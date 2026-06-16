@@ -11,12 +11,18 @@ splits drive end-of-epoch eval with the F1 hook, and the test splits are
 held out for a blind pass on the best checkpoint after training finishes.
 
 Edit the ``CORPORA`` list below to drop a corpus or point at smaller subsets.
+
+Event-extraction corpora (ACE 2005, MAVEN, RAMS) are listed separately in
+``EVENT_FILES`` because they ship canonical train/dev/test splits and
+require manual download (see TRAINING.md §2). Each entry is included only
+if the file exists on disk, so the script runs cleanly with any subset of
+event corpora present.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 from gliner2 import GLiNER2
 from gliner2.training import evaluate_checkpoint, make_compute_metrics
@@ -37,14 +43,38 @@ CORPORA: List[str] = [
     "data/bio_ner_relations",
 ]
 
+# Event-extraction corpora — emitted by tools/data/convert_{ace2005,maven,rams}.py.
+# Files are picked up only if they exist on disk; absent ones are silently
+# skipped so the script works with any subset (or none) of these.
+EVENT_FILES: Dict[str, Dict[str, str]] = {
+    "rams":    {"train": "data/rams.train.jsonl",
+                "val":   "data/rams.dev.jsonl",
+                "test":  "data/rams.test.jsonl"},
+    "maven":   {"train": "data/maven.train.jsonl",
+                "val":   "data/maven.valid.jsonl"},
+    # ACE 2005 has no canonical train/dev/test split — the converter emits a
+    # single file and the user partitions it themselves. By default we treat
+    # it as train data only.
+    "ace2005": {"train": "data/ace2005.jsonl"},
+}
+
 
 def _split_files(corpora: List[str], suffix: str) -> List[str]:
     return [f"{c}.{suffix}.jsonl" for c in corpora]
 
 
-TRAIN_DATA = _split_files(CORPORA, "train")
-EVAL_DATA = _split_files(CORPORA, "val")
-TEST_DATA = _split_files(CORPORA, "test")
+def _event_split(suffix: str) -> List[str]:
+    paths: List[str] = []
+    for corpus, by_split in EVENT_FILES.items():
+        p = by_split.get(suffix)
+        if p and Path(p).is_file():
+            paths.append(p)
+    return paths
+
+
+TRAIN_DATA = _split_files(CORPORA, "train") + _event_split("train")
+EVAL_DATA = _split_files(CORPORA, "val") + _event_split("val")
+TEST_DATA = _split_files(CORPORA, "test") + _event_split("test")
 
 
 def main() -> None:
@@ -100,7 +130,7 @@ def main() -> None:
         elif isinstance(val, int):
             print(f"  {key}: {val}")
 
-    for category in ("entity", "relation", "classification"):
+    for category in ("entity", "relation", "classification", "event_trigger", "event_argument"):
         report_key = f"eval_{category}_classification_report"
         if report_key in test_metrics:
             print(f"\n--- {category} classification report ---")
