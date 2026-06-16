@@ -134,13 +134,20 @@ class GLiNER2(Extractor):
                 schema_dict = schema.build()
                 # Extract classification task names
                 classification_tasks = [c["task"] for c in schema_dict.get("classifications", [])]
+                event_role_orders = {
+                    name: list(schema_dict.get("events", {}).get(name, []))
+                    for name in getattr(schema, '_event_order', [])
+                }
                 metadata = {
                     "field_metadata": schema._field_metadata,
                     "entity_metadata": schema._entity_metadata,
                     "relation_metadata": getattr(schema, '_relation_metadata', {}),
+                    "event_metadata": getattr(schema, '_event_metadata', {}),
+                    "event_role_orders": event_role_orders,
                     "field_orders": schema._field_orders,
                     "entity_order": schema._entity_order,
                     "relation_order": getattr(schema, '_relation_order', []),
+                    "event_order": getattr(schema, '_event_order', []),
                     "classification_tasks": classification_tasks
                 }
             else:
@@ -153,10 +160,31 @@ class GLiNER2(Extractor):
                 # Extract classification task names from dict schema
                 classification_tasks = [c["task"] for c in schema_dict.get("classifications", [])]
                 entity_order = list(schema_dict["entities"].keys()) if isinstance(schema_dict.get("entities"), dict) else []
+                events_block = schema_dict.get("events") or {}
+                event_order: List[str] = []
+                event_role_orders = {}
+                if isinstance(events_block, dict):
+                    for name, roles in events_block.items():
+                        if not isinstance(name, str):
+                            continue
+                        if isinstance(roles, list):
+                            role_list = [r for r in roles if isinstance(r, str)]
+                        elif isinstance(roles, dict):
+                            r2 = roles.get("roles")
+                            role_list = [r for r in r2 if isinstance(r, str)] if isinstance(r2, list) else []
+                        else:
+                            role_list = []
+                        if not role_list:
+                            continue
+                        event_order.append(name)
+                        event_role_orders[name] = role_list
                 metadata = {
                     "field_metadata": {}, "entity_metadata": {},
-                    "relation_metadata": {}, "field_orders": {},
+                    "relation_metadata": {}, "event_metadata": {},
+                    "event_role_orders": event_role_orders,
+                    "field_orders": {},
                     "entity_order": entity_order, "relation_order": [],
+                    "event_order": event_order,
                     "classification_tasks": classification_tasks
                 }
 
@@ -208,9 +236,11 @@ class GLiNER2(Extractor):
                 for i, result in enumerate(batch_results):
                     meta = metadata_list[sample_idx + i]
                     requested_relations = meta.get("relation_order", [])
+                    requested_events = meta.get("event_order", [])
                     classification_tasks = meta.get("classification_tasks", [])
                     batch_results[i] = self.format_results(
-                        result, include_confidence, requested_relations, classification_tasks
+                        result, include_confidence, requested_relations, classification_tasks,
+                        requested_events=requested_events,
                     )
 
             all_results.extend(batch_results)
@@ -399,11 +429,14 @@ class GLiNER2(Extractor):
         # Get field names
         field_names = []
         for j in range(len(schema_tokens) - 1):
-            if schema_tokens[j] in ("[E]", "[C]", "[R]"):
+            if schema_tokens[j] in ("[E]", "[C]", "[R]", "[V]"):
                 field_names.append(schema_tokens[j + 1])
 
         if not field_names:
-            results[schema_name] = [] if schema_name == "entities" else {}
+            if task_type == "events":
+                results[schema_name] = []
+            else:
+                results[schema_name] = [] if schema_name == "entities" else {}
             return
 
         # Predict count
@@ -414,6 +447,8 @@ class GLiNER2(Extractor):
             if schema_name == "entities":
                 results[schema_name] = []
             elif task_type == "relations":
+                results[schema_name] = []
+            elif task_type == "events":
                 results[schema_name] = []
             else:
                 results[schema_name] = {}
@@ -434,6 +469,12 @@ class GLiNER2(Extractor):
             )
         elif task_type == "relations":
             results[schema_name] = self._extract_relations(
+                schema_name, field_names, span_scores, pred_count,
+                text_len, text_tokens, original_text, start_mapping, end_mapping,
+                threshold, metadata, include_confidence, include_spans
+            )
+        elif task_type == "events":
+            results[schema_name] = self._extract_events(
                 schema_name, field_names, span_scores, pred_count,
                 text_len, text_tokens, original_text, start_mapping, end_mapping,
                 threshold, metadata, include_confidence, include_spans
@@ -581,6 +622,92 @@ class GLiNER2(Extractor):
                     instances.append((values[0], values[1]))
 
         return instances
+
+    def _extract_events(
+        self,
+        event_type: str,
+        field_names: List[str],
+        span_scores: torch.Tensor,
+        count: int,
+        text_len: int,
+        text_tokens: List[str],
+        text: str,
+        start_map: List[int],
+        end_map: List[int],
+        threshold: float,
+        metadata: Dict,
+        include_confidence: bool,
+        include_spans: bool
+    ) -> List[Dict[str, Any]]:
+        """Extract event mentions for one event type.
+
+        Field 0 of the schema is the trigger; fields 1..N are the typed
+        argument roles. For each predicted instance, take the top-scoring
+        span above threshold for the trigger, and all spans above threshold
+        for each role (roles are multi-valued).
+        """
+        event_meta = metadata.get("event_metadata", {}).get(event_type, {})
+        trigger_threshold = event_meta.get("trigger_threshold")
+        if trigger_threshold is None:
+            trigger_threshold = threshold
+        argument_threshold = event_meta.get("argument_threshold")
+        if argument_threshold is None:
+            argument_threshold = threshold
+
+        # Roles preserve the original schema order; field_names[0] is always
+        # the synthetic "trigger" field. Fall back to field_names if no
+        # explicit order was tracked at schema-build time.
+        roles_ordered = metadata.get("event_role_orders", {}).get(event_type)
+        if roles_ordered is None:
+            roles_ordered = field_names[1:] if len(field_names) > 1 else []
+
+        def _format_span(text_val: str, conf: float, char_start: int, char_end: int):
+            if include_spans and include_confidence:
+                return {"text": text_val, "confidence": conf,
+                        "start": char_start, "end": char_end}
+            if include_spans:
+                return {"text": text_val, "start": char_start, "end": char_end}
+            if include_confidence:
+                return {"text": text_val, "confidence": conf}
+            return text_val
+
+        events: List[Dict[str, Any]] = []
+        for inst in range(count):
+            scores = span_scores[inst, :, -text_len:]
+
+            # Trigger — top-1 above threshold.
+            trigger_spans = self._find_spans(
+                scores[0], trigger_threshold, text_len, text, start_map, end_map
+            )
+            if not trigger_spans:
+                continue
+            t_text, t_conf, t_start, t_end = trigger_spans[0]
+
+            arguments: List[Dict[str, Any]] = []
+            for role in roles_ordered:
+                if role not in field_names:
+                    continue
+                fidx = field_names.index(role)
+                if fidx >= scores.shape[0]:
+                    continue
+                arg_spans = self._find_spans(
+                    scores[fidx], argument_threshold,
+                    text_len, text, start_map, end_map
+                )
+                for a_text, a_conf, a_start, a_end in arg_spans:
+                    arguments.append({
+                        "role": role,
+                        "entity": _format_span(a_text, a_conf, a_start, a_end),
+                    })
+
+            event = {"trigger": _format_span(t_text, t_conf, t_start, t_end)}
+            if arguments:
+                event["arguments"] = arguments
+            else:
+                event["arguments"] = []
+            events.append(event)
+
+        return events
 
     def _extract_structures(
         self,
@@ -774,22 +901,39 @@ class GLiNER2(Extractor):
         results: Dict,
         include_confidence: bool = False,
         requested_relations: List[str] = None,
-        classification_tasks: List[str] = None
+        classification_tasks: List[str] = None,
+        requested_events: List[str] = None,
     ) -> Dict[str, Any]:
         """Format extraction results."""
         formatted = {}
         relations = {}
+        events_out = {}
         requested_relations = requested_relations or []
+        requested_events = requested_events or []
         classification_tasks = classification_tasks or []
 
         for key, value in results.items():
             # Check if this is a classification task (takes priority)
             is_classification = key in classification_tasks
-            
+
+            # Check if this is an event (also takes priority over relation
+            # heuristics, since events have a distinct shape).
+            is_event = False
+
             # Check if this is a relation
             is_relation = False
-            
+
             if not is_classification:
+                if key in requested_events:
+                    is_event = True
+                elif (
+                    isinstance(value, list) and len(value) > 0
+                    and isinstance(value[0], dict)
+                    and "trigger" in value[0] and "arguments" in value[0]
+                ):
+                    is_event = True
+
+            if not is_classification and not is_event:
                 # Check if key is in requested_relations (this takes priority)
                 if key in requested_relations:
                     is_relation = True
@@ -816,6 +960,9 @@ class GLiNER2(Extractor):
                     formatted[key] = {"label": label, "confidence": conf} if include_confidence else label
                 else:
                     formatted[key] = value
+            elif is_event:
+                # Events go under the event_extraction bucket like relations.
+                events_out[key] = value if isinstance(value, list) else []
             elif is_relation:
                 # This is a relation - store in relations dict, not formatted
                 # Relations should always be lists, but handle edge cases defensively
@@ -858,6 +1005,14 @@ class GLiNER2(Extractor):
         # Only add relation_extraction if we have relations
         if relations:
             formatted["relation_extraction"] = relations
+
+        # Add all requested events (including empty ones)
+        for evt in requested_events:
+            if evt not in events_out:
+                events_out[evt] = []
+
+        if events_out:
+            formatted["event_extraction"] = events_out
 
         return formatted
 
@@ -1017,6 +1172,28 @@ class GLiNER2(Extractor):
                                max_len: Optional[int] = None) -> List[Dict]:
         """Batch extract relations."""
         schema = self.create_schema().relations(relation_types)
+        return self.batch_extract(texts, schema, batch_size, threshold, 0, format_results, include_confidence, include_spans, max_len=max_len)
+
+    def extract_events(self, text: str, event_types, threshold: float = 0.5,
+                       format_results: bool = True, include_confidence: bool = False,
+                       include_spans: bool = False, max_len: Optional[int] = None) -> Dict:
+        """Extract events.
+
+        Args:
+            text: Input text.
+            event_types: dict ``{event_type: [role, ...]}`` or rich
+                ``{event_type: {"roles": [...], "description": ...,
+                "role_descriptions": {...}}}``.
+        """
+        schema = self.create_schema().events(event_types)
+        return self.extract(text, schema, threshold, format_results, include_confidence, include_spans, max_len=max_len)
+
+    def batch_extract_events(self, texts: List[str], event_types, batch_size: int = 8,
+                             threshold: float = 0.5, format_results: bool = True,
+                             include_confidence: bool = False, include_spans: bool = False,
+                             max_len: Optional[int] = None) -> List[Dict]:
+        """Batch extract events."""
+        schema = self.create_schema().events(event_types)
         return self.batch_extract(texts, schema, batch_size, threshold, 0, format_results, include_confidence, include_spans, max_len=max_len)
 
     def _parse_field_spec(self, spec: Union[str, Dict]) -> Tuple[str, str, Optional[List[str]], Optional[str]]:
