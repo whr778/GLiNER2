@@ -29,9 +29,19 @@ uv run python tools/data/convert_nuner.py \
 # Pile-NER-definition — ~47,671 conversations, each contributing many entity-type queries
 uv run python tools/data/convert_pile_ner_definition.py \
     --out data/pile_ner_def.jsonl
+
+# knowledgator/GLINER-multi-task-synthetic-data — multi-task synthetic NER
+# (~10 entity types per record on average; prompt prefix is stripped automatically)
+uv run python tools/data/convert_knowledgator_gliner.py \
+    --out data/knowledgator_gliner.jsonl
+
+# knowledgator/text2json-training-data — schema-driven structured extraction
+# (each record defines its own field names; nested objects are skipped)
+uv run python tools/data/convert_text2json.py \
+    --out data/text2json.jsonl
 ```
 
-Both converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped because no span appeared verbatim in the text, and the count of distinct entity types.
+All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped because no span appeared verbatim in the text, and the count of distinct entity types.
 
 Approximate output sizes after conversion:
 
@@ -39,8 +49,19 @@ Approximate output sizes after conversion:
 |---|---:|---:|
 | NuNER `full` | ~990,000 | ~0.8 GB |
 | Pile-NER-definition | ~45,000 | ~0.2 GB |
+| knowledgator/GLINER-multi-task-synthetic-data | ~210,000 | ~0.4 GB |
+| knowledgator/text2json-training-data | ~80,000 | ~0.2 GB |
 
-You can pass both JSONL files to the trainer at once — the trainer concatenates them and shuffles.
+You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all four is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, and text2json contributes bespoke per-document field names that drive generalisation to arbitrary extraction prompts.
+
+```python
+trainer.train(train_data=[
+    "data/nuner_full.jsonl",
+    "data/pile_ner_def.jsonl",
+    "data/knowledgator_gliner.jsonl",
+    "data/text2json.jsonl",
+])
+```
 
 ---
 

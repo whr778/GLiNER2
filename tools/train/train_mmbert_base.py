@@ -4,12 +4,25 @@ Run::
 
     uv run python tools/train/train_mmbert_base.py
 
-Expects ``data/nuner_full.jsonl`` and ``data/pile_ner_def.jsonl`` to already
-exist (see tools/data/convert_nuner.py and tools/data/convert_pile_ner_definition.py).
+Expects these JSONLs under ``data/`` (see ``tools/data/`` converters):
+    - nuner_full.jsonl                   (numind/NuNER)
+    - pile_ner_def.jsonl                 (Universal-NER/Pile-NER-definition)
+    - knowledgator_gliner.jsonl          (knowledgator/GLINER-multi-task-synthetic-data)
+    - text2json.jsonl                    (knowledgator/text2json-training-data)
+
+Edit ``TRAIN_DATA`` below to drop a corpus or to point at smaller subsets.
 """
 
 from gliner2 import GLiNER2
 from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
+
+
+TRAIN_DATA = [
+    "data/nuner_full.jsonl",
+    "data/pile_ner_def.jsonl",
+    "data/knowledgator_gliner.jsonl",
+    "data/text2json.jsonl",
+]
 
 
 def main() -> None:
@@ -17,7 +30,7 @@ def main() -> None:
 
     config = TrainingConfig(
         output_dir="./out/mmbert-base",
-        experiment_name="mmbert_base_nuner_pile",
+        experiment_name="mmbert_base_multi_corpus",
         num_epochs=2,
         batch_size=8,
         gradient_accumulation_steps=2,
@@ -36,7 +49,7 @@ def main() -> None:
     )
 
     trainer = GLiNER2Trainer(model, config)
-    trainer.train(train_data=["data/nuner_full.jsonl", "data/pile_ner_def.jsonl"])
+    trainer.train(train_data=TRAIN_DATA)
 
 
 if __name__ == "__main__":

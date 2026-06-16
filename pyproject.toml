@@ -29,6 +29,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "datasets>=3.1.0",
     "gliner",
     "peft",
     "pydantic>=2.0.0",

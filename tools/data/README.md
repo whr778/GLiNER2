@@ -32,6 +32,46 @@ The converter mints short synthetic keys (`e_0`, `e_1`, ...) per record and
 puts the definition in `entity_descriptions`, so the model sees compact type
 tokens with rich descriptions. Empty answers (negative samples) are dropped.
 
+## knowledgator/GLINER-multi-task-synthetic-data
+
+```bash
+uv run python tools/data/convert_knowledgator_gliner.py \
+    --out data/knowledgator_gliner.jsonl
+
+# Smaller subset for a smoke run
+uv run python tools/data/convert_knowledgator_gliner.py \
+    --out data/knowledgator_5k.jsonl --max-records 5000
+```
+
+The source dataset stores each row as a word-tokenized text with a
+"Identify the following entity classes ... Text: ..." prompt prefix and a
+list of `[start_token, end_token, "\"Label\""]` spans. The converter strips
+the prompt prefix (so the model trains on plain text, not the template),
+re-bases each span's token indices into the body, joins body tokens into a
+plain string, and unwraps the JSON quoting on labels. Each record carries
+~10 entity types on average, so loss values start much higher than NuNER
+records but drop fast.
+
+## knowledgator/text2json-training-data
+
+```bash
+uv run python tools/data/convert_text2json.py \
+    --out data/text2json.jsonl
+
+# Smaller subset for a smoke run
+uv run python tools/data/convert_text2json.py \
+    --out data/text2json_5k.jsonl --max-records 5000
+```
+
+This dataset stores extractions as either:
+
+- **Entity list** — `{"entities": [{"entity": "...", "type": "...", "description": "..."}, ...]}`. Mapped directly to GLiNER2 NER with descriptions preserved.
+- **Flat key→value** — e.g. `{"tournament_code": "ROL-2024", "winner": "Sofia Petrova", ...}`. Each top-level key becomes an entity label; the value (coerced to a string) becomes the surface.
+
+Nested dicts and list-of-dicts values are skipped — their leaves typically don't round-trip verbatim into the source text. Surfaces that don't appear verbatim are dropped silently; ~20% of rows are dropped entirely because they're all paraphrased or generated values.
+
+Because text2json field names are highly bespoke (each document defines its own schema), the type cardinality grows fast. Mixing this corpus with the others helps the model generalise to arbitrary, schema-driven extraction prompts at inference time.
+
 ## Output format
 
 Both scripts produce GLiNER2 JSONL that can be passed directly to
