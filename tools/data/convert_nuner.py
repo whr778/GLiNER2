@@ -37,12 +37,16 @@ def parse_items(output_field: str) -> list[list[str]]:
 
 def convert_row(row: dict) -> dict | None:
     """Convert one NuNER row to a GLiNER2 record; return None if it has no entities."""
-    text = row["input"]
+    text = row.get("input")
+    output_field = row.get("output")
+    # A handful of NuNER rows have input=None (e.g. row 135648 in the full split).
+    if not isinstance(text, str) or not text or not isinstance(output_field, str):
+        return None
     entities: dict[str, list[str]] = defaultdict(list)
     descriptions: dict[str, str] = {}
 
     try:
-        items = parse_items(row["output"])
+        items = parse_items(output_field)
     except (SyntaxError, ValueError):
         return None
 
