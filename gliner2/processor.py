@@ -180,6 +180,9 @@ class SamplingConfig:
     # Relations
     remove_relations_prob: float = 0.2
     swap_head_tail_prob: float = 0.2
+    # Events
+    remove_events_prob: float = 0.2
+    shuffle_event_roles: bool = True
     # Classifications
     remove_classification_prob: float = 0.0
     shuffle_classification_labels: bool = True
@@ -209,13 +212,14 @@ class SchemaTransformer:
     E_TOKEN = "[E]"
     R_TOKEN = "[R]"
     L_TOKEN = "[L]"
+    V_TOKEN = "[V]"
     EXAMPLE_TOKEN = "[EXAMPLE]"
     OUTPUT_TOKEN = "[OUTPUT]"
     DESC_TOKEN = "[DESCRIPTION]"
 
     SPECIAL_TOKENS = [
         SEP_STRUCT, SEP_TEXT, P_TOKEN, C_TOKEN, E_TOKEN,
-        R_TOKEN, L_TOKEN, EXAMPLE_TOKEN, OUTPUT_TOKEN, DESC_TOKEN
+        R_TOKEN, L_TOKEN, V_TOKEN, EXAMPLE_TOKEN, OUTPUT_TOKEN, DESC_TOKEN
     ]
 
     def __init__(
@@ -242,7 +246,10 @@ class SchemaTransformer:
         # OPT-1: Pre-compute special token IDs for fast lookup in embedding extraction
         self._special_ids = frozenset(
             self.tokenizer.convert_tokens_to_ids(t)
-            for t in (self.P_TOKEN, self.C_TOKEN, self.E_TOKEN, self.R_TOKEN, self.L_TOKEN)
+            for t in (
+                self.P_TOKEN, self.C_TOKEN, self.E_TOKEN,
+                self.R_TOKEN, self.L_TOKEN, self.V_TOKEN,
+            )
         )
 
         # OPT-6: Cache tokenized forms of special tokens and common punctuation
@@ -605,6 +612,9 @@ class SchemaTransformer:
         # Process relations
         self._process_relations(schema, schemas, labels, types, sampling)
 
+        # Process events
+        self._process_events(schema, schemas, labels, types, sampling)
+
         # Process classifications
         self._process_classifications(schema, schemas, labels, types, sampling)
 
@@ -786,6 +796,121 @@ class SchemaTransformer:
             labels.append([len(uniq), uniq])
             schemas.append(self._transform_schema(parent, field_names, self.R_TOKEN))
             types.append("relations")
+
+    def _process_events(self, schema, schemas, labels, types, sampling):
+        """Process event-extraction schemas.
+
+        Events are modelled as multi-field structures: each event type gets
+        a schema entry whose fields are ``[trigger, role_1, role_2, ...]``.
+        Per mention, the structure label carries one span for the trigger
+        and a list of spans per role (multi-valued — several entities can
+        share the same role within an event).
+
+        Accepts two shapes for ``schema["events"]``:
+        * **Inference schema** — ``dict[event_type, list[role]]`` from
+          ``Schema.events(...).build()``. No gold mentions; empty structure
+          labels are appended so the schema embedding is still produced.
+        * **Training gold** — ``list[{event_type, trigger, arguments}]``
+          from the JSONL record's ``output.events``.
+        """
+        if "events" not in schema:
+            return
+
+        events_data = schema.get("events")
+        if not events_data:
+            return
+
+        # ---- inference path: dict[type, roles] ----
+        if isinstance(events_data, dict):
+            for etype, roles in events_data.items():
+                if not isinstance(etype, str) or not etype.strip():
+                    continue
+                if not isinstance(roles, list) or not roles:
+                    continue
+                role_list = [r for r in roles if isinstance(r, str) and r.strip()]
+                if not role_list:
+                    continue
+                if sampling and random.random() < getattr(sampling, "remove_events_prob", 0.0):
+                    continue
+                if sampling and getattr(sampling, "shuffle_event_roles", False) and len(role_list) > 1:
+                    role_list = list(role_list)
+                    random.shuffle(role_list)
+                field_names = ["trigger"] + role_list
+                labels.append([0, []])
+                schemas.append(self._transform_schema(etype, field_names, self.V_TOKEN))
+                types.append("events")
+            return
+
+        # ---- training path: list of mentions ----
+        if not isinstance(events_data, list):
+            return
+
+        groups: Dict[str, List[Dict[str, Any]]] = {}
+        for mention in events_data:
+            if not isinstance(mention, dict):
+                continue
+            etype = mention.get("event_type")
+            trigger = mention.get("trigger")
+            if not isinstance(etype, str) or not isinstance(trigger, str):
+                continue
+            groups.setdefault(etype, []).append(mention)
+
+        for etype, occurrences in groups.items():
+            if sampling and random.random() < getattr(sampling, "remove_events_prob", 0.0):
+                continue
+
+            # Union of roles across mentions of this event type.
+            roles_seen: List[str] = []
+            seen: set = set()
+            for occ in occurrences:
+                for arg in occ.get("arguments") or []:
+                    if not isinstance(arg, dict):
+                        continue
+                    role = arg.get("role")
+                    if isinstance(role, str) and role.strip() and role not in seen:
+                        seen.add(role)
+                        roles_seen.append(role)
+
+            field_names = ["trigger"] + list(roles_seen)
+            if sampling and getattr(sampling, "shuffle_event_roles", False) and len(roles_seen) > 1:
+                roles_shuffled = list(roles_seen)
+                random.shuffle(roles_shuffled)
+                field_names = ["trigger"] + roles_shuffled
+
+            spans: List[List[Any]] = []
+            for occ in occurrences:
+                trigger_span = occ.get("trigger")
+                row: List[Any] = [trigger_span]
+                role_to_spans: Dict[str, List[Any]] = {r: [] for r in field_names[1:]}
+                for arg in occ.get("arguments") or []:
+                    if not isinstance(arg, dict):
+                        continue
+                    role = arg.get("role")
+                    entity = arg.get("entity")
+                    if role in role_to_spans and entity:
+                        role_to_spans[role].append(entity)
+                for role in field_names[1:]:
+                    row.append(list(role_to_spans[role]))
+                spans.append(row)
+
+            # Dedup whole-mention rows.
+            seen_rows: set = set()
+            uniq: List[List[Any]] = []
+            for row in spans:
+                key = tuple(
+                    tuple(x) if isinstance(x, list) else x
+                    for x in row
+                )
+                if key not in seen_rows:
+                    seen_rows.add(key)
+                    uniq.append(row)
+
+            if not uniq:
+                continue
+
+            labels.append([len(uniq), uniq])
+            schemas.append(self._transform_schema(etype, field_names, self.V_TOKEN))
+            types.append("events")
 
     def _process_classifications(self, schema, schemas, labels, types, sampling):
         """Process classification schemas."""
