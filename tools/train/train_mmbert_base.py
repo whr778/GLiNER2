@@ -89,7 +89,7 @@ def main() -> None:
         encoder_lr=1e-5,
         task_lr=3e-4,
         warmup_ratio=0.05,
-        scheduler_type="cosine",
+        scheduler_type="cosine_restarts",
         bf16=True,
         fp16=False,
         max_grad_norm=1.0,
