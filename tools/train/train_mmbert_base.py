@@ -83,7 +83,7 @@ def main() -> None:
     config = TrainingConfig(
         output_dir="./out/mmbert-base",
         experiment_name="mmbert_base_multi_corpus",
-        num_epochs=2,
+        num_epochs=3,
         batch_size=4,
         gradient_accumulation_steps=2,
         encoder_lr=1e-5,
@@ -99,7 +99,8 @@ def main() -> None:
         save_best=True,
         save_total_limit=3,
         logging_steps=50,
-        num_workers=4,
+        num_workers=0,
+        # num_workers=4,
         validate_data=False,
         max_len=8192,
     )

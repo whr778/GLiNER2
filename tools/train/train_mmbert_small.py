@@ -84,7 +84,7 @@ def main() -> None:
         output_dir="./out/mmbert-small",
         experiment_name="mmbert_small_multi_corpus",
         num_epochs=3,
-        batch_size=6,
+        batch_size=3,
         gradient_accumulation_steps=1,
         encoder_lr=2e-5,
         task_lr=5e-4,
@@ -99,7 +99,8 @@ def main() -> None:
         save_best=True,
         save_total_limit=3,
         logging_steps=50,
-        num_workers=4,
+        num_workers=0,
+        # num_workers=4,
         validate_data=False,
         max_len=8192,
     )
