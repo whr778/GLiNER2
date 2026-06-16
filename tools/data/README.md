@@ -52,6 +52,21 @@ plain string, and unwraps the JSON quoting on labels. Each record carries
 ~10 entity types on average, so loss values start much higher than NuNER
 records but drop fast.
 
+## knowledgator/gliner-multilingual-synthetic
+
+```bash
+uv run python tools/data/convert_gliner_multilingual.py \
+    --out data/gliner_multilingual.jsonl
+
+# Smaller subset for a smoke run
+uv run python tools/data/convert_gliner_multilingual.py \
+    --out data/gliner_multilingual_5k.jsonl --max-records 5000
+```
+
+Same on-disk shape as the GLINER-multi-task corpus (`tokenized_text` + `[start, end, "\"label\""]` triples) but with no prompt prefix — each row is just the raw multilingual passage (German, Polish, French, etc.) and its spans. The converter joins tokens, slices each span, unwraps the JSON-quoted label, and verbatim-filters surfaces.
+
+Pair this with `mmBERT-base` (multilingual encoder) to learn non-English extraction.
+
 ## knowledgator/text2json-training-data
 
 ```bash
@@ -61,9 +76,15 @@ uv run python tools/data/convert_text2json.py \
 # Smaller subset for a smoke run
 uv run python tools/data/convert_text2json.py \
     --out data/text2json_5k.jsonl --max-records 5000
+
+# Pick a different JSONL file in the same repo
+uv run python tools/data/convert_text2json.py \
+    --file mixed_train.jsonl --out data/text2json_mixed.jsonl
 ```
 
-This dataset stores extractions as either:
+The repo holds ~25 JSONL files with inconsistent per-shard schemas (some carry an `_augmented` column, others don't), so the converter bypasses `datasets.load_dataset` — which fails the Arrow schema cast — and downloads a single named file via `huggingface_hub` instead. Default is `augmented_train.jsonl` (12.8k rows, clean `{text, extracted}` schema). Pass `--file` to convert a different one (e.g. `sft_train.jsonl`, `mixed_train.jsonl`, `merged_clean.jsonl`).
+
+The `extracted` payload comes in two shapes:
 
 - **Entity list** — `{"entities": [{"entity": "...", "type": "...", "description": "..."}, ...]}`. Mapped directly to GLiNER2 NER with descriptions preserved.
 - **Flat key→value** — e.g. `{"tournament_code": "ROL-2024", "winner": "Sofia Petrova", ...}`. Each top-level key becomes an entity label; the value (coerced to a string) becomes the surface.

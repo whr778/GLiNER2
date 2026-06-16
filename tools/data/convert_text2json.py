@@ -1,6 +1,11 @@
 """Convert knowledgator/text2json-training-data to GLiNER2 JSONL.
 
-The source dataset has each row as ``{"text": ..., "extracted": <json>}``.
+The source repo holds many JSONL files with *inconsistent schemas* across
+shards (some carry an ``_augmented`` column, others don't). ``datasets.load_dataset``
+fails to merge them, so this converter downloads a single named file via
+``huggingface_hub`` and iterates JSONL directly. Default file is
+``augmented_train.jsonl`` (12.8k rows, clean ``{text, extracted}`` schema).
+
 The ``extracted`` payload comes in two useful shapes (plus a long tail of
 deeply nested objects we skip):
 
@@ -31,6 +36,10 @@ Usage::
 
     uv run python tools/data/convert_text2json.py \\
         --out data/text2json.jsonl
+
+    # Use a different file from the same repo:
+    uv run python tools/data/convert_text2json.py \\
+        --file mixed_train.jsonl --out data/text2json_mixed.jsonl
 """
 
 from __future__ import annotations
@@ -125,6 +134,19 @@ def convert_row(row: dict) -> dict | None:
     return {"input": text, "output": output}
 
 
+def _iter_jsonl(path: Path):
+    """Yield decoded JSON objects from a JSONL file; skip malformed lines."""
+    with path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
@@ -133,14 +155,15 @@ def main() -> int:
                         help="Maximum input records to read (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/text2json-training-data",
                         help="HuggingFace dataset repo.")
-    parser.add_argument("--split", default="train",
-                        help="Dataset split to read.")
+    parser.add_argument("--file", default="augmented_train.jsonl",
+                        help="JSONL file inside the repo to convert "
+                             "(default: augmented_train.jsonl).")
     args = parser.parse_args()
 
-    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
 
-    print(f"Streaming {args.repo} split={args.split}...")
-    ds = load_dataset(args.repo, split=args.split, streaming=True)
+    print(f"Downloading {args.repo}/{args.file}...")
+    src_path = Path(hf_hub_download(args.repo, args.file, repo_type="dataset"))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -150,7 +173,7 @@ def main() -> int:
     all_types: set[str] = set()
 
     with args.out.open("w") as f:
-        for idx, row in enumerate(ds):
+        for idx, row in enumerate(_iter_jsonl(src_path)):
             if 0 <= args.max_records <= idx:
                 break
             record = convert_row(row)

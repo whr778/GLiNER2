@@ -39,6 +39,11 @@ uv run python tools/data/convert_knowledgator_gliner.py \
 # (each record defines its own field names; nested objects are skipped)
 uv run python tools/data/convert_text2json.py \
     --out data/text2json.jsonl
+
+# knowledgator/gliner-multilingual-synthetic — multilingual NER
+# (German, Polish, French, etc.; pair with mmBERT for non-English extraction)
+uv run python tools/data/convert_gliner_multilingual.py \
+    --out data/gliner_multilingual.jsonl
 ```
 
 All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped because no span appeared verbatim in the text, and the count of distinct entity types.
@@ -51,8 +56,9 @@ Approximate output sizes after conversion:
 | Pile-NER-definition | ~45,000 | ~0.2 GB |
 | knowledgator/GLINER-multi-task-synthetic-data | ~210,000 | ~0.4 GB |
 | knowledgator/text2json-training-data | ~80,000 | ~0.2 GB |
+| knowledgator/gliner-multilingual-synthetic | ~400,000 | ~0.3 GB |
 
-You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all four is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, and text2json contributes bespoke per-document field names that drive generalisation to arbitrary extraction prompts.
+You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all five is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, and gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction).
 
 ```python
 trainer.train(train_data=[
@@ -60,6 +66,7 @@ trainer.train(train_data=[
     "data/pile_ner_def.jsonl",
     "data/knowledgator_gliner.jsonl",
     "data/text2json.jsonl",
+    "data/gliner_multilingual.jsonl",
 ])
 ```
 

@@ -9,6 +9,7 @@ Expects these JSONLs under ``data/`` (see ``tools/data/`` converters):
     - pile_ner_def.jsonl                 (Universal-NER/Pile-NER-definition)
     - knowledgator_gliner.jsonl          (knowledgator/GLINER-multi-task-synthetic-data)
     - text2json.jsonl                    (knowledgator/text2json-training-data)
+    - gliner_multilingual.jsonl          (knowledgator/gliner-multilingual-synthetic)
 
 Edit ``TRAIN_DATA`` below to drop a corpus or to point at smaller subsets.
 """
@@ -22,6 +23,7 @@ TRAIN_DATA = [
     "data/pile_ner_def.jsonl",
     "data/knowledgator_gliner.jsonl",
     "data/text2json.jsonl",
+    "data/gliner_multilingual.jsonl",
 ]
 
 
