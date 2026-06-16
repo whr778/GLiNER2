@@ -118,17 +118,21 @@ trainer.train(train_data=[
 
 ## 3. Pick a hardware profile
 
+The committed training scripts use **`max_len=8192`** — mmBERT's full sequence window. ModernBERT's local-global attention keeps memory near-linear in sequence length, but activations and the optimizer state still scale with it, so batch sizes at 8192 are much smaller than at 512. The cells below assume `max_len=8192`. To regain bigger batches at the cost of context window, lower `max_len` in `TrainingConfig` (e.g. `max_len=2048` or `1024`) and roughly 2–4× each batch-size cell.
+
 | Device | mmBERT-small (148 M params) | mmBERT-base (314 M params) |
 |---|---|---|
-| **Single A100/H100 80 GB** | `batch_size=64`, `fp16=True`, ~6 h/epoch on full NuNER | `batch_size=32`, `bf16=True`, ~14 h/epoch |
-| **Single A100/4090 40–48 GB** | `batch_size=32`, `fp16=True`, ~10 h/epoch | `batch_size=16`, `fp16=True`, ~22 h/epoch |
-| **Single 24 GB GPU (3090/4090)** | `batch_size=16`, `fp16=True`, ~16 h/epoch | `batch_size=8` + `gradient_accumulation_steps=2`, `fp16=True`, ~30 h/epoch |
-| **Apple M-series (MPS, 32–96 GB unified)** | `batch_size=4–8`, no AMP, ~2 d/epoch on full data | `batch_size=2–4`, no AMP, only practical on a small slice |
+| **Single A100/H100 80 GB** | `batch_size=16–24`, `bf16=True` | `batch_size=8–12`, `bf16=True` |
+| **Single A100/4090 40–48 GB** | `batch_size=8–12`, `bf16=True` | `batch_size=4` + `gradient_accumulation_steps=2`, `bf16=True` |
+| **Single 24 GB GPU (3090/4090)** | `batch_size=4–6`, `bf16=True` | `batch_size=2` + `gradient_accumulation_steps=4`, `bf16=True` |
+| **Apple M-series (MPS, 32–96 GB unified)** | `batch_size=1–2`, no AMP, dev / small-slice only | `batch_size=1`, no AMP, dev / small-slice only |
 | **CPU** | dev / smoke only | dev / smoke only |
+
+Per-step wall-clock at `max_len=8192` is roughly 6–10× longer than at `max_len=512` for the same effective batch size; full-corpus runs on smaller GPUs become multi-day. Tune to your real corpus before committing to a long run.
 
 > On MPS, mixed precision (`fp16`/`bf16`) is disabled automatically: `torch.amp.GradScaler` is CUDA-only and MPS autocast adds little speed-up for this model. The trainer logs the choice it made.
 >
-> For an Apple M-series dev workflow, treat NuNER as a sampleable corpus: pass `--max-records 50_000` to `convert_nuner.py` and train for 1 epoch (~3 h on an M3 Pro). Use a real GPU for the full corpus.
+> For an Apple M-series dev workflow at `max_len=8192`, an epoch over the full mixed corpus is prohibitive — drop `max_len` to 1024–2048 and/or pass `--max-records 50_000` to the converters to train on a slice. Use a real GPU for the full 8192 corpus.
 
 ---
 
