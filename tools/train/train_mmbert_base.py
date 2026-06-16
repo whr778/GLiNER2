@@ -12,6 +12,8 @@ Expects these JSONLs under ``data/`` (see ``tools/data/`` converters):
     - gliner_multilingual.jsonl          (knowledgator/gliner-multilingual-synthetic)
     - gliclass_logic.jsonl               (knowledgator/gliclass-v3-logic-dataset; classification)
     - scientific_text.jsonl              (knowledgator/Scientific-text-classification; classification)
+    - biomed_ner.jsonl                   (knowledgator/biomed_NER; biomedical NER, 35 classes)
+    - events_biotech.jsonl               (knowledgator/events_classification_biotech; multi-label classification)
 
 Edit ``TRAIN_DATA`` below to drop a corpus or to point at smaller subsets.
 """
@@ -28,6 +30,8 @@ TRAIN_DATA = [
     "data/gliner_multilingual.jsonl",
     "data/gliclass_logic.jsonl",
     "data/scientific_text.jsonl",
+    "data/biomed_ner.jsonl",
+    "data/events_biotech.jsonl",
 ]
 
 

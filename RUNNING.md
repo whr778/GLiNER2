@@ -55,6 +55,16 @@ uv run python tools/data/convert_gliclass_logic.py \
 # of scientific abstracts (10 broad domains: math, quantum physics, ...)
 uv run python tools/data/convert_scientific_text.py \
     --out data/scientific_text.jsonl
+
+# knowledgator/biomed_NER — domain-specific biomedical NER
+# (35 classes: CHEMICALS, DISORDER, GENE AND GENE PRODUCTS, ...)
+uv run python tools/data/convert_biomed_ner.py \
+    --out data/biomed_ner.jsonl
+
+# knowledgator/events_classification_biotech — multi-label classification
+# (29 biotech "event types"; despite the name, NO structured event extraction)
+uv run python tools/data/convert_events_biotech.py \
+    --out data/events_biotech.jsonl
 ```
 
 All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped (for NER converters: because no span appeared verbatim; for the classification converters: because the labels couldn't form a valid classification task), and the count of distinct entity types or label counts.
@@ -70,8 +80,10 @@ Approximate output sizes after conversion:
 | knowledgator/gliner-multilingual-synthetic | NER (multilingual) | ~400,000 | ~0.3 GB |
 | knowledgator/gliclass-v3-logic-dataset | Classification (multiple-choice) | ~5,700 | ~10 MB |
 | knowledgator/Scientific-text-classification | Classification (single-label) | ~50,000 | ~80 MB |
+| knowledgator/biomed_NER | NER (biomedical, 35 classes) | ~4,800 | ~30 MB |
+| knowledgator/events_classification_biotech | Classification (multi-label) | ~2,750 | ~10 MB |
 
-You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all seven is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, and Scientific-text-classification teaches single-label classification with a fixed vocabulary.
+You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all nine is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, Scientific-text-classification teaches single-label classification with a fixed vocabulary, biomed_NER adds domain-specific biomedical extraction, and events_biotech adds multi-label business-news classification.
 
 ```python
 trainer.train(train_data=[
@@ -82,6 +94,8 @@ trainer.train(train_data=[
     "data/gliner_multilingual.jsonl",
     "data/gliclass_logic.jsonl",
     "data/scientific_text.jsonl",
+    "data/biomed_ner.jsonl",
+    "data/events_biotech.jsonl",
 ])
 ```
 

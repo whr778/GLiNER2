@@ -82,6 +82,39 @@ About ~27% of source rows are dropped because their `true_labels` aren't a subse
 
 Mixing this corpus with the NER corpora teaches the model classification on top of extraction; the trainer happily interleaves both record types.
 
+## knowledgator/events_classification_biotech
+
+```bash
+uv run python tools/data/convert_events_biotech.py \
+    --out data/events_biotech.jsonl
+
+# Convert the test split for held-out evaluation
+uv run python tools/data/convert_events_biotech.py \
+    --out data/events_biotech_test.jsonl --file test.csv
+```
+
+**Despite the name, this is multi-label text classification, not structured event extraction.** Each article is tagged with 1–5 of 29 event-type categories (`funding round`, `m&a`, `alliance & partnership`, `executive statement`, etc.). There are no trigger spans or argument roles — those would require new model heads and a different dataset.
+
+The repo ships CSVs (`train.csv`, 2,759 rows; `test.csv`) plus a legacy `events_classification_biotech.py` loader script that newer `datasets` rejects, so the converter downloads the CSV directly via `huggingface_hub` and parses it with pandas.
+
+Input text is `Title + "\n" + Content` joined. All 29 labels are repeated as the `labels` vocabulary per record; `true_label` is the non-empty subset from columns `Label 1`...`Label 5`. `Classification.__post_init__` auto-detects multi-label.
+
+## knowledgator/biomed_NER
+
+```bash
+uv run python tools/data/convert_biomed_ner.py \
+    --out data/biomed_ner.jsonl
+```
+
+Biomedical NER with 35 entity classes (CHEMICALS, ACTIVITY, PHENOTYPE, FUNCTION, GROUP, DISORDER, GENE AND GENE PRODUCTS, ANATOMICAL STRUCTURE, etc.). 4,840 abstracts, averaging ~46 spans each — dense annotation.
+
+Source rows are `{text, entities: [{start, end, class}]}` with end-exclusive character offsets, so surfaces are sliced directly from `text`. Light cleanup:
+
+- Class names with trailing whitespace are normalised (the source has `"ORGANISMS "` and `"ORGANISMS"` as separate buckets).
+- The `"Unlabelled"` class (~190 spans, no training signal) is skipped.
+
+This is the only domain-specific (biomedical) corpus in the recipe. Mixing it with the general-domain corpora keeps the model strong on plain text while adding biomedical extraction headroom.
+
 ## knowledgator/Scientific-text-classification
 
 ```bash
