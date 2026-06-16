@@ -101,7 +101,34 @@ uv run python tools/data/convert_sentence_rex.py \
 # (50 entity types, 48 relation types; umlsterm noise dropped by default)
 uv run python tools/data/convert_bio_ner_relations.py \
     --out data/bio_ner_relations.jsonl
+```
 
+### Event extraction corpora (manual download)
+
+ACE 2005, MAVEN, and RAMS are the standard NLP event-extraction benchmarks. None of them is on HuggingFace under those names — you download from the source and point the converters at the local files. Output is a single JSONL file per call (the benchmarks ship canonical train/dev/test splits we want to preserve), not the 3-file split used by the other converters.
+
+```bash
+# RAMS (Ebner et al., ACL 2020) — multi-sentence trigger + typed arguments.
+#   Download: https://nlp.jhu.edu/rams/  ->  RAMS_1.0c.tar.gz
+uv run python tools/data/convert_rams.py \
+    --input /path/to/RAMS_1.0c/data/train.jsonlines \
+    --out data/rams.train.jsonl
+
+# MAVEN (Wang et al., EMNLP 2020) — large general-domain trigger detection.
+#   Download: github.com/THU-KEG/MAVEN-dataset (Tsinghua Cloud / Google Drive)
+#   Trigger-only — arguments will be empty, so only the trigger-detection
+#   path of the joint event loss benefits from this corpus.
+uv run python tools/data/convert_maven.py \
+    --input /path/to/maven/train.jsonl \
+    --out data/maven.train.jsonl
+
+# ACE 2005 (LDC2006T06) — LDC-licensed. Point --input at the directory
+# that contains the .sgm + .apf.xml pairs (typically
+# ace_2005_td_v7/data/English). Default emits hierarchical event types
+# like "Conflict.Attack"; pass --no-subtypes for "Conflict".
+uv run python tools/data/convert_ace2005.py \
+    --input /path/to/ace_2005_td_v7/data/English \
+    --out data/ace2005.jsonl
 ```
 
 All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped (for NER converters: because no span appeared verbatim; for the classification converters: because the labels couldn't form a valid classification task), and the count of distinct entity types or label counts, followed by per-split counts and file paths.
@@ -121,8 +148,25 @@ Approximate output sizes after conversion (totals across all three splits combin
 | knowledgator/events_classification_biotech | Classification (multi-label) | ~2,750 | ~10 MB |
 | knowledgator/sentence_rex | Relation extraction | ~44,000 | ~30 MB |
 | knowledgator/bio-NER-relations | Biomedical NER + RE | ~10,400 | ~80 MB |
+| RAMS (manual download) | Event extraction (trigger + args) | ~9,000 | ~10 MB |
+| MAVEN (manual download) | Event detection (trigger only) | ~4,500 | ~20 MB |
+| ACE 2005 (LDC) | Event extraction (trigger + args, 33 subtypes) | ~600 | ~3 MB |
 
 You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all eleven is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, Scientific-text-classification teaches single-label classification with a fixed vocabulary, biomed_NER adds domain-specific biomedical extraction, events_biotech adds multi-label business-news classification, sentence_rex introduces general-domain relation extraction, and bio-NER-relations couples biomedical NER with co-occurring relations.
+
+**Event-extraction training.** The Phase-1-6 event additions land entirely within the existing JSONL/Schema machinery: an event record looks like
+```json
+{"input": "John fired Bob in Paris.",
+ "output": {"events": [
+     {"event_type": "Attack", "trigger": "fired",
+      "arguments": [
+          {"role": "Attacker", "entity": "John"},
+          {"role": "Victim",   "entity": "Bob"},
+          {"role": "Place",    "entity": "Paris"}
+      ]}
+ ]}}
+```
+and an inference schema is `schema.events({"Attack": ["Attacker", "Victim", "Place", "Time"], ...})`. Add the ACE 2005 / MAVEN / RAMS JSONLs to `train_data=` like any other corpus; `compute_metrics` will report `eval_event_trigger_*` and `eval_event_argument_*` micro/macro F1 alongside the entity/relation/classification metrics, with per-event-type and per-role classification reports.
 
 The training scripts under `tools/train/` already wire all three splits into `trainer.train(train_data=…)` / `eval_data=…` / the final blind-test pass. The equivalent inline pattern is:
 
