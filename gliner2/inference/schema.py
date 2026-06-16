@@ -114,15 +114,19 @@ class Schema:
             "classifications": [],
             "entities": OrderedDict(),
             "relations": [],
+            "events": OrderedDict(),
             "json_descriptions": {},
             "entity_descriptions": OrderedDict()
         }
         self._field_metadata = {}
         self._entity_metadata = {}
         self._relation_metadata = {}
+        self._event_metadata = {}
+        self._event_role_descriptions = {}
         self._field_orders = {}
         self._entity_order = []
         self._relation_order = []
+        self._event_order = []
         self._active_builder = None
 
     def _store_field_metadata(self, parent, field, dtype, threshold, choices, validators=None):
@@ -255,6 +259,99 @@ class Schema:
 
         return self
 
+    def events(
+        self,
+        event_types: Union[Dict[str, Union[List[str], Dict[str, Any]]], List[Dict[str, Any]]],
+        trigger_threshold: Optional[float] = None,
+        argument_threshold: Optional[float] = None,
+    ) -> 'Schema':
+        """Add an event-extraction task (ACE-style trigger + typed arguments).
+
+        Args:
+            event_types: Either a dict ``{event_type: [role1, role2, ...]}`` or
+                a richer ``{event_type: {"roles": [...], "description": ...,
+                "role_descriptions": {role: desc}, "trigger_threshold": float,
+                "argument_threshold": float}}``. A list of ``{"name": ...,
+                "roles": [...], ...}`` dicts is also accepted.
+            trigger_threshold: Default trigger-detection threshold (0-1).
+            argument_threshold: Default argument-role threshold (0-1).
+
+        Returns:
+            self, for chaining.
+        """
+        if self._active_builder:
+            self._active_builder._auto_finish()
+            self._active_builder = None
+
+        normalised: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        if isinstance(event_types, dict):
+            if not event_types:
+                raise ValueError("events dict cannot be empty")
+            iterable = event_types.items()
+        elif isinstance(event_types, list):
+            if not event_types:
+                raise ValueError("events list cannot be empty")
+            iterable = []
+            for item in event_types:
+                if not isinstance(item, dict) or "name" not in item:
+                    raise ValueError(
+                        "events list entries must be dicts with a 'name' key"
+                    )
+                name = item["name"]
+                config = {k: v for k, v in item.items() if k != "name"}
+                iterable.append((name, config))
+        else:
+            raise ValueError("Invalid event_types format")
+
+        for name, config in iterable:
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Event type names must be non-empty strings")
+            if isinstance(config, list):
+                config = {"roles": list(config)}
+            elif not isinstance(config, dict):
+                raise ValueError(
+                    f"Event '{name}' config must be a list of roles or a dict"
+                )
+            roles = config.get("roles") or []
+            if not isinstance(roles, list) or len(roles) == 0:
+                raise ValueError(
+                    f"Event '{name}' must have at least one role"
+                )
+            if not all(isinstance(r, str) and r.strip() for r in roles):
+                raise ValueError(
+                    f"Event '{name}' role names cannot be empty strings"
+                )
+            if len(set(roles)) != len(roles):
+                raise ValueError(f"Event '{name}' has duplicate roles")
+            normalised[name] = {
+                "roles": list(roles),
+                "description": config.get("description"),
+                "role_descriptions": config.get("role_descriptions") or {},
+                "trigger_threshold": config.get("trigger_threshold", trigger_threshold),
+                "argument_threshold": config.get("argument_threshold", argument_threshold),
+            }
+
+        for name, cfg in normalised.items():
+            t = cfg["trigger_threshold"]
+            a = cfg["argument_threshold"]
+            if t is not None and not 0 <= t <= 1:
+                raise ValueError(f"trigger_threshold for '{name}' must be 0-1, got {t}")
+            if a is not None and not 0 <= a <= 1:
+                raise ValueError(f"argument_threshold for '{name}' must be 0-1, got {a}")
+            self.schema["events"][name] = list(cfg["roles"])
+            if name not in self._event_order:
+                self._event_order.append(name)
+            self._event_metadata[name] = {
+                "description": cfg["description"],
+                "trigger_threshold": t,
+                "argument_threshold": a,
+            }
+            for role, desc in (cfg["role_descriptions"] or {}).items():
+                if isinstance(desc, str) and desc.strip():
+                    self._event_role_descriptions[(name, role)] = desc
+
+        return self
+
     def build(self) -> Dict[str, Any]:
         """Build final schema dictionary."""
         if self._active_builder:
@@ -323,6 +420,9 @@ class Schema:
 
         if validated.relations is not None:
             schema.relations(validated.relations)
+
+        if validated.events is not None:
+            schema.events(validated.events)
 
         return schema
 
@@ -421,5 +521,32 @@ class Schema:
             result["relations"] = self._relation_order if self._relation_order else [
                 list(rel_dict.keys())[0] for rel_dict in self.schema["relations"]
             ]
+
+        if self.schema["events"]:
+            event_order = self._event_order or list(self.schema["events"].keys())
+            events_out = {}
+            any_descriptions = False
+            for name in event_order:
+                roles = list(self.schema["events"].get(name, []))
+                meta = self._event_metadata.get(name, {})
+                desc = meta.get("description")
+                role_descs = {
+                    role: self._event_role_descriptions[(name, role)]
+                    for role in roles
+                    if (name, role) in self._event_role_descriptions
+                }
+                if desc or role_descs:
+                    any_descriptions = True
+                    entry: Dict[str, Any] = {"roles": roles}
+                    if desc:
+                        entry["description"] = desc
+                    if role_descs:
+                        entry["role_descriptions"] = role_descs
+                    events_out[name] = entry
+                else:
+                    events_out[name] = roles
+            result["events"] = events_out if any_descriptions else {
+                name: list(self.schema["events"][name]) for name in event_order
+            }
 
         return result

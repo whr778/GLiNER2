@@ -617,6 +617,111 @@ class Relation:
 
 
 @dataclass
+class EventArgument:
+    """A single typed argument participating in an event.
+
+    Parameters
+    ----------
+    role : str
+        Argument role within the event (e.g. ``"Attacker"``, ``"Victim"``,
+        ``"Place"``). Roles are scoped by event type — the same span may
+        play different roles in different events.
+    entity : str
+        Surface form of the argument span. Must appear verbatim
+        (case-insensitive) in the parent example's text.
+    """
+    role: str
+    entity: str
+
+    def validate(self, text: str, event_type: str) -> List[str]:
+        errors = []
+        if not self.role:
+            errors.append(f"Event '{event_type}' has argument with empty role")
+        if not self.entity:
+            errors.append(
+                f"Event '{event_type}' argument '{self.role}' has empty entity"
+            )
+        elif self.entity.lower() not in text.lower():
+            errors.append(
+                f"Event '{event_type}' argument '{self.role}' "
+                f"entity '{self.entity}' not found in text"
+            )
+        return errors
+
+    def to_dict(self) -> Dict[str, str]:
+        return {"role": self.role, "entity": self.entity}
+
+
+@dataclass
+class Event:
+    """An event mention: typed trigger plus typed arguments.
+
+    Parameters
+    ----------
+    event_type : str
+        Event type label (e.g. ``"Attack"``, ``"Meet"``, ``"Phone-Write"``).
+    trigger : str
+        Surface form of the trigger word/phrase that signals the event.
+        Must appear in the parent example's text.
+    arguments : List[EventArgument or dict], optional
+        Typed arguments. Plain dicts of the form
+        ``{"role": ..., "entity": ...}`` are accepted and converted.
+    """
+    event_type: str
+    trigger: str
+    arguments: Optional[List[Union[EventArgument, Dict[str, str]]]] = None
+
+    def __post_init__(self):
+        if self.arguments is None:
+            self.arguments = []
+        normalised: List[EventArgument] = []
+        for arg in self.arguments:
+            if isinstance(arg, EventArgument):
+                normalised.append(arg)
+            elif isinstance(arg, dict):
+                normalised.append(EventArgument(
+                    role=arg.get("role", ""),
+                    entity=arg.get("entity", ""),
+                ))
+            else:
+                raise TypeError(
+                    f"Event argument must be EventArgument or dict, got {type(arg).__name__}"
+                )
+        self.arguments = normalised
+
+    def validate(self, text: str) -> List[str]:
+        """Return validation errors against ``text``."""
+        errors = []
+        if not self.event_type:
+            errors.append("Event type cannot be empty")
+        if not self.trigger:
+            errors.append(f"Event '{self.event_type}' has no trigger")
+        elif self.trigger.lower() not in text.lower():
+            errors.append(
+                f"Trigger '{self.trigger}' for event '{self.event_type}' "
+                f"not found in text"
+            )
+        seen = set()
+        for arg in self.arguments:
+            errors.extend(arg.validate(text, self.event_type))
+            key = (arg.role, arg.entity)
+            if key in seen:
+                errors.append(
+                    f"Event '{self.event_type}' has duplicate argument "
+                    f"({arg.role}, {arg.entity})"
+                )
+            seen.add(key)
+        return errors
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_type": self.event_type,
+            "trigger": self.trigger,
+            "arguments": [a.to_dict() for a in self.arguments],
+        }
+
+
+@dataclass
 class InputExample:
     """
     A single training example for GLiNER2.
@@ -635,6 +740,8 @@ class InputExample:
         Structured data extractions for this example.
     relations : List[Relation], optional
         Relation extractions for this example.
+    events : List[Event], optional
+        Event mentions (ACE-style trigger + typed arguments) for this example.
 
     Examples
     --------
@@ -649,6 +756,7 @@ class InputExample:
     classifications: Optional[List[Classification]] = None
     structures: Optional[List[Structure]] = None
     relations: Optional[List[Relation]] = None
+    events: Optional[List[Event]] = None
 
     def __post_init__(self):
         if self.entities is None:
@@ -659,6 +767,8 @@ class InputExample:
             self.structures = []
         if self.relations is None:
             self.relations = []
+        if self.events is None:
+            self.events = []
 
     def validate(self) -> List[str]:
         """
@@ -706,9 +816,19 @@ class InputExample:
             else:
                 relation_fields[rel.name] = field_names
 
-        has_content = bool(self.entities) or bool(self.classifications) or bool(self.structures) or bool(self.relations)
+        for event in self.events:
+            errors.extend(event.validate(self.text))
+
+        has_content = (
+            bool(self.entities) or bool(self.classifications)
+            or bool(self.structures) or bool(self.relations)
+            or bool(self.events)
+        )
         if not has_content:
-            errors.append("Example must have at least one task (entities, classifications, structures, or relations)")
+            errors.append(
+                "Example must have at least one task "
+                "(entities, classifications, structures, relations, or events)"
+            )
 
         return errors
 
@@ -833,11 +953,11 @@ class InputExample:
                 if not rel.name:
                     warnings.append(f"Relation has empty name - dropping")
                     continue
-                
+
                 if not rel._fields:
                     warnings.append(f"Relation '{rel.name}' has no fields - dropping")
                     continue
-                
+
                 # Check if any field value is invalid
                 has_invalid = False
                 for field_name, value in rel._fields.items():
@@ -846,14 +966,57 @@ class InputExample:
                             warnings.append(f"Relation '{rel.name}' field '{field_name}' value '{value}' not found - dropping relation")
                             has_invalid = True
                             break
-                
+
                 if not has_invalid:
                     valid_relations.append(rel)
-            
+
             self.relations = valid_relations
-        
+
+        # 5. Sanitize events - drop event if trigger missing; drop missing arguments
+        if self.events:
+            valid_events: List[Event] = []
+            for event in self.events:
+                if not event.event_type or not event.trigger:
+                    warnings.append(
+                        f"Event '{event.event_type}' has empty type or trigger - dropping"
+                    )
+                    continue
+                if event.trigger.lower() not in self.text.lower():
+                    warnings.append(
+                        f"Event '{event.event_type}' trigger '{event.trigger}' "
+                        f"not in text - dropping event"
+                    )
+                    continue
+                kept_args: List[EventArgument] = []
+                seen = set()
+                for arg in event.arguments:
+                    if not arg.role or not arg.entity:
+                        warnings.append(
+                            f"Event '{event.event_type}' argument with empty "
+                            f"role/entity - dropping argument"
+                        )
+                        continue
+                    if arg.entity.lower() not in self.text.lower():
+                        warnings.append(
+                            f"Event '{event.event_type}' argument '{arg.role}' "
+                            f"entity '{arg.entity}' not in text - dropping argument"
+                        )
+                        continue
+                    key = (arg.role, arg.entity)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    kept_args.append(arg)
+                event.arguments = kept_args
+                valid_events.append(event)
+            self.events = valid_events
+
         # Check if example still has any valid content
-        has_content = bool(self.entities) or bool(self.classifications) or bool(self.structures) or bool(self.relations)
+        has_content = (
+            bool(self.entities) or bool(self.classifications)
+            or bool(self.structures) or bool(self.relations)
+            or bool(self.events)
+        )
         
         if not has_content:
             warnings.append("No valid tasks remain after sanitization")
@@ -881,6 +1044,8 @@ class InputExample:
                 output["json_descriptions"] = all_descriptions
         if self.relations:
             output["relations"] = [rel.to_dict() for rel in self.relations]
+        if self.events:
+            output["events"] = [evt.to_dict() for evt in self.events]
         return {"input": self.text, "output": output}
 
     def to_json(self) -> str:
@@ -927,13 +1092,24 @@ class InputExample:
                 else:
                     relations.append(Relation(rel_name, **fields))
 
+        events = []
+        for evt_data in output.get("events", []):
+            if not isinstance(evt_data, dict):
+                continue
+            events.append(Event(
+                event_type=evt_data.get("event_type", ""),
+                trigger=evt_data.get("trigger", ""),
+                arguments=evt_data.get("arguments") or [],
+            ))
+
         return cls(
             text=text,
             entities=entities,
             entity_descriptions=entity_descriptions,
             classifications=classifications if classifications else None,
             structures=structures if structures else None,
-            relations=relations if relations else None
+            relations=relations if relations else None,
+            events=events if events else None,
         )
 
     @classmethod

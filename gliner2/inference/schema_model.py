@@ -72,6 +72,9 @@ class SchemaInput(BaseModel):
         structures: Dict mapping structure names to structure definitions
         classifications: List of classification task definitions
         relations: List of relation types or dict mapping types to config
+        events: Dict mapping event types to a role list (e.g. ``["Attacker",
+            "Victim", "Place"]``) or to a richer config dict
+            ``{"roles": [...], "description": "...", "role_descriptions": {...}}``.
     """
     entities: Optional[Union[List[str], Dict[str, str]]] = Field(
         default=None,
@@ -88,6 +91,10 @@ class SchemaInput(BaseModel):
     relations: Optional[Union[List[str], Dict[str, Dict[str, Any]]]] = Field(
         default=None,
         description="Relation types"
+    )
+    events: Optional[Dict[str, Union[List[str], Dict[str, Any]]]] = Field(
+        default=None,
+        description="Event types and their roles"
     )
 
     @field_validator('entities')
@@ -177,15 +184,49 @@ class SchemaInput(BaseModel):
 
         return v
 
+    @field_validator('events')
+    @classmethod
+    def validate_events(
+            cls,
+            v: Optional[Dict[str, Union[List[str], Dict[str, Any]]]]
+    ) -> Optional[Dict[str, Union[List[str], Dict[str, Any]]]]:
+        """Validate events format."""
+        if v is None:
+            return v
+        if len(v) == 0:
+            raise ValueError("events dict cannot be empty")
+        for name, config in v.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("event type names cannot be empty strings")
+            if isinstance(config, list):
+                roles = config
+            elif isinstance(config, dict):
+                roles = config.get("roles")
+                if roles is None:
+                    raise ValueError(
+                        f"event '{name}' config dict must include a 'roles' list"
+                    )
+            else:
+                raise ValueError(
+                    f"event '{name}' must map to a role list or config dict"
+                )
+            if not isinstance(roles, list) or len(roles) == 0:
+                raise ValueError(f"event '{name}' must have at least one role")
+            if any(not isinstance(r, str) or not r.strip() for r in roles):
+                raise ValueError(f"event '{name}' role names cannot be empty strings")
+            if len(set(roles)) != len(roles):
+                raise ValueError(f"event '{name}' has duplicate roles")
+        return v
+
     @model_validator(mode='after')
     def validate_at_least_one_section(self) -> 'SchemaInput':
         """Ensure at least one section is provided."""
         if all(
                 getattr(self, field) is None
-                for field in ['entities', 'structures', 'classifications', 'relations']
+                for field in ['entities', 'structures', 'classifications', 'relations', 'events']
         ):
             raise ValueError(
                 "At least one of entities, structures, classifications, "
-                "or relations must be provided"
+                "relations, or events must be provided"
             )
         return self
