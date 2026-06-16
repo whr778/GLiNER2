@@ -41,3 +41,15 @@ dynamic = ["version"]
 [project.urls]
 Homepage = "https://github.com/fastino-ai/GLiNER2"
 Repository = "https://github.com/fastino-ai/GLiNER2"
+
+[dependency-groups]
+dev = [
+    "datasets>=2.14",
+    "pytest>=7.0",
+    "pytest-timeout>=2.1",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: tests that download models or are otherwise too slow for default runs",
+]

@@ -95,3 +95,11 @@ Thumbs.db
 *.log
 
 test_api_client.py
+
+# Local training inputs/outputs (large, machine-specific). Root-anchored so
+# `tools/data/` (the dataset-converter package) is NOT excluded.
+/data/
+/out/
+
+# Personal / per-session notes — not project documentation
+/INSTRUCTIONS.md

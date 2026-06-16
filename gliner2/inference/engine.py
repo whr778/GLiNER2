@@ -188,7 +188,7 @@ class GLiNER2(Extractor):
                 shuffle=False,
                 num_workers=num_workers,
                 collate_fn=collator,
-                pin_memory=True if torch.cuda.is_available() else False,
+                pin_memory=torch.cuda.is_available(),  # pin_memory only helps CUDA H2D copies
             )
 
         # Process batches

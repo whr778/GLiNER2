@@ -53,7 +53,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import autocast
+from torch.amp import GradScaler  # device-typed; we instantiate it conditionally
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
@@ -229,8 +230,8 @@ class TrainingConfig:
     def __post_init__(self):
         if self.fp16 and self.bf16:
             raise ValueError("Cannot use both fp16 and bf16")
-        if self.bf16 and not torch.cuda.is_bf16_supported():
-            logger.warning("bf16 not supported, falling back to fp16")
+        if self.bf16 and torch.cuda.is_available() and not torch.cuda.is_bf16_supported():
+            logger.warning("bf16 not supported on this CUDA device, falling back to fp16")
             self.bf16 = False
             self.fp16 = True
         
@@ -552,12 +553,13 @@ class GLiNER2Trainer:
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        if self.config.deterministic:
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
-        else:
-            torch.backends.cudnn.benchmark = True
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+            if self.config.deterministic:
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+            else:
+                torch.backends.cudnn.benchmark = True
 
     def _setup_device(self):
         if self.config.local_rank >= 0:
@@ -567,6 +569,19 @@ class GLiNER2Trainer:
         elif torch.cuda.is_available():
             self.device = torch.device("cuda")
             self.is_distributed = False
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+            self.is_distributed = False
+            if self.config.fp16 or self.config.bf16:
+                logger.warning(
+                    "Mixed precision disabled on MPS (fp16/bf16 with GradScaler is "
+                    "CUDA-only; the model can still be quantized post-training via "
+                    "model.quantize()).")
+                self.config.fp16 = False
+                self.config.bf16 = False
+            if self.config.pin_memory:
+                logger.info("Disabling pin_memory on MPS (not supported).")
+                self.config.pin_memory = False
         else:
             self.device = torch.device("cpu")
             self.is_distributed = False
@@ -698,12 +713,12 @@ class GLiNER2Trainer:
             return None
         
         # Apply the accumulated gradients
-        if self.config.fp16:
+        if self.scaler is not None:
             self.scaler.unscale_(self.optimizer)
-        
+
         grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
-        
-        if self.config.fp16:
+
+        if self.scaler is not None:
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
@@ -784,13 +799,16 @@ class GLiNER2Trainer:
         # Adjust num_workers for small datasets
         effective_num_workers = self.config.num_workers if len(dataset) > self.config.num_workers else 0
 
+        # pin_memory is a no-op on MPS/CPU; only enable when targeting CUDA.
+        pin_memory = self.config.pin_memory and self.device.type == "cuda"
+
         return DataLoader(
             dataset,
             batch_size=effective_batch_size,
             shuffle=shuffle,
             sampler=sampler,
             num_workers=effective_num_workers,
-            pin_memory=self.config.pin_memory,
+            pin_memory=pin_memory,
             prefetch_factor=self.config.prefetch_factor if effective_num_workers > 0 else None,
             collate_fn=collator,
             drop_last=drop_last,
@@ -870,10 +888,14 @@ class GLiNER2Trainer:
         self.optimizer = self._create_optimizer()
         self.scheduler = get_scheduler(self.optimizer, self.config.scheduler_type, max_steps, warmup_steps, self.config.num_cycles)
 
-        # Mixed precision
+        # Mixed precision (CUDA-only; on MPS/CPU these were already disabled in
+        # _setup_device, so use_amp is False).
         use_amp = self.config.fp16 or self.config.bf16
         amp_dtype = torch.bfloat16 if self.config.bf16 else torch.float16
-        self.scaler = GradScaler(enabled=self.config.fp16)
+        if self.device.type == "cuda" and self.config.fp16:
+            self.scaler = GradScaler("cuda", enabled=True)
+        else:
+            self.scaler = None
 
         # Logging
         logger.info("***** Running Training *****")
@@ -924,7 +946,7 @@ class GLiNER2Trainer:
                 samples_seen += len(batch)
 
                 try:
-                    with autocast(enabled=use_amp, dtype=amp_dtype):
+                    with autocast(device_type=self.device.type, enabled=use_amp, dtype=amp_dtype):
                         outputs = self.model(batch)
                         loss = outputs["total_loss"]
 
@@ -939,7 +961,7 @@ class GLiNER2Trainer:
                         )
                         continue
 
-                    if self.config.fp16:
+                    if self.scaler is not None:
                         self.scaler.scale(loss).backward()
                     else:
                         loss.backward()
@@ -948,23 +970,28 @@ class GLiNER2Trainer:
                     epoch_loss += loss.item()
                     epoch_steps += 1
 
-                except torch.cuda.OutOfMemoryError:
+                except RuntimeError as e:
+                    if "out of memory" not in str(e).lower():
+                        raise
                     logger.warning(
                         f"OOM at step {step}, batch skipped. "
                         f"Consider reducing batch_size or max sequence length."
                     )
-                    torch.cuda.empty_cache()
+                    if self.device.type == "cuda":
+                        torch.cuda.empty_cache()
+                    elif self.device.type == "mps":
+                        torch.mps.empty_cache()
                     gc.collect()
                     self.optimizer.zero_grad()
                     continue
 
                 if (step + 1) % self.config.gradient_accumulation_steps == 0:
-                    if self.config.fp16:
+                    if self.scaler is not None:
                         self.scaler.unscale_(self.optimizer)
 
                     grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
 
-                    if self.config.fp16:
+                    if self.scaler is not None:
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
                     else:
@@ -1093,7 +1120,7 @@ class GLiNER2Trainer:
 
         with torch.no_grad():
             for batch in tqdm(eval_loader, desc="Evaluating", disable=not self.is_main_process):
-                with autocast(enabled=use_amp, dtype=amp_dtype):
+                with autocast(device_type=self.device.type, enabled=use_amp, dtype=amp_dtype):
                     outputs = self.model(batch)
 
                 # Fix Bug #10: Move tensors to CPU to prevent memory leak

@@ -96,6 +96,10 @@ class Extractor(PreTrainedModel):
         self.encoder = self._load_encoder(config.model_name, encoder_config)
 
         self.encoder.resize_token_embeddings(len(self.processor.tokenizer))
+        # Re-tie input/output embeddings for encoders with tied weights
+        # (BERT/DeBERTa: no-op; ModernBERT/mmBERT: required so the LM head matches).
+        if hasattr(self.encoder, "tie_weights"):
+            self.encoder.tie_weights()
         self.hidden_size = self.encoder.config.hidden_size
 
         # Span representation layer
@@ -672,9 +676,60 @@ class Extractor(PreTrainedModel):
             api.upload_folder(repo_id=repo_id, folder_path=tmp_dir)
 
     @classmethod
+    def from_encoder(
+        cls,
+        encoder_name_or_path: str,
+        max_width: int = 8,
+        max_len: Optional[int] = None,
+        map_location: Optional[str] = None,
+        trust_remote_code: bool = True,
+        **config_kwargs,
+    ):
+        """Bootstrap a fresh GLiNER2 on top of a raw HuggingFace encoder.
+
+        Use this for training from scratch (e.g. ``jhu-clsp/mmBERT-small``).
+        For loading a saved GLiNER2 checkpoint, use :meth:`from_pretrained`.
+
+        Args:
+            encoder_name_or_path: HF repo id or local path of the base encoder.
+            max_width: Max span width for the span representation layer.
+            max_len: Optional max sequence length override.
+            map_location: Device to place the model on. Defaults to CUDA → MPS → CPU.
+            trust_remote_code: Forwarded to ``AutoConfig.from_pretrained``.
+            **config_kwargs: Extra fields forwarded to :class:`ExtractorConfig`.
+
+        Returns:
+            An initialized model with pretrained encoder weights and randomly
+            initialized task heads.
+        """
+        encoder_config = AutoConfig.from_pretrained(
+            encoder_name_or_path, trust_remote_code=trust_remote_code,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(encoder_name_or_path)
+        config = cls.config_class(
+            model_name=encoder_name_or_path,
+            max_width=max_width,
+            max_len=max_len,
+            **config_kwargs,
+        )
+        model = cls(config, encoder_config=encoder_config, tokenizer=tokenizer)
+
+        if map_location is None:
+            if torch.cuda.is_available():
+                map_location = "cuda"
+            elif torch.backends.mps.is_available():
+                map_location = "mps"
+            else:
+                map_location = "cpu"
+        return model.to(map_location)
+
+    @classmethod
     def from_pretrained(cls, repo_or_dir: str, **kwargs):
         """
-        Load model from Hugging Face Hub or local directory.
+        Load a saved GLiNER2 checkpoint from Hugging Face Hub or local directory.
+
+        For bootstrapping a new model on top of a raw HF encoder (e.g.
+        ``jhu-clsp/mmBERT-small``), use :meth:`from_encoder` instead.
 
         Args:
             repo_or_dir: HuggingFace repo ID or local directory path.
@@ -720,20 +775,30 @@ class Extractor(PreTrainedModel):
             model_path = download_or_local(repo_or_dir, "pytorch_model.bin")
             state_dict = torch.load(model_path, map_location="cpu")
 
-        # Handle embedding size mismatch
-        try:
-            saved_emb = state_dict["encoder.embeddings.word_embeddings.weight"]
-            model_emb = model.encoder.embeddings.word_embeddings.weight
+        # Handle embedding size mismatch — works for any encoder regardless of
+        # where the input-embedding parameter lives (BERT: embeddings.word_embeddings,
+        # ModernBERT/mmBERT: embeddings.tok_embeddings, etc.).
+        input_emb = model.encoder.get_input_embeddings()
+        emb_param_name = None
+        for name, param in model.encoder.named_parameters():
+            if param is input_emb.weight:
+                emb_param_name = f"encoder.{name}"
+                break
+
+        if emb_param_name is not None and emb_param_name in state_dict:
+            saved_emb = state_dict[emb_param_name]
+            model_emb = input_emb.weight
             if saved_emb.shape[0] != model_emb.shape[0]:
                 extra = model_emb.shape[0] - saved_emb.shape[0]
-                state_dict["encoder.embeddings.word_embeddings.weight"] = torch.cat([
+                state_dict[emb_param_name] = torch.cat([
                     saved_emb,
                     torch.randn(extra, saved_emb.shape[1]) * 0.02
                 ], dim=0)
-        except KeyError:
-            pass
 
         model.load_state_dict(state_dict)
+        # Re-tie weights in case the encoder shares input/output embeddings.
+        if hasattr(model.encoder, "tie_weights"):
+            model.encoder.tie_weights()
 
         # Mirror HF PreTrainedModel.from_pretrained semantics so downstream
         # PEFT saves derive ``base_model_name_or_path`` correctly. PEFT reads
@@ -745,8 +810,15 @@ class Extractor(PreTrainedModel):
         model.config._name_or_path = repo_or_dir
         model.name_or_path = repo_or_dir
 
-        if map_location is not None:
-            model = model.to(map_location)
+        # Default device: prefer CUDA, then MPS (Apple Silicon), then CPU.
+        if map_location is None:
+            if torch.cuda.is_available():
+                map_location = "cuda"
+            elif torch.backends.mps.is_available():
+                map_location = "mps"
+            else:
+                map_location = "cpu"
+        model = model.to(map_location)
 
         if quantize:
             model.quantize()

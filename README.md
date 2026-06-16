@@ -1063,6 +1063,26 @@ model = GLiNER2.from_pretrained("./ner_model/best")
 
 For more details, see the [Training Tutorial](tutorial/9-training.md) and [Data Format Guide](tutorial/8-train_data.md).
 
+### Training a custom model from mmBERT
+
+GLiNER2 can be trained from scratch on a non-Fastino backbone — for example, `jhu-clsp/mmBERT-base` (multilingual, ModernBERT architecture). The trainer auto-selects CUDA → MPS (Apple M-series) → CPU.
+
+```python
+from gliner2 import GLiNER2
+from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
+
+model = GLiNER2.from_pretrained("jhu-clsp/mmBERT-base")  # downloads encoder + tokenizer
+trainer = GLiNER2Trainer(model, TrainingConfig(output_dir="./mmbert_out", num_epochs=1))
+trainer.train(train_data="data/nuner.jsonl")
+```
+
+Two converters in [`tools/data/`](tools/data/README.md) reformat public NER corpora into GLiNER2 JSONL:
+
+```bash
+uv run python tools/data/convert_nuner.py --split full --out data/nuner.jsonl
+uv run python tools/data/convert_pile_ner_definition.py --out data/pile_ner.jsonl
+```
+
 ## 📄 License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.

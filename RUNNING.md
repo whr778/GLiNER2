@@ -1,0 +1,184 @@
+# Running GLiNER2 Training from Scratch on mmBERT
+
+End-to-end instructions for training a custom GLiNER2 model on top of `jhu-clsp/mmBERT-small` or `jhu-clsp/mmBERT-base`, using the full **NuNER** and **Pile-NER-definition** corpora as pre-training data. Works on NVIDIA GPUs and Apple M-series (MPS); the trainer auto-selects the best available device.
+
+---
+
+## 1. Install
+
+```bash
+git clone <this-repo> GLiNER2 && cd GLiNER2
+uv sync                       # installs torch>=2.1, transformers>=4.48, gliner, etc.
+uv add datasets               # one-time, only needed for the dataset converters
+```
+
+The first training run downloads the mmBERT weights (~550 MB for small, ~1.2 GB for base) into the HuggingFace cache.
+
+---
+
+## 2. Convert the datasets to GLiNER2 JSONL
+
+```bash
+mkdir -p data
+
+# NuNER `full` split — 1,000,000 rows with LLM-generated entity descriptions
+uv run python tools/data/convert_nuner.py \
+    --split full \
+    --out data/nuner_full.jsonl
+
+# Pile-NER-definition — ~47,671 conversations, each contributing many entity-type queries
+uv run python tools/data/convert_pile_ner_definition.py \
+    --out data/pile_ner_def.jsonl
+```
+
+Both converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped because no span appeared verbatim in the text, and the count of distinct entity types.
+
+Approximate output sizes after conversion:
+
+| Source | Records out | Disk |
+|---|---:|---:|
+| NuNER `full` | ~990,000 | ~0.8 GB |
+| Pile-NER-definition | ~45,000 | ~0.2 GB |
+
+You can pass both JSONL files to the trainer at once — the trainer concatenates them and shuffles.
+
+---
+
+## 3. Pick a hardware profile
+
+| Device | mmBERT-small (148 M params) | mmBERT-base (314 M params) |
+|---|---|---|
+| **Single A100/H100 80 GB** | `batch_size=64`, `fp16=True`, ~6 h/epoch on full NuNER | `batch_size=32`, `bf16=True`, ~14 h/epoch |
+| **Single A100/4090 40–48 GB** | `batch_size=32`, `fp16=True`, ~10 h/epoch | `batch_size=16`, `fp16=True`, ~22 h/epoch |
+| **Single 24 GB GPU (3090/4090)** | `batch_size=16`, `fp16=True`, ~16 h/epoch | `batch_size=8` + `gradient_accumulation_steps=2`, `fp16=True`, ~30 h/epoch |
+| **Apple M-series (MPS, 32–96 GB unified)** | `batch_size=4–8`, no AMP, ~2 d/epoch on full data | `batch_size=2–4`, no AMP, only practical on a small slice |
+| **CPU** | dev / smoke only | dev / smoke only |
+
+> On MPS, mixed precision (`fp16`/`bf16`) is disabled automatically: `torch.amp.GradScaler` is CUDA-only and MPS autocast adds little speed-up for this model. The trainer logs the choice it made.
+>
+> For an Apple M-series dev workflow, treat NuNER as a sampleable corpus: pass `--max-records 50_000` to `convert_nuner.py` and train for 1 epoch (~3 h on an M3 Pro). Use a real GPU for the full corpus.
+
+---
+
+## 4. Train
+
+> **Run the training scripts under `tools/train/` rather than piping a heredoc.** Piping the script via `python - <<PY ... PY` breaks DataLoader workers on macOS + Python 3.12+, where multiprocessing uses the **spawn** start method: workers need to re-import the main module by path, but stdin has no path. Symptom: `FileNotFoundError: '<stdin>'` followed by `BrokenPipeError`.
+
+### 4a. mmBERT-small
+
+Recommended baseline — runs on a single 24 GB GPU and converges in 2–3 epochs of mixed NuNER + Pile-NER-definition.
+
+```bash
+uv run python tools/train/train_mmbert_small.py
+```
+
+The script (`tools/train/train_mmbert_small.py`) calls `GLiNER2.from_encoder("jhu-clsp/mmBERT-small", ...)` — use `from_encoder` for training from scratch; `from_pretrained` is for loading saved GLiNER2 checkpoints. Edit the script in place to change hyperparameters (batch size, learning rates, epochs, `max_len`, etc.). Defaults target a 24 GB GPU; see the hardware table above for other profiles.
+
+Checkpoints land in `out/mmbert-small/`. The `final` checkpoint is the last step; intermediate `checkpoint-<step>` directories are rotated.
+
+### 4b. mmBERT-base
+
+Same shape; lower learning rates, smaller batch, longer wall-clock:
+
+```bash
+uv run python tools/train/train_mmbert_base.py
+```
+
+Edit `tools/train/train_mmbert_base.py` to retune for your hardware. Defaults use `bf16=True` (prefer on Ampere+/Hopper; switch to `fp16=True` elsewhere) and `max_len=512`.
+
+### Optional: hold out an evaluation slice
+
+```python
+from gliner2.training.data import TrainingDataset
+ds = TrainingDataset.load(["data/nuner_full.jsonl", "data/pile_ner_def.jsonl"])
+train_ds, val_ds, _ = ds.split(train_ratio=0.99, val_ratio=0.01, test_ratio=0.0, seed=42)
+# then pass train_ds / val_ds to trainer.train(..., eval_data=val_ds) and set
+# eval_strategy="steps", eval_steps=2000 in the config.
+```
+
+---
+
+## 5. Use the trained model
+
+```python
+from gliner2 import GLiNER2
+
+model = GLiNER2.from_pretrained("./out/mmbert-small/final")   # or .../best
+print(model.extract_entities(
+    "Marie Curie discovered radium in Paris.",
+    ["scientist", "element", "city"],
+))
+```
+
+`GLiNER2.from_pretrained` auto-selects CUDA → MPS → CPU. Pass `map_location="cpu"` to force CPU, or `quantize=True` for fp16 inference on GPU/MPS.
+
+---
+
+## 6. Push to Hugging Face Hub
+
+Once you're happy with a checkpoint, upload it so it can be loaded by anyone with `GLiNER2.from_pretrained("<username>/<repo>")`.
+
+First, authenticate (once per machine):
+
+```bash
+uv run huggingface-cli login        # paste a write token from https://huggingface.co/settings/tokens
+# or: export HF_TOKEN=hf_xxx        # non-interactive (CI, headless boxes)
+```
+
+Then push:
+
+```bash
+uv run python tools/train/push_to_hub.py \
+    --checkpoint ./out/mmbert-small/final \
+    --repo-id <username>/gliner2-mmbert-small \
+    --private
+```
+
+Flags:
+
+- `--checkpoint` — local path to a saved GLiNER2 checkpoint directory (`final`, `best`, or any `checkpoint-<step>`).
+- `--repo-id` — target repo, created if missing.
+- `--private` (default) / `--public` — repo visibility.
+- `--commit-message` — optional commit message (defaults to `Upload GLiNER2 checkpoint`).
+
+The script calls `model.save_pretrained()` into a temp directory and uploads the folder via `HfApi.upload_folder`, so the repo layout matches what `GLiNER2.from_pretrained` expects (`config.json` + `encoder_config/config.json` + `model.safetensors` + tokenizer files).
+
+Sanity-check the upload:
+
+```python
+from gliner2 import GLiNER2
+model = GLiNER2.from_pretrained("<username>/gliner2-mmbert-small")
+print(model.extract_entities("Marie Curie discovered radium in Paris.",
+                             ["scientist", "element", "city"]))
+```
+
+---
+
+## 7. Practical tips
+
+- **Run a 50-record smoke test first** before launching a multi-day run:
+  ```bash
+  uv run python tools/data/convert_nuner.py --split full --out /tmp/nuner_smoke.jsonl --max-records 50
+  # then train with num_epochs=1, batch_size=2, max_steps=20 to confirm the loss falls
+  ```
+- **Mix the two datasets in one pass.** Passing them as a list to `train_data=` interleaves them; the converter scripts already produce compatible JSONL.
+- **Resume mid-run** by pointing a fresh `from_pretrained` at the latest checkpoint directory (`./out/.../checkpoint-<step>`) and starting a new trainer. The trainer always starts a new optimizer/scheduler — that's intentional, not a bug.
+- **Watch the loss curve.** Healthy mmBERT-small on this data starts at ~500 (batch 1), drops below 100 in the first ~50 steps, then drifts down toward 40–60 over an epoch. Loss collapsing to ~0 means the data labels aren't reaching the loss head — stop and inspect.
+- **W&B**: set `report_to_wandb=True` and `wandb_project="..."` in `TrainingConfig` to stream live metrics.
+
+---
+
+## 8. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: datasets` | Converters need the HF `datasets` lib | `uv add datasets` |
+| `FileNotFoundError: '<stdin>'` + `BrokenPipeError` | Running training inside a heredoc (`python - <<PY`) with `num_workers>0`; spawn workers can't re-import stdin | Save the script as a `.py` file and run `uv run python <file>.py`, or set `num_workers=0` |
+| `out of memory` on CUDA | Batch too large | Halve `batch_size`, double `gradient_accumulation_steps` |
+| `out of memory` on MPS | Same | Same; also try `max_len=384` and `num_workers=0` |
+| Loss stuck at exactly the initial value | LR too low or all params frozen | Confirm `use_lora=False` (or pass LoRA modules); raise `task_lr` |
+| Loss explodes (`NaN`/`Inf`) | LR too high or mixed precision on a fragile encoder | Drop `encoder_lr` 5x, set `fp16=False` |
+| `train_metrics_history` is empty | `logging_steps` larger than total steps | Lower `logging_steps`, or run more epochs |
+| Tokenizer error about unknown special tokens | mmBERT tokenizer didn't accept GLiNER2's specials | Should never happen with `transformers>=4.48` — file an issue and include the tokenizer version |
+| `401 Unauthorized` from `push_to_hub.py` | No HF auth token | `uv run huggingface-cli login` (with a **write**-scope token), or `export HF_TOKEN=hf_xxx` |
+| `403 Forbidden` writing to `<repo-id>` | Token lacks write access or repo is owned by someone else | Issue a new write token, or pick a repo-id you own |
