@@ -23,6 +23,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 def parse_items(output_field: str) -> list[list[str]]:
     """Parse the NuNER `output` string into a list of [surface, type, desc?] lists."""
@@ -73,11 +76,13 @@ def main() -> int:
     parser.add_argument("--split", default="full", choices=["full", "entity"],
                         help="NuNER split to convert (default: full)")
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to read (-1 = all)")
     parser.add_argument("--repo", default="numind/NuNER",
                         help="HuggingFace dataset repo (default: numind/NuNER)")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -85,14 +90,12 @@ def main() -> int:
     print(f"Streaming {args.repo} split={args.split}...")
     ds = load_dataset(args.repo, split=args.split, streaming=True)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-
     emitted = 0
     skipped_empty = 0
     skipped_parse = 0
     all_types: set[str] = set()
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for idx, row in enumerate(ds):
             if 0 <= args.max_records <= idx:
                 break
@@ -103,7 +106,7 @@ def main() -> int:
                 else:
                     skipped_empty += 1
                 continue
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             all_types.update(record["output"]["entities"].keys())
 
@@ -111,7 +114,7 @@ def main() -> int:
                 print(f"  emitted={emitted}  skipped_empty={skipped_empty}  types={len(all_types)}")
 
     print(f"Done. emitted={emitted} skipped_empty={skipped_empty} skipped_parse={skipped_parse} "
-          f"distinct_types={len(all_types)} -> {args.out}")
+          f"distinct_types={len(all_types)} {writer.summary()}")
     return 0
 
 

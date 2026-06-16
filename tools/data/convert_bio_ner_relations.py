@@ -40,6 +40,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 def join_passages(passages) -> str:
     """Concatenate all passage text into a single document string."""
@@ -127,7 +130,8 @@ def convert_row(row: dict, skip_types: set[str]) -> dict | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path.")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to emit (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/bio-NER-relations",
@@ -139,6 +143,7 @@ def main() -> int:
                              "'umlsterm' — auto-matched UMLS concepts that "
                              "account for ~85%% of entity assignments). Pass "
                              "'' to keep everything.")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -147,7 +152,6 @@ def main() -> int:
     print(f"Loading {args.repo} split={args.split}...")
     ds = load_dataset(args.repo, split=args.split)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
     emitted = 0
     skipped_empty = 0
     total_entities = 0
@@ -156,13 +160,13 @@ def main() -> int:
     all_ent_types: set[str] = set()
     all_rel_types: set[str] = set()
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for row in ds:
             record = convert_row(row, skip_types)
             if record is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             ents = record["output"]["entities"]
             total_entities += sum(len(v) for v in ents.values())
@@ -180,7 +184,7 @@ def main() -> int:
     print(f"Done. emitted={emitted} skipped_empty={skipped_empty} "
           f"total_entities={total_entities} total_relations={total_relations} "
           f"ent_types={len(all_ent_types)} rel_types={len(all_rel_types)} "
-          f"-> {args.out}")
+          f"{writer.summary()}")
     return 0
 
 

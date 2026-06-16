@@ -37,6 +37,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 def convert_row(row: dict, task_name: str) -> dict | None:
     """Convert one gliclass row to a GLiNER2 classification record; None if unusable."""
@@ -71,7 +74,8 @@ def convert_row(row: dict, task_name: str) -> dict | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path.")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to read (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/gliclass-v3-logic-dataset",
@@ -80,6 +84,7 @@ def main() -> int:
                         help="Dataset split to read.")
     parser.add_argument("--task-name", default="logic",
                         help="Classification task name written into each record.")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -87,15 +92,13 @@ def main() -> int:
     print(f"Streaming {args.repo} split={args.split}...")
     ds = load_dataset(args.repo, split=args.split, streaming=True)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-
     emitted = 0
     skipped_not_subset = 0
     skipped_empty = 0
     multi_label_count = 0
     label_count_sum = 0
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for idx, row in enumerate(ds):
             if 0 <= args.max_records <= idx:
                 break
@@ -108,7 +111,7 @@ def main() -> int:
                 else:
                     skipped_empty += 1
                 continue
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             cls = record["output"]["classifications"][0]
             label_count_sum += len(cls["labels"])
@@ -122,7 +125,7 @@ def main() -> int:
     avg_labels = label_count_sum / emitted if emitted else 0.0
     print(f"Done. emitted={emitted} skipped_not_subset={skipped_not_subset} "
           f"skipped_empty={skipped_empty} multi_label={multi_label_count} "
-          f"avg_labels_per_row={avg_labels:.1f} -> {args.out}")
+          f"avg_labels_per_row={avg_labels:.1f} {writer.summary()}")
     return 0
 
 

@@ -18,6 +18,32 @@ The first training run downloads the mmBERT weights (~550 MB for small, ~1.2 GB 
 
 ## 2. Convert the datasets to GLiNER2 JSONL
 
+Every converter writes **three** sibling files based on the `--out` base path: `<base>.train.jsonl`, `<base>.val.jsonl`, `<base>.test.jsonl`. The default split is 80 / 10 / 10 and is deterministic (seeded RNG). Pass `--split-ratios` and/or `--split-seed` to customise.
+
+```bash
+# Default 80/10/10 — both forms below produce the same three files:
+uv run python tools/data/convert_nuner.py --split full --out data/nuner_full.jsonl
+uv run python tools/data/convert_nuner.py --split full --out data/nuner_full      # no .jsonl suffix
+
+# Explicit 80/10/10
+uv run python tools/data/convert_nuner.py --split full --out data/nuner_full.jsonl \
+    --split-ratios 0.8,0.1,0.1
+
+# 90/5/5 (larger train slice for production runs)
+uv run python tools/data/convert_pile_ner_definition.py --out data/pile_ner_def.jsonl \
+    --split-ratios 0.9,0.05,0.05
+
+# Reproducible with a custom seed (default seed is 42)
+uv run python tools/data/convert_sentence_rex.py --out data/sentence_rex.jsonl \
+    --split-seed 1337
+
+# Train-only — useful when you already have separate held-out evaluation data
+uv run python tools/data/convert_biomed_ner.py --out data/biomed_ner.jsonl \
+    --split-ratios 1.0,0.0,0.0
+```
+
+The same flags work on every converter (the helpers in `tools/data/_split.py` add them uniformly). The split assignment is per-record, deterministic across runs with the same seed, and runs in O(1) extra memory — no buffering of the whole corpus.
+
 ```bash
 mkdir -p data
 
@@ -78,9 +104,9 @@ uv run python tools/data/convert_bio_ner_relations.py \
 
 ```
 
-All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped (for NER converters: because no span appeared verbatim; for the classification converters: because the labels couldn't form a valid classification task), and the count of distinct entity types or label counts.
+All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped (for NER converters: because no span appeared verbatim; for the classification converters: because the labels couldn't form a valid classification task), and the count of distinct entity types or label counts, followed by per-split counts and file paths.
 
-Approximate output sizes after conversion:
+Approximate output sizes after conversion (totals across all three splits combined):
 
 | Source | Task | Records out | Disk |
 |---|---|---:|---:|
@@ -98,21 +124,25 @@ Approximate output sizes after conversion:
 
 You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all eleven is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, Scientific-text-classification teaches single-label classification with a fixed vocabulary, biomed_NER adds domain-specific biomedical extraction, events_biotech adds multi-label business-news classification, sentence_rex introduces general-domain relation extraction, and bio-NER-relations couples biomedical NER with co-occurring relations.
 
+The training scripts under `tools/train/` already wire all three splits into `trainer.train(train_data=…)` / `eval_data=…` / the final blind-test pass. The equivalent inline pattern is:
+
 ```python
 trainer.train(train_data=[
-    "data/nuner_full.jsonl",
-    "data/pile_ner_def.jsonl",
-    "data/knowledgator_gliner.jsonl",
-    "data/text2json.jsonl",
-    "data/gliner_multilingual.jsonl",
-    "data/gliclass_logic.jsonl",
-    "data/scientific_text.jsonl",
-    "data/biomed_ner.jsonl",
-    "data/events_biotech.jsonl",
-    "data/sentence_rex.jsonl",
-    "data/bio_ner_relations.jsonl",
+    "data/nuner_full.train.jsonl",
+    "data/pile_ner_def.train.jsonl",
+    "data/knowledgator_gliner.train.jsonl",
+    "data/text2json.train.jsonl",
+    "data/gliner_multilingual.train.jsonl",
+    "data/gliclass_logic.train.jsonl",
+    "data/scientific_text.train.jsonl",
+    "data/biomed_ner.train.jsonl",
+    "data/events_biotech.train.jsonl",
+    "data/sentence_rex.train.jsonl",
+    "data/bio_ner_relations.train.jsonl",
 ])
 ```
+
+Swap `.train.jsonl` for `.val.jsonl` to build the `eval_data` list, and `.test.jsonl` for the final blind-test pass.
 
 ---
 
@@ -150,6 +180,11 @@ uv run python tools/train/train_mmbert_small.py
 
 The script (`tools/train/train_mmbert_small.py`) calls `GLiNER2.from_encoder("jhu-clsp/mmBERT-small", ...)` — use `from_encoder` for training from scratch; `from_pretrained` is for loading saved GLiNER2 checkpoints. Edit the script in place to change hyperparameters (batch size, learning rates, epochs, `max_len`, etc.). Defaults target a 24 GB GPU; see the hardware table above for other profiles.
 
+The script also:
+
+* Wires the `.val.jsonl` files into `eval_data=` so the trainer scores them at the end of every epoch with `make_compute_metrics()` — micro/macro precision/recall/F1 for entities, relations, and classifications, plus a per-label `classification_report` string. `eval_loss` drives `save_best=True`, so `out/mmbert-small/best/` always holds the lowest-val-loss checkpoint.
+* After `trainer.train()` returns, calls `evaluate_checkpoint(out/mmbert-small/best, TEST_DATA)` against the `.test.jsonl` splits and prints the blind-test classification reports.
+
 Checkpoints land in `out/mmbert-small/`. The `final` checkpoint is the last step; intermediate `checkpoint-<step>` directories are rotated.
 
 ### 4b. mmBERT-base
@@ -160,7 +195,7 @@ Same shape; lower learning rates, smaller batch, longer wall-clock:
 uv run python tools/train/train_mmbert_base.py
 ```
 
-Edit `tools/train/train_mmbert_base.py` to retune for your hardware. Defaults use `bf16=True` (prefer on Ampere+/Hopper; switch to `fp16=True` elsewhere) and `max_len=512`.
+Edit `tools/train/train_mmbert_base.py` to retune for your hardware. Defaults use `bf16=True` (prefer on Ampere+/Hopper; switch to `fp16=True` elsewhere) and `max_len=8192`. Eval-on-val and final blind test on `best` work the same way as for the small variant.
 
 ### Optional: hold out an evaluation slice
 

@@ -39,6 +39,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 E1_RE = re.compile(r"<e1>\s*(.*?)\s*</e1>", re.DOTALL)
 E2_RE = re.compile(r"<e2>\s*(.*?)\s*</e2>", re.DOTALL)
@@ -76,7 +79,8 @@ def parse_row(row: dict) -> tuple[str, str, str, str] | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path.")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to emit (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/sentence_rex",
@@ -86,6 +90,7 @@ def main() -> int:
     parser.add_argument("--min-count", type=int, default=1,
                         help="Minimum count for a relation label to be kept "
                              "(default 1 = keep everything).")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -105,13 +110,12 @@ def main() -> int:
     else:
         kept = None
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
     emitted = 0
     skipped_parse = 0
     skipped_rare = 0
     all_labels: set[str] = set()
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for row in ds:
             parsed = parse_row(row)
             if parsed is None:
@@ -125,7 +129,7 @@ def main() -> int:
                 "input": clean,
                 "output": {"relations": [{label: {"head": e1, "tail": e2}}]},
             }
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             all_labels.add(label)
             if 0 <= args.max_records <= emitted:
@@ -135,7 +139,7 @@ def main() -> int:
                       f"labels={len(all_labels)}")
 
     print(f"Done. emitted={emitted} skipped_parse={skipped_parse} "
-          f"skipped_rare={skipped_rare} labels={len(all_labels)} -> {args.out}")
+          f"skipped_rare={skipped_rare} labels={len(all_labels)} {writer.summary()}")
     return 0
 
 

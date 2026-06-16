@@ -43,6 +43,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 LABEL_COLUMNS = ("Label 1", "Label 2", "Label 3", "Label 4", "Label 5")
 
@@ -63,7 +66,8 @@ def extract_labels(row, by) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path.")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to emit (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/events_classification_biotech",
@@ -73,6 +77,7 @@ def main() -> int:
                              "(default: train.csv; also available: test.csv).")
     parser.add_argument("--task-name", default="biotech_event",
                         help="Classification task name written into each record.")
+    add_split_args(parser)
     args = parser.parse_args()
 
     import pandas as pd
@@ -92,12 +97,11 @@ def main() -> int:
     print(f"Vocab: {len(kept_labels)} labels")
     label_set = set(kept_labels)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
     emitted = 0
     skipped_empty = 0
     multi_label_count = 0
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for _, row in df.iterrows():
             title = str(row.get("Title") or "").strip()
             content = str(row.get("Content") or "").strip()
@@ -121,7 +125,7 @@ def main() -> int:
                     ]
                 },
             }
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             if len(true_labels) > 1:
                 multi_label_count += 1
@@ -131,7 +135,7 @@ def main() -> int:
                 print(f"  emitted={emitted}  multi_label={multi_label_count}")
 
     print(f"Done. emitted={emitted} skipped_empty={skipped_empty} "
-          f"multi_label={multi_label_count} labels={len(kept_labels)} -> {args.out}")
+          f"multi_label={multi_label_count} labels={len(kept_labels)} {writer.summary()}")
     return 0
 
 

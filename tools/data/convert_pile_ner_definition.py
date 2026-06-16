@@ -29,6 +29,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 def strip_definition(human_value: str) -> str | None:
     """Extract the definition from a 'What describes X in the text?' turn."""
@@ -92,11 +95,13 @@ def convert_record(record: dict) -> dict | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to read (-1 = all)")
     parser.add_argument("--repo", default="Universal-NER/Pile-NER-definition",
                         help="HuggingFace dataset repo")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -104,13 +109,11 @@ def main() -> int:
     print(f"Streaming {args.repo}...")
     ds = load_dataset(args.repo, split="train", streaming=True)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-
     emitted = 0
     skipped_empty = 0
     total_entities = 0
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for idx, record in enumerate(ds):
             if 0 <= args.max_records <= idx:
                 break
@@ -118,7 +121,7 @@ def main() -> int:
             if converted is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(converted) + "\n")
+            writer.write(converted)
             emitted += 1
             total_entities += sum(len(v) for v in converted["output"]["entities"].values())
 
@@ -126,7 +129,7 @@ def main() -> int:
                 print(f"  emitted={emitted}  skipped_empty={skipped_empty}  entities={total_entities}")
 
     print(f"Done. emitted={emitted} skipped_empty={skipped_empty} "
-          f"total_entities={total_entities} -> {args.out}")
+          f"total_entities={total_entities} {writer.summary()}")
     return 0
 
 

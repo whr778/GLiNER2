@@ -50,6 +50,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 def _coerce_surface(value: Any) -> str | None:
     """Return a non-empty string surface for primitive scalars, else None."""
@@ -150,7 +153,8 @@ def _iter_jsonl(path: Path):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path.")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to read (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/text2json-training-data",
@@ -158,6 +162,7 @@ def main() -> int:
     parser.add_argument("--file", default="augmented_train.jsonl",
                         help="JSONL file inside the repo to convert "
                              "(default: augmented_train.jsonl).")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from huggingface_hub import hf_hub_download
@@ -165,14 +170,12 @@ def main() -> int:
     print(f"Downloading {args.repo}/{args.file}...")
     src_path = Path(hf_hub_download(args.repo, args.file, repo_type="dataset"))
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-
     emitted = 0
     skipped_empty = 0
     total_entities = 0
     all_types: set[str] = set()
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for idx, row in enumerate(_iter_jsonl(src_path)):
             if 0 <= args.max_records <= idx:
                 break
@@ -180,7 +183,7 @@ def main() -> int:
             if record is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             total_entities += sum(len(v) for v in record["output"]["entities"].values())
             all_types.update(record["output"]["entities"].keys())
@@ -191,7 +194,7 @@ def main() -> int:
 
     print(f"Done. emitted={emitted} skipped_empty={skipped_empty} "
           f"total_entities={total_entities} distinct_types={len(all_types)} "
-          f"-> {args.out}")
+          f"{writer.summary()}")
     return 0
 
 

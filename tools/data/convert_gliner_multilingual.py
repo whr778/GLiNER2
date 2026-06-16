@@ -29,6 +29,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 def unwrap_label(raw: str) -> str | None:
     """Strip the JSON quoting around a label, e.g. '\"location\"' -> 'location'."""
@@ -82,13 +85,15 @@ def convert_row(row: dict) -> dict | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path.")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to read (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/gliner-multilingual-synthetic",
                         help="HuggingFace dataset repo.")
     parser.add_argument("--split", default="train",
                         help="Dataset split to read.")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -96,14 +101,12 @@ def main() -> int:
     print(f"Streaming {args.repo} split={args.split}...")
     ds = load_dataset(args.repo, split=args.split, streaming=True)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-
     emitted = 0
     skipped_empty = 0
     total_entities = 0
     all_types: set[str] = set()
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for idx, row in enumerate(ds):
             if 0 <= args.max_records <= idx:
                 break
@@ -111,7 +114,7 @@ def main() -> int:
             if record is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             total_entities += sum(len(v) for v in record["output"]["entities"].values())
             all_types.update(record["output"]["entities"].keys())
@@ -122,7 +125,7 @@ def main() -> int:
 
     print(f"Done. emitted={emitted} skipped_empty={skipped_empty} "
           f"total_entities={total_entities} distinct_types={len(all_types)} "
-          f"-> {args.out}")
+          f"{writer.summary()}")
     return 0
 
 

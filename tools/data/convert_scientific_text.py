@@ -39,11 +39,15 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import SplitWriter, add_split_args
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, type=Path,
-                        help="Output JSONL file path.")
+                        help="Output JSONL base path (writes <base>.train.jsonl, "
+                             ".val.jsonl, .test.jsonl).")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum input records to emit (-1 = all).")
     parser.add_argument("--repo", default="knowledgator/Scientific-text-classification",
@@ -56,6 +60,7 @@ def main() -> int:
                         help="Minimum number of training examples a label must "
                              "have to be kept (default: 2, which drops all "
                              "singleton labels).")
+    add_split_args(parser)
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -72,12 +77,11 @@ def main() -> int:
     print(f"Vocab: {len(kept_labels)} labels (min_count={args.min_count}) covering "
           f"{sum(counts[l] for l in kept_labels):,}/{len(ds):,} rows")
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
     emitted = 0
     skipped_rare = 0
     skipped_empty = 0
 
-    with args.out.open("w") as f:
+    with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         for row in ds:
             text = row.get("text")
             label = row.get("label")
@@ -97,7 +101,7 @@ def main() -> int:
                     ]
                 },
             }
-            f.write(json.dumps(record) + "\n")
+            writer.write(record)
             emitted += 1
             if 0 <= args.max_records <= emitted:
                 break
@@ -105,7 +109,7 @@ def main() -> int:
                 print(f"  emitted={emitted}  skipped_rare={skipped_rare}")
 
     print(f"Done. emitted={emitted} skipped_rare={skipped_rare} "
-          f"skipped_empty={skipped_empty} labels={len(kept_labels)} -> {args.out}")
+          f"skipped_empty={skipped_empty} labels={len(kept_labels)} {writer.summary()}")
     return 0
 
 
