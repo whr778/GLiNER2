@@ -52,7 +52,7 @@ def main() -> None:
         task_lr=5e-4,
         warmup_ratio=0.05,
         scheduler_type="cosine",
-        fp16=True,
+        bf16=True,
         max_grad_norm=1.0,
         eval_strategy="no",
         save_total_limit=3,
