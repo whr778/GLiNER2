@@ -82,6 +82,38 @@ About ~27% of source rows are dropped because their `true_labels` aren't a subse
 
 Mixing this corpus with the NER corpora teaches the model classification on top of extraction; the trainer happily interleaves both record types.
 
+## knowledgator/sentence_rex
+
+```bash
+uv run python tools/data/convert_sentence_rex.py \
+    --out data/sentence_rex.jsonl
+
+# Drop relation labels with fewer than 5 examples
+uv run python tools/data/convert_sentence_rex.py \
+    --out data/sentence_rex.jsonl --min-count 5
+```
+
+Sentence-level **relation extraction**, ~44k rows. Each source row marks the two relation arguments inline with `<e1>...</e1>` and `<e2>...</e2>` tags, with a single Wikidata-property label (`director`, `cast member`, `architect`, etc.). The converter strips the tags, recovers clean text, and emits one relation per record using GLiNER2's `{relation_name: {head, tail}}` shape (head = e1, tail = e2).
+
+Vocabulary is large (~850 labels), with 92 singleton labels. `--min-count` lets you drop the tail; default 1 keeps everything.
+
+## knowledgator/bio-NER-relations
+
+```bash
+uv run python tools/data/convert_bio_ner_relations.py \
+    --out data/bio_ner_relations.jsonl
+
+# Keep the noisy umlsterm entity bucket
+uv run python tools/data/convert_bio_ner_relations.py \
+    --out data/bio_ner_relations.jsonl --skip-types ''
+```
+
+Document-level biomedical **NER + relation extraction**, ~10k rows. Source rows follow a BioC-style layout with `passages`, `entities`, and `relations`. Entities have character offsets; relations reference entity IDs (`arg1_id`, `arg2_id`).
+
+The converter joins all passage text, groups entities by type into `output.entities`, resolves each relation's args via the entity-ID lookup, and emits relations as `output.relations` with head = arg1 surface and tail = arg2 surface.
+
+`umlsterm` is dropped by default (it accounts for ~85% of entity assignments — auto-matched UMLS concepts that are noisy for downstream training). Override with `--skip-types ''` to keep them, or `--skip-types umlsterm,Habitat` to drop multiple types.
+
 ## knowledgator/events_classification_biotech
 
 ```bash
