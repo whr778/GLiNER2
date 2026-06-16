@@ -111,7 +111,7 @@ ACE 2005, MAVEN, and RAMS are the standard NLP event-extraction benchmarks. None
 # RAMS (Ebner et al., ACL 2020) — multi-sentence trigger + typed arguments.
 #   Download: https://nlp.jhu.edu/rams/  ->  RAMS_1.0c.tar.gz
 uv run python tools/data/convert_rams.py \
-    --input /path/to/RAMS_1.0c/data/train.jsonlines \
+    --input data/RAMS_1.0c/data/train.jsonlines \
     --out data/rams.train.jsonl
 
 # MAVEN (Wang et al., EMNLP 2020) — large general-domain trigger detection.
@@ -119,7 +119,7 @@ uv run python tools/data/convert_rams.py \
 #   Trigger-only — arguments will be empty, so only the trigger-detection
 #   path of the joint event loss benefits from this corpus.
 uv run python tools/data/convert_maven.py \
-    --input /path/to/maven/train.jsonl \
+    --input data/maven/train.jsonl \
     --out data/maven.train.jsonl
 
 # ACE 2005 (LDC2006T06) — LDC-licensed. Point --input at the directory

@@ -55,7 +55,7 @@ EVENT_FILES: Dict[str, Dict[str, str]] = {
     # ACE 2005 has no canonical train/dev/test split — the converter emits a
     # single file and the user partitions it themselves. By default we treat
     # it as train data only.
-    "ace2005": {"train": "data/ace2005.jsonl"},
+    # "ace2005": {"train": "data/ace2005.jsonl"},
 }
 
 
