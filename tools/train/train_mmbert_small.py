@@ -46,7 +46,7 @@ def main() -> None:
         output_dir="./out/mmbert-small",
         experiment_name="mmbert_small_multi_corpus",
         num_epochs=3,
-        batch_size=8,
+        batch_size=6,
         gradient_accumulation_steps=1,
         encoder_lr=2e-5,
         task_lr=5e-4,
