@@ -52,6 +52,53 @@ plain string, and unwraps the JSON quoting on labels. Each record carries
 ~10 entity types on average, so loss values start much higher than NuNER
 records but drop fast.
 
+## knowledgator/gliclass-v3-logic-dataset
+
+```bash
+uv run python tools/data/convert_gliclass_logic.py \
+    --out data/gliclass_logic.jsonl
+
+# Smaller subset for a smoke run
+uv run python tools/data/convert_gliclass_logic.py \
+    --out data/gliclass_logic_2k.jsonl --max-records 2000
+
+# Customise the task name written into each classification record
+uv run python tools/data/convert_gliclass_logic.py \
+    --out data/gliclass_logic.jsonl --task-name reasoning
+```
+
+This is a **classification** corpus — it trains GLiNER2's classification head, not the entity extractor. Each source row carries `text`, `true_labels`, and `all_labels`; the converter emits
+
+```json
+{"input": "<text>",
+ "output": {"classifications": [
+     {"task": "logic", "labels": <all_labels>, "true_label": <true_labels>}
+ ]}}
+```
+
+`Classification.__post_init__` auto-sets `multi_label=True` when more than one true label is provided.
+
+About ~27% of source rows are dropped because their `true_labels` aren't a subset of `all_labels` (NLI-style entries where the true label is a relation type like `"neutral"` and `all_labels` is a single candidate hypothesis). Those would fail GLiNER2's classification validation, so we filter them at conversion time rather than letting the trainer reject them.
+
+Mixing this corpus with the NER corpora teaches the model classification on top of extraction; the trainer happily interleaves both record types.
+
+## knowledgator/Scientific-text-classification
+
+```bash
+uv run python tools/data/convert_scientific_text.py \
+    --out data/scientific_text.jsonl
+
+# Keep more of the long tail
+uv run python tools/data/convert_scientific_text.py \
+    --out data/scientific_text.jsonl --min-count 10
+```
+
+Single-label scientific-abstract classification with a **global** label vocabulary. The raw dataset is heavily skewed: 10 broad-domain labels (mathematics, quantum physics, astrophysics, computer science, statistics, etc.) each have ~5,000 examples and 28,631 fine-grained MeSH-style labels each have exactly **one** example. Records with singleton labels can't train the classification head and would inflate every record's `labels` field to ~28k entries.
+
+The converter therefore drops labels by `--min-count` (default 2 — which naturally yields the 10 broad-domain labels covering ~50k rows, since there's a hard cliff in the distribution between rank-10 and rank-11). Raise `--min-count` to keep a broader tail, but expect rapid quality drop past the natural cliff.
+
+The emitted records share the same `labels` vocabulary and carry `true_label` as a 1-element list.
+
 ## knowledgator/gliner-multilingual-synthetic
 
 ```bash

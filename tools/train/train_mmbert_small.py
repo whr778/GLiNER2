@@ -10,6 +10,8 @@ Expects these JSONLs under ``data/`` (see ``tools/data/`` converters):
     - knowledgator_gliner.jsonl          (knowledgator/GLINER-multi-task-synthetic-data)
     - text2json.jsonl                    (knowledgator/text2json-training-data)
     - gliner_multilingual.jsonl          (knowledgator/gliner-multilingual-synthetic)
+    - gliclass_logic.jsonl               (knowledgator/gliclass-v3-logic-dataset; classification)
+    - scientific_text.jsonl              (knowledgator/Scientific-text-classification; classification)
 
 Edit ``TRAIN_DATA`` below to drop a corpus or to point at smaller subsets.
 """
@@ -24,6 +26,8 @@ TRAIN_DATA = [
     "data/knowledgator_gliner.jsonl",
     "data/text2json.jsonl",
     "data/gliner_multilingual.jsonl",
+    "data/gliclass_logic.jsonl",
+    "data/scientific_text.jsonl",
 ]
 
 

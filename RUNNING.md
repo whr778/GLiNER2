@@ -44,21 +44,34 @@ uv run python tools/data/convert_text2json.py \
 # (German, Polish, French, etc.; pair with mmBERT for non-English extraction)
 uv run python tools/data/convert_gliner_multilingual.py \
     --out data/gliner_multilingual.jsonl
+
+# knowledgator/gliclass-v3-logic-dataset — classification (NOT NER)
+# Trains GLiNER2's classification head; the trainer interleaves NER and
+# classification records cleanly.
+uv run python tools/data/convert_gliclass_logic.py \
+    --out data/gliclass_logic.jsonl
+
+# knowledgator/Scientific-text-classification — single-label classification
+# of scientific abstracts (10 broad domains: math, quantum physics, ...)
+uv run python tools/data/convert_scientific_text.py \
+    --out data/scientific_text.jsonl
 ```
 
-All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped because no span appeared verbatim in the text, and the count of distinct entity types.
+All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped (for NER converters: because no span appeared verbatim; for the classification converters: because the labels couldn't form a valid classification task), and the count of distinct entity types or label counts.
 
 Approximate output sizes after conversion:
 
-| Source | Records out | Disk |
-|---|---:|---:|
-| NuNER `full` | ~990,000 | ~0.8 GB |
-| Pile-NER-definition | ~45,000 | ~0.2 GB |
-| knowledgator/GLINER-multi-task-synthetic-data | ~210,000 | ~0.4 GB |
-| knowledgator/text2json-training-data | ~80,000 | ~0.2 GB |
-| knowledgator/gliner-multilingual-synthetic | ~400,000 | ~0.3 GB |
+| Source | Task | Records out | Disk |
+|---|---|---:|---:|
+| NuNER `full` | NER | ~990,000 | ~0.8 GB |
+| Pile-NER-definition | NER | ~45,000 | ~0.2 GB |
+| knowledgator/GLINER-multi-task-synthetic-data | NER | ~210,000 | ~0.4 GB |
+| knowledgator/text2json-training-data | NER (extraction) | ~80,000 | ~0.2 GB |
+| knowledgator/gliner-multilingual-synthetic | NER (multilingual) | ~400,000 | ~0.3 GB |
+| knowledgator/gliclass-v3-logic-dataset | Classification (multiple-choice) | ~5,700 | ~10 MB |
+| knowledgator/Scientific-text-classification | Classification (single-label) | ~50,000 | ~80 MB |
 
-You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all five is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, and gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction).
+You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all seven is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, and Scientific-text-classification teaches single-label classification with a fixed vocabulary.
 
 ```python
 trainer.train(train_data=[
@@ -67,6 +80,8 @@ trainer.train(train_data=[
     "data/knowledgator_gliner.jsonl",
     "data/text2json.jsonl",
     "data/gliner_multilingual.jsonl",
+    "data/gliclass_logic.jsonl",
+    "data/scientific_text.jsonl",
 ])
 ```
 
