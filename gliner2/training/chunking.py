@@ -65,7 +65,16 @@ def chunk_text_by_subwords(
             f"window_size and stride must be positive, got {window_size}/{stride}"
         )
 
-    enc = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
+    # verbose=False suppresses the "Token indices sequence length is longer
+    # than the specified maximum sequence length for this model" warning.
+    # We only use the offset mapping to compute chunk boundaries — the long
+    # sequence is never fed through the encoder, so the warning is harmless.
+    enc = tokenizer(
+        text,
+        add_special_tokens=False,
+        return_offsets_mapping=True,
+        verbose=False,
+    )
     offsets = enc["offset_mapping"]
     n = len(offsets)
 
