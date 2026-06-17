@@ -36,6 +36,7 @@ CORPORA: List[str] = [
     "data/text2json",
     "data/gliner_multilingual",
     "data/gliclass_logic",
+    "data/gliclass_rac",
     "data/scientific_text",
     "data/biomed_ner",
     "data/events_biotech",

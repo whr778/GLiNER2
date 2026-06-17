@@ -77,6 +77,14 @@ uv run python tools/data/convert_gliner_multilingual.py \
 uv run python tools/data/convert_gliclass_logic.py \
     --out data/gliclass_logic.jsonl
 
+# knowledgator/gliclass-v2.0-RAC — sibling of v3-logic, same converter,
+# general-domain multi-label classification (~612k rows). Override --repo
+# and --task-name so the two GLiClass corpora stay namespaced apart.
+uv run python tools/data/convert_gliclass_logic.py \
+    --repo knowledgator/gliclass-v2.0-RAC \
+    --task-name topic_classification \
+    --out data/gliclass_rac.jsonl
+
 # knowledgator/Scientific-text-classification — single-label classification
 # of scientific abstracts (10 broad domains: math, quantum physics, ...)
 uv run python tools/data/convert_scientific_text.py \
@@ -149,6 +157,7 @@ Approximate output sizes after conversion (totals across all three splits combin
 | knowledgator/text2json-training-data | NER (extraction) | ~80,000 | ~0.2 GB |
 | knowledgator/gliner-multilingual-synthetic | NER (multilingual) | ~400,000 | ~0.3 GB |
 | knowledgator/gliclass-v3-logic-dataset | Classification (multiple-choice) | ~5,700 | ~10 MB |
+| knowledgator/gliclass-v2.0-RAC | Classification (multi-label, general-domain) | ~550,000 | ~150 MB |
 | knowledgator/Scientific-text-classification | Classification (single-label) | ~50,000 | ~80 MB |
 | knowledgator/biomed_NER | NER (biomedical, 35 classes) | ~4,800 | ~30 MB |
 | knowledgator/events_classification_biotech | Classification (multi-label) | ~2,750 | ~10 MB |

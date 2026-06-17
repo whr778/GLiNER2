@@ -67,6 +67,15 @@ uv run python tools/data/convert_gliclass_logic.py \
     --out data/gliclass_logic.jsonl --task-name reasoning
 ```
 
+**Same converter handles `knowledgator/gliclass-v2.0-RAC`**, a sibling dataset in the GLiClass family with the identical `{text, all_labels, true_labels}` schema. RAC is general-domain (~612k rows, multi-label news topic classification with per-document custom hypothesis sets). Override `--repo` and use a different `--task-name` so the two corpora's classification tasks stay namespaced apart at train time:
+
+```bash
+uv run python tools/data/convert_gliclass_logic.py \
+    --repo knowledgator/gliclass-v2.0-RAC \
+    --task-name topic_classification \
+    --out data/gliclass_rac.jsonl
+```
+
 This is a **classification** corpus — it trains GLiNER2's classification head, not the entity extractor. Each source row carries `text`, `true_labels`, and `all_labels`; the converter emits
 
 ```json
