@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from gliner2 import GLiNER2
-from gliner2.training import evaluate_checkpoint, make_compute_metrics
+from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics
 from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
 
 
@@ -110,6 +110,7 @@ def main() -> None:
         eval_data=EVAL_DATA,
         compute_metrics=make_compute_metrics(batch_size=8, threshold=0.5),
     )
+    estimate_eta(model, TRAIN_DATA, config)
     trainer.train(train_data=TRAIN_DATA)
 
     best = Path(config.output_dir) / "best"

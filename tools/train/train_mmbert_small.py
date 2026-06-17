@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from gliner2 import GLiNER2
-from gliner2.training import evaluate_checkpoint, make_compute_metrics
+from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics
 from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
 
 
@@ -84,7 +84,7 @@ def main() -> None:
         output_dir="./out/mmbert-small",
         experiment_name="mmbert_small_multi_corpus",
         num_epochs=3,
-        batch_size=3,
+        batch_size=4,
         gradient_accumulation_steps=2,
         encoder_lr=2e-5,
         task_lr=5e-4,
@@ -115,6 +115,7 @@ def main() -> None:
         eval_data=EVAL_DATA,
         compute_metrics=make_compute_metrics(batch_size=8, threshold=0.5),
     )
+    estimate_eta(model, TRAIN_DATA, config)
     trainer.train(train_data=TRAIN_DATA)
 
     best = Path(config.output_dir) / "best"

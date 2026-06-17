@@ -8,6 +8,7 @@ from gliner2.training.data import (
     Relation,
     Structure,
 )
+from gliner2.training.eta import estimate_eta
 from gliner2.training.metrics import (
     compute_metrics,
     evaluate_checkpoint,
@@ -22,6 +23,7 @@ __all__ = [
     "Relation",
     "Structure",
     "compute_metrics",
+    "estimate_eta",
     "evaluate_checkpoint",
     "make_compute_metrics",
 ]
