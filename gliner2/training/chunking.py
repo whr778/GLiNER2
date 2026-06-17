@@ -36,7 +36,9 @@ spans.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from tqdm.auto import tqdm
 
 
 def chunk_text_by_subwords(
@@ -221,34 +223,60 @@ def chunk_records(
     tokenizer,
     window_size: int,
     stride: int,
+    desc: Optional[str] = "chunking",
+    show_progress: bool = True,
 ) -> List[Dict[str, Any]]:
     """Expand ``records`` into overlapping subword-window chunks.
 
     Records that fit within ``window_size`` subwords are passed through
     unchanged. Chunks with no usable supervision after filtering are
     dropped.
+
+    A tqdm progress bar is shown by default (set ``show_progress=False``
+    to silence it); the bar's ``postfix`` reports running counts of
+    pass-through records, records actually chunked, and chunks emitted
+    so the user can see the windowing pass making progress on long
+    corpora.
     """
     expanded: List[Dict[str, Any]] = []
-    for record in records:
+    n_chunked = 0
+    n_passthrough = 0
+    iterator = tqdm(
+        records,
+        desc=desc,
+        disable=not show_progress,
+        unit="rec",
+    )
+    for record in iterator:
         text = record.get("input")
         if text is None:
             text = record.get("text")
         if not isinstance(text, str) or not text:
             expanded.append(record)
+            n_passthrough += 1
             continue
         chunks = chunk_text_by_subwords(text, tokenizer, window_size, stride)
         if len(chunks) == 1 and chunks[0][2] == text:
             expanded.append(record)
+            n_passthrough += 1
             continue
         output = record.get("output")
         if output is None:
             # Inference-shape records carry their schema under "schema";
             # pass them through unchunked (training never sees them).
             expanded.append(record)
+            n_passthrough += 1
             continue
+        n_chunked += 1
         for _, _, chunk_text in chunks:
             new_out = _filter_record_output(output, chunk_text)
             if not _record_has_content(new_out):
                 continue
             expanded.append({"input": chunk_text, "output": new_out})
+        if show_progress:
+            iterator.set_postfix(
+                chunked=n_chunked,
+                passthrough=n_passthrough,
+                out=len(expanded),
+            )
     return expanded

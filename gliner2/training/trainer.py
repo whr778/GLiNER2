@@ -778,11 +778,26 @@ class GLiNER2Trainer:
             from gliner2.training.chunking import chunk_records
             window_size = self.config.max_len or 512
             stride = self.config.window_stride or window_size
+            split = "train" if is_train else "eval"
+            n_in = len(records)
+            logger.info(
+                "[sliding-window] %s: chunking %d records "
+                "(window_size=%d subwords, stride=%d)",
+                split, n_in, int(window_size), int(stride),
+            )
             records = chunk_records(
                 records,
                 tokenizer=self.processor.tokenizer,
                 window_size=int(window_size),
                 stride=int(stride),
+                desc=f"chunking {split}",
+                show_progress=self.is_main_process,
+            )
+            n_out = len(records)
+            ratio = (n_out / n_in) if n_in else 0.0
+            logger.info(
+                "[sliding-window] %s: %d records -> %d chunks (%.2fx)",
+                split, n_in, n_out, ratio,
             )
 
         rng = random.Random(self.config.seed)
