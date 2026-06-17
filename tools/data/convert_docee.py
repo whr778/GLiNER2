@@ -87,17 +87,58 @@ ANNOTATIONS_KEYS = (
 )
 
 
+def _normalise_record(raw: Any) -> Optional[Dict[str, Any]]:
+    """Coerce a raw DocEE record into a uniform dict.
+
+    The published JSON / pickle layout uses 4-element lists::
+
+        [title, text, event_type, annotations]
+
+    where ``annotations`` is either a list of ``{start, end, type, text}``
+    dicts or a JSON-encoded string of the same. Older releases shipped
+    everything as dicts. We accept either.
+    """
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, (list, tuple)) and len(raw) >= 4:
+        title, text, event_type, annotations = raw[0], raw[1], raw[2], raw[3]
+        if isinstance(annotations, str):
+            try:
+                annotations = json.loads(annotations)
+            except json.JSONDecodeError:
+                annotations = []
+        return {
+            "title": title if isinstance(title, str) else None,
+            "text": text if isinstance(text, str) else None,
+            "event_type": event_type if isinstance(event_type, str) else None,
+            "annotations": annotations if isinstance(annotations, list) else [],
+        }
+    return None
+
+
 def _load_records(input_path: Path) -> List[Dict[str, Any]]:
     """Load DocEE records from a JSON file (top-level list, or dict-wrapped)."""
     with input_path.open() as fh:
         data = json.load(fh)
+    items: List[Any]
     if isinstance(data, list):
-        return [r for r in data if isinstance(r, dict)]
-    if isinstance(data, dict):
+        items = data
+    elif isinstance(data, dict):
+        items = []
         for key in ("data", "records", "examples", "items"):
             if key in data and isinstance(data[key], list):
-                return [r for r in data[key] if isinstance(r, dict)]
-    raise SystemExit(f"could not find a list of records in {input_path}")
+                items = data[key]
+                break
+    else:
+        items = []
+    out: List[Dict[str, Any]] = []
+    for raw in items:
+        rec = _normalise_record(raw)
+        if rec is not None:
+            out.append(rec)
+    if not out:
+        raise SystemExit(f"could not find a list of records in {input_path}")
+    return out
 
 
 def _first_value(rec: Dict[str, Any], keys) -> Any:

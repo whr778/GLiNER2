@@ -143,23 +143,32 @@ Input text is `Title + "\n" + Content` joined. All 29 labels are repeated as the
 ## DocEE (Tong et al., NAACL 2022)
 
 ```bash
-# All-data file with auto-stratify (recommended):
-uv run python tools/data/convert_docee.py \
-    --input data/docee/DocEE-en.json \
-    --out data/docee.jsonl
+# Canonical normal_setting splits (recommended — matches the paper):
+uv run python tools/data/convert_docee.py --no-stratify \
+    --input data/docee/DocEE-en/normal_setting/train.json --out data/docee.train.jsonl
+uv run python tools/data/convert_docee.py --no-stratify \
+    --input data/docee/DocEE-en/normal_setting/dev.json   --out data/docee.val.jsonl
+uv run python tools/data/convert_docee.py --no-stratify \
+    --input data/docee/DocEE-en/normal_setting/test.json  --out data/docee.test.jsonl
 
-# Or canonical normal_setting splits (one converter call each):
-uv run python tools/data/convert_docee.py --no-stratify \
-    --input data/docee/normal_setting/train.json --out data/docee.train.jsonl
-uv run python tools/data/convert_docee.py --no-stratify \
-    --input data/docee/normal_setting/dev.json   --out data/docee.val.jsonl
-uv run python tools/data/convert_docee.py --no-stratify \
-    --input data/docee/normal_setting/test.json  --out data/docee.test.jsonl
+# Or auto-stratify from the all-data file:
+uv run python tools/data/convert_docee.py \
+    --input data/docee/DocEE-en/DocEE-en.json \
+    --out data/docee.jsonl
 ```
 
 **Largest publicly-available document-level event extraction corpus** — 27,485 docs, 59 event types, 356 argument-role types, 180,528 argument instances. One event per document. **No triggers** are annotated, so the converter maps each doc into entities + classification by default: arguments are bucketed by their role `type` (`Husband`, `Court`, `Date`, …) into `output.entities`, and the doc-level `event_type` becomes a single classification record with the 59-type vocabulary. Pass `--emit-events` to additionally emit events records with a synthetic trigger (`[event_type]` prepended to the text); off by default.
 
-**Manual download required**: the data ships through a Google Drive folder linked from https://github.com/tongmeihan1995/docee — no public direct URL. Download `DocEE-en.json` (or the `normal_setting/` splits) into a local directory and point `--input` at it.
+**Manual download required**: the data ships through a Google Drive folder linked from https://github.com/tongmeihan1995/docee — no public direct URL. The easiest way is `gdown`:
+
+```bash
+mkdir -p data/docee
+uv run --with gdown gdown --folder \
+    'https://drive.google.com/drive/folders/1_cRnc2leAmOKT9Ma8koz6X8Ivl-_lapp' \
+    -O data/docee/
+```
+
+That drops everything under `data/docee/DocEE-en/` (the all-data file at the top, plus `normal_setting/` and `cross_domain_setting/` subfolders). Each DocEE record is a 4-element list `[title, text, event_type, annotations]` where the annotation list elements are `{start, end, type, text}` dicts; the converter handles that format directly.
 
 ## CASIE (Satyapanich et al., AAAI 2020)
 

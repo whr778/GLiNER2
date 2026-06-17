@@ -72,9 +72,18 @@ run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split
 # CASIE auto-downloads the GitHub tarball and emits stratified splits — no manual prep.
 run_step casie            uv run python tools/data/convert_casie.py --out data/casie.jsonl
 
-# DocEE — manual Google Drive download required.
-run_optional docee      data/docee/DocEE-en.json               uv run python tools/data/convert_docee.py \
-                            --input data/docee/DocEE-en.json --out data/docee.jsonl
+# DocEE — manual Google Drive download required. Run each canonical
+# split through the converter; existence-guard on the train file means
+# the whole block is skipped cleanly when DocEE isn't present.
+run_optional docee_train data/docee/DocEE-en/normal_setting/train.json \
+    uv run python tools/data/convert_docee.py --no-stratify \
+        --input data/docee/DocEE-en/normal_setting/train.json --out data/docee.train.jsonl
+run_optional docee_val   data/docee/DocEE-en/normal_setting/dev.json \
+    uv run python tools/data/convert_docee.py --no-stratify \
+        --input data/docee/DocEE-en/normal_setting/dev.json --out data/docee.val.jsonl
+run_optional docee_test  data/docee/DocEE-en/normal_setting/test.json \
+    uv run python tools/data/convert_docee.py --no-stratify \
+        --input data/docee/DocEE-en/normal_setting/test.json --out data/docee.test.jsonl
 
 # MAVEN, RAMS — manual local downloads required (see TRAINING.md §2).
 run_optional maven      data/maven/train.jsonl                 uv run python tools/data/convert_maven.py \
