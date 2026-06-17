@@ -85,7 +85,7 @@ def main() -> None:
         experiment_name="mmbert_small_multi_corpus",
         num_epochs=3,
         batch_size=3,
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=2,
         encoder_lr=2e-5,
         task_lr=5e-4,
         warmup_ratio=0.05,
@@ -99,10 +99,15 @@ def main() -> None:
         save_best=True,
         save_total_limit=3,
         logging_steps=50,
-        num_workers=0,
-        # num_workers=4,
+        num_workers=0,        # was 4; per-worker tokenizer copies + MPS unified
+                              # memory triggered OOM-kills of DataLoader workers on
+                              # macOS (single leaked semaphore at shutdown).
         validate_data=False,
-        max_len=8192,
+        max_len=2048,         # was 8192; most records are well under 2048 word-
+                              # tokens, 8192 was ~4x padding cost for no signal.
+                              # `from_encoder(max_len=8192)` above keeps the
+                              # positional embeddings, so inference still handles 8k.
+        pin_memory=False,     # CUDA-only hint; no-op on MPS.
     )
 
     trainer = GLiNER2Trainer(
