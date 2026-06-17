@@ -72,6 +72,10 @@ run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split
 # CASIE auto-downloads the GitHub tarball and emits stratified splits — no manual prep.
 run_step casie            uv run python tools/data/convert_casie.py --out data/casie.jsonl
 
+# DocEE — manual Google Drive download required.
+run_optional docee      data/docee/DocEE-en.json               uv run python tools/data/convert_docee.py \
+                            --input data/docee/DocEE-en.json --out data/docee.jsonl
+
 # MAVEN, RAMS — manual local downloads required (see TRAINING.md §2).
 run_optional maven      data/maven/train.jsonl                 uv run python tools/data/convert_maven.py \
                             --input data/maven/train.jsonl --out data/maven.train.jsonl

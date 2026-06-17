@@ -60,6 +60,11 @@ EVENT_FILES: Dict[str, Dict[str, str]] = {
     "casie":      {"train": "data/casie.train.jsonl",
                    "val":   "data/casie.val.jsonl",
                    "test":  "data/casie.test.jsonl"},
+    # DocEE — manual Google Drive download; entity- and classification-shaped
+    # rather than events-shaped (no triggers in the source).
+    "docee":      {"train": "data/docee.train.jsonl",
+                   "val":   "data/docee.val.jsonl",
+                   "test":  "data/docee.test.jsonl"},
     # ACE 2005: convert_ace2005.py now emits a stratified 80/10/10
     # train/test/val split by default (greedy multi-label rule covering
     # entity types, relation types, and event types). Each split is

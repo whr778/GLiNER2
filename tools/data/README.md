@@ -140,6 +140,27 @@ The repo ships CSVs (`train.csv`, 2,759 rows; `test.csv`) plus a legacy `events_
 
 Input text is `Title + "\n" + Content` joined. All 29 labels are repeated as the `labels` vocabulary per record; `true_label` is the non-empty subset from columns `Label 1`...`Label 5`. `Classification.__post_init__` auto-detects multi-label.
 
+## DocEE (Tong et al., NAACL 2022)
+
+```bash
+# All-data file with auto-stratify (recommended):
+uv run python tools/data/convert_docee.py \
+    --input data/docee/DocEE-en.json \
+    --out data/docee.jsonl
+
+# Or canonical normal_setting splits (one converter call each):
+uv run python tools/data/convert_docee.py --no-stratify \
+    --input data/docee/normal_setting/train.json --out data/docee.train.jsonl
+uv run python tools/data/convert_docee.py --no-stratify \
+    --input data/docee/normal_setting/dev.json   --out data/docee.val.jsonl
+uv run python tools/data/convert_docee.py --no-stratify \
+    --input data/docee/normal_setting/test.json  --out data/docee.test.jsonl
+```
+
+**Largest publicly-available document-level event extraction corpus** — 27,485 docs, 59 event types, 356 argument-role types, 180,528 argument instances. One event per document. **No triggers** are annotated, so the converter maps each doc into entities + classification by default: arguments are bucketed by their role `type` (`Husband`, `Court`, `Date`, …) into `output.entities`, and the doc-level `event_type` becomes a single classification record with the 59-type vocabulary. Pass `--emit-events` to additionally emit events records with a synthetic trigger (`[event_type]` prepended to the text); off by default.
+
+**Manual download required**: the data ships through a Google Drive folder linked from https://github.com/tongmeihan1995/docee — no public direct URL. Download `DocEE-en.json` (or the `normal_setting/` splits) into a local directory and point `--input` at it.
+
 ## CASIE (Satyapanich et al., AAAI 2020)
 
 ```bash
