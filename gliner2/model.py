@@ -46,6 +46,10 @@ class ExtractorConfig(PretrainedConfig):
             counting_layer: str = "count_lstm",
             token_pooling: str = "first",
             max_len: int = None,
+            struct_loss: str = "bce",
+            struct_pos_weight: float = 1.0,
+            focal_gamma: float = 2.0,
+            focal_alpha: float = 0.25,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -54,6 +58,11 @@ class ExtractorConfig(PretrainedConfig):
         self.counting_layer = counting_layer
         self.token_pooling = token_pooling
         self.max_len = max_len
+        # Structure loss variant: "bce" | "bce_posweight" | "focal"
+        self.struct_loss = struct_loss
+        self.struct_pos_weight = struct_pos_weight
+        self.focal_gamma = focal_gamma
+        self.focal_alpha = focal_alpha
 
 
 class Extractor(PreTrainedModel):
@@ -655,11 +664,45 @@ class Extractor(PreTrainedModel):
             loss_mask = torch.ones_like(scores)
 
         # Compute masked loss
-        loss = F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+        loss = self._struct_loss_term(scores, labs)
         loss = loss * loss_mask
         loss = loss.view(loss.shape[0], loss.shape[1], -1) * (~span_mask[0]).float()
 
         return loss.sum()
+
+    def _struct_loss_term(self, scores: torch.Tensor, labs: torch.Tensor) -> torch.Tensor:
+        """Per-cell structure loss, selected by config.struct_loss.
+
+        Returns an unreduced tensor matching `scores`; reduction/masking is
+        applied by the caller.
+
+        - "bce": plain binary cross-entropy with logits (default).
+        - "bce_posweight": BCE up-weighting positives by config.struct_pos_weight,
+          a principled alternative to random negative masking.
+        - "focal": focal loss (Lin et al.), down-weighting easy negatives via
+          config.focal_gamma and balancing classes via config.focal_alpha.
+        """
+        variant = getattr(self.config, "struct_loss", "bce")
+
+        if variant == "bce_posweight":
+            pos_weight = scores.new_tensor(self.config.struct_pos_weight)
+            return F.binary_cross_entropy_with_logits(
+                scores, labs, pos_weight=pos_weight, reduction="none"
+            )
+
+        if variant == "focal":
+            gamma = self.config.focal_gamma
+            alpha = self.config.focal_alpha
+            ce = F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+            p = torch.sigmoid(scores)
+            p_t = p * labs + (1 - p) * (1 - labs)
+            loss = ce * (1 - p_t).pow(gamma)
+            if alpha is not None and alpha >= 0:
+                alpha_t = alpha * labs + (1 - alpha) * (1 - labs)
+                loss = alpha_t * loss
+            return loss
+
+        return F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
 
     # =========================================================================
     # Hugging Face Methods

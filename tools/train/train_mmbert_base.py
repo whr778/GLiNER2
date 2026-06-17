@@ -99,7 +99,21 @@ TEST_DATA = _split_files(CORPORA, "test") + _event_split("test")
 
 
 def main() -> None:
-    model = GLiNER2.from_encoder("jhu-clsp/mmBERT-base", max_width=20, max_len=8192)
+    # Structure-loss variant (events/relations/entities span scoring):
+    #   "bce"           - plain BCE-with-logits (default, original behavior)
+    #   "bce_posweight" - BCE up-weighting positive spans by struct_pos_weight
+    #   "focal"         - focal loss (focal_gamma / focal_alpha)
+    # focal / bce_posweight handle class imbalance via the loss itself, so the
+    # random negative masking in compute_struct_loss becomes partly redundant.
+    model = GLiNER2.from_encoder(
+        "jhu-clsp/mmBERT-base",
+        max_width=20,
+        max_len=8192,
+        struct_loss="focal",
+        struct_pos_weight=8.0,
+        focal_gamma=2.0,
+        focal_alpha=0.25,
+    )
 
     config = TrainingConfig(
         output_dir="./out/mmbert-base",

@@ -336,6 +336,29 @@ uv run python tools/train/train_mmbert_base.py
 
 Edit `tools/train/train_mmbert_base.py` to retune for your hardware. Defaults use `bf16=True` (prefer on Ampere+/Hopper; switch to `fp16=True` elsewhere) and `max_len=8192`. Eval-on-val and final blind test on `best` work the same way as for the small variant.
 
+### Structure-loss variant (span scoring for entities/relations/events)
+
+The structure head scores every `(start, width)` span against each schema field on a dense grid, so positives (the few gold spans) are vastly outnumbered by negatives. The loss applied to that grid is selectable via `GLiNER2.from_encoder(...)`:
+
+| `struct_loss`    | Behavior                                                        | Extra knobs |
+|------------------|-----------------------------------------------------------------|-------------|
+| `"bce"`          | Plain BCE-with-logits (default; original behavior).             | —           |
+| `"bce_posweight"`| BCE up-weighting positive spans, a principled alternative to the random negative masking. | `struct_pos_weight` (≈ #neg / #pos, e.g. `8.0`) |
+| `"focal"`        | Focal loss — down-weights easy negatives, focuses on hard spans. | `focal_gamma` (default `2.0`), `focal_alpha` (default `0.25`) |
+
+Both training scripts default to `struct_loss="focal"`. To go back to the original loss, set `struct_loss="bce"` in the `from_encoder(...)` call:
+
+```python
+model = GLiNER2.from_encoder(
+    "jhu-clsp/mmBERT-base", max_width=20, max_len=8192,
+    struct_loss="bce",            # or "bce_posweight" / "focal"
+    struct_pos_weight=8.0,        # only used by "bce_posweight"
+    focal_gamma=2.0, focal_alpha=0.25,  # only used by "focal"
+)
+```
+
+Note: `focal` and `bce_posweight` handle class imbalance inside the loss, so the random negative masking in `compute_struct_loss` (50% by default) becomes partly redundant with them — it will randomly drop hard negatives that focal specifically wants to learn from. For the cleanest comparison, evaluate these variants against the `bce` baseline on your own val splits.
+
 ### Optional: hold out an evaluation slice
 
 ```python
