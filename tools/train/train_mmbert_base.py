@@ -52,10 +52,13 @@ EVENT_FILES: Dict[str, Dict[str, str]] = {
                 "test":  "data/rams.test.jsonl"},
     "maven":   {"train": "data/maven.train.jsonl",
                 "val":   "data/maven.valid.jsonl"},
-    # ACE 2005 has no canonical train/dev/test split — the converter emits a
-    # single file and the user partitions it themselves. By default we treat
-    # it as train data only.
-    "ace2005": {"train": "data/ace2005.jsonl"},
+    # ACE 2005: convert_ace2005.py now emits a stratified 80/10/10
+    # train/test/val split by default (greedy multi-label rule covering
+    # entity types, relation types, and event types). Each split is
+    # picked up here only if its file is present on disk.
+    "ace2005": {"train": "data/ace2005.train.jsonl",
+                "val":   "data/ace2005.val.jsonl",
+                "test":  "data/ace2005.test.jsonl"},
 }
 
 
