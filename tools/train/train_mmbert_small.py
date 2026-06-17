@@ -99,7 +99,7 @@ TEST_DATA = _split_files(CORPORA, "test") + _event_split("test")
 
 
 def main() -> None:
-    model = GLiNER2.from_encoder("jhu-clsp/mmBERT-small", max_width=12, max_len=8192)
+    model = GLiNER2.from_encoder("jhu-clsp/mmBERT-small", max_width=20, max_len=8192)
 
     config = TrainingConfig(
         output_dir="./out/mmbert-small",
@@ -124,11 +124,13 @@ def main() -> None:
                               # memory triggered OOM-kills of DataLoader workers on
                               # macOS (single leaked semaphore at shutdown).
         validate_data=False,
-        max_len=2048,         # was 8192; most records are well under 2048 word-
+        max_len=1024,         # was 8192; most records are well under 2048 word-
                               # tokens, 8192 was ~4x padding cost for no signal.
                               # `from_encoder(max_len=8192)` above keeps the
                               # positional embeddings, so inference still handles 8k.
         pin_memory=False,     # CUDA-only hint; no-op on MPS.
+        sliding_window=True,
+        window_stride=512,    # subword stride between consecutive chunks
     )
 
     trainer = GLiNER2Trainer(

@@ -99,7 +99,7 @@ TEST_DATA = _split_files(CORPORA, "test") + _event_split("test")
 
 
 def main() -> None:
-    model = GLiNER2.from_encoder("jhu-clsp/mmBERT-base", max_width=12, max_len=8192)
+    model = GLiNER2.from_encoder("jhu-clsp/mmBERT-base", max_width=20, max_len=8192)
 
     config = TrainingConfig(
         output_dir="./out/mmbert-base",

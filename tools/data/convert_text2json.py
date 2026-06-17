@@ -53,6 +53,14 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _split import SplitWriter, add_split_args
 
+# Drop entity surfaces longer than this many whitespace tokens. text2json's
+# flat key->value shape happily promotes things like plot_summary, abstract,
+# or long-form description fields into "entities", which then balloon past
+# 100 word-tokens and pollute the span head's max_width budget. The span
+# head can only predict surfaces up to its configured max_width anyway, so
+# anything beyond that is supervision the model can never match.
+MAX_SURFACE_WORDS = 50
+
 
 def _coerce_surface(value: Any) -> str | None:
     """Return a non-empty string surface for primitive scalars, else None."""
@@ -69,6 +77,8 @@ def _coerce_surface(value: Any) -> str | None:
 def _add(entities: dict[str, list[str]], label: str, surface: str, text: str) -> None:
     """Append surface under label if it appears verbatim in text and isn't a dupe."""
     if surface not in text:
+        return
+    if len(surface.split()) > MAX_SURFACE_WORDS:
         return
     bucket = entities.setdefault(label, [])
     if surface not in bucket:
