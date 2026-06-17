@@ -140,6 +140,18 @@ The repo ships CSVs (`train.csv`, 2,759 rows; `test.csv`) plus a legacy `events_
 
 Input text is `Title + "\n" + Content` joined. All 29 labels are repeated as the `labels` vocabulary per record; `true_label` is the non-empty subset from columns `Label 1`...`Label 5`. `Classification.__post_init__` auto-detects multi-label.
 
+## CASIE (Satyapanich et al., AAAI 2020)
+
+```bash
+# Auto-downloads the GitHub tarball (~24 MB), produces a stratified
+# 80/10/10 train/test/val split by default:
+uv run python tools/data/convert_casie.py --out data/casie.jsonl
+```
+
+Cybersecurity event corpus: 1,000 news articles annotated with 5 event subtypes (`Databreach`, `Phishing`, `Ransom`, `Vulnerability-Discover`, `Vulnerability-Patch`) and ~21 typed argument-entity types (`PII`, `Person`, `Organization`, `Device`, `Money`, `System`, etc.). Each argument carries both an event role (`Compromised-Data`, `Attacker`, `Place`, ...) **and** an entity type, so the corpus naturally feeds the entities + events co-training pattern (no relations annotated).
+
+Stratification uses the same greedy multi-label rule (b) as `convert_ace2005.py` (shared in `tools/data/_stratify.py`). Categories combine entity types and event subtypes; on the full corpus all 26 categories appear in every split. Default prefixes event subtypes as `Cyber.<Subtype>` so they don't collide with ACE / MAVEN / RAMS / WikiEvents event types; pass `--no-prefix-event` to keep them bare. Pass `--no-stratify` for single-file output.
+
 ## WikiEvents (Li et al., NAACL 2021)
 
 ```bash

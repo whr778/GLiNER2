@@ -69,6 +69,9 @@ run_step wikievents_train uv run python tools/data/convert_wikievents.py --split
 run_step wikievents_dev   uv run python tools/data/convert_wikievents.py --split dev   --out data/wikievents.dev.jsonl
 run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split test  --out data/wikievents.test.jsonl
 
+# CASIE auto-downloads the GitHub tarball and emits stratified splits — no manual prep.
+run_step casie            uv run python tools/data/convert_casie.py --out data/casie.jsonl
+
 # MAVEN, RAMS — manual local downloads required (see TRAINING.md §2).
 run_optional maven      data/maven/train.jsonl                 uv run python tools/data/convert_maven.py \
                             --input data/maven/train.jsonl --out data/maven.train.jsonl
