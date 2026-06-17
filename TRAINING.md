@@ -143,6 +143,13 @@ uv run python tools/data/convert_maven.py \
 uv run python tools/data/convert_ace2005.py \
     --input /path/to/ace_2005_td_v7/data/English \
     --out data/ace2005.jsonl
+
+# WikiEvents (Li et al., NAACL 2021) — KAIROS ontology event extraction
+# co-trained with typed entity mentions; --split auto-downloads from the
+# public S3 bucket.
+uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
+uv run python tools/data/convert_wikievents.py --split dev   --out data/wikievents.dev.jsonl
+uv run python tools/data/convert_wikievents.py --split test  --out data/wikievents.test.jsonl
 ```
 
 All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped (for NER converters: because no span appeared verbatim; for the classification converters: because the labels couldn't form a valid classification task), and the count of distinct entity types or label counts, followed by per-split counts and file paths.
@@ -167,6 +174,7 @@ Approximate output sizes after conversion (totals across all three splits combin
 | RAMS (manual download) | Event extraction (trigger + args) | ~9,000 | ~10 MB |
 | MAVEN (manual download) | Event detection (trigger only) | ~4,500 | ~20 MB |
 | ACE 2005 (LDC) | Event extraction (trigger + args, 33 subtypes) | ~600 | ~3 MB |
+| WikiEvents (NAACL 2021) | NER + event extraction (KAIROS, 49+ types) | ~246 docs (206/20/20) | ~2 MB |
 
 You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all eleven is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, Scientific-text-classification teaches single-label classification with a fixed vocabulary, biomed_NER adds domain-specific biomedical extraction, events_biotech adds multi-label business-news classification, sentence_rex introduces general-domain relation extraction, and bio-NER-relations couples biomedical NER with co-occurring relations.
 

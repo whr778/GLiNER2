@@ -140,6 +140,19 @@ The repo ships CSVs (`train.csv`, 2,759 rows; `test.csv`) plus a legacy `events_
 
 Input text is `Title + "\n" + Content` joined. All 29 labels are repeated as the `labels` vocabulary per record; `true_label` is the non-empty subset from columns `Label 1`...`Label 5`. `Classification.__post_init__` auto-detects multi-label.
 
+## WikiEvents (Li et al., NAACL 2021)
+
+```bash
+# All three canonical splits — auto-fetched from the public S3 bucket:
+uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
+uv run python tools/data/convert_wikievents.py --split dev   --out data/wikievents.dev.jsonl
+uv run python tools/data/convert_wikievents.py --split test  --out data/wikievents.test.jsonl
+```
+
+Document-level event extraction (KAIROS ontology, ~50 event types and ~60 argument roles) plus typed entity mentions (PER, GPE, ORG, LOC, FAC, WEA) in the same record — perfect for **NER + event co-training**. 206 train / 20 dev / 20 test documents. The dataset's `relation_mentions` field is always empty across all splits, so the converter emits entities + events only (no relations).
+
+Source lives in a public S3 bucket published by https://github.com/raspberryice/gen-arg, so `--split` auto-downloads via HTTPS. `--input` accepts either a URL or a local path for offline use.
+
 ## knowledgator/biomed_NER
 
 ```bash

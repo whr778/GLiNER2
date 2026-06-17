@@ -54,6 +54,9 @@ EVENT_FILES: Dict[str, Dict[str, str]] = {
                 "test":  "data/rams.test.jsonl"},
     "maven":   {"train": "data/maven.train.jsonl",
                 "val":   "data/maven.valid.jsonl"},
+    "wikievents": {"train": "data/wikievents.train.jsonl",
+                   "val":   "data/wikievents.dev.jsonl",
+                   "test":  "data/wikievents.test.jsonl"},
     # ACE 2005: convert_ace2005.py now emits a stratified 80/10/10
     # train/test/val split by default (greedy multi-label rule covering
     # entity types, relation types, and event types). Each split is

@@ -63,7 +63,13 @@ run_step knowledgator_gliner uv run python tools/data/convert_knowledgator_gline
 run_step gliner_multilingual uv run python tools/data/convert_gliner_multilingual.py --out data/gliner_multilingual.jsonl
 run_step nuner_full          uv run python tools/data/convert_nuner.py --split full --out data/nuner_full.jsonl
 
-# Event corpora — manual local downloads required.
+# Event corpora.
+# WikiEvents auto-downloads from the public S3 bucket — no manual prep.
+run_step wikievents_train uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
+run_step wikievents_dev   uv run python tools/data/convert_wikievents.py --split dev   --out data/wikievents.dev.jsonl
+run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split test  --out data/wikievents.test.jsonl
+
+# MAVEN, RAMS — manual local downloads required (see TRAINING.md §2).
 run_optional maven      data/maven/train.jsonl                 uv run python tools/data/convert_maven.py \
                             --input data/maven/train.jsonl --out data/maven.train.jsonl
 run_optional rams_train data/RAMS_1.0c/data/train.jsonlines    uv run python tools/data/convert_rams.py \
