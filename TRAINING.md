@@ -157,7 +157,7 @@ Approximate output sizes after conversion (totals across all three splits combin
 | knowledgator/text2json-training-data | NER (extraction) | ~80,000 | ~0.2 GB |
 | knowledgator/gliner-multilingual-synthetic | NER (multilingual) | ~400,000 | ~0.3 GB |
 | knowledgator/gliclass-v3-logic-dataset | Classification (multiple-choice) | ~5,700 | ~10 MB |
-| knowledgator/gliclass-v2.0-RAC | Classification (multi-label, general-domain) | ~550,000 | ~150 MB |
+| knowledgator/gliclass-v2.0-RAC | Classification (multi-label, general-domain) | ~550,000 | ~1.2 GB |
 | knowledgator/Scientific-text-classification | Classification (single-label) | ~50,000 | ~80 MB |
 | knowledgator/biomed_NER | NER (biomedical, 35 classes) | ~4,800 | ~30 MB |
 | knowledgator/events_classification_biotech | Classification (multi-label) | ~2,750 | ~10 MB |
