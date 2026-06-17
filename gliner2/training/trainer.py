@@ -217,6 +217,13 @@ class TrainingConfig:
     max_eval_samples: int = -1
     validate_data: bool = True
     max_len: Optional[int] = None
+    # Sliding-window chunking. When sliding_window=True, max_len is
+    # interpreted as the window size in SUBWORD tokens (the encoder's
+    # tokenizer); records longer than the window are expanded into
+    # overlapping window_stride-spaced chunks at dataset-load time.
+    # See gliner2.training.chunking for the per-task annotation filters.
+    sliding_window: bool = False
+    window_stride: int = 256
 
     # LoRA Configuration (Parameter-Efficient Fine-Tuning)
     use_lora: bool = False
@@ -732,7 +739,23 @@ class GLiNER2Trainer:
         return grad_norm
 
     def _prepare_data(self, data: TrainDataInput, is_train: bool = True) -> ExtractorDataset:
-        """Convert any supported data format to ExtractorDataset."""
+        """Convert any supported data format to ExtractorDataset.
+
+        Two behaviours are layered on top of the basic load:
+
+        * **Sliding-window chunking** (when ``self.config.sliding_window`` is
+          set) expands each record's ``input`` into overlapping subword-
+          token windows. ``max_len`` is the window size and
+          ``window_stride`` is the step, both in subword tokens. Each chunk
+          inherits annotations whose surfaces appear inside it; the
+          per-task filter rules live in
+          :mod:`gliner2.training.chunking`.
+
+        * **Deterministic shuffle** runs over every split (train, eval,
+          and — via :func:`gliner2.training.metrics.evaluate_checkpoint` —
+          test) so corpus-aggregation order can't bias the model. The
+          training DataLoader still shuffles per-epoch on top.
+        """
         if data is None:
             return None
 
@@ -741,12 +764,36 @@ class GLiNER2Trainer:
 
         max_samples = self.config.max_train_samples if is_train else self.config.max_eval_samples
 
-        return ExtractorDataset(
+        # Load records once via the factory so we can chunk and re-shuffle
+        # before handing them to ExtractorDataset.
+        records = DataLoader_Factory.load(
             data=data,
             max_samples=max_samples,
-            shuffle=is_train,
+            shuffle=False,  # we shuffle ourselves after chunking
             seed=self.config.seed,
-            validate=self.config.validate_data if is_train else False
+            validate=self.config.validate_data if is_train else False,
+        )
+
+        if self.config.sliding_window:
+            from gliner2.training.chunking import chunk_records
+            window_size = self.config.max_len or 512
+            stride = self.config.window_stride or window_size
+            records = chunk_records(
+                records,
+                tokenizer=self.processor.tokenizer,
+                window_size=int(window_size),
+                stride=int(stride),
+            )
+
+        rng = random.Random(self.config.seed)
+        rng.shuffle(records)
+
+        return ExtractorDataset(
+            data=records,
+            max_samples=-1,         # already applied above
+            shuffle=False,          # already shuffled above
+            seed=self.config.seed,
+            validate=False,         # already validated above
         )
 
     def _create_optimizer(self) -> AdamW:
@@ -788,7 +835,14 @@ class GLiNER2Trainer:
             sampler = DistributedSampler(dataset, shuffle=shuffle)
             shuffle = False
 
-        max_len = self.config.max_len or getattr(self.model.config, "max_len", None)
+        # When sliding_window is on, records are already chunked to fit
+        # the encoder. Don't apply word-level truncation on top — that
+        # would re-truncate by word count while the chunks are sized by
+        # subword count.
+        if self.config.sliding_window:
+            max_len = None
+        else:
+            max_len = self.config.max_len or getattr(self.model.config, "max_len", None)
         collator = ExtractorCollator(self.processor, is_training=is_training, max_len=max_len)
 
         # Fix Bug #1 & #9: Handle small datasets

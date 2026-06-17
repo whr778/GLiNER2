@@ -273,6 +273,42 @@ Per-step wall-clock at `max_len=8192` is roughly 6–10× longer than at `max_le
 
 > **Run the training scripts under `tools/train/` rather than piping a heredoc.** Piping the script via `python - <<PY ... PY` breaks DataLoader workers on macOS + Python 3.12+, where multiprocessing uses the **spawn** start method: workers need to re-import the main module by path, but stdin has no path. Symptom: `FileNotFoundError: '<stdin>'` followed by `BrokenPipeError`.
 
+### Sliding-window chunking (instead of truncation)
+
+By default, records longer than `max_len` word-tokens get truncated by the collator. Set `sliding_window=True` in `TrainingConfig` to switch behaviour: each record's `input` is expanded **at dataset-load time** into overlapping subword-token windows, and each chunk inherits a filtered copy of the gold annotations.
+
+```python
+TrainingConfig(
+    ...
+    sliding_window=True,
+    max_len=1024,         # window size, now measured in SUBWORD tokens
+    window_stride=512,    # subword stride between consecutive chunks
+)
+```
+
+Per-task filter rules (see `gliner2/training/chunking.py`):
+
+| task | rule |
+|---|---|
+| Entities | keep mention only in chunks where its surface verbatim appears |
+| Entity descriptions | keep only for entity types that survived the entity filter |
+| Classifications | doc-level label is inherited by **every** chunk |
+| Relations | emit only if **both** head and tail appear in the same chunk |
+| Events | emit if the trigger appears; per-event arguments independently filtered |
+| JSON structures | passed through; the processor's verbatim filter handles missing fields |
+
+Notes:
+
+* `max_len`'s **meaning changes**: under sliding window it is the subword window size, not the word-truncation limit. The processor's word-level truncation is suppressed when sliding window is on (chunks are already sized).
+* Docs that fit in the window are emitted as a single record (no chunking).
+* With `window_stride < max_len`, annotations whose surfaces fall in the overlap region naturally repeat across multiple adjacent chunks — that's intentional, just slightly more supervision on those spans.
+* Chunks that wind up with **no usable supervision** after filtering are dropped (e.g. a generic-prose chunk that contains none of the gold spans).
+* Currently training-only; evaluation and the blind-test path still truncate at `max_len` as today.
+
+### Per-split deterministic shuffle
+
+After the trainer aggregates JSONLs into a single `TRAIN_DATA` / `EVAL_DATA` / `TEST_DATA` list, every split is shuffled once with `TrainingConfig.seed` before the DataLoader sees it. This means corpus-file ordering can never bias the model. The training DataLoader still shuffles per-epoch on top, so train data is re-shuffled every epoch. Eval and test data stay in the same shuffled-once order between epochs, which keeps eval/test metrics deterministic (set/aggregate metrics like F1 are order-independent anyway).
+
 ### 4a. mmBERT-small
 
 Recommended baseline — runs on a single 24 GB GPU and converges in 2–3 epochs of mixed NuNER + Pile-NER-definition.
