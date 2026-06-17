@@ -72,6 +72,17 @@ run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split
 # CASIE auto-downloads the GitHub tarball and emits stratified splits — no manual prep.
 run_step casie            uv run python tools/data/convert_casie.py --out data/casie.jsonl
 
+# CMNEE — Chinese military event extraction. Manual Google Drive download.
+run_optional cmnee_train data/cmnee/CMNEE/train.json \
+    uv run python tools/data/convert_cmnee.py \
+        --input data/cmnee/CMNEE/train.json --out data/cmnee.train.jsonl
+run_optional cmnee_val   data/cmnee/CMNEE/valid.json \
+    uv run python tools/data/convert_cmnee.py \
+        --input data/cmnee/CMNEE/valid.json --out data/cmnee.val.jsonl
+run_optional cmnee_test  data/cmnee/CMNEE/test.json \
+    uv run python tools/data/convert_cmnee.py \
+        --input data/cmnee/CMNEE/test.json --out data/cmnee.test.jsonl
+
 # DocEE — manual Google Drive download required. Run each canonical
 # split through the converter; existence-guard on the train file means
 # the whole block is skipped cleanly when DocEE isn't present.

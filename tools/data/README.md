@@ -170,6 +170,28 @@ uv run --with gdown gdown --folder \
 
 That drops everything under `data/docee/DocEE-en/` (the all-data file at the top, plus `normal_setting/` and `cross_domain_setting/` subfolders). Each DocEE record is a 4-element list `[title, text, event_type, annotations]` where the annotation list elements are `{start, end, type, text}` dicts; the converter handles that format directly.
 
+## CMNEE (Zhu et al., LREC-COLING 2024)
+
+```bash
+# Download once (Google Drive folder):
+mkdir -p data/cmnee
+uv run --with gdown gdown --folder \
+    'https://drive.google.com/drive/folders/1nfKiSsu88oBeykUSYm7NGn4Q50_2GPS1' \
+    -O data/cmnee/
+
+# Then convert the canonical train/valid/test splits:
+uv run python tools/data/convert_cmnee.py \
+    --input data/cmnee/CMNEE/train.json --out data/cmnee.train.jsonl
+uv run python tools/data/convert_cmnee.py \
+    --input data/cmnee/CMNEE/valid.json --out data/cmnee.val.jsonl
+uv run python tools/data/convert_cmnee.py \
+    --input data/cmnee/CMNEE/test.json  --out data/cmnee.test.jsonl
+```
+
+**Chinese Military News Event Extraction**: 17,000 documents, **29,223 events**, 8 event types, 11 argument role types. Document-level, multi-event-per-document, with manual character-offset annotations for both triggers and typed arguments. Source records are clean dicts (`{id, text, event_list, coref_arguments}`) — `event_list[*]` maps directly into our `{event_type, trigger, arguments}` shape, no schema gymnastics.
+
+This is the first Chinese corpus in the training mix; it complements `gliner_multilingual` (multilingual NER) with multilingual event supervision and adds the military domain alongside CASIE (cyber) and the general-domain English corpora. mmBERT handles Chinese natively. The `coref_arguments` field is ignored (we don't model coreference). Records with empty `event_list` (the dataset's negative samples) are dropped — the converter only emits docs that contribute event-extraction supervision.
+
 ## CASIE (Satyapanich et al., AAAI 2020)
 
 ```bash

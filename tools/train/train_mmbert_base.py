@@ -65,6 +65,11 @@ EVENT_FILES: Dict[str, Dict[str, str]] = {
     "docee":      {"train": "data/docee.train.jsonl",
                    "val":   "data/docee.val.jsonl",
                    "test":  "data/docee.test.jsonl"},
+    # CMNEE — Chinese military event extraction (triggers + typed args).
+    # Manual Google Drive download required.
+    "cmnee":      {"train": "data/cmnee.train.jsonl",
+                   "val":   "data/cmnee.val.jsonl",
+                   "test":  "data/cmnee.test.jsonl"},
     # ACE 2005: convert_ace2005.py now emits a stratified 80/10/10
     # train/test/val split by default (greedy multi-label rule covering
     # entity types, relation types, and event types). Each split is
