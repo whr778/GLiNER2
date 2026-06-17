@@ -147,6 +147,17 @@ Source rows are `{text, entities: [{start, end, class}]}` with end-exclusive cha
 
 This is the only domain-specific (biomedical) corpus in the recipe. Mixing it with the general-domain corpora keeps the model strong on plain text while adding biomedical extraction headroom.
 
+## knowledgator/PubMedAbstractsNER
+
+```bash
+uv run python tools/data/convert_pubmed_abstracts_ner.py \
+    --out data/pubmed_abstracts_ner.jsonl
+```
+
+35k PubMed abstracts with token-level NER spans typed by UMLS-style biomedical concept categories (~470 distinct types — `Body Regions`, `Hemic and Immune Systems`, `Radiography`, `Probability`, …). The source label string bakes the type and a natural-language description together with `" - "`; this converter splits them so the type goes into the `entities` bucket and the description goes into `entity_descriptions` for the model to condition on.
+
+The HuggingFace `datasets` loader fails on this repo (`KeyError: 'feature'`), so the converter downloads `train.json` directly via `huggingface_hub`. Token offsets are inclusive on both ends.
+
 ## knowledgator/Scientific-text-classification
 
 ```bash

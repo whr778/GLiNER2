@@ -101,6 +101,12 @@ uv run python tools/data/convert_sentence_rex.py \
 # (50 entity types, 48 relation types; umlsterm noise dropped by default)
 uv run python tools/data/convert_bio_ner_relations.py \
     --out data/bio_ner_relations.jsonl
+
+# knowledgator/PubMedAbstractsNER — 35k PubMed abstracts with ~470 UMLS-style
+# biomedical entity types; descriptions parsed out of the label string and
+# put into entity_descriptions for the model to condition on.
+uv run python tools/data/convert_pubmed_abstracts_ner.py \
+    --out data/pubmed_abstracts_ner.jsonl
 ```
 
 ### Event extraction corpora (manual download)
@@ -148,6 +154,7 @@ Approximate output sizes after conversion (totals across all three splits combin
 | knowledgator/events_classification_biotech | Classification (multi-label) | ~2,750 | ~10 MB |
 | knowledgator/sentence_rex | Relation extraction | ~44,000 | ~30 MB |
 | knowledgator/bio-NER-relations | Biomedical NER + RE | ~10,400 | ~80 MB |
+| knowledgator/PubMedAbstractsNER | NER (biomedical, ~470 UMLS types, with descriptions) | ~35,000 | ~100 MB |
 | RAMS (manual download) | Event extraction (trigger + args) | ~9,000 | ~10 MB |
 | MAVEN (manual download) | Event detection (trigger only) | ~4,500 | ~20 MB |
 | ACE 2005 (LDC) | Event extraction (trigger + args, 33 subtypes) | ~600 | ~3 MB |

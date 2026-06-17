@@ -41,6 +41,7 @@ CORPORA: List[str] = [
     "data/events_biotech",
     "data/sentence_rex",
     "data/bio_ner_relations",
+    "data/pubmed_abstracts_ner",
 ]
 
 # Event-extraction corpora — emitted by tools/data/convert_{ace2005,maven,rams}.py.
