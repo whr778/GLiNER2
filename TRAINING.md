@@ -278,7 +278,7 @@ Per-step wall-clock at `max_len=8192` is roughly 6–10× longer than at `max_le
 A single entry point, `tools/train/train.py`, runs any training setup from a YAML file — no editing Python. The per-model `train_mmbert_*.py` scripts below still work and remain handy for quick one-off edits, but new runs should prefer the configs in `tools/train/config/`.
 
 ```bash
-uv run python tools/train/train.py tools/train/config/mmbert-small.yaml
+uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
 ```
 
 Each YAML has four sections:

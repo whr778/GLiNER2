@@ -2,7 +2,7 @@
 
 Run::
 
-    uv run python tools/train/train.py tools/train/config/mmbert-small-focal.yaml
+    uv run python tools/train/train.py --config tools/train/config/mmbert-small-focal.yaml
 
 The config has four sections:
 
@@ -23,8 +23,8 @@ in ``<output_dir>/test_metrics.json``.
 
 from __future__ import annotations
 
+import argparse
 import json
-import sys
 from pathlib import Path
 from pprint import pprint
 from typing import Dict, List
@@ -115,7 +115,7 @@ def main(config_path: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("usage: train.py <config.yaml>")
-        raise SystemExit(1)
-    main(sys.argv[1])
+    parser = argparse.ArgumentParser(description="Train GLiNER2 from a YAML config.")
+    parser.add_argument("--config", required=True, help="Path to the YAML config file.")
+    args = parser.parse_args()
+    main(args.config)
