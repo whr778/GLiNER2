@@ -273,6 +273,35 @@ Per-step wall-clock at `max_len=8192` is roughly 6–10× longer than at `max_le
 
 > **Run the training scripts under `tools/train/` rather than piping a heredoc.** Piping the script via `python - <<PY ... PY` breaks DataLoader workers on macOS + Python 3.12+, where multiprocessing uses the **spawn** start method: workers need to re-import the main module by path, but stdin has no path. Symptom: `FileNotFoundError: '<stdin>'` followed by `BrokenPipeError`.
 
+### Config-driven training (recommended)
+
+A single entry point, `tools/train/train.py`, runs any training setup from a YAML file — no editing Python. The per-model `train_mmbert_*.py` scripts below still work and remain handy for quick one-off edits, but new runs should prefer the configs in `tools/train/config/`.
+
+```bash
+uv run python tools/train/train.py tools/train/config/mmbert-small.yaml
+```
+
+Each YAML has four sections:
+
+| section    | maps to                                  | notes |
+|------------|------------------------------------------|-------|
+| `model`    | `GLiNER2.from_encoder(encoder, **rest)`  | `encoder`, `max_width`, `max_len`, and the struct-loss knobs (`struct_loss`, `struct_pos_weight`, `focal_gamma`, `focal_alpha`). Omit a knob to take its default. |
+| `training` | `TrainingConfig(**training)`             | any `TrainingConfig` field (epochs, LRs, `bf16`, `sliding_window`, `logging_steps`, ...). Omitted fields take their defaults. |
+| `eval`     | `make_compute_metrics()` + blind test    | `batch_size`, `threshold`. |
+| `data`     | corpus / event-file lists                | `corpora` (base paths, expanded to `<name>.{train,val,test}.jsonl`) and `event_files` (a `{name: {train,val,test}}` map; each split is used only if the file is present on disk). |
+
+Provided configs:
+
+| config | encoder | `struct_loss` | data |
+|--------|---------|---------------|------|
+| `mmbert-base.yaml` | mmBERT-base | focal | full multi-corpus + all event corpora |
+| `mmbert-small.yaml` | mmBERT-small | focal | ACE 2005 |
+| `mmbert-small-focal.yaml` | mmBERT-small | focal | WikiEvents |
+| `mmbert-small-bce.yaml` | mmBERT-small | bce | WikiEvents |
+| `mmbert-small-bce-posweight.yaml` | mmBERT-small | bce_posweight | WikiEvents |
+
+Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass.
+
 ### Sliding-window chunking (instead of truncation)
 
 By default, records longer than `max_len` word-tokens get truncated by the collator. Set `sliding_window=True` in `TrainingConfig` to switch behaviour: each record's `input` is expanded **at dataset-load time** into overlapping subword-token windows, and each chunk inherits a filtered copy of the gold annotations.

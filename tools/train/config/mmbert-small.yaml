@@ -1,0 +1,47 @@
+# mmBERT-small, focal struct-loss, ACE 2005 only.
+model:
+  encoder: jhu-clsp/mmBERT-small
+  max_width: 20
+  max_len: 8192            # encoder positional capacity; inference handles 8k
+  struct_loss: focal
+  struct_pos_weight: 8.0
+  focal_gamma: 2.0
+  focal_alpha: 0.25
+
+training:
+  output_dir: ./out/mmbert-small
+  experiment_name: mmbert_small_multi_corpus
+  num_epochs: 3
+  batch_size: 2
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  max_len: 1024            # training cap; most records are well under 2048
+  pin_memory: false
+  sliding_window: true
+  window_stride: 512
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+
+data:
+  corpora: []
+  event_files:
+    ace2005:
+      train: data/ace2005.train.jsonl
+      val: data/ace2005.val.jsonl
+      test: data/ace2005.test.jsonl

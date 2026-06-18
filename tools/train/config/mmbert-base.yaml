@@ -1,0 +1,80 @@
+# mmBERT-base, focal struct-loss, full multi-corpus + all event corpora.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  max_width: 20
+  max_len: 8192            # encoder positional capacity; inference handles 8k
+  struct_loss: focal
+  struct_pos_weight: 8.0
+  focal_gamma: 2.0
+  focal_alpha: 0.25
+
+training:
+  output_dir: ./out/mmbert-base
+  experiment_name: mmbert_base_multi_corpus
+  num_epochs: 3
+  batch_size: 4
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  max_len: 8192
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+
+data:
+  corpora:
+    - data/nuner_full
+    - data/pile_ner_def
+    - data/knowledgator_gliner
+    - data/text2json
+    - data/gliner_multilingual
+    - data/gliclass_logic
+    - data/gliclass_rac
+    - data/scientific_text
+    - data/biomed_ner
+    - data/events_biotech
+    - data/sentence_rex
+    - data/bio_ner_relations
+    - data/pubmed_abstracts_ner
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl
+    maven:
+      train: data/maven.train.jsonl
+      val: data/maven.valid.jsonl
+    wikievents:
+      train: data/wikievents.train.jsonl
+      val: data/wikievents.dev.jsonl
+      test: data/wikievents.test.jsonl
+    casie:
+      train: data/casie.train.jsonl
+      val: data/casie.val.jsonl
+      test: data/casie.test.jsonl
+    docee:
+      train: data/docee.train.jsonl
+      val: data/docee.val.jsonl
+      test: data/docee.test.jsonl
+    cmnee:
+      train: data/cmnee.train.jsonl
+      val: data/cmnee.val.jsonl
+      test: data/cmnee.test.jsonl
+    ace2005:
+      train: data/ace2005.train.jsonl
+      val: data/ace2005.val.jsonl
+      test: data/ace2005.test.jsonl
