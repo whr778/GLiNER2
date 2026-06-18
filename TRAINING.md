@@ -145,6 +145,11 @@ uv run python tools/data/convert_stockmark_ner.py \
 # finer-ord is CC-BY-NC-4.0 (non-commercial).
 uv run python tools/data/convert_finer_ord.py \
     --out data/finer_ord.jsonl                                       # financial NER (PER/LOC/ORG)
+
+# KLUE (Korean) NER + RE, read from the canonical KLUE-benchmark GitHub release
+# (its HF loader is broken). CC-BY-SA-4.0.
+uv run python tools/data/convert_klue.py --task ner --out data/klue_ner.jsonl
+uv run python tools/data/convert_klue.py --task re  --out data/klue_re.jsonl
 ```
 
 ### Event extraction corpora (manual download)
@@ -240,6 +245,8 @@ Approximate output sizes after conversion (totals across all three splits combin
 | tner/bc5cdr | NER (chemical + disease) | ~3,900 | ~5 MB |
 | stockmark/ner-wikipedia-dataset | NER (Japanese, 8 types) | ~4,900 | ~5 MB |
 | gtfintechlab/finer-ord | NER (financial, PER/LOC/ORG; **NC**) | ~1,800 | ~2 MB |
+| KLUE-NER | NER (Korean, 6 types) | ~21,000 | ~15 MB |
+| KLUE-RE | NER + relations (Korean) | ~32,000 | ~25 MB |
 | RAMS (manual download) | Event extraction (trigger + args) | ~9,000 | ~10 MB |
 | MAVEN (manual download) | Event detection (trigger only) | ~4,500 | ~20 MB |
 | ACE 2005 (LDC) | Event extraction (trigger + args, 33 subtypes) | ~600 | ~3 MB |

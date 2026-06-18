@@ -23,10 +23,12 @@ corpora keep their canonical train/dev/test splits.
 | BC5CDR | NER (chemical + disease) | 3,126 | 394 | 395 | other | [HF](https://huggingface.co/datasets/tner/bc5cdr) |
 | stockmark-jpn | NER (Japanese, 8 types) | 3,900 | 486 | 473 | cc-by-sa-3.0 | [HF](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset) |
 | FiNER-ORD | NER (financial, PER/LOC/ORG) | 1,427 | 184 | 171 | **cc-by-nc-4.0** | [HF](https://huggingface.co/datasets/gtfintechlab/finer-ord) |
+| KLUE-NER | NER (Korean, 6 types) | 16,782 | 2,116 | 2,104 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
 | **Relation extraction** | | | | | | |
 | sentence_rex | Relation extraction | 34,314 | 4,269 | 4,282 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
 | DocRED | NER + relations (doc-level) | 83,951 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) |
+| KLUE-RE | NER + relations (Korean) | 26,028 | 3,237 | 3,205 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
 | **Classification** | | | | | | |
 | GLiClass v3 logic | Classification (multiple-choice) | 4,566 | 550 | 548 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset) |
 | GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) |
@@ -43,7 +45,7 @@ corpora keep their canonical train/dev/test splits.
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,672,595** | **208,238** | **210,262** | | |
+| **Total (generated)** | | **1,715,405** | **213,591** | **215,571** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard). ACE 2005
@@ -114,6 +116,12 @@ its inclusion in `mmbert-base` makes that mix non-commercial. Token-per-row sour
 regrouped into sentences by `(doc_idx, sent_idx)`.
 *Stats: 3 types (PER, LOC, ORG), ~3.7k mentions over ~1.8k sentences.*
 
+### KLUE-NER — KLUE-benchmark (Korean)
+Korean NER read from the canonical [KLUE GitHub](https://github.com/KLUE-benchmark/KLUE)
+release (the HF loader is broken). Char-level BIO; text is the concatenated chars,
+6 entity types (PS, LC, OG, DT, TI, QT).
+*Stats: 6 entity types, ~49.7k mentions over ~21k sentences.*
+
 ## Relation extraction
 
 ### sentence_rex — `knowledgator/sentence_rex`
@@ -131,6 +139,12 @@ Document-level NER + relation extraction. Relations use human-readable names; th
 parquet `train` split merges ~3k gold-annotated docs with ~102k distant-supervised
 (noisy) docs (see [TRAINING.md](TRAINING.md) for the caveat).
 *Stats: 6 entity types, 96 relation types, avg 4.6 entity types/record, 99.7% of records carry relations.*
+
+### KLUE-RE — KLUE-benchmark (Korean)
+Korean relation extraction from the canonical [KLUE GitHub](https://github.com/KLUE-benchmark/KLUE)
+release. Each record contributes its two typed entities plus a `{label: {head, tail}}`
+relation (records labelled `no_relation` keep entities only).
+*Stats: 6 entity types, ~22.9k relations over ~32k sentences (~71% carry a relation).*
 
 ## Classification
 

@@ -82,6 +82,11 @@ run_step stockmark_jpn       uv run python tools/data/convert_stockmark_ner.py -
 # finer-ord is cc-by-nc-4.0 (non-commercial).
 run_step finer_ord           uv run python tools/data/convert_finer_ord.py --out data/finer_ord.jsonl
 
+# KLUE (Korean) NER + RE, read from the canonical KLUE-benchmark GitHub
+# (its HF loader is broken). CC-BY-SA-4.0.
+run_step klue_ner            uv run python tools/data/convert_klue.py --task ner --out data/klue_ner.jsonl
+run_step klue_re             uv run python tools/data/convert_klue.py --task re  --out data/klue_re.jsonl
+
 # Event corpora.
 # WikiEvents auto-downloads from the public S3 bucket — no manual prep.
 run_step wikievents_train uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
