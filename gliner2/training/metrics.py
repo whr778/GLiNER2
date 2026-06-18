@@ -146,7 +146,22 @@ def compute_metrics(
         metrics.update(_finalize("event_trigger", et_tp, et_fp, et_fn))
     if has_event_arguments:
         metrics.update(_finalize("event_argument", ea_tp, ea_fp, ea_fn))
+    _print_micro_report(metrics)
     return metrics
+
+
+def _print_micro_report(metrics: Dict[str, Any]) -> None:
+    """Print a compact micro precision/recall/F1 line per present category."""
+    categories = ("entity", "relation", "classification", "event_trigger", "event_argument")
+    present = [c for c in categories if f"eval_{c}_micro_f1" in metrics]
+    if not present:
+        return
+    print("\n[eval] micro precision / recall / f1")
+    for c in present:
+        p = metrics[f"eval_{c}_micro_precision"]
+        r = metrics[f"eval_{c}_micro_recall"]
+        f = metrics[f"eval_{c}_micro_f1"]
+        print(f"  {c:<15} P={p:.4f}  R={r:.4f}  F1={f:.4f}")
 
 
 # ---------------------------------------------------------------------------

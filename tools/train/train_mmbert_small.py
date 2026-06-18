@@ -21,7 +21,9 @@ event corpora present.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from pprint import pprint
 from typing import Dict, List
 
 from gliner2 import GLiNER2
@@ -30,46 +32,46 @@ from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
 
 
 CORPORA: List[str] = [
-    "data/nuner_full",
-    "data/pile_ner_def",
-    "data/knowledgator_gliner",
-    "data/text2json",
-    "data/gliner_multilingual",
-    "data/gliclass_logic",
-    "data/gliclass_rac",
-    "data/scientific_text",
-    "data/biomed_ner",
-    "data/events_biotech",
-    "data/sentence_rex",
-    "data/bio_ner_relations",
-    "data/pubmed_abstracts_ner",
+    # "data/nuner_full",
+    # "data/pile_ner_def",
+    # "data/knowledgator_gliner",
+    # "data/text2json",
+    # "data/gliner_multilingual",
+    # "data/gliclass_logic",
+    # "data/gliclass_rac",
+    # "data/scientific_text",
+    # "data/biomed_ner",
+    # "data/events_biotech",
+    # "data/sentence_rex",
+    # "data/bio_ner_relations",
+    # "data/pubmed_abstracts_ner",
 ]
 
 # Event-extraction corpora — emitted by tools/data/convert_{ace2005,maven,rams}.py.
 # Files are picked up only if they exist on disk; absent ones are silently
 # skipped so the script works with any subset (or none) of these.
 EVENT_FILES: Dict[str, Dict[str, str]] = {
-    "rams":    {"train": "data/rams.train.jsonl",
-                "val":   "data/rams.dev.jsonl",
-                "test":  "data/rams.test.jsonl"},
-    "maven":   {"train": "data/maven.train.jsonl",
-                "val":   "data/maven.valid.jsonl"},
-    "wikievents": {"train": "data/wikievents.train.jsonl",
-                   "val":   "data/wikievents.dev.jsonl",
-                   "test":  "data/wikievents.test.jsonl"},
-    "casie":      {"train": "data/casie.train.jsonl",
-                   "val":   "data/casie.val.jsonl",
-                   "test":  "data/casie.test.jsonl"},
-    # DocEE — manual Google Drive download; entity- and classification-shaped
-    # rather than events-shaped (no triggers in the source).
-    "docee":      {"train": "data/docee.train.jsonl",
-                   "val":   "data/docee.val.jsonl",
-                   "test":  "data/docee.test.jsonl"},
-    # CMNEE — Chinese military event extraction (triggers + typed args).
-    # Manual Google Drive download required.
-    "cmnee":      {"train": "data/cmnee.train.jsonl",
-                   "val":   "data/cmnee.val.jsonl",
-                   "test":  "data/cmnee.test.jsonl"},
+    # "rams":    {"train": "data/rams.train.jsonl",
+    #             "val":   "data/rams.dev.jsonl",
+    #             "test":  "data/rams.test.jsonl"},
+    # "maven":   {"train": "data/maven.train.jsonl",
+    #             "val":   "data/maven.valid.jsonl"},
+    # "wikievents": {"train": "data/wikievents.train.jsonl",
+    #                "val":   "data/wikievents.dev.jsonl",
+    #                "test":  "data/wikievents.test.jsonl"},
+    # "casie":      {"train": "data/casie.train.jsonl",
+    #                "val":   "data/casie.val.jsonl",
+    #                "test":  "data/casie.test.jsonl"},
+    # # DocEE — manual Google Drive download; entity- and classification-shaped
+    # # rather than events-shaped (no triggers in the source).
+    # "docee":      {"train": "data/docee.train.jsonl",
+    #                "val":   "data/docee.val.jsonl",
+    #                "test":  "data/docee.test.jsonl"},
+    # # CMNEE — Chinese military event extraction (triggers + typed args).
+    # # Manual Google Drive download required.
+    # "cmnee":      {"train": "data/cmnee.train.jsonl",
+    #                "val":   "data/cmnee.val.jsonl",
+    #                "test":  "data/cmnee.test.jsonl"},
     # ACE 2005: convert_ace2005.py now emits a stratified 80/10/10
     # train/test/val split by default (greedy multi-label rule covering
     # entity types, relation types, and event types). Each split is
@@ -133,7 +135,7 @@ def main() -> None:
         greater_is_better=False,
         save_best=True,
         save_total_limit=3,
-        logging_steps=50,
+        logging_steps=10,
         num_workers=0,        # was 4; per-worker tokenizer copies + MPS unified
                               # memory triggered OOM-kills of DataLoader workers on
                               # macOS (single leaked semaphore at shutdown).
@@ -153,7 +155,14 @@ def main() -> None:
         compute_metrics=make_compute_metrics(batch_size=8, threshold=0.5),
     )
     estimate_eta(model, TRAIN_DATA, config)
-    trainer.train(train_data=TRAIN_DATA)
+    results = trainer.train(train_data=TRAIN_DATA)
+    pprint(results)
+
+    results_path = Path(config.output_dir) / "train_results.json"
+    results_path.write_text(
+        json.dumps(results, indent=2, default=lambda o: o.to_dict() if hasattr(o, "to_dict") else str(o))
+    )
+    print(f"[train] Wrote results to {results_path}")
 
     best = Path(config.output_dir) / "best"
     if not best.is_dir():
@@ -165,6 +174,10 @@ def main() -> None:
     if not test_metrics:
         print("[blind test] No metrics produced (empty test set?).")
         return
+
+    metrics_path = Path(config.output_dir) / "test_metrics.json"
+    metrics_path.write_text(json.dumps(test_metrics, indent=2))
+    print(f"\n[blind test] Wrote metrics to {metrics_path}")
 
     print("\n===== Blind test metrics =====")
     for key in sorted(test_metrics):

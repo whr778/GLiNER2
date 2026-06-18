@@ -1,8 +1,8 @@
-"""Train a fresh GLiNER2 on top of jhu-clsp/mmBERT-base.
+"""Train a fresh GLiNER2 on top of jhu-clsp/mmBERT-small.
 
 Run::
 
-    uv run python tools/train/train_mmbert_base.py
+    uv run python tools/train/train_mmbert_small.py
 
 Expects each corpus split into three JSONL files under ``data/`` by the
 ``tools/data/`` converters — ``<name>.train.jsonl``, ``<name>.val.jsonl``,
@@ -32,53 +32,53 @@ from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
 
 
 CORPORA: List[str] = [
-    "data/nuner_full",
-    "data/pile_ner_def",
-    "data/knowledgator_gliner",
-    "data/text2json",
-    "data/gliner_multilingual",
-    "data/gliclass_logic",
-    "data/gliclass_rac",
-    "data/scientific_text",
-    "data/biomed_ner",
-    "data/events_biotech",
-    "data/sentence_rex",
-    "data/bio_ner_relations",
-    "data/pubmed_abstracts_ner",
+    # "data/nuner_full",
+    # "data/pile_ner_def",
+    # "data/knowledgator_gliner",
+    # "data/text2json",
+    # "data/gliner_multilingual",
+    # "data/gliclass_logic",
+    # "data/gliclass_rac",
+    # "data/scientific_text",
+    # "data/biomed_ner",
+    # "data/events_biotech",
+    # "data/sentence_rex",
+    # "data/bio_ner_relations",
+    # "data/pubmed_abstracts_ner",
 ]
 
 # Event-extraction corpora — emitted by tools/data/convert_{ace2005,maven,rams}.py.
 # Files are picked up only if they exist on disk; absent ones are silently
 # skipped so the script works with any subset (or none) of these.
 EVENT_FILES: Dict[str, Dict[str, str]] = {
-    "rams":    {"train": "data/rams.train.jsonl",
-                "val":   "data/rams.dev.jsonl",
-                "test":  "data/rams.test.jsonl"},
-    "maven":   {"train": "data/maven.train.jsonl",
-                "val":   "data/maven.valid.jsonl"},
+    # "rams":    {"train": "data/rams.train.jsonl",
+    #             "val":   "data/rams.dev.jsonl",
+    #             "test":  "data/rams.test.jsonl"},
+    # "maven":   {"train": "data/maven.train.jsonl",
+    #             "val":   "data/maven.valid.jsonl"},
     "wikievents": {"train": "data/wikievents.train.jsonl",
                    "val":   "data/wikievents.dev.jsonl",
                    "test":  "data/wikievents.test.jsonl"},
-    "casie":      {"train": "data/casie.train.jsonl",
-                   "val":   "data/casie.val.jsonl",
-                   "test":  "data/casie.test.jsonl"},
-    # DocEE — manual Google Drive download; entity- and classification-shaped
-    # rather than events-shaped (no triggers in the source).
-    "docee":      {"train": "data/docee.train.jsonl",
-                   "val":   "data/docee.val.jsonl",
-                   "test":  "data/docee.test.jsonl"},
-    # CMNEE — Chinese military event extraction (triggers + typed args).
-    # Manual Google Drive download required.
-    "cmnee":      {"train": "data/cmnee.train.jsonl",
-                   "val":   "data/cmnee.val.jsonl",
-                   "test":  "data/cmnee.test.jsonl"},
+    # "casie":      {"train": "data/casie.train.jsonl",
+    #                "val":   "data/casie.val.jsonl",
+    #                "test":  "data/casie.test.jsonl"},
+    # # DocEE — manual Google Drive download; entity- and classification-shaped
+    # # rather than events-shaped (no triggers in the source).
+    # "docee":      {"train": "data/docee.train.jsonl",
+    #                "val":   "data/docee.val.jsonl",
+    #                "test":  "data/docee.test.jsonl"},
+    # # CMNEE — Chinese military event extraction (triggers + typed args).
+    # # Manual Google Drive download required.
+    # "cmnee":      {"train": "data/cmnee.train.jsonl",
+    #                "val":   "data/cmnee.val.jsonl",
+    #                "test":  "data/cmnee.test.jsonl"},
     # ACE 2005: convert_ace2005.py now emits a stratified 80/10/10
     # train/test/val split by default (greedy multi-label rule covering
     # entity types, relation types, and event types). Each split is
     # picked up here only if its file is present on disk.
-    "ace2005": {"train": "data/ace2005.train.jsonl",
-                "val":   "data/ace2005.val.jsonl",
-                "test":  "data/ace2005.test.jsonl"},
+    # "ace2005": {"train": "data/ace2005.train.jsonl",
+    #             "val":   "data/ace2005.val.jsonl",
+    #             "test":  "data/ace2005.test.jsonl"},
 }
 
 
@@ -108,23 +108,23 @@ def main() -> None:
     # focal / bce_posweight handle class imbalance via the loss itself, so the
     # random negative masking in compute_struct_loss becomes partly redundant.
     model = GLiNER2.from_encoder(
-        "jhu-clsp/mmBERT-base",
+        "jhu-clsp/mmBERT-small",
         max_width=20,
         max_len=8192,
-        struct_loss="focal",
+        struct_loss="bce_posweight",
         struct_pos_weight=8.0,
-        focal_gamma=2.0,
-        focal_alpha=0.25,
+        # focal_gamma=2.0,
+        # focal_alpha=0.25,
     )
 
     config = TrainingConfig(
-        output_dir="./out/mmbert-base",
-        experiment_name="mmbert_base_multi_corpus",
+        output_dir="./out/mmbert-small/bce_posweight",
+        experiment_name="mmbert_small_multi_corpus",
         num_epochs=3,
-        batch_size=4,
+        batch_size=2,
         gradient_accumulation_steps=2,
-        encoder_lr=1e-5,
-        task_lr=3e-4,
+        encoder_lr=2e-5,
+        task_lr=5e-4,
         warmup_ratio=0.05,
         scheduler_type="cosine_restarts",
         bf16=True,
@@ -136,10 +136,17 @@ def main() -> None:
         save_best=True,
         save_total_limit=3,
         logging_steps=10,
-        num_workers=0,
-        # num_workers=4,
+        num_workers=0,        # was 4; per-worker tokenizer copies + MPS unified
+                              # memory triggered OOM-kills of DataLoader workers on
+                              # macOS (single leaked semaphore at shutdown).
         validate_data=False,
-        max_len=8192,
+        max_len=1024,         # was 8192; most records are well under 2048 word-
+                              # tokens, 8192 was ~4x padding cost for no signal.
+                              # `from_encoder(max_len=8192)` above keeps the
+                              # positional embeddings, so inference still handles 8k.
+        pin_memory=False,     # CUDA-only hint; no-op on MPS.
+        sliding_window=True,
+        window_stride=512,    # subword stride between consecutive chunks
     )
 
     trainer = GLiNER2Trainer(
