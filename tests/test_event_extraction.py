@@ -200,6 +200,11 @@ def test_event_pipeline_end_to_end():
     assert "event_extraction" in result
     assert "Attack" in result["event_extraction"]
 
+    # Format-regression guard: the scorer must parse the engine's real event
+    # output (mirrors the relation tuple-format bug). The model emitted an Attack
+    # event above, so the trigger scorer must read at least one trigger from it.
+    assert _pred_event_trigger_set(result), "scorer parsed no triggers from real model output"
+
     # compute_metrics: event_trigger + event_argument keys populated.
     metrics = compute_metrics(
         model,

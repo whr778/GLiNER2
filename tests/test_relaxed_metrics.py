@@ -12,9 +12,23 @@ from gliner2.training.metrics import (
     _items_trigger,
     _match_relaxed,
     _overlap,
+    _pred_event_argument_set,
+    _pred_event_trigger_set,
     _pred_relation_set,
     compute_metrics,
 )
+
+
+def test_pred_event_sets_handle_default_and_dict_formats():
+    """The engine emits trigger/entity as plain strings by default and as
+    {'text': ...} dicts under include_spans/confidence; both must score."""
+    default = {"event_extraction": {"Conflict.Attack": [
+        {"trigger": "bombed", "arguments": [{"role": "Target", "entity": "tower"}]}]}}
+    nested = {"event_extraction": {"Conflict.Attack": [
+        {"trigger": {"text": "bombed"}, "arguments": [{"role": "Target", "entity": {"text": "tower"}}]}]}}
+    for pred in (default, nested):
+        assert _pred_event_trigger_set(pred) == {("Conflict.Attack", "bombed")}
+        assert _pred_event_argument_set(pred) == {("Conflict.Attack", "Target", "tower", "bombed")}
 
 
 def test_pred_relation_set_handles_all_engine_output_formats():
@@ -111,6 +125,32 @@ def test_entity_strict_zero_relaxed_one_on_overlap():
     m = _run({"entities": {"PER": ["Bank of America"]}}, {"entities": {"PER": ["America"]}})
     assert m["eval_entity_strict_micro_f1"] == 0.0
     assert m["eval_entity_relaxed_micro_f1"] == 1.0
+
+
+def test_all_categories_score_with_real_engine_output_shapes():
+    """Feed compute_metrics predictions in the inference engine's ACTUAL output
+    shapes for every category at once -- entities as a {label: [str]} dict,
+    relations as (head, tail) tuples, classifications under the task key, events
+    as {trigger, arguments:[{role, entity}]} dicts. Every category must score
+    (guards the whole pred-parsing surface against format drift)."""
+    gold = {
+        "entities": {"PER": ["Alice"], "ORG": ["Acme"]},
+        "relations": [{"works_for": {"head": "Alice", "tail": "Acme"}}],
+        "classifications": [{"task": "topic", "labels": ["business", "sports"], "true_label": "business"}],
+        "events": [{"event_type": "Hire", "trigger": "joined",
+                    "arguments": [{"role": "Employee", "entity": "Alice"}]}],
+    }
+    pred = {
+        "entities": {"PER": ["Alice"], "ORG": ["Acme"]},          # engine entity dict
+        "relation_extraction": {"works_for": [("Alice", "Acme")]},  # default tuple shape
+        "topic": "business",                                        # classification under task key
+        "event_extraction": {"Hire": [{"trigger": "joined",        # event dict, string leaves
+                                        "arguments": [{"role": "Employee", "entity": "Alice"}]}]},
+    }
+    m = _run(pred=pred, gold_output=gold)
+    for cat in ("entity", "relation", "classification", "event_trigger", "event_argument"):
+        assert m[f"eval_{cat}_strict_micro_f1"] > 0.0, f"{cat} scored 0 (pred parsing/format issue)"
+        assert m[f"eval_{cat}_relaxed_micro_f1"] >= m[f"eval_{cat}_strict_micro_f1"]
 
 
 def test_relaxed_never_below_strict_across_categories():
