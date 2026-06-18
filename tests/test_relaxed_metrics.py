@@ -12,8 +12,22 @@ from gliner2.training.metrics import (
     _items_trigger,
     _match_relaxed,
     _overlap,
+    _pred_relation_set,
     compute_metrics,
 )
+
+
+def test_pred_relation_set_handles_all_engine_output_formats():
+    """The inference engine emits relations as (head, tail) tuples by default and
+    as nested {'head': {'text': ...}} dicts under include_spans/confidence; the
+    scorer must read all of them (a tuple-only run previously scored 0.0)."""
+    expected = {("country", "Stockholm", "Sweden")}
+    assert _pred_relation_set({"relation_extraction": {"country": [("Stockholm", "Sweden")]}}) == expected
+    assert _pred_relation_set({"relation_extraction": {"country": [["Stockholm", "Sweden"]]}}) == expected
+    assert _pred_relation_set(
+        {"relation_extraction": {"country": [{"head": {"text": "Stockholm"}, "tail": {"text": "Sweden"}}]}}
+    ) == expected
+    assert _pred_relation_set({"relation_extraction": {"country": [{"head": "Stockholm", "tail": "Sweden"}]}}) == expected
 
 
 # --- overlap rule ----------------------------------------------------------

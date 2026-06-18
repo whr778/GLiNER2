@@ -298,6 +298,18 @@ def _gold_relation_set(output: Dict) -> Set[Tuple[str, str, str]]:
     return out
 
 
+def _rel_endpoint(v) -> str:
+    """Coerce a relation head/tail to its surface string.
+
+    The inference engine emits relation instances in several shapes depending on
+    include_spans/include_confidence: a plain surface string, or a ``{"text": ...}``
+    dict (with spans/confidence). Returns the stripped surface, or None.
+    """
+    if isinstance(v, dict):
+        v = v.get("text")
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
 def _pred_relation_set(pred: Dict) -> Set[Tuple[str, str, str]]:
     out: Set[Tuple[str, str, str]] = set()
     block = pred.get("relation_extraction") or {}
@@ -307,10 +319,16 @@ def _pred_relation_set(pred: Dict) -> Set[Tuple[str, str, str]]:
         if not isinstance(name, str) or not isinstance(items, list):
             continue
         for item in items:
+            # The engine's default output is a (head, tail) tuple; with
+            # include_spans/confidence it's a {"head": ..., "tail": ...} dict.
             if isinstance(item, dict):
-                head, tail = item.get("head"), item.get("tail")
-                if isinstance(head, str) and isinstance(tail, str) and head.strip() and tail.strip():
-                    out.add((name, head.strip(), tail.strip()))
+                head, tail = _rel_endpoint(item.get("head")), _rel_endpoint(item.get("tail"))
+            elif isinstance(item, (tuple, list)) and len(item) == 2:
+                head, tail = _rel_endpoint(item[0]), _rel_endpoint(item[1])
+            else:
+                head = tail = None
+            if head and tail:
+                out.add((name, head, tail))
     return out
 
 
