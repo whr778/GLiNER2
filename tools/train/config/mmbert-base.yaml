@@ -35,6 +35,14 @@ eval:
   batch_size: 8
   threshold: 0.5
 
+# Optional label transforms applied to train/val/test. Roll-up keeps the parent
+# segment (ORG.Media -> ORG); map renames labels afterwards. Leave rollup:false
+# and map:{} for no transform.
+labels:
+  rollup: false
+  separator: "."
+  map: {}
+
 data:
   corpora:
     - data/nuner_full

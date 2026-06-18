@@ -289,6 +289,7 @@ Each YAML has four sections:
 | `training` | `TrainingConfig(**training)`             | any `TrainingConfig` field (epochs, LRs, `bf16`, `sliding_window`, `logging_steps`, ...). Omitted fields take their defaults. |
 | `eval`     | `make_compute_metrics()` + blind test    | `batch_size`, `threshold`. |
 | `data`     | corpus / event-file lists                | `corpora` (base paths, expanded to `<name>.{train,val,test}.jsonl`) and `event_files` (a `{name: {train,val,test}}` map; each split is used only if the file is present on disk). |
+| `labels`   | label roll-up / remap (optional)         | `rollup`, `separator`, `map` — applied identically to train/val/test. See the label-transforms section below. |
 
 Provided configs:
 
@@ -304,6 +305,26 @@ Provided configs:
 | `mmbert-small-bce-dice.yaml` | mmBERT-small | bce_dice | WikiEvents |
 
 The six `mmbert-small-*` configs share encoder, hyperparameters, and data — they differ only in `struct_loss` and write to separate `output_dir`s, so they form a ready-made loss-variant sweep.
+
+#### Label transforms (roll-up and remap)
+
+Many corpora use hierarchical `parent.child` labels — ACE 2005 entity subtypes (`ORG.Media`, `LOC.Address`), event types (`Conflict.Attack`), WikiEvents types (`Cognitive.IdentifyCategorize.Unspecified`). The optional `labels:` section collapses and/or renames them, applied **identically to the train, validation, and test splits** so the label space stays consistent:
+
+```yaml
+labels:
+  rollup: true        # ORG.Media -> ORG (keep the first segment)
+  separator: "."      # split character for roll-up (default ".")
+  map:                # rename labels AFTER roll-up
+    ORG: ORGANIZATION
+    PER: PERSON
+```
+
+* **Order**: roll-up runs first, then `map` — so `map` keys refer to the rolled-up parent (`ORG.Media → ORG → ORGANIZATION`).
+* **Scope**: entity labels, relation names, event types, event-argument roles, and classification labels (plus `entity_descriptions` keys).
+* **Merge-safe**: when two labels collapse to the same target, their surfaces/labels are merged (order-preserving dedup), never dropped — so rolling `ORG.Media` and `ORG.Government` to `ORG` keeps every entity.
+* Omit the section (or `rollup: false` with an empty `map`) for no transform; then `train.py` streams the JSONL files unchanged.
+
+`mmbert-small.yaml` (ACE 2005) ships with `rollup: true` as a worked example; `mmbert-base.yaml` carries the section as a documented no-op.
 
 Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass.
 
