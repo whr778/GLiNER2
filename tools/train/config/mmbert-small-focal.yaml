@@ -37,6 +37,13 @@ eval:
   batch_size: 8
   threshold: 0.5
 
+# Label transforms applied to train/val/test. ACE 2005 uses parent.child
+# types (ORG.Media, LOC.Address, Conflict.Attack); roll them up to the parent.
+labels:
+  rollup: true
+  separator: "."
+  map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+
 data:
   corpora: []
   event_files:
