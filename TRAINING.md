@@ -115,6 +115,13 @@ uv run python tools/data/convert_bio_ner_relations.py \
 # put into entity_descriptions for the model to condition on.
 uv run python tools/data/convert_pubmed_abstracts_ner.py \
     --out data/pubmed_abstracts_ner.jsonl
+
+# thunlp/docred — document-level NER + relation extraction (6 entity types,
+# ~96 relation types as human-readable names). Reads the auto-converted parquet
+# revision; the 'train' split merges the 3k gold annotated docs with the ~102k
+# distant-supervised (noisy) docs. Add --max-records to cap the distant volume.
+uv run python tools/data/convert_docred.py \
+    --out data/docred.jsonl
 ```
 
 ### Event extraction corpora (manual download)
@@ -203,6 +210,7 @@ Approximate output sizes after conversion (totals across all three splits combin
 | knowledgator/sentence_rex | Relation extraction | ~44,000 | ~30 MB |
 | knowledgator/bio-NER-relations | Biomedical NER + RE | ~10,400 | ~80 MB |
 | knowledgator/PubMedAbstractsNER | NER (biomedical, ~470 UMLS types, with descriptions) | ~35,000 | ~100 MB |
+| thunlp/docred | Doc-level NER + RE (6 entity, ~96 relation types) | ~105,000 (gold + distant) | ~270 MB |
 | RAMS (manual download) | Event extraction (trigger + args) | ~9,000 | ~10 MB |
 | MAVEN (manual download) | Event detection (trigger only) | ~4,500 | ~20 MB |
 | ACE 2005 (LDC) | Event extraction (trigger + args, 33 subtypes) | ~600 | ~3 MB |

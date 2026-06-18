@@ -67,6 +67,7 @@ data:
     - data/sentence_rex
     - data/bio_ner_relations
     - data/pubmed_abstracts_ner
+    - data/docred
   event_files:
     rams:
       train: data/rams.train.jsonl

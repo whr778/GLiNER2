@@ -123,6 +123,22 @@ The converter joins all passage text, groups entities by type into `output.entit
 
 `umlsterm` is dropped by default (it accounts for ~85% of entity assignments — auto-matched UMLS concepts that are noisy for downstream training). Override with `--skip-types ''` to keep them, or `--skip-types umlsterm,Habitat` to drop multiple types.
 
+## thunlp/docred
+
+```bash
+uv run python tools/data/convert_docred.py --out data/docred.jsonl
+
+# Cap the distant-supervised volume (e.g. for a cleaner/smaller corpus)
+uv run python tools/data/convert_docred.py --out data/docred.jsonl --max-records 20000
+
+# Gold dev split only (998 human-annotated docs)
+uv run python tools/data/convert_docred.py --out data/docred.jsonl --split validation
+```
+
+Document-level **NER + relation extraction** (DocRED). Each row has `sents` (per-sentence token lists), `vertexSet` (one coreference cluster of mentions per entity, each with `type` and `pos`), and `labels` (parallel `head`/`tail` entity indices + `relation_text`). The converter joins all tokens into one document, reconstructs each mention surface from its tokens at `pos` (so surfaces appear verbatim), groups them by the 6 entity types (`PER`, `ORG`, `LOC`, `TIME`, `NUM`, `MISC`), and emits relations under their human-readable `relation_text` (head/tail = each entity's first mention).
+
+The original ships a dataset script that newer `datasets` won't run, so this reads the auto-converted parquet revision (`refs/convert/parquet`). Its `train` split **merges the ~3k gold annotated docs with the ~102k distant-supervised (noisy) docs** — there is no way to isolate the gold train docs. Use `--split validation` for the 998 gold dev docs, or `--max-records` to cap the distant volume. `--split test` has no relation labels.
+
 ## knowledgator/events_classification_biotech
 
 ```bash
