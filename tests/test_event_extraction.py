@@ -207,7 +207,9 @@ def test_event_pipeline_end_to_end():
         batch_size=1,
         threshold=0.01,
     )
-    assert "eval_event_trigger_micro_f1" in metrics
-    assert "eval_event_argument_micro_f1" in metrics
-    assert metrics["eval_event_trigger_support"] == 1
-    assert metrics["eval_event_argument_support"] == 3
+    assert "eval_event_trigger_strict_micro_f1" in metrics
+    assert "eval_event_argument_strict_micro_f1" in metrics
+    assert "eval_event_trigger_relaxed_micro_f1" in metrics
+    assert "eval_event_argument_relaxed_micro_f1" in metrics
+    assert metrics["eval_event_trigger_strict_support"] == 1
+    assert metrics["eval_event_argument_strict_support"] == 3

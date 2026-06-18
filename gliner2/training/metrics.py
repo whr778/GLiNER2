@@ -8,23 +8,34 @@ The trainer calls ``compute_metrics(model, eval_dataset)`` once per evaluation
 pass and merges the returned dict into its own metrics. This module
 reconstructs a per-example schema from each gold record, runs
 ``model.batch_extract`` to get predictions, then tallies per-label TP/FP/FN
-and reports:
+and reports, for both a ``strict`` and a ``relaxed`` regime:
 
-* ``eval_<category>_micro_{precision,recall,f1}``
-* ``eval_<category>_macro_{precision,recall,f1}``
-* ``eval_<category>_support`` — total gold count
-* ``eval_<category>_classification_report`` — multi-line text table
+* ``eval_<category>_<regime>_micro_{precision,recall,f1}``
+* ``eval_<category>_<regime>_macro_{precision,recall,f1}``
+* ``eval_<category>_<regime>_support`` — total gold count
+* ``eval_<category>_<regime>_classification_report`` — multi-line text table
 
-where ``<category>`` is one of ``entity``, ``relation``, ``classification``.
-Categories that don't appear anywhere in the eval set are silently omitted.
+where ``<category>`` is one of ``entity``, ``relation``, ``classification``,
+``event_trigger``, ``event_argument`` and ``<regime>`` is ``strict`` or
+``relaxed``. Categories absent from the eval set are silently omitted.
 
-Match semantics:
+Match semantics — **strict** is exact, **relaxed** keeps the discrete
+type/label parts exact but lets surfaces partially overlap (one-to-one matched,
+so relaxed never scores below strict):
 
-* **Entities** — exact ``(label, surface)`` set match (case-sensitive,
-  whitespace-stripped, deduped within a record).
-* **Relations** — exact ``(name, head, tail)`` set match.
-* **Classifications** — exact ``(task, label)`` set match; multi-label
-  predictions are unrolled and scored individually.
+* **Entities** — strict ``(label, surface)``; relaxed = label exact + surface
+  overlap. (case-sensitive/exact for strict; normalized + overlap for relaxed.)
+* **Relations** — strict ``(name, head, tail)``; relaxed = name exact + head and
+  tail surfaces overlap.
+* **Classifications** — strict ``(task, label)``; relaxed = task exact + label
+  overlap. Multi-label predictions are unrolled and scored individually.
+* **Event triggers** — strict ``(event_type, trigger)``; relaxed = event_type
+  presence (the exact trigger word is dropped).
+* **Event arguments** — strict ``(event_type, role, entity, trigger)``; relaxed =
+  ``(event_type, role)`` exact + entity overlap, dropping the trigger link.
+
+"Overlap" means substring containment or a shared non-stopword token after
+lowercasing/whitespace-normalization.
 
 Example::
 
@@ -100,11 +111,12 @@ def compute_metrics(
         texts, schemas, batch_size=batch_size, threshold=threshold,
     )
 
-    ent_tp, ent_fp, ent_fn = Counter(), Counter(), Counter()
-    rel_tp, rel_fp, rel_fn = Counter(), Counter(), Counter()
-    cls_tp, cls_fp, cls_fn = Counter(), Counter(), Counter()
-    et_tp, et_fp, et_fn = Counter(), Counter(), Counter()
-    ea_tp, ea_fp, ea_fn = Counter(), Counter(), Counter()
+    # strict (exact) and relaxed (partial-overlap) TP/FP/FN per category.
+    ent_s, ent_r = _counters(), _counters()
+    rel_s, rel_r = _counters(), _counters()
+    cls_s, cls_r = _counters(), _counters()
+    et_s, et_r = _counters(), _counters()
+    ea_s, ea_r = _counters(), _counters()
     has_entities = has_relations = has_classifications = False
     has_event_triggers = has_event_arguments = False
 
@@ -112,56 +124,66 @@ def compute_metrics(
         g, p = _gold_entity_set(gold), _pred_entity_set(pred)
         if g or p:
             has_entities = True
-            _tally(g, p, ent_tp, ent_fp, ent_fn, key=lambda x: x[0])
+            _tally(g, p, *ent_s, key=lambda x: x[0])
+            _match_relaxed(_items_entity(g), _items_entity(p), *ent_r)
 
         g, p = _gold_relation_set(gold), _pred_relation_set(pred)
         if g or p:
             has_relations = True
-            _tally(g, p, rel_tp, rel_fp, rel_fn, key=lambda x: x[0])
+            _tally(g, p, *rel_s, key=lambda x: x[0])
+            _match_relaxed(_items_relation(g), _items_relation(p), *rel_r)
 
         g, p = _gold_classification_pairs(gold), _pred_classification_pairs(pred, gold)
         if g or p:
             has_classifications = True
-            _tally(g, p, cls_tp, cls_fp, cls_fn, key=lambda x: x[0])
+            _tally(g, p, *cls_s, key=lambda x: x[0])
+            _match_relaxed(_items_classification(g), _items_classification(p), *cls_r)
 
-        # Events — score trigger and arguments separately.
+        # Events — score trigger and arguments separately. Relaxed drops the
+        # trigger link (trigger = event_type presence; argument = type/role/entity).
         g_trig, p_trig = _gold_event_trigger_set(gold), _pred_event_trigger_set(pred)
         if g_trig or p_trig:
             has_event_triggers = True
-            _tally(g_trig, p_trig, et_tp, et_fp, et_fn, key=lambda x: x[0])
+            _tally(g_trig, p_trig, *et_s, key=lambda x: x[0])
+            _match_relaxed(_items_trigger(g_trig), _items_trigger(p_trig), *et_r)
 
         g_arg, p_arg = _gold_event_argument_set(gold), _pred_event_argument_set(pred)
         if g_arg or p_arg:
             has_event_arguments = True
-            _tally(g_arg, p_arg, ea_tp, ea_fp, ea_fn, key=lambda x: x[1])
+            _tally(g_arg, p_arg, *ea_s, key=lambda x: x[1])
+            _match_relaxed(_items_argument(g_arg), _items_argument(p_arg), *ea_r)
 
     metrics: Dict[str, Any] = {}
-    if has_entities:
-        metrics.update(_finalize("entity", ent_tp, ent_fp, ent_fn))
-    if has_relations:
-        metrics.update(_finalize("relation", rel_tp, rel_fp, rel_fn))
-    if has_classifications:
-        metrics.update(_finalize("classification", cls_tp, cls_fp, cls_fn))
-    if has_event_triggers:
-        metrics.update(_finalize("event_trigger", et_tp, et_fp, et_fn))
-    if has_event_arguments:
-        metrics.update(_finalize("event_argument", ea_tp, ea_fp, ea_fn))
+    for present, prefix, strict, relaxed in (
+        (has_entities, "entity", ent_s, ent_r),
+        (has_relations, "relation", rel_s, rel_r),
+        (has_classifications, "classification", cls_s, cls_r),
+        (has_event_triggers, "event_trigger", et_s, et_r),
+        (has_event_arguments, "event_argument", ea_s, ea_r),
+    ):
+        if present:
+            metrics.update(_finalize(prefix, "strict", *strict))
+            metrics.update(_finalize(prefix, "relaxed", *relaxed))
     _print_micro_report(metrics)
     return metrics
 
 
 def _print_micro_report(metrics: Dict[str, Any]) -> None:
-    """Print a compact micro precision/recall/F1 line per present category."""
+    """Print a compact micro precision/recall/F1 line per category, strict -> relaxed."""
     categories = ("entity", "relation", "classification", "event_trigger", "event_argument")
-    present = [c for c in categories if f"eval_{c}_micro_f1" in metrics]
+    present = [c for c in categories if f"eval_{c}_strict_micro_f1" in metrics]
     if not present:
         return
-    print("\n[eval] micro precision / recall / f1")
+
+    def val(cat: str, regime: str, metric: str) -> float:
+        return metrics.get(f"eval_{cat}_{regime}_micro_{metric}", 0.0)
+
+    print("\n[eval] micro precision / recall / f1  (strict -> relaxed)")
     for c in present:
-        p = metrics[f"eval_{c}_micro_precision"]
-        r = metrics[f"eval_{c}_micro_recall"]
-        f = metrics[f"eval_{c}_micro_f1"]
-        print(f"  {c:<15} P={p:.4f}  R={r:.4f}  F1={f:.4f}")
+        print(f"  {c:<15} "
+              f"P={val(c, 'strict', 'precision'):.4f}->{val(c, 'relaxed', 'precision'):.4f}  "
+              f"R={val(c, 'strict', 'recall'):.4f}->{val(c, 'relaxed', 'recall'):.4f}  "
+              f"F1={val(c, 'strict', 'f1'):.4f}->{val(c, 'relaxed', 'f1'):.4f}")
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +492,95 @@ def _pr_f1(tp_n: int, fp_n: int, fn_n: int) -> Tuple[float, float, float]:
     return p, r, f
 
 
+# ---------------------------------------------------------------------------
+# Relaxed (partial-overlap) matching
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = {"the", "a", "an", "of", "in", "on", "at", "to", "for", "and",
+              "or", "by", "with", "from", "as", "is", "are", "was", "were"}
+
+
+def _counters() -> Tuple[Counter, Counter, Counter]:
+    return Counter(), Counter(), Counter()
+
+
+def _normalize(s: str) -> str:
+    """Lowercase and collapse whitespace."""
+    return " ".join(s.lower().split())
+
+
+def _overlap(a: str, b: str) -> bool:
+    """Partial-surface match: substring containment, or a shared non-stopword
+    token (length >= 2), so common words like 'the'/'of' don't create matches."""
+    na, nb = _normalize(a), _normalize(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    ta = {t for t in na.split() if len(t) >= 2 and t not in _STOPWORDS}
+    tb = {t for t in nb.split() if len(t) >= 2 and t not in _STOPWORDS}
+    return bool(ta & tb)
+
+
+def _match_relaxed(gold_items, pred_items, tp: Counter, fp: Counter, fn: Counter) -> None:
+    """One-to-one relaxed match, accumulating per-key TP/FP/FN.
+
+    Each item is ``(discrete, surfaces, key)``: ``discrete`` (type/label parts)
+    must match exactly; each ``surfaces`` component need only overlap. Two passes
+    guarantee relaxed dominates strict: pass 1 pairs normalized-equal surfaces (a
+    superset of the strict exact matches), pass 2 pairs the leftovers by overlap.
+    Items with empty ``surfaces`` (e.g. relaxed triggers) match on ``discrete``
+    alone. Inputs are pre-sorted by the caller for deterministic greedy order.
+    """
+    g_used = [False] * len(gold_items)
+    p_done = [False] * len(pred_items)
+
+    def run(match) -> None:
+        for pi, (pd, ps, pk) in enumerate(pred_items):
+            if p_done[pi]:
+                continue
+            for gi, (gd, gs, _gk) in enumerate(gold_items):
+                if g_used[gi] or pd != gd or len(ps) != len(gs):
+                    continue
+                if all(match(x, y) for x, y in zip(ps, gs)):
+                    g_used[gi] = p_done[pi] = True
+                    tp[pk] += 1
+                    break
+
+    run(lambda x, y: _normalize(x) == _normalize(y))  # exact (normalized) first
+    run(_overlap)                                      # then partial overlap
+
+    for pi, (_pd, _ps, pk) in enumerate(pred_items):
+        if not p_done[pi]:
+            fp[pk] += 1
+    for gi, (_gd, _gs, gk) in enumerate(gold_items):
+        if not g_used[gi]:
+            fn[gk] += 1
+
+
+def _items_entity(s):
+    return sorted(((label,), (surface,), label) for label, surface in s)
+
+
+def _items_relation(s):
+    return sorted(((name,), (head, tail), name) for name, head, tail in s)
+
+
+def _items_classification(s):
+    return sorted(((task,), (label,), task) for task, label in s)
+
+
+def _items_trigger(s):
+    # relaxed trigger = event_type presence (drop the exact trigger word)
+    return sorted(((et,), (), et) for et in {et for et, _trig in s})
+
+
+def _items_argument(s):
+    # relaxed argument = (event_type, role, entity), dropping the trigger link
+    triples = {(et, role, ent) for et, role, ent, _trig in s}
+    return sorted(((et, role), (ent,), role) for et, role, ent in triples)
+
+
 def evaluate_checkpoint(
     checkpoint_dir,
     test_data,
@@ -507,7 +618,7 @@ def evaluate_checkpoint(
     )
 
 
-def _finalize(prefix: str, tp: Counter, fp: Counter, fn: Counter) -> Dict[str, Any]:
+def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -> Dict[str, Any]:
     labels = sorted(set(tp) | set(fp) | set(fn))
     if not labels:
         return {}
@@ -544,12 +655,12 @@ def _finalize(prefix: str, tp: Counter, fp: Counter, fn: Counter) -> Dict[str, A
     report = "\n".join(lines)
 
     return {
-        f"eval_{prefix}_micro_precision": micro_p,
-        f"eval_{prefix}_micro_recall": micro_r,
-        f"eval_{prefix}_micro_f1": micro_f,
-        f"eval_{prefix}_macro_precision": macro_p,
-        f"eval_{prefix}_macro_recall": macro_r,
-        f"eval_{prefix}_macro_f1": macro_f,
-        f"eval_{prefix}_support": overall_support,
-        f"eval_{prefix}_classification_report": report,
+        f"eval_{prefix}_{regime}_micro_precision": micro_p,
+        f"eval_{prefix}_{regime}_micro_recall": micro_r,
+        f"eval_{prefix}_{regime}_micro_f1": micro_f,
+        f"eval_{prefix}_{regime}_macro_precision": macro_p,
+        f"eval_{prefix}_{regime}_macro_recall": macro_r,
+        f"eval_{prefix}_{regime}_macro_f1": macro_f,
+        f"eval_{prefix}_{regime}_support": overall_support,
+        f"eval_{prefix}_{regime}_classification_report": report,
     }

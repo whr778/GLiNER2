@@ -332,10 +332,11 @@ def main(config_path: str) -> None:
             print(f"  {key}: {val}")
 
     for category in ("entity", "relation", "classification", "event_trigger", "event_argument"):
-        report_key = f"eval_{category}_classification_report"
-        if report_key in test_metrics:
-            print(f"\n--- {category} classification report ---")
-            print(test_metrics[report_key])
+        for regime in ("strict", "relaxed"):
+            report_key = f"eval_{category}_{regime}_classification_report"
+            if report_key in test_metrics:
+                print(f"\n--- {category} {regime} classification report ---")
+                print(test_metrics[report_key])
 
 
 if __name__ == "__main__":
