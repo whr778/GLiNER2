@@ -29,11 +29,11 @@ training:
   logging_steps: 10
   num_workers: 0
   validate_data: false
-  max_len: 512               # training chunk size (subwords); safe for any encoder,
-                             # raise it if gliner2-multi-v1's encoder allows more
+  max_len: 256               # deberta-v3-large caps at 512 positions; leave room for
+                             # the prepended schema + special tokens (512 overflows)
   pin_memory: false
   sliding_window: true
-  window_stride: 256
+  window_stride: 128
 
 eval:
   batch_size: 8
