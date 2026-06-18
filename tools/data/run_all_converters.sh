@@ -68,6 +68,20 @@ run_step nuner_full          uv run python tools/data/convert_nuner.py --split f
 # 'train' split merges gold + distant-supervised docs (~270 MB output).
 run_step docred              uv run python tools/data/convert_docred.py --out data/docred.jsonl
 
+# Token-classification NER corpora (auto-download; parquet revision where the
+# original ships a dataset script).
+run_step kaznerd             uv run python tools/data/convert_hf_token_ner.py \
+                                 --repo yeshpanovrustem/kaznerd --out data/kaznerd.jsonl
+run_step bc4chemd            uv run python tools/data/convert_hf_token_ner.py \
+                                 --repo chintagunta85/bc4chemd --revision refs/convert/parquet \
+                                 --out data/bc4chemd.jsonl
+run_step bc5cdr              uv run python tools/data/convert_hf_token_ner.py \
+                                 --repo tner/bc5cdr --revision refs/convert/parquet --tags-col tags \
+                                 --label-file dataset/label.json --out data/bc5cdr.jsonl
+run_step stockmark_jpn       uv run python tools/data/convert_stockmark_ner.py --out data/stockmark_jpn.jsonl
+# finer-ord is cc-by-nc-4.0 (non-commercial).
+run_step finer_ord           uv run python tools/data/convert_finer_ord.py --out data/finer_ord.jsonl
+
 # Event corpora.
 # WikiEvents auto-downloads from the public S3 bucket — no manual prep.
 run_step wikievents_train uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl

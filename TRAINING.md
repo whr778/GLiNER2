@@ -128,6 +128,23 @@ uv run python tools/data/convert_pubmed_abstracts_ner.py \
 # distant-supervised (noisy) docs. Add --max-records to cap the distant volume.
 uv run python tools/data/convert_docred.py \
     --out data/docred.jsonl
+
+# Token-classification NER corpora. convert_hf_token_ner.py is a generic
+# tokens+BIO-tags converter (handles string tags, ClassLabel ints, and bare ints
+# with a --label-file). Datasets whose HF repo ships a dataset script are read
+# from the auto-converted parquet revision.
+uv run python tools/data/convert_hf_token_ner.py \
+    --repo yeshpanovrustem/kaznerd --out data/kaznerd.jsonl          # Kazakh NER (CC-BY-4.0)
+uv run python tools/data/convert_hf_token_ner.py \
+    --repo chintagunta85/bc4chemd --revision refs/convert/parquet --out data/bc4chemd.jsonl
+uv run python tools/data/convert_hf_token_ner.py \
+    --repo tner/bc5cdr --revision refs/convert/parquet --tags-col tags \
+    --label-file dataset/label.json --out data/bc5cdr.jsonl
+uv run python tools/data/convert_stockmark_ner.py \
+    --out data/stockmark_jpn.jsonl                                   # Japanese NER (CC-BY-SA-3.0)
+# finer-ord is CC-BY-NC-4.0 (non-commercial).
+uv run python tools/data/convert_finer_ord.py \
+    --out data/finer_ord.jsonl                                       # financial NER (PER/LOC/ORG)
 ```
 
 ### Event extraction corpora (manual download)
@@ -218,6 +235,11 @@ Approximate output sizes after conversion (totals across all three splits combin
 | knowledgator/bio-NER-relations | Biomedical NER + RE | ~10,400 | ~80 MB |
 | knowledgator/PubMedAbstractsNER | NER (biomedical, ~470 UMLS types, with descriptions) | ~35,000 | ~100 MB |
 | thunlp/docred | Doc-level NER + RE (6 entity, ~96 relation types) | ~105,000 (gold + distant) | ~270 MB |
+| yeshpanovrustem/kaznerd | NER (Kazakh, 25 types) | ~59,000 | ~40 MB |
+| chintagunta85/bc4chemd | NER (chemical) | ~14,500 | ~15 MB |
+| tner/bc5cdr | NER (chemical + disease) | ~3,900 | ~5 MB |
+| stockmark/ner-wikipedia-dataset | NER (Japanese, 8 types) | ~4,900 | ~5 MB |
+| gtfintechlab/finer-ord | NER (financial, PER/LOC/ORG; **NC**) | ~1,800 | ~2 MB |
 | RAMS (manual download) | Event extraction (trigger + args) | ~9,000 | ~10 MB |
 | MAVEN (manual download) | Event detection (trigger only) | ~4,500 | ~20 MB |
 | ACE 2005 (LDC) | Event extraction (trigger + args, 33 subtypes) | ~600 | ~3 MB |

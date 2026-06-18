@@ -69,6 +69,11 @@ data:
     - data/bio_ner_relations
     - data/pubmed_abstracts_ner
     - data/docred
+    - data/kaznerd
+    - data/bc4chemd
+    - data/bc5cdr
+    - data/stockmark_jpn
+    - data/finer_ord          # NB: finer-ord is cc-by-nc-4.0 (non-commercial)
   event_files:
     rams:
       train: data/rams.train.jsonl

@@ -18,6 +18,11 @@ corpora keep their canonical train/dev/test splits.
 | GLiNER multilingual synthetic | NER (multilingual) | 77,259 | 9,598 | 9,749 | see card | [HF](https://huggingface.co/datasets/knowledgator/gliner-multilingual-synthetic) |
 | biomed_NER | NER (biomedical) | 3,885 | 485 | 470 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/biomed_NER) |
 | PubMedAbstractsNER | NER (biomedical + descriptions) | 28,051 | 3,486 | 3,450 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/PubMedAbstractsNER) |
+| KazNERD | NER (Kazakh, 25 types) | 47,546 | 5,884 | 5,961 | cc-by-4.0 | [HF](https://huggingface.co/datasets/yeshpanovrustem/kaznerd) |
+| BC4CHEMD | NER (chemical) | 11,611 | 1,437 | 1,459 | see card | [HF](https://huggingface.co/datasets/chintagunta85/bc4chemd) |
+| BC5CDR | NER (chemical + disease) | 3,126 | 394 | 395 | other | [HF](https://huggingface.co/datasets/tner/bc5cdr) |
+| stockmark-jpn | NER (Japanese, 8 types) | 3,900 | 486 | 473 | cc-by-sa-3.0 | [HF](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset) |
+| FiNER-ORD | NER (financial, PER/LOC/ORG) | 1,427 | 184 | 171 | **cc-by-nc-4.0** | [HF](https://huggingface.co/datasets/gtfintechlab/finer-ord) |
 | **Relation extraction** | | | | | | |
 | sentence_rex | Relation extraction | 34,314 | 4,269 | 4,282 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
@@ -38,7 +43,7 @@ corpora keep their canonical train/dev/test splits.
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,604,985** | **199,853** | **201,803** | | |
+| **Total (generated)** | | **1,672,595** | **208,238** | **210,262** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard). ACE 2005
@@ -81,6 +86,33 @@ GENE AND GENE PRODUCTS, …).
 ~35k PubMed abstracts with ~470 UMLS-style biomedical types; descriptions are
 parsed out of the label string into `entity_descriptions`.
 *Stats: ~5,698 distinct entity types (open UMLS-style), avg 10.3 types/record, 100% carry entities.*
+
+### KazNERD — `yeshpanovrustem/kaznerd`
+Kazakh NER (Wikipedia + news), 25 entity types. BIO token tags folded into
+`{type: [surface]}` entities (sentences with no entities are dropped).
+*Stats: 25 entity types, ~105k entity mentions over 59k sentences.*
+
+### BC4CHEMD — `chintagunta85/bc4chemd`
+BioCreative IV chemical NER (PubMed abstracts). Read from the parquet revision;
+token/tag lengths are off by one in the source, so the converter aligns on the
+common prefix.
+*Stats: 1 type (CHEMICAL), ~36k mentions over ~14.5k sentences.*
+
+### BC5CDR — `tner/bc5cdr`
+BioCreative V chemical-disease NER (the tner token-tagged version; NER only, no
+relations). Bare int tags mapped via the dataset's `dataset/label.json`.
+*Stats: 2 types (Chemical, Disease), ~8.8k mentions over ~3.9k sentences.*
+
+### stockmark-jpn — `stockmark/ner-wikipedia-dataset`
+Japanese Wikipedia NER, 8 entity types (人名, 法人名, 地名, 製品名, …). Already
+span-based; surfaces grouped by type, kept when verbatim in the text.
+*Stats: 8 entity types, ~12.8k mentions over ~4.9k sentences.*
+
+### FiNER-ORD — `gtfintechlab/finer-ord`
+Financial NER (PER/LOC/ORG) over financial news. **cc-by-nc-4.0 (non-commercial)** —
+its inclusion in `mmbert-base` makes that mix non-commercial. Token-per-row source
+regrouped into sentences by `(doc_idx, sent_idx)`.
+*Stats: 3 types (PER, LOC, ORG), ~3.7k mentions over ~1.8k sentences.*
 
 ## Relation extraction
 
