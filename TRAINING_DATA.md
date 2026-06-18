@@ -94,35 +94,35 @@ parsed out of the label string into `entity_descriptions`.
 ### KazNERD — `yeshpanovrustem/kaznerd`
 Kazakh NER (Wikipedia + news), 25 entity types. BIO token tags folded into
 `{type: [surface]}` entities (sentences with no entities are dropped).
-*Stats: 25 entity types, ~105k entity mentions over 59k sentences.*
+*Stats: 25 entity types, avg 1.6 types/record; ~84.7k mentions over 47.5k train sentences.*
 
 ### BC4CHEMD — `chintagunta85/bc4chemd`
 BioCreative IV chemical NER (PubMed abstracts). Read from the parquet revision;
 token/tag lengths are off by one in the source, so the converter aligns on the
 common prefix.
-*Stats: 1 type (CHEMICAL), ~36k mentions over ~14.5k sentences.*
+*Stats: 1 type (CHEMICAL), avg 1.0/record; ~29k mentions over 11.6k train sentences.*
 
 ### BC5CDR — `tner/bc5cdr`
 BioCreative V chemical-disease NER (the tner token-tagged version; NER only, no
 relations). Bare int tags mapped via the dataset's `dataset/label.json`.
-*Stats: 2 types (Chemical, Disease), ~8.8k mentions over ~3.9k sentences.*
+*Stats: 2 types (Chemical, Disease), avg 1.4/record; ~7.0k mentions over 3.1k train sentences.*
 
 ### stockmark-jpn — `stockmark/ner-wikipedia-dataset`
 Japanese Wikipedia NER, 8 entity types (人名, 法人名, 地名, 製品名, …). Already
 span-based; surfaces grouped by type, kept when verbatim in the text.
-*Stats: 8 entity types, ~12.8k mentions over ~4.9k sentences.*
+*Stats: 8 entity types, avg 1.8 types/record; ~10.3k mentions over 3.9k train sentences.*
 
 ### FiNER-ORD — `gtfintechlab/finer-ord`
 Financial NER (PER/LOC/ORG) over financial news. **cc-by-nc-4.0 (non-commercial)** —
 its inclusion in `mmbert-base` makes that mix non-commercial. Token-per-row source
 regrouped into sentences by `(doc_idx, sent_idx)`.
-*Stats: 3 types (PER, LOC, ORG), ~3.7k mentions over ~1.8k sentences.*
+*Stats: 3 types (PER, LOC, ORG), avg 1.4/record; ~2.9k mentions over 1.4k train sentences.*
 
 ### KLUE-NER — KLUE-benchmark (Korean)
 Korean NER read from the canonical [KLUE GitHub](https://github.com/KLUE-benchmark/KLUE)
 release (the HF loader is broken). Char-level BIO; text is the concatenated chars,
 6 entity types (PS, LC, OG, DT, TI, QT).
-*Stats: 6 entity types, ~49.7k mentions over ~21k sentences.*
+*Stats: 6 entity types, avg 1.7 types/record; ~39.8k mentions over 16.8k train sentences.*
 
 ## Relation extraction
 
@@ -146,19 +146,19 @@ parquet `train` split merges ~3k gold-annotated docs with ~102k distant-supervis
 Korean relation extraction from the canonical [KLUE GitHub](https://github.com/KLUE-benchmark/KLUE)
 release. Each record contributes its two typed entities plus a `{label: {head, tail}}`
 relation (records labelled `no_relation` keep entities only).
-*Stats: 6 entity types, ~22.9k relations over ~32k sentences (~71% carry a relation).*
+*Stats: 6 entity types, 29 relation types; 70.7% of records carry a relation, ~18.4k relations over 26k train sentences.*
 
 ### BioRED — NCBI
 Biomedical document-level NER + RE from the [NCBI release](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/)
 (BioC.JSON). 6 entity types (Gene, Disease, Chemical, Variant, CellLine, Species);
 relations link normalized entity identifiers, so head/tail are representative mentions.
-*Stats: 6 entity types, 8 relation types (Association, Positive/Negative_Correlation, Bind, …), ~3.8k relations over ~400 docs.*
+*Stats: 6 entity types, 8 relation types (Association, Positive/Negative_Correlation, Bind, …), avg 3.8 entity types/doc; 99% carry relations, ~2.9k relations over 308 train docs.*
 
 ### SciERC — AI2
 Scientific NER + RE over abstracts, from the [AI2 release](http://nlp.cs.washington.edu/sciIE/)
 (processed JSON). 6 entity types (Task, Method, Material, Metric, OtherScientificTerm,
 Generic), 7 relation types (USED-FOR, CONJUNCTION, HYPONYM-OF, …).
-*Stats: 6 entity types, 7 relation types, ~3.2k relations over ~350 docs.*
+*Stats: 6 entity types, 7 relation types, avg 4.4 entity types/doc; 99% carry relations, ~2.4k relations over 265 train docs.*
 
 ## Classification
 
