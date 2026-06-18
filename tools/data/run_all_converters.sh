@@ -63,6 +63,10 @@ run_step knowledgator_gliner uv run python tools/data/convert_knowledgator_gline
 run_step gliner_multilingual uv run python tools/data/convert_gliner_multilingual.py --out data/gliner_multilingual.jsonl
 run_step nuner_full          uv run python tools/data/convert_nuner.py --split full --out data/nuner_full.jsonl
 
+# DocRED — doc-level NER + relations. Auto-downloads the parquet revision; its
+# 'train' split merges gold + distant-supervised docs (~270 MB output).
+run_step docred              uv run python tools/data/convert_docred.py --out data/docred.jsonl
+
 # Event corpora.
 # WikiEvents auto-downloads from the public S3 bucket — no manual prep.
 run_step wikievents_train uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
