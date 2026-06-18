@@ -285,7 +285,7 @@ Each YAML has four sections:
 
 | section    | maps to                                  | notes |
 |------------|------------------------------------------|-------|
-| `model`    | `GLiNER2.from_encoder(encoder, **rest)`  | `encoder`, `max_width`, `max_len`, and the struct-loss knobs (`struct_loss` plus the variant's params — see the structure-loss section below). Omit a knob to take its default. |
+| `model`    | `from_encoder` or `from_pretrained`      | Set **`encoder`** (raw HF encoder → fresh heads; plus `max_width`, `max_len`, and the struct-loss knobs — see the structure-loss section below) **or** `pretrained` (a saved GLiNER2 checkpoint → continue its trained heads; remaining keys like `struct_loss` override the loaded config). Exactly one. |
 | `training` | `TrainingConfig(**training)`             | any `TrainingConfig` field (epochs, LRs, `bf16`, `sliding_window`, `logging_steps`, ...). Omitted fields take their defaults. |
 | `eval`     | `make_compute_metrics()` + blind test    | `batch_size`, `threshold`. |
 | `data`     | corpus / event-file lists                | `corpora` (base paths, expanded to `<name>.{train,val,test}.jsonl`) and `event_files` (a `{name: {train,val,test}}` map; each split is used only if the file is present on disk). |
@@ -293,9 +293,9 @@ Each YAML has four sections:
 
 Provided configs:
 
-| config | encoder | `struct_loss` | data |
-|--------|---------|---------------|------|
-| `mmbert-base.yaml` | mmBERT-base | focal | full multi-corpus + all event corpora |
+| config | model | `struct_loss` | data |
+|--------|-------|---------------|------|
+| `mmbert-base.yaml` | mmBERT-base (from_encoder) | focal | full multi-corpus + all event corpora |
 | `mmbert-small.yaml` | mmBERT-small | focal | ACE 2005 |
 | `mmbert-small-bce.yaml` | mmBERT-small | bce | WikiEvents |
 | `mmbert-small-bce-posweight.yaml` | mmBERT-small | bce_posweight | WikiEvents |
@@ -303,28 +303,34 @@ Provided configs:
 | `mmbert-small-asl.yaml` | mmBERT-small | asl | WikiEvents |
 | `mmbert-small-dice.yaml` | mmBERT-small | dice | WikiEvents |
 | `mmbert-small-bce-dice.yaml` | mmBERT-small | bce_dice | WikiEvents |
+| `gliner2-multi-wikievents.yaml` | fastino/gliner2-multi-v1 (from_pretrained) | from checkpoint | WikiEvents |
 
-The six `mmbert-small-*` configs share encoder, hyperparameters, and data — they differ only in `struct_loss` and write to separate `output_dir`s, so they form a ready-made loss-variant sweep.
+The six `mmbert-small-*` configs share encoder, hyperparameters, and data — they differ only in `struct_loss` and write to separate `output_dir`s, so they form a ready-made loss-variant sweep. `gliner2-multi-wikievents.yaml` instead **fine-tunes the pretrained `fastino/gliner2-multi-v1`** GLiNER2 model on WikiEvents (lower LRs, the checkpoint's own loss) — the `pretrained` form of the `model` section.
 
 #### Label transforms (roll-up and remap)
 
-Many corpora use hierarchical `parent.child` labels — ACE 2005 entity subtypes (`ORG.Media`, `LOC.Address`), event types (`Conflict.Attack`), WikiEvents types (`Cognitive.IdentifyCategorize.Unspecified`). The optional `labels:` section collapses and/or renames them, applied **identically to the train, validation, and test splits** so the label space stays consistent:
+Many corpora use hierarchical `parent.child` labels — ACE 2005 entity subtypes (`ORG.Media`, `LOC.Address`), event types (`Conflict.Attack`), WikiEvents types (`Cognitive.IdentifyCategorize.Unspecified`). The optional `labels:` section collapses and/or renames them, applied **identically to the train, validation, and test splits** so the label space stays consistent. Each label category is configured **independently** — `entities`, `relations`, `events`, and `classifications` each take their own `rollup` / `separator` / `map`:
 
 ```yaml
 labels:
-  rollup: true        # ORG.Media -> ORG (keep the first segment)
-  separator: "."      # split character for roll-up (default ".")
-  map:                # rename labels AFTER roll-up
-    ORG: ORGANIZATION
-    PER: PERSON
+  entities:
+    rollup: true        # ORG.Media -> ORG (keep the first segment)
+    separator: "."      # split character for roll-up (default ".")
+    map:                # rename labels AFTER roll-up
+      ORG: ORGANIZATION
+  events:
+    rollup: false       # leave event types untouched (per-category control)
+    separator: "."
+    map: {}
+  # relations / classifications: omit a category to leave it untouched
 ```
 
-* **Order**: roll-up runs first, then `map` — so `map` keys refer to the rolled-up parent (`ORG.Media → ORG → ORGANIZATION`).
-* **Scope**: entity labels, relation names, event types, event-argument roles, and classification labels (plus `entity_descriptions` keys).
+* **Per category, roll-up runs first then `map`** — so `map` keys refer to the rolled-up parent (`ORG.Media → ORG → ORGANIZATION`).
+* **Scope**: `entities` covers entity labels and `entity_descriptions` keys; `relations` covers relation names; `events` covers both event types and argument roles; `classifications` covers classification labels.
 * **Merge-safe**: when two labels collapse to the same target, their surfaces/labels are merged (order-preserving dedup), never dropped — so rolling `ORG.Media` and `ORG.Government` to `ORG` keeps every entity.
-* Omit the section (or `rollup: false` with an empty `map`) for no transform; then `train.py` streams the JSONL files unchanged.
+* A category with `rollup: false` and an empty `map` (or omitted entirely) is left untouched; omit the whole section for no transform. The old flat form (top-level `rollup`/`separator`/`map`) is rejected with an error.
 
-`mmbert-small.yaml` (ACE 2005) ships with `rollup: true` as a worked example; `mmbert-base.yaml` carries the section as a documented no-op.
+The `mmbert-small-*` and WikiEvents configs ship with `entities`/`relations`/`events` rolled up as a worked example; `mmbert-base.yaml` carries the section as a documented no-op.
 
 Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass.
 

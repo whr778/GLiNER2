@@ -41,9 +41,18 @@ eval:
 # Label transforms applied to train/val/test. ACE 2005 uses parent.child
 # types (ORG.Media, LOC.Address, Conflict.Attack); roll them up to the parent.
 labels:
-  rollup: true
-  separator: "."
-  map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+  entities:
+    rollup: true
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+  relations:
+    rollup: true
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+  events:
+    rollup: true
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
 
 data:
   corpora: []

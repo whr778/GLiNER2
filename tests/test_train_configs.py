@@ -40,20 +40,33 @@ def test_config_builds(path):
         f"{path.name}: missing one of the model/training/data sections"
     )
 
-    # Mirror tools/train/train.py: model.* (minus encoder) -> ExtractorConfig.
     model = dict(cfg["model"])
-    encoder = model.pop("encoder")
-    assert isinstance(encoder, str) and encoder, f"{path.name}: empty encoder"
-    ec = ExtractorConfig(
-        model_name=encoder,
-        max_width=model.pop("max_width"),
-        max_len=model.pop("max_len"),
-        **model,
-    )
-    assert ec.struct_loss in RECOGNIZED_STRUCT_LOSS, (
-        f"{path.name}: struct_loss={ec.struct_loss!r} is not recognized; "
-        f"it would silently train as plain BCE"
-    )
+    if "pretrained" in model:
+        # from_pretrained path: the encoder/heads/struct_loss come from the saved
+        # checkpoint (can't build without downloading it). Validate the override
+        # shape: a non-empty repo id, and a recognized struct_loss if overridden.
+        assert isinstance(model["pretrained"], str) and model["pretrained"], (
+            f"{path.name}: empty 'pretrained' repo id"
+        )
+        assert "encoder" not in model, f"{path.name}: set either 'pretrained' or 'encoder', not both"
+        if "struct_loss" in model:
+            assert model["struct_loss"] in RECOGNIZED_STRUCT_LOSS, (
+                f"{path.name}: struct_loss override {model['struct_loss']!r} is not recognized"
+            )
+    else:
+        # from_encoder path: mirror train.py, model.* (minus encoder) -> ExtractorConfig.
+        encoder = model.pop("encoder")
+        assert isinstance(encoder, str) and encoder, f"{path.name}: empty encoder"
+        ec = ExtractorConfig(
+            model_name=encoder,
+            max_width=model.pop("max_width"),
+            max_len=model.pop("max_len"),
+            **model,
+        )
+        assert ec.struct_loss in RECOGNIZED_STRUCT_LOSS, (
+            f"{path.name}: struct_loss={ec.struct_loss!r} is not recognized; "
+            f"it would silently train as plain BCE"
+        )
 
     # training.* -> TrainingConfig (a dataclass; raises on an unknown field).
     tc = TrainingConfig(**cfg["training"])
@@ -61,18 +74,28 @@ def test_config_builds(path):
     assert isinstance(tc.task_lr, float), f"{path.name}: task_lr is not a float"
 
 
+LABEL_CATEGORIES = {"entities", "relations", "events", "classifications"}
+
+
 @pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)
 def test_config_labels_section_shape(path):
     labels = yaml.safe_load(path.read_text()).get("labels")
     if labels is None:
         return  # the section is optional
-    assert isinstance(labels.get("rollup", False), bool), f"{path.name}: labels.rollup must be bool"
-    assert isinstance(labels.get("separator", "."), str), f"{path.name}: labels.separator must be str"
-    mapping = labels.get("map") or {}
-    assert isinstance(mapping, dict), f"{path.name}: labels.map must be a mapping"
-    assert all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items()), (
-        f"{path.name}: labels.map keys and values must be strings"
+    # Nested per-category form only; the removed flat form must not reappear.
+    assert not any(k in labels for k in ("rollup", "separator", "map")), (
+        f"{path.name}: labels uses the removed flat form; nest under a category"
     )
+    for cat, block in labels.items():
+        assert cat in LABEL_CATEGORIES, f"{path.name}: unknown labels category {cat!r}"
+        assert isinstance(block, dict), f"{path.name}: labels.{cat} must be a mapping"
+        assert isinstance(block.get("rollup", False), bool), f"{path.name}: {cat}.rollup must be bool"
+        assert isinstance(block.get("separator", "."), str), f"{path.name}: {cat}.separator must be str"
+        mapping = block.get("map") or {}
+        assert isinstance(mapping, dict), f"{path.name}: {cat}.map must be a mapping"
+        assert all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items()), (
+            f"{path.name}: {cat}.map keys and values must be strings"
+        )
 
 
 @pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)

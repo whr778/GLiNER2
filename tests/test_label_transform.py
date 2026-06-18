@@ -9,6 +9,8 @@ two child labels roll up to the same parent.
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from gliner2.training.data import DataLoader_Factory
 
 _TRAIN_PY = Path(__file__).resolve().parents[1] / "tools" / "train" / "train.py"
@@ -86,23 +88,77 @@ def test_classifications_labels_and_true_label_rolled_up():
 
 
 def test_no_transform_is_identity():
-    fn = train._label_fn(rollup=False, separator=".", mapping={})
+    fns = train._category_fns({})
     rec = {"input": "x", "output": {"entities": {"ORG.Media": ["BBC"]}}}
-    assert train.transform_record(rec, fn) == rec
+    assert train.transform_record(rec, fns) == rec
 
 
 def test_schema_format_entities_transformed():
     """The {text, schema} record form is handled too (entities as label->desc)."""
-    fn = train._label_fn(rollup=True, separator=".", mapping={})
+    fns = train._category_fns({"entities": {"rollup": True}})
     rec = {"text": "x", "schema": {"entities": {"ORG.Media": "media", "ORG.Government": "gov"}}}
-    out = train.transform_record(rec, fn)
+    out = train.transform_record(rec, fns)
     assert out["schema"]["entities"] == {"ORG": "media"}
 
 
 def test_transformed_record_roundtrips_through_factory():
     """A transformed dict loads through DataLoader_Factory unchanged (in-memory path)."""
-    fn = train._label_fn(rollup=True, separator=".", mapping={"ORG": "ORGANIZATION"})
+    fns = train._category_fns({"entities": {"rollup": True, "map": {"ORG": "ORGANIZATION"}}})
     rec = {"input": "BBC reported", "output": {"entities": {"ORG.Media": ["BBC"]}}}
-    out = train.transform_record(rec, fn)
+    out = train.transform_record(rec, fns)
     loaded = DataLoader_Factory.load([out], shuffle=False)
     assert loaded == [{"input": "BBC reported", "output": {"entities": {"ORGANIZATION": ["BBC"]}}}]
+
+
+# --- per-category dispatch -------------------------------------------------
+
+def test_category_fns_selects_only_active_categories():
+    fns = train._category_fns({
+        "entities": {"rollup": True},
+        "relations": {"rollup": False, "map": {}},                 # inactive -> skipped
+        "events": {"rollup": False, "map": {"Conflict.Attack": "attack"}},  # active via map
+    })
+    assert set(fns) == {"entities", "events"}
+
+
+def test_category_fns_rejects_flat_form():
+    with pytest.raises(ValueError):
+        train._category_fns({"rollup": True, "separator": "."})
+
+
+def test_entities_active_leaves_events_untouched():
+    fns = train._category_fns({"entities": {"rollup": True}})
+    rec = {"input": "x", "output": {
+        "entities": {"ORG.Media": ["BBC"]},
+        "events": [{"event_type": "Conflict.Attack", "trigger": "t", "arguments": []}],
+    }}
+    out = train.transform_record(rec, fns)["output"]
+    assert out["entities"] == {"ORG": ["BBC"]}
+    assert out["events"][0]["event_type"] == "Conflict.Attack"  # events not configured -> untouched
+
+
+def test_events_active_leaves_entities_untouched():
+    fns = train._category_fns({"events": {"rollup": True}})
+    rec = {"input": "x", "output": {
+        "entities": {"ORG.Media": ["BBC"]},
+        "events": [{"event_type": "Conflict.Attack", "trigger": "t",
+                    "arguments": [{"role": "Place.City", "entity": "Paris"}]}],
+    }}
+    out = train.transform_record(rec, fns)["output"]
+    assert out["entities"] == {"ORG.Media": ["BBC"]}             # entities not configured -> untouched
+    assert out["events"][0]["event_type"] == "Conflict"
+    assert out["events"][0]["arguments"][0]["role"] == "Place"  # events covers roles too
+
+
+def test_per_category_separator_and_map_are_independent():
+    fns = train._category_fns({
+        "entities": {"rollup": True, "separator": ".", "map": {"ORG": "ORGANIZATION"}},
+        "relations": {"rollup": True, "separator": "."},
+    })
+    rec = {"input": "x", "output": {
+        "entities": {"ORG.Media": ["BBC"]},
+        "relations": [{"PHYS.Located": {"head": "a", "tail": "b"}}],
+    }}
+    out = train.transform_record(rec, fns)["output"]
+    assert out["entities"] == {"ORGANIZATION": ["BBC"]}
+    assert out["relations"] == [{"PHYS": {"head": "a", "tail": "b"}}]

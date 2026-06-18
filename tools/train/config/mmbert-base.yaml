@@ -39,9 +39,18 @@ eval:
 # segment (ORG.Media -> ORG); map renames labels afterwards. Leave rollup:false
 # and map:{} for no transform.
 labels:
-  rollup: false
-  separator: "."
-  map: {}
+  entities:
+    rollup: false
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+  relations:
+    rollup: false
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+  events:
+    rollup: false
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
 
 data:
   corpora:
