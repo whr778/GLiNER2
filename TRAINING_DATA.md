@@ -29,6 +29,7 @@ corpora keep their canonical train/dev/test splits.
 | events_classification_biotech | Classification (multi-label) | 2,216 | 271 | 272 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
 | **Structured extraction** | | | | | | |
 | text2json-training-data | Schema-driven structured extraction | 7,817 | 962 | 958 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
+| json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) |
 | **Event extraction** (manual download) | | | | | | |
 | WikiEvents | NER + event extraction | 206 | 20 | 20 | see source | [gen-arg](https://github.com/raspberryice/gen-arg) |
 | RAMS | Event extraction (trigger + args) | 7,329 | 924 | 871 | see source | [JHU](https://nlp.jhu.edu/rams/) |
@@ -37,7 +38,7 @@ corpora keep their canonical train/dev/test splits.
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,604,607** | **199,798** | **201,753** | | |
+| **Total (generated)** | | **1,604,985** | **199,853** | **201,803** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard). ACE 2005
@@ -125,6 +126,13 @@ event extraction).
 Schema-driven structured extraction; each record defines its own field names
 (nested objects skipped).
 *Stats: ~9,060 distinct field names (per-record schemas), avg 5.3 fields/record.*
+
+### json_data_extraction — `paraloq/json_data_extraction`
+Schema-driven structured extraction: each row is a `(text, JSON Schema, item)`
+triple. The converter walks the extracted `item` recursively and maps every leaf
+scalar / list-of-scalars to a `{field: [value]}` entity, keeping only values that
+appear verbatim in the text. Small but field-diverse, and Apache-2.0 (clean license).
+*Stats: ~1,634 distinct leaf field names, ~7,400 extracted values over 483 documents.*
 
 ## Event extraction
 

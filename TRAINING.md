@@ -66,6 +66,12 @@ uv run python tools/data/convert_knowledgator_gliner.py \
 uv run python tools/data/convert_text2json.py \
     --out data/text2json.jsonl
 
+# paraloq/json_data_extraction — schema-driven structured extraction (text +
+# JSON Schema + extracted JSON). Nested fields are flattened to {field: [value]}
+# entities, kept only when verbatim in the text. Small (~483 rows), Apache-2.0.
+uv run python tools/data/convert_paraloq_json.py \
+    --out data/paraloq_json.jsonl
+
 # knowledgator/gliner-multilingual-synthetic — multilingual NER
 # (German, Polish, French, etc.; pair with mmBERT for non-English extraction)
 uv run python tools/data/convert_gliner_multilingual.py \
@@ -201,6 +207,7 @@ Approximate output sizes after conversion (totals across all three splits combin
 | Pile-NER-definition | NER | ~45,000 | ~0.2 GB |
 | knowledgator/GLINER-multi-task-synthetic-data | NER | ~210,000 | ~0.4 GB |
 | knowledgator/text2json-training-data | NER (extraction) | ~80,000 | ~0.2 GB |
+| paraloq/json_data_extraction | Schema-driven structured extraction | ~483 | ~5 MB |
 | knowledgator/gliner-multilingual-synthetic | NER (multilingual) | ~400,000 | ~0.3 GB |
 | knowledgator/gliclass-v3-logic-dataset | Classification (multiple-choice) | ~5,700 | ~10 MB |
 | knowledgator/gliclass-v2.0-RAC | Classification (multi-label, general-domain) | ~550,000 | ~1.2 GB |

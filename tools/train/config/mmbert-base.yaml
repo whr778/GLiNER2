@@ -58,6 +58,7 @@ data:
     - data/pile_ner_def
     - data/knowledgator_gliner
     - data/text2json
+    - data/paraloq_json
     - data/gliner_multilingual
     - data/gliclass_logic
     - data/gliclass_rac

@@ -47,6 +47,7 @@ run_step gliclass_logic      uv run python tools/data/convert_gliclass_logic.py 
 run_step biomed_ner          uv run python tools/data/convert_biomed_ner.py --out data/biomed_ner.jsonl
 run_step events_biotech      uv run python tools/data/convert_events_biotech.py --out data/events_biotech.jsonl
 run_step text2json           uv run python tools/data/convert_text2json.py --out data/text2json.jsonl
+run_step paraloq_json        uv run python tools/data/convert_paraloq_json.py --out data/paraloq_json.jsonl
 run_step sentence_rex        uv run python tools/data/convert_sentence_rex.py --out data/sentence_rex.jsonl
 run_step bio_ner_relations   uv run python tools/data/convert_bio_ner_relations.py --out data/bio_ner_relations.jsonl
 run_step pubmed_abstracts    uv run python tools/data/convert_pubmed_abstracts_ner.py --out data/pubmed_abstracts_ner.jsonl
