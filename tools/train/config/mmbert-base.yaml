@@ -76,6 +76,8 @@ data:
     - data/finer_ord          # NB: finer-ord is cc-by-nc-4.0 (non-commercial)
     - data/klue_ner
     - data/klue_re
+    - data/scierc
+    - data/biored
   event_files:
     rams:
       train: data/rams.train.jsonl

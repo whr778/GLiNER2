@@ -87,6 +87,12 @@ run_step finer_ord           uv run python tools/data/convert_finer_ord.py --out
 run_step klue_ner            uv run python tools/data/convert_klue.py --task ner --out data/klue_ner.jsonl
 run_step klue_re             uv run python tools/data/convert_klue.py --task re  --out data/klue_re.jsonl
 
+# BioRED (biomedical NER + RE) from the NCBI release (~2 MB zip).
+run_step biored              uv run python tools/data/convert_biored.py --out data/biored.jsonl
+# SciERC (scientific NER + RE) from the AI2 release. NB: the default download is
+# ~695 MB (bundles ELMo); pre-extract once and pass --json to skip it.
+run_step scierc              uv run python tools/data/convert_scierc.py --out data/scierc.jsonl
+
 # Event corpora.
 # WikiEvents auto-downloads from the public S3 bucket — no manual prep.
 run_step wikievents_train uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl

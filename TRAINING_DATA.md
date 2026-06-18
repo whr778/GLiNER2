@@ -29,6 +29,8 @@ corpora keep their canonical train/dev/test splits.
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
 | DocRED | NER + relations (doc-level) | 83,951 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) |
 | KLUE-RE | NER + relations (Korean) | 26,028 | 3,237 | 3,205 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
+| BioRED | NER + relations (biomedical) | 308 | 47 | 45 | NLM / NCBI | [NCBI](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/) |
+| SciERC | NER + relations (scientific) | 265 | 46 | 38 | research use (AI2) | [AI2](http://nlp.cs.washington.edu/sciIE/) |
 | **Classification** | | | | | | |
 | GLiClass v3 logic | Classification (multiple-choice) | 4,566 | 550 | 548 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset) |
 | GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) |
@@ -45,7 +47,7 @@ corpora keep their canonical train/dev/test splits.
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,715,405** | **213,591** | **215,571** | | |
+| **Total (generated)** | | **1,715,978** | **213,684** | **215,654** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard). ACE 2005
@@ -145,6 +147,18 @@ Korean relation extraction from the canonical [KLUE GitHub](https://github.com/K
 release. Each record contributes its two typed entities plus a `{label: {head, tail}}`
 relation (records labelled `no_relation` keep entities only).
 *Stats: 6 entity types, ~22.9k relations over ~32k sentences (~71% carry a relation).*
+
+### BioRED — NCBI
+Biomedical document-level NER + RE from the [NCBI release](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/)
+(BioC.JSON). 6 entity types (Gene, Disease, Chemical, Variant, CellLine, Species);
+relations link normalized entity identifiers, so head/tail are representative mentions.
+*Stats: 6 entity types, 8 relation types (Association, Positive/Negative_Correlation, Bind, …), ~3.8k relations over ~400 docs.*
+
+### SciERC — AI2
+Scientific NER + RE over abstracts, from the [AI2 release](http://nlp.cs.washington.edu/sciIE/)
+(processed JSON). 6 entity types (Task, Method, Material, Metric, OtherScientificTerm,
+Generic), 7 relation types (USED-FOR, CONJUNCTION, HYPONYM-OF, …).
+*Stats: 6 entity types, 7 relation types, ~3.2k relations over ~350 docs.*
 
 ## Classification
 
