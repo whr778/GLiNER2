@@ -50,6 +50,10 @@ class ExtractorConfig(PretrainedConfig):
             struct_pos_weight: float = 1.0,
             focal_gamma: float = 2.0,
             focal_alpha: float = 0.25,
+            asl_gamma_pos: float = 1.0,
+            asl_gamma_neg: float = 4.0,
+            asl_clip: float = 0.05,
+            dice_smooth: float = 1.0,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -58,11 +62,16 @@ class ExtractorConfig(PretrainedConfig):
         self.counting_layer = counting_layer
         self.token_pooling = token_pooling
         self.max_len = max_len
-        # Structure loss variant: "bce" | "bce_posweight" | "focal"
+        # Structure loss variant:
+        #   "bce" | "bce_posweight" | "focal" | "asl" | "dice" | "bce_dice"
         self.struct_loss = struct_loss
         self.struct_pos_weight = struct_pos_weight
         self.focal_gamma = focal_gamma
         self.focal_alpha = focal_alpha
+        self.asl_gamma_pos = asl_gamma_pos
+        self.asl_gamma_neg = asl_gamma_neg
+        self.asl_clip = asl_clip
+        self.dice_smooth = dice_smooth
 
 
 class Extractor(PreTrainedModel):
@@ -654,6 +663,15 @@ class Extractor(PreTrainedModel):
                         if 0 <= start < scores.shape[2] and 0 <= width < scores.shape[3]:
                             labs[i, k, start, width] = 1
 
+        # Dice variants are region-based and handle the negative imbalance
+        # intrinsically, so they skip the random negative masking and apply
+        # only the valid-span mask.
+        variant = getattr(self.config, "struct_loss", "bce")
+        if variant in ("dice", "bce_dice"):
+            return self._dice_struct_loss(
+                scores, labs, span_mask, include_bce=(variant == "bce_dice")
+            )
+
         # Apply negative masking
         if masking_rate > 0.0 and self.training:
             negative = (labs == 0)
@@ -681,6 +699,10 @@ class Extractor(PreTrainedModel):
           a principled alternative to random negative masking.
         - "focal": focal loss (Lin et al.), down-weighting easy negatives via
           config.focal_gamma and balancing classes via config.focal_alpha.
+        - "asl": asymmetric loss (Ben-Baruch et al.), decoupled focusing for
+          positives/negatives (config.asl_gamma_pos/neg) plus probability
+          shifting of easy negatives (config.asl_clip). Built for multi-label
+          extreme negative imbalance.
         """
         variant = getattr(self.config, "struct_loss", "bce")
 
@@ -702,7 +724,53 @@ class Extractor(PreTrainedModel):
                 loss = alpha_t * loss
             return loss
 
+        if variant == "asl":
+            eps = 1e-8
+            xs_pos = torch.sigmoid(scores)
+            xs_neg = 1.0 - xs_pos
+            clip = self.config.asl_clip
+            if clip and clip > 0:
+                xs_neg = (xs_neg + clip).clamp(max=1.0)
+            los_pos = labs * torch.log(xs_pos.clamp(min=eps))
+            los_neg = (1 - labs) * torch.log(xs_neg.clamp(min=eps))
+            loss = los_pos + los_neg
+            pt = xs_pos * labs + xs_neg * (1 - labs)
+            gamma = self.config.asl_gamma_pos * labs + self.config.asl_gamma_neg * (1 - labs)
+            loss = loss * (1 - pt).pow(gamma)
+            return -loss
+
         return F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+
+    def _dice_struct_loss(
+            self,
+            scores: torch.Tensor,
+            labs: torch.Tensor,
+            span_mask: torch.Tensor,
+            include_bce: bool = False,
+    ) -> torch.Tensor:
+        """Soft-Dice structure loss, optionally combined with BCE ("bce_dice").
+
+        Computes an overlap (F1-like) objective per (instance, field) slice over
+        valid spans only. config.dice_smooth smooths the ratio and yields zero
+        loss for a correctly all-negative slice. Region-based, so it does not use
+        the random negative masking.
+        """
+        g, f = scores.shape[0], scores.shape[1]
+        span_valid = (~span_mask[0]).float()
+        smooth = self.config.dice_smooth
+
+        probs = torch.sigmoid(scores).view(g, f, -1) * span_valid
+        target = labs.view(g, f, -1) * span_valid
+
+        num = 2.0 * (probs * target).sum(-1) + smooth
+        den = probs.sum(-1) + target.sum(-1) + smooth
+        loss = (1.0 - num / den).sum()
+
+        if include_bce:
+            bce = F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+            loss = loss + (bce.view(g, f, -1) * span_valid).sum()
+
+        return loss
 
     # =========================================================================
     # Hugging Face Methods

@@ -1,0 +1,45 @@
+# mmBERT-small, soft-Dice struct-loss (skips random negative masking), wikievents only.
+model:
+  encoder: jhu-clsp/mmBERT-small
+  max_width: 20
+  max_len: 8192            # encoder positional capacity; inference handles 8k
+  struct_loss: dice
+  dice_smooth: 1.0
+
+training:
+  output_dir: ./out/mmbert-small/dice
+  experiment_name: mmbert_small_multi_corpus
+  num_epochs: 3
+  batch_size: 2
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  max_len: 1024            # training cap; most records are well under 2048
+  pin_memory: false
+  sliding_window: true
+  window_stride: 512
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+
+data:
+  corpora: []
+  event_files:
+    wikievents:
+      train: data/wikievents.train.jsonl
+      val: data/wikievents.dev.jsonl
+      test: data/wikievents.test.jsonl

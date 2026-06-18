@@ -275,7 +275,7 @@ Per-step wall-clock at `max_len=8192` is roughly 6–10× longer than at `max_le
 
 ### Config-driven training (recommended)
 
-A single entry point, `tools/train/train.py`, runs any training setup from a YAML file — no editing Python. The per-model `train_mmbert_*.py` scripts below still work and remain handy for quick one-off edits, but new runs should prefer the configs in `tools/train/config/`.
+A single entry point, `tools/train/train.py`, runs any training setup from a YAML file — no editing Python. Every run is defined by a config in `tools/train/config/`; copy one and edit it to add a corpus or retune hyperparameters.
 
 ```bash
 uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
@@ -285,7 +285,7 @@ Each YAML has four sections:
 
 | section    | maps to                                  | notes |
 |------------|------------------------------------------|-------|
-| `model`    | `GLiNER2.from_encoder(encoder, **rest)`  | `encoder`, `max_width`, `max_len`, and the struct-loss knobs (`struct_loss`, `struct_pos_weight`, `focal_gamma`, `focal_alpha`). Omit a knob to take its default. |
+| `model`    | `GLiNER2.from_encoder(encoder, **rest)`  | `encoder`, `max_width`, `max_len`, and the struct-loss knobs (`struct_loss` plus the variant's params — see the structure-loss section below). Omit a knob to take its default. |
 | `training` | `TrainingConfig(**training)`             | any `TrainingConfig` field (epochs, LRs, `bf16`, `sliding_window`, `logging_steps`, ...). Omitted fields take their defaults. |
 | `eval`     | `make_compute_metrics()` + blind test    | `batch_size`, `threshold`. |
 | `data`     | corpus / event-file lists                | `corpora` (base paths, expanded to `<name>.{train,val,test}.jsonl`) and `event_files` (a `{name: {train,val,test}}` map; each split is used only if the file is present on disk). |
@@ -296,9 +296,14 @@ Provided configs:
 |--------|---------|---------------|------|
 | `mmbert-base.yaml` | mmBERT-base | focal | full multi-corpus + all event corpora |
 | `mmbert-small.yaml` | mmBERT-small | focal | ACE 2005 |
-| `mmbert-small-focal.yaml` | mmBERT-small | focal | WikiEvents |
 | `mmbert-small-bce.yaml` | mmBERT-small | bce | WikiEvents |
 | `mmbert-small-bce-posweight.yaml` | mmBERT-small | bce_posweight | WikiEvents |
+| `mmbert-small-focal.yaml` | mmBERT-small | focal | WikiEvents |
+| `mmbert-small-asl.yaml` | mmBERT-small | asl | WikiEvents |
+| `mmbert-small-dice.yaml` | mmBERT-small | dice | WikiEvents |
+| `mmbert-small-bce-dice.yaml` | mmBERT-small | bce_dice | WikiEvents |
+
+The six `mmbert-small-*` configs share encoder, hyperparameters, and data — they differ only in `struct_loss` and write to separate `output_dir`s, so they form a ready-made loss-variant sweep.
 
 Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass.
 
@@ -343,50 +348,66 @@ After the trainer aggregates JSONLs into a single `TRAIN_DATA` / `EVAL_DATA` / `
 Recommended baseline — runs on a single 24 GB GPU and converges in 2–3 epochs of mixed NuNER + Pile-NER-definition.
 
 ```bash
-uv run python tools/train/train_mmbert_small.py
+uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
 ```
 
-The script (`tools/train/train_mmbert_small.py`) calls `GLiNER2.from_encoder("jhu-clsp/mmBERT-small", ...)` — use `from_encoder` for training from scratch; `from_pretrained` is for loading saved GLiNER2 checkpoints. Edit the script in place to change hyperparameters (batch size, learning rates, epochs, `max_len`, etc.). Defaults target a 24 GB GPU; see the hardware table above for other profiles.
+The config sets `model.encoder: jhu-clsp/mmBERT-small`, which `train.py` passes to `GLiNER2.from_encoder` — use `from_encoder` for training from scratch; `from_pretrained` is for loading saved GLiNER2 checkpoints. Edit the YAML (batch size, learning rates, epochs, `max_len`, ...) to retune; defaults target a 24 GB GPU, see the hardware table above for other profiles.
 
-The script also:
+`train.py` also:
 
-* Wires the `.val.jsonl` files into `eval_data=` so the trainer scores them at the end of every epoch with `make_compute_metrics()` — micro/macro precision/recall/F1 for entities, relations, and classifications, plus a per-label `classification_report` string. `eval_loss` drives `save_best=True`, so `out/mmbert-small/best/` always holds the lowest-val-loss checkpoint.
-* After `trainer.train()` returns, calls `evaluate_checkpoint(out/mmbert-small/best, TEST_DATA)` against the `.test.jsonl` splits and prints the blind-test classification reports.
+* Wires the `.val.jsonl` files into `eval_data=` so the trainer scores them at the end of every epoch with `make_compute_metrics()` — micro/macro precision/recall/F1 for entities, relations, and classifications, plus a per-label `classification_report` string. `eval_loss` drives `save_best=True`, so `<output_dir>/best/` always holds the lowest-val-loss checkpoint.
+* After `trainer.train()` returns, calls `evaluate_checkpoint(<output_dir>/best, test_data)` against the `.test.jsonl` splits and writes `test_metrics.json`.
 
-Checkpoints land in `out/mmbert-small/`. The `final` checkpoint is the last step; intermediate `checkpoint-<step>` directories are rotated.
+Checkpoints land in the config's `output_dir` (e.g. `out/mmbert-small/`). The `final` checkpoint is the last step; intermediate `checkpoint-<step>` directories are rotated.
 
 ### 4b. mmBERT-base
 
 Same shape; lower learning rates, smaller batch, longer wall-clock:
 
 ```bash
-uv run python tools/train/train_mmbert_base.py
+uv run python tools/train/train.py --config tools/train/config/mmbert-base.yaml
 ```
 
-Edit `tools/train/train_mmbert_base.py` to retune for your hardware. Defaults use `bf16=True` (prefer on Ampere+/Hopper; switch to `fp16=True` elsewhere) and `max_len=8192`. Eval-on-val and final blind test on `best` work the same way as for the small variant.
+Edit `tools/train/config/mmbert-base.yaml` to retune for your hardware. Defaults use `bf16: true` (prefer on Ampere+/Hopper; switch to `fp16: true` elsewhere) and `max_len: 8192`. Eval-on-val and final blind test on `best` work the same way as for the small variant.
 
 ### Structure-loss variant (span scoring for entities/relations/events)
 
-The structure head scores every `(start, width)` span against each schema field on a dense grid, so positives (the few gold spans) are vastly outnumbered by negatives. The loss applied to that grid is selectable via `GLiNER2.from_encoder(...)`:
+The structure head scores every `(start, width)` span against each schema field on a dense grid, so positives (the few gold spans) are vastly outnumbered by negatives. The loss applied to that grid is selected by the `struct_loss` key in the `model:` section of a YAML config — `train.py` forwards the whole `model:` block to `GLiNER2.from_encoder`, so a config sets only the keys its variant uses:
 
-| `struct_loss`    | Behavior                                                        | Extra knobs |
+| `struct_loss`    | Behavior                                                        | Extra `model:` keys |
 |------------------|-----------------------------------------------------------------|-------------|
-| `"bce"`          | Plain BCE-with-logits (default; original behavior).             | —           |
-| `"bce_posweight"`| BCE up-weighting positive spans, a principled alternative to the random negative masking. | `struct_pos_weight` (≈ #neg / #pos, e.g. `8.0`) |
-| `"focal"`        | Focal loss — down-weights easy negatives, focuses on hard spans. | `focal_gamma` (default `2.0`), `focal_alpha` (default `0.25`) |
+| `bce`            | Plain BCE-with-logits (default; original behavior).             | —           |
+| `bce_posweight`  | BCE up-weighting positive spans, a principled alternative to the random negative masking. | `struct_pos_weight` (≈ #neg / #pos, e.g. `8.0`) |
+| `focal`          | Focal loss — down-weights easy negatives, focuses on hard spans. | `focal_gamma` (default `2.0`), `focal_alpha` (default `0.25`) |
+| `asl`            | Asymmetric loss (Ben-Baruch et al.) — decoupled focusing for positives vs negatives plus probability-shifting of easy negatives; built for multi-label extreme negative imbalance. | `asl_gamma_neg` (default `4.0`), `asl_gamma_pos` (default `1.0`), `asl_clip` (default `0.05`) |
+| `dice`           | Soft-Dice overlap (F1-like) objective; robust to the dense-grid imbalance by construction. | `dice_smooth` (default `1.0`) |
+| `bce_dice`       | `BCE + soft-Dice` — per-cell calibration plus the overlap objective. | `dice_smooth` |
 
-Both training scripts default to `struct_loss="focal"`. To go back to the original loss, set `struct_loss="bce"` in the `from_encoder(...)` call:
+All variants keep the sigmoid + 0.5 decode at inference (`engine.py`), so they slot in without touching the decode path. One ready-to-run config per variant (mmBERT-small, WikiEvents only) ships under `tools/train/config/`:
 
-```python
-model = GLiNER2.from_encoder(
-    "jhu-clsp/mmBERT-base", max_width=20, max_len=8192,
-    struct_loss="bce",            # or "bce_posweight" / "focal"
-    struct_pos_weight=8.0,        # only used by "bce_posweight"
-    focal_gamma=2.0, focal_alpha=0.25,  # only used by "focal"
-)
+```bash
+uv run python tools/train/train.py --config tools/train/config/mmbert-small-bce.yaml
+uv run python tools/train/train.py --config tools/train/config/mmbert-small-bce-posweight.yaml
+uv run python tools/train/train.py --config tools/train/config/mmbert-small-focal.yaml
+uv run python tools/train/train.py --config tools/train/config/mmbert-small-asl.yaml
+uv run python tools/train/train.py --config tools/train/config/mmbert-small-dice.yaml
+uv run python tools/train/train.py --config tools/train/config/mmbert-small-bce-dice.yaml
 ```
 
-Note: `focal` and `bce_posweight` handle class imbalance inside the loss, so the random negative masking in `compute_struct_loss` (50% by default) becomes partly redundant with them — it will randomly drop hard negatives that focal specifically wants to learn from. For the cleanest comparison, evaluate these variants against the `bce` baseline on your own val splits.
+Each writes to its own `output_dir` (`./out/mmbert-small/<variant>`), so a sweep can run side by side. The `model:` block to select a variant looks like:
+
+```yaml
+model:
+  encoder: jhu-clsp/mmBERT-small
+  max_width: 20
+  max_len: 8192
+  struct_loss: asl          # bce | bce_posweight | focal | asl | dice | bce_dice
+  asl_gamma_neg: 4.0        # only used by asl
+  asl_gamma_pos: 1.0
+  asl_clip: 0.05
+```
+
+Note: `focal`, `asl`, and the Dice variants handle class imbalance inside the loss, so the 50% random negative masking in `compute_struct_loss` becomes partly redundant — for `focal`/`asl` it still runs (it randomly drops hard negatives the loss wants to learn from), while `dice`/`bce_dice` skip it entirely. For the cleanest comparison, evaluate each variant against the `bce` baseline on your own val splits.
 
 ### Optional: hold out an evaluation slice
 
