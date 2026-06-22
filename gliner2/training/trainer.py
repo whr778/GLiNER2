@@ -61,6 +61,7 @@ from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from tqdm.auto import tqdm
 
 from gliner2.training.parallel import BatchDataParallel, _AutocastModule
+from gliner2.training.eta import _fmt_seconds
 
 from gliner2.processor import SchemaTransformer, SamplingConfig
 
@@ -1050,6 +1051,9 @@ class GLiNER2Trainer:
 
         start_time = time.time()
         samples_seen = 0
+        # Stashed so _evaluate can report remaining ETA from measured progress.
+        self._train_start_time = start_time
+        self._train_max_steps = max_steps
 
         self.progress_bar = tqdm(total=max_steps, desc="Training", disable=not self.is_main_process)
 
@@ -1208,8 +1212,27 @@ class GLiNER2Trainer:
             "eval_metrics_history": self.eval_metrics_history,
         }
 
+    def _log_remaining_eta(self) -> None:
+        """Log estimated remaining training time, projected from progress so far.
+
+        Uses the measured step rate since training started (steps done / elapsed)
+        rather than the warmup-based startup estimate, so it sharpens over time.
+        """
+        start = getattr(self, "_train_start_time", None)
+        max_steps = getattr(self, "_train_max_steps", 0)
+        if start is None or self.global_step <= 0 or max_steps <= 0:
+            return
+        elapsed = time.time() - start
+        remaining_steps = max(0, max_steps - self.global_step)
+        eta = remaining_steps * elapsed / self.global_step
+        logger.info(
+            f"Training ETA: ~{_fmt_seconds(eta)} remaining "
+            f"(step {self.global_step}/{max_steps}, elapsed {_fmt_seconds(elapsed)})"
+        )
+
     def _evaluate(self, eval_dataset: ExtractorDataset) -> Dict[str, float]:
         logger.info("Running evaluation...")
+        self._log_remaining_eta()
         self.model.eval()
         self.processor.change_mode(is_training=False)
 
