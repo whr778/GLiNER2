@@ -234,11 +234,20 @@ class Extractor(PreTrainedModel):
                 - count_loss: Count prediction loss
                 - batch_size: Number of valid samples
         """
-        if len(batch) == 0:
-            return self._empty_loss_dict()
+        # nn.DataParallel replicas expose no parameters (replicate() stores them
+        # as plain attributes, so self.parameters() is empty and next() raises);
+        # fall back to the scattered batch's device and the fp32 compute dtype
+        # (DataParallel is used with autocast-style mixed precision, i.e. fp32
+        # weights -- not manually halved weights).
+        first_param = next(self.parameters(), None)
+        if first_param is not None:
+            device, dtype = first_param.device, first_param.dtype
+        else:
+            device, dtype = batch.input_ids.device, torch.float32
 
-        device = next(self.parameters()).device
-        dtype = next(self.parameters()).dtype
+        if len(batch) == 0:
+            return self._empty_loss_dict(device)
+
         batch = batch.to(device, dtype if dtype != torch.float32 else None)
 
         # Encode batch through transformer
@@ -311,7 +320,7 @@ class Extractor(PreTrainedModel):
                     })
 
         if valid_samples == 0:
-            result = self._empty_loss_dict()
+            result = self._empty_loss_dict(device)
             if return_individual_losses:
                 result["individual_losses"] = individual
             return result
@@ -335,9 +344,16 @@ class Extractor(PreTrainedModel):
 
         return result
 
-    def _empty_loss_dict(self) -> Dict[str, torch.Tensor]:
-        """Return empty loss dictionary."""
-        device = next(self.parameters()).device
+    def _empty_loss_dict(self, device: torch.device = None) -> Dict[str, torch.Tensor]:
+        """Return empty loss dictionary.
+
+        ``device`` is passed in from forward (which already resolved it in a
+        replica-safe way); when called without one, fall back to a parameter's
+        device, defaulting to CPU if parameters are unavailable (DP replica).
+        """
+        if device is None:
+            first_param = next(self.parameters(), None)
+            device = first_param.device if first_param is not None else torch.device("cpu")
         return {
             "total_loss": torch.tensor(0.0, device=device, requires_grad=True),
             "classification_loss": torch.tensor(0.0, device=device),
