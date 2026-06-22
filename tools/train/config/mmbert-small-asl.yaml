@@ -11,6 +11,7 @@ model:
 training:
   output_dir: ./out/mmbert-small/asl
   experiment_name: mmbert_small_multi_corpus
+  data_parallel: false
   num_epochs: 3
   batch_size: 2
   gradient_accumulation_steps: 2

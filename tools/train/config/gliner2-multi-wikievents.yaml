@@ -11,6 +11,7 @@ model:
 training:
   output_dir: ./out/gliner2-multi-wikievents
   experiment_name: gliner2_multi_wikievents
+  data_parallel: false
   num_epochs: 3
   batch_size: 2
   gradient_accumulation_steps: 2

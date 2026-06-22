@@ -60,6 +60,8 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from tqdm.auto import tqdm
 
+from gliner2.training.parallel import BatchDataParallel
+
 from gliner2.processor import SchemaTransformer, SamplingConfig
 
 # Import training data classes
@@ -212,6 +214,14 @@ class TrainingConfig:
     seed: int = 42
     deterministic: bool = False
     local_rank: int = -1
+    # Multi-GPU via nn.DataParallel (single process, one thread per GPU).
+    # CUDA-only: ignored on CPU/MPS, with a single GPU, or when the DDP path
+    # (local_rank >= 0) is active. The DataLoader batch is split across GPUs,
+    # so per-GPU work is batch_size / num_gpus. device_ids=None uses all
+    # visible CUDA devices. See gliner2.training.parallel (note the AMP caveat:
+    # autocast does not apply on DataParallel's replica threads).
+    data_parallel: bool = False
+    data_parallel_device_ids: Optional[List[int]] = None
     debug: bool = False
     max_train_samples: int = -1
     max_eval_samples: int = -1
@@ -555,6 +565,9 @@ class GLiNER2Trainer:
         self.lora_layers = {}
         self._setup_lora()
 
+        # Multi-GPU forward wrapper (no-op unless data_parallel is enabled).
+        self._setup_data_parallel()
+
     def _setup_seed(self):
         seed = self.config.seed
         random.seed(seed)
@@ -656,6 +669,37 @@ class GLiNER2Trainer:
         total_params = sum(p.numel() for p in self.model.parameters())
         pct = (lora_params / total_params * 100) if total_params > 0 else 0.0
         logger.info(f"LoRA setup complete: {lora_params:,} trainable / {total_params:,} total ({pct:.2f}%)")
+
+    def _setup_data_parallel(self):
+        """Wrap the model in nn.DataParallel for multi-GPU forward when enabled.
+
+        ``self.model`` stays the raw module (optimizer, grad-clipping, and
+        checkpoint saving all use it); only the forward pass goes through
+        ``self._fwd_model``. A no-op (``_fwd_model is model``) unless
+        ``data_parallel`` is set and >=2 CUDA devices are available.
+        """
+        self._fwd_model = self.model
+        if not self.config.data_parallel:
+            return
+        if self.is_distributed:
+            logger.warning("data_parallel ignored: DDP path (local_rank >= 0) is active.")
+            return
+        if self.device.type != "cuda" or torch.cuda.device_count() < 2:
+            logger.info("data_parallel requested but <2 CUDA devices available; "
+                        "running on a single device.")
+            return
+        device_ids = self.config.data_parallel_device_ids or list(range(torch.cuda.device_count()))
+        if len(device_ids) < 2:
+            return
+        # nn.DataParallel requires the model to live on device_ids[0] (its
+        # source/output device); honour a custom device_ids list that doesn't
+        # start at 0 by moving the model there.
+        primary = torch.device("cuda", device_ids[0])
+        if self.device != primary:
+            self.device = primary
+            self.model.to(self.device)
+        self._fwd_model = BatchDataParallel(self.model, device_ids=device_ids)
+        logger.info(f"DataParallel enabled across CUDA devices {device_ids}")
 
     @property
     def is_main_process(self) -> bool:
@@ -1016,7 +1060,7 @@ class GLiNER2Trainer:
 
                 try:
                     with autocast(device_type=self.device.type, enabled=use_amp, dtype=amp_dtype):
-                        outputs = self.model(batch)
+                        outputs = self._fwd_model(batch)
                         loss = outputs["total_loss"]
 
                         if self.config.gradient_accumulation_steps > 1:
@@ -1190,7 +1234,7 @@ class GLiNER2Trainer:
         with torch.no_grad():
             for batch in tqdm(eval_loader, desc="Evaluating", disable=not self.is_main_process):
                 with autocast(device_type=self.device.type, enabled=use_amp, dtype=amp_dtype):
-                    outputs = self.model(batch)
+                    outputs = self._fwd_model(batch)
 
                 # Fix Bug #10: Move tensors to CPU to prevent memory leak
                 total_loss += outputs["total_loss"].detach().cpu().item()
@@ -1402,6 +1446,8 @@ class GLiNER2Trainer:
                 self.lora_layers = {}
                 self._setup_lora()
 
+        # self.model was reassigned; rebuild the forward wrapper to track it.
+        self._setup_data_parallel()
         logger.info("Loaded checkpoint: %s", checkpoint_path)
 
 

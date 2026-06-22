@@ -11,7 +11,12 @@ The config has four sections:
   ``struct_loss`` are forwarded to it) or ``pretrained`` (a saved GLiNER2
   checkpoint continued via ``GLiNER2.from_pretrained``; remaining keys override
   the loaded ``model.config``). Exactly one of the two must be set.
-* ``training`` - fields forwarded verbatim to :class:`TrainingConfig`.
+* ``training`` - fields forwarded verbatim to :class:`TrainingConfig`. For
+  multi-GPU set ``data_parallel: true`` (optionally ``data_parallel_device_ids:
+  [0, 1]``); it wraps the model in ``nn.DataParallel`` when >=2 CUDA devices are
+  present and is a no-op otherwise. The loader ``batch_size`` is split across
+  GPUs, so raise it by ~num_gpus to keep per-GPU work constant. Note AMP does
+  not apply on DataParallel replica threads (see gliner2.training.parallel).
 * ``eval``     - ``batch_size`` / ``threshold`` for the metrics hook and the
   blind test pass.
 * ``data``     - ``corpora`` base paths (``<name>.{train,val,test}.jsonl``) and
@@ -300,7 +305,7 @@ def main(config_path: str) -> None:
     )
     estimate_eta(model, train_data, config)
     results = trainer.train(train_data=train_data)
-    pprint(results)
+    # pprint(results)
 
     results_path = Path(config.output_dir) / "train_results.json"
     results_path.write_text(

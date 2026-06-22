@@ -12,6 +12,7 @@ model:
 training:
   output_dir: ./out/fastino/gliner2-large-v1-docred
   experiment_name: gliner2-large-v1_docred
+  data_parallel: false
   num_epochs: 3
   batch_size: 2
   gradient_accumulation_steps: 2
