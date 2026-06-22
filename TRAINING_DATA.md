@@ -45,13 +45,15 @@ corpora keep their canonical train/dev/test splits.
 | MAVEN | Event detection (trigger) | 2,913 | — | — | see source | [GitHub](https://github.com/THU-KEG/MAVEN-dataset) |
 | CASIE | Event extraction (cybersecurity) | 795 | 98 | 107 | see source | [GitHub](https://github.com/Ebiquity/CASIE) |
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
+| LEVEN | Event detection (Chinese legal, trigger) | 5,301 | 1,230 | — | see source | [GitHub](https://github.com/thunlp/LEVEN) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,715,978** | **213,684** | **215,654** | | |
+| **Total (generated)** | | **1,721,279** | **214,914** | **215,654** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
-labelled train split (dev/test labels are held out for the leaderboard). ACE 2005
-is LDC-licensed and not generated here.
+labelled train split (dev/test labels are held out for the leaderboard); LEVEN
+ships labelled train/valid but holds out its test labels for the leaderboard.
+ACE 2005 is LDC-licensed and not generated here.
 
 ‡ "see card" = the HuggingFace dataset card declares no explicit license — verify
 before redistribution. "see source" = manual-download corpora governed by their
@@ -222,6 +224,13 @@ auto-downloads the GitHub tarball and emits a stratified 80/10/10 split.
 Chinese military news event extraction with triggers + typed arguments (manual
 Google Drive download).
 *Stats: 8 event types, 11 argument roles, 100% of records carry events.*
+
+### LEVEN — [thunlp/LEVEN](https://github.com/thunlp/LEVEN)
+Largest Chinese legal event detection corpus; trigger-only (arguments are empty,
+like MAVEN, so only the trigger-detection path of the joint loss benefits; manual
+Google Drive download). The held-out test split ships candidates instead of gold
+events, so only train / valid are converted.
+*Stats: 108 event types, trigger-only (no arguments), ~98k trigger mentions in train.*
 
 ### DocEE — [tongmeihan1995/docee](https://github.com/tongmeihan1995/docee)
 Largest doc-level event corpus; one event per doc, no triggers — mapped to

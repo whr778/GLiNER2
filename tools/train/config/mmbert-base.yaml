@@ -102,6 +102,9 @@ data:
       train: data/cmnee.train.jsonl
       val: data/cmnee.val.jsonl
       test: data/cmnee.test.jsonl
+    leven:
+      train: data/leven.train.jsonl
+      val: data/leven.val.jsonl
     ace2005:
       train: data/ace2005.train.jsonl
       val: data/ace2005.val.jsonl

@@ -113,6 +113,16 @@ run_optional cmnee_test  data/cmnee/CMNEE/test.json \
     uv run python tools/data/convert_cmnee.py \
         --input data/cmnee/CMNEE/test.json --out data/cmnee.test.jsonl
 
+# LEVEN — Chinese legal event detection (trigger only). Manual Google Drive
+# download (gdown wraps it); see TRAINING.md. test.jsonl has its annotations
+# removed, so only train / valid are converted.
+run_optional leven_train data/leven/LEVEN/train.jsonl \
+    uv run python tools/data/convert_leven.py \
+        --input data/leven/LEVEN/train.jsonl --out data/leven.train.jsonl
+run_optional leven_val   data/leven/LEVEN/valid.jsonl \
+    uv run python tools/data/convert_leven.py \
+        --input data/leven/LEVEN/valid.jsonl --out data/leven.val.jsonl
+
 # DocEE — manual Google Drive download required. Run each canonical
 # split through the converter; existence-guard on the train file means
 # the whole block is skipped cleanly when DocEE isn't present.

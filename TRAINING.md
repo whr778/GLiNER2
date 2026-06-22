@@ -210,6 +210,19 @@ uv run python tools/data/convert_cmnee.py \
 uv run python tools/data/convert_cmnee.py \
     --input data/cmnee/CMNEE/test.json  --out data/cmnee.test.jsonl
 
+# LEVEN (Yao et al., Findings of ACL 2022) — largest Chinese legal event
+# detection corpus (108 event types). Trigger-only, like MAVEN, so arguments
+# stay empty. Google Drive download (gdown wraps it):
+#   mkdir -p data/leven && uv run --with gdown gdown --folder \
+#       'https://drive.google.com/drive/folders/1VGD0h365kegTqGEyLr24SJtJUUoZIt20' \
+#       -O data/leven/
+# test.jsonl ships candidates instead of gold events, so only train / valid
+# are converted.
+uv run python tools/data/convert_leven.py \
+    --input data/leven/LEVEN/train.jsonl --out data/leven.train.jsonl
+uv run python tools/data/convert_leven.py \
+    --input data/leven/LEVEN/valid.jsonl --out data/leven.val.jsonl
+
 # DocEE (Tong et al., NAACL 2022) — largest doc-level event-extraction
 # corpus (27k docs, 59 types, 356 roles, 180k arg instances). One event
 # per doc, no triggers — maps to role-typed entities + 59-way doc
@@ -262,6 +275,7 @@ Approximate output sizes after conversion (totals across all three splits combin
 | WikiEvents (NAACL 2021) | NER + event extraction (KAIROS, 49+ types) | ~246 docs (206/20/20) | ~2 MB |
 | CASIE (AAAI 2020) | NER + cybersecurity event extraction (5 event subtypes, ~21 entity types) | 1,000 docs (794/100/106) | ~8 MB |
 | CMNEE (LREC-COLING 2024) | Chinese military event extraction (8 types, 11 roles, 29k events) | 13,617 docs (9,284/1,606/2,727) | ~19 MB |
+| LEVEN (Findings of ACL 2022) | Chinese legal event detection (trigger only, 108 types, 121k events) | 6,531 docs (5,301/1,230; test unlabeled) | ~75 MB |
 | DocEE (NAACL 2022) | Role-typed NER + 59-way doc classification (356 roles, 180k args) | 27,485 docs (21,966/2,748/2,771) | ~140 MB |
 
 You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all eleven is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, Scientific-text-classification teaches single-label classification with a fixed vocabulary, biomed_NER adds domain-specific biomedical extraction, events_biotech adds multi-label business-news classification, sentence_rex introduces general-domain relation extraction, and bio-NER-relations couples biomedical NER with co-occurring relations.
