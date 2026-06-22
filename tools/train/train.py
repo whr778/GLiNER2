@@ -12,7 +12,7 @@ The config has four sections:
   checkpoint continued via ``GLiNER2.from_pretrained``; remaining keys override
   the loaded ``model.config``). Exactly one of the two must be set.
 * ``training`` - fields forwarded verbatim to :class:`TrainingConfig`. Multi-GPU:
-  preferred is DistributedDataParallel via ``torchrun --nproc_per_node=N
+  preferred is DistributedDataParallel via ``uv run torchrun --nproc_per_node=N
   tools/train/train.py --config ...`` (auto-detected from ``LOCAL_RANK``; here
   ``batch_size`` is per-GPU). Alternatively set ``data_parallel: true`` for
   single-process ``nn.DataParallel`` (``batch_size`` is the total split across

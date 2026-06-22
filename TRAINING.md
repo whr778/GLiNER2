@@ -472,11 +472,11 @@ Two options, mutually exclusive:
 
 ```bash
 # 2 GPUs on one node
-torchrun --standalone --nproc_per_node=2 tools/train/train.py \
+uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
     --config tools/train/config/mmbert-base.yaml
 ```
 
-DDP is auto-detected from the `torchrun` environment (`LOCAL_RANK`) — no config flag needed; leave `data_parallel: false`. Notes:
+`uv run torchrun` uses the project venv's `torchrun`, which launches each rank with the venv's Python (`uv run python -m torch.distributed.run ...` is equivalent). DDP is auto-detected from the `torchrun` environment (`LOCAL_RANK`) — no config flag needed; leave `data_parallel: false`. Notes:
 
 * `batch_size` in the config is **per GPU** under DDP (unlike DataParallel, where it's the total split across GPUs). Effective global batch = `batch_size × nproc_per_node × gradient_accumulation_steps`. Keep the per-GPU `batch_size` the same as your single-GPU value.
 * Only rank 0 logs, evaluates, and writes checkpoints / `train_results.json` / `test_metrics.json`; the early-stop decision is broadcast so all ranks stop together.
