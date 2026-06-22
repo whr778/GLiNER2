@@ -20,10 +20,13 @@ The split/slice/reduce logic lives in module-level functions so it can be unit
 tested on CPU; the subclass methods are thin wrappers. ``nn.DataParallel``
 itself is CUDA-only and only exercises scatter/gather with >=2 CUDA devices.
 
-Known caveat: ``torch.autocast`` is thread-local and DataParallel runs replicas
-in worker threads, so AMP (fp16/bf16) does not apply on the replicas -- they run
-in fp32. Correctness is unaffected, but per-GPU memory is higher than a
-single-GPU AMP run. For full AMP multi-GPU, use DistributedDataParallel instead.
+Mixed precision: DataParallel runs each replica's forward in a worker thread,
+and torch's ``parallel_apply`` re-enables autocast there from the *enabled* flag
+only -- it drops the dtype, which is thread-local and defaults to fp16 on CUDA.
+A ``bf16`` run therefore silently executes replicas in fp16 and overflows to
+NaN. ``_AutocastModule`` wraps the model so each replica re-opens autocast with
+the configured dtype, overriding that fp16 default (the innermost autocast
+context wins). For full-featured multi-GPU, DistributedDataParallel is preferred.
 """
 
 from __future__ import annotations
@@ -109,6 +112,28 @@ def reduce_loss_dicts(outputs: List[Dict[str, Any]],
         else:
             combined[key] = first
     return combined
+
+
+class _AutocastModule(nn.Module):
+    """Run the wrapped module's forward under a fixed-dtype autocast.
+
+    nn.DataParallel's ``parallel_apply`` re-enables autocast on each replica's
+    worker thread but drops the dtype (CUDA defaults to fp16, and the dtype is
+    thread-local so it cannot be set from the main thread). Re-opening autocast
+    with the configured dtype inside the replica overrides that default, so a
+    bf16 run actually computes in bf16 rather than overflowing fp16 to NaN.
+    Holds no parameters of its own -- it just forwards to ``module``.
+    """
+
+    def __init__(self, module: nn.Module, device_type: str, dtype: torch.dtype):
+        super().__init__()
+        self.module = module
+        self._ac_device_type = device_type
+        self._ac_dtype = dtype
+
+    def forward(self, *args, **kwargs):
+        with torch.amp.autocast(self._ac_device_type, dtype=self._ac_dtype):
+            return self.module(*args, **kwargs)
 
 
 class BatchDataParallel(nn.DataParallel):

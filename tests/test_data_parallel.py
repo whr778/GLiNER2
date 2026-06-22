@@ -11,6 +11,7 @@ from gliner2.training.parallel import (
     _chunk_sizes,
     split_batch,
     reduce_loss_dicts,
+    _AutocastModule,
 )
 
 
@@ -102,3 +103,23 @@ def test_reduce_handles_empty_shard():
     assert combined["batch_size"] == 3            # 3 + 0
     combined["total_loss"].backward()
     assert a.grad.item() == 1.0
+
+
+def test_autocast_module_overrides_dtype_less_outer_context():
+    """Reproduce the parallel_apply bug on CPU: an outer dtype-less autocast
+    defaults to one dtype (bf16 on CPU, fp16 on CUDA); _AutocastModule must
+    re-open autocast with the configured dtype inside the replica forward."""
+    seen = {}
+
+    class Probe(torch.nn.Module):
+        def forward(self, x, scale=1):
+            seen["dtype"] = torch.get_autocast_dtype("cpu")
+            return x * scale
+
+    wrapped = _AutocastModule(Probe(), "cpu", torch.float16)
+    with torch.amp.autocast("cpu", enabled=True):          # dtype-less -> bf16 default
+        assert torch.get_autocast_dtype("cpu") == torch.bfloat16
+        out = wrapped(10, scale=3)                          # args + kwargs forwarded
+
+    assert seen["dtype"] == torch.float16                   # wrapper overrode the default
+    assert out == 30                                        # output passed through

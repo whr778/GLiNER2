@@ -15,8 +15,8 @@ The config has four sections:
   multi-GPU set ``data_parallel: true`` (optionally ``data_parallel_device_ids:
   [0, 1]``); it wraps the model in ``nn.DataParallel`` when >=2 CUDA devices are
   present and is a no-op otherwise. The loader ``batch_size`` is split across
-  GPUs, so raise it by ~num_gpus to keep per-GPU work constant. Note AMP does
-  not apply on DataParallel replica threads (see gliner2.training.parallel).
+  GPUs, so raise it by ~num_gpus to keep per-GPU work constant. autocast
+  (bf16/fp16) is preserved on the replica threads (see gliner2.training.parallel).
 * ``eval``     - ``batch_size`` / ``threshold`` for the metrics hook and the
   blind test pass.
 * ``data``     - ``corpora`` base paths (``<name>.{train,val,test}.jsonl``) and

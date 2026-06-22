@@ -60,7 +60,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from tqdm.auto import tqdm
 
-from gliner2.training.parallel import BatchDataParallel
+from gliner2.training.parallel import BatchDataParallel, _AutocastModule
 
 from gliner2.processor import SchemaTransformer, SamplingConfig
 
@@ -218,8 +218,8 @@ class TrainingConfig:
     # CUDA-only: ignored on CPU/MPS, with a single GPU, or when the DDP path
     # (local_rank >= 0) is active. The DataLoader batch is split across GPUs,
     # so per-GPU work is batch_size / num_gpus. device_ids=None uses all
-    # visible CUDA devices. See gliner2.training.parallel (note the AMP caveat:
-    # autocast does not apply on DataParallel's replica threads).
+    # visible CUDA devices. autocast (bf16/fp16) is preserved on the replica
+    # threads via a wrapper -- see gliner2.training.parallel.
     data_parallel: bool = False
     data_parallel_device_ids: Optional[List[int]] = None
     debug: bool = False
@@ -698,7 +698,15 @@ class GLiNER2Trainer:
         if self.device != primary:
             self.device = primary
             self.model.to(self.device)
-        self._fwd_model = BatchDataParallel(self.model, device_ids=device_ids)
+        # parallel_apply re-enables autocast on replica threads but drops the
+        # dtype (thread-local, CUDA default fp16), so a bf16 run would silently
+        # execute replicas in fp16 and overflow to NaN. Wrap the model so each
+        # replica re-opens autocast with the configured dtype.
+        inner = self.model
+        if self.config.bf16 or self.config.fp16:
+            amp_dtype = torch.bfloat16 if self.config.bf16 else torch.float16
+            inner = _AutocastModule(self.model, self.device.type, amp_dtype)
+        self._fwd_model = BatchDataParallel(inner, device_ids=device_ids)
         logger.info(f"DataParallel enabled across CUDA devices {device_ids}")
 
     @property
