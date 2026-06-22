@@ -464,6 +464,26 @@ uv run python tools/train/train.py --config tools/train/config/mmbert-base.yaml
 
 Edit `tools/train/config/mmbert-base.yaml` to retune for your hardware. Defaults use `bf16: true` (prefer on Ampere+/Hopper; switch to `fp16: true` elsewhere) and `max_len: 8192`. Eval-on-val and final blind test on `best` work the same way as for the small variant.
 
+### 4c. Multi-GPU training
+
+Two options, mutually exclusive:
+
+**DistributedDataParallel (recommended).** One process per GPU, launched with `torchrun`. Each process holds the full model and trains on a shard of the data (`DistributedSampler`); gradients are all-reduced in place. No per-step model replication, so it avoids DataParallel's memory growth and is the right choice for large/long runs.
+
+```bash
+# 2 GPUs on one node
+torchrun --standalone --nproc_per_node=2 tools/train/train.py \
+    --config tools/train/config/mmbert-base.yaml
+```
+
+DDP is auto-detected from the `torchrun` environment (`LOCAL_RANK`) — no config flag needed; leave `data_parallel: false`. Notes:
+
+* `batch_size` in the config is **per GPU** under DDP (unlike DataParallel, where it's the total split across GPUs). Effective global batch = `batch_size × nproc_per_node × gradient_accumulation_steps`. Keep the per-GPU `batch_size` the same as your single-GPU value.
+* Only rank 0 logs, evaluates, and writes checkpoints / `train_results.json` / `test_metrics.json`; the early-stop decision is broadcast so all ranks stop together.
+* Backend is `nccl` on CUDA. `bf16`/`fp16` autocast works normally (DDP runs forward in-process, so the DataParallel autocast-dtype caveat does not apply).
+
+**nn.DataParallel (simple, single-process).** Set `data_parallel: true` and launch normally (`uv run python tools/train/train.py ...`). Easiest for a quick 2-GPU run, but it replicates the model every step and gathers on GPU 0 — higher memory and slower than DDP. Prefer DDP for anything large.
+
 ### Structure-loss variant (span scoring for entities/relations/events)
 
 The structure head scores every `(start, width)` span against each schema field on a dense grid, so positives (the few gold spans) are vastly outnumbered by negatives. The loss applied to that grid is selected by the `struct_loss` key in the `model:` section of a YAML config — `train.py` forwards the whole `model:` block to `GLiNER2.from_encoder`, so a config sets only the keys its variant uses:

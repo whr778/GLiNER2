@@ -52,9 +52,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from torch.amp import autocast
 from torch.amp import GradScaler  # device-typed; we instantiate it conditionally
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
@@ -566,8 +568,8 @@ class GLiNER2Trainer:
         self.lora_layers = {}
         self._setup_lora()
 
-        # Multi-GPU forward wrapper (no-op unless data_parallel is enabled).
-        self._setup_data_parallel()
+        # Multi-GPU forward wrapper (DDP / DataParallel; no-op on single device).
+        self._setup_parallel()
 
     def _setup_seed(self):
         seed = self.config.seed
@@ -583,11 +585,26 @@ class GLiNER2Trainer:
                 torch.backends.cudnn.benchmark = True
 
     def _setup_device(self):
-        if self.config.local_rank >= 0:
-            torch.cuda.set_device(self.config.local_rank)
-            self.device = torch.device("cuda", self.config.local_rank)
+        # DDP: torchrun sets LOCAL_RANK/RANK/WORLD_SIZE. Initialize the process
+        # group once (nccl on CUDA, gloo for CPU runs) and pin this rank's device.
+        local_rank = int(os.environ.get("LOCAL_RANK", self.config.local_rank))
+        self.config.local_rank = local_rank
+        if local_rank >= 0:
+            if torch.cuda.is_available():
+                torch.cuda.set_device(local_rank)
+                self.device = torch.device("cuda", local_rank)
+                backend = "nccl"
+            else:
+                self.device = torch.device("cpu")
+                backend = "gloo"
+                self.config.fp16 = self.config.bf16 = False
+            if not dist.is_initialized():
+                dist.init_process_group(backend=backend)
             self.is_distributed = True
-        elif torch.cuda.is_available():
+            self.model.to(self.device)
+            logger.info(f"DDP rank {dist.get_rank()}/{dist.get_world_size()} on {self.device}")
+            return
+        if torch.cuda.is_available():
             self.device = torch.device("cuda")
             self.is_distributed = False
         elif torch.backends.mps.is_available():
@@ -671,19 +688,27 @@ class GLiNER2Trainer:
         pct = (lora_params / total_params * 100) if total_params > 0 else 0.0
         logger.info(f"LoRA setup complete: {lora_params:,} trainable / {total_params:,} total ({pct:.2f}%)")
 
-    def _setup_data_parallel(self):
-        """Wrap the model in nn.DataParallel for multi-GPU forward when enabled.
+    def _setup_parallel(self):
+        """Wrap the model for multi-GPU forward (DDP or nn.DataParallel).
 
         ``self.model`` stays the raw module (optimizer, grad-clipping, and
         checkpoint saving all use it); only the forward pass goes through
-        ``self._fwd_model``. A no-op (``_fwd_model is model``) unless
-        ``data_parallel`` is set and >=2 CUDA devices are available.
+        ``self._fwd_model``. DDP (launched via torchrun, i.e. local_rank >= 0)
+        takes precedence; otherwise DataParallel is used when ``data_parallel``
+        is set and >=2 CUDA devices are available; otherwise it's a no-op.
         """
         self._fwd_model = self.model
-        if not self.config.data_parallel:
-            return
         if self.is_distributed:
-            logger.warning("data_parallel ignored: DDP path (local_rank >= 0) is active.")
+            device_ids = [self.config.local_rank] if self.device.type == "cuda" else None
+            self._fwd_model = DistributedDataParallel(
+                self.model, device_ids=device_ids,
+                # the model runs different task heads per sample, so some params
+                # get no gradient on a given batch -- DDP must tolerate that.
+                find_unused_parameters=True,
+            )
+            logger.info(f"DDP wrapping model on {self.device}")
+            return
+        if not self.config.data_parallel:
             return
         if self.device.type != "cuda" or torch.cuda.device_count() < 2:
             logger.info("data_parallel requested but <2 CUDA devices available; "
@@ -712,7 +737,22 @@ class GLiNER2Trainer:
 
     @property
     def is_main_process(self) -> bool:
+        if dist.is_available() and dist.is_initialized():
+            return dist.get_rank() == 0
         return self.config.local_rank <= 0
+
+    def _barrier(self) -> None:
+        """Synchronize all DDP ranks (no-op when not distributed)."""
+        if self.is_distributed and dist.is_initialized():
+            dist.barrier()
+
+    def _sync_flag(self, flag: bool) -> bool:
+        """Broadcast a boolean decision (e.g. early-stop) from rank 0 to all ranks."""
+        if not (self.is_distributed and dist.is_initialized()):
+            return flag
+        t = torch.tensor([1 if flag else 0], device=self.device)
+        dist.broadcast(t, src=0)
+        return bool(t.item())
 
     @staticmethod
     def _safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
@@ -899,7 +939,9 @@ class GLiNER2Trainer:
 
     def _create_dataloader(self, dataset: ExtractorDataset, batch_size: int, shuffle: bool = True, is_training: bool = True) -> DataLoader:
         sampler = None
-        if self.is_distributed:
+        # Shard only the training data across ranks. Evaluation runs on rank 0
+        # over the full set (see _evaluate), so eval loaders stay unsharded.
+        if self.is_distributed and is_training:
             sampler = DistributedSampler(dataset, shuffle=shuffle)
             shuffle = False
 
@@ -1147,7 +1189,9 @@ class GLiNER2Trainer:
                         tr_loss = 0.0
 
                     if self.config.eval_strategy == "steps" and self.global_step % self.config.eval_steps == 0:
-                        if eval_dataset:
+                        # Under DDP, eval/early-stop run on rank 0 only; the
+                        # decision is then broadcast so all ranks stop together.
+                        if eval_dataset and self.is_main_process:
                             prev_best = self.best_metric
                             eval_metrics = self._evaluate(eval_dataset)
                             self.model.train()
@@ -1155,8 +1199,11 @@ class GLiNER2Trainer:
                             if self.config.early_stopping and self._check_early_stopping(eval_metrics, prev_best):
                                 logger.info(f"Early stopping triggered at step {self.global_step}")
                                 should_stop = True
-                                break
                         self._save_checkpoint(f"checkpoint-{self.global_step}")
+                        should_stop = self._sync_flag(should_stop)
+                        self._barrier()
+                        if should_stop:
+                            break
 
                     self.progress_bar.update(1)
 
@@ -1177,15 +1224,20 @@ class GLiNER2Trainer:
             logger.info(f"Epoch {epoch + 1}/{num_epochs} - Loss: {avg_epoch_loss:.4f}")
 
             if self.config.eval_strategy == "epoch":
-                if eval_dataset:
+                epoch_stop = False
+                if eval_dataset and self.is_main_process:
                     prev_best = self.best_metric
                     eval_metrics = self._evaluate(eval_dataset)
                     self.model.train()
                     self.processor.change_mode(is_training=True)
                     if self.config.early_stopping and self._check_early_stopping(eval_metrics, prev_best):
                         logger.info(f"Early stopping triggered at epoch {epoch + 1}")
-                        break
+                        epoch_stop = True
                 self._save_checkpoint(f"checkpoint-epoch-{epoch + 1}")
+                epoch_stop = self._sync_flag(epoch_stop)
+                self._barrier()
+                if epoch_stop:
+                    break
 
             if self.global_step >= max_steps:
                 break
@@ -1193,6 +1245,7 @@ class GLiNER2Trainer:
         self.progress_bar.close()
         self.progress_bar = None
 
+        self._barrier()  # all ranks finish training before rank 0 writes the final checkpoint
         if self.is_main_process:
             self._save_checkpoint("final")
             if self.config.report_to_wandb:
@@ -1200,6 +1253,10 @@ class GLiNER2Trainer:
                 wandb.summary["best_metric"] = self.best_metric
                 wandb.summary["total_steps"] = self.global_step
                 wandb.finish()
+
+        if self.is_distributed and dist.is_initialized():
+            dist.barrier()
+            dist.destroy_process_group()
 
         total_time = time.time() - start_time
         return {
@@ -1265,7 +1322,9 @@ class GLiNER2Trainer:
         with torch.no_grad():
             for batch in tqdm(eval_loader, desc="Evaluating", disable=not self.is_main_process):
                 with autocast(device_type=self.device.type, enabled=use_amp, dtype=amp_dtype):
-                    outputs = self._fwd_model(batch)
+                    # Raw model, not the DDP/DataParallel wrapper: eval runs on
+                    # rank 0 only, so the wrapper's collectives would deadlock.
+                    outputs = self.model(batch)
 
                 # Fix Bug #10: Move tensors to CPU to prevent memory leak
                 total_loss += outputs["total_loss"].detach().cpu().item()
@@ -1478,7 +1537,7 @@ class GLiNER2Trainer:
                 self._setup_lora()
 
         # self.model was reassigned; rebuild the forward wrapper to track it.
-        self._setup_data_parallel()
+        self._setup_parallel()
         logger.info("Loaded checkpoint: %s", checkpoint_path)
 
 

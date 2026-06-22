@@ -11,12 +11,12 @@ The config has four sections:
   ``struct_loss`` are forwarded to it) or ``pretrained`` (a saved GLiNER2
   checkpoint continued via ``GLiNER2.from_pretrained``; remaining keys override
   the loaded ``model.config``). Exactly one of the two must be set.
-* ``training`` - fields forwarded verbatim to :class:`TrainingConfig`. For
-  multi-GPU set ``data_parallel: true`` (optionally ``data_parallel_device_ids:
-  [0, 1]``); it wraps the model in ``nn.DataParallel`` when >=2 CUDA devices are
-  present and is a no-op otherwise. The loader ``batch_size`` is split across
-  GPUs, so raise it by ~num_gpus to keep per-GPU work constant. autocast
-  (bf16/fp16) is preserved on the replica threads (see gliner2.training.parallel).
+* ``training`` - fields forwarded verbatim to :class:`TrainingConfig`. Multi-GPU:
+  preferred is DistributedDataParallel via ``torchrun --nproc_per_node=N
+  tools/train/train.py --config ...`` (auto-detected from ``LOCAL_RANK``; here
+  ``batch_size`` is per-GPU). Alternatively set ``data_parallel: true`` for
+  single-process ``nn.DataParallel`` (``batch_size`` is the total split across
+  GPUs). See TRAINING.md section 4c.
 * ``eval``     - ``batch_size`` / ``threshold`` for the metrics hook and the
   blind test pass.
 * ``data``     - ``corpora`` base paths (``<name>.{train,val,test}.jsonl``) and
@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from pprint import pprint
 from typing import Dict, List
@@ -272,6 +273,10 @@ def _build_model(model_cfg: Dict):
 
 
 def main(config_path: str) -> None:
+    # Under torchrun (DDP) only rank 0 estimates ETA and writes results/blind-test;
+    # all ranks run trainer.train(). LOCAL_RANK is unset (-> -1) for single-process.
+    is_main = int(os.environ.get("LOCAL_RANK", -1)) <= 0
+
     cfg = yaml.safe_load(Path(config_path).read_text())
 
     model = _build_model(cfg["model"])
@@ -303,9 +308,14 @@ def main(config_path: str) -> None:
         eval_data=eval_data,
         compute_metrics=make_compute_metrics(batch_size=eval_bs, threshold=eval_thr),
     )
-    estimate_eta(model, train_data, config)
+    if is_main:
+        estimate_eta(model, train_data, config)
     results = trainer.train(train_data=train_data)
     # pprint(results)
+
+    # Only rank 0 writes results and runs the blind test; other ranks are done.
+    if not is_main:
+        return
 
     results_path = Path(config.output_dir) / "train_results.json"
     results_path.write_text(
