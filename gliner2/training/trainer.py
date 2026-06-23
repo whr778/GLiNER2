@@ -585,6 +585,15 @@ class GLiNER2Trainer:
                 torch.backends.cudnn.benchmark = True
 
     def _setup_device(self):
+        # The cuDNN fused-attention (SDPA) backend intermittently fails to
+        # execute its graph on certain sequence shapes -- with variable-length
+        # mmBERT/ModernBERT inputs (up to 8192 tokens) this surfaces mid-run as
+        # "mha_graph.execute().is_good() ... got False" and aborts training.
+        # Disabling it lets SDPA fall back to the stable flash / mem-efficient
+        # kernels. Global flag, so set it on every rank before the first forward.
+        if torch.cuda.is_available():
+            torch.backends.cuda.enable_cudnn_sdp(False)
+
         # DDP: torchrun sets LOCAL_RANK/RANK/WORLD_SIZE. Initialize the process
         # group once (nccl on CUDA, gloo for CPU runs) and pin this rank's device.
         local_rank = int(os.environ.get("LOCAL_RANK", self.config.local_rank))
