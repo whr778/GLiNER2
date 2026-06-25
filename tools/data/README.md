@@ -21,6 +21,7 @@ does two things:
 - Strips stray Unicode line separators (NEL U+0085, U+2028, U+2029) to a space.
   Left in, `json.dumps` writes them literally and they fragment a JSONL record
   across physical lines for any `splitlines()`-based reader.
+- When using json.dump or json.dumps ensure_ascii should always be set to False unless I have directed otherwise.
 
 ## Mention-type filtering
 
