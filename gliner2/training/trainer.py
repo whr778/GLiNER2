@@ -1111,6 +1111,9 @@ class GLiNER2Trainer:
         should_stop = False
         for epoch in range(num_epochs):
             self.epoch = epoch
+            # Release the previous epoch's cached blocks at the boundary so the
+            # MPS/CUDA high-water mark does not climb across epochs.
+            self._free_memory()
 
             if self.is_distributed:
                 train_loader.sampler.set_epoch(epoch)
@@ -1296,11 +1299,25 @@ class GLiNER2Trainer:
             f"(step {self.global_step}/{max_steps}, elapsed {_fmt_seconds(elapsed)})"
         )
 
+    def _free_memory(self) -> None:
+        """Release cached allocator memory so the high-water mark does not grow
+        across epochs. The MPS/CUDA caching allocators retain freed blocks; on
+        MPS (unified memory) an unbounded high-water mark ends in an uncatchable
+        OS OOM kill, typically first hit during the memory-heavy eval pass.
+        Cheap and safe to call between phases (it frees only unused blocks)."""
+        gc.collect()
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
+        elif self.device.type == "mps":
+            torch.mps.empty_cache()
+
     def _evaluate(self, eval_dataset: ExtractorDataset) -> Dict[str, float]:
         logger.info("Running evaluation...")
         self._log_remaining_eta()
         self.model.eval()
         self.processor.change_mode(is_training=False)
+        # Free the training step's cached blocks so eval has headroom.
+        self._free_memory()
 
         eval_loader = self._create_dataloader(eval_dataset, self.config.eval_batch_size, shuffle=False, is_training=False)
 
@@ -1352,6 +1369,9 @@ class GLiNER2Trainer:
             "epoch": self.epoch,
         }
 
+        # The eval-loss pass is done; release its activations before the second
+        # forward pass that compute_metrics runs (batch_extract over the val set).
+        self._free_memory()
         if self.compute_metrics:
             metrics.update(self.compute_metrics(self.model, eval_dataset))
 
@@ -1372,6 +1392,8 @@ class GLiNER2Trainer:
                 self._write_eval_metrics(metrics)
             logger.info(f"New best {self.config.metric_for_best}: {self.best_metric:.4f}")
 
+        # Release eval activations before training resumes.
+        self._free_memory()
         return metrics
 
     def _check_early_stopping(self, metrics: Dict[str, float], prev_best: Optional[float] = None) -> bool:
