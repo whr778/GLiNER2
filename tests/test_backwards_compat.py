@@ -18,6 +18,22 @@ from peft import PeftModel
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "compat"
 
+# The numeric-equivalence proofs replay binary golden fixtures captured ONCE from
+# pre-migration main (scripts/capture_legacy_oracle.py). They are gitignored
+# (*.pt / *.safetensors) and cannot be faithfully regenerated from post-migration
+# code, so skip them cleanly when absent rather than failing on a fresh checkout.
+_LEGACY_FIXTURES = (
+    FIXTURE_DIR / "input_batch.pt",
+    FIXTURE_DIR / "legacy_forward_outputs.pt",
+    FIXTURE_DIR / "lora_weights.pt",
+    FIXTURE_DIR / "legacy_adapter_golden" / "adapter_weights.safetensors",
+)
+requires_legacy_fixtures = pytest.mark.skipif(
+    not all(p.exists() for p in _LEGACY_FIXTURES),
+    reason="legacy binary fixtures absent (gitignored); regenerate from "
+           "pre-migration main via scripts/capture_legacy_oracle.py",
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers (identical to the oracle capture)
@@ -125,6 +141,7 @@ def test_training_config_lora_fields() -> None:
 # Proof 2 — On-disk adapter format parity
 # =========================================================================
 
+@requires_legacy_fixtures
 def test_save_adapter_directory_shape(tmp_path) -> None:
     """save_lora_adapter emits the legacy directory shape."""
     from gliner2.training.lora import save_lora_adapter, _resolve_targets
@@ -163,6 +180,7 @@ def test_save_adapter_directory_shape(tmp_path) -> None:
 # Proof 3 — Numeric equivalence (legacy oracle replay)
 # =========================================================================
 
+@requires_legacy_fixtures
 def test_legacy_adapter_forward_matches_oracle() -> None:
     """Loading the legacy golden adapter and replaying the oracle input
     produces outputs within tolerance of the legacy forward."""
@@ -239,6 +257,7 @@ def test_legacy_adapter_forward_matches_oracle() -> None:
     torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
 
 
+@requires_legacy_fixtures
 def test_legacy_adapter_forward_matches_oracle_fp16() -> None:
     """Same as above but in fp16 — validates the PR #4 dtype fix."""
     from gliner2.training.lora import _resolve_targets

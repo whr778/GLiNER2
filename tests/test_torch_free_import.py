@@ -6,9 +6,12 @@ parent process.  It must be run in a venv built from
 ``pip install -e .`` (no extras).
 """
 
+import importlib.util
 import subprocess
 import sys
 import textwrap
+
+import pytest
 
 TORCH_FREE_SCRIPT = textwrap.dedent("""\
     import sys
@@ -46,6 +49,12 @@ TORCH_FREE_SCRIPT = textwrap.dedent("""\
 """)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("torch") is not None,
+    reason="requires a torch-free venv (pip install -e . with no extras); "
+           "torch is installed in this environment, so the final 'GLiNER2 "
+           "unavailable without torch' assertion cannot hold",
+)
 def test_torch_free_import():
     result = subprocess.run(
         [sys.executable, "-c", TORCH_FREE_SCRIPT],
