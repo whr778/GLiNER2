@@ -1,0 +1,254 @@
+# Dataset + base-model registry for model-card generation.
+#
+# This is the single source of truth for the data/license sections of the
+# generated MODEL_CARD.md. License strings are copied VERBATIM from
+# TRAINING_DATA.md (the dataset License column) and the upstream model cards.
+#
+# RULES (keep model cards honest):
+#   - Never "upgrade" an unverified license to a named SPDX id. Strings like
+#     "see card", "see source", "other", "research use", and "LDC" stay as-is;
+#     the generator classifies them as unverified / research-only.
+#   - Keys are the corpus basename used in tools/train/config/*.yaml
+#     (data/<key> for corpora; <key> for event_files).
+#   - Every corpus used in any config must have an entry here
+#     (enforced by tests/test_model_card.py).
+#
+# Fields: name, tasks, license, hf_id (HF dataset id for frontmatter; omit if
+# not an HF dataset), source_url, language (list of ISO 639-1 codes).
+
+base_models:
+  jhu-clsp/mmBERT-base:
+    name: mmBERT-base
+    license: see model card        # confirm upstream and replace if known
+    source_url: https://huggingface.co/jhu-clsp/mmBERT-base
+  jhu-clsp/mmBERT-small:
+    name: mmBERT-small
+    license: see model card
+    source_url: https://huggingface.co/jhu-clsp/mmBERT-small
+  fastino/gliner2-large-v1:
+    name: gliner2-large-v1
+    license: see model card
+    source_url: https://huggingface.co/fastino/gliner2-large-v1
+  fastino/gliner2-multi-v1:
+    name: gliner2-multi-v1
+    license: see model card
+    source_url: https://huggingface.co/fastino/gliner2-multi-v1
+
+datasets:
+  # --- NER ---
+  nuner_full:
+    name: NuNER
+    tasks: NER
+    license: MIT
+    hf_id: numind/NuNER
+    source_url: https://huggingface.co/datasets/numind/NuNER
+    language: [en]
+  pile_ner_def:
+    name: Pile-NER-definition
+    tasks: NER (typed + definitions)
+    license: see card
+    hf_id: Universal-NER/Pile-NER-definition
+    source_url: https://huggingface.co/datasets/Universal-NER/Pile-NER-definition
+    language: [en]
+  knowledgator_gliner:
+    name: GLiNER multi-task synthetic
+    tasks: NER (multi-task)
+    license: Apache-2.0
+    hf_id: knowledgator/GLINER-multi-task-synthetic-data
+    source_url: https://huggingface.co/datasets/knowledgator/GLINER-multi-task-synthetic-data
+    language: [en]
+  gliner_multilingual:
+    name: GLiNER multilingual synthetic
+    tasks: NER (multilingual)
+    license: see card
+    hf_id: knowledgator/gliner-multilingual-synthetic
+    source_url: https://huggingface.co/datasets/knowledgator/gliner-multilingual-synthetic
+    language: [en, de, fr, es, it, pl, nl, pt]
+  biomed_ner:
+    name: biomed_NER
+    tasks: NER (biomedical)
+    license: Apache-2.0
+    hf_id: knowledgator/biomed_NER
+    source_url: https://huggingface.co/datasets/knowledgator/biomed_NER
+    language: [en]
+  pubmed_abstracts_ner:
+    name: PubMedAbstractsNER
+    tasks: NER (biomedical + descriptions)
+    license: Apache-2.0
+    hf_id: knowledgator/PubMedAbstractsNER
+    source_url: https://huggingface.co/datasets/knowledgator/PubMedAbstractsNER
+    language: [en]
+  kaznerd:
+    name: KazNERD
+    tasks: NER (Kazakh, 25 types)
+    license: cc-by-4.0
+    hf_id: yeshpanovrustem/kaznerd
+    source_url: https://huggingface.co/datasets/yeshpanovrustem/kaznerd
+    language: [kk]
+  bc4chemd:
+    name: BC4CHEMD
+    tasks: NER (chemical)
+    license: see card
+    hf_id: chintagunta85/bc4chemd
+    source_url: https://huggingface.co/datasets/chintagunta85/bc4chemd
+    language: [en]
+  bc5cdr:
+    name: BC5CDR
+    tasks: NER (chemical + disease)
+    license: other
+    hf_id: tner/bc5cdr
+    source_url: https://huggingface.co/datasets/tner/bc5cdr
+    language: [en]
+  stockmark_jpn:
+    name: stockmark-jpn
+    tasks: NER (Japanese, 8 types)
+    license: cc-by-sa-3.0
+    hf_id: stockmark/ner-wikipedia-dataset
+    source_url: https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset
+    language: [ja]
+  finer_ord:
+    name: FiNER-ORD
+    tasks: NER (financial, PER/LOC/ORG)
+    license: cc-by-nc-4.0
+    hf_id: gtfintechlab/finer-ord
+    source_url: https://huggingface.co/datasets/gtfintechlab/finer-ord
+    language: [en]
+  klue_ner:
+    name: KLUE-NER
+    tasks: NER (Korean, 6 types)
+    license: cc-by-sa-4.0
+    source_url: https://github.com/KLUE-benchmark/KLUE
+    language: [ko]
+  # --- Relation extraction ---
+  sentence_rex:
+    name: sentence_rex
+    tasks: Relation extraction
+    license: Apache-2.0
+    hf_id: knowledgator/sentence_rex
+    source_url: https://huggingface.co/datasets/knowledgator/sentence_rex
+    language: [en]
+  bio_ner_relations:
+    name: bio-NER-relations
+    tasks: NER + relations
+    license: see card
+    hf_id: knowledgator/bio-NER-relations
+    source_url: https://huggingface.co/datasets/knowledgator/bio-NER-relations
+    language: [en]
+  docred:
+    name: DocRED
+    tasks: NER + relations (doc-level)
+    license: MIT
+    hf_id: thunlp/docred
+    source_url: https://huggingface.co/datasets/thunlp/docred
+    language: [en]
+  klue_re:
+    name: KLUE-RE
+    tasks: NER + relations (Korean)
+    license: cc-by-sa-4.0
+    source_url: https://github.com/KLUE-benchmark/KLUE
+    language: [ko]
+  biored:
+    name: BioRED
+    tasks: NER + relations (biomedical)
+    license: NLM / NCBI
+    source_url: https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/
+    language: [en]
+  scierc:
+    name: SciERC
+    tasks: NER + relations (scientific)
+    license: research use (AI2)
+    source_url: http://nlp.cs.washington.edu/sciIE/
+    language: [en]
+  # --- Classification ---
+  gliclass_logic:
+    name: GLiClass v3 logic
+    tasks: Classification (multiple-choice)
+    license: Apache-2.0
+    hf_id: knowledgator/gliclass-v3-logic-dataset
+    source_url: https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset
+    language: [en]
+  gliclass_rac:
+    name: GLiClass v2.0-RAC
+    tasks: Classification (multi-label)
+    license: Apache-2.0
+    hf_id: knowledgator/gliclass-v2.0-RAC
+    source_url: https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC
+    language: [en]
+  scientific_text:
+    name: Scientific-text-classification
+    tasks: Classification (single-label)
+    license: see card
+    hf_id: knowledgator/Scientific-text-classification
+    source_url: https://huggingface.co/datasets/knowledgator/Scientific-text-classification
+    language: [en]
+  events_biotech:
+    name: events_classification_biotech
+    tasks: Classification (multi-label)
+    license: ODC-BY
+    hf_id: knowledgator/events_classification_biotech
+    source_url: https://huggingface.co/datasets/knowledgator/events_classification_biotech
+    language: [en]
+  # --- Structured extraction ---
+  text2json:
+    name: text2json-training-data
+    tasks: Schema-driven structured extraction
+    license: see card
+    hf_id: knowledgator/text2json-training-data
+    source_url: https://huggingface.co/datasets/knowledgator/text2json-training-data
+    language: [en]
+  paraloq_json:
+    name: json_data_extraction
+    tasks: Schema-driven structured extraction
+    license: Apache-2.0
+    hf_id: paraloq/json_data_extraction
+    source_url: https://huggingface.co/datasets/paraloq/json_data_extraction
+    language: [en]
+  # --- Event extraction (manual download) ---
+  wikievents:
+    name: WikiEvents
+    tasks: NER + event extraction
+    license: see source
+    source_url: https://github.com/raspberryice/gen-arg
+    language: [en]
+  rams:
+    name: RAMS
+    tasks: Event extraction (trigger + args)
+    license: see source
+    source_url: https://nlp.jhu.edu/rams/
+    language: [en]
+  maven:
+    name: MAVEN
+    tasks: Event detection (trigger)
+    license: see source
+    source_url: https://github.com/THU-KEG/MAVEN-dataset
+    language: [en]
+  casie:
+    name: CASIE
+    tasks: Event extraction (cybersecurity)
+    license: see source
+    source_url: https://github.com/Ebiquity/CASIE
+    language: [en]
+  cmnee:
+    name: CMNEE
+    tasks: Event extraction (Chinese military)
+    license: see source
+    source_url: https://github.com/2086482524/CMNEE
+    language: [zh]
+  leven:
+    name: LEVEN
+    tasks: Event detection (Chinese legal, trigger)
+    license: see source
+    source_url: https://github.com/thunlp/LEVEN
+    language: [zh]
+  docee:
+    name: DocEE
+    tasks: Event extraction (doc-level)
+    license: see source
+    source_url: https://github.com/tongmeihan1995/docee
+    language: [en]
+  ace2005:
+    name: ACE 2005
+    tasks: NER + relations + events
+    license: LDC (LDC2006T06)
+    source_url: https://catalog.ldc.upenn.edu/LDC2006T06
+    language: [en]

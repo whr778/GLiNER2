@@ -401,6 +401,8 @@ The `mmbert-small-*` and WikiEvents configs ship with `entities`/`relations`/`ev
 
 Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass. Each time a new best checkpoint is saved, its eval metrics are written to `output_dir/eval_metrics.json` and `output_dir/best/eval_metrics.json`; the blind-test metrics are likewise copied to `output_dir/best/test_metrics.json`, so every metrics file sits next to the model it describes. See [METRICS.md](METRICS.md) for the metric definitions.
 
+At the end of training, a human-readable **`output_dir/best/MODEL_CARD.md`** is generated: base model, training procedure and date, the datasets actually used (with per-dataset licenses pulled from `tools/train/dataset_registry.yaml`), the best metrics, and an **effective-license determination** that takes the most restrictive term across the base model and every dataset. License strings are copied verbatim and unverified ones ("see card"/"see source"/"other") are flagged, never upgraded — so the card never asserts a license the data doesn't support. Keep the registry current when adding a corpus (a test enforces every config corpus has an entry).
+
 ### Sliding-window chunking (instead of truncation)
 
 By default, records longer than `max_len` word-tokens get truncated by the collator. Set `sliding_window=True` in `TrainingConfig` to switch behaviour: each record's `input` is expanded **at dataset-load time** into overlapping subword-token windows, and each chunk inherits a filtered copy of the gold annotations.

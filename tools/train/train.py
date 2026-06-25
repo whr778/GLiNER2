@@ -47,7 +47,11 @@ Results land in ``<output_dir>/train_results.json`` and the blind-test metrics
 in ``<output_dir>/test_metrics.json``. The best checkpoint's eval metrics are
 written to ``<output_dir>/eval_metrics.json`` and ``<output_dir>/best/``; the
 blind-test metrics are also copied into ``<output_dir>/best/test_metrics.json``,
-so each metrics file sits alongside the model it describes.
+so each metrics file sits alongside the model it describes. A human-readable
+``<output_dir>/best/MODEL_CARD.md`` is generated at the end of training,
+covering the base model, training procedure and date, the datasets actually
+used (with per-dataset licenses), the best metrics, and an effective-license
+determination sourced from ``tools/train/dataset_registry.yaml``.
 """
 
 from __future__ import annotations
@@ -77,6 +81,37 @@ def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[st
         if p and Path(p).is_file():
             paths.append(p)
     return paths
+
+
+def _write_model_card(cfg, config, corpora, event_files, results, test_metrics, best: Path) -> None:
+    """Generate MODEL_CARD.md in the best checkpoint folder. Never fatal -- a
+    card bug must not lose a model that already trained for hours."""
+    try:
+        from datetime import datetime
+        from model_card import build_model_card
+
+        eval_metrics = None
+        ev = best / "eval_metrics.json"
+        if ev.is_file():
+            eval_metrics = json.loads(ev.read_text())
+        # Datasets actually used: every corpus, plus event sets whose files exist.
+        dataset_keys = [Path(c).name for c in corpora] + [
+            name for name, by_split in (event_files or {}).items()
+            if any(p and Path(p).is_file() for p in by_split.values())
+        ]
+        model_cfg = cfg.get("model") or {}
+        card = build_model_card(
+            model_name=getattr(config, "experiment_name", None) or Path(config.output_dir).name,
+            base_model=model_cfg.get("encoder") or model_cfg.get("pretrained"),
+            cfg=cfg, config=config, dataset_keys=dataset_keys, results=results,
+            eval_metrics=eval_metrics, test_metrics=test_metrics or None,
+            generated_at=datetime.now().strftime("%Y-%m-%d"),
+        )
+        path = best / "MODEL_CARD.md"
+        path.write_text(card, encoding="utf-8")
+        print(f"[model card] Wrote {path}")
+    except Exception as e:  # noqa: BLE001 - never let a card bug abort the run
+        print(f"[model card] Skipped (generation failed): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -332,32 +367,34 @@ def main(config_path: str) -> None:
         return
 
     print(f"\n[blind test] Loading {best} and scoring against {len(test_data)} held-out splits...")
-    test_metrics = evaluate_checkpoint(best, test_data, batch_size=eval_bs, threshold=eval_thr)
-    if not test_metrics:
+    test_metrics = evaluate_checkpoint(best, test_data, batch_size=eval_bs, threshold=eval_thr) or {}
+    if test_metrics:
+        metrics_path = Path(config.output_dir) / "test_metrics.json"
+        metrics_path.write_text(json.dumps(test_metrics, indent=2))
+        best_metrics_path = best / "test_metrics.json"
+        best_metrics_path.write_text(json.dumps(test_metrics, indent=2))
+        print(f"\n[blind test] Wrote metrics to {metrics_path} and {best_metrics_path}")
+
+        print("\n===== Blind test metrics =====")
+        for key in sorted(test_metrics):
+            val = test_metrics[key]
+            if isinstance(val, float):
+                print(f"  {key}: {val:.4f}")
+            elif isinstance(val, int):
+                print(f"  {key}: {val}")
+
+        for category in ("entity", "relation", "classification", "event_type",
+                         "event_trigger", "event_argument", "event"):
+            for regime in ("strict", "relaxed"):
+                report_key = f"eval_{category}_{regime}_classification_report"
+                if report_key in test_metrics:
+                    print(f"\n--- {category} {regime} classification report ---")
+                    print(test_metrics[report_key])
+    else:
         print("[blind test] No metrics produced (empty test set?).")
-        return
 
-    metrics_path = Path(config.output_dir) / "test_metrics.json"
-    metrics_path.write_text(json.dumps(test_metrics, indent=2))
-    best_metrics_path = best / "test_metrics.json"
-    best_metrics_path.write_text(json.dumps(test_metrics, indent=2))
-    print(f"\n[blind test] Wrote metrics to {metrics_path} and {best_metrics_path}")
-
-    print("\n===== Blind test metrics =====")
-    for key in sorted(test_metrics):
-        val = test_metrics[key]
-        if isinstance(val, float):
-            print(f"  {key}: {val:.4f}")
-        elif isinstance(val, int):
-            print(f"  {key}: {val}")
-
-    for category in ("entity", "relation", "classification", "event_type",
-                     "event_trigger", "event_argument", "event"):
-        for regime in ("strict", "relaxed"):
-            report_key = f"eval_{category}_{regime}_classification_report"
-            if report_key in test_metrics:
-                print(f"\n--- {category} {regime} classification report ---")
-                print(test_metrics[report_key])
+    # ----- model card (best/ exists at this point) -----
+    _write_model_card(cfg, config, corpora, event_files, results, test_metrics, best)
 
 
 if __name__ == "__main__":
