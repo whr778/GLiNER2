@@ -399,7 +399,7 @@ labels:
 
 The `mmbert-small-*` and WikiEvents configs ship with `entities`/`relations`/`events` rolled up as a worked example; `mmbert-base.yaml` carries the section as a documented no-op.
 
-Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass.
+Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass. Each time a new best checkpoint is saved, its eval metrics are written to `output_dir/eval_metrics.json` and `output_dir/best/eval_metrics.json`; the blind-test metrics are likewise copied to `output_dir/best/test_metrics.json`, so every metrics file sits next to the model it describes. See [METRICS.md](METRICS.md) for the metric definitions.
 
 ### Sliding-window chunking (instead of truncation)
 
@@ -450,7 +450,7 @@ The config sets `model.encoder: jhu-clsp/mmBERT-small`, which `train.py` passes 
 `train.py` also:
 
 * Wires the `.val.jsonl` files into `eval_data=` so the trainer scores them at the end of every epoch with `make_compute_metrics()` — micro/macro precision/recall/F1 for entities, relations, and classifications, plus a per-label `classification_report` string. `eval_loss` drives `save_best=True`, so `<output_dir>/best/` always holds the lowest-val-loss checkpoint.
-* After `trainer.train()` returns, calls `evaluate_checkpoint(<output_dir>/best, test_data)` against the `.test.jsonl` splits and writes `test_metrics.json`.
+* After `trainer.train()` returns, calls `evaluate_checkpoint(<output_dir>/best, test_data)` against the `.test.jsonl` splits and writes `test_metrics.json` (to both `<output_dir>/` and `<output_dir>/best/`).
 
 Checkpoints land in the config's `output_dir` (e.g. `out/mmbert-small/`). The `final` checkpoint is the last step; intermediate `checkpoint-<step>` directories are rotated.
 

@@ -44,7 +44,10 @@ The config has four sections:
   category (or the whole section) to leave it untouched.
 
 Results land in ``<output_dir>/train_results.json`` and the blind-test metrics
-in ``<output_dir>/test_metrics.json``.
+in ``<output_dir>/test_metrics.json``. The best checkpoint's eval metrics are
+written to ``<output_dir>/eval_metrics.json`` and ``<output_dir>/best/``; the
+blind-test metrics are also copied into ``<output_dir>/best/test_metrics.json``,
+so each metrics file sits alongside the model it describes.
 """
 
 from __future__ import annotations
@@ -336,7 +339,9 @@ def main(config_path: str) -> None:
 
     metrics_path = Path(config.output_dir) / "test_metrics.json"
     metrics_path.write_text(json.dumps(test_metrics, indent=2))
-    print(f"\n[blind test] Wrote metrics to {metrics_path}")
+    best_metrics_path = best / "test_metrics.json"
+    best_metrics_path.write_text(json.dumps(test_metrics, indent=2))
+    print(f"\n[blind test] Wrote metrics to {metrics_path} and {best_metrics_path}")
 
     print("\n===== Blind test metrics =====")
     for key in sorted(test_metrics):

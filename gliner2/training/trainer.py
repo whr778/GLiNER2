@@ -1368,6 +1368,8 @@ class GLiNER2Trainer:
             self.best_metric = metric_value
             if self.config.save_best:
                 self._save_checkpoint("best")
+            if self.is_main_process:
+                self._write_eval_metrics(metrics)
             logger.info(f"New best {self.config.metric_for_best}: {self.best_metric:.4f}")
 
         return metrics
@@ -1438,6 +1440,20 @@ class GLiNER2Trainer:
 
         if prefix == "train":
             self.train_metrics_history.append(metrics)
+
+    def _write_eval_metrics(self, metrics: Dict) -> None:
+        """Persist the best checkpoint's eval metrics as JSON.
+
+        Writes ``eval_metrics.json`` to ``output_dir`` (always reflecting the
+        current best) and, when the ``best/`` checkpoint folder exists, into it
+        too — so the metrics travel with the saved model. Caller guards on
+        ``is_main_process``.
+        """
+        payload = json.dumps(metrics, indent=2, default=str)
+        (self.output_dir / "eval_metrics.json").write_text(payload, encoding="utf-8")
+        best_dir = self.output_dir / "best"
+        if best_dir.is_dir():
+            (best_dir / "eval_metrics.json").write_text(payload, encoding="utf-8")
 
     def _save_checkpoint(self, name: str):
         if not self.is_main_process:
