@@ -27,11 +27,42 @@ import argparse
 import json
 import random
 import sys
+import unicodedata
 from pathlib import Path
 from typing import IO, Dict, List, Sequence, Tuple
 
 
 SPLIT_NAMES = ("train", "val", "test")
+
+
+def nfkc_normalize(obj):
+    """Recursively NFKC-normalize every string in a nested JSON-like structure.
+
+    Normalizes dict keys and values, list items, and bare strings; non-string
+    scalars pass through unchanged. When two dict keys normalize to the same
+    string and both values are lists, the lists are concatenated (otherwise
+    last-wins) so a key collision never silently drops data.
+    """
+    if isinstance(obj, str):
+        return unicodedata.normalize("NFKC", obj)
+    if isinstance(obj, dict):
+        out: dict = {}
+        for k, v in obj.items():
+            nk = nfkc_normalize(k)
+            nv = nfkc_normalize(v)
+            if nk in out and isinstance(out[nk], list) and isinstance(nv, list):
+                out[nk] = out[nk] + nv
+            else:
+                out[nk] = nv
+        return out
+    if isinstance(obj, list):
+        return [nfkc_normalize(x) for x in obj]
+    return obj
+
+
+def dumps_record(record: dict) -> str:
+    """Serialize a record to one JSONL line: NFKC-normalized, non-ASCII kept."""
+    return json.dumps(nfkc_normalize(record), ensure_ascii=False)
 
 
 def parse_ratios(spec: str) -> Tuple[float, float, float]:
@@ -117,7 +148,7 @@ class SplitWriter:
     def __enter__(self) -> "SplitWriter":
         for name, path in self._paths.items():
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._files[name] = path.open("w")
+            self._files[name] = path.open("w", encoding="utf-8")
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -136,7 +167,7 @@ class SplitWriter:
         """Write ``record`` to the chosen split and return the split name."""
         split = self._route()
         fh = self._files[split]
-        fh.write(json.dumps(record) + "\n")
+        fh.write(dumps_record(record) + "\n")
         self._counts[split] += 1
         return split
 

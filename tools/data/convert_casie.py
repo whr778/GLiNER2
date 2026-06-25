@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import dumps_record  # noqa: E402
 from _stratify import (  # noqa: E402
     coverage_summary,
     derive_split_paths,
@@ -93,7 +94,7 @@ def parse_annotation(
 ) -> Optional[Dict[str, Any]]:
     """Parse one CASIE annotation JSON into a GLiNER2 record; None if unusable."""
     try:
-        with annotation_path.open() as fh:
+        with annotation_path.open(encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, json.JSONDecodeError):
         return None
@@ -263,9 +264,9 @@ def main() -> int:
     # ----- single-file mode -----
     if args.no_stratify:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        with args.out.open("w") as f:
+        with args.out.open("w", encoding="utf-8") as f:
             for rec in records:
-                f.write(json.dumps(rec) + "\n")
+                f.write(dumps_record(rec) + "\n")
         print(f"Wrote {len(records)} records -> {args.out}")
         return 0
 
@@ -276,9 +277,9 @@ def main() -> int:
     paths = derive_split_paths(args.out)
     paths["train"].parent.mkdir(parents=True, exist_ok=True)
     for split_name, slice_records in (("train", train), ("test", test), ("val", val)):
-        with paths[split_name].open("w") as f:
+        with paths[split_name].open("w", encoding="utf-8") as f:
             for rec in slice_records:
-                f.write(json.dumps(rec) + "\n")
+                f.write(dumps_record(rec) + "\n")
     print(
         f"Stratified split (ratios={args.split_ratios}): "
         f"train={len(train)} test={len(test)} val={len(val)}\n"

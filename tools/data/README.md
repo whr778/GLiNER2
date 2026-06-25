@@ -6,6 +6,17 @@ JSONL training format (`{"input": ..., "output": {"entities": {...}, "entity_des
 Both scripts stream from HuggingFace so they don't need to fit the dataset in RAM.
 They install one dep on first run: `uv add datasets`.
 
+## Text normalization & encoding
+
+Every converter emits NFKC-normalized, UTF-8 JSONL through one write path
+(`_split.dumps_record`, used by `SplitWriter` and the standalone writers).
+All reads and writes use `encoding="utf-8"`, non-ASCII is written literally
+(`ensure_ascii=False`), and each record is recursively NFKC-normalized so
+`input` and every entity/relation/event surface stay consistent (surfaces
+remain verbatim substrings of `input`). Note NFKC folds CJK full-width
+punctuation to ASCII (e.g. `，` to `,`); switch `NFKC` to `NFC` in
+`_split.nfkc_normalize` if you need to preserve it.
+
 ## numind/NuNER
 
 ```bash

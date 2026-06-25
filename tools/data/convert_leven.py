@@ -45,6 +45,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import dumps_record  # noqa: E402
+
 
 def _flatten_tokens(sentences: List[Dict[str, Any]]) -> List[str]:
     """Concatenate per-sentence token lists into one flat token list."""
@@ -120,7 +123,7 @@ def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
 
 
 def _iter_jsonl(path: Path):
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -151,7 +154,7 @@ def main() -> int:
     total_events = 0
     all_types: set[str] = set()
 
-    with args.out.open("w") as f:
+    with args.out.open("w", encoding="utf-8") as f:
         for idx, row in enumerate(_iter_jsonl(args.input)):
             if 0 <= args.max_records <= idx:
                 break
@@ -159,7 +162,7 @@ def main() -> int:
             if record is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.write(dumps_record(record) + "\n")
             emitted += 1
             events = record["output"]["events"]
             total_events += len(events)

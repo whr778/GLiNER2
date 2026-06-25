@@ -69,6 +69,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import dumps_record  # noqa: E402
 from _stratify import (  # noqa: E402
     coverage_summary,
     derive_split_paths,
@@ -118,7 +119,7 @@ def _normalise_record(raw: Any) -> Optional[Dict[str, Any]]:
 
 def _load_records(input_path: Path) -> List[Dict[str, Any]]:
     """Load DocEE records from a JSON file (top-level list, or dict-wrapped)."""
-    with input_path.open() as fh:
+    with input_path.open(encoding="utf-8") as fh:
         data = json.load(fh)
     items: List[Any]
     if isinstance(data, list):
@@ -308,9 +309,9 @@ def main() -> int:
 
     if args.no_stratify:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        with args.out.open("w") as f:
+        with args.out.open("w", encoding="utf-8") as f:
             for rec in records:
-                f.write(json.dumps(rec) + "\n")
+                f.write(dumps_record(rec) + "\n")
         print(f"Wrote {len(records)} records -> {args.out}")
         return 0
 
@@ -320,9 +321,9 @@ def main() -> int:
     paths = derive_split_paths(args.out)
     paths["train"].parent.mkdir(parents=True, exist_ok=True)
     for split_name, slice_records in (("train", train), ("test", test), ("val", val)):
-        with paths[split_name].open("w") as f:
+        with paths[split_name].open("w", encoding="utf-8") as f:
             for rec in slice_records:
-                f.write(json.dumps(rec) + "\n")
+                f.write(dumps_record(rec) + "\n")
     print(
         f"Stratified split (ratios={args.split_ratios}): "
         f"train={len(train)} test={len(test)} val={len(val)}\n"

@@ -64,6 +64,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import dumps_record  # noqa: E402
+
 
 def convert_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Convert one CMNEE document into a GLiNER2 record; None if unusable."""
@@ -129,7 +132,7 @@ def main() -> int:
     if not args.input.is_file():
         raise SystemExit(f"input not found: {args.input}")
 
-    with args.input.open() as fh:
+    with args.input.open(encoding="utf-8") as fh:
         data = json.load(fh)
     if not isinstance(data, list):
         raise SystemExit(f"expected a JSON array of records, got {type(data).__name__}")
@@ -142,7 +145,7 @@ def main() -> int:
     all_event_types: set = set()
     all_roles: set = set()
 
-    with args.out.open("w") as f:
+    with args.out.open("w", encoding="utf-8") as f:
         for idx, row in enumerate(data):
             if 0 <= args.max_records <= idx:
                 break
@@ -150,7 +153,7 @@ def main() -> int:
             if record is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.write(dumps_record(record) + "\n")
             emitted += 1
             for ev in record["output"]["events"]:
                 total_events += 1

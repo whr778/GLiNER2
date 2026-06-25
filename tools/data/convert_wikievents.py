@@ -69,6 +69,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import dumps_record  # noqa: E402
+
 
 S3_BASE = "https://gen-arg-data.s3.us-east-2.amazonaws.com/wikievents/data"
 
@@ -77,7 +80,7 @@ def _iter_jsonl_from_url(url: str) -> Iterable[Dict[str, Any]]:
     req = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
     with urllib.request.urlopen(req, timeout=120) as r:
         for line in r:
-            line = line.decode().strip()
+            line = line.decode("utf-8").strip()
             if not line:
                 continue
             try:
@@ -87,7 +90,7 @@ def _iter_jsonl_from_url(url: str) -> Iterable[Dict[str, Any]]:
 
 
 def _iter_jsonl_from_file(path: Path) -> Iterable[Dict[str, Any]]:
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -211,7 +214,7 @@ def main() -> int:
     all_roles: set = set()
 
     print(f"Reading {source}")
-    with args.out.open("w") as f:
+    with args.out.open("w", encoding="utf-8") as f:
         for idx, row in enumerate(_iter_records(source)):
             if 0 <= args.max_records <= idx:
                 break
@@ -219,7 +222,7 @@ def main() -> int:
             if record is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(record) + "\n")
+            f.write(dumps_record(record) + "\n")
             emitted += 1
             ents = record["output"].get("entities") or {}
             for t, surfaces in ents.items():

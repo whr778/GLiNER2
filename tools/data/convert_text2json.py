@@ -149,7 +149,7 @@ def convert_row(row: dict) -> dict | None:
 
 def _iter_jsonl(path: Path):
     """Yield decoded JSON objects from a JSONL file; skip malformed lines."""
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:

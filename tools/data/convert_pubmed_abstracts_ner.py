@@ -114,7 +114,7 @@ def main() -> int:
 
     print(f"Downloading {args.repo}/{args.file}...")
     src_path = Path(hf_hub_download(args.repo, args.file, repo_type="dataset"))
-    with src_path.open() as fh:
+    with src_path.open(encoding="utf-8") as fh:
         rows = json.load(fh)
     if not isinstance(rows, list):
         raise SystemExit(f"expected a JSON array in {args.file}, got {type(rows).__name__}")

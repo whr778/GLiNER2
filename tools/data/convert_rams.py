@@ -43,6 +43,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _split import dumps_record  # noqa: E402
+
 
 ROLE_RE = re.compile(r"^evt\d+arg\d+([A-Za-z]+)$")
 
@@ -149,7 +152,7 @@ def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
 
 
 def _iter_jsonl(path: Path):
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -182,7 +185,7 @@ def main() -> int:
     all_types: set[str] = set()
     all_roles: set[str] = set()
 
-    with args.out.open("w") as f:
+    with args.out.open("w", encoding="utf-8") as f:
         for idx, row in enumerate(_iter_jsonl(args.input)):
             if 0 <= args.max_records <= idx:
                 break
@@ -190,7 +193,7 @@ def main() -> int:
             if record is None:
                 skipped_empty += 1
                 continue
-            f.write(json.dumps(record) + "\n")
+            f.write(dumps_record(record) + "\n")
             emitted += 1
             for ev in record["output"]["events"]:
                 total_events += 1
