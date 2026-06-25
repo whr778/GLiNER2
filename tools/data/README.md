@@ -22,6 +22,42 @@ does two things:
   Left in, `json.dumps` writes them literally and they fragment a JSONL record
   across physical lines for any `splitlines()`-based reader.
 
+## Mention-type filtering
+
+Some corpora annotate each entity mention with a *mention type* — ACE 2005 uses
+`NAM` (named), `NOM` (nominal), `PRO` (pronominal). A converter that supports it
+takes `--filter-config <yaml>` to keep only the types you want. **Filtering an
+entity mention cascades**: any relation or event argument that referenced a
+dropped mention is dropped too. Non-entity event arguments (e.g. time/value
+fillers, which have no mention type) are always kept.
+
+Config (`tools/data/config/mention_filter.yaml`):
+
+```yaml
+allow: [NAM, NOM, PRO]    # global default; omit to keep all, `[]` drops all typed
+converters:               # optional per-converter overrides
+  ace2005:
+    allow: [NAM, NOM]     # e.g. drop pronouns for ACE 2005
+```
+
+```bash
+uv run python tools/data/convert_ace2005.py \
+    --input /path/to/ace_2005_td_v7/data/English \
+    --out data/ace2005.jsonl \
+    --filter-config tools/data/config/mention_filter.yaml
+```
+
+The converter prints how many mentions, relations, and event arguments the
+filter dropped. Default (no `--filter-config`) keeps every type — byte-identical
+to before. The shared plumbing is `tools/data/_mention_filter.py`; a new
+converter opts in by reading its per-mention type and calling
+`load_mention_filter(path, "<name>").allows(m_type)`.
+
+> ACE 2005 support assumes raw-LDC APF: the mention type is the `TYPE` attribute
+> on `<entity_mention>`, and `event_mention_argument` `REFID`s are mention-level
+> (like `relation_mention_argument`). Verify against your corpus if filtering
+> doesn't behave as expected.
+
 ## numind/NuNER
 
 ```bash

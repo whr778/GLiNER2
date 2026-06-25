@@ -1,0 +1,20 @@
+# Entity mention-type filter for the data converters.
+#
+# Keep only entity mentions whose type is listed in `allow`; drop the rest.
+# Dropping a mention cascades -- any relation or event argument that referenced
+# it is dropped too. Omit `allow` (or this whole file) to keep every type.
+# `allow: []` drops every typed mention. Matching is case-insensitive.
+#
+# ACE 2005 mention types: NAM (named), NOM (nominal), PRO (pronominal).
+#
+# Pass this file to a converter that supports it, e.g.:
+#   uv run python tools/data/convert_ace2005.py \
+#       --input /path/to/ace_2005_td_v7/data/English \
+#       --out data/ace2005.jsonl \
+#       --filter-config tools/data/config/mention_filter.yaml
+
+allow: [NAM, NOM, PRO]        # global default: keep everything
+
+converters:                    # optional per-converter overrides
+  ace2005:
+    allow: [NAM, NOM]          # drop pronominal mentions for ACE 2005

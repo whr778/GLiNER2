@@ -80,10 +80,12 @@ import json
 import re
 import sys
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _mention_filter import MentionFilter, load_mention_filter  # noqa: E402
 from _split import dumps_record  # noqa: E402
 from _stratify import (  # noqa: E402
     coverage_summary,
@@ -128,12 +130,25 @@ def _pair_sgm(apf_path: Path) -> Optional[Path]:
     return sgm if sgm.is_file() else None
 
 
-def parse_apf(apf_path: Path, keep_subtypes: bool) -> Optional[Dict[str, Any]]:
+def parse_apf(
+    apf_path: Path,
+    keep_subtypes: bool,
+    mention_filter: Optional[MentionFilter] = None,
+    stats: Optional[Counter] = None,
+) -> Optional[Dict[str, Any]]:
     """Parse one .apf.xml + .sgm pair into a single GLiNER2 record.
 
     Pulls entities, relations, and events together so co-training has
     aligned surface forms for argument fillers.
+
+    ``mention_filter`` keeps only the allowed entity mention types (NAM/NOM/PRO);
+    a dropped mention cascades to its relations and event arguments. ``stats``
+    accumulates the per-category drop counts for the caller's summary.
     """
+    if mention_filter is None:
+        mention_filter = MentionFilter(None)
+    if stats is None:
+        stats = Counter()
     sgm_path = _pair_sgm(apf_path)
     if sgm_path is None:
         return None
@@ -152,7 +167,14 @@ def parse_apf(apf_path: Path, keep_subtypes: bool) -> Optional[Dict[str, Any]]:
         return None
 
     # ----- entities -----
-    entity_mention_text: Dict[str, str] = {}   # mention_id -> surface
+    # entity_mention_type records the mention type (NAM/NOM/PRO) for EVERY entity
+    # mention, unconditionally, so the event-argument cascade can tell an entity
+    # mention from a value/time mention regardless of the extent-in-text check.
+    # entity_mention_text holds only the kept (allowed + in-text) mentions and
+    # drives entities + relations.
+    entity_mention_text: Dict[str, str] = {}   # kept mention_id -> surface
+    entity_mention_type: Dict[str, str] = {}   # every entity mention_id -> m_type
+    filtered_mids: Set[str] = set()            # mentions removed by the filter
     entities_by_type: Dict[str, List[str]] = {}
     for entity in root.iter("entity"):
         etype = (entity.get("TYPE") or "").strip()
@@ -162,8 +184,16 @@ def parse_apf(apf_path: Path, keep_subtypes: bool) -> Optional[Dict[str, Any]]:
         full_type = f"{etype}.{esub}" if keep_subtypes and esub else etype
         for emention in entity.iter("entity_mention"):
             mid = emention.get("ID")
+            if not mid:
+                continue
+            m_type = (emention.get("TYPE") or "").strip()
+            entity_mention_type[mid] = m_type
             extent_text = _first_charseq_text(emention, "extent")
-            if not mid or not extent_text or extent_text not in text:
+            if not extent_text or extent_text not in text:
+                continue
+            if not mention_filter.allows(m_type):
+                filtered_mids.add(mid)
+                stats["filtered_mentions"] += 1
                 continue
             entity_mention_text[mid] = extent_text
             bucket = entities_by_type.setdefault(full_type, [])
@@ -182,10 +212,15 @@ def parse_apf(apf_path: Path, keep_subtypes: bool) -> Optional[Dict[str, Any]]:
         for rmention in rel.iter("relation_mention"):
             head: Optional[str] = None
             tail: Optional[str] = None
+            dropped_by_filter = False
             for ramg in rmention.iter("relation_mention_argument"):
                 refid = ramg.get("REFID")
                 role = (ramg.get("ROLE") or "").strip()
-                if not refid or refid not in entity_mention_text:
+                if not refid:
+                    continue
+                if refid not in entity_mention_text:
+                    if refid in filtered_mids:
+                        dropped_by_filter = True
                     continue
                 surface = entity_mention_text[refid]
                 if role == "Arg-1":
@@ -198,6 +233,8 @@ def parse_apf(apf_path: Path, keep_subtypes: bool) -> Optional[Dict[str, Any]]:
                     continue
                 seen_rel.add(key)
                 relations_out.append({rel_type: {"head": head, "tail": tail}})
+            elif dropped_by_filter:
+                stats["filtered_relations"] += 1
 
     # ----- events -----
     events_out: List[Dict[str, Any]] = []
@@ -216,6 +253,16 @@ def parse_apf(apf_path: Path, keep_subtypes: bool) -> Optional[Dict[str, Any]]:
             for arg in emention.iter("event_mention_argument"):
                 role = (arg.get("ROLE") or "").strip()
                 if not role:
+                    continue
+                # Cascade: drop an argument whose REFID is a filtered entity
+                # mention. event_mention_argument REFID is mention-level
+                # (e.g. "DOC-E1-3"), like relation_mention_argument. Value and
+                # time arguments are not entity mentions, so they are kept.
+                refid = arg.get("REFID")
+                if refid in entity_mention_type and not mention_filter.allows(
+                    entity_mention_type[refid]
+                ):
+                    stats["filtered_event_args"] += 1
                     continue
                 arg_text = _first_charseq_text(arg, "extent")
                 if not arg_text or arg_text not in text:
@@ -280,12 +327,20 @@ def main() -> int:
                              "(default: 0.8,0.1,0.1).")
     parser.add_argument("--split-seed", type=int, default=42,
                         help="Seed for the deterministic stratified placement.")
+    parser.add_argument("--filter-config", type=Path, default=None,
+                        help="YAML mention-type filter (see "
+                             "tools/data/config/mention_filter.yaml). Keeps only "
+                             "the allowed entity mention types (NAM/NOM/PRO); "
+                             "dropped mentions cascade to their relations and "
+                             "event arguments. Default: keep all.")
     args = parser.parse_args()
 
     if not args.input.is_dir():
         raise SystemExit(f"input directory not found: {args.input}")
 
     keep_subtypes = not args.no_subtypes
+    mention_filter = load_mention_filter(args.filter_config, "ace2005")
+    stats: Counter = Counter()
 
     # ----- collect all records -----
     records: List[Dict[str, Any]] = []
@@ -293,13 +348,19 @@ def main() -> int:
     for apf_path in iter_apf_files(args.input):
         if 0 <= args.max_records <= len(records):
             break
-        rec = parse_apf(apf_path, keep_subtypes=keep_subtypes)
+        rec = parse_apf(apf_path, keep_subtypes=keep_subtypes,
+                        mention_filter=mention_filter, stats=stats)
         if rec is None:
             skipped += 1
             continue
         records.append(rec)
 
     print(f"Parsed: {_stats(records)} skipped_no_content={skipped}")
+    if mention_filter.active:
+        print(f"Mention filter ({mention_filter.describe()}): "
+              f"dropped_mentions={stats['filtered_mentions']} "
+              f"dropped_relations={stats['filtered_relations']} "
+              f"dropped_event_args={stats['filtered_event_args']}")
 
     # ----- single-file mode -----
     if args.no_stratify:
