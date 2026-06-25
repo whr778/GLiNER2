@@ -22,5 +22,5 @@
 - Don't jump to conclusions.  Don't apply workarounds.
 
 ## Data converters (tools/data/)
-- Emit NFKC-normalized, UTF-8 JSONL via `_split.dumps_record` (the `SplitWriter` write path).
+- Emit normalized, UTF-8 JSONL via `_split.dumps_record` (the `SplitWriter` write path): NFKC plus stray line-separator stripping (NEL U+0085, U+2028, U+2029 -> space, so records never fragment across lines).
 - New converters must route every record write through `dumps_record`, never raw `json.dumps`, and open all files with `encoding="utf-8"`.

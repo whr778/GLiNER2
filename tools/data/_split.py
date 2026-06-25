@@ -35,34 +35,47 @@ from typing import IO, Dict, List, Sequence, Tuple
 SPLIT_NAMES = ("train", "val", "test")
 
 
-def nfkc_normalize(obj):
-    """Recursively NFKC-normalize every string in a nested JSON-like structure.
+# Stray Unicode line/paragraph separators that json.dumps writes literally
+# (they are >= U+0020, so not escaped) yet str.splitlines() treats as line
+# breaks. Left in place they fragment a JSONL record across physical lines,
+# breaking any splitlines()-based reader. Map them to a plain space.
+_LINE_SEPARATORS = str.maketrans({"\x85": " ", " ": " ", " ": " "})
 
-    Normalizes dict keys and values, list items, and bare strings; non-string
-    scalars pass through unchanged. When two dict keys normalize to the same
-    string and both values are lists, the lists are concatenated (otherwise
-    last-wins) so a key collision never silently drops data.
+
+def clean_text(s: str) -> str:
+    """NFKC-normalize a string and strip stray Unicode line separators."""
+    return unicodedata.normalize("NFKC", s).translate(_LINE_SEPARATORS)
+
+
+def normalize_record(obj):
+    """Recursively normalize every string in a nested JSON-like structure.
+
+    Each string is NFKC-normalized and has stray Unicode line separators
+    (NEL, U+2028, U+2029) replaced with a space; non-string scalars pass
+    through unchanged. When two dict keys normalize to the same string and
+    both values are lists, the lists are concatenated (otherwise last-wins)
+    so a key collision never silently drops data.
     """
     if isinstance(obj, str):
-        return unicodedata.normalize("NFKC", obj)
+        return clean_text(obj)
     if isinstance(obj, dict):
         out: dict = {}
         for k, v in obj.items():
-            nk = nfkc_normalize(k)
-            nv = nfkc_normalize(v)
+            nk = normalize_record(k)
+            nv = normalize_record(v)
             if nk in out and isinstance(out[nk], list) and isinstance(nv, list):
                 out[nk] = out[nk] + nv
             else:
                 out[nk] = nv
         return out
     if isinstance(obj, list):
-        return [nfkc_normalize(x) for x in obj]
+        return [normalize_record(x) for x in obj]
     return obj
 
 
 def dumps_record(record: dict) -> str:
-    """Serialize a record to one JSONL line: NFKC-normalized, non-ASCII kept."""
-    return json.dumps(nfkc_normalize(record), ensure_ascii=False)
+    """Serialize a record to one JSONL line: normalized, non-ASCII kept."""
+    return json.dumps(normalize_record(record), ensure_ascii=False)
 
 
 def parse_ratios(spec: str) -> Tuple[float, float, float]:

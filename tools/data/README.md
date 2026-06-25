@@ -8,14 +8,19 @@ They install one dep on first run: `uv add datasets`.
 
 ## Text normalization & encoding
 
-Every converter emits NFKC-normalized, UTF-8 JSONL through one write path
+Every converter emits normalized, UTF-8 JSONL through one write path
 (`_split.dumps_record`, used by `SplitWriter` and the standalone writers).
 All reads and writes use `encoding="utf-8"`, non-ASCII is written literally
-(`ensure_ascii=False`), and each record is recursively NFKC-normalized so
-`input` and every entity/relation/event surface stay consistent (surfaces
-remain verbatim substrings of `input`). Note NFKC folds CJK full-width
-punctuation to ASCII (e.g. `，` to `,`); switch `NFKC` to `NFC` in
-`_split.nfkc_normalize` if you need to preserve it.
+(`ensure_ascii=False`), and each record is recursively normalized so `input`
+and every entity/relation/event surface stay consistent (surfaces remain
+verbatim substrings of `input`). Per-string normalization (`_split.clean_text`)
+does two things:
+
+- NFKC normalization. Note this folds CJK full-width punctuation to ASCII
+  (e.g. `，` to `,`); switch `NFKC` to `NFC` in `_split.clean_text` to preserve it.
+- Strips stray Unicode line separators (NEL U+0085, U+2028, U+2029) to a space.
+  Left in, `json.dumps` writes them literally and they fragment a JSONL record
+  across physical lines for any `splitlines()`-based reader.
 
 ## numind/NuNER
 
