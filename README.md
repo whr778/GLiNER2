@@ -119,6 +119,7 @@ Comprehensive guides for all GLiNER2 features:
 - **[Model Training](tutorial/9-training.md)** - Train custom models for your domain
 - **[LoRA Adapters](tutorial/10-lora_adapters.md)** - Parameter-efficient fine-tuning
 - **[Adapter Switching](tutorial/11-adapter_switching.md)** - Switch between domain adapters
+- **[Evaluation Metrics](METRICS.md)** - How entities, relations, classifications, and events are scored
 
 ## 🎯 Core Capabilities
 

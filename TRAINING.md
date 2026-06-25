@@ -292,7 +292,7 @@ You can pass any subset of the JSONL files to the trainer at once — they're co
       ]}
  ]}}
 ```
-and an inference schema is `schema.events({"Attack": ["Attacker", "Victim", "Place", "Time"], ...})`. Add the ACE 2005 / MAVEN / RAMS JSONLs to `train_data=` like any other corpus; `compute_metrics` will report `eval_event_trigger_*` and `eval_event_argument_*` micro/macro F1 alongside the entity/relation/classification metrics, with per-event-type and per-role classification reports.
+and an inference schema is `schema.events({"Attack": ["Attacker", "Victim", "Place", "Time"], ...})`. Add the ACE 2005 / MAVEN / RAMS JSONLs to `train_data=` like any other corpus; `compute_metrics` will report `eval_event_type_*`, `eval_event_trigger_*`, `eval_event_argument_*`, and a combined `eval_event_*` micro/macro F1 alongside the entity/relation/classification metrics, with per-event-type and per-role classification reports. See [METRICS.md](METRICS.md) for the full scoring definitions.
 
 The training scripts under `tools/train/` already wire all three splits into `trainer.train(train_data=…)` / `eval_data=…` / the final blind-test pass. The equivalent inline pattern is:
 
