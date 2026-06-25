@@ -148,7 +148,8 @@ def test_all_categories_score_with_real_engine_output_shapes():
                                         "arguments": [{"role": "Employee", "entity": "Alice"}]}]},
     }
     m = _run(pred=pred, gold_output=gold)
-    for cat in ("entity", "relation", "classification", "event_trigger", "event_argument"):
+    for cat in ("entity", "relation", "classification", "event_type",
+                "event_trigger", "event_argument", "event"):
         assert m[f"eval_{cat}_strict_micro_f1"] > 0.0, f"{cat} scored 0 (pred parsing/format issue)"
         assert m[f"eval_{cat}_relaxed_micro_f1"] >= m[f"eval_{cat}_strict_micro_f1"]
 
@@ -168,3 +169,52 @@ def test_relaxed_never_below_strict_across_categories():
         assert m[f"eval_{cat}_relaxed_micro_recall"] >= m[f"eval_{cat}_strict_micro_recall"]
     # both regimes are emitted for every present category
     assert "eval_entity_strict_support" in m and "eval_entity_relaxed_support" in m
+
+
+# --- event_type and overall (combined) event metrics -----------------------
+
+_EVENT_GOLD = {"events": [
+    {"event_type": "Attack", "trigger": "bombed",
+     "arguments": [{"role": "Attacker", "entity": "rebels"},
+                   {"role": "Target", "entity": "base"},
+                   {"role": "Place", "entity": "Aleppo"}]}
+]}
+
+
+def test_event_type_and_overall_keys_on_perfect_pred():
+    """A perfect event prediction populates the standalone event_type keys and
+    the combined overall-event keys; overall support sums type + trigger + args
+    (1 + 1 + 3 = 5)."""
+    pred = {"event_extraction": {"Attack": [
+        {"trigger": "bombed",
+         "arguments": [{"role": "Attacker", "entity": "rebels"},
+                       {"role": "Target", "entity": "base"},
+                       {"role": "Place", "entity": "Aleppo"}]}]}}
+    m = _run(_EVENT_GOLD, pred)
+    for key in ("eval_event_type_strict_micro_f1", "eval_event_type_relaxed_micro_f1",
+                "eval_event_strict_micro_f1", "eval_event_relaxed_micro_f1"):
+        assert key in m
+    assert m["eval_event_type_strict_support"] == 1
+    assert m["eval_event_strict_support"] == 5
+    assert m["eval_event_strict_micro_f1"] == 1.0
+
+
+def test_overall_event_sums_component_counts():
+    """Overall event micro counts equal the elementwise sum of type + trigger +
+    argument. The pred has the right event type but a wrong trigger surface (so
+    strict trigger misses, and all strict args miss because a strict arg carries
+    its trigger), giving combined tp=1, fp=4, fn=4 over support 5."""
+    pred = {"event_extraction": {"Attack": [
+        {"trigger": "struck",  # right type, wrong surface
+         "arguments": [{"role": "Attacker", "entity": "rebels"},
+                       {"role": "Target", "entity": "base"},
+                       {"role": "Place", "entity": "Damascus"}]}]}}
+    m = _run(_EVENT_GOLD, pred)
+    assert m["eval_event_strict_support"] == 5                     # 1 + 1 + 3
+    assert abs(m["eval_event_strict_micro_recall"] - 0.2) < 1e-9   # tp 1 / support 5
+    assert abs(m["eval_event_strict_micro_precision"] - 0.2) < 1e-9  # tp 1 / (tp 1 + fp 4)
+    # event-type detection is correct; by construction it equals its own relaxed
+    # and the relaxed trigger metric (both are event-type presence).
+    assert m["eval_event_type_strict_micro_f1"] == 1.0
+    assert m["eval_event_type_strict_micro_f1"] == m["eval_event_type_relaxed_micro_f1"]
+    assert m["eval_event_type_strict_micro_f1"] == m["eval_event_trigger_relaxed_micro_f1"]

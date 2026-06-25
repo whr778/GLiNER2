@@ -16,8 +16,9 @@ and reports, for both a ``strict`` and a ``relaxed`` regime:
 * ``eval_<category>_<regime>_classification_report`` — multi-line text table
 
 where ``<category>`` is one of ``entity``, ``relation``, ``classification``,
-``event_trigger``, ``event_argument`` and ``<regime>`` is ``strict`` or
-``relaxed``. Categories absent from the eval set are silently omitted.
+``event_type``, ``event_trigger``, ``event_argument``, ``event`` and
+``<regime>`` is ``strict`` or ``relaxed``. Categories absent from the eval set
+are silently omitted.
 
 Match semantics — **strict** is exact, **relaxed** keeps the discrete
 type/label parts exact but lets surfaces partially overlap (one-to-one matched,
@@ -29,10 +30,18 @@ so relaxed never scores below strict):
   tail surfaces overlap.
 * **Classifications** — strict ``(task, label)``; relaxed = task exact + label
   overlap. Multi-label predictions are unrolled and scored individually.
+* **Event types** — ``(event_type,)`` presence. There is no surface to relax,
+  so strict == relaxed; both also equal ``event_trigger`` relaxed, which
+  likewise collapses a trigger to its event type. (Same metric, named on its
+  own for convenience — not a copy-paste bug.)
 * **Event triggers** — strict ``(event_type, trigger)``; relaxed = event_type
   presence (the exact trigger word is dropped).
 * **Event arguments** — strict ``(event_type, role, entity, trigger)``; relaxed =
   ``(event_type, role)`` exact + entity overlap, dropping the trigger link.
+* **Event (overall)** — one combined score over event types + triggers +
+  arguments: their TP/FP/FN are summed (micro is the aggregate). Per-label rows
+  are namespaced ``type:``/``trigger:``/``arg:`` so the report stays honest; the
+  event type is counted in all three buckets at their respective granularities.
 
 "Overlap" means substring containment or a shared non-stopword token after
 lowercasing/whitespace-normalization.
@@ -115,10 +124,11 @@ def compute_metrics(
     ent_s, ent_r = _counters(), _counters()
     rel_s, rel_r = _counters(), _counters()
     cls_s, cls_r = _counters(), _counters()
+    ety_s, ety_r = _counters(), _counters()
     et_s, et_r = _counters(), _counters()
     ea_s, ea_r = _counters(), _counters()
     has_entities = has_relations = has_classifications = False
-    has_event_triggers = has_event_arguments = False
+    has_event_types = has_event_triggers = has_event_arguments = False
 
     for gold, pred in zip(golds, preds):
         g, p = _gold_entity_set(gold), _pred_entity_set(pred)
@@ -139,8 +149,15 @@ def compute_metrics(
             _tally(g, p, *cls_s, key=lambda x: x[0])
             _match_relaxed(_items_classification(g), _items_classification(p), *cls_r)
 
-        # Events — score trigger and arguments separately. Relaxed drops the
-        # trigger link (trigger = event_type presence; argument = type/role/entity).
+        # Events — score type detection, triggers, and arguments separately.
+        # Relaxed drops the trigger link (trigger = event_type presence;
+        # argument = type/role/entity).
+        g_ety, p_ety = _gold_event_type_set(gold), _pred_event_type_set(pred)
+        if g_ety or p_ety:
+            has_event_types = True
+            _tally(g_ety, p_ety, *ety_s, key=lambda x: x[0])
+            _match_relaxed(_items_event_type(g_ety), _items_event_type(p_ety), *ety_r)
+
         g_trig, p_trig = _gold_event_trigger_set(gold), _pred_event_trigger_set(pred)
         if g_trig or p_trig:
             has_event_triggers = True
@@ -153,13 +170,22 @@ def compute_metrics(
             _tally(g_arg, p_arg, *ea_s, key=lambda x: x[1])
             _match_relaxed(_items_argument(g_arg), _items_argument(p_arg), *ea_r)
 
+    # Overall event score: sum the type, trigger, and argument counters
+    # (namespaced so the per-label report keeps distinct rows; micro is the
+    # aggregate over all three).
+    evt_s = _combine_counters({"type": ety_s, "trigger": et_s, "arg": ea_s})
+    evt_r = _combine_counters({"type": ety_r, "trigger": et_r, "arg": ea_r})
+    has_events = has_event_types or has_event_triggers or has_event_arguments
+
     metrics: Dict[str, Any] = {}
     for present, prefix, strict, relaxed in (
         (has_entities, "entity", ent_s, ent_r),
         (has_relations, "relation", rel_s, rel_r),
         (has_classifications, "classification", cls_s, cls_r),
+        (has_event_types, "event_type", ety_s, ety_r),
         (has_event_triggers, "event_trigger", et_s, et_r),
         (has_event_arguments, "event_argument", ea_s, ea_r),
+        (has_events, "event", evt_s, evt_r),
     ):
         if present:
             metrics.update(_finalize(prefix, "strict", *strict))
@@ -170,7 +196,8 @@ def compute_metrics(
 
 def _print_micro_report(metrics: Dict[str, Any]) -> None:
     """Print a compact micro precision/recall/F1 line per category, strict -> relaxed."""
-    categories = ("entity", "relation", "classification", "event_trigger", "event_argument")
+    categories = ("entity", "relation", "classification", "event_type",
+                  "event_trigger", "event_argument", "event")
     present = [c for c in categories if f"eval_{c}_strict_micro_f1" in metrics]
     if not present:
         return
@@ -371,6 +398,16 @@ def _pred_event_trigger_set(pred: Dict) -> Set[Tuple[str, str]]:
     return out
 
 
+def _gold_event_type_set(output: Dict) -> Set[Tuple[str]]:
+    """Set of ``(event_type,)`` over gold events — event-type presence."""
+    return {(et,) for et, _trig in _gold_event_trigger_set(output)}
+
+
+def _pred_event_type_set(pred: Dict) -> Set[Tuple[str]]:
+    """Set of ``(event_type,)`` over predicted events — event-type presence."""
+    return {(et,) for et, _trig in _pred_event_trigger_set(pred)}
+
+
 def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, str]]:
     """Set of ``(event_type, role, entity, trigger)`` over gold arguments.
 
@@ -522,6 +559,23 @@ def _counters() -> Tuple[Counter, Counter, Counter]:
     return Counter(), Counter(), Counter()
 
 
+def _combine_counters(
+    parts: Dict[str, Tuple[Counter, Counter, Counter]],
+) -> Tuple[Counter, Counter, Counter]:
+    """Sum several ``(tp, fp, fn)`` counter-triples into one.
+
+    Each source's per-label keys are namespaced (``type:``/``trigger:``/``arg:``)
+    so the merged report keeps distinct rows and never silently folds an
+    event-type row into a same-named trigger row. Micro totals are unaffected.
+    """
+    tp, fp, fn = Counter(), Counter(), Counter()
+    for ns, (t, f, n) in parts.items():
+        for src, dst in ((t, tp), (f, fp), (n, fn)):
+            for k, v in src.items():
+                dst[f"{ns}:{k}"] += v
+    return tp, fp, fn
+
+
 def _normalize(s: str) -> str:
     """Lowercase and collapse whitespace."""
     return " ".join(s.lower().split())
@@ -586,6 +640,11 @@ def _items_relation(s):
 
 def _items_classification(s):
     return sorted(((task,), (label,), task) for task, label in s)
+
+
+def _items_event_type(s):
+    # event-type presence; no surface, so relaxed collapses to strict
+    return sorted(((et,), (), et) for (et,) in s)
 
 
 def _items_trigger(s):

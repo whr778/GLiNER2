@@ -346,7 +346,8 @@ def main(config_path: str) -> None:
         elif isinstance(val, int):
             print(f"  {key}: {val}")
 
-    for category in ("entity", "relation", "classification", "event_trigger", "event_argument"):
+    for category in ("entity", "relation", "classification", "event_type",
+                     "event_trigger", "event_argument", "event"):
         for regime in ("strict", "relaxed"):
             report_key = f"eval_{category}_{regime}_classification_report"
             if report_key in test_metrics:
