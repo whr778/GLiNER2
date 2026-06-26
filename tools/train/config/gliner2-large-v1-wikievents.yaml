@@ -9,12 +9,13 @@ model:
   # focal_alpha: 0.25
 
 training:
+  checkpoint_restart: highest # hightest, last, or None
   output_dir: ./out/fastino/gliner2-large-v1-wikievents
   experiment_name: gliner2-large-v1_wikievents
   data_parallel: false
-  num_epochs: 3
+  num_epochs: 15
   batch_size: 2
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 16
   encoder_lr: 1.0e-5         # lower LR than from-scratch: fine-tuning a trained model
   task_lr: 3.0e-4
   warmup_ratio: 0.05
@@ -23,30 +24,34 @@ training:
   fp16: false
   max_grad_norm: 1.0
   eval_strategy: epoch
-  metric_for_best: eval_loss
-  greater_is_better: false
+  metric_for_best: eval_event_strict_micro_f1
+  greater_is_better: true
   save_best: true
   save_total_limit: 3
   logging_steps: 10
   num_workers: 0
   validate_data: false
-  max_len: 256               # deberta-v3-large caps at 512 positions; leave room for
-                             # the prepended schema + special tokens (512 overflows)
-  pin_memory: false
   sliding_window: true
-  window_stride: 128
+  max_len: 256               # deberta-v3-large caps at 512 positions; leave room for
+  window_stride: 128                           # the prepended schema + special tokens (512 overflows)
+  gradient_checkpointing: true
+  pin_memory: false
+  
+  early_stopping: true        # Enable early stopping.
+  early_stopping_patience: 3  # Patience for early stopping.
+
 
 eval:
-  batch_size: 8
+  batch_size: 1
   threshold: 0.5
 
 labels:
   entities:
-    rollup: true
+    rollup: false
     separator: "."
     map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
   relations:
-    rollup: true
+    rollup: false
     separator: "."
     map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
   events:
