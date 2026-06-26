@@ -152,6 +152,9 @@ class SchemaAPI:
         self._structures = {}
         self._relations = None
         self._relation_threshold = None
+        self._events = None
+        self._event_trigger_threshold = None
+        self._event_argument_threshold = None
         self._active_structure_builder = None
     
     def entities(
@@ -244,7 +247,49 @@ class SchemaAPI:
         
         self._relation_threshold = threshold
         return self
-    
+
+    def events(
+        self,
+        event_types: Union[
+            Dict[str, Union[List[str], Dict[str, Any]]],
+            List[Dict[str, Any]],
+        ],
+        trigger_threshold: Optional[float] = None,
+        argument_threshold: Optional[float] = None,
+    ) -> 'SchemaAPI':
+        """
+        Add an event-extraction task (ACE-style trigger + typed arguments).
+
+        Args:
+            event_types: Event types and their argument roles. Either
+                ``{event_type: [role, ...]}`` or the richer
+                ``{event_type: {"roles": [...], "description": ...,
+                "role_descriptions": {role: desc}}}``. A list of
+                ``{"name": ..., "roles": [...], ...}`` dicts is also accepted.
+            trigger_threshold: Default trigger-detection threshold (0-1).
+            argument_threshold: Default argument-role threshold (0-1).
+
+        Returns:
+            Self for method chaining.
+        """
+        if self._active_structure_builder:
+            self._active_structure_builder._auto_finish()
+            self._active_structure_builder = None
+
+        if isinstance(event_types, dict):
+            if not event_types:
+                raise ValueError("events dict cannot be empty")
+        elif isinstance(event_types, list):
+            if not event_types:
+                raise ValueError("events list cannot be empty")
+        else:
+            raise ValueError("event_types must be a dict or a list of dicts")
+
+        self._events = event_types
+        self._event_trigger_threshold = trigger_threshold
+        self._event_argument_threshold = argument_threshold
+        return self
+
     def build(self) -> Dict[str, Any]:
         """Build the schema for API request."""
         if self._active_structure_builder:
@@ -269,7 +314,23 @@ class SchemaAPI:
             schema["relations"] = self._relations
             if self._relation_threshold is not None:
                 schema["relation_threshold"] = self._relation_threshold
-        
+
+        if self._events is not None:
+            events = self._events
+            if isinstance(events, list):
+                # Normalize the list form to the {type: config} dict the server's
+                # schema parser expects.
+                events = {
+                    item["name"]: {k: v for k, v in item.items() if k != "name"}
+                    for item in events
+                    if isinstance(item, dict) and "name" in item
+                }
+            schema["events"] = events
+            if self._event_trigger_threshold is not None:
+                schema["event_trigger_threshold"] = self._event_trigger_threshold
+            if self._event_argument_threshold is not None:
+                schema["event_argument_threshold"] = self._event_argument_threshold
+
         return schema
 
 
@@ -878,11 +939,78 @@ class GLiNER2API:
         if isinstance(result, dict):
             return [result]
         return result
-    
+
+    def extract_events(
+        self,
+        text: str,
+        event_types: Union[Dict[str, Any], List[Dict[str, Any]]],
+        threshold: float = 0.5,
+        format_results: bool = True,
+        include_confidence: bool = False,
+        include_spans: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Extract events (triggers + typed arguments) from text.
+
+        Args:
+            text: Input text to extract events from.
+            event_types: Event types and roles, e.g. ``{event_type: [role, ...]}``
+                or the richer ``{event_type: {"roles": [...], "description": ...}}``.
+            threshold: Minimum confidence threshold.
+            format_results: Whether to format results. If False, returns raw data.
+            include_confidence: Whether to include confidence scores.
+            include_spans: Whether to include character-level start/end positions.
+
+        Returns:
+            Dictionary with an "event_extraction" key. Format:
+            {"event_extraction": {"event_type": [{"trigger": ...,
+             "arguments": [{"role": ..., "entity": ...}]}]}}
+        """
+        schema = self.create_schema().events(event_types).build()
+        return self._make_request(
+            task="schema",
+            text=text,
+            schema=schema,
+            threshold=threshold,
+            include_confidence=include_confidence,
+            include_spans=include_spans,
+            format_results=format_results,
+        )
+
+    def batch_extract_events(
+        self,
+        texts: List[str],
+        event_types: Union[Dict[str, Any], List[Dict[str, Any]]],
+        batch_size: int = 8,
+        threshold: float = 0.5,
+        format_results: bool = True,
+        include_confidence: bool = False,
+        include_spans: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Batch extract events from multiple texts. See :meth:`extract_events`.
+
+        Returns:
+            List of per-text dicts, each with an "event_extraction" key.
+        """
+        schema = self.create_schema().events(event_types).build()
+        result = self._make_request(
+            task="schema",
+            text=texts,
+            schema=schema,
+            threshold=threshold,
+            include_confidence=include_confidence,
+            include_spans=include_spans,
+            format_results=format_results,
+        )
+        if isinstance(result, dict):
+            return [result]
+        return result
+
     # -------------------------------------------------------------------------
     # General Extraction Methods
     # -------------------------------------------------------------------------
-    
+
     def extract(
         self,
         text: str,
@@ -920,7 +1048,7 @@ class GLiNER2API:
         # Validate schema has at least one extraction task
         has_any_task = any(
             key in schema_dict 
-            for key in ["entities", "classifications", "structures", "relations"]
+            for key in ["entities", "classifications", "structures", "relations", "events"]
         )
         if not has_any_task:
             raise ValueError("Schema must contain at least one extraction task")

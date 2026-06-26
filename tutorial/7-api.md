@@ -9,6 +9,7 @@ Use GLiNER2 through a cloud API without loading models locally. Perfect for prod
 - [Text Classification](#text-classification)
 - [Structured Extraction](#structured-extraction)
 - [Relation Extraction](#relation-extraction)
+- [Event Extraction](#event-extraction)
 - [Combined Schemas](#combined-schemas)
 - [Batch Processing](#batch-processing)
 - [Confidence Scores](#confidence-scores)
@@ -303,6 +304,56 @@ results = extractor.batch_extract_relations(
 )
 # Returns list of relation extraction results for each text
 ```
+
+## Event Extraction
+
+Extract events — ACE-style triggers plus their typed arguments — via the API, exactly like the local model.
+
+```python
+text = "Rebels bombed the airbase near Aleppo on Tuesday."
+results = extractor.extract_events(
+    text,
+    {"Attack": ["Attacker", "Target", "Place", "Time"]},
+)
+# {
+#     "event_extraction": {
+#         "Attack": [
+#             {"trigger": "bombed",
+#              "arguments": [
+#                  {"role": "Attacker", "entity": "Rebels"},
+#                  {"role": "Target", "entity": "the airbase"},
+#                  {"role": "Place", "entity": "Aleppo"},
+#                  {"role": "Time", "entity": "Tuesday"},
+#              ]}
+#         ]
+#     }
+# }
+```
+
+### Multiple Types and Descriptions
+
+```python
+results = extractor.extract_events(text, {
+    "Acquisition": ["Buyer", "Acquired", "Price"],
+    "Resignation": {"roles": ["Person", "Organization"],
+                    "description": "someone leaving a role"},
+})
+```
+
+### Via the Schema Builder
+
+```python
+schema = extractor.create_schema().events({"Attack": ["Attacker", "Target"]})
+results = extractor.extract(text, schema)
+```
+
+### Batch
+
+```python
+results = extractor.batch_extract_events(texts, {"Attack": ["Attacker", "Target"]})
+```
+
+See the [Event Extraction tutorial](12-events.md) for the full events API.
 
 ## Combined Schemas
 
