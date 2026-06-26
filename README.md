@@ -112,6 +112,7 @@ Comprehensive guides for all GLiNER2 features:
 - **[Combined Schemas](tutorial/4-combined.md)** - Multi-task extraction in a single pass
 - **[Regex Validators](tutorial/5-validator.md)** - Filter and validate extracted spans
 - **[Relation Extraction](tutorial/6-relation_extraction.md)** - Extract relationships between entities
+- **[Event Extraction](tutorial/12-events.md)** - Extract event triggers and their typed arguments
 - **[API Access](tutorial/7-api.md)** - Use GLiNER2 via cloud API
 
 ### Training & Customization

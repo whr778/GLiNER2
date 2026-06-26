@@ -28,6 +28,7 @@ Both formats are equivalent - use whichever is more convenient for your workflow
 | `json_structures` | `list[dict]` | No | List of structured data extractions |
 | `json_descriptions` | `dict[str, dict[str, str]]` | No | Parent → field → description |
 | `relations` | `list[dict]` | No | List of relation extractions |
+| `events` | `list[dict]` | No | List of event extractions (trigger + typed arguments) |
 
 ### Classification Task Fields
 
@@ -91,6 +92,22 @@ Relations use flexible field structures - you can use ANY field names (not just 
 **Example**: If first "works_for" has `{"head": "...", "tail": "..."}`, all other "works_for" instances must also have "head" and "tail" fields.
 
 **Validation**: The `TrainingDataset.validate_relation_consistency()` method checks that all relation types have consistent field structures across the entire dataset.
+
+### Event Fields Format
+
+Each event is a dict with an event type, a trigger word, and a list of typed argument fillers:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `event_type` | `str` | Yes | Name of the event type (e.g., "Attack", "Hire") |
+| `trigger` | `str` | Yes | The trigger word/phrase signalling the event |
+| `arguments` | `list[dict]` | No | List of `{"role": ..., "entity": ...}` argument fillers |
+| Argument `role` | `str` | Yes (per arg) | The argument role name (e.g., "Attacker") |
+| Argument `entity` | `str` | Yes (per arg) | The argument filler text |
+
+**Format**: `[{"event_type": "Attack", "trigger": "bombed", "arguments": [{"role": "Attacker", "entity": "Rebels"}]}]`
+
+Like entity and relation surfaces, the `trigger` and each argument `entity` should appear **verbatim in the input text** so the model can locate them.
 
 ---
 
@@ -385,7 +402,43 @@ You can use custom field names - the first occurrence defines what fields to use
 
 ---
 
-## 5. Combined Multi-Task Examples
+## 5. Event Extraction
+
+Events capture ACE-style triggers and their typed arguments. Each event has an `event_type`, a `trigger`, and a list of `arguments` (role + entity).
+
+### Basic Event
+
+```jsonl
+{"input": "Rebels bombed the airbase near Aleppo on Tuesday.", "output": {"events": [{"event_type": "Attack", "trigger": "bombed", "arguments": [{"role": "Attacker", "entity": "Rebels"}, {"role": "Target", "entity": "the airbase"}, {"role": "Place", "entity": "Aleppo"}, {"role": "Time", "entity": "Tuesday"}]}]}}
+```
+
+### Trigger Only (No Arguments)
+
+`arguments` may be empty — useful for event-detection-only corpora (e.g. MAVEN, LEVEN):
+
+```jsonl
+{"input": "The committee met on Friday.", "output": {"events": [{"event_type": "Meet", "trigger": "met", "arguments": []}]}}
+```
+
+### Multiple Events in One Document
+
+```jsonl
+{"input": "Acme acquired Beta Corp, and CEO Jane Doe resigned.", "output": {"events": [{"event_type": "Acquisition", "trigger": "acquired", "arguments": [{"role": "Buyer", "entity": "Acme"}, {"role": "Acquired", "entity": "Beta Corp"}]}, {"event_type": "Resignation", "trigger": "resigned", "arguments": [{"role": "Person", "entity": "Jane Doe"}]}]}}
+```
+
+### Same Event Type Firing Multiple Times
+
+A type can occur more than once; each mention is a separate dict in the list:
+
+```jsonl
+{"input": "Forces struck the depot, then struck the bridge.", "output": {"events": [{"event_type": "Attack", "trigger": "struck", "arguments": [{"role": "Target", "entity": "the depot"}]}, {"event_type": "Attack", "trigger": "struck", "arguments": [{"role": "Target", "entity": "the bridge"}]}]}}
+```
+
+The converters under `tools/data/` (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, CMNEE, LEVEN, DocEE) already emit this format — see [TRAINING_DATA.md](../TRAINING_DATA.md).
+
+---
+
+## 6. Combined Multi-Task Examples
 
 ### Entities + Classifications
 
@@ -447,7 +500,7 @@ This is valid because it has a classification task. However, if all tasks were e
 
 ---
 
-## 6. Format Edge Cases
+## 7. Format Edge Cases
 
 ### Completely Empty Output
 

@@ -83,6 +83,35 @@ schema = (extractor.create_schema()
 )
 ```
 
+### Entities + Events
+
+```python
+# Pull out entities and the events they participate in, in a single pass
+schema = (extractor.create_schema()
+    .entities(["person", "organization", "location"])
+    .events({"Attack": ["Attacker", "Target", "Place", "Time"]})
+)
+
+text = "Rebels bombed the airbase near Aleppo on Tuesday."
+results = extractor.extract(text, schema)
+# Output: {
+#     'entities': {'location': ['Aleppo']},
+#     'event_extraction': {
+#         'Attack': [
+#             {'trigger': 'bombed',
+#              'arguments': [
+#                  {'role': 'Attacker', 'entity': 'Rebels'},
+#                  {'role': 'Target', 'entity': 'the airbase'},
+#                  {'role': 'Place', 'entity': 'Aleppo'},
+#                  {'role': 'Time', 'entity': 'Tuesday'}
+#              ]}
+#         ]
+#     }
+# }
+```
+
+See the [Event Extraction tutorial](12-events.md) for the full events API.
+
 ## Advanced Multi-Task Schemas
 
 ### Complete Document Analysis
