@@ -42,6 +42,7 @@ import logging
 import math
 import os
 import random
+import re
 import shutil
 import time
 from abc import ABC, abstractmethod
@@ -215,6 +216,7 @@ class TrainingConfig:
     pin_memory: bool = True
     prefetch_factor: int = 2
     gradient_checkpointing: bool = False  # trade compute for activation memory
+    checkpoint_restart: Optional[str] = None  # None | "highest" | "last" -- resume mid-run
     seed: int = 42
     deterministic: bool = False
     local_rank: int = -1
@@ -1087,9 +1089,29 @@ class GLiNER2Trainer:
 
         warmup_steps = self.config.warmup_steps or int(max_steps * self.config.warmup_ratio)
 
+        # Resume from a prior checkpoint if requested. Load weights BEFORE the
+        # optimizer is created so it tracks the restored model's parameters.
+        resume_state = None
+        resume_dir = self._find_resume_checkpoint()
+        if resume_dir is not None:
+            logger.info("checkpoint_restart=%s: resuming from %s",
+                        self.config.checkpoint_restart, resume_dir)
+            self.load_checkpoint(str(resume_dir))
+            resume_state = torch.load(
+                resume_dir / "training_state.pt", map_location="cpu", weights_only=False,
+            )
+
         # Create optimizer and scheduler
         self.optimizer = self._create_optimizer()
         self.scheduler = get_scheduler(self.optimizer, self.config.scheduler_type, max_steps, warmup_steps, self.config.num_cycles)
+
+        start_epoch = 0
+        if resume_state is not None:
+            start_epoch = self._restore_training_state(resume_state)
+            logger.info(
+                "Resumed: continuing at epoch %d/%d (global_step %d, best_metric %.4f)",
+                start_epoch + 1, num_epochs, self.global_step, self.best_metric,
+            )
 
         # Mixed precision (CUDA-only; on MPS/CPU these were already disabled in
         # _setup_device, so use_amp is False).
@@ -1139,7 +1161,7 @@ class GLiNER2Trainer:
         self.progress_bar = tqdm(total=max_steps, desc="Training", disable=not self.is_main_process)
 
         should_stop = False
-        for epoch in range(num_epochs):
+        for epoch in range(start_epoch, num_epochs):
             self.epoch = epoch
             # Release the previous epoch's cached blocks at the boundary so the
             # MPS/CUDA high-water mark does not climb across epochs.
@@ -1507,6 +1529,79 @@ class GLiNER2Trainer:
         if best_dir.is_dir():
             (best_dir / "eval_metrics.json").write_text(payload, encoding="utf-8")
 
+    def _save_training_state(self, checkpoint_dir: Path) -> None:
+        """Save optimizer/scheduler/epoch state for mid-run resume.
+
+        Written only into numbered ``checkpoint-*`` dirs (not ``best``/``final``,
+        which stay model-only and publishable). For Adam this roughly doubles a
+        checkpoint's size (two moments per parameter).
+        """
+        if self.optimizer is None:
+            return
+        state = {
+            "epoch": self.epoch,
+            "global_step": self.global_step,
+            "best_metric": self.best_metric,
+            "patience_counter": self.patience_counter,
+            "optimizer": self.optimizer.state_dict(),
+            "scheduler": self.scheduler.state_dict() if self.scheduler is not None else None,
+            "torch_rng": torch.get_rng_state(),
+            "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        }
+        torch.save(state, checkpoint_dir / "training_state.pt")
+
+    def _find_resume_checkpoint(self) -> Optional[Path]:
+        """Pick a resumable checkpoint per ``config.checkpoint_restart``.
+
+        Considers numbered ``checkpoint-*`` dirs carrying a ``training_state.pt``
+        (``best``/``final`` are excluded). ``highest`` = largest trailing number,
+        ``last`` = newest by mtime. Returns None (with a warning) when none exist.
+        """
+        mode = getattr(self.config, "checkpoint_restart", None)
+        if not mode:
+            return None
+        candidates = [
+            d for d in self.output_dir.glob("checkpoint-*")
+            if d.is_dir() and (d / "training_state.pt").is_file()
+        ]
+        if not candidates:
+            logger.warning(
+                "checkpoint_restart=%r but no resumable checkpoint (with "
+                "training_state.pt) found in %s; starting a fresh run.",
+                mode, self.output_dir,
+            )
+            return None
+        if mode == "last":
+            return max(candidates, key=lambda d: d.stat().st_mtime)
+        if mode == "highest":
+            def _num(d: Path) -> int:
+                m = re.search(r"(\d+)$", d.name)
+                return int(m.group(1)) if m else -1
+            return max(candidates, key=_num)
+        logger.warning(
+            "Unknown checkpoint_restart=%r (use 'highest' or 'last'); starting fresh.", mode
+        )
+        return None
+
+    def _restore_training_state(self, state: dict) -> int:
+        """Restore optimizer/scheduler/counters/RNG; return the epoch to resume at."""
+        self.optimizer.load_state_dict(state["optimizer"])
+        # Optimizer tensors were loaded on CPU; move them to the training device.
+        for opt_state in self.optimizer.state.values():
+            for k, v in opt_state.items():
+                if isinstance(v, torch.Tensor):
+                    opt_state[k] = v.to(self.device)
+        if self.scheduler is not None and state.get("scheduler") is not None:
+            self.scheduler.load_state_dict(state["scheduler"])
+        self.global_step = int(state.get("global_step", 0))
+        self.best_metric = state.get("best_metric", self.best_metric)
+        self.patience_counter = int(state.get("patience_counter", 0))
+        if state.get("torch_rng") is not None:
+            torch.set_rng_state(state["torch_rng"])
+        if state.get("cuda_rng") is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(state["cuda_rng"])
+        return int(state.get("epoch", -1)) + 1
+
     def _save_checkpoint(self, name: str):
         if not self.is_main_process:
             return
@@ -1544,7 +1639,11 @@ class GLiNER2Trainer:
                 self.model.save_pretrained(str(checkpoint_dir))
             checkpoint_type = "full"
             trainable_params = sum(p.numel() for p in self.model.parameters())
-        
+
+        # Numbered checkpoints carry resume state; best/final stay model-only.
+        if name.startswith("checkpoint-"):
+            self._save_training_state(checkpoint_dir)
+
         save_time = time.time() - save_start
         checkpoint_size_mb = sum(f.stat().st_size for f in checkpoint_dir.rglob('*') if f.is_file()) / (1024 * 1024)
         
@@ -1613,8 +1712,11 @@ class GLiNER2Trainer:
                 self.lora_layers = {}
                 self._setup_lora()
 
-        # self.model was reassigned; rebuild the forward wrapper to track it.
+        # self.model was reassigned; rebuild the forward wrapper to track it and
+        # re-apply gradient checkpointing (a runtime flag from_pretrained drops),
+        # else a resume silently loses the activation-memory fix and re-OOMs.
         self._setup_parallel()
+        self._setup_gradient_checkpointing()
         logger.info("Loaded checkpoint: %s", checkpoint_path)
 
 

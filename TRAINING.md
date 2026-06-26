@@ -535,6 +535,73 @@ train_ds, val_ds, _ = ds.split(train_ratio=0.99, val_ratio=0.01, test_ratio=0.0,
 # eval_strategy="steps", eval_steps=2000 in the config.
 ```
 
+### Resuming / continuing training from a checkpoint
+
+Every run saves self-contained GLiNER2 checkpoints under `output_dir` — `best/`,
+`checkpoint-epoch-<N>/`, `final/` (and `checkpoint-<step>/` under
+`eval_strategy: steps`). Each is a complete model (`config.json` + weights +
+tokenizer). There are two ways to pick up from one.
+
+#### Automatic mid-run resume — `checkpoint_restart`
+
+For crash recovery (e.g. an OOM mid-run), set `checkpoint_restart` and keep the
+**same `output_dir`**. The trainer finds the latest numbered checkpoint and
+restores the model **plus** the optimizer, scheduler, epoch, global step,
+best-metric, and RNG — then continues from the next epoch. This is a true
+resume, not a warm-start.
+
+```yaml
+training:
+  output_dir: ./out/mmbert-base   # SAME dir as the original run — that's where it looks
+  checkpoint_restart: highest      # "highest" = largest checkpoint-epoch-<N>;
+                                   # "last" = newest by timestamp; omit/null = off
+  num_epochs: 15                   # keep this (+ batch_size, grad-accum, data) identical
+  # encoder_lr / task_lr MAY change; the step-count fields above must not.
+```
+
+- `highest` picks the largest `checkpoint-epoch-<N>`; `last` picks the newest by
+  filesystem timestamp. Only numbered `checkpoint-*` dirs count (`best`/`final`
+  are excluded). If none is found it logs a warning and starts fresh, so you can
+  leave `checkpoint_restart` set permanently.
+- Resume is at **epoch granularity** — checkpoints are taken at epoch
+  boundaries, so nothing mid-epoch is lost; only the partially-run crashing
+  epoch is redone (near-zero when the crash is at the end-of-epoch eval).
+- **Keep step-count-affecting fields identical** to the original run
+  (`num_epochs`, `batch_size`, `gradient_accumulation_steps`, data) so the
+  restored LR schedule lines up. Learning rates themselves *can* change.
+- Numbered checkpoints carry the resume state (`training_state.pt`), which
+  **roughly doubles their on-disk size** (Adam keeps two moments per parameter);
+  `best/` and `final/` stay model-only and publishable. `save_total_limit`
+  rotates the numbered ones, so resume uses the most recent survivor.
+- Compatible with `gradient_checkpointing: true` (re-applied to the reloaded
+  model). Your `model:` section is unchanged — the trainer builds it, then swaps
+  in the resumed checkpoint (a brief double-load).
+
+#### Warm-start from a checkpoint — `model.pretrained`
+
+To start a **new** run from a trained model (fresh optimizer/schedule — e.g.
+fine-tuning on different data), point the `model` section at a checkpoint
+instead of a raw encoder:
+
+```yaml
+model:
+  pretrained: ./out/mmbert-base/best     # or checkpoint-epoch-<N> / final
+  # Only loss-related overrides here (e.g. struct_loss); structural keys
+  # (encoder, max_width, ...) are baked into the saved weights — do not set them.
+
+training:
+  output_dir: ./out/mmbert-base-finetune  # a NEW dir, else it overwrites the original run
+  num_epochs: 12                          # ADDITIONAL epochs (counter restarts at 0)
+  encoder_lr: 5.0e-6                       # lower than from-scratch
+  task_lr: 1.0e-4
+```
+
+This is a **warm-start, not a resume**: it loads the weights but starts a fresh
+optimizer, scheduler, LR warmup, and epoch counter, so expect a brief loss blip
+while the new schedule warms up. The shipped `gliner2-large-v1-wikievents.yaml`
+and `gliner2-multi-wikievents.yaml` configs use this `pretrained` form against
+HF-hosted checkpoints.
+
 ---
 
 ## 5. Use the trained model
@@ -601,7 +668,7 @@ print(model.extract_entities("Marie Curie discovered radium in Paris.",
   # then train with num_epochs=1, batch_size=2, max_steps=20 to confirm the loss falls
   ```
 - **Mix the two datasets in one pass.** Passing them as a list to `train_data=` interleaves them; the converter scripts already produce compatible JSONL.
-- **Resume mid-run** by pointing a fresh `from_pretrained` at the latest checkpoint directory (`./out/.../checkpoint-<step>`) and starting a new trainer. The trainer always starts a new optimizer/scheduler — that's intentional, not a bug.
+- **Resume / continue from a checkpoint** by switching the config's `model` section to `pretrained: ./out/.../checkpoint-epoch-<N>` (or `best`/`final`) — see [Resuming / continuing training from a checkpoint](#resuming--continuing-training-from-a-checkpoint) in §4. The programmatic equivalent is a fresh `GLiNER2.from_pretrained(...)` into a new trainer. Either way the trainer starts a new optimizer/scheduler — that's intentional, not a bug.
 - **Watch the loss curve.** Healthy mmBERT-small on this data starts at ~500 (batch 1), drops below 100 in the first ~50 steps, then drifts down toward 40–60 over an epoch. Loss collapsing to ~0 means the data labels aren't reaching the loss head — stop and inspect.
 - **W&B**: set `report_to_wandb=True` and `wandb_project="..."` in `TrainingConfig` to stream live metrics.
 
