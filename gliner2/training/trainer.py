@@ -214,6 +214,7 @@ class TrainingConfig:
     num_workers: int = 4
     pin_memory: bool = True
     prefetch_factor: int = 2
+    gradient_checkpointing: bool = False  # trade compute for activation memory
     seed: int = 42
     deterministic: bool = False
     local_rank: int = -1
@@ -548,6 +549,7 @@ class GLiNER2Trainer:
 
         self._setup_seed()
         self._setup_device()
+        self._setup_gradient_checkpointing()
         self._setup_output_dir()
         self._setup_logging()
 
@@ -638,6 +640,34 @@ class GLiNER2Trainer:
                 self.config.bf16 = False
         self.model.to(self.device)
         logger.info(f"Using device: {self.device}")
+
+    def _setup_gradient_checkpointing(self) -> None:
+        """Enable gradient checkpointing on the encoder when configured.
+
+        Recomputes activations during backward instead of storing them, cutting
+        training-activation memory at the cost of ~20-30% more compute. This is
+        the main lever for fitting a large encoder on constrained memory (e.g.
+        MPS unified memory), where it lowers the high-water mark that the eval
+        pass inherits.
+        """
+        if not getattr(self.config, "gradient_checkpointing", False):
+            return
+        enc = getattr(self.model, "encoder", None)
+        if enc is None or not hasattr(enc, "gradient_checkpointing_enable"):
+            logger.warning(
+                "gradient_checkpointing requested but the encoder does not "
+                "support it; skipping."
+            )
+            return
+        if hasattr(enc, "config"):
+            enc.config.use_cache = False  # KV cache is incompatible with checkpointing
+        try:
+            enc.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
+        except TypeError:  # older transformers without the kwargs argument
+            enc.gradient_checkpointing_enable()
+        logger.info("Enabled gradient checkpointing on the encoder (use_reentrant=False).")
 
     def _setup_output_dir(self):
         self.output_dir = Path(self.config.output_dir)
