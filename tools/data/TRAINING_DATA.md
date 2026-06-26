@@ -1,7 +1,7 @@
 # Training Data
 
 The corpora used to train GLiNER2, converted to the unified JSONL format by the
-scripts under [`tools/data/`](tools/data/) (see [TRAINING.md](TRAINING.md) §2 for
+scripts under [`tools/data/`](.) (see [TRAINING.md](../train/TRAINING.md) §2 for
 the conversion commands). Sample counts below are the **actual line counts of the
 generated `data/*.jsonl` splits**; type statistics are computed from the same
 files. Most corpora are partitioned 80/10/10 by a seeded `SplitWriter`; the event
@@ -141,7 +141,7 @@ dropped by default).
 ### DocRED — `thunlp/docred`
 Document-level NER + relation extraction. Relations use human-readable names; the
 parquet `train` split merges ~3k gold-annotated docs with ~102k distant-supervised
-(noisy) docs (see [TRAINING.md](TRAINING.md) for the caveat).
+(noisy) docs (see [TRAINING.md](../train/TRAINING.md) for the caveat).
 *Stats: 6 entity types, 96 relation types, avg 4.6 entity types/record, 99.7% of records carry relations.*
 
 ### KLUE-RE — KLUE-benchmark (Korean)
@@ -198,7 +198,7 @@ appear verbatim in the text. Small but field-diverse, and Apache-2.0 (clean lice
 
 ## Event extraction
 
-These corpora require manual or scripted download (see [TRAINING.md](TRAINING.md)
+These corpora require manual or scripted download (see [TRAINING.md](../train/TRAINING.md)
 §2) and keep their canonical splits.
 
 ### WikiEvents — [gen-arg](https://github.com/raspberryice/gen-arg)

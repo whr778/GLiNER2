@@ -434,7 +434,7 @@ A type can occur more than once; each mention is a separate dict in the list:
 {"input": "Forces struck the depot, then struck the bridge.", "output": {"events": [{"event_type": "Attack", "trigger": "struck", "arguments": [{"role": "Target", "entity": "the depot"}]}, {"event_type": "Attack", "trigger": "struck", "arguments": [{"role": "Target", "entity": "the bridge"}]}]}}
 ```
 
-The converters under `tools/data/` (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, CMNEE, LEVEN, DocEE) already emit this format — see [TRAINING_DATA.md](../TRAINING_DATA.md).
+The converters under `tools/data/` (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, CMNEE, LEVEN, DocEE) already emit this format — see [TRAINING_DATA.md](../tools/data/TRAINING_DATA.md).
 
 ---
 

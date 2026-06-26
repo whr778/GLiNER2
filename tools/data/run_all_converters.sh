@@ -114,7 +114,7 @@ run_optional cmnee_test  data/cmnee/CMNEE/test.json \
         --input data/cmnee/CMNEE/test.json --out data/cmnee.test.jsonl
 
 # LEVEN — Chinese legal event detection (trigger only). Manual Google Drive
-# download (gdown wraps it); see TRAINING.md. test.jsonl has its annotations
+# download (gdown wraps it); see ../train/TRAINING.md. test.jsonl has its annotations
 # removed, so only train / valid are converted.
 run_optional leven_train data/leven/LEVEN/train.jsonl \
     uv run python tools/data/convert_leven.py \
@@ -136,7 +136,7 @@ run_optional docee_test  data/docee/DocEE-en/normal_setting/test.json \
     uv run python tools/data/convert_docee.py --no-stratify \
         --input data/docee/DocEE-en/normal_setting/test.json --out data/docee.test.jsonl
 
-# MAVEN, RAMS — manual local downloads required (see TRAINING.md §2).
+# MAVEN, RAMS — manual local downloads required (see ../train/TRAINING.md §2).
 run_optional maven      data/maven/train.jsonl                 uv run python tools/data/convert_maven.py \
                             --input data/maven/train.jsonl --out data/maven.train.jsonl
 run_optional rams_train data/RAMS_1.0c/data/train.jsonlines    uv run python tools/data/convert_rams.py \

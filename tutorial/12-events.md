@@ -279,5 +279,5 @@ The pretrained models give zero-shot event extraction, but a domain model traine
  ]}}
 ```
 
-- **Prepare data:** the converters under `tools/data/` produce this format from the public event corpora — see [TRAINING_DATA.md](../TRAINING_DATA.md).
-- **Train:** add the event JSONLs to your config's `event_files` and train — see [TRAINING.md](../TRAINING.md). `compute_metrics` reports `event_type`, `event_trigger`, `event_argument`, and a combined `event` score; the metric definitions are in [METRICS.md](../METRICS.md).
+- **Prepare data:** the converters under `tools/data/` produce this format from the public event corpora — see [TRAINING_DATA.md](../tools/data/TRAINING_DATA.md).
+- **Train:** add the event JSONLs to your config's `event_files` and train — see [TRAINING.md](../tools/train/TRAINING.md). `compute_metrics` reports `event_type`, `event_trigger`, `event_argument`, and a combined `event` score; the metric definitions are in [METRICS.md](../METRICS.md).

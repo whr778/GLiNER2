@@ -292,7 +292,7 @@ You can pass any subset of the JSONL files to the trainer at once — they're co
       ]}
  ]}}
 ```
-and an inference schema is `schema.events({"Attack": ["Attacker", "Victim", "Place", "Time"], ...})`. Add the ACE 2005 / MAVEN / RAMS JSONLs to `train_data=` like any other corpus; `compute_metrics` will report `eval_event_type_*`, `eval_event_trigger_*`, `eval_event_argument_*`, and a combined `eval_event_*` micro/macro F1 alongside the entity/relation/classification metrics, with per-event-type and per-role classification reports. See [METRICS.md](METRICS.md) for the full scoring definitions.
+and an inference schema is `schema.events({"Attack": ["Attacker", "Victim", "Place", "Time"], ...})`. Add the ACE 2005 / MAVEN / RAMS JSONLs to `train_data=` like any other corpus; `compute_metrics` will report `eval_event_type_*`, `eval_event_trigger_*`, `eval_event_argument_*`, and a combined `eval_event_*` micro/macro F1 alongside the entity/relation/classification metrics, with per-event-type and per-role classification reports. See [METRICS.md](../../METRICS.md) for the full scoring definitions.
 
 The training scripts under `tools/train/` already wire all three splits into `trainer.train(train_data=…)` / `eval_data=…` / the final blind-test pass. The equivalent inline pattern is:
 
@@ -399,7 +399,7 @@ labels:
 
 The `mmbert-small-*` and WikiEvents configs ship with `entities`/`relations`/`events` rolled up as a worked example; `mmbert-base.yaml` carries the section as a documented no-op.
 
-Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass. Each time a new best checkpoint is saved, its eval metrics are written to `output_dir/eval_metrics.json` and `output_dir/best/eval_metrics.json`; the blind-test metrics are likewise copied to `output_dir/best/test_metrics.json`, so every metrics file sits next to the model it describes. See [METRICS.md](METRICS.md) for the metric definitions.
+Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass. Each time a new best checkpoint is saved, its eval metrics are written to `output_dir/eval_metrics.json` and `output_dir/best/eval_metrics.json`; the blind-test metrics are likewise copied to `output_dir/best/test_metrics.json`, so every metrics file sits next to the model it describes. See [METRICS.md](../../METRICS.md) for the metric definitions.
 
 At the end of training, a human-readable **`output_dir/best/MODEL_CARD.md`** is generated: base model, training procedure and date, the datasets actually used (with per-dataset licenses pulled from `tools/train/dataset_registry.yaml`), the best metrics, and an **effective-license determination** that takes the most restrictive term across the base model and every dataset. License strings are copied verbatim and unverified ones ("see card"/"see source"/"other") are flagged, never upgraded — so the card never asserts a license the data doesn't support. Keep the registry current when adding a corpus (a test enforces every config corpus has an entry).
 
