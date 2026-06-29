@@ -740,6 +740,33 @@ class GLiNER2Trainer:
         """
         self._fwd_model = self.model
         if self.is_distributed:
+            """
+            With find_unused_parameters=False (the default), DDP assumes every parameter receives a 
+            gradient on every backward pass. It uses a "bucket" reduction strategy: as gradients are
+            computed during backward, DDP fires an all_reduce across ranks for each bucket as soon as all
+            parameters in that bucket have their gradients ready. This overlaps the gradient communication
+            with the tail of the backward computation.
+
+            If a parameter gets no gradient on a given step (because its task head wasn't active for any
+            sample in that batch), DDP waits forever for that bucket to be "ready" — and hangs.
+
+            In your model, different task heads (entity, relation, event) may not all be active in every
+            batch. That's why find_unused_parameters=True was set: DDP needs to know which parameters to
+            skip so it doesn't wait on them.
+
+            The practical options are:
+
+            1. find_unused_parameters=True — safe but slow (graph traversal every backward)
+            2. find_unused_parameters=False + static_graph=True — fast, but requires the set of active
+            parameters to be identical across all ranks on every step. DDP traces the graph once on the
+            first step and reuses it. If your batches consistently contain all task types (across a big
+            enough batch), this works.
+            3. Always include all task types in every batch — if your data loader ensures every batch has
+            at least one entity, one relation, and one event example, all heads produce gradients and
+            find_unused_parameters=False is safe without static_graph.
+            4. Add dummy losses — force all parameters to have a gradient by adding a 0 * param.sum() term
+            for unused heads. Hacky, generally not recommended.
+            """
             device_ids = [self.config.local_rank] if self.device.type == "cuda" else None
             self._fwd_model = DistributedDataParallel(
                 self.model, device_ids=device_ids,
