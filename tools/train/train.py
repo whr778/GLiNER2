@@ -286,6 +286,23 @@ def _read_records(paths: List[str]) -> List[Dict]:
     return records
 
 
+def _detect_lang(text: str) -> str:
+    """Return 3-char ISO 639-2 code for text using lumi_language_id + langcodes."""
+    from lumi_language_id import detect_language as _lid
+    import langcodes
+    lang2, _ = _lid(text)
+    return langcodes.Language.get(lang2).to_alpha3()
+
+
+def _annotate_languages(records: List[Dict]) -> List[Dict]:
+    """Stamp each record dict with '_lang' (ISO 639-2) in-place; returns the list."""
+    print("[lang] Detecting language for each sample (this may take a moment)...")
+    for rec in records:
+        text = rec.get("input") or rec.get("text") or ""
+        rec["_lang"] = _detect_lang(text.strip()) if text.strip() else "und"
+    return records
+
+
 def _build_model(model_cfg: Dict):
     """Build the model from the ``model`` config section.
 
@@ -308,6 +325,72 @@ def _build_model(model_cfg: Dict):
         return model
     encoder = model_cfg.pop("encoder")
     return GLiNER2.from_encoder(encoder, **model_cfg)
+
+
+def _print_blind_test(metrics: Dict) -> None:
+    """Print the detailed blind-test report followed by a compact micro summary."""
+    from gliner2.training.metrics import _print_micro_report
+
+    if not metrics:
+        return
+
+    print("\n===== Blind test metrics =====")
+    for key in sorted(metrics):
+        val = metrics[key]
+        if isinstance(val, float):
+            print(f"  {key}: {val:.4f}")
+        elif isinstance(val, int):
+            print(f"  {key}: {val}")
+
+    for category in ("entity", "relation", "classification", "event_type",
+                     "event_trigger", "event_argument", "event"):
+        for regime in ("strict", "relaxed"):
+            report_key = f"eval_{category}_{regime}_classification_report"
+            if report_key in metrics:
+                print(f"\n--- {category} {regime} classification report ---")
+                print(metrics[report_key])
+
+    print("\n===== Blind test summary =====")
+    _print_micro_report(metrics)
+
+
+def _blind_test_by_language(
+    best: Path,
+    test_data,
+    eval_bs: int,
+    eval_thr: float,
+) -> Dict:
+    """Run the blind test per language then over all data; return aggregate metrics."""
+    from collections import defaultdict
+    from gliner2 import GLiNER2
+    from gliner2.training.metrics import compute_metrics
+    from gliner2.training.trainer import ExtractorDataset
+
+    # Materialise file paths to dicts so we can annotate and filter.
+    if test_data and isinstance(test_data[0], str):
+        test_data = _read_records(test_data)
+
+    _annotate_languages(test_data)
+
+    by_lang: Dict[str, List[Dict]] = defaultdict(list)
+    for rec in test_data:
+        by_lang[rec.get("_lang", "und")].append(rec)
+
+    print(f"\n[blind test] Loading {best} for per-language evaluation...")
+    model = GLiNER2.from_pretrained(str(best))
+
+    for lang in sorted(by_lang):
+        subset = by_lang[lang]
+        print(f"\n[blind test] Processing language: {lang}  ({len(subset)} samples)")
+        ds = ExtractorDataset(subset, shuffle=False, validate=False)
+        lang_metrics = compute_metrics(model, ds, batch_size=eval_bs, threshold=eval_thr)
+        _print_blind_test(lang_metrics)
+
+    print(f"\n[blind test] All languages combined ({len(test_data)} samples)")
+    ds_all = ExtractorDataset(test_data, shuffle=False, validate=False)
+    all_metrics = compute_metrics(model, ds_all, batch_size=eval_bs, threshold=eval_thr) or {}
+    _print_blind_test(all_metrics)
+    return all_metrics
 
 
 def main(config_path: str) -> None:
@@ -340,6 +423,7 @@ def main(config_path: str) -> None:
     eval_cfg = cfg.get("eval") or {}
     eval_bs = eval_cfg.get("batch_size", 8)
     eval_thr = eval_cfg.get("threshold", 0.5)
+    eval_by_language = eval_cfg.get("eval_by_language", False)
 
     trainer = GLiNER2Trainer(
         model, config,
@@ -366,30 +450,19 @@ def main(config_path: str) -> None:
         print(f"\n[blind test] No 'best' checkpoint at {best}; skipping.")
         return
 
-    print(f"\n[blind test] Loading {best} and scoring against {len(test_data)} held-out splits...")
-    test_metrics = evaluate_checkpoint(best, test_data, batch_size=eval_bs, threshold=eval_thr) or {}
+    if eval_by_language:
+        test_metrics = _blind_test_by_language(best, test_data, eval_bs, eval_thr)
+    else:
+        print(f"\n[blind test] Loading {best} and scoring against {len(test_data)} held-out samples...")
+        test_metrics = evaluate_checkpoint(best, test_data, batch_size=eval_bs, threshold=eval_thr) or {}
+        _print_blind_test(test_metrics)
+
     if test_metrics:
         metrics_path = Path(config.output_dir) / "test_metrics.json"
         metrics_path.write_text(json.dumps(test_metrics, indent=2))
         best_metrics_path = best / "test_metrics.json"
         best_metrics_path.write_text(json.dumps(test_metrics, indent=2))
         print(f"\n[blind test] Wrote metrics to {metrics_path} and {best_metrics_path}")
-
-        print("\n===== Blind test metrics =====")
-        for key in sorted(test_metrics):
-            val = test_metrics[key]
-            if isinstance(val, float):
-                print(f"  {key}: {val:.4f}")
-            elif isinstance(val, int):
-                print(f"  {key}: {val}")
-
-        for category in ("entity", "relation", "classification", "event_type",
-                         "event_trigger", "event_argument", "event"):
-            for regime in ("strict", "relaxed"):
-                report_key = f"eval_{category}_{regime}_classification_report"
-                if report_key in test_metrics:
-                    print(f"\n--- {category} {regime} classification report ---")
-                    print(test_metrics[report_key])
     else:
         print("[blind test] No metrics produced (empty test set?).")
 

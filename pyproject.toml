@@ -46,6 +46,10 @@ local = [
     "transformers",
     "peft",
 ]
+train = [
+    "lumi-language-id-2; python_version >= '3.9'",
+    "langcodes",
+]
 
 [project.urls]
 Homepage = "https://github.com/fastino-ai/GLiNER2"
