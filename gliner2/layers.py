@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional
 
 
 class CompileSafeGRU(nn.Module):
@@ -300,3 +301,144 @@ class CountLSTMoE(nn.Module):
         # ───── mixture weighted by gates ─────
         out = (gates.unsqueeze(-1) * x).sum(dim=2)  # [L, M, D]
         return out
+
+
+# =============================================================================
+# Span Representation Layer (from gliner package - copied to remove dependency)
+# =============================================================================
+
+def create_projection_layer(hidden_size: int, dropout: float, out_dim: Optional[int] = None) -> nn.Sequential:
+    """Creates a two-layer projection network with ReLU activation and dropout.
+
+    The projection layer expands the input by 4x in the hidden layer before
+    projecting to the output dimension.
+
+    Args:
+        hidden_size: Size of the input hidden dimension.
+        dropout: Dropout probability applied after the first layer.
+        out_dim: Output dimension size. If None, uses hidden_size. Defaults to None.
+
+    Returns:
+        A Sequential module containing the projection layers.
+    """
+    if out_dim is None:
+        out_dim = hidden_size
+
+    return nn.Sequential(
+        nn.Linear(hidden_size, out_dim * 4), nn.ReLU(), nn.Dropout(dropout), nn.Linear(out_dim * 4, out_dim)
+    )
+
+
+def extract_elements(sequence, indices):
+    """Extract elements from a sequence using provided indices.
+
+    Args:
+        sequence (torch.Tensor): Input sequence of shape [B, L, D].
+        indices (torch.Tensor): Indices to extract, shape [B, K].
+
+    Returns:
+        torch.Tensor: Extracted elements of shape [B, K, D].
+    """
+    D = sequence.size(-1)
+
+    # Expand indices to [B, K, D]
+    expanded_indices = indices.unsqueeze(2).expand(-1, -1, D)
+
+    # Gather the elements
+    extracted_elements = torch.gather(sequence, 1, expanded_indices)
+
+    return extracted_elements
+
+
+class SpanMarkerV0(nn.Module):
+    """Marks and projects span endpoints using an MLP.
+
+    A cleaner version of SpanMarker using the create_projection_layer utility.
+
+    Attributes:
+        max_width (int): Maximum span width to represent.
+        project_start (nn.Module): MLP for projecting start positions.
+        project_end (nn.Module): MLP for projecting end positions.
+        out_project (nn.Module): Final projection layer.
+    """
+
+    def __init__(self, hidden_size: int, max_width: int, dropout: float = 0.4):
+        """Initialize the SpanMarkerV0 layer.
+
+        Args:
+            hidden_size (int): Dimension of the hidden representations.
+            max_width (int): Maximum span width to represent.
+            dropout (float, optional): Dropout rate. Defaults to 0.4.
+        """
+        super().__init__()
+        self.max_width = max_width
+        self.project_start = create_projection_layer(hidden_size, dropout)
+        self.project_end = create_projection_layer(hidden_size, dropout)
+
+        self.out_project = create_projection_layer(hidden_size * 2, dropout, hidden_size)
+
+    def forward(self, h: torch.Tensor, span_idx: torch.Tensor) -> torch.Tensor:
+        """Compute span representations using start and end markers.
+
+        Args:
+            h (torch.Tensor): Token representations of shape [B, L, D].
+            span_idx (torch.Tensor): Span indices of shape [B, *, 2].
+
+        Returns:
+            torch.Tensor: Span representations of shape [B, L, max_width, D].
+        """
+        B, L, D = h.size()
+
+        start_rep = self.project_start(h)
+        end_rep = self.project_end(h)
+
+        start_span_rep = extract_elements(start_rep, span_idx[:, :, 0])
+        end_span_rep = extract_elements(end_rep, span_idx[:, :, 1])
+
+        cat = torch.cat([start_span_rep, end_span_rep], dim=-1).relu()
+
+        return self.out_project(cat).view(B, L, self.max_width, D)
+
+
+class SpanRepLayer(nn.Module):
+    """Factory class for various span representation approaches.
+
+    This class provides a unified interface to instantiate different span
+    representation methods based on the specified mode.
+
+    Attributes:
+        span_rep_layer (nn.Module): The underlying span representation layer.
+    """
+
+    def __init__(self, hidden_size, max_width, span_mode, **kwargs):
+        """Initialize the SpanRepLayer with the specified mode.
+
+        Args:
+            hidden_size (int): Dimension of the hidden representations.
+            max_width (int): Maximum span width to represent.
+            span_mode (str): Type of span representation to use. Options:
+                - 'markerV0': SpanMarkerV0
+            **kwargs: Additional arguments passed to the span representation layer.
+
+        Raises:
+            ValueError: If an unknown span_mode is provided.
+        """
+        super().__init__()
+
+        if span_mode == "markerV0":
+            self.span_rep_layer = SpanMarkerV0(hidden_size, max_width, **kwargs)
+        else:
+            raise ValueError(f"Unknown span mode {span_mode}")
+
+    def forward(self, x, *args):
+        """Forward pass through the selected span representation layer.
+
+        Args:
+            x (torch.Tensor): Input tensor, typically of shape [B, L, D].
+            *args: Additional arguments passed to the underlying layer.
+
+        Returns:
+            torch.Tensor: Span representations, typically of shape
+                [B, L, max_width, D].
+        """
+        return self.span_rep_layer(x, *args)

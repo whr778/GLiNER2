@@ -29,7 +29,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "gliner",
     "peft",
     "pydantic>=2.0.0",
     "requests>=2.28",
