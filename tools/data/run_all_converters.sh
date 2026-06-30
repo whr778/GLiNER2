@@ -68,6 +68,11 @@ run_step nuner_full          uv run python tools/data/convert_nuner.py --split f
 # 'train' split merges gold + distant-supervised docs (~270 MB output).
 run_step docred              uv run python tools/data/convert_docred.py --out data/docred.jsonl
 
+# Re-DocRED — revised DocRED with corrected gold annotations; canonical splits.
+run_step redocred_train      uv run python tools/data/convert_redocred.py --split train      --out data/redocred.train.jsonl
+run_step redocred_val        uv run python tools/data/convert_redocred.py --split validation  --out data/redocred.val.jsonl
+run_step redocred_test       uv run python tools/data/convert_redocred.py --split test        --out data/redocred.test.jsonl
+
 # Token-classification NER corpora (auto-download; parquet revision where the
 # original ships a dataset script).
 run_step kaznerd             uv run python tools/data/convert_hf_token_ner.py \

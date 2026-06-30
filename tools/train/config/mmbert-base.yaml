@@ -70,6 +70,7 @@ data:
     - data/bio_ner_relations
     - data/pubmed_abstracts_ner
     - data/docred
+    - data/redocred
     - data/kaznerd
     - data/bc4chemd
     - data/bc5cdr

@@ -28,6 +28,7 @@ corpora keep their canonical train/dev/test splits.
 | sentence_rex | Relation extraction | 34,314 | 4,269 | 4,282 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
 | DocRED | NER + relations (doc-level) | 83,951 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) |
+| Re-DocRED | NER + relations (doc-level) | 3,053 | 500 | 500 | see card | [HF](https://huggingface.co/datasets/tonytan48/Re-DocRED) |
 | KLUE-RE | NER + relations (Korean) | 26,028 | 3,237 | 3,205 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
 | BioRED | NER + relations (biomedical) | 308 | 47 | 45 | NLM / NCBI | [NCBI](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/) |
 | SciERC | NER + relations (scientific) | 265 | 46 | 38 | research use (AI2) | [AI2](http://nlp.cs.washington.edu/sciIE/) |
@@ -48,7 +49,7 @@ corpora keep their canonical train/dev/test splits.
 | LEVEN | Event detection (Chinese legal, trigger) | 5,301 | 1,230 | — | see source | [GitHub](https://github.com/thunlp/LEVEN) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,721,279** | **214,914** | **215,654** | | |
+| **Total (generated)** | | **1,724,332** | **215,414** | **216,154** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard); LEVEN
@@ -143,6 +144,14 @@ Document-level NER + relation extraction. Relations use human-readable names; th
 parquet `train` split merges ~3k gold-annotated docs with ~102k distant-supervised
 (noisy) docs (see [TRAINING.md](../train/TRAINING.md) for the caveat).
 *Stats: 6 entity types, 96 relation types, avg 4.6 entity types/record, 99.7% of records carry relations.*
+
+### Re-DocRED — `tonytan48/Re-DocRED`
+Revised DocRED with corrected gold annotations (Tan et al., 2022). Unlike DocRED's
+train split (which mixes ~3k gold + ~102k noisy distant-supervised docs), Re-DocRED
+ships only clean gold annotations in canonical train/validation/test splits. Relation
+text labels are mapped from Wikidata P-IDs using the same strings as DocRED's
+`relation_text` field, so both corpora share the same 96 relation-type vocabulary.
+*Stats: 6 entity types, 96 relation types, avg 4.5 entity types/record, 99.9% of records carry relations.*
 
 ### KLUE-RE — KLUE-benchmark (Korean)
 Korean relation extraction from the canonical [KLUE GitHub](https://github.com/KLUE-benchmark/KLUE)

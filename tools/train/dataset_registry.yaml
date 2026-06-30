@@ -157,6 +157,14 @@ datasets:
     source_url: https://huggingface.co/datasets/thunlp/docred
     language: [en]
     description: "Document-level NER + RE; train merges gold-annotated and distant-supervised documents."
+  redocred:
+    name: Re-DocRED
+    tasks: NER + relations (doc-level)
+    license: see card
+    hf_id: tonytan48/Re-DocRED
+    source_url: https://huggingface.co/datasets/tonytan48/Re-DocRED
+    language: [en]
+    description: "Revised DocRED with corrected gold annotations; canonical train/val/test splits, 96 relation types, 6 entity types."
   klue_re:
     name: KLUE-RE
     tasks: NER + relations (Korean)
