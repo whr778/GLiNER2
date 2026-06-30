@@ -31,11 +31,9 @@ so relaxed never scores below strict):
 * **Classifications** — strict ``(task, label)``; relaxed = task exact + label
   overlap. Multi-label predictions are unrolled and scored individually.
 * **Event types** — ``(event_type,)`` presence. There is no surface to relax,
-  so strict == relaxed; both also equal ``event_trigger`` relaxed, which
-  likewise collapses a trigger to its event type. (Same metric, named on its
-  own for convenience — not a copy-paste bug.)
+  so strict == relaxed.
 * **Event triggers** — strict ``(event_type, trigger)``; relaxed = event_type
-  presence (the exact trigger word is dropped).
+  exact + trigger surface overlap (consistent with entity/relation relaxed).
 * **Event arguments** — strict ``(event_type, role, entity, trigger)``; relaxed =
   ``(event_type, role)`` exact + entity overlap, dropping the trigger link.
 * **Event (overall)** — one combined score over event types + triggers +
@@ -648,8 +646,8 @@ def _items_event_type(s):
 
 
 def _items_trigger(s):
-    # relaxed trigger = event_type presence (drop the exact trigger word)
-    return sorted(((et,), (), et) for et in {et for et, _trig in s})
+    # relaxed trigger = event_type exact + trigger surface overlap
+    return sorted(((et,), (trigger,), et) for et, trigger in s)
 
 
 def _items_argument(s):

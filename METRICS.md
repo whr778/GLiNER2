@@ -142,11 +142,10 @@ f1        = 2 * precision * recall / (precision + recall)
   overlap. Multi-label gold/preds are unrolled and each `(task, label)` scored
   individually. Aggregated per task.
 - **Event type** — `(event_type,)` presence. There is no surface to relax, so
-  **strict == relaxed**, and both also equal `event_trigger` *relaxed* (which
-  likewise collapses a trigger down to its event type). This is the same number
-  surfaced under its own name for convenience — not a bug.
-- **Event trigger** — strict `(event_type, trigger)`; relaxed drops the exact
-  trigger word and scores **event-type presence**. Aggregated per event type.
+  **strict == relaxed**.
+- **Event trigger** — strict `(event_type, trigger)`; relaxed = event_type exact
+  + trigger surface overlap (consistent with entity/relation relaxed). Aggregated
+  per event type.
 - **Event argument** — strict `(event_type, role, entity, trigger)`; relaxed =
   `(event_type, role)` exact + entity overlap, dropping the trigger link.
   Aggregated per role. The trigger is part of the **strict** key so that
@@ -226,21 +225,21 @@ Micro `P / R / F1  (strict -> relaxed)`:
 ```
 [eval] micro precision / recall / f1  (strict -> relaxed)
   event_type      P=1.0000->1.0000  R=1.0000->1.0000  F1=1.0000->1.0000
-  event_trigger   P=0.0000->1.0000  R=0.0000->1.0000  F1=0.0000->1.0000
+  event_trigger   P=0.0000->0.0000  R=0.0000->0.0000  F1=0.0000->0.0000
   event_argument  P=0.0000->0.6667  R=0.0000->0.6667  F1=0.0000->0.6667
-  event           P=0.2000->0.8000  R=0.2000->0.8000  F1=0.2000->0.8000
+  event           P=0.2000->0.6000  R=0.2000->0.6000  F1=0.2000->0.6000
 ```
 
 Reading it:
 
 - **event_type** is perfect — the type `Attack` was found (strict == relaxed).
-- **event_trigger** strict is 0 (`struck` ≠ `bombed`) but relaxed is 1.0
-  (type presence only).
+- **event_trigger** strict is 0 (`struck` ≠ `bombed`); relaxed is also 0
+  (`struck` and `bombed` share no content tokens or substring).
 - **event_argument** strict is 0 because the wrong trigger poisons the strict
   argument key; relaxed is 2/3 (`rebels`, `base` match; `Damascus` ≠ `Aleppo`).
 - **event** combines them. Strict: TP=1 (type) + 0 (trigger) + 0 (args) = 1,
   FP = 0 + 1 + 3 = 4, FN = 0 + 1 + 3 = 4, over **support 5** = 1 type + 1
-  trigger + 3 args → P = R = 1/5 = 0.20. Relaxed: TP = 1 + 1 + 2 = 4 → 0.80.
+  trigger + 3 args → P = R = 1/5 = 0.20. Relaxed: TP = 1 + 0 + 2 = 3 → 0.60.
 
 The combined strict report (note the namespaced rows):
 

@@ -80,12 +80,13 @@ def test_relaxed_counts_overlap_as_tp():
 
 # --- relaxed event item builders drop the trigger link ---------------------
 
-def test_relaxed_trigger_is_event_type_presence():
+def test_relaxed_trigger_uses_surface_overlap():
     strict = {("Conflict.Attack", "bombed"), ("Conflict.Attack", "struck"), ("Life.Die", "killed")}
     items = _items_trigger(strict)
-    # two Conflict.Attack triggers collapse to one event-type presence item
-    assert sorted(d[0] for d, _s, _k in items) == ["Conflict.Attack", "Life.Die"]
-    assert all(s == () for _d, s, _k in items)
+    # all three (et, trigger) pairs kept; trigger word is the relaxed surface
+    assert len(items) == 3
+    assert all(len(s) == 1 for _d, s, _k in items)
+    assert {s[0] for _d, s, _k in items} == {"bombed", "struck", "killed"}
 
 
 def test_relaxed_argument_drops_trigger():
@@ -213,8 +214,8 @@ def test_overall_event_sums_component_counts():
     assert m["eval_event_strict_support"] == 5                     # 1 + 1 + 3
     assert abs(m["eval_event_strict_micro_recall"] - 0.2) < 1e-9   # tp 1 / support 5
     assert abs(m["eval_event_strict_micro_precision"] - 0.2) < 1e-9  # tp 1 / (tp 1 + fp 4)
-    # event-type detection is correct; by construction it equals its own relaxed
-    # and the relaxed trigger metric (both are event-type presence).
+    # event-type detection is correct; strict == relaxed (no surface to relax)
     assert m["eval_event_type_strict_micro_f1"] == 1.0
     assert m["eval_event_type_strict_micro_f1"] == m["eval_event_type_relaxed_micro_f1"]
-    assert m["eval_event_type_strict_micro_f1"] == m["eval_event_trigger_relaxed_micro_f1"]
+    # trigger relaxed = type exact + surface overlap; "struck" vs "bombed" = no overlap
+    assert m["eval_event_trigger_relaxed_micro_f1"] == 0.0
