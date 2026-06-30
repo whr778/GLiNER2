@@ -70,6 +70,31 @@ from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_met
 from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
 
 
+def _dataset_counts(corpora: List[str], event_files: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, int]]:
+    """Count non-empty lines per split for each dataset."""
+    def _count(path: str) -> int:
+        try:
+            with open(path, encoding="utf-8") as f:
+                return sum(1 for line in f if line.strip())
+        except OSError:
+            return 0
+
+    counts: Dict[str, Dict[str, int]] = {}
+    for c in (corpora or []):
+        key = Path(c).name
+        counts[key] = {}
+        for split in ("train", "val", "test"):
+            p = f"{c}.{split}.jsonl"
+            if Path(p).is_file():
+                counts[key][split] = _count(p)
+    for name, by_split in (event_files or {}).items():
+        counts[name] = {}
+        for split, path in (by_split or {}).items():
+            if path and Path(path).is_file():
+                counts[name][split] = _count(path)
+    return counts
+
+
 def _split_files(corpora: List[str], suffix: str) -> List[str]:
     return [f"{c}.{suffix}.jsonl" for c in corpora]
 
@@ -106,6 +131,7 @@ def _write_model_card(cfg, config, corpora, event_files, results, test_metrics, 
             cfg=cfg, config=config, dataset_keys=dataset_keys, results=results,
             eval_metrics=eval_metrics, test_metrics=test_metrics or None,
             generated_at=datetime.now().strftime("%Y-%m-%d"),
+            dataset_counts=_dataset_counts(corpora, event_files),
         )
         path = best / "MODEL_CARD.md"
         path.write_text(card, encoding="utf-8")

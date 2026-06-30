@@ -116,6 +116,30 @@ def test_build_model_card_structure_and_honesty():
     assert "ACE 2005" in card
 
 
+def test_build_model_card_with_counts_and_descriptions():
+    counts = {
+        "nuner_full": {"train": 790202, "val": 98373, "test": 98464},
+        "finer_ord": {"train": 900, "val": 300},
+    }
+    card = build_model_card(
+        model_name="demo-model", base_model="jhu-clsp/mmBERT-base", cfg={"model": {}},
+        config=type("C", (), {"experiment_name": "demo"})(),
+        dataset_keys=["nuner_full", "finer_ord"],
+        results={}, eval_metrics=None, test_metrics=None,
+        generated_at="2026-06-25",
+        dataset_counts=counts,
+    )
+    # Summary line shows combined train count; table row shows per-dataset count
+    assert "791,102" in card   # nuner (790202) + finer (900) combined in summary
+    assert "790,202" in card   # NuNER row in table
+    # Table has Train/Val/Test columns
+    assert "| Train |" in card
+    # Description notes section present
+    assert "Dataset notes" in card
+    assert "Synthetic NER" in card          # NuNER description
+    assert "Financial NER" in card          # FiNER-ORD description
+
+
 def test_unknown_dataset_is_flagged_not_silently_dropped():
     card = build_model_card(
         model_name="m", base_model="jhu-clsp/mmBERT-base", cfg={"model": {}},

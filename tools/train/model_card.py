@@ -185,22 +185,67 @@ def _frontmatter(model_name, base_model, lang_codes, hf_ids, verdict) -> str:
     return "\n".join(lines)
 
 
-def _data_section(datasets: List[tuple]) -> str:
-    rows = ["## Training data", "",
-            "Datasets the model was actually trained on (resolved from the run config):", "",
-            "| Dataset | Task(s) | Language | License | Source |",
-            "|---|---|---|---|---|"]
+def _data_section(datasets: List[tuple], counts: Optional[Dict[str, Dict[str, int]]] = None) -> str:
+    has_counts = bool(counts)
+    n = len(datasets)
+
+    summary = f"**{n}** dataset{'s' if n != 1 else ''} used for this run."
+    if has_counts:
+        total_train = sum(c.get("train", 0) for c in counts.values())
+        total_val = sum(c.get("val", 0) for c in counts.values())
+        total_test = sum(c.get("test", 0) for c in counts.values())
+        if total_train:
+            extras = []
+            if total_val:
+                extras.append(f"val: {total_val:,}")
+            if total_test:
+                extras.append(f"test: {total_test:,}")
+            detail = f"{total_train:,} training records"
+            if extras:
+                detail += f" ({', '.join(extras)})"
+            summary += f" {detail}."
+
+    if has_counts:
+        header = ("| Dataset | Task(s) | Train | Val | Test | Language | License | Source |",
+                  "|---|---|--:|--:|--:|---|---|---|")
+    else:
+        header = ("| Dataset | Task(s) | Language | License | Source |",
+                  "|---|---|---|---|---|")
+
+    rows = ["## Training data", "", summary, ""] + list(header)
+
     for key, entry in datasets:
         if entry is None:
-            rows.append(f"| ⚠️ `{key}` | unknown | — | **UNKNOWN — not in registry** | — |")
+            if has_counts:
+                rows.append(f"| ⚠️ `{key}` | unknown | — | — | — | — | **UNKNOWN — not in registry** | — |")
+            else:
+                rows.append(f"| ⚠️ `{key}` | unknown | — | **UNKNOWN — not in registry** | — |")
             continue
         lang = ", ".join(entry.get("language") or []) or "—"
         src = entry.get("source_url")
         src_md = f"[link]({src})" if src else "—"
-        rows.append(
-            f"| {entry.get('name', key)} | {entry.get('tasks', '—')} | {lang} | "
-            f"{entry.get('license', '—')} | {src_md} |"
-        )
+        name = entry.get("name", key)
+        tasks = entry.get("tasks", "—")
+        lic = entry.get("license", "—")
+        if has_counts:
+            c = counts.get(key, {})
+            tr = f"{c['train']:,}" if c.get("train") else "—"
+            vl = f"{c['val']:,}" if c.get("val") else "—"
+            te = f"{c['test']:,}" if c.get("test") else "—"
+            rows.append(f"| {name} | {tasks} | {tr} | {vl} | {te} | {lang} | {lic} | {src_md} |")
+        else:
+            rows.append(f"| {name} | {tasks} | {lang} | {lic} | {src_md} |")
+
+    notes = [
+        (entry.get("name", key), entry["description"])
+        for key, entry in datasets
+        if entry and entry.get("description")
+    ]
+    if notes:
+        rows += ["", "**Dataset notes**", ""]
+        for name, desc in notes:
+            rows.append(f"- **{name}** — {desc}")
+
     return "\n".join(rows)
 
 
@@ -306,6 +351,7 @@ def build_model_card(
     test_metrics: Optional[Dict[str, Any]],
     generated_at: str,
     registry: Optional[Dict[str, Any]] = None,
+    dataset_counts: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> str:
     """Render a complete MODEL_CARD.md as a Markdown string."""
     registry = registry or load_registry()
@@ -359,7 +405,7 @@ def build_model_card(
         f"- **Tasks:** entity, relation, event, and classification extraction",
         f"- **Experiment:** `{getattr(config, 'experiment_name', '—')}`",
         "",
-        _data_section(datasets),
+        _data_section(datasets, dataset_counts),
         "",
         _training_section(config, cfg, results, generated_at),
         "",
