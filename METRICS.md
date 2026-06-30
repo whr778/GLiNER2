@@ -206,9 +206,12 @@ Example: `eval_event_strict_micro_f1`, `eval_entity_relaxed_macro_precision`,
 Each `eval_<category>_<regime>_classification_report` is a ready-to-print table:
 one row per label (precision, recall, F1, per-label support), then `micro avg`
 and `macro avg` rows. The avg rows show the category's total support. The
-printed micro summary (one compact `P / R / F1  (strict -> relaxed)` line per
-category) is emitted on every eval pass; `tools/train/train.py` additionally
-prints the full per-label reports after the blind-test pass.
+printed micro summary (one `P / R / F1  (strict -> relaxed)` line per category,
+preceded by an `[eval]` header) is emitted on every eval pass. After the
+blind-test pass, `tools/train/train.py` also prints the full per-label
+classification reports followed by a second compact micro summary. With
+`eval_by_language: true` in the `eval` config section this double-print runs once
+per language in alphabetical order, then once over all data combined.
 
 ---
 
@@ -221,10 +224,11 @@ surface** `struck`, and one wrong argument entity `Place=Damascus`.
 Micro `P / R / F1  (strict -> relaxed)`:
 
 ```
-event_type      P=1.0000->1.0000  R=1.0000->1.0000  F1=1.0000->1.0000
-event_trigger   P=0.0000->1.0000  R=0.0000->1.0000  F1=0.0000->1.0000
-event_argument  P=0.0000->0.6667  R=0.0000->0.6667  F1=0.0000->0.6667
-event           P=0.2000->0.8000  R=0.2000->0.8000  F1=0.2000->0.8000
+[eval] micro precision / recall / f1  (strict -> relaxed)
+  event_type      P=1.0000->1.0000  R=1.0000->1.0000  F1=1.0000->1.0000
+  event_trigger   P=0.0000->1.0000  R=0.0000->1.0000  F1=0.0000->1.0000
+  event_argument  P=0.0000->0.6667  R=0.0000->0.6667  F1=0.0000->0.6667
+  event           P=0.2000->0.8000  R=0.2000->0.8000  F1=0.2000->0.8000
 ```
 
 Reading it:
