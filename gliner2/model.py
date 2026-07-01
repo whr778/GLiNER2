@@ -18,8 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
-from gliner.modeling.span_rep import SpanRepLayer
-from gliner2.layers import CountLSTMoE, CountLSTM, create_mlp, CountLSTMv2
+from gliner2.layers import CountLSTMoE, CountLSTM, create_mlp, CountLSTMv2, SpanRepLayer
 from gliner2.processor import SchemaTransformer, PreprocessedBatch, SamplingConfig
 from safetensors.torch import save_file, load_file
 from transformers import (
