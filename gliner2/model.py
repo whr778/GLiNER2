@@ -53,6 +53,8 @@ class ExtractorConfig(PretrainedConfig):
             asl_gamma_neg: float = 4.0,
             asl_clip: float = 0.05,
             dice_smooth: float = 1.0,
+            event_struct_loss: str = None,
+            event_struct_pos_weight: float = None,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -61,7 +63,7 @@ class ExtractorConfig(PretrainedConfig):
         self.counting_layer = counting_layer
         self.token_pooling = token_pooling
         self.max_len = max_len
-        # Structure loss variant:
+        # Structure loss variant for entities + relations:
         #   "bce" | "bce_posweight" | "focal" | "asl" | "dice" | "bce_dice"
         self.struct_loss = struct_loss
         self.struct_pos_weight = struct_pos_weight
@@ -71,6 +73,10 @@ class ExtractorConfig(PretrainedConfig):
         self.asl_gamma_neg = asl_gamma_neg
         self.asl_clip = asl_clip
         self.dice_smooth = dice_smooth
+        # Optional per-task overrides for event structure loss.
+        # None → falls back to struct_loss / struct_pos_weight.
+        self.event_struct_loss = event_struct_loss
+        self.event_struct_pos_weight = event_struct_pos_weight
 
 
 class Extractor(PreTrainedModel):
@@ -269,6 +275,7 @@ class Extractor(PreTrainedModel):
         # Compute losses for each sample
         cls_losses = []
         struct_losses = []
+        event_struct_losses = []
         count_losses = []
         individual = []
         valid_samples = 0
@@ -286,6 +293,7 @@ class Extractor(PreTrainedModel):
 
                 cls_losses.append(sample_losses["classification"])
                 struct_losses.append(sample_losses["structure"])
+                event_struct_losses.append(sample_losses["event_structure"])
                 count_losses.append(sample_losses["count"])
 
                 if return_individual_losses:
@@ -293,11 +301,13 @@ class Extractor(PreTrainedModel):
                         "total_loss": (
                                 sample_losses["classification"] +
                                 sample_losses["structure"] +
+                                sample_losses["event_structure"] +
                                 sample_losses["count"]
                         ).item(),
-                        "classification_loss": sample_losses["classification"].item(),
-                        "structure_loss": sample_losses["structure"].item(),
-                        "count_loss": sample_losses["count"].item(),
+                        "classification_loss":  sample_losses["classification"].item(),
+                        "structure_loss":        sample_losses["structure"].item(),
+                        "event_structure_loss":  sample_losses["event_structure"].item(),
+                        "count_loss":            sample_losses["count"].item(),
                     })
 
                 valid_samples += 1
@@ -307,15 +317,17 @@ class Extractor(PreTrainedModel):
                 zero = torch.tensor(0.0, device=device)
                 cls_losses.append(zero)
                 struct_losses.append(zero)
+                event_struct_losses.append(zero)
                 count_losses.append(zero)
 
                 if return_individual_losses:
                     individual.append({
-                        "total_loss": 0.0,
-                        "classification_loss": 0.0,
-                        "structure_loss": 0.0,
-                        "count_loss": 0.0,
-                        "error": str(e)
+                        "total_loss":           0.0,
+                        "classification_loss":  0.0,
+                        "structure_loss":       0.0,
+                        "event_structure_loss": 0.0,
+                        "count_loss":           0.0,
+                        "error":                str(e),
                     })
 
         if valid_samples == 0:
@@ -325,17 +337,19 @@ class Extractor(PreTrainedModel):
             return result
 
         # Aggregate losses
-        total_cls = torch.stack(cls_losses).sum()
-        total_struct = torch.stack(struct_losses).sum()
-        total_count = torch.stack(count_losses).sum()
-        total_loss = total_cls + total_struct + total_count
+        total_cls          = torch.stack(cls_losses).sum()
+        total_struct       = torch.stack(struct_losses).sum()
+        total_event_struct = torch.stack(event_struct_losses).sum()
+        total_count        = torch.stack(count_losses).sum()
+        total_loss = total_cls + total_struct + total_event_struct + total_count
 
         result = {
-            "total_loss": total_loss,
-            "classification_loss": total_cls,
-            "structure_loss": total_struct,
-            "count_loss": total_count,
-            "batch_size": valid_samples
+            "total_loss":           total_loss,
+            "classification_loss":  total_cls,
+            "structure_loss":       total_struct,
+            "event_structure_loss": total_event_struct,
+            "count_loss":           total_count,
+            "batch_size":           valid_samples,
         }
 
         if return_individual_losses:
@@ -354,11 +368,12 @@ class Extractor(PreTrainedModel):
             first_param = next(self.parameters(), None)
             device = first_param.device if first_param is not None else torch.device("cpu")
         return {
-            "total_loss": torch.tensor(0.0, device=device, requires_grad=True),
-            "classification_loss": torch.tensor(0.0, device=device),
-            "structure_loss": torch.tensor(0.0, device=device),
-            "count_loss": torch.tensor(0.0, device=device),
-            "batch_size": 0
+            "total_loss":           torch.tensor(0.0, device=device, requires_grad=True),
+            "classification_loss":  torch.tensor(0.0, device=device),
+            "structure_loss":       torch.tensor(0.0, device=device),
+            "event_structure_loss": torch.tensor(0.0, device=device),
+            "count_loss":           torch.tensor(0.0, device=device),
+            "batch_size":           0,
         }
 
     # =========================================================================
@@ -419,10 +434,11 @@ class Extractor(PreTrainedModel):
                        If None, computed on-the-fly for this sample.
 
         Returns:
-            Dict with classification, structure, and count losses
+            Dict with classification, structure, event_structure, and count losses
         """
         cls_loss = torch.tensor(0.0, device=device)
         struct_loss = torch.tensor(0.0, device=device)
+        event_struct_loss = torch.tensor(0.0, device=device)
         count_loss = torch.tensor(0.0, device=device)
 
         # Compute span representations if needed and not pre-computed
@@ -449,7 +465,7 @@ class Extractor(PreTrainedModel):
                     logits, labels, reduction="sum"
                 )
             else:
-                # Structure loss
+                # Structure loss — events tracked separately from entities/relations
                 structure = structure_labels[i]
 
                 if structure[0] == 0:
@@ -457,12 +473,19 @@ class Extractor(PreTrainedModel):
                     continue
 
                 if span_info is not None:
-                    struct_loss = struct_loss + self.compute_struct_loss(
-                        span_info["span_rep"],
-                        schema_emb,
-                        structure,
-                        span_info["span_mask"]
-                    )
+                    if task_type == "events":
+                        ev_variant = getattr(self.config, "event_struct_loss", None) or getattr(self.config, "struct_loss", "bce")
+                        ev_pos_weight = getattr(self.config, "event_struct_pos_weight", None)
+                        span_loss = self.compute_struct_loss(
+                            span_info["span_rep"], schema_emb, structure, span_info["span_mask"],
+                            variant=ev_variant, pos_weight=ev_pos_weight,
+                        )
+                        event_struct_loss = event_struct_loss + span_loss
+                    else:
+                        span_loss = self.compute_struct_loss(
+                            span_info["span_rep"], schema_emb, structure, span_info["span_mask"],
+                        )
+                        struct_loss = struct_loss + span_loss
 
                 # Collect for count loss (skip entities)
                 if task_type != "entities":
@@ -476,9 +499,10 @@ class Extractor(PreTrainedModel):
             count_loss = F.cross_entropy(self.count_pred(p_embs), counts, reduction="sum")
 
         return {
-            "classification": cls_loss,
-            "structure": struct_loss,
-            "count": count_loss
+            "classification":    cls_loss,
+            "structure":         struct_loss,
+            "event_structure":   event_struct_loss,
+            "count":             count_loss,
         }
 
     # =========================================================================
@@ -637,7 +661,9 @@ class Extractor(PreTrainedModel):
             schema_emb: torch.Tensor,
             structure: List[Any],
             span_mask: torch.Tensor,
-            masking_rate: float = 0.5
+            masking_rate: float = 0.5,
+            variant: str = None,
+            pos_weight: float = None,
     ) -> torch.Tensor:
         """
         Compute structure extraction loss with negative span masking.
@@ -648,6 +674,8 @@ class Extractor(PreTrainedModel):
             structure: [count, spans] structure labels
             span_mask: (1, num_spans) mask for invalid spans
             masking_rate: Probability of masking negative spans
+            variant: Loss variant override; None → use config.struct_loss.
+            pos_weight: Positive weight override for bce_posweight; None → use config.struct_pos_weight.
 
         Returns:
             Structure loss tensor
@@ -678,10 +706,12 @@ class Extractor(PreTrainedModel):
                         if 0 <= start < scores.shape[2] and 0 <= width < scores.shape[3]:
                             labs[i, k, start, width] = 1
 
+        # Resolve variant: caller may override (e.g. event-specific loss).
+        variant = variant or getattr(self.config, "struct_loss", "bce")
+
         # Dice variants are region-based and handle the negative imbalance
         # intrinsically, so they skip the random negative masking and apply
         # only the valid-span mask.
-        variant = getattr(self.config, "struct_loss", "bce")
         if variant in ("dice", "bce_dice"):
             return self._dice_struct_loss(
                 scores, labs, span_mask, include_bce=(variant == "bce_dice")
@@ -697,34 +727,41 @@ class Extractor(PreTrainedModel):
             loss_mask = torch.ones_like(scores)
 
         # Compute masked loss
-        loss = self._struct_loss_term(scores, labs)
+        loss = self._struct_loss_term(scores, labs, variant=variant, pos_weight=pos_weight)
         loss = loss * loss_mask
         loss = loss.view(loss.shape[0], loss.shape[1], -1) * (~span_mask[0]).float()
 
         return loss.sum()
 
-    def _struct_loss_term(self, scores: torch.Tensor, labs: torch.Tensor) -> torch.Tensor:
-        """Per-cell structure loss, selected by config.struct_loss.
-
-        Returns an unreduced tensor matching `scores`; reduction/masking is
-        applied by the caller.
+    def _struct_loss_term(
+            self,
+            scores: torch.Tensor,
+            labs: torch.Tensor,
+            variant: str = None,
+            pos_weight: float = None,
+    ) -> torch.Tensor:
+        """Per-cell structure loss. Returns unreduced tensor; caller applies masking.
 
         - "bce": plain binary cross-entropy with logits (default).
-        - "bce_posweight": BCE up-weighting positives by config.struct_pos_weight,
-          a principled alternative to random negative masking.
+        - "bce_posweight": BCE up-weighting positives by pos_weight (falls back to
+          config.struct_pos_weight); a principled alternative to random negative masking.
         - "focal": focal loss (Lin et al.), down-weighting easy negatives via
           config.focal_gamma and balancing classes via config.focal_alpha.
         - "asl": asymmetric loss (Ben-Baruch et al.), decoupled focusing for
           positives/negatives (config.asl_gamma_pos/neg) plus probability
           shifting of easy negatives (config.asl_clip). Built for multi-label
           extreme negative imbalance.
+
+        Args:
+            variant: Loss variant; None → use config.struct_loss.
+            pos_weight: Positive weight for bce_posweight; None → use config.struct_pos_weight.
         """
-        variant = getattr(self.config, "struct_loss", "bce")
+        variant = variant or getattr(self.config, "struct_loss", "bce")
 
         if variant == "bce_posweight":
-            pos_weight = scores.new_tensor(self.config.struct_pos_weight)
+            pw = pos_weight if pos_weight is not None else self.config.struct_pos_weight
             return F.binary_cross_entropy_with_logits(
-                scores, labs, pos_weight=pos_weight, reduction="none"
+                scores, labs, pos_weight=scores.new_tensor(pw), reduction="none"
             )
 
         if variant == "focal":

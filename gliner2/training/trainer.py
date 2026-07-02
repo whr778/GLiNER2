@@ -429,6 +429,7 @@ class TrainingMetrics:
     loss: float = 0.0
     classification_loss: float = 0.0
     structure_loss: float = 0.0
+    event_structure_loss: float = 0.0
     count_loss: float = 0.0
     learning_rate: float = 0.0
     epoch: float = 0.0
@@ -1269,6 +1270,7 @@ class GLiNER2Trainer:
                             loss=avg_loss,
                             classification_loss=outputs.get("classification_loss", torch.tensor(0)).item(),
                             structure_loss=outputs.get("structure_loss", torch.tensor(0)).item(),
+                            event_structure_loss=outputs.get("event_structure_loss", torch.tensor(0)).item(),
                             count_loss=outputs.get("count_loss", torch.tensor(0)).item(),
                             learning_rate=self.scheduler.get_last_lr()[0],
                             epoch=epoch + epoch_progress,
@@ -1407,17 +1409,19 @@ class GLiNER2Trainer:
                 f"Batch size: {self.config.eval_batch_size}. Skipping evaluation."
             )
             return {
-                "eval_loss": 0.0,
-                "eval_classification_loss": 0.0,
-                "eval_structure_loss": 0.0,
-                "eval_count_loss": 0.0,
-                "step": self.global_step,
+                "eval_loss":                  0.0,
+                "eval_classification_loss":   0.0,
+                "eval_structure_loss":        0.0,
+                "eval_event_structure_loss":  0.0,
+                "eval_count_loss":            0.0,
+                "step":  self.global_step,
                 "epoch": self.epoch,
             }
 
         total_loss = 0.0
         total_cls_loss = 0.0
         total_struct_loss = 0.0
+        total_event_struct_loss = 0.0
         total_count_loss = 0.0
         num_batches = 0
 
@@ -1431,20 +1435,21 @@ class GLiNER2Trainer:
                     # rank 0 only, so the wrapper's collectives would deadlock.
                     outputs = self.model(batch)
 
-                # Fix Bug #10: Move tensors to CPU to prevent memory leak
+                # Move tensors to CPU to prevent memory leak
                 total_loss += outputs["total_loss"].detach().cpu().item()
                 total_cls_loss += outputs.get("classification_loss", torch.tensor(0)).detach().cpu().item()
                 total_struct_loss += outputs.get("structure_loss", torch.tensor(0)).detach().cpu().item()
+                total_event_struct_loss += outputs.get("event_structure_loss", torch.tensor(0)).detach().cpu().item()
                 total_count_loss += outputs.get("count_loss", torch.tensor(0)).detach().cpu().item()
                 num_batches += 1
 
-        # Fix Bug #4: Safe division for evaluation metrics
         metrics = {
-            "eval_loss": self._safe_divide(total_loss, num_batches, default=0.0),
-            "eval_classification_loss": self._safe_divide(total_cls_loss, num_batches, default=0.0),
-            "eval_structure_loss": self._safe_divide(total_struct_loss, num_batches, default=0.0),
-            "eval_count_loss": self._safe_divide(total_count_loss, num_batches, default=0.0),
-            "step": self.global_step,
+            "eval_loss":                  self._safe_divide(total_loss, num_batches, default=0.0),
+            "eval_classification_loss":   self._safe_divide(total_cls_loss, num_batches, default=0.0),
+            "eval_structure_loss":        self._safe_divide(total_struct_loss, num_batches, default=0.0),
+            "eval_event_structure_loss":  self._safe_divide(total_event_struct_loss, num_batches, default=0.0),
+            "eval_count_loss":            self._safe_divide(total_count_loss, num_batches, default=0.0),
+            "step":  self.global_step,
             "epoch": self.epoch,
         }
 

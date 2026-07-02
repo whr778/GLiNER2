@@ -525,6 +525,32 @@ model:
 
 Note: `focal`, `asl`, and the Dice variants handle class imbalance inside the loss, so the 50% random negative masking in `compute_struct_loss` becomes partly redundant — for `focal`/`asl` it still runs (it randomly drops hard negatives the loss wants to learn from), while `dice`/`bce_dice` skip it entirely. For the cleanest comparison, evaluate each variant against the `bce` baseline on your own val splits.
 
+#### Per-task loss metrics and event-specific loss variant
+
+The trainer logs and W&B track three separate structure-loss buckets:
+
+| Metric | Covers |
+|--------|--------|
+| `structure_loss` / `eval_structure_loss` | Entities + relations span loss |
+| `event_structure_loss` / `eval_event_structure_loss` | Events span loss only |
+| `count_loss` / `eval_count_loss` | Count prediction (relations + events combined) |
+
+`total_loss` is always the sum of all four components (`classification + structure + event_structure + count`).
+
+Event tasks often have a different positive/negative ratio than entity extraction — event triggers and arguments are sparser. To set a different loss variant for events while keeping `struct_loss` for entities and relations, add `event_struct_loss` (and optionally `event_struct_pos_weight`) to the `model:` section:
+
+```yaml
+model:
+  encoder: jhu-clsp/mmBERT-small
+  max_width: 20
+  max_len: 8192
+  struct_loss: bce                    # used for entities + relations
+  event_struct_loss: bce_posweight    # overrides struct_loss for events only
+  event_struct_pos_weight: 16.0       # used when event_struct_loss is bce_posweight
+```
+
+`event_struct_loss` accepts the same values as `struct_loss` (`bce`, `bce_posweight`, `focal`, `asl`, `dice`, `bce_dice`). When omitted (the default), events use `struct_loss`. Hyperparameters other than `pos_weight` (`focal_gamma`, `asl_*`, `dice_smooth`) are shared between the entity/relation and event paths — set them once at the top level and both paths use them.
+
 ### Optional: hold out an evaluation slice
 
 ```python
