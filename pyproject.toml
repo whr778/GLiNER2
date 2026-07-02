@@ -16,7 +16,7 @@ name = "gliner2"
 description = "GLiNER2: Unified Schema-Based Information Extraction and Text Classification"
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 
 maintainers = [
     {name = "Urchade Zaratiana"},
