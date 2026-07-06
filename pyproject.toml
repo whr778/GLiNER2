@@ -31,11 +31,17 @@ classifiers = [
 dependencies = [
     "datasets>=3.1.0",
     "gliner",
+    "huggingface_hub",
+    "langcodes[data]",
     "lumi-language-id-2",
+    "numpy",
     "peft",
     "pydantic>=2.0.0",
     "pyyaml>=6.0.3",
     "requests>=2.28",
+    "safetensors",
+    "stopwordsiso>=0.7.0",
+    "tqdm",
     "urllib3>=1.26",
 ]
 
@@ -46,10 +52,6 @@ local = [
     "torch",
     "transformers",
     "peft",
-]
-train = [
-    "langcodes[data]",
-    "stopwordsiso>=0.7.0",
 ]
 
 [project.urls]
