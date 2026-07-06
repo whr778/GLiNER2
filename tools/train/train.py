@@ -356,16 +356,107 @@ def _build_model(model_cfg: Dict):
     return GLiNER2.from_encoder(encoder, **model_cfg)
 
 
-def _build_eval_stopwords(eval_cfg: Dict, config_path: str):
-    """Build the stopword set for eval from the config, or return the default.
+def _collect_lang_codes(data) -> set:
+    """Collect unique ISO 639-2 _lang codes from training records.
 
-    Reads ``eval.stopword_languages`` (list of ISO 639-2 codes) and
-    ``eval.stopword_yaml`` (path relative to the config file's directory,
-    defaults to ``stopwords.yaml``).
+    Accepts a list of file-path strings (JSONL) or already-materialised dicts.
+    Skips undetermined ('und') and missing values.
+    """
+    codes: set = set()
+    for item in data:
+        if isinstance(item, str):
+            try:
+                with open(item, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            lang = json.loads(line).get("_lang")
+                            if lang and lang != "und":
+                                codes.add(lang)
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
+            except OSError:
+                pass
+        elif isinstance(item, dict):
+            lang = item.get("_lang")
+            if lang and lang != "und":
+                codes.add(lang)
+    return codes
+
+
+def _print_stopword_report(codes: list, yaml_path) -> None:
+    """Print a per-language table: code, name, word count, source."""
+    try:
+        import langcodes
+        import stopwordsiso
+    except ImportError:
+        print(f"[stopwords] {len(codes)} languages: {', '.join(codes)}")
+        return
+
+    yaml_data: dict = {}
+    if yaml_path and yaml_path.exists():
+        with open(yaml_path, encoding="utf-8") as fh:
+            yaml_data = yaml.safe_load(fh) or {}
+
+    print(f"\n[stopwords] Building stopword set from {len(codes)} languages:")
+    print(f"  {'Code':<6}  {'Language':<30}  {'Words':>5}  Source")
+    print(f"  {'-'*6}  {'-'*30}  {'-'*5}  {'-'*20}")
+
+    total = 0
+    for code in codes:
+        try:
+            lang = langcodes.Language.get(code)
+            alpha2 = lang.language
+        except Exception:
+            print(f"  {code:<6}  {'(unknown)':<30}  {'0':>5}  none")
+            continue
+
+        try:
+            name = lang.display_name("en") or code
+        except Exception:
+            name = code
+
+        iso_words: set = set(stopwordsiso.stopwords(alpha2)) if stopwordsiso.has_lang(alpha2) else set()
+        yaml_words: set = set(str(w) for w in (yaml_data.get(code) or []))
+        n = len(iso_words | yaml_words)
+        total += n
+
+        if iso_words and yaml_words:
+            source = "stopwordsiso + yaml"
+        elif iso_words:
+            source = "stopwordsiso"
+        elif yaml_words:
+            source = "yaml"
+        else:
+            source = "none"
+
+        print(f"  {code:<6}  {name:<30}  {n:>5}  {source}")
+
+    print(f"  {'':6}  {'':30}  {'-----':>5}")
+    print(f"  {'total':<6}  {'':30}  {total:>5}\n")
+
+
+def _build_eval_stopwords(eval_cfg: Dict, config_path: str, corpus_data=None):
+    """Build the stopword set for eval, augmented from training corpus _lang codes.
+
+    Unions ``eval.stopword_languages`` (config list) with language codes found
+    in corpus_data records (via ``_lang`` field). Falls back to the English-only
+    default when neither source produces any codes.
     """
     from gliner2.training.metrics import _DEFAULT_STOPWORDS
 
-    lang_codes = eval_cfg.get("stopword_languages") or []
+    config_codes: set = set(eval_cfg.get("stopword_languages") or [])
+
+    detected_codes: set = set()
+    if corpus_data:
+        detected_codes = _collect_lang_codes(corpus_data)
+        if detected_codes:
+            print(f"[stopwords] Detected {len(detected_codes)} language codes in corpus")
+
+    lang_codes = sorted(config_codes | detected_codes)
+
     if not lang_codes:
         return _DEFAULT_STOPWORDS
 
@@ -374,8 +465,8 @@ def _build_eval_stopwords(eval_cfg: Dict, config_path: str):
     yaml_name = eval_cfg.get("stopword_yaml", "stopwords.yaml")
     yaml_path = Path(config_path).parent / yaml_name
     extra = yaml_path if yaml_path.exists() else None
-    if extra is None:
-        print(f"[stopwords] no supplement file at {yaml_path}; using stopwordsiso only")
+
+    _print_stopword_report(lang_codes, extra)
 
     return build_stopwords(lang_codes, extra_yaml=extra)
 
@@ -478,7 +569,9 @@ def main(config_path: str) -> None:
     eval_thr = eval_cfg.get("threshold", 0.5)
     eval_by_language = eval_cfg.get("eval_by_language", False)
 
-    eval_stopwords = _build_eval_stopwords(eval_cfg, config_path)
+    eval_stopwords = _build_eval_stopwords(
+        eval_cfg, config_path, corpus_data=train_data + eval_data + test_data,
+    )
 
     trainer = GLiNER2Trainer(
         model, config,
