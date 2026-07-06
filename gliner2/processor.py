@@ -145,14 +145,21 @@ class PreprocessedBatch:
 # =============================================================================
 
 class WhitespaceTokenSplitter:
-    """Fast regex-based tokenizer for text splitting."""
+    """Fast regex-based tokenizer for text splitting.
+
+    CJK characters (Chinese/Japanese/Korean) are each matched as individual
+    tokens so that span matching works correctly for languages without spaces.
+    The non-CJK word pattern explicitly excludes CJK ranges so that adjacent
+    Latin and CJK characters are not merged into a single token.
+    """
     __slots__ = ()
 
     _PATTERN = re.compile(
         r"""(?:https?://[^\s]+|www\.[^\s]+)
         |[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}
         |@[a-z0-9_]+
-        |\w+(?:[-_]\w+)*
+        |[一-鿿㐀-䶿぀-ゟ゠-ヿ가-힯]
+        |[^\W一-鿿㐀-䶿぀-ゟ゠-ヿ가-힯]+(?:[-_][^\W一-鿿㐀-䶿぀-ゟ゠-ヿ가-힯]+)*
         |\S""",
         re.VERBOSE | re.IGNORECASE,
     )
