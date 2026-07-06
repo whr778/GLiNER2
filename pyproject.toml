@@ -31,6 +31,7 @@ classifiers = [
 dependencies = [
     "datasets>=3.1.0",
     "gliner",
+    "lumi-language-id-2",
     "peft",
     "pydantic>=2.0.0",
     "pyyaml>=6.0.3",
@@ -47,7 +48,6 @@ local = [
     "peft",
 ]
 train = [
-    "lumi-language-id-2; python_version >= '3.9'",
     "langcodes[data]",
     "stopwordsiso>=0.7.0",
 ]

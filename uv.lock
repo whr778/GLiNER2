@@ -565,6 +565,7 @@ source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "gliner" },
+    { name = "lumi-language-id-2" },
     { name = "peft" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -580,7 +581,6 @@ local = [
 ]
 train = [
     { name = "langcodes", extra = ["data"] },
-    { name = "lumi-language-id-2" },
     { name = "stopwordsiso" },
 ]
 
@@ -596,7 +596,7 @@ requires-dist = [
     { name = "datasets", specifier = ">=3.1.0" },
     { name = "gliner" },
     { name = "langcodes", extras = ["data"], marker = "extra == 'train'" },
-    { name = "lumi-language-id-2", marker = "python_full_version >= '3.9' and extra == 'train'" },
+    { name = "lumi-language-id-2" },
     { name = "peft" },
     { name = "peft", marker = "extra == 'local'" },
     { name = "pydantic", specifier = ">=2.0.0" },
