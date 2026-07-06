@@ -37,6 +37,8 @@ training:
 eval:
   batch_size: 8
   threshold: 0.5
+  # stopword_languages: [eng, fra, deu, zho, jpn, kor, uzb, kat]
+  # stopword_yaml: stopwords.yaml  # relative to this config file; defaults to stopwords.yaml
 
 # Label transforms applied to train/val/test. ACE 2005 uses parent.child
 # types (ORG.Media, LOC.Address, Conflict.Attack); roll them up to the parent.

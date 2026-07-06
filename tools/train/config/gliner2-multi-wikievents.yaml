@@ -39,6 +39,8 @@ training:
 eval:
   batch_size: 8
   threshold: 0.5
+  # stopword_languages: [eng, fra, deu, zho, jpn, kor, uzb, kat]
+  # stopword_yaml: stopwords.yaml  # relative to this config file; defaults to stopwords.yaml
 
 labels:
   entities:
