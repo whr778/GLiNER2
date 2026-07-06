@@ -18,7 +18,10 @@ The config has four sections:
   single-process ``nn.DataParallel`` (``batch_size`` is the total split across
   GPUs). See TRAINING.md section 4c.
 * ``eval``     - ``batch_size`` / ``threshold`` for the metrics hook and the
-  blind test pass.
+  blind test pass. Optional ``stopword_languages`` (list of ISO 639-2 codes)
+  enables multilingual stopword filtering in relaxed metrics; defaults to the
+  English-only built-in set. Optional ``stopword_yaml`` (relative path, default
+  ``stopwords.yaml``) supplements stopwordsiso with a user-maintained YAML file.
 * ``data``     - ``corpora`` base paths (``<name>.{train,val,test}.jsonl``) and
   an ``event_files`` map of ``{name: {train,val,test}}``. Event splits are
   included only if the file exists on disk, so a config runs with any subset
@@ -353,6 +356,30 @@ def _build_model(model_cfg: Dict):
     return GLiNER2.from_encoder(encoder, **model_cfg)
 
 
+def _build_eval_stopwords(eval_cfg: Dict, config_path: str):
+    """Build the stopword set for eval from the config, or return the default.
+
+    Reads ``eval.stopword_languages`` (list of ISO 639-2 codes) and
+    ``eval.stopword_yaml`` (path relative to the config file's directory,
+    defaults to ``stopwords.yaml``).
+    """
+    from gliner2.training.metrics import _DEFAULT_STOPWORDS
+
+    lang_codes = eval_cfg.get("stopword_languages") or []
+    if not lang_codes:
+        return _DEFAULT_STOPWORDS
+
+    from gliner2.training.stopwords import build_stopwords
+
+    yaml_name = eval_cfg.get("stopword_yaml", "stopwords.yaml")
+    yaml_path = Path(config_path).parent / yaml_name
+    extra = yaml_path if yaml_path.exists() else None
+    if extra is None:
+        print(f"[stopwords] no supplement file at {yaml_path}; using stopwordsiso only")
+
+    return build_stopwords(lang_codes, extra_yaml=extra)
+
+
 def _print_blind_test(metrics: Dict) -> None:
     """Print the detailed blind-test report followed by a compact micro summary."""
     from gliner2.training.metrics import _print_micro_report
@@ -451,10 +478,14 @@ def main(config_path: str) -> None:
     eval_thr = eval_cfg.get("threshold", 0.5)
     eval_by_language = eval_cfg.get("eval_by_language", False)
 
+    eval_stopwords = _build_eval_stopwords(eval_cfg, config_path)
+
     trainer = GLiNER2Trainer(
         model, config,
         eval_data=eval_data,
-        compute_metrics=make_compute_metrics(batch_size=eval_bs, threshold=eval_thr),
+        compute_metrics=make_compute_metrics(
+            batch_size=eval_bs, threshold=eval_thr, stopwords=eval_stopwords,
+        ),
     )
     if is_main:
         estimate_eta(model, train_data, config)

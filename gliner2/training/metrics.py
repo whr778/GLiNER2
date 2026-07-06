@@ -59,10 +59,16 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any, Callable, Dict, Iterable, List, Set, Tuple
 
+_DEFAULT_STOPWORDS: frozenset = frozenset({
+    "the", "a", "an", "of", "in", "on", "at", "to", "for", "and",
+    "or", "by", "with", "from", "as", "is", "are", "was", "were",
+})
+
 
 def make_compute_metrics(
     batch_size: int = 8,
     threshold: float = 0.5,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
 ) -> Callable[[Any, Any], Dict[str, Any]]:
     """Return a ``compute_metrics`` callable bound to the given inference settings.
 
@@ -71,7 +77,8 @@ def make_compute_metrics(
     """
     def _hook(model, eval_dataset) -> Dict[str, Any]:
         return compute_metrics(
-            model, eval_dataset, batch_size=batch_size, threshold=threshold,
+            model, eval_dataset,
+            batch_size=batch_size, threshold=threshold, stopwords=stopwords,
         )
     return _hook
 
@@ -81,6 +88,7 @@ def compute_metrics(
     eval_dataset,
     batch_size: int = 8,
     threshold: float = 0.5,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
 ) -> Dict[str, Any]:
     """Score ``eval_dataset`` and return a flat metrics dict.
 
@@ -133,19 +141,19 @@ def compute_metrics(
         if g or p:
             has_entities = True
             _tally(g, p, *ent_s, key=lambda x: x[0])
-            _match_relaxed(_items_entity(g), _items_entity(p), *ent_r)
+            _match_relaxed(_items_entity(g), _items_entity(p), *ent_r, stopwords=stopwords)
 
         g, p = _gold_relation_set(gold), _pred_relation_set(pred)
         if g or p:
             has_relations = True
             _tally(g, p, *rel_s, key=lambda x: x[0])
-            _match_relaxed(_items_relation(g), _items_relation(p), *rel_r)
+            _match_relaxed(_items_relation(g), _items_relation(p), *rel_r, stopwords=stopwords)
 
         g, p = _gold_classification_pairs(gold), _pred_classification_pairs(pred, gold)
         if g or p:
             has_classifications = True
             _tally(g, p, *cls_s, key=lambda x: x[0])
-            _match_relaxed(_items_classification(g), _items_classification(p), *cls_r)
+            _match_relaxed(_items_classification(g), _items_classification(p), *cls_r, stopwords=stopwords)
 
         # Events — score type detection, triggers, and arguments separately.
         # Relaxed drops the trigger link (trigger = event_type presence;
@@ -154,19 +162,19 @@ def compute_metrics(
         if g_ety or p_ety:
             has_event_types = True
             _tally(g_ety, p_ety, *ety_s, key=lambda x: x[0])
-            _match_relaxed(_items_event_type(g_ety), _items_event_type(p_ety), *ety_r)
+            _match_relaxed(_items_event_type(g_ety), _items_event_type(p_ety), *ety_r, stopwords=stopwords)
 
         g_trig, p_trig = _gold_event_trigger_set(gold), _pred_event_trigger_set(pred)
         if g_trig or p_trig:
             has_event_triggers = True
             _tally(g_trig, p_trig, *et_s, key=lambda x: x[0])
-            _match_relaxed(_items_trigger(g_trig), _items_trigger(p_trig), *et_r)
+            _match_relaxed(_items_trigger(g_trig), _items_trigger(p_trig), *et_r, stopwords=stopwords)
 
         g_arg, p_arg = _gold_event_argument_set(gold), _pred_event_argument_set(pred)
         if g_arg or p_arg:
             has_event_arguments = True
             _tally(g_arg, p_arg, *ea_s, key=lambda x: x[1])
-            _match_relaxed(_items_argument(g_arg), _items_argument(p_arg), *ea_r)
+            _match_relaxed(_items_argument(g_arg), _items_argument(p_arg), *ea_r, stopwords=stopwords)
 
     # Overall event score: sum the type, trigger, and argument counters
     # (namespaced so the per-label report keeps distinct rows; micro is the
@@ -549,10 +557,6 @@ def _pr_f1(tp_n: int, fp_n: int, fn_n: int) -> Tuple[float, float, float]:
 # Relaxed (partial-overlap) matching
 # ---------------------------------------------------------------------------
 
-_STOPWORDS = {"the", "a", "an", "of", "in", "on", "at", "to", "for", "and",
-              "or", "by", "with", "from", "as", "is", "are", "was", "were"}
-
-
 def _counters() -> Tuple[Counter, Counter, Counter]:
     return Counter(), Counter(), Counter()
 
@@ -579,7 +583,7 @@ def _normalize(s: str) -> str:
     return " ".join(s.lower().split())
 
 
-def _overlap(a: str, b: str) -> bool:
+def _overlap(a: str, b: str, stopwords: frozenset = _DEFAULT_STOPWORDS) -> bool:
     """Partial-surface match: substring containment, or a shared non-stopword
     token (length >= 2), so common words like 'the'/'of' don't create matches."""
     na, nb = _normalize(a), _normalize(b)
@@ -587,12 +591,19 @@ def _overlap(a: str, b: str) -> bool:
         return False
     if na == nb or na in nb or nb in na:
         return True
-    ta = {t for t in na.split() if len(t) >= 2 and t not in _STOPWORDS}
-    tb = {t for t in nb.split() if len(t) >= 2 and t not in _STOPWORDS}
+    ta = {t for t in na.split() if len(t) >= 2 and t not in stopwords}
+    tb = {t for t in nb.split() if len(t) >= 2 and t not in stopwords}
     return bool(ta & tb)
 
 
-def _match_relaxed(gold_items, pred_items, tp: Counter, fp: Counter, fn: Counter) -> None:
+def _match_relaxed(
+    gold_items,
+    pred_items,
+    tp: Counter,
+    fp: Counter,
+    fn: Counter,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+) -> None:
     """One-to-one relaxed match, accumulating per-key TP/FP/FN.
 
     Each item is ``(discrete, surfaces, key)``: ``discrete`` (type/label parts)
@@ -618,7 +629,7 @@ def _match_relaxed(gold_items, pred_items, tp: Counter, fp: Counter, fn: Counter
                     break
 
     run(lambda x, y: _normalize(x) == _normalize(y))  # exact (normalized) first
-    run(_overlap)                                      # then partial overlap
+    run(lambda x, y: _overlap(x, y, stopwords))       # then partial overlap
 
     for pi, (_pd, _ps, pk) in enumerate(pred_items):
         if not p_done[pi]:
@@ -662,6 +673,7 @@ def evaluate_checkpoint(
     batch_size: int = 8,
     threshold: float = 0.5,
     map_location: str = None,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
 ) -> Dict[str, Any]:
     """Load a saved GLiNER2 checkpoint and run :func:`compute_metrics` on a test set.
 
@@ -689,7 +701,7 @@ def evaluate_checkpoint(
     model = GLiNER2.from_pretrained(str(checkpoint_dir), map_location=map_location)
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
     return compute_metrics(
-        model, dataset, batch_size=batch_size, threshold=threshold,
+        model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,
     )
 
 

@@ -49,6 +49,7 @@ local = [
 train = [
     "lumi-language-id-2; python_version >= '3.9'",
     "langcodes",
+    "stopwordsiso>=0.7.0",
 ]
 
 [project.urls]
