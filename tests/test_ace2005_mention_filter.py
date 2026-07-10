@@ -15,7 +15,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "data"))
-from convert_ace2005 import parse_apf  # noqa: E402
+from convert_ace2005 import iter_apf_files, parse_apf  # noqa: E402
 from _mention_filter import MentionFilter  # noqa: E402
 
 
@@ -122,3 +122,27 @@ def test_nam_only_drops_nom_and_pro(tmp_path):
     assert "relations" not in out
     # only Place (NAM) and the non-entity Time-Within survive
     assert _roles(out["events"][0]) == {"Place", "Time-Within"}
+
+
+def test_iter_apf_files_only_reads_adj_folder(tmp_path):
+    """The raw ACE 2005 LDC delivery re-annotates the same documents in
+    several sibling folders per genre (adj, fp1, fp2, timex2norm, ...).
+    Only 'adj' (adjudicated gold) should be converted -- walking the whole
+    tree duplicates every document once per folder."""
+    for folder in ("adj", "fp1", "fp2", "timex2norm"):
+        d = tmp_path / "bc" / folder
+        d.mkdir(parents=True)
+        (d / "DOC1.apf.xml").write_text("<x/>", encoding="utf-8")
+
+    found = sorted(p.relative_to(tmp_path) for p in iter_apf_files(tmp_path))
+    assert [str(p) for p in found] == ["bc/adj/DOC1.apf.xml"]
+
+
+def test_iter_apf_files_no_adj_folder_yields_nothing(tmp_path):
+    """A genre with no 'adj' folder contributes no documents -- there is no
+    fallback to a non-adjudicated annotation pass."""
+    d = tmp_path / "bn" / "timex2norm"
+    d.mkdir(parents=True)
+    (d / "DOC1.apf.xml").write_text("<x/>", encoding="utf-8")
+
+    assert list(iter_apf_files(tmp_path)) == []

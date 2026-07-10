@@ -52,9 +52,14 @@ Source layout — typical LDC delivery::
       data/
         English/                 (or any locale code)
           bc/ bn/ nw/ ... /      (genre dirs)
-            adj/ timex2norm/     (annotation dirs)
+            adj/ fp1/ fp2/ timex2norm/  (annotation-pass dirs; all 4 re-annotate
+                                          the SAME documents)
               CNN_CF_*.sgm       (text)
               CNN_CF_*.apf.xml   (annotations)
+
+Only the ``adj`` (adjudicated gold) folder is converted -- the other
+annotation-pass folders duplicate the same documents and are skipped, so
+converting the whole tree unfiltered would emit duplicate records.
 
 Usage::
 
@@ -292,7 +297,17 @@ def parse_apf(
 
 
 def iter_apf_files(root: Path):
-    yield from root.rglob("*.apf.xml")
+    """Yield .apf.xml files from the adjudicated ("adj") annotation folders only.
+
+    The raw ACE 2005 LDC delivery has several annotation-pass folders per
+    genre/language (``adj`` plus others) that re-annotate the SAME underlying
+    documents. Walking the whole tree would convert each document once per
+    folder, duplicating records. ``adj`` holds the adjudicated gold
+    annotation and is the only folder that should be converted.
+    """
+    for path in root.rglob("*.apf.xml"):
+        if "adj" in path.relative_to(root).parts:
+            yield path
 
 
 # ---------------------------------------------------------------------------
