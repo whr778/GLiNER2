@@ -27,7 +27,7 @@ Each input record::
 
     {"input": "<doc text>",
      "output": {"events": [{"event_type": "Manoeuvre",
-                            "trigger": "执行",
+                            "triggers": ["执行"],
                             "arguments": [{"role": "Subject", "entity": "美国海军"}, ...]}]}}
 
 The ``coref_arguments`` field is ignored (we don't model coreference).
@@ -109,7 +109,7 @@ def convert_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
         events_out.append({
             "event_type": etype,
-            "trigger": trigger_text,
+            "triggers": [trigger_text],
             "arguments": arguments,
         })
 

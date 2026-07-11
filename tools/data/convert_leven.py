@@ -9,7 +9,7 @@ record per document with the event-extraction shape::
 
     {"input": "<doc text>",
      "output": {"events": [
-         {"event_type": "<type>", "trigger": "<surface>", "arguments": []},
+         {"event_type": "<type>", "triggers": ["<surface>"], "arguments": []},
          ...
      ]}}
 
@@ -113,7 +113,7 @@ def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
                     continue
                 events_out.append({
                     "event_type": etype,
-                    "trigger": trigger,
+                    "triggers": [trigger],
                     "arguments": [],
                 })
 

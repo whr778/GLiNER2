@@ -816,15 +816,16 @@ class SchemaTransformer:
 
         Events are modelled as multi-field structures: each event type gets
         a schema entry whose fields are ``[trigger, role_1, role_2, ...]``.
-        Per mention, the structure label carries one span for the trigger
-        and a list of spans per role (multi-valued — several entities can
-        share the same role within an event).
+        Per mention, the structure label carries a list of spans for the
+        trigger field (multi-valued — a mention may have more than one
+        trigger span) and a list of spans per role (multi-valued —
+        several entities can share the same role within an event).
 
         Accepts two shapes for ``schema["events"]``:
         * **Inference schema** — ``dict[event_type, list[role]]`` from
           ``Schema.events(...).build()``. No gold mentions; empty structure
           labels are appended so the schema embedding is still produced.
-        * **Training gold** — ``list[{event_type, trigger, arguments}]``
+        * **Training gold** — ``list[{event_type, triggers, arguments}]``
           from the JSONL record's ``output.events``.
         """
         if "events" not in schema:
@@ -864,8 +865,8 @@ class SchemaTransformer:
             if not isinstance(mention, dict):
                 continue
             etype = mention.get("event_type")
-            trigger = mention.get("trigger")
-            if not isinstance(etype, str) or not isinstance(trigger, str):
+            triggers = mention.get("triggers")
+            if not isinstance(etype, str) or not isinstance(triggers, list) or not triggers:
                 continue
             groups.setdefault(etype, []).append(mention)
 
@@ -893,8 +894,8 @@ class SchemaTransformer:
 
             spans: List[List[Any]] = []
             for occ in occurrences:
-                trigger_span = occ.get("trigger")
-                row: List[Any] = [trigger_span]
+                trigger_list = list(occ.get("triggers") or [])
+                row: List[Any] = [trigger_list]
                 role_to_spans: Dict[str, List[Any]] = {r: [] for r in field_names[1:]}
                 for arg in occ.get("arguments") or []:
                     if not isinstance(arg, dict):

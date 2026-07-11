@@ -13,7 +13,7 @@ For each ``.apf.xml`` / ``.sgm`` pair the converter emits one record::
          "entities":  {"PER.Individual": ["John Smith"], "ORG.Government": ["UN"]},
          "relations": [{"ORG-AFF.Employment": {"head": "John Smith", "tail": "UN"}}],
          "events":    [{"event_type": "Conflict.Attack",
-                        "trigger": "attacked",
+                        "triggers": ["attacked"],
                         "arguments": [{"role": "Attacker", "entity": "John Smith"}]}]
      }}
 
@@ -279,7 +279,7 @@ def parse_apf(
                 arguments.append({"role": role, "entity": arg_text})
             events_out.append({
                 "event_type": event_type,
-                "trigger": anchor_text,
+                "triggers": [anchor_text],
                 "arguments": arguments,
             })
 

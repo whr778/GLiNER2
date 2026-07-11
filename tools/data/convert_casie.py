@@ -158,7 +158,7 @@ def parse_annotation(
 
             events_out.append({
                 "event_type": event_type,
-                "trigger": trigger,
+                "triggers": [trigger],
                 "arguments": arguments,
             })
 

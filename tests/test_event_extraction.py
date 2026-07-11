@@ -63,7 +63,7 @@ def test_schema_events_rejects_empty_inputs():
 def test_event_round_trip_validate_and_to_dict():
     ex = InputExample(
         text="John fired Bob in Paris.",
-        events=[Event(event_type="Attack", trigger="fired", arguments=[
+        events=[Event(event_type="Attack", triggers=["fired"], arguments=[
             EventArgument(role="Attacker", entity="John"),
             EventArgument(role="Victim", entity="Bob"),
             EventArgument(role="Place", entity="Paris"),
@@ -79,8 +79,8 @@ def test_sanitize_drops_unresolvable_events_and_arguments():
     ex = InputExample(
         text="John fired Bob.",
         events=[
-            Event(event_type="Attack", trigger="exploded", arguments=[]),
-            Event(event_type="Attack", trigger="fired", arguments=[
+            Event(event_type="Attack", triggers=["exploded"], arguments=[]),
+            Event(event_type="Attack", triggers=["fired"], arguments=[
                 EventArgument(role="Attacker", entity="John"),
                 EventArgument(role="Place", entity="Mars"),
             ]),
@@ -102,19 +102,19 @@ def test_sanitize_drops_unresolvable_events_and_arguments():
 def test_event_metric_helpers_match_expected_tuples():
     gold = {
         "events": [
-            {"event_type": "Attack", "trigger": "fired",
+            {"event_type": "Attack", "triggers": ["fired"],
              "arguments": [
                  {"role": "Attacker", "entity": "John"},
                  {"role": "Victim", "entity": "Bob"},
              ]},
-            {"event_type": "Meet", "trigger": "met",
+            {"event_type": "Meet", "triggers": ["met"],
              "arguments": [{"role": "Entity", "entity": "Alice"}]},
         ]
     }
     pred = {
         "event_extraction": {
             "Attack": [
-                {"trigger": "fired",
+                {"triggers": ["fired"],
                  "arguments": [
                      {"role": "Attacker", "entity": "John"},
                      {"role": "Victim", "entity": "Bob"},
@@ -126,18 +126,116 @@ def test_event_metric_helpers_match_expected_tuples():
     }
     assert _gold_event_trigger_set(gold) == {("Attack", "fired"), ("Meet", "met")}
     assert _pred_event_trigger_set(pred) == {("Attack", "fired")}
-    assert ("Attack", "Victim", "Carla", "fired") in _pred_event_argument_set(pred)
+    assert ("Attack", "Victim", "Carla", ("fired",)) in _pred_event_argument_set(pred)
 
 
 def test_schema_from_gold_picks_up_events():
     gold = {
         "events": [
-            {"event_type": "Attack", "trigger": "fired",
+            {"event_type": "Attack", "triggers": ["fired"],
              "arguments": [{"role": "Attacker", "entity": "John"}]},
         ]
     }
     schema = _schema_from_gold(gold)
     assert schema == {"events": {"Attack": ["Attacker"]}}
+
+
+# ---------------------------------------------------------------------------
+# Multiple trigger spans per mention
+# ---------------------------------------------------------------------------
+
+def test_event_with_two_triggers_validates_and_round_trips():
+    ex = InputExample(
+        text="Rebels shot and killed the guard.",
+        events=[Event(event_type="Attack", triggers=["shot", "killed"], arguments=[
+            EventArgument(role="Attacker", entity="Rebels"),
+            EventArgument(role="Victim", entity="the guard"),
+        ])],
+    )
+    assert ex.validate() == []
+    rt = InputExample.from_dict(ex.to_dict())
+    assert rt.events[0].triggers == ["shot", "killed"]
+
+
+def test_event_rejects_non_list_triggers():
+    with pytest.raises(TypeError):
+        Event(event_type="Attack", triggers="shot")  # bare str, not a list
+
+
+def test_sanitize_drops_only_the_missing_trigger_not_the_whole_event():
+    ex = InputExample(
+        text="Rebels shot the guard.",
+        events=[Event(event_type="Attack", triggers=["shot", "exploded"], arguments=[
+            EventArgument(role="Attacker", entity="Rebels"),
+        ])],
+    )
+    warns, ok = ex.sanitize()
+    assert ok
+    assert len(ex.events) == 1
+    assert ex.events[0].triggers == ["shot"]
+    assert any("exploded" in w and "dropping trigger" in w for w in warns)
+
+
+def test_sanitize_drops_whole_event_when_no_triggers_survive():
+    ex = InputExample(
+        text="Rebels shot the guard.",
+        events=[Event(event_type="Attack", triggers=["exploded", "vanished"], arguments=[
+            EventArgument(role="Attacker", entity="Rebels"),
+        ])],
+    )
+    warns, ok = ex.sanitize()
+    assert ok is False  # no valid tasks remain
+    assert ex.events == []
+
+
+def test_gold_trigger_set_flattens_multiple_triggers():
+    gold = {"events": [
+        {"event_type": "Attack", "triggers": ["shot", "killed"],
+         "arguments": [{"role": "Attacker", "entity": "Rebels"}]},
+    ]}
+    assert _gold_event_trigger_set(gold) == {("Attack", "shot"), ("Attack", "killed")}
+
+
+def test_gold_argument_set_uses_canonical_sorted_trigger_key():
+    gold = {"events": [
+        {"event_type": "Attack", "triggers": ["killed", "shot"],  # unsorted input order
+         "arguments": [{"role": "Attacker", "entity": "Rebels"}]},
+    ]}
+    assert _gold_event_argument_set(gold) == {
+        ("Attack", "Attacker", "Rebels", ("killed", "shot")),
+    }
+
+
+def test_pred_argument_set_matches_gold_when_both_triggers_predicted():
+    """A two-trigger mention only strict-matches on the argument metric when
+    BOTH trigger spans are predicted -- the whole trigger set is the key."""
+    gold = {"event_type": "Attack", "triggers": ["shot", "killed"],
+            "arguments": [{"role": "Attacker", "entity": "Rebels"}]}
+    pred_full = {"event_extraction": {"Attack": [
+        {"triggers": ["shot", "killed"],
+         "arguments": [{"role": "Attacker", "entity": "Rebels"}]}]}}
+    pred_partial = {"event_extraction": {"Attack": [
+        {"triggers": ["shot"],
+         "arguments": [{"role": "Attacker", "entity": "Rebels"}]}]}}
+    gold_set = _gold_event_argument_set({"events": [gold]})
+    assert gold_set & _pred_event_argument_set(pred_full) == gold_set
+    assert gold_set & _pred_event_argument_set(pred_partial) == set()
+
+
+def test_chunking_keeps_event_only_when_all_triggers_survive():
+    from gliner2.training.chunking import _filter_events
+
+    events = [{"event_type": "Attack", "triggers": ["shot", "killed"],
+               "arguments": [{"role": "Attacker", "entity": "Rebels"}]}]
+
+    # Both trigger words present in the chunk -> mention kept.
+    both = _filter_events(events, "Rebels shot and killed the guard.")
+    assert len(both) == 1
+    assert both[0]["triggers"] == ["shot", "killed"]
+
+    # Only one trigger word present -> mention dropped entirely.
+    partial = _filter_events(events, "Rebels shot the guard.")
+    assert partial == []
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +266,7 @@ def test_event_pipeline_end_to_end():
         "input": text,
         "output": {
             "events": [
-                {"event_type": "Attack", "trigger": "fired", "arguments": [
+                {"event_type": "Attack", "triggers": ["fired"], "arguments": [
                     {"role": "Attacker", "entity": "John"},
                     {"role": "Victim", "entity": "Bob"},
                     {"role": "Place", "entity": "Paris"},
@@ -218,3 +316,51 @@ def test_event_pipeline_end_to_end():
     assert "eval_event_argument_relaxed_micro_f1" in metrics
     assert metrics["eval_event_trigger_strict_support"] == 1
     assert metrics["eval_event_argument_strict_support"] == 3
+
+
+@pytest.mark.slow
+def test_event_pipeline_multiple_triggers_end_to_end():
+    """A mention with two trigger spans trains and decodes without error,
+    and the engine's decoded shape is a 'triggers' list, not a scalar."""
+    from gliner2 import GLiNER2
+    from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
+
+    text = "Rebels shot and killed the guard yesterday."
+    gold = {
+        "input": text,
+        "output": {
+            "events": [
+                {"event_type": "Attack", "triggers": ["shot", "killed"], "arguments": [
+                    {"role": "Attacker", "entity": "Rebels"},
+                    {"role": "Victim", "entity": "the guard"},
+                ]}
+            ]
+        },
+    }
+
+    model = GLiNER2.from_encoder(
+        "jhu-clsp/mmBERT-small", max_width=8, max_len=256, map_location="cpu",
+    )
+    cfg = TrainingConfig(
+        output_dir="/tmp/event_pipeline_multi_trigger_test_out",
+        num_epochs=1, batch_size=1, fp16=False, bf16=False,
+        eval_strategy="no", save_total_limit=1, num_workers=0,
+        pin_memory=False, validate_data=False, report_to_wandb=False,
+        logging_steps=1, max_steps=2,
+    )
+    ex = InputExample.from_dict(gold)
+    assert ex.events[0].triggers == ["shot", "killed"]
+    trainer = GLiNER2Trainer(model, cfg)
+    trainer.train(train_data=[ex])
+
+    result = model.extract_events(
+        text,
+        {"Attack": ["Attacker", "Victim"]},
+        threshold=0.01,
+    )
+    assert "event_extraction" in result
+    attacks = result["event_extraction"].get("Attack", [])
+    if attacks:
+        # Decode shape is always a list, regardless of how many spans
+        # actually cleared threshold after 2 training steps.
+        assert isinstance(attacks[0]["triggers"], list)

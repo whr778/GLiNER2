@@ -31,7 +31,7 @@ Output (one record per source document)::
      "output": {
          "entities": {"PER": ["Prayuth Chan-ocha", ...], "GPE": ["Thailand"], ...},
          "events":   [{"event_type": "Life.Injure.Unspecified",
-                       "trigger": "injured",
+                       "triggers": ["injured"],
                        "arguments": [{"role": "Victim", "entity": "Terry Duffield"}]}]
      }}
 
@@ -168,7 +168,7 @@ def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
             arguments.append({"role": role, "entity": arg_text})
         events_out.append({
             "event_type": etype,
-            "trigger": trigger_text,
+            "triggers": [trigger_text],
             "arguments": arguments,
         })
 

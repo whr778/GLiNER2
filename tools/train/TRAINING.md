@@ -284,7 +284,7 @@ You can pass any subset of the JSONL files to the trainer at once — they're co
 ```json
 {"input": "John fired Bob in Paris.",
  "output": {"events": [
-     {"event_type": "Attack", "trigger": "fired",
+     {"event_type": "Attack", "triggers": ["fired"],
       "arguments": [
           {"role": "Attacker", "entity": "John"},
           {"role": "Victim",   "entity": "Bob"},
@@ -424,7 +424,7 @@ Per-task filter rules (see `gliner2/training/chunking.py`):
 | Entity descriptions | keep only for entity types that survived the entity filter |
 | Classifications | doc-level label is inherited by **every** chunk |
 | Relations | emit only if **both** head and tail appear in the same chunk |
-| Events | emit if the trigger appears; per-event arguments independently filtered |
+| Events | emit only if **every** trigger span appears in the chunk; per-event arguments independently filtered |
 | JSON structures | passed through; the processor's verbatim filter handles missing fields |
 
 Notes:

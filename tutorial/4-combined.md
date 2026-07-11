@@ -98,7 +98,7 @@ results = extractor.extract(text, schema)
 #     'entities': {'location': ['Aleppo']},
 #     'event_extraction': {
 #         'Attack': [
-#             {'trigger': 'bombed',
+#             {'triggers': ['bombed'],
 #              'arguments': [
 #                  {'role': 'Attacker', 'entity': 'Rebels'},
 #                  {'role': 'Target', 'entity': 'the airbase'},

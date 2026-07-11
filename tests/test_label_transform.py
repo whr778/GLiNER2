@@ -69,12 +69,12 @@ def test_events_type_and_role_rolled_up():
     fn = train._label_fn(rollup=True, separator=".", mapping={})
     events = [{
         "event_type": "Conflict.Attack",
-        "trigger": "bombed",
+        "triggers": ["bombed"],
         "arguments": [{"role": "Place.City", "entity": "Paris"}],
     }]
     out = train._transform_events(events, fn)
     assert out[0]["event_type"] == "Conflict"
-    assert out[0]["trigger"] == "bombed"
+    assert out[0]["triggers"] == ["bombed"]
     assert out[0]["arguments"][0] == {"role": "Place", "entity": "Paris"}
 
 
@@ -130,7 +130,7 @@ def test_entities_active_leaves_events_untouched():
     fns = train._category_fns({"entities": {"rollup": True}})
     rec = {"input": "x", "output": {
         "entities": {"ORG.Media": ["BBC"]},
-        "events": [{"event_type": "Conflict.Attack", "trigger": "t", "arguments": []}],
+        "events": [{"event_type": "Conflict.Attack", "triggers": ["t"], "arguments": []}],
     }}
     out = train.transform_record(rec, fns)["output"]
     assert out["entities"] == {"ORG": ["BBC"]}
@@ -141,7 +141,7 @@ def test_events_active_leaves_entities_untouched():
     fns = train._category_fns({"events": {"rollup": True}})
     rec = {"input": "x", "output": {
         "entities": {"ORG.Media": ["BBC"]},
-        "events": [{"event_type": "Conflict.Attack", "trigger": "t",
+        "events": [{"event_type": "Conflict.Attack", "triggers": ["t"],
                     "arguments": [{"role": "Place.City", "entity": "Paris"}]}],
     }}
     out = train.transform_record(rec, fns)["output"]

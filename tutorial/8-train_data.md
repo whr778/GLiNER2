@@ -95,19 +95,19 @@ Relations use flexible field structures - you can use ANY field names (not just 
 
 ### Event Fields Format
 
-Each event is a dict with an event type, a trigger word, and a list of typed argument fillers:
+Each event is a dict with an event type, a list of trigger word(s), and a list of typed argument fillers:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `event_type` | `str` | Yes | Name of the event type (e.g., "Attack", "Hire") |
-| `trigger` | `str` | Yes | The trigger word/phrase signalling the event |
+| `triggers` | `list[str]` | Yes | The trigger word(s)/phrase(s) signalling the event — usually one, but a mention can have more than one for a multi-word or discontiguous trigger |
 | `arguments` | `list[dict]` | No | List of `{"role": ..., "entity": ...}` argument fillers |
 | Argument `role` | `str` | Yes (per arg) | The argument role name (e.g., "Attacker") |
 | Argument `entity` | `str` | Yes (per arg) | The argument filler text |
 
-**Format**: `[{"event_type": "Attack", "trigger": "bombed", "arguments": [{"role": "Attacker", "entity": "Rebels"}]}]`
+**Format**: `[{"event_type": "Attack", "triggers": ["bombed"], "arguments": [{"role": "Attacker", "entity": "Rebels"}]}]`
 
-Like entity and relation surfaces, the `trigger` and each argument `entity` should appear **verbatim in the input text** so the model can locate them.
+Like entity and relation surfaces, each `triggers` entry and each argument `entity` should appear **verbatim in the input text** so the model can locate them.
 
 ---
 
@@ -404,12 +404,12 @@ You can use custom field names - the first occurrence defines what fields to use
 
 ## 5. Event Extraction
 
-Events capture ACE-style triggers and their typed arguments. Each event has an `event_type`, a `trigger`, and a list of `arguments` (role + entity).
+Events capture ACE-style triggers and their typed arguments. Each event has an `event_type`, a `triggers` list, and a list of `arguments` (role + entity).
 
 ### Basic Event
 
 ```jsonl
-{"input": "Rebels bombed the airbase near Aleppo on Tuesday.", "output": {"events": [{"event_type": "Attack", "trigger": "bombed", "arguments": [{"role": "Attacker", "entity": "Rebels"}, {"role": "Target", "entity": "the airbase"}, {"role": "Place", "entity": "Aleppo"}, {"role": "Time", "entity": "Tuesday"}]}]}}
+{"input": "Rebels bombed the airbase near Aleppo on Tuesday.", "output": {"events": [{"event_type": "Attack", "triggers": ["bombed"], "arguments": [{"role": "Attacker", "entity": "Rebels"}, {"role": "Target", "entity": "the airbase"}, {"role": "Place", "entity": "Aleppo"}, {"role": "Time", "entity": "Tuesday"}]}]}}
 ```
 
 ### Trigger Only (No Arguments)
@@ -417,13 +417,13 @@ Events capture ACE-style triggers and their typed arguments. Each event has an `
 `arguments` may be empty — useful for event-detection-only corpora (e.g. MAVEN, LEVEN):
 
 ```jsonl
-{"input": "The committee met on Friday.", "output": {"events": [{"event_type": "Meet", "trigger": "met", "arguments": []}]}}
+{"input": "The committee met on Friday.", "output": {"events": [{"event_type": "Meet", "triggers": ["met"], "arguments": []}]}}
 ```
 
 ### Multiple Events in One Document
 
 ```jsonl
-{"input": "Acme acquired Beta Corp, and CEO Jane Doe resigned.", "output": {"events": [{"event_type": "Acquisition", "trigger": "acquired", "arguments": [{"role": "Buyer", "entity": "Acme"}, {"role": "Acquired", "entity": "Beta Corp"}]}, {"event_type": "Resignation", "trigger": "resigned", "arguments": [{"role": "Person", "entity": "Jane Doe"}]}]}}
+{"input": "Acme acquired Beta Corp, and CEO Jane Doe resigned.", "output": {"events": [{"event_type": "Acquisition", "triggers": ["acquired"], "arguments": [{"role": "Buyer", "entity": "Acme"}, {"role": "Acquired", "entity": "Beta Corp"}]}, {"event_type": "Resignation", "triggers": ["resigned"], "arguments": [{"role": "Person", "entity": "Jane Doe"}]}]}}
 ```
 
 ### Same Event Type Firing Multiple Times
@@ -431,10 +431,21 @@ Events capture ACE-style triggers and their typed arguments. Each event has an `
 A type can occur more than once; each mention is a separate dict in the list:
 
 ```jsonl
-{"input": "Forces struck the depot, then struck the bridge.", "output": {"events": [{"event_type": "Attack", "trigger": "struck", "arguments": [{"role": "Target", "entity": "the depot"}]}, {"event_type": "Attack", "trigger": "struck", "arguments": [{"role": "Target", "entity": "the bridge"}]}]}}
+{"input": "Forces struck the depot, then struck the bridge.", "output": {"events": [{"event_type": "Attack", "triggers": ["struck"], "arguments": [{"role": "Target", "entity": "the depot"}]}, {"event_type": "Attack", "triggers": ["struck"], "arguments": [{"role": "Target", "entity": "the bridge"}]}]}}
 ```
 
-The converters under `tools/data/` (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, CMNEE, LEVEN, DocEE) already emit this format — see [TRAINING_DATA.md](../tools/data/TRAINING_DATA.md).
+### Multiple Trigger Spans on One Mention
+
+`triggers` is a list because a single mention can have more than one trigger
+span — e.g. a multi-word or discontiguous trigger, or several trigger words
+that jointly signal the same instance and share one argument set. Every
+entry must appear verbatim in `input`:
+
+```jsonl
+{"input": "Rebels shot and killed the guard.", "output": {"events": [{"event_type": "Attack", "triggers": ["shot", "killed"], "arguments": [{"role": "Attacker", "entity": "Rebels"}, {"role": "Victim", "entity": "the guard"}]}]}}
+```
+
+The converters under `tools/data/` (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, CMNEE, LEVEN, DocEE) already emit this format — see [TRAINING_DATA.md](../tools/data/TRAINING_DATA.md). None of the native source corpora annotate more than one trigger span per mention, so each converter emits a single-element `triggers` list; the multi-trigger shape is for hand-authored data or future corpora.
 
 ---
 

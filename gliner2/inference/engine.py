@@ -643,9 +643,9 @@ class GLiNER2(Extractor):
         """Extract event mentions for one event type.
 
         Field 0 of the schema is the trigger; fields 1..N are the typed
-        argument roles. For each predicted instance, take the top-scoring
-        span above threshold for the trigger, and all spans above threshold
-        for each role (roles are multi-valued).
+        argument roles. For each predicted instance, take every span above
+        threshold for the trigger field, and every span above threshold for
+        each role field (both are multi-valued, decoded identically).
         """
         event_meta = metadata.get("event_metadata", {}).get(event_type, {})
         trigger_threshold = event_meta.get("trigger_threshold")
@@ -676,13 +676,17 @@ class GLiNER2(Extractor):
         for inst in range(count):
             scores = span_scores[inst, :, -text_len:]
 
-            # Trigger — top-1 above threshold.
+            # Trigger — every span above threshold (a mention may have more
+            # than one trigger span, e.g. a multi-word/discontiguous trigger).
             trigger_spans = self._find_spans(
                 scores[0], trigger_threshold, text_len, text, start_map, end_map
             )
             if not trigger_spans:
                 continue
-            t_text, t_conf, t_start, t_end = trigger_spans[0]
+            triggers = [
+                _format_span(t_text, t_conf, t_start, t_end)
+                for t_text, t_conf, t_start, t_end in trigger_spans
+            ]
 
             arguments: List[Dict[str, Any]] = []
             for role in roles_ordered:
@@ -701,7 +705,7 @@ class GLiNER2(Extractor):
                         "entity": _format_span(a_text, a_conf, a_start, a_end),
                     })
 
-            event = {"trigger": _format_span(t_text, t_conf, t_start, t_end)}
+            event = {"triggers": triggers}
             if arguments:
                 event["arguments"] = arguments
             else:
@@ -930,7 +934,7 @@ class GLiNER2(Extractor):
                 elif (
                     isinstance(value, list) and len(value) > 0
                     and isinstance(value[0], dict)
-                    and "trigger" in value[0] and "arguments" in value[0]
+                    and "triggers" in value[0] and "arguments" in value[0]
                 ):
                     is_event = True
 

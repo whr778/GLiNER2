@@ -654,24 +654,33 @@ class EventArgument:
 
 @dataclass
 class Event:
-    """An event mention: typed trigger plus typed arguments.
+    """An event mention: one or more trigger spans plus typed arguments.
 
     Parameters
     ----------
     event_type : str
         Event type label (e.g. ``"Attack"``, ``"Meet"``, ``"Phone-Write"``).
-    trigger : str
-        Surface form of the trigger word/phrase that signals the event.
-        Must appear in the parent example's text.
+    triggers : List[str]
+        Surface forms of the trigger word(s)/phrase(s) that signal the
+        event. A mention normally has one trigger span; more than one is
+        used for multi-word/discontiguous triggers or several trigger
+        words that jointly signal the same instance. Each must appear in
+        the parent example's text.
     arguments : List[EventArgument or dict], optional
         Typed arguments. Plain dicts of the form
         ``{"role": ..., "entity": ...}`` are accepted and converted.
     """
     event_type: str
-    trigger: str
+    triggers: List[str]
     arguments: Optional[List[Union[EventArgument, Dict[str, str]]]] = None
 
     def __post_init__(self):
+        if not isinstance(self.triggers, list) or not all(
+            isinstance(t, str) for t in self.triggers
+        ):
+            raise TypeError(
+                f"Event triggers must be a list of str, got {type(self.triggers).__name__}"
+            )
         if self.arguments is None:
             self.arguments = []
         normalised: List[EventArgument] = []
@@ -694,13 +703,18 @@ class Event:
         errors = []
         if not self.event_type:
             errors.append("Event type cannot be empty")
-        if not self.trigger:
+        if not self.triggers:
             errors.append(f"Event '{self.event_type}' has no trigger")
-        elif self.trigger.lower() not in text.lower():
-            errors.append(
-                f"Trigger '{self.trigger}' for event '{self.event_type}' "
-                f"not found in text"
-            )
+        else:
+            text_lower = text.lower()
+            for trigger in self.triggers:
+                if not trigger:
+                    errors.append(f"Event '{self.event_type}' has an empty trigger")
+                elif trigger.lower() not in text_lower:
+                    errors.append(
+                        f"Trigger '{trigger}' for event '{self.event_type}' "
+                        f"not found in text"
+                    )
         seen = set()
         for arg in self.arguments:
             errors.extend(arg.validate(text, self.event_type))
@@ -716,7 +730,7 @@ class Event:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "event_type": self.event_type,
-            "trigger": self.trigger,
+            "triggers": list(self.triggers),
             "arguments": [a.to_dict() for a in self.arguments],
         }
 
@@ -972,21 +986,31 @@ class InputExample:
 
             self.relations = valid_relations
 
-        # 5. Sanitize events - drop event if trigger missing; drop missing arguments
+        # 5. Sanitize events - drop event if no triggers remain; drop missing arguments
         if self.events:
             valid_events: List[Event] = []
+            text_lower = self.text.lower()
             for event in self.events:
-                if not event.event_type or not event.trigger:
+                if not event.event_type or not event.triggers:
                     warnings.append(
                         f"Event '{event.event_type}' has empty type or trigger - dropping"
                     )
                     continue
-                if event.trigger.lower() not in self.text.lower():
+                kept_triggers: List[str] = []
+                for trigger in event.triggers:
+                    if trigger and trigger.lower() in text_lower:
+                        kept_triggers.append(trigger)
+                    else:
+                        warnings.append(
+                            f"Event '{event.event_type}' trigger '{trigger}' "
+                            f"not in text - dropping trigger"
+                        )
+                if not kept_triggers:
                     warnings.append(
-                        f"Event '{event.event_type}' trigger '{event.trigger}' "
-                        f"not in text - dropping event"
+                        f"Event '{event.event_type}' has no triggers left in text - dropping event"
                     )
                     continue
+                event.triggers = kept_triggers
                 kept_args: List[EventArgument] = []
                 seen = set()
                 for arg in event.arguments:
@@ -1098,7 +1122,7 @@ class InputExample:
                 continue
             events.append(Event(
                 event_type=evt_data.get("event_type", ""),
-                trigger=evt_data.get("trigger", ""),
+                triggers=list(evt_data.get("triggers") or []),
                 arguments=evt_data.get("arguments") or [],
             ))
 

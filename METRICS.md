@@ -71,7 +71,7 @@ Seven categories, each derived from a gold field and a prediction block:
 | `relation` | relation triples | `output.relations` `[{name: {head, tail}}]` | `relation_extraction` | relation name |
 | `classification` | task labels | `output.classifications` `[{task, labels, true_label}]` | `<task>` key | task |
 | `event_type` | event-type presence | `output.events[].event_type` | `event_extraction` keys | event type |
-| `event_trigger` | trigger spans | `output.events[]` `{event_type, trigger}` | `event_extraction` | event type |
+| `event_trigger` | trigger spans | `output.events[]` `{event_type, triggers}` | `event_extraction` | event type |
 | `event_argument` | argument spans | `output.events[].arguments` `[{role, entity}]` | `event_extraction` | role |
 | `event` | **combined** type + trigger + argument | (all of the above) | (all of the above) | namespaced |
 
@@ -144,15 +144,18 @@ f1        = 2 * precision * recall / (precision + recall)
 - **Event type** — `(event_type,)` presence. There is no surface to relax, so
   **strict == relaxed**.
 - **Event trigger** — strict `(event_type, trigger)`; relaxed = event_type exact
-  + trigger surface overlap (consistent with entity/relation relaxed). Aggregated
-  per event type.
-- **Event argument** — strict `(event_type, role, entity, trigger)`; relaxed =
-  `(event_type, role)` exact + entity overlap, dropping the trigger link.
-  Aggregated per role. The trigger is part of the **strict** key so that
-  identical `(type, role, entity)` arguments from different event mentions are
-  distinguished — a consequence is that a wrong predicted trigger makes **all**
-  of that mention's arguments miss under strict scoring (they still match under
-  relaxed).
+  + trigger surface overlap (consistent with entity/relation relaxed). A
+  mention's `triggers` list is flattened, so a two-trigger mention contributes
+  two `(event_type, trigger)` pairs. Aggregated per event type.
+- **Event argument** — strict `(event_type, role, entity, trigger_key)`, where
+  `trigger_key` is the mention's full trigger set as a canonical sorted tuple
+  (e.g. `("bombed",)`, or `("killed", "shot")` for a two-trigger mention);
+  relaxed = `(event_type, role)` exact + entity overlap, dropping the trigger
+  link entirely. Aggregated per role. `trigger_key` is part of the **strict**
+  key so that identical `(type, role, entity)` arguments from different event
+  mentions are distinguished — a consequence is that a wrong or incomplete
+  predicted trigger set makes **all** of that mention's arguments miss under
+  strict scoring (they still match under relaxed).
 
 ---
 

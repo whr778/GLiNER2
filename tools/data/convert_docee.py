@@ -236,7 +236,7 @@ def convert_row(
         text = f"{trigger} {text}"
         output["events"] = [{
             "event_type": event_type,
-            "trigger": trigger,
+            "triggers": [trigger],
             "arguments": args_for_event,
         }]
 

@@ -209,7 +209,7 @@ trainer.train(train_data=examples)
 
 ### Training with Events
 
-Events train from the same `InputExample` interface — add an `events` list of `Event` objects, each with a `trigger` and typed `EventArgument`s. They compose with entities, classifications, and relations in the same example.
+Events train from the same `InputExample` interface — add an `events` list of `Event` objects, each with a `triggers` list and typed `EventArgument`s. They compose with entities, classifications, and relations in the same example.
 
 ```python
 from gliner2.training.data import InputExample, Event, EventArgument
@@ -219,7 +219,7 @@ examples = [
         text="Rebels bombed the airbase near Aleppo on Tuesday.",
         entities={"location": ["Aleppo"]},
         events=[
-            Event(event_type="Attack", trigger="bombed", arguments=[
+            Event(event_type="Attack", triggers=["bombed"], arguments=[
                 EventArgument(role="Attacker", entity="Rebels"),
                 EventArgument(role="Target", entity="the airbase"),
                 EventArgument(role="Place", entity="Aleppo"),
@@ -231,7 +231,16 @@ examples = [
 ]
 ```
 
-Triggers and argument entities must appear verbatim in `text` (case-insensitive). The equivalent JSONL uses the `events` key — see the [Training Data tutorial](8-train_data.md#5-event-extraction). For real event corpora (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, …), convert them with the scripts under `tools/data/` and wire the JSONLs in through the config's `event_files`; see [TRAINING.md](../tools/train/TRAINING.md). `compute_metrics` reports `event_type`, `event_trigger`, `event_argument`, and a combined `event` score ([METRICS.md](../METRICS.md)).
+`triggers` is a list — most mentions have one trigger span, but it can hold
+more than one (e.g. `triggers=["shot", "killed"]` for a mention signalled by
+two words). Every trigger span and argument entity must appear verbatim in
+`text` (case-insensitive). The equivalent JSONL uses the `events` key — see
+the [Training Data tutorial](8-train_data.md#5-event-extraction). For real
+event corpora (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, …), convert them
+with the scripts under `tools/data/` and wire the JSONLs in through the
+config's `event_files`; see [TRAINING.md](../tools/train/TRAINING.md).
+`compute_metrics` reports `event_type`, `event_trigger`, `event_argument`,
+and a combined `event` score ([METRICS.md](../METRICS.md)).
 
 ### Example 3: Domain-Specific Fine-tuning (Medical NER)
 

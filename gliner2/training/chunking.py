@@ -152,12 +152,17 @@ def _filter_events(
     events: List[Dict[str, Any]],
     chunk_text: str,
 ) -> List[Dict[str, Any]]:
+    """Keep an event mention only if EVERY trigger span survives in the
+    chunk -- a partial trigger set changes what the trigger phrase means,
+    unlike a partial argument set, which is still independently useful."""
     kept: List[Dict[str, Any]] = []
     for ev in events or []:
         if not isinstance(ev, dict):
             continue
-        trigger = ev.get("trigger", "")
-        if not (isinstance(trigger, str) and trigger and trigger in chunk_text):
+        triggers = ev.get("triggers")
+        if not isinstance(triggers, list) or not triggers:
+            continue
+        if not all(isinstance(t, str) and t and t in chunk_text for t in triggers):
             continue
         kept_args: List[Dict[str, Any]] = []
         for arg in ev.get("arguments") or []:
@@ -168,7 +173,7 @@ def _filter_events(
                 kept_args.append(arg)
         kept.append({
             "event_type": ev.get("event_type"),
-            "trigger": trigger,
+            "triggers": list(triggers),
             "arguments": kept_args,
         })
     return kept

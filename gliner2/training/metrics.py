@@ -34,7 +34,8 @@ so relaxed never scores below strict):
   so strict == relaxed.
 * **Event triggers** — strict ``(event_type, trigger)``; relaxed = event_type
   exact + trigger surface overlap (consistent with entity/relation relaxed).
-* **Event arguments** — strict ``(event_type, role, entity, trigger)``; relaxed =
+* **Event arguments** — strict ``(event_type, role, entity, trigger_key)``, where
+  ``trigger_key`` is the mention's ``triggers`` sorted into a tuple; relaxed =
   ``(event_type, role)`` exact + entity overlap, dropping the trigger link.
 * **Event (overall)** — one combined score over event types + triggers +
   arguments: their TP/FP/FN are summed (micro is the aggregate). Per-label rows
@@ -366,7 +367,12 @@ def _pred_relation_set(pred: Dict) -> Set[Tuple[str, str, str]]:
 
 
 def _gold_event_trigger_set(output: Dict) -> Set[Tuple[str, str]]:
-    """Set of ``(event_type, trigger_surface)`` over the gold events."""
+    """Set of ``(event_type, trigger_surface)`` over the gold events.
+
+    A mention's ``triggers`` list is flattened into one tuple per trigger
+    span (same treatment as arguments/roles), so a two-trigger mention
+    contributes two tuples here.
+    """
     out: Set[Tuple[str, str]] = set()
     events = output.get("events") or []
     if not isinstance(events, list):
@@ -375,17 +381,22 @@ def _gold_event_trigger_set(output: Dict) -> Set[Tuple[str, str]]:
         if not isinstance(ev, dict):
             continue
         etype = ev.get("event_type")
-        trigger = ev.get("trigger")
-        if isinstance(etype, str) and isinstance(trigger, str):
-            etype = etype.strip()
-            trigger = trigger.strip()
-            if etype and trigger:
-                out.add((etype, trigger))
+        triggers = ev.get("triggers")
+        if not isinstance(etype, str) or not isinstance(triggers, list):
+            continue
+        etype = etype.strip()
+        if not etype:
+            continue
+        for trigger in triggers:
+            if isinstance(trigger, str) and trigger.strip():
+                out.add((etype, trigger.strip()))
     return out
 
 
 def _pred_event_trigger_set(pred: Dict) -> Set[Tuple[str, str]]:
-    """Same shape as the gold trigger set, sourced from the ``event_extraction`` block."""
+    """Same shape as the gold trigger set, sourced from the ``event_extraction``
+    block. Each mention's ``triggers`` list is flattened into one tuple per
+    trigger span, matching ``_gold_event_trigger_set``."""
     out: Set[Tuple[str, str]] = set()
     block = pred.get("event_extraction") or {}
     if not isinstance(block, dict):
@@ -396,11 +407,14 @@ def _pred_event_trigger_set(pred: Dict) -> Set[Tuple[str, str]]:
         for ev in mentions:
             if not isinstance(ev, dict):
                 continue
-            trigger = ev.get("trigger")
-            if isinstance(trigger, dict):
-                trigger = trigger.get("text")
-            if isinstance(trigger, str) and trigger.strip():
-                out.add((etype, trigger.strip()))
+            triggers = ev.get("triggers")
+            if not isinstance(triggers, list):
+                continue
+            for trigger in triggers:
+                if isinstance(trigger, dict):
+                    trigger = trigger.get("text")
+                if isinstance(trigger, str) and trigger.strip():
+                    out.add((etype, trigger.strip()))
     return out
 
 
@@ -414,14 +428,17 @@ def _pred_event_type_set(pred: Dict) -> Set[Tuple[str]]:
     return {(et,) for et, _trig in _pred_event_trigger_set(pred)}
 
 
-def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, str]]:
-    """Set of ``(event_type, role, entity, trigger)`` over gold arguments.
+def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, Tuple[str, ...]]]:
+    """Set of ``(event_type, role, entity, trigger_key)`` over gold arguments.
 
-    Including the trigger lets the metric distinguish identical (type, role,
-    entity) tuples that come from different event mentions in the same text.
-    Aggregation uses the role as the per-label key.
+    ``trigger_key`` is the mention's trigger set as a canonical
+    (order-independent) sorted tuple, e.g. ``("bombed",)`` for a
+    single-trigger mention. Including it lets the metric distinguish
+    identical (type, role, entity) tuples that come from different event
+    mentions in the same text. Aggregation uses the role as the per-label
+    key.
     """
-    out: Set[Tuple[str, str, str, str]] = set()
+    out: Set[Tuple[str, str, str, Tuple[str, ...]]] = set()
     events = output.get("events") or []
     if not isinstance(events, list):
         return out
@@ -429,11 +446,14 @@ def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, str]]:
         if not isinstance(ev, dict):
             continue
         etype = ev.get("event_type")
-        trigger = ev.get("trigger")
-        if not isinstance(etype, str) or not isinstance(trigger, str):
+        triggers = ev.get("triggers")
+        if not isinstance(etype, str) or not isinstance(triggers, list):
             continue
-        etype, trigger = etype.strip(), trigger.strip()
-        if not etype or not trigger:
+        etype = etype.strip()
+        trigger_key = tuple(sorted(
+            t.strip() for t in triggers if isinstance(t, str) and t.strip()
+        ))
+        if not etype or not trigger_key:
             continue
         for arg in ev.get("arguments") or []:
             if not isinstance(arg, dict):
@@ -444,13 +464,17 @@ def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, str]]:
                 continue
             role, entity = role.strip(), entity.strip()
             if role and entity:
-                out.add((etype, role, entity, trigger))
+                out.add((etype, role, entity, trigger_key))
     return out
 
 
-def _pred_event_argument_set(pred: Dict) -> Set[Tuple[str, str, str, str]]:
-    """Same shape as the gold argument set, sourced from ``event_extraction``."""
-    out: Set[Tuple[str, str, str, str]] = set()
+def _pred_event_argument_set(pred: Dict) -> Set[Tuple[str, str, str, Tuple[str, ...]]]:
+    """Same shape as the gold argument set, sourced from ``event_extraction``.
+
+    The mention's ``triggers`` list is canonicalised into a sorted tuple,
+    matching ``_gold_event_argument_set``'s ``trigger_key``.
+    """
+    out: Set[Tuple[str, str, str, Tuple[str, ...]]] = set()
     block = pred.get("event_extraction") or {}
     if not isinstance(block, dict):
         return out
@@ -460,12 +484,18 @@ def _pred_event_argument_set(pred: Dict) -> Set[Tuple[str, str, str, str]]:
         for ev in mentions:
             if not isinstance(ev, dict):
                 continue
-            trigger = ev.get("trigger")
-            if isinstance(trigger, dict):
-                trigger = trigger.get("text")
-            if not isinstance(trigger, str) or not trigger.strip():
+            triggers = ev.get("triggers")
+            if not isinstance(triggers, list):
                 continue
-            trigger = trigger.strip()
+            trigger_texts = []
+            for trigger in triggers:
+                if isinstance(trigger, dict):
+                    trigger = trigger.get("text")
+                if isinstance(trigger, str) and trigger.strip():
+                    trigger_texts.append(trigger.strip())
+            trigger_key = tuple(sorted(trigger_texts))
+            if not trigger_key:
+                continue
             for arg in ev.get("arguments") or []:
                 if not isinstance(arg, dict):
                     continue
@@ -477,7 +507,7 @@ def _pred_event_argument_set(pred: Dict) -> Set[Tuple[str, str, str, str]]:
                     continue
                 role, entity = role.strip(), entity.strip()
                 if role and entity:
-                    out.add((etype, role, entity, trigger))
+                    out.add((etype, role, entity, trigger_key))
     return out
 
 

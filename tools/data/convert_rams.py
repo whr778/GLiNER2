@@ -114,7 +114,7 @@ def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
                 continue
             trigger_index[(s, e)] = {
                 "event_type": etype,
-                "trigger": surface,
+                "triggers": [surface],
                 "arguments": [],
             }
 
@@ -145,7 +145,7 @@ def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
                 continue
             evt["arguments"].append({"role": role, "entity": arg_surface})
 
-    events = [e for e in trigger_index.values() if e["trigger"] in text]
+    events = [e for e in trigger_index.values() if e["triggers"][0] in text]
     if not events:
         return None
     return {"input": text, "output": {"events": events}}

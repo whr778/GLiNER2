@@ -40,10 +40,10 @@ def test_tokens_join_without_spaces_and_offsets_reconstruct_triggers():
     # Chinese tokens concatenated with no separator across both sentences.
     assert rec["input"] == "被告人为获利诱骗并采用暴力"
     events = rec["output"]["events"]
-    assert events[0] == {"event_type": "获利", "trigger": "获利", "arguments": []}
+    assert events[0] == {"event_type": "获利", "triggers": ["获利"], "arguments": []}
     # second sentence trigger resolved via the flat cross-sentence offset
-    assert events[1] == {"event_type": "暴力", "trigger": "暴力", "arguments": []}
-    assert all(e["trigger"] in rec["input"] for e in events)
+    assert events[1] == {"event_type": "暴力", "triggers": ["暴力"], "arguments": []}
+    assert all(e["triggers"][0] in rec["input"] for e in events)
 
 
 def test_test_split_without_events_is_dropped():

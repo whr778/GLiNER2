@@ -963,7 +963,7 @@ class GLiNER2API:
 
         Returns:
             Dictionary with an "event_extraction" key. Format:
-            {"event_extraction": {"event_type": [{"trigger": ...,
+            {"event_extraction": {"event_type": [{"triggers": [...],
              "arguments": [{"role": ..., "entity": ...}]}]}}
         """
         schema = self.create_schema().events(event_types).build()

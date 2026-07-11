@@ -23,12 +23,12 @@ def test_pred_event_sets_handle_default_and_dict_formats():
     """The engine emits trigger/entity as plain strings by default and as
     {'text': ...} dicts under include_spans/confidence; both must score."""
     default = {"event_extraction": {"Conflict.Attack": [
-        {"trigger": "bombed", "arguments": [{"role": "Target", "entity": "tower"}]}]}}
+        {"triggers": ["bombed"], "arguments": [{"role": "Target", "entity": "tower"}]}]}}
     nested = {"event_extraction": {"Conflict.Attack": [
-        {"trigger": {"text": "bombed"}, "arguments": [{"role": "Target", "entity": {"text": "tower"}}]}]}}
+        {"triggers": [{"text": "bombed"}], "arguments": [{"role": "Target", "entity": {"text": "tower"}}]}]}}
     for pred in (default, nested):
         assert _pred_event_trigger_set(pred) == {("Conflict.Attack", "bombed")}
-        assert _pred_event_argument_set(pred) == {("Conflict.Attack", "Target", "tower", "bombed")}
+        assert _pred_event_argument_set(pred) == {("Conflict.Attack", "Target", "tower", ("bombed",))}
 
 
 def test_pred_relation_set_handles_all_engine_output_formats():
@@ -132,20 +132,20 @@ def test_all_categories_score_with_real_engine_output_shapes():
     """Feed compute_metrics predictions in the inference engine's ACTUAL output
     shapes for every category at once -- entities as a {label: [str]} dict,
     relations as (head, tail) tuples, classifications under the task key, events
-    as {trigger, arguments:[{role, entity}]} dicts. Every category must score
+    as {triggers, arguments:[{role, entity}]} dicts. Every category must score
     (guards the whole pred-parsing surface against format drift)."""
     gold = {
         "entities": {"PER": ["Alice"], "ORG": ["Acme"]},
         "relations": [{"works_for": {"head": "Alice", "tail": "Acme"}}],
         "classifications": [{"task": "topic", "labels": ["business", "sports"], "true_label": "business"}],
-        "events": [{"event_type": "Hire", "trigger": "joined",
+        "events": [{"event_type": "Hire", "triggers": ["joined"],
                     "arguments": [{"role": "Employee", "entity": "Alice"}]}],
     }
     pred = {
         "entities": {"PER": ["Alice"], "ORG": ["Acme"]},          # engine entity dict
         "relation_extraction": {"works_for": [("Alice", "Acme")]},  # default tuple shape
         "topic": "business",                                        # classification under task key
-        "event_extraction": {"Hire": [{"trigger": "joined",        # event dict, string leaves
+        "event_extraction": {"Hire": [{"triggers": ["joined"],     # event dict, string leaves
                                         "arguments": [{"role": "Employee", "entity": "Alice"}]}]},
     }
     m = _run(pred=pred, gold_output=gold)
@@ -175,7 +175,7 @@ def test_relaxed_never_below_strict_across_categories():
 # --- event_type and overall (combined) event metrics -----------------------
 
 _EVENT_GOLD = {"events": [
-    {"event_type": "Attack", "trigger": "bombed",
+    {"event_type": "Attack", "triggers": ["bombed"],
      "arguments": [{"role": "Attacker", "entity": "rebels"},
                    {"role": "Target", "entity": "base"},
                    {"role": "Place", "entity": "Aleppo"}]}
@@ -187,7 +187,7 @@ def test_event_type_and_overall_keys_on_perfect_pred():
     the combined overall-event keys; overall support sums type + trigger + args
     (1 + 1 + 3 = 5)."""
     pred = {"event_extraction": {"Attack": [
-        {"trigger": "bombed",
+        {"triggers": ["bombed"],
          "arguments": [{"role": "Attacker", "entity": "rebels"},
                        {"role": "Target", "entity": "base"},
                        {"role": "Place", "entity": "Aleppo"}]}]}}
@@ -206,7 +206,7 @@ def test_overall_event_sums_component_counts():
     strict trigger misses, and all strict args miss because a strict arg carries
     its trigger), giving combined tp=1, fp=4, fn=4 over support 5."""
     pred = {"event_extraction": {"Attack": [
-        {"trigger": "struck",  # right type, wrong surface
+        {"triggers": ["struck"],  # right type, wrong surface
          "arguments": [{"role": "Attacker", "entity": "rebels"},
                        {"role": "Target", "entity": "base"},
                        {"role": "Place", "entity": "Damascus"}]}]}}

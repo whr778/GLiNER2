@@ -4,7 +4,7 @@ Learn how to extract events — ACE-style **triggers** plus their **typed argume
 
 An *event* is something that happens in the text. Each event has:
 - an **event type** (e.g. `Attack`, `Hire`, `Transaction`),
-- a **trigger**: the word/phrase that signals it (e.g. *bombed*, *joined*, *sold*),
+- one or more **triggers**: the word(s)/phrase(s) that signal it (e.g. *bombed*, *joined*, *sold* — usually one, but a mention can have more than one for a multi-word or discontiguous trigger),
 - zero or more **arguments**: participants in typed **roles** (e.g. `Attacker`, `Target`, `Place`).
 
 ## Table of Contents
@@ -43,7 +43,7 @@ print(results)
 #     "event_extraction": {
 #         "Attack": [
 #             {
-#                 "trigger": "bombed",
+#                 "triggers": ["bombed"],
 #                 "arguments": [
 #                     {"role": "Attacker", "entity": "Rebels"},
 #                     {"role": "Target",   "entity": "the airbase"},
@@ -91,7 +91,7 @@ Event results live under the `event_extraction` key. The value is a dict keyed b
     "event_extraction": {
         "<event_type>": [
             {
-                "trigger": "<trigger surface>",
+                "triggers": ["<trigger surface>", ...],
                 "arguments": [
                     {"role": "<role>", "entity": "<argument surface>"},
                     ...
@@ -104,8 +104,11 @@ Event results live under the `event_extraction` key. The value is a dict keyed b
 ```
 
 - An event type with no detected trigger is omitted.
+- `triggers` is a list — usually one span, but a mention can have more than
+  one (e.g. a multi-word or discontiguous trigger, or several trigger words
+  that jointly signal the same instance).
 - `arguments` is a list of `{role, entity}` pairs; only filled roles appear.
-- Trigger and entity are plain strings by default — see [Spans and Confidence](#spans-and-confidence) to get character offsets and scores instead.
+- Each trigger and entity is a plain string by default — see [Spans and Confidence](#spans-and-confidence) to get character offsets and scores instead.
 
 ## Multiple Event Types
 
@@ -119,11 +122,11 @@ results = extractor.extract_events(text, {
 })
 # {
 #   "event_extraction": {
-#     "Acquisition": [{"trigger": "acquired",
+#     "Acquisition": [{"triggers": ["acquired"],
 #                      "arguments": [{"role": "Buyer", "entity": "Acme"},
 #                                    {"role": "Acquired", "entity": "Beta Corp"},
 #                                    {"role": "Price", "entity": "$2B"}]}],
-#     "Resignation": [{"trigger": "resigned",
+#     "Resignation": [{"triggers": ["resigned"],
 #                      "arguments": [{"role": "Person", "entity": "Jane Doe"},
 #                                    {"role": "Time", "entity": "the next day"}]}],
 #   }
@@ -173,7 +176,7 @@ schema = extractor.create_schema().events({
 
 ## Spans and Confidence
 
-Ask for character offsets and/or confidence scores; the trigger and each entity then become dicts instead of bare strings:
+Ask for character offsets and/or confidence scores; each trigger and entity then becomes a dict instead of a bare string:
 
 ```python
 results = extractor.extract_events(
@@ -183,7 +186,7 @@ results = extractor.extract_events(
     include_confidence=True,
 )
 # "Attack": [
-#   {"trigger": {"text": "bombed", "start": 7, "end": 13, "confidence": 0.97},
+#   {"triggers": [{"text": "bombed", "start": 7, "end": 13, "confidence": 0.97}],
 #    "arguments": [
 #        {"role": "Attacker",
 #         "entity": {"text": "Rebels", "start": 0, "end": 6, "confidence": 0.91}},
@@ -273,11 +276,16 @@ The pretrained models give zero-shot event extraction, but a domain model traine
 ```json
 {"input": "Rebels bombed the airbase near Aleppo on Tuesday.",
  "output": {"events": [
-     {"event_type": "Attack", "trigger": "bombed",
+     {"event_type": "Attack", "triggers": ["bombed"],
       "arguments": [{"role": "Attacker", "entity": "Rebels"},
                     {"role": "Place", "entity": "Aleppo"}]}
  ]}}
 ```
+
+`triggers` is always a list, even for the common single-trigger case. Use
+more than one entry for a multi-word or discontiguous trigger, or several
+trigger words that jointly signal the same mention — all of them must
+appear verbatim in `input`.
 
 - **Prepare data:** the converters under `tools/data/` produce this format from the public event corpora — see [TRAINING_DATA.md](../tools/data/TRAINING_DATA.md).
 - **Train:** add the event JSONLs to your config's `event_files` and train — see [TRAINING.md](../tools/train/TRAINING.md). `compute_metrics` reports `event_type`, `event_trigger`, `event_argument`, and a combined `event` score; the metric definitions are in [METRICS.md](../METRICS.md).
