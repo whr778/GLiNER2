@@ -507,7 +507,7 @@ def _blind_test_by_language(
     """Run the blind test per language then over all data; return aggregate metrics."""
     from collections import defaultdict
     from gliner2 import GLiNER2
-    from gliner2.training.metrics import compute_metrics
+    from gliner2.training.metrics import compute_metrics, _print_micro_report
     from gliner2.training.trainer import ExtractorDataset
 
     # Materialise file paths to dicts so we can annotate and filter.
@@ -523,17 +523,25 @@ def _blind_test_by_language(
     print(f"\n[blind test] Loading {best} for per-language evaluation...")
     model = GLiNER2.from_pretrained(str(best))
 
+    per_lang: Dict[str, Dict] = {}
     for lang in sorted(by_lang):
         subset = by_lang[lang]
         print(f"\n[blind test] Processing language: {lang}  ({len(subset)} samples)")
         ds = ExtractorDataset(subset, shuffle=False, validate=False)
-        lang_metrics = compute_metrics(model, ds, batch_size=eval_bs, threshold=eval_thr)
+        lang_metrics = compute_metrics(model, ds, batch_size=eval_bs, threshold=eval_thr) or {}
+        per_lang[lang] = lang_metrics
         _print_blind_test(lang_metrics)
 
     print(f"\n[blind test] All languages combined ({len(test_data)} samples)")
     ds_all = ExtractorDataset(test_data, shuffle=False, validate=False)
     all_metrics = compute_metrics(model, ds_all, batch_size=eval_bs, threshold=eval_thr) or {}
     _print_blind_test(all_metrics)
+
+    print("\n===== Blind test summary by language =====")
+    for lang in sorted(per_lang):
+        _print_micro_report(per_lang[lang], label=lang)
+    _print_micro_report(all_metrics, label="all")
+
     return all_metrics
 
 

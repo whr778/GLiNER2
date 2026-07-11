@@ -213,7 +213,11 @@ preceded by an `[eval]` header) is emitted on every eval pass. After the
 blind-test pass, `tools/train/train.py` also prints the full per-label
 classification reports followed by a second compact micro summary. With
 `eval_by_language: true` in the `eval` config section this double-print runs once
-per language in alphabetical order, then once over all data combined.
+per language in alphabetical order, then once over all data combined. Finally,
+a `===== Blind test summary by language =====` recap prints just the compact
+micro table for each language (labeled `[<lang>]`), plus a final `[all]` row
+for the combined pass, so per-language results can be compared at a glance
+without scrolling back through the detailed reports above.
 
 ---
 

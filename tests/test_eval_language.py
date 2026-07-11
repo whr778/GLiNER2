@@ -43,6 +43,17 @@ def _make_records(langs):
     return [{"input": f"text in {lang}", "output": {}, "_lang": lang} for lang in langs]
 
 
+def _entity_metrics(f1=0.5):
+    return {
+        "eval_entity_strict_micro_precision": f1,
+        "eval_entity_strict_micro_recall": f1,
+        "eval_entity_strict_micro_f1": f1,
+        "eval_entity_relaxed_micro_precision": f1,
+        "eval_entity_relaxed_micro_recall": f1,
+        "eval_entity_relaxed_micro_f1": f1,
+    }
+
+
 # ---------------------------------------------------------------------------
 # _detect_lang
 # ---------------------------------------------------------------------------
@@ -320,6 +331,100 @@ def test_blind_test_by_language_materialises_file_paths(tmp_path):
     called_arg = mock_ann.call_args[0][0]
     assert isinstance(called_arg[0], dict)
     assert called_arg[0]["input"] == "Hello world"
+
+
+# ---------------------------------------------------------------------------
+# _blind_test_by_language -- final per-language recap
+# ---------------------------------------------------------------------------
+
+def test_blind_test_by_language_recap_header_present(tmp_path, capsys):
+    records = _make_records(["eng", "fra"])
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    assert "===== Blind test summary by language =====" in capsys.readouterr().out
+
+
+def test_blind_test_by_language_recap_contains_each_language(tmp_path, capsys):
+    records = _make_records(["eng", "fra"])
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    recap = capsys.readouterr().out.split("Blind test summary by language")[1]
+    assert "[eng]" in recap
+    assert "[fra]" in recap
+
+
+def test_blind_test_by_language_recap_includes_combined_row(tmp_path, capsys):
+    records = _make_records(["eng", "fra"])
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    recap = capsys.readouterr().out.split("Blind test summary by language")[1]
+    assert "[all]" in recap
+
+
+def test_blind_test_by_language_recap_order_languages_then_all(tmp_path, capsys):
+    records = _make_records(["spa", "eng", "fra"])
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    recap = capsys.readouterr().out.split("Blind test summary by language")[1]
+    assert recap.find("[eng]") < recap.find("[fra]") < recap.find("[spa]") < recap.find("[all]")
+
+
+def test_blind_test_by_language_recap_appears_after_combined_pass(tmp_path, capsys):
+    records = _make_records(["eng"])
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    out = capsys.readouterr().out
+    assert out.find("All languages combined") < out.find("Blind test summary by language")
+
+
+def test_blind_test_by_language_recap_omits_language_with_no_metrics(tmp_path, capsys):
+    """A language whose compute_metrics call returns {} (e.g. empty subset) is
+    silently absent from the recap, matching _print_micro_report's existing
+    early-return behaviour for a metrics dict with no known category keys."""
+    records = _make_records(["eng", "fra"])
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value={}), \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    out = capsys.readouterr().out
+    assert "===== Blind test summary by language =====" in out
+    assert "[eng]" not in out
+    assert "[fra]" not in out
+    assert "[all]" not in out
 
 
 # ---------------------------------------------------------------------------

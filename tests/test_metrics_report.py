@@ -26,3 +26,35 @@ def test_micro_report_prints_strict_and_relaxed(capsys):
 def test_micro_report_prints_nothing_when_empty(capsys):
     _print_micro_report({})
     assert capsys.readouterr().out == ""
+
+
+def test_micro_report_label_appears_in_header(capsys):
+    metrics = {
+        "eval_entity_strict_micro_precision": 0.50,
+        "eval_entity_strict_micro_recall": 0.25,
+        "eval_entity_strict_micro_f1": 0.3333,
+        "eval_entity_relaxed_micro_precision": 0.80,
+        "eval_entity_relaxed_micro_recall": 0.40,
+        "eval_entity_relaxed_micro_f1": 0.5333,
+    }
+    _print_micro_report(metrics, label="eng")
+    out = capsys.readouterr().out
+
+    assert "[eng]" in out
+    assert "strict -> relaxed" in out
+
+
+def test_micro_report_no_label_omits_bracket_tag(capsys):
+    metrics = {
+        "eval_entity_strict_micro_f1": 0.3333,
+        "eval_entity_relaxed_micro_f1": 0.5333,
+    }
+    _print_micro_report(metrics)
+    out = capsys.readouterr().out
+
+    assert "[eng]" not in out
+
+
+def test_micro_report_empty_metrics_prints_nothing_even_with_label(capsys):
+    _print_micro_report({}, label="fra")
+    assert capsys.readouterr().out == ""

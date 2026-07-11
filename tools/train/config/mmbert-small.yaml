@@ -38,7 +38,7 @@ training:
 eval:
   batch_size: 8
   threshold: 0.5
-  eval_by_language: false   # default
+  eval_by_language: true   # default
   # stopword_languages: [eng, fra, deu, zho, jpn, kor, uzb, kat]
   # stopword_yaml: stopwords.yaml  # relative to this config file; defaults to stopwords.yaml
 
@@ -59,7 +59,15 @@ labels:
     map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
 
 data:
-  corpora: []
+  corpora: 
+    # - data/kaznerd
+    # - data/bc4chemd
+    # - data/bc5cdr
+    - data/stockmark_jpn
+    # - data/finer_ord          # NB: finer-ord is cc-by-nc-4.0 (non-commercial)
+    # - data/klue_ner
+    - data/klue_re
+
   event_files:
     ace2005:
       train: data/ace2005.train.jsonl

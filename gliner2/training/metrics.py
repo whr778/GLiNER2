@@ -201,7 +201,7 @@ def compute_metrics(
     return metrics
 
 
-def _print_micro_report(metrics: Dict[str, Any]) -> None:
+def _print_micro_report(metrics: Dict[str, Any], label: str | None = None) -> None:
     """Print a compact micro precision/recall/F1 line per category, strict -> relaxed."""
     categories = ("entity", "relation", "classification", "event_type",
                   "event_trigger", "event_argument", "event")
@@ -212,7 +212,10 @@ def _print_micro_report(metrics: Dict[str, Any]) -> None:
     def val(cat: str, regime: str, metric: str) -> float:
         return metrics.get(f"eval_{cat}_{regime}_micro_{metric}", 0.0)
 
-    print("\n[eval] micro precision / recall / f1  (strict -> relaxed)")
+    header = "\n[eval] micro precision / recall / f1  (strict -> relaxed)"
+    if label:
+        header += f"  [{label}]"
+    print(header)
     for c in present:
         print(f"  {c:<15} "
               f"P={val(c, 'strict', 'precision'):.4f}->{val(c, 'relaxed', 'precision'):.4f}  "
