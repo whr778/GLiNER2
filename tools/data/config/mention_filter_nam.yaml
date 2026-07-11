@@ -17,4 +17,4 @@ allow: [NAM, NOM, PRO]        # global default: keep everything
 
 converters:                    # optional per-converter overrides
   ace2005:
-    allow: [NAM, NOM, PRO]          # drop pronominal mentions for ACE 2005
+    allow: [NAM]          # drop pronominal mentions for ACE 2005
