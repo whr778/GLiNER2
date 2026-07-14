@@ -32,8 +32,8 @@ training:
   num_workers: 0
   validate_data: false
   sliding_window: true
-  max_len: 256               # deberta-v3-large caps at 512 positions; leave room for
-  window_stride: 128                           # the prepended schema + special tokens (512 overflows)
+  max_len: 384               # deberta-v3-large caps at 512 positions; leave room for
+  window_stride: 256                           # the prepended schema + special tokens (512 overflows)
   gradient_checkpointing: true
   pin_memory: false
   
@@ -44,7 +44,7 @@ training:
 eval:
   batch_size: 1
   threshold: 0.5
-  eval_by_language: false   # default
+  eval_by_language: true   # default
   # stopword_languages: [eng, fra, deu, zho, jpn, kor, uzb, kat]
   # stopword_yaml: stopwords.yaml  # relative to this config file; defaults to stopwords.yaml
 

@@ -118,7 +118,9 @@ class Extractor(PreTrainedModel):
         # Load encoder
         self.encoder = self._load_encoder(config.model_name, encoder_config)
 
-        self.encoder.resize_token_embeddings(len(self.processor.tokenizer))
+        # https://www.cs.columbia.edu/~johnhew/vocab-expansion.html
+        # https://huggingface.co/docs/transformers/main_classes/model#transformers.PreTrainedModel.resize_token_embeddings.mean_resizing
+        self.encoder.resize_token_embeddings(len(self.processor.tokenizer), mean_resizing=True)
         # Re-tie input/output embeddings for encoders with tied weights
         # (BERT/DeBERTa: no-op; ModernBERT/mmBERT: required so the LM head matches).
         if hasattr(self.encoder, "tie_weights"):
