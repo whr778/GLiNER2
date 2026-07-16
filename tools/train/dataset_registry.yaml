@@ -26,6 +26,10 @@ base_models:
     name: mmBERT-small
     license: see model card
     source_url: https://huggingface.co/jhu-clsp/mmBERT-small
+  fastino/gliner2-base-v1:
+    name: gliner2-base-v1
+    license: see model card
+    source_url: https://huggingface.co/fastino/gliner2-base-v1
   fastino/gliner2-large-v1:
     name: gliner2-large-v1
     license: see model card
