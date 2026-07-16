@@ -1,5 +1,11 @@
 # Recommendations
 
+_Verified against the codebase on 2026-07-16: every option below is still
+unimplemented and valid. Both "works today" starting points are confirmed —
+`include_spans=True` returns character spans for entities and event arguments
+(`gliner2/inference/engine.py`), and a single schema can hold both `.entities()`
+and `.events()` (`gliner2/inference/schema.py`)._
+
 ## Connecting Event Arguments to NER Entities
 
 Three options, ordered by complexity.
@@ -18,7 +24,7 @@ Put entity types and event roles in the same schema. The model processes all fie
 
 No model changes required. Adds schema complexity but gives richer joint context during inference.
 
-### Option 3: Learned linking head in model.py
+### Option 3: Learned linking head in `gliner2/model.py`
 
 Add a linking head that scores (event argument span, entity span) pairs — a bilinear or dot-product scorer over the shared span representations. Closest to how models like DEGREE and OneIE work. Gives learned linking rather than heuristic position matching.
 
@@ -38,17 +44,17 @@ To handle surface variation (e.g. "Tim Cook" vs "Cook"), normalize by stripping 
 
 ### Option 2: Post-processing — embedding similarity clustering
 
-Instead of matching by span position, extract contextual embeddings for each span and cluster by cosine similarity. GLiNER2 computes internal span representations during inference; exposing them (a small addition to `engine.py`) lets you run agglomerative or k-means clustering over both entity and argument spans without any new training.
+Instead of matching by span position, extract contextual embeddings for each span and cluster by cosine similarity. GLiNER2 computes internal span representations during inference (`compute_span_rep` in `gliner2/model.py`); exposing them (a small addition there, surfaced through `gliner2/inference/engine.py`) lets you run agglomerative or k-means clustering over both entity and argument spans without any new training.
 
 Handles aliases and some cross-sentence coreference that text overlap misses. Requires choosing a similarity threshold and adds inference latency proportional to the number of spans.
 
-### Option 3: Expose span representations from model.py
+### Option 3: Expose span representations from `gliner2/model.py`
 
 Add a `extract_with_span_embeddings()` method (or a flag on `batch_extract`) that returns the raw span representation tensors alongside the normal extraction output. External coreference algorithms — including off-the-shelf coref models like `fastcoref` or `coreferee` — can then operate on those embeddings or on the extracted text spans.
 
 Moderate model.py change, no new training. Keeps coreference logic decoupled and swappable.
 
-### Option 4: Learned pairwise mention-scoring head in model.py
+### Option 4: Learned pairwise mention-scoring head in `gliner2/model.py`
 
 Add a mention-pair scoring head (bilinear scorer over span representation pairs, as in SpanBERT-coref or DEGREE) that explicitly scores whether two spans — regardless of whether they came from the entity task or an event argument task — are coreferent. Training targets would be coreference cluster annotations (e.g. from OntoNotes or a domain-specific annotation pass).
 
