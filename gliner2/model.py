@@ -748,7 +748,10 @@ class Extractor(PreTrainedModel):
         - "bce_posweight": BCE up-weighting positives by pos_weight (falls back to
           config.struct_pos_weight); a principled alternative to random negative masking.
         - "focal": focal loss (Lin et al.), down-weighting easy negatives via
-          config.focal_gamma and balancing classes via config.focal_alpha.
+          config.focal_gamma and balancing classes via config.focal_alpha, with
+          an additional positive-class multiplier from config.struct_pos_weight
+          (1.0 by default, i.e. a no-op -- set it >1 to further counteract
+          class imbalance on top of alpha/gamma).
         - "asl": asymmetric loss (Ben-Baruch et al.), decoupled focusing for
           positives/negatives (config.asl_gamma_pos/neg) plus probability
           shifting of easy negatives (config.asl_clip). Built for multi-label
@@ -756,7 +759,8 @@ class Extractor(PreTrainedModel):
 
         Args:
             variant: Loss variant; None → use config.struct_loss.
-            pos_weight: Positive weight for bce_posweight; None → use config.struct_pos_weight.
+            pos_weight: Positive weight for bce_posweight/focal; None → use
+                config.struct_pos_weight.
         """
         variant = variant or getattr(self.config, "struct_loss", "bce")
 
@@ -769,6 +773,7 @@ class Extractor(PreTrainedModel):
         if variant == "focal":
             gamma = self.config.focal_gamma
             alpha = self.config.focal_alpha
+            pw = pos_weight if pos_weight is not None else self.config.struct_pos_weight
             ce = F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
             p = torch.sigmoid(scores)
             p_t = p * labs + (1 - p) * (1 - labs)
@@ -776,6 +781,8 @@ class Extractor(PreTrainedModel):
             if alpha is not None and alpha >= 0:
                 alpha_t = alpha * labs + (1 - alpha) * (1 - labs)
                 loss = alpha_t * loss
+            pos_weight_t = pw * labs + (1 - labs)
+            loss = pos_weight_t * loss
             return loss
 
         if variant == "asl":

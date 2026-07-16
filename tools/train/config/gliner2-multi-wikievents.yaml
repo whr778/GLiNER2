@@ -1,3 +1,14 @@
+
+# what are the SOTA scores for wikievents
+
+# Based on the provided search context, there are two distinct State-of-the-Art (SOTA) results reported for the **WikiEvents** dataset, depending on the specific subtask:
+
+# *   **Event Detection**: The **EDM3** model achieved a benchmark F1 score of **60.7%**. This was reported as a new benchmark for the event detection task on this dataset.
+# *   **Document-Level Event Argument Extraction**: The **AssocKD** method achieved an **Arg-C F1 score of 67.0%**. This result surpassed the previous SOTA method, TabEAE (66.0%), by 1.0 point.
+
+# These results highlight that "SOTA" performance varies significantly based on whether the focus is on detecting events or extracting their arguments.
+
+
 # Fine-tune the pretrained fastino/gliner2-multi-v1 GLiNER2 model on WikiEvents.
 # Uses from_pretrained (continues the model's existing heads); contrast with the
 # mmbert-* configs, which bootstrap fresh heads on a raw encoder via from_encoder.

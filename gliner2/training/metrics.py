@@ -738,6 +738,80 @@ def evaluate_checkpoint(
     )
 
 
+DEFAULT_THRESHOLD_GRID: Tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
+
+# The three combined-event rows ("event") double-count event_type/trigger/
+# argument, so they're excluded here -- each category should contribute once.
+_SWEEP_CATEGORIES = (
+    "entity", "relation", "classification",
+    "event_type", "event_trigger", "event_argument",
+)
+
+
+def _selection_score(metrics: Dict[str, Any], regime: str = "strict") -> float:
+    """Support-weighted average micro-F1 across whatever categories are present.
+
+    Weighting by support means a large, genuinely threshold-sensitive category
+    (e.g. entities) drives the choice, while a small category can't swing the
+    pick by an unweighted vote -- relevant here because not every category
+    responds to the threshold the same way (see ``sweep_thresholds``).
+    """
+    total_support = 0
+    weighted = 0.0
+    for category in _SWEEP_CATEGORIES:
+        support = metrics.get(f"eval_{category}_{regime}_support")
+        f1 = metrics.get(f"eval_{category}_{regime}_micro_f1")
+        if support and f1 is not None:
+            weighted += f1 * support
+            total_support += support
+    return weighted / total_support if total_support else 0.0
+
+
+def sweep_thresholds(
+    model,
+    eval_dataset,
+    thresholds: Iterable[float] = DEFAULT_THRESHOLD_GRID,
+    batch_size: int = 8,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+) -> Tuple[float, Dict[str, Any], Dict[float, Dict[str, Any]]]:
+    """Score ``eval_dataset`` at each candidate threshold; return the best.
+
+    "Best" maximizes a support-weighted average of strict micro-F1 across
+    whichever categories are present (see ``_selection_score``).
+
+    Each candidate re-runs the full model over ``eval_dataset`` (extraction
+    is not threshold-cached), so keep the grid small -- this is a one-time
+    post-training calibration step, not a fine search.
+
+    Calibration raises the *measured* F1 by finding a better decision
+    threshold; it does not make the underlying model stronger. It also only
+    helps categories whose decode is threshold-filtered in the first place --
+    a category whose instance count is set by ``count_pred`` (see
+    ``Extractor.compute_struct_loss`` in ``gliner2/model.py``) is far less
+    threshold-sensitive and may barely move regardless of the value chosen.
+
+    Args:
+        model: A loaded GLiNER2 model.
+        eval_dataset: A pre-built ``ExtractorDataset`` (or anything
+            ``compute_metrics`` accepts), evaluated once per candidate.
+        thresholds: Candidate threshold values.
+        batch_size: Forwarded to ``compute_metrics``.
+        stopwords: Forwarded to ``compute_metrics``.
+
+    Returns:
+        ``(best_threshold, best_threshold's metrics dict, {threshold: metrics}
+        for every candidate)``.
+    """
+    results: Dict[float, Dict[str, Any]] = {}
+    for t in thresholds:
+        results[t] = compute_metrics(
+            model, eval_dataset, batch_size=batch_size, threshold=t, stopwords=stopwords,
+        ) or {}
+
+    best_threshold = max(results, key=lambda t: _selection_score(results[t]))
+    return best_threshold, results[best_threshold], results
+
+
 def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -> Dict[str, Any]:
     labels = sorted(set(tp) | set(fp) | set(fn))
     if not labels:

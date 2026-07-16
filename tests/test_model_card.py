@@ -140,6 +140,36 @@ def test_build_model_card_with_counts_and_descriptions():
     assert "Financial NER" in card          # FiNER-ORD description
 
 
+def test_threshold_omitted_when_not_given():
+    card = build_model_card(
+        model_name="m", base_model="jhu-clsp/mmBERT-base", cfg={"model": {}},
+        config=type("C", (), {"experiment_name": "m"})(),
+        dataset_keys=["nuner_full"],
+        results={}, eval_metrics=None, test_metrics=None, generated_at="2026-06-25",
+    )
+    assert "Decision threshold" not in card
+
+
+def test_threshold_reports_config_default_vs_calibrated():
+    default_card = build_model_card(
+        model_name="m", base_model="jhu-clsp/mmBERT-base", cfg={"model": {}},
+        config=type("C", (), {"experiment_name": "m"})(),
+        dataset_keys=["nuner_full"],
+        results={}, eval_metrics=None, test_metrics=None, generated_at="2026-06-25",
+        threshold=0.5, threshold_calibrated=False,
+    )
+    assert "Decision threshold: **0.5** (config default)" in default_card
+
+    calibrated_card = build_model_card(
+        model_name="m", base_model="jhu-clsp/mmBERT-base", cfg={"model": {}},
+        config=type("C", (), {"experiment_name": "m"})(),
+        dataset_keys=["nuner_full"],
+        results={}, eval_metrics=None, test_metrics=None, generated_at="2026-06-25",
+        threshold=0.3, threshold_calibrated=True,
+    )
+    assert "Decision threshold: **0.3** (calibrated against the validation set)" in calibrated_card
+
+
 def test_unknown_dataset_is_flagged_not_silently_dropped():
     card = build_model_card(
         model_name="m", base_model="jhu-clsp/mmBERT-base", cfg={"model": {}},

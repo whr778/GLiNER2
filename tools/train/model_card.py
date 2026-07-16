@@ -352,6 +352,8 @@ def build_model_card(
     generated_at: str,
     registry: Optional[Dict[str, Any]] = None,
     dataset_counts: Optional[Dict[str, Dict[str, int]]] = None,
+    threshold: Optional[float] = None,
+    threshold_calibrated: bool = False,
 ) -> str:
     """Render a complete MODEL_CARD.md as a Markdown string."""
     registry = registry or load_registry()
@@ -412,6 +414,10 @@ def build_model_card(
         "## Evaluation",
         "",
     ]
+
+    if threshold is not None:
+        source = "calibrated against the validation set" if threshold_calibrated else "config default"
+        parts += [f"Decision threshold: **{threshold}** ({source}).", ""]
 
     blind = _metrics_table(test_metrics or {}, "Blind test (held-out test splits)")
     val = _metrics_table(eval_metrics or {}, "Best checkpoint (validation)")

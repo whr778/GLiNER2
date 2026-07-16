@@ -13,6 +13,7 @@ from gliner2.training.metrics import (
     compute_metrics,
     evaluate_checkpoint,
     make_compute_metrics,
+    sweep_thresholds,
 )
 from gliner2.training.stopwords import build_stopwords
 
@@ -28,4 +29,5 @@ __all__ = [
     "estimate_eta",
     "evaluate_checkpoint",
     "make_compute_metrics",
+    "sweep_thresholds",
 ]

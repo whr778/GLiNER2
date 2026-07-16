@@ -22,6 +22,13 @@ The config has four sections:
   enables multilingual stopword filtering in relaxed metrics; defaults to the
   English-only built-in set. Optional ``stopword_yaml`` (relative path, default
   ``stopwords.yaml``) supplements stopwordsiso with a user-maintained YAML file.
+  Optional ``threshold_sweep`` calibrates the decision threshold against the
+  val set after training: ``true`` uses a default 5-point grid (0.1/0.3/0.5/
+  0.7/0.9), or give an explicit list of candidates. The chosen threshold
+  replaces ``threshold`` for the blind test and is recorded in
+  ``best/threshold_sweep.json`` and the model card. Unset/false keeps
+  ``threshold`` as-is (today's behavior). Each candidate is a full forward
+  pass over the val set, so keep the grid small.
 * ``data``     - ``corpora`` base paths (``<name>.{train,val,test}.jsonl``) and
   an ``event_files`` map of ``{name: {train,val,test}}``. Event splits are
   included only if the file exists on disk, so a config runs with any subset
@@ -69,8 +76,9 @@ from typing import Dict, List
 import yaml
 
 from gliner2 import GLiNER2
-from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics
-from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
+from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics, sweep_thresholds
+from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID, _selection_score
+from gliner2.training.trainer import ExtractorDataset, GLiNER2Trainer, TrainingConfig
 
 
 def _dataset_counts(corpora: List[str], event_files: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, int]]:
@@ -111,7 +119,10 @@ def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[st
     return paths
 
 
-def _write_model_card(cfg, config, corpora, event_files, results, test_metrics, best: Path) -> None:
+def _write_model_card(
+    cfg, config, corpora, event_files, results, test_metrics, best: Path,
+    threshold: float, threshold_calibrated: bool,
+) -> None:
     """Generate MODEL_CARD.md in the best checkpoint folder. Never fatal -- a
     card bug must not lose a model that already trained for hours."""
     try:
@@ -135,6 +146,7 @@ def _write_model_card(cfg, config, corpora, event_files, results, test_metrics, 
             eval_metrics=eval_metrics, test_metrics=test_metrics or None,
             generated_at=datetime.now().strftime("%Y-%m-%d"),
             dataset_counts=_dataset_counts(corpora, event_files),
+            threshold=threshold, threshold_calibrated=threshold_calibrated,
         )
         path = best / "MODEL_CARD.md"
         path.write_text(card, encoding="utf-8")
@@ -576,6 +588,9 @@ def main(config_path: str) -> None:
     eval_bs = eval_cfg.get("batch_size", 8)
     eval_thr = eval_cfg.get("threshold", 0.5)
     eval_by_language = eval_cfg.get("eval_by_language", False)
+    # threshold_sweep: true -> DEFAULT_THRESHOLD_GRID, or an explicit list of
+    # candidate thresholds. Unset/false keeps today's behavior (eval_thr as-is).
+    threshold_sweep_cfg = eval_cfg.get("threshold_sweep")
 
     eval_stopwords = _build_eval_stopwords(
         eval_cfg, config_path, corpus_data=train_data + eval_data + test_data,
@@ -608,6 +623,30 @@ def main(config_path: str) -> None:
         print(f"\n[blind test] No 'best' checkpoint at {best}; skipping.")
         return
 
+    if threshold_sweep_cfg and not eval_data:
+        print("\n[threshold sweep] No val data; skipping, keeping threshold="
+              f"{eval_thr}.")
+    elif threshold_sweep_cfg:
+        thresholds = DEFAULT_THRESHOLD_GRID if threshold_sweep_cfg is True else list(threshold_sweep_cfg)
+        print(f"\n[threshold sweep] Loading {best} to calibrate against "
+              f"{len(eval_data)} val samples over {thresholds}...")
+        sweep_model = GLiNER2.from_pretrained(str(best))
+        eval_records = _read_records(eval_data) if eval_data and isinstance(eval_data[0], str) else eval_data
+        sweep_ds = ExtractorDataset(eval_records, shuffle=False, validate=False)
+        eval_thr, sweep_best_metrics, sweep_all = sweep_thresholds(
+            sweep_model, sweep_ds, thresholds=thresholds, batch_size=eval_bs, stopwords=eval_stopwords,
+        )
+        print(f"[threshold sweep] Chose threshold={eval_thr} "
+              f"(support-weighted strict micro-F1={_selection_score(sweep_best_metrics):.4f}); "
+              f"this only recalibrates the decision cutoff, it does not retrain the model.")
+        sweep_path = best / "threshold_sweep.json"
+        sweep_path.write_text(json.dumps(
+            {"chosen_threshold": eval_thr, "by_threshold": {str(t): m for t, m in sweep_all.items()}},
+            indent=2,
+        ))
+        print(f"[threshold sweep] Wrote {sweep_path}")
+        del sweep_model
+
     if eval_by_language:
         test_metrics = _blind_test_by_language(best, test_data, eval_bs, eval_thr)
     else:
@@ -625,7 +664,10 @@ def main(config_path: str) -> None:
         print("[blind test] No metrics produced (empty test set?).")
 
     # ----- model card (best/ exists at this point) -----
-    _write_model_card(cfg, config, corpora, event_files, results, test_metrics, best)
+    _write_model_card(
+        cfg, config, corpora, event_files, results, test_metrics, best,
+        threshold=eval_thr, threshold_calibrated=bool(threshold_sweep_cfg),
+    )
 
 
 if __name__ == "__main__":

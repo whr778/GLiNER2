@@ -71,6 +71,33 @@ def test_nonbce_term_variants_differ_from_bce(name, knobs, grid):
     assert not torch.allclose(bce, variant), f"{name} produced the same per-cell loss as bce"
 
 
+def test_focal_pos_weight_default_is_noop(grid):
+    """struct_pos_weight defaults to 1.0 -- focal loss must be unchanged from
+    before pos_weight was wired in, so every existing focal config keeps its
+    current behavior."""
+    scores, labs = grid
+    without = Extractor._struct_loss_term(
+        _stub("focal", focal_gamma=2.0, focal_alpha=0.25, struct_pos_weight=1.0), scores, labs
+    )
+    with_default = Extractor._struct_loss_term(
+        _stub("focal", focal_gamma=2.0, focal_alpha=0.25), scores, labs
+    )
+    assert torch.allclose(without, with_default)
+
+
+def test_focal_pos_weight_scales_only_positive_cells(grid):
+    scores, labs = grid
+    base = Extractor._struct_loss_term(
+        _stub("focal", focal_gamma=2.0, focal_alpha=0.25, struct_pos_weight=1.0), scores, labs
+    )
+    boosted = Extractor._struct_loss_term(
+        _stub("focal", focal_gamma=2.0, focal_alpha=0.25, struct_pos_weight=8.0), scores, labs
+    )
+    ratio = boosted / base
+    assert torch.allclose(ratio[labs == 1], torch.full_like(ratio[labs == 1], 8.0))
+    assert torch.allclose(ratio[labs == 0], torch.ones_like(ratio[labs == 0]))
+
+
 @pytest.mark.parametrize("include_bce,name", [(False, "dice"), (True, "bce_dice")])
 def test_dice_variants_are_finite_and_differentiable(include_bce, name, grid):
     scores, labs = grid
