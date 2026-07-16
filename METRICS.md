@@ -11,6 +11,7 @@ own metrics.
 - [Micro, macro, support](#micro-macro-support)
 - [Per-category match semantics](#per-category-match-semantics)
 - [The overall `event` metric](#the-overall-event-metric)
+- [Fine-grained entity error analysis](#fine-grained-entity-error-analysis)
 - [Returned keys](#returned-keys)
 - [The classification report](#the-classification-report)
 - [Worked example](#worked-example)
@@ -179,7 +180,71 @@ Two deliberate design points:
 
 ---
 
+## Fine-grained entity error analysis
+
+An **additive, entity-only diagnostic** based on Ortmann (2022), [*Fine-Grained
+Error Analysis and Fair Evaluation of Labeled Spans*](https://aclanthology.org/2022.lrec-1.150/).
+It runs automatically whenever entities are scored and never touches the
+strict/relaxed regimes or checkpoint selection.
+
+**The problem it addresses.** Strict/relaxed **double-penalize a near-miss**:
+an entity with the right surface but the wrong label, or the right label but a
+slightly-off boundary, becomes *both* a false positive (under the predicted
+label) and a false negative (under the gold label) — two errors for one
+almost-right annotation. Our matcher pairs only within a label
+(`_match_relaxed`), so a label confusion is invisible: it looks like a
+hallucination plus an unrelated miss.
+
+**What it does.** For each record it matches predicted vs gold entities
+**across labels**, one-to-one, and tags each pairing with a single typed error:
+
+| Type | Meaning |
+|---|---|
+| `COR` | correct — same label, same surface |
+| `LE` | labeling error — same surface, wrong label |
+| `BES` | boundary error, system **s**maller (pred surface ⊂ gold) |
+| `BEL` | boundary error, system **l**arger (gold surface ⊂ pred) |
+| `BEO` | boundary **o**verlap — shared content token, no containment |
+| `LBE` | labeling+boundary error — wrong label *and* overlapping surface |
+| `FP` / `FN` | pred / gold with no overlapping counterpart at all |
+
+Matching is greedy in priority order `COR → LE → BE → LBE`, so every annotation
+is counted once. The order is our adaptation; the result is deterministic given
+the fixed order and sorted inputs. Relabeling an already-matched pair does not
+move the fair score below (equal weights), but because the match is greedy, in
+rare records where one prediction overlaps several gold entities the order can
+change which pairs match and thus shift the counts slightly.
+
+**Fair P/R/F1.** Each near-miss (`LE`/`BES`/`BEL`/`BEO`/`LBE`) counts as *half*
+a false positive and *half* a false negative, so a close annotation is one
+error, not two:
+
+```
+E = LE + BES + BEL + BEO + LBE
+fair_precision = COR / (COR + FP + 0.5*E)
+fair_recall    = COR / (COR + FN + 0.5*E)
+fair_f1        = 2 * P * R / (P + R)
+```
+
+With no typed near-misses (`E = 0`) fair reduces exactly to strict. These
+numbers are **diagnostic only** — they are not a selectable regime and are
+never read by `metric_for_best`.
+
+**Surface-approximation caveats.** Gold entities carry no character offsets, so
+the positional boundary sub-types are approximated from substring containment:
+`York` ⊂ `New York` reads as `BES` even if it is a different occurrence in the
+text. Counts are over the record's distinct `(label, surface)` pairs, not
+mentions — a surface repeated in the text collapses to one. This is the same
+deduplicated surface set the strict/relaxed regimes already score.
+
+---
+
 ## Returned keys
+
+Plus the entity error diagnostic (only when entities are scored):
+`eval_entity_error_{COR,LE,BES,BEL,BEO,LBE,FP,FN}` (integer counts),
+`eval_entity_fair_{precision,recall,f1}`, and `eval_entity_error_report` (a
+multi-line table). These are outside the `<category>_<regime>` scheme below.
 
 `compute_metrics` returns a flat dict. For every present `<category>` and each
 `<regime>` in `strict`, `relaxed`:

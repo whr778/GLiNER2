@@ -129,6 +129,7 @@ def compute_metrics(
 
     # strict (exact) and relaxed (partial-overlap) TP/FP/FN per category.
     ent_s, ent_r = _counters(), _counters()
+    ent_err: Counter = Counter()  # fine-grained entity error types (diagnostic)
     rel_s, rel_r = _counters(), _counters()
     cls_s, cls_r = _counters(), _counters()
     ety_s, ety_r = _counters(), _counters()
@@ -143,6 +144,7 @@ def compute_metrics(
             has_entities = True
             _tally(g, p, *ent_s, key=lambda x: x[0])
             _match_relaxed(_items_entity(g), _items_entity(p), *ent_r, stopwords=stopwords)
+            ent_err += _classify_entity_errors(g, p, stopwords=stopwords)
 
         g, p = _gold_relation_set(gold), _pred_relation_set(pred)
         if g or p:
@@ -197,6 +199,8 @@ def compute_metrics(
         if present:
             metrics.update(_finalize(prefix, "strict", *strict))
             metrics.update(_finalize(prefix, "relaxed", *relaxed))
+    if has_entities:
+        metrics.update(_finalize_entity_errors(ent_err))
     _print_micro_report(metrics)
     return metrics
 
@@ -858,3 +862,115 @@ def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -
         f"eval_{prefix}_{regime}_support": overall_support,
         f"eval_{prefix}_{regime}_classification_report": report,
     }
+
+
+# ---------------------------------------------------------------------------
+# Fine-grained entity error analysis (Ortmann 2022, "Fine-Grained Error
+# Analysis and Fair Evaluation of Labeled Spans", LREC).
+#
+# Additive diagnostic. Strict/relaxed double-penalize a near-miss -- a
+# right-span/wrong-label or right-label/wrong-boundary entity becomes one FP
+# AND one FN. This classifies each entity into one typed error counted once,
+# and reports a "fair" P/R/F1 that credits near-misses as half an error.
+# It never drives checkpoint selection and does not touch strict/relaxed.
+#
+# Surface approximation: gold entities carry no offsets, so positional boundary
+# sub-types are impossible; substring containment is the only signal (BES/BEL/
+# BEO). Counts are over distinct (label, surface) pairs, not mentions.
+# ---------------------------------------------------------------------------
+
+_ENTITY_ERROR_TYPES = ("COR", "LE", "BES", "BEL", "BEO", "LBE", "FP", "FN")
+
+
+def _boundary_subtype(pred_surface: str, gold_surface: str) -> str:
+    """Classify a same-label, non-exact surface overlap into a boundary error:
+    BES (system smaller: pred ⊂ gold), BEL (system larger: gold ⊂ pred), or
+    BEO (overlap with no containment)."""
+    np_, ng = _normalize(pred_surface), _normalize(gold_surface)
+    if np_ in ng:
+        return "BES"
+    if ng in np_:
+        return "BEL"
+    return "BEO"
+
+
+def _classify_entity_errors(
+    gold: Set[Tuple[str, str]],
+    pred: Set[Tuple[str, str]],
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+) -> Counter:
+    """Match predicted vs gold entities across labels, one-to-one, tagging each
+    pairing with a single typed error (Ortmann 2022). Returns a Counter over
+    ``_ENTITY_ERROR_TYPES``.
+
+    Greedy priority so each annotation is counted once: COR (exact) first, then
+    LE (right span, wrong label), then BE (right label, boundary off), then LBE
+    (both off); unmatched predictions are FP and unmatched gold FN. The priority
+    order is our adaptation. Given the fixed order and sorted inputs the result
+    is deterministic. Relabeling an already-matched pair does not move the fair
+    score (equal weights), but because the match is greedy, in rare records
+    where one prediction overlaps several gold entities the order can change
+    which pairs match -- and thus the counts.
+    """
+    gold_items = sorted(gold)
+    pred_items = sorted(pred)
+    g_used = [False] * len(gold_items)
+    p_used = [False] * len(pred_items)
+    counts: Counter = Counter()
+
+    def run(pick: Callable[[str, str, str, str], str]) -> None:
+        for pi, (pl, ps) in enumerate(pred_items):
+            if p_used[pi]:
+                continue
+            for gi, (gl, gs) in enumerate(gold_items):
+                if g_used[gi]:
+                    continue
+                etype = pick(pl, ps, gl, gs)
+                if etype:
+                    g_used[gi] = p_used[pi] = True
+                    counts[etype] += 1
+                    break
+
+    run(lambda pl, ps, gl, gs: "COR" if pl == gl and _normalize(ps) == _normalize(gs) else "")
+    run(lambda pl, ps, gl, gs: "LE" if pl != gl and _normalize(ps) == _normalize(gs) else "")
+    run(lambda pl, ps, gl, gs: _boundary_subtype(ps, gs)
+        if pl == gl and _overlap(ps, gs, stopwords) else "")
+    run(lambda pl, ps, gl, gs: "LBE" if pl != gl and _overlap(ps, gs, stopwords) else "")
+
+    counts["FP"] += sum(1 for used in p_used if not used)
+    counts["FN"] += sum(1 for used in g_used if not used)
+    return counts
+
+
+def _finalize_entity_errors(counts: Counter) -> Dict[str, Any]:
+    """Turn typed entity-error counts into diagnostic keys plus a report.
+
+    Fair P/R/F1 (Ortmann 2022): each near-miss (LE/BES/BEL/BEO/LBE) counts as
+    half a false positive and half a false negative, so a close annotation is
+    one error, not the two that strict/relaxed charge. Diagnostic only -- these
+    keys are never read for checkpoint selection.
+    """
+    tp = counts.get("COR", 0)
+    fp = counts.get("FP", 0)
+    fn = counts.get("FN", 0)
+    near = sum(counts.get(t, 0) for t in ("LE", "BES", "BEL", "BEO", "LBE"))
+    half = near / 2.0
+    fair_p = tp / (tp + fp + half) if (tp + fp + half) > 0 else 0.0
+    fair_r = tp / (tp + fn + half) if (tp + fn + half) > 0 else 0.0
+    fair_f = 2 * fair_p * fair_r / (fair_p + fair_r) if (fair_p + fair_r) > 0 else 0.0
+
+    lines = ["entity error analysis (Ortmann 2022, fair evaluation)"]
+    lines.append(f"{'type':<8} {'count':>8}")
+    lines.append("-" * 17)
+    for t in _ENTITY_ERROR_TYPES:
+        lines.append(f"{t:<8} {counts.get(t, 0):>8d}")
+    lines.append("-" * 17)
+    lines.append(f"fair P / R / F1: {fair_p:.4f} / {fair_r:.4f} / {fair_f:.4f}")
+    report = "\n".join(lines)
+
+    out: Dict[str, Any] = {f"eval_entity_error_{t}": counts.get(t, 0) for t in _ENTITY_ERROR_TYPES}
+    out["eval_entity_fair_precision"] = fair_p
+    out["eval_entity_fair_recall"] = fair_r
+    out["eval_entity_fair_f1"] = fair_f
+    out["eval_entity_error_report"] = report
+    return out
