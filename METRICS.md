@@ -11,7 +11,7 @@ own metrics.
 - [Micro, macro, support](#micro-macro-support)
 - [Per-category match semantics](#per-category-match-semantics)
 - [The overall `event` metric](#the-overall-event-metric)
-- [Fine-grained entity error analysis](#fine-grained-entity-error-analysis)
+- [Fine-grained span error analysis](#fine-grained-span-error-analysis)
 - [Returned keys](#returned-keys)
 - [The classification report](#the-classification-report)
 - [Worked example](#worked-example)
@@ -180,23 +180,26 @@ Two deliberate design points:
 
 ---
 
-## Fine-grained entity error analysis
+## Fine-grained span error analysis
 
-An **additive, entity-only diagnostic** based on Ortmann (2022), [*Fine-Grained
-Error Analysis and Fair Evaluation of Labeled Spans*](https://aclanthology.org/2022.lrec-1.150/).
-It runs automatically whenever entities are scored and never touches the
-strict/relaxed regimes or checkpoint selection.
+An **additive diagnostic** for **entities and event spans (triggers,
+arguments)**, based on Ortmann (2022), [*Fine-Grained Error Analysis and Fair
+Evaluation of Labeled Spans*](https://aclanthology.org/2022.lrec-1.150/). It
+runs automatically whenever those categories are scored and leaves the
+strict/relaxed regimes untouched.
 
-**The problem it addresses.** Strict/relaxed **double-penalize a near-miss**:
-an entity with the right surface but the wrong label, or the right label but a
+**The problem it addresses.** Strict/relaxed **double-penalize a near-miss**: a
+span with the right surface but the wrong label, or the right label but a
 slightly-off boundary, becomes *both* a false positive (under the predicted
 label) and a false negative (under the gold label) — two errors for one
-almost-right annotation. Our matcher pairs only within a label
+almost-right annotation. The strict/relaxed matchers pair only within a label
 (`_match_relaxed`), so a label confusion is invisible: it looks like a
 hallucination plus an unrelated miss.
 
-**What it does.** For each record it matches predicted vs gold entities
-**across labels**, one-to-one, and tags each pairing with a single typed error:
+**What it does.** For each record it matches predicted vs gold spans **across
+labels**, one-to-one, and tags each pairing with a single typed error. The
+"label" is the entity type, the event type (for triggers), or the role (for
+arguments); the "surface" is the span text:
 
 | Type | Meaning |
 |---|---|
@@ -212,8 +215,13 @@ Matching is greedy in priority order `COR → LE → BE → LBE`, so every annot
 is counted once. The order is our adaptation; the result is deterministic given
 the fixed order and sorted inputs. Relabeling an already-matched pair does not
 move the fair score below (equal weights), but because the match is greedy, in
-rare records where one prediction overlaps several gold entities the order can
+rare records where one prediction overlaps several gold spans the order can
 change which pairs match and thus shift the counts slightly.
+
+It also records **label confusions** — the `(gold_label → pred_label)` pairs
+behind every `LE`/`LBE` — and prints them as a small table under the error
+counts, so you can see *which* labels get swapped (e.g. `LOC → PER`, or a
+`Target → Attacker` role swap) rather than just how often.
 
 **Fair P/R/F1.** Each near-miss (`LE`/`BES`/`BEL`/`BEO`/`LBE`) counts as *half*
 a false positive and *half* a false negative, so a close annotation is one
@@ -226,12 +234,24 @@ fair_recall    = COR / (COR + FN + 0.5*E)
 fair_f1        = 2 * P * R / (P + R)
 ```
 
-With no typed near-misses (`E = 0`) fair reduces exactly to strict. These
-numbers are **diagnostic only** — they are not a selectable regime and are
-never read by `metric_for_best`.
+With no typed near-misses (`E = 0`) fair matches strict up to the normalization
+`COR` applies — strict is case-sensitive, but `COR` (like `LE`) lowercases and
+collapses whitespace first, so the two can still differ on case- or
+whitespace-only surface variants (`Apple` vs `apple`). Fair is also **stricter
+than relaxed** on boundary errors: relaxed credits any overlap as a full true
+positive, whereas fair treats a boundary error as half an error with *no* true
+positive — so a category whose only hits are boundary-off scores 0 under fair
+but 1.0 under relaxed.
 
-**Surface-approximation caveats.** Gold entities carry no character offsets, so
-the positional boundary sub-types are approximated from substring containment:
+Fair is emitted as a **selectable regime**: `eval_<cat>_fair_micro_{precision,
+recall,f1}` and `eval_<cat>_fair_support`, for `<cat>` in `entity`,
+`event_trigger`, `event_argument`. Any returned float can drive
+`metric_for_best` (e.g. `eval_entity_fair_micro_f1`), but fair is **never
+selected by default**, and the [threshold sweep](#driving-best-checkpoint-selection)
+still optimizes strict.
+
+**Surface-approximation caveats.** Gold spans carry no character offsets, so the
+positional boundary sub-types are approximated from substring containment:
 `York` ⊂ `New York` reads as `BES` even if it is a different occurrence in the
 text. Counts are over the record's distinct `(label, surface)` pairs, not
 mentions — a surface repeated in the text collapses to one. This is the same
@@ -241,10 +261,13 @@ deduplicated surface set the strict/relaxed regimes already score.
 
 ## Returned keys
 
-Plus the entity error diagnostic (only when entities are scored):
-`eval_entity_error_{COR,LE,BES,BEL,BEO,LBE,FP,FN}` (integer counts),
-`eval_entity_fair_{precision,recall,f1}`, and `eval_entity_error_report` (a
-multi-line table). These are outside the `<category>_<regime>` scheme below.
+Plus the span error diagnostic, per span category `<cat>` in `entity`,
+`event_trigger`, `event_argument` (when scored):
+`eval_<cat>_error_{COR,LE,BES,BEL,BEO,LBE,FP,FN}` (integer counts),
+`eval_<cat>_fair_micro_{precision,recall,f1}`, `eval_<cat>_fair_support`, and
+`eval_<cat>_error_report` (a multi-line table, including the label-confusion
+list). The `fair` keys follow the `<category>_<regime>` scheme below; the
+`error_*` keys sit outside it.
 
 `compute_metrics` returns a flat dict. For every present `<category>` and each
 `<regime>` in `strict`, `relaxed`:

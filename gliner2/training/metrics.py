@@ -129,7 +129,11 @@ def compute_metrics(
 
     # strict (exact) and relaxed (partial-overlap) TP/FP/FN per category.
     ent_s, ent_r = _counters(), _counters()
-    ent_err: Counter = Counter()  # fine-grained entity error types (diagnostic)
+    # fine-grained span error types + label confusions (diagnostic), for the
+    # three span categories: entities, event triggers, event arguments.
+    ent_err, ent_conf = Counter(), Counter()
+    trig_err, trig_conf = Counter(), Counter()
+    arg_err, arg_conf = Counter(), Counter()
     rel_s, rel_r = _counters(), _counters()
     cls_s, cls_r = _counters(), _counters()
     ety_s, ety_r = _counters(), _counters()
@@ -144,7 +148,9 @@ def compute_metrics(
             has_entities = True
             _tally(g, p, *ent_s, key=lambda x: x[0])
             _match_relaxed(_items_entity(g), _items_entity(p), *ent_r, stopwords=stopwords)
-            ent_err += _classify_entity_errors(g, p, stopwords=stopwords)
+            e, c = _classify_span_errors(g, p, stopwords=stopwords)
+            ent_err += e
+            ent_conf += c
 
         g, p = _gold_relation_set(gold), _pred_relation_set(pred)
         if g or p:
@@ -172,12 +178,23 @@ def compute_metrics(
             has_event_triggers = True
             _tally(g_trig, p_trig, *et_s, key=lambda x: x[0])
             _match_relaxed(_items_trigger(g_trig), _items_trigger(p_trig), *et_r, stopwords=stopwords)
+            # trigger span: label = event type, surface = trigger.
+            e, c = _classify_span_errors(g_trig, p_trig, stopwords=stopwords)
+            trig_err += e
+            trig_conf += c
 
         g_arg, p_arg = _gold_event_argument_set(gold), _pred_event_argument_set(pred)
         if g_arg or p_arg:
             has_event_arguments = True
             _tally(g_arg, p_arg, *ea_s, key=lambda x: x[1])
             _match_relaxed(_items_argument(g_arg), _items_argument(p_arg), *ea_r, stopwords=stopwords)
+            # argument span: label = role, surface = entity (drop event_type /
+            # trigger link, matching the relaxed argument aggregation per role).
+            g_ae = {(role, ent) for _et, role, ent, _tk in g_arg}
+            p_ae = {(role, ent) for _et, role, ent, _tk in p_arg}
+            e, c = _classify_span_errors(g_ae, p_ae, stopwords=stopwords)
+            arg_err += e
+            arg_conf += c
 
     # Overall event score: sum the type, trigger, and argument counters
     # (namespaced so the per-label report keeps distinct rows; micro is the
@@ -199,8 +216,13 @@ def compute_metrics(
         if present:
             metrics.update(_finalize(prefix, "strict", *strict))
             metrics.update(_finalize(prefix, "relaxed", *relaxed))
-    if has_entities:
-        metrics.update(_finalize_entity_errors(ent_err))
+    for present, prefix, err, conf in (
+        (has_entities, "entity", ent_err, ent_conf),
+        (has_event_triggers, "event_trigger", trig_err, trig_conf),
+        (has_event_arguments, "event_argument", arg_err, arg_conf),
+    ):
+        if present:
+            metrics.update(_finalize_span_errors(prefix, err, conf))
     _print_micro_report(metrics)
     return metrics
 
@@ -225,6 +247,14 @@ def _print_micro_report(metrics: Dict[str, Any], label: str | None = None) -> No
               f"P={val(c, 'strict', 'precision'):.4f}->{val(c, 'relaxed', 'precision'):.4f}  "
               f"R={val(c, 'strict', 'recall'):.4f}->{val(c, 'relaxed', 'recall'):.4f}  "
               f"F1={val(c, 'strict', 'f1'):.4f}->{val(c, 'relaxed', 'f1'):.4f}")
+
+    # Fair regime (Ortmann 2022) exists only for span categories; show it as a
+    # compact extra line rather than a column so the strict->relaxed table stays
+    # aligned.
+    fair = [c for c in categories if f"eval_{c}_fair_micro_f1" in metrics]
+    if fair:
+        print("  fair (Ortmann) micro F1:  "
+              + "  ".join(f"{c}={val(c, 'fair', 'f1'):.4f}" for c in fair))
 
 
 # ---------------------------------------------------------------------------
@@ -865,21 +895,23 @@ def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -
 
 
 # ---------------------------------------------------------------------------
-# Fine-grained entity error analysis (Ortmann 2022, "Fine-Grained Error
+# Fine-grained labeled-span error analysis (Ortmann 2022, "Fine-Grained Error
 # Analysis and Fair Evaluation of Labeled Spans", LREC).
 #
-# Additive diagnostic. Strict/relaxed double-penalize a near-miss -- a
-# right-span/wrong-label or right-label/wrong-boundary entity becomes one FP
-# AND one FN. This classifies each entity into one typed error counted once,
-# and reports a "fair" P/R/F1 that credits near-misses as half an error.
-# It never drives checkpoint selection and does not touch strict/relaxed.
+# Additive diagnostic for entities and event spans (triggers, arguments).
+# Strict/relaxed double-penalize a near-miss -- a right-span/wrong-label or
+# right-label/wrong-boundary span becomes one FP AND one FN. This classifies
+# each span into one typed error counted once, tracks which labels get swapped
+# (confusions), and reports a "fair" P/R/F1 that credits near-misses as half an
+# error. Fair is a selectable regime (eval_<cat>_fair_micro_f1) but is never
+# chosen by default; strict/relaxed are untouched.
 #
-# Surface approximation: gold entities carry no offsets, so positional boundary
+# Surface approximation: gold spans carry no offsets, so positional boundary
 # sub-types are impossible; substring containment is the only signal (BES/BEL/
 # BEO). Counts are over distinct (label, surface) pairs, not mentions.
 # ---------------------------------------------------------------------------
 
-_ENTITY_ERROR_TYPES = ("COR", "LE", "BES", "BEL", "BEO", "LBE", "FP", "FN")
+_SPAN_ERROR_TYPES = ("COR", "LE", "BES", "BEL", "BEO", "LBE", "FP", "FN")
 
 
 def _boundary_subtype(pred_surface: str, gold_surface: str) -> str:
@@ -894,14 +926,18 @@ def _boundary_subtype(pred_surface: str, gold_surface: str) -> str:
     return "BEO"
 
 
-def _classify_entity_errors(
+def _classify_span_errors(
     gold: Set[Tuple[str, str]],
     pred: Set[Tuple[str, str]],
     stopwords: frozenset = _DEFAULT_STOPWORDS,
-) -> Counter:
-    """Match predicted vs gold entities across labels, one-to-one, tagging each
-    pairing with a single typed error (Ortmann 2022). Returns a Counter over
-    ``_ENTITY_ERROR_TYPES``.
+) -> Tuple[Counter, Counter]:
+    """Match predicted vs gold labeled spans across labels, one-to-one, tagging
+    each pairing with a single typed error (Ortmann 2022). Returns
+    ``(error_type_counts, confusion_counts)`` where confusion_counts is keyed by
+    ``(gold_label, pred_label)`` for the label-swap errors (LE, LBE).
+
+    Works for any ``{(label, surface)}`` set -- entities (label = entity type),
+    event triggers (label = event type), or event arguments (label = role).
 
     Greedy priority so each annotation is counted once: COR (exact) first, then
     LE (right span, wrong label), then BE (right label, boundary off), then LBE
@@ -909,14 +945,15 @@ def _classify_entity_errors(
     order is our adaptation. Given the fixed order and sorted inputs the result
     is deterministic. Relabeling an already-matched pair does not move the fair
     score (equal weights), but because the match is greedy, in rare records
-    where one prediction overlaps several gold entities the order can change
-    which pairs match -- and thus the counts.
+    where one prediction overlaps several gold spans the order can change which
+    pairs match -- and thus the counts.
     """
     gold_items = sorted(gold)
     pred_items = sorted(pred)
     g_used = [False] * len(gold_items)
     p_used = [False] * len(pred_items)
     counts: Counter = Counter()
+    confusions: Counter = Counter()
 
     def run(pick: Callable[[str, str, str, str], str]) -> None:
         for pi, (pl, ps) in enumerate(pred_items):
@@ -929,6 +966,8 @@ def _classify_entity_errors(
                 if etype:
                     g_used[gi] = p_used[pi] = True
                     counts[etype] += 1
+                    if etype in ("LE", "LBE"):
+                        confusions[(gl, pl)] += 1
                     break
 
     run(lambda pl, ps, gl, gs: "COR" if pl == gl and _normalize(ps) == _normalize(gs) else "")
@@ -939,16 +978,17 @@ def _classify_entity_errors(
 
     counts["FP"] += sum(1 for used in p_used if not used)
     counts["FN"] += sum(1 for used in g_used if not used)
-    return counts
+    return counts, confusions
 
 
-def _finalize_entity_errors(counts: Counter) -> Dict[str, Any]:
-    """Turn typed entity-error counts into diagnostic keys plus a report.
+def _finalize_span_errors(prefix: str, counts: Counter, confusions: Counter) -> Dict[str, Any]:
+    """Turn typed span-error counts into diagnostic keys plus a report.
 
     Fair P/R/F1 (Ortmann 2022): each near-miss (LE/BES/BEL/BEO/LBE) counts as
     half a false positive and half a false negative, so a close annotation is
-    one error, not the two that strict/relaxed charge. Diagnostic only -- these
-    keys are never read for checkpoint selection.
+    one error, not the two that strict/relaxed charge. Emitted under the
+    ``fair`` regime (``eval_<prefix>_fair_micro_*``) so it can drive checkpoint
+    selection like any other regime, but it is never selected by default.
     """
     tp = counts.get("COR", 0)
     fp = counts.get("FP", 0)
@@ -958,19 +998,26 @@ def _finalize_entity_errors(counts: Counter) -> Dict[str, Any]:
     fair_p = tp / (tp + fp + half) if (tp + fp + half) > 0 else 0.0
     fair_r = tp / (tp + fn + half) if (tp + fn + half) > 0 else 0.0
     fair_f = 2 * fair_p * fair_r / (fair_p + fair_r) if (fair_p + fair_r) > 0 else 0.0
+    support = tp + near + fn  # total gold spans
 
-    lines = ["entity error analysis (Ortmann 2022, fair evaluation)"]
+    lines = [f"{prefix} error analysis (Ortmann 2022, fair evaluation)"]
     lines.append(f"{'type':<8} {'count':>8}")
     lines.append("-" * 17)
-    for t in _ENTITY_ERROR_TYPES:
+    for t in _SPAN_ERROR_TYPES:
         lines.append(f"{t:<8} {counts.get(t, 0):>8d}")
     lines.append("-" * 17)
     lines.append(f"fair P / R / F1: {fair_p:.4f} / {fair_r:.4f} / {fair_f:.4f}")
+    if confusions:
+        lines.append("")
+        lines.append("label confusions (gold -> pred):")
+        for (gl, pl), n in sorted(confusions.items(), key=lambda kv: (-kv[1], kv[0])):
+            lines.append(f"  {gl} -> {pl}: {n}")
     report = "\n".join(lines)
 
-    out: Dict[str, Any] = {f"eval_entity_error_{t}": counts.get(t, 0) for t in _ENTITY_ERROR_TYPES}
-    out["eval_entity_fair_precision"] = fair_p
-    out["eval_entity_fair_recall"] = fair_r
-    out["eval_entity_fair_f1"] = fair_f
-    out["eval_entity_error_report"] = report
+    out: Dict[str, Any] = {f"eval_{prefix}_error_{t}": counts.get(t, 0) for t in _SPAN_ERROR_TYPES}
+    out[f"eval_{prefix}_fair_micro_precision"] = fair_p
+    out[f"eval_{prefix}_fair_micro_recall"] = fair_r
+    out[f"eval_{prefix}_fair_micro_f1"] = fair_f
+    out[f"eval_{prefix}_fair_support"] = support
+    out[f"eval_{prefix}_error_report"] = report
     return out
