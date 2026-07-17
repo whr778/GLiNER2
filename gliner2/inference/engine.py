@@ -47,6 +47,33 @@ if TYPE_CHECKING:
     from gliner2.api_client import GLiNER2API
 
 
+def _schema_event_roles(schema: Any) -> Dict[str, List[str]]:
+    """``{event_type: [valid role]}`` for a Schema object or a raw schema dict —
+    the role-validity constraint for global decoding. Mirrors how batch_extract
+    derives ``event_role_orders`` (engine.py build-metadata block)."""
+    if hasattr(schema, "build"):
+        schema_dict = schema.build()
+        return {
+            name: list(schema_dict.get("events", {}).get(name, []))
+            for name in getattr(schema, "_event_order", [])
+        }
+    events_block = (schema or {}).get("events") or {}
+    roles: Dict[str, List[str]] = {}
+    if isinstance(events_block, dict):
+        for name, spec in events_block.items():
+            if not isinstance(name, str):
+                continue
+            if isinstance(spec, list):
+                role_list = [r for r in spec if isinstance(r, str)]
+            elif isinstance(spec, dict) and isinstance(spec.get("roles"), list):
+                role_list = [r for r in spec["roles"] if isinstance(r, str)]
+            else:
+                role_list = []
+            if role_list:
+                roles[name] = role_list
+    return roles
+
+
 # =============================================================================
 # Main GLiNER2 Class
 # =============================================================================
@@ -1107,8 +1134,14 @@ class GLiNER2(Extractor):
         format_results: bool = True,
         include_confidence: bool = False,
         include_spans: bool = False,
+        global_decode: bool = False,
+        global_decode_config: Any = None,
     ) -> Dict:
-        """Extract from a long document with overlapping word chunks."""
+        """Extract from a long document with overlapping word chunks.
+
+        ``global_decode`` opts into OneIE-style document-level event assembly;
+        see ``batch_extract_long``.
+        """
         return self.batch_extract_long(
             [text],
             schema,
@@ -1120,6 +1153,8 @@ class GLiNER2(Extractor):
             include_spans=include_spans,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            global_decode=global_decode,
+            global_decode_config=global_decode_config,
         )[0]
 
     def batch_extract_long(
@@ -1134,12 +1169,20 @@ class GLiNER2(Extractor):
         include_spans: bool = False,
         chunk_size: int = 384,
         chunk_overlap: int = 64,
+        global_decode: bool = False,
+        global_decode_config: Any = None,
     ) -> List[Dict[str, Any]]:
         """Extract from long documents by scanning overlapping word chunks.
 
         Chunk-local spans are remapped to document-level character offsets before
         overlapping detections are merged. Existing ``batch_extract`` semantics
         remain unchanged; this method is explicit opt-in long-document handling.
+
+        ``global_decode`` opts into OneIE-style event assembly: overlapping
+        windows are reconnected into document-level events (cluster mentions by
+        trigger, union arguments, beam-refine under global constraints) rather
+        than naively concatenated. Off by default. ``global_decode_config`` is an
+        optional ``GlobalDecodeConfig``.
         """
         if not format_results:
             raise ValueError("batch_extract_long currently requires format_results=True")
@@ -1180,8 +1223,9 @@ class GLiNER2(Extractor):
 
         merged_results: List[Dict[str, Any]] = []
         offset = 0
-        for text, chunks, count in zip(texts, doc_chunks, doc_chunk_counts):
+        for text, schema, chunks, count in zip(texts, schema_list, doc_chunks, doc_chunk_counts):
             results_for_doc = chunk_results[offset:offset + count]
+            event_roles = _schema_event_roles(schema) if global_decode else None
             merged_results.append(
                 merge_chunk_results(
                     text,
@@ -1189,6 +1233,9 @@ class GLiNER2(Extractor):
                     results_for_doc,
                     include_confidence=include_confidence,
                     include_spans=include_spans,
+                    global_decode=global_decode,
+                    event_roles=event_roles,
+                    global_decode_config=global_decode_config,
                 )
             )
             offset += count

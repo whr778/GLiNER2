@@ -113,8 +113,16 @@ def merge_chunk_results(
     chunk_results: List[Dict[str, Any]],
     include_confidence: bool = False,
     include_spans: bool = False,
+    global_decode: bool = False,
+    event_roles: Optional[Dict[str, List[str]]] = None,
+    global_decode_config: Any = None,
 ) -> Dict[str, Any]:
-    """Merge formatted extraction results from one document's chunks."""
+    """Merge formatted extraction results from one document's chunks.
+
+    When ``global_decode`` is set, the ``event_extraction`` block is rebuilt by
+    the OneIE-style assembler (cluster mentions across windows, union arguments)
+    instead of the naive concatenate/dedupe; all other blocks merge as usual.
+    """
     if len(chunks) != len(chunk_results):
         raise ValueError("chunks and chunk_results must have the same length")
 
@@ -123,6 +131,13 @@ def merge_chunk_results(
         for chunk, result in zip(chunks, chunk_results)
     ]
     merged = _merge_result_dicts(remapped_results)
+    if global_decode:
+        # Lazy import: global_decode.py imports helpers from this module.
+        from gliner2.inference.global_decode import GlobalDecodeConfig, assemble_events_global
+        cfg = global_decode_config or GlobalDecodeConfig()
+        events = assemble_events_global(remapped_results, event_roles=event_roles, cfg=cfg)
+        if events:
+            merged["event_extraction"] = events
     return _strip_span_metadata(merged, include_confidence, include_spans)
 
 
