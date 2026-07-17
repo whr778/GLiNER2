@@ -566,6 +566,93 @@ def _blind_test_by_language(
     return all_metrics
 
 
+def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Dict = None) -> Dict:
+    """Resolve the ``eval:`` block into inference settings, applying any CLI
+    ``overrides`` (threshold / chunk_size / chunk_overlap / global_decode).
+    Shared by training's end-of-run blind test and the standalone eval CLI."""
+    overrides = overrides or {}
+    eval_cfg = cfg.get("eval") or {}
+    chunk_explicit = "chunk_size" in overrides
+
+    chunk_size = overrides.get("chunk_size", eval_cfg.get("chunk_size"))
+    chunk_overlap = overrides.get("chunk_overlap", eval_cfg.get("chunk_overlap", 128))
+    gd_raw = overrides.get("global_decode", eval_cfg.get("global_decode", False))
+    global_decode = bool(gd_raw)
+    global_decode_config = None
+    if isinstance(gd_raw, dict):
+        from gliner2.inference.global_decode import GlobalDecodeConfig
+        gd_params = {**gd_raw}
+        if "single_filler_roles" in gd_params:
+            gd_params["single_filler_roles"] = frozenset(gd_params["single_filler_roles"])
+        global_decode_config = GlobalDecodeConfig(**gd_params)
+    # global_decode implies chunking; default the window to training max_len,
+    # unless the caller explicitly set chunk_size (e.g. --chunk-size 0 = whole-doc).
+    if global_decode and chunk_size is None and not chunk_explicit:
+        chunk_size = (cfg.get("training") or {}).get("max_len", 384)
+
+    return {
+        "batch_size": eval_cfg.get("batch_size", 8),
+        "threshold": overrides.get("threshold", eval_cfg.get("threshold", 0.5)),
+        "by_language": eval_cfg.get("eval_by_language", False),
+        "threshold_sweep": eval_cfg.get("threshold_sweep"),
+        "stopwords": _build_eval_stopwords(eval_cfg, config_path, corpus_data=corpus_data),
+        "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap,
+        "global_decode": global_decode,
+        "global_decode_config": global_decode_config,
+    }
+
+
+def _run_blind_test(best, split_data, batch_size, threshold, by_language, gd_kwargs) -> Dict:
+    """Score ``split_data`` against the ``best`` checkpoint (per-language or
+    combined) and return the metrics dict. Shared by train and eval."""
+    if by_language:
+        return _blind_test_by_language(best, split_data, batch_size, threshold, **gd_kwargs)
+    print(f"\n[blind test] Loading {best} and scoring against {len(split_data)} samples...")
+    metrics = evaluate_checkpoint(best, split_data, batch_size=batch_size, threshold=threshold, **gd_kwargs) or {}
+    _print_blind_test(metrics)
+    return metrics
+
+
+def evaluate_config(config_path: str, split: str = "test", checkpoint: str = None,
+                    overrides: Dict = None) -> Dict:
+    """Load a saved checkpoint for ``config_path`` and score its ``val`` or
+    ``test`` split without retraining, writing ``<split>_metrics.json`` next to
+    the checkpoint. Reuses the same blind-test path as training."""
+    cfg = yaml.safe_load(Path(config_path).read_text())
+    data = cfg.get("data") or {}
+    suffix = "val" if split == "val" else "test"
+    split_data = (_split_files(data.get("corpora") or [], suffix)
+                  + _event_split(data.get("event_files") or {}, suffix))
+    fns = _category_fns(cfg.get("labels") or {})
+    if fns:
+        split_data = [transform_record(r, fns) for r in _read_records(split_data)]
+    if not split_data:
+        print(f"[eval] config has no {split} split; nothing to score.")
+        return {}
+
+    ev = _parse_eval_settings(cfg, config_path, corpus_data=split_data, overrides=overrides)
+    best = Path(checkpoint) if checkpoint else Path(cfg["training"]["output_dir"]) / "best"
+    if not best.is_dir():
+        raise SystemExit(f"[eval] no checkpoint directory: {best}")
+
+    gd_kwargs = dict(
+        chunk_size=ev["chunk_size"], chunk_overlap=ev["chunk_overlap"],
+        global_decode=ev["global_decode"], global_decode_config=ev["global_decode_config"],
+    )
+    metrics = _run_blind_test(best, split_data, ev["batch_size"], ev["threshold"], ev["by_language"], gd_kwargs)
+    if metrics:
+        fname = f"{split}_metrics.json"
+        out_dir = Path(cfg["training"]["output_dir"])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / fname).write_text(json.dumps(metrics, indent=2))
+        (best / fname).write_text(json.dumps(metrics, indent=2))
+        print(f"[eval] wrote {out_dir / fname} and {best / fname}")
+    else:
+        print("[eval] no metrics produced (empty split?).")
+    return metrics
+
+
 def main(config_path: str) -> None:
     # Under torchrun (DDP) only rank 0 estimates ETA and writes results/blind-test;
     # all ranks run trainer.train(). LOCAL_RANK is unset (-> -1) for single-process.
@@ -593,35 +680,19 @@ def main(config_path: str) -> None:
         print(f"[labels] transforms: {', '.join(sorted(fns))}; "
               f"transformed {len(train_data)}/{len(eval_data)}/{len(test_data)} train/val/test records")
 
-    eval_cfg = cfg.get("eval") or {}
-    eval_bs = eval_cfg.get("batch_size", 8)
-    eval_thr = eval_cfg.get("threshold", 0.5)
-    eval_by_language = eval_cfg.get("eval_by_language", False)
-    # threshold_sweep: true -> DEFAULT_THRESHOLD_GRID, or an explicit list of
-    # candidate thresholds. Unset/false keeps today's behavior (eval_thr as-is).
-    threshold_sweep_cfg = eval_cfg.get("threshold_sweep")
-    # Windowed long-doc scoring for eval/blind-test. chunk_size (words) turns on
-    # chunking; global_decode (true, or a dict of GlobalDecodeConfig overrides)
-    # additionally reconnects events across windows (OneIE-style). Unset keeps
-    # today's whole-doc single pass. See tools/train/DOCUMENT_EXTRACTION_PLAN.md.
-    chunk_size = eval_cfg.get("chunk_size")
-    chunk_overlap = eval_cfg.get("chunk_overlap", 128)
-    gd_raw = eval_cfg.get("global_decode", False)
-    global_decode = bool(gd_raw)
-    global_decode_config = None
-    if isinstance(gd_raw, dict):
-        from gliner2.inference.global_decode import GlobalDecodeConfig
-        gd_params = {**gd_raw}
-        if "single_filler_roles" in gd_params:
-            gd_params["single_filler_roles"] = frozenset(gd_params["single_filler_roles"])
-        global_decode_config = GlobalDecodeConfig(**gd_params)
-    # global_decode implies chunking; default the window to the training max_len.
-    if global_decode and chunk_size is None:
-        chunk_size = (cfg.get("training") or {}).get("max_len", 384)
-
-    eval_stopwords = _build_eval_stopwords(
-        eval_cfg, config_path, corpus_data=train_data + eval_data + test_data,
-    )
+    # Resolve the eval: block (threshold_sweep, windowed chunk_size/chunk_overlap,
+    # global_decode, stopwords) into inference settings. See the eval CLI in
+    # tools/train/eval.py for scoring a checkpoint without retraining.
+    ev = _parse_eval_settings(cfg, config_path, corpus_data=train_data + eval_data + test_data)
+    eval_bs = ev["batch_size"]
+    eval_thr = ev["threshold"]
+    eval_by_language = ev["by_language"]
+    threshold_sweep_cfg = ev["threshold_sweep"]
+    chunk_size = ev["chunk_size"]
+    chunk_overlap = ev["chunk_overlap"]
+    global_decode = ev["global_decode"]
+    global_decode_config = ev["global_decode_config"]
+    eval_stopwords = ev["stopwords"]
 
     trainer = GLiNER2Trainer(
         model, config,
@@ -682,12 +753,7 @@ def main(config_path: str) -> None:
         chunk_size=chunk_size, chunk_overlap=chunk_overlap,
         global_decode=global_decode, global_decode_config=global_decode_config,
     )
-    if eval_by_language:
-        test_metrics = _blind_test_by_language(best, test_data, eval_bs, eval_thr, **gd_kwargs)
-    else:
-        print(f"\n[blind test] Loading {best} and scoring against {len(test_data)} held-out samples...")
-        test_metrics = evaluate_checkpoint(best, test_data, batch_size=eval_bs, threshold=eval_thr, **gd_kwargs) or {}
-        _print_blind_test(test_metrics)
+    test_metrics = _run_blind_test(best, test_data, eval_bs, eval_thr, eval_by_language, gd_kwargs)
 
     if test_metrics:
         metrics_path = Path(config.output_dir) / "test_metrics.json"
