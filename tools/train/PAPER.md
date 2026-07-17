@@ -330,6 +330,19 @@ cardinality tuning.
 |---|---|---|---|
 | bce / bce_posweight / focal / asl / dice / bce_dice | *TBD* | *TBD* | one config per variant |
 
+### 10.4 Full event-dataset sweep
+
+Blind-test micro-F1 per fine-tuned config, filled automatically as each run in
+`scripts/train_all_events.sh` finishes (via `scripts/update_paper_metrics.py`);
+the model is evaluated with windowed global decoding. Datasets without a
+held-out test split (MAVEN, LEVEN) show no blind test. `event_argument` is given
+as strict / relaxed / fair.
+
+| Config | entity | event_type | event_trigger | event_argument (S / R / Fair) | event | support |
+|---|--:|--:|--:|--:|--:|--:|
+<!-- SWEEP_START -->
+<!-- SWEEP_END -->
+
 ## 11. Reproducibility
 
 - **Train** from a raw backbone: `uv run python tools/train/train.py --config

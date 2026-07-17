@@ -73,6 +73,24 @@ for name in "${CONFIGS[@]}"; do
   if uv run python tools/train/train.py --config "$cfg" 2>&1 | tee "$log"; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] DONE   $name"
     OK+=("$name")
+
+    # Fold this run's blind-test metrics into the paper's sweep table and commit.
+    if uv run python scripts/update_paper_metrics.py "$name" 2>&1 | tee -a "$log"; then
+      if git diff --quiet -- tools/train/PAPER.md; then
+        echo "[paper] no PAPER.md change for $name"
+      else
+        git add tools/train/PAPER.md
+        if git commit -m "paper: $name blind-test metrics" \
+                      -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" \
+                      >>"$log" 2>&1; then
+          echo "[paper] committed metrics for $name"
+        else
+          echo "[paper] commit failed for $name (see $log)"
+        fi
+      fi
+    else
+      echo "[paper] metrics update failed for $name (see $log)"
+    fi
   else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAILED $name (see $log)"
     FAIL+=("$name")
