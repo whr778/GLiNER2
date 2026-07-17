@@ -1,0 +1,75 @@
+# Fine-tune the pretrained fastino/gliner2-large-v1 GLiNER2 model on MAVEN.
+# Uses from_pretrained (continues the model's existing heads); contrast with the
+# mmbert-* configs, which bootstrap fresh heads on a raw encoder via from_encoder.
+# NOTE: only a train split is present on disk (MAVEN's official test labels are
+# held out). Add data/maven.{val,test}.jsonl to enable epoch eval / blind test.
+model:
+  pretrained: fastino/gliner2-large-v1
+  # Optional: override the checkpoint's loss for continued training, e.g.
+  # struct_loss: focal
+  # focal_gamma: 2.0
+  # focal_alpha: 0.25
+
+training:
+  checkpoint_restart: None # highest, last, or None
+  output_dir: ./out/fastino/gliner2-large-v1-maven
+  experiment_name: gliner2-large-v1_maven
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  encoder_lr: 1.0e-5         # lower LR than from-scratch: fine-tuning a trained model
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch       # no-op until a val split exists (see NOTE above)
+  metric_for_best: eval_event_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true
+  max_len: 384               # deberta-v3 caps at 512 positions; leave room for
+  window_stride: 256         # the prepended schema + special tokens (512 overflows)
+  gradient_checkpointing: true
+  pin_memory: false
+
+  early_stopping: true        # Enable early stopping.
+  early_stopping_patience: 3  # Patience for early stopping.
+
+
+eval:
+  batch_size: 1
+  threshold: 0.5
+  # Document-level events: window long docs and reconnect events across windows.
+  chunk_size: 384        # word window (matches training max_len)
+  chunk_overlap: 128     # overlap so an event recurs across windows
+  global_decode: true    # OneIE-style cross-window event assembly
+  eval_by_language: false
+  # stopword_languages: [eng, fra, deu, zho, jpn, kor, uzb, kat]
+  # stopword_yaml: stopwords.yaml  # relative to this config file; defaults to stopwords.yaml
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+  relations:
+    rollup: false
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+  events:
+    rollup: false
+    separator: "."
+    map: {}          # e.g. {ORG: ORGANIZATION} to rename labels after roll-up
+
+data:
+  corpora: []
+  event_files:
+    maven:
+      train: data/maven.train.jsonl
