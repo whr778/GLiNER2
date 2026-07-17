@@ -9,7 +9,7 @@ model:
   # focal_alpha: 0.25
 
 training:
-  checkpoint_restart: highest # hightest, last, or None
+  checkpoint_restart: None # hightest, last, or None
   output_dir: ./out/fastino/gliner2-large-v1-wikievents
   experiment_name: gliner2-large-v1_wikievents
   data_parallel: false
@@ -48,7 +48,7 @@ eval:
   chunk_size: 384        # word window (matches training max_len)
   chunk_overlap: 128     # overlap so an event recurs across windows
   global_decode: true    # OneIE-style cross-window event assembly
-  eval_by_language: true   # default
+  eval_by_language: false   # default
   # stopword_languages: [eng, fra, deu, zho, jpn, kor, uzb, kat]
   # stopword_yaml: stopwords.yaml  # relative to this config file; defaults to stopwords.yaml
 

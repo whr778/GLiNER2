@@ -9,11 +9,11 @@ model:
   # focal_alpha: 0.25
 
 training:
-  checkpoint_restart: highest # hightest, last, or None
+  checkpoint_restart: None # hightest, last, or None
   output_dir: ./out/fastino/gliner2-base-v1-wikievents
   experiment_name: gliner2-base-v1_wikievents
   data_parallel: false
-  num_epochs: 3
+  num_epochs: 15
   batch_size: 2
   gradient_accumulation_steps: 16
   encoder_lr: 1.0e-5         # lower LR than from-scratch: fine-tuning a trained model
