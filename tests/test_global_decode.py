@@ -181,3 +181,45 @@ class TestMergeWiring:
         merged = merge_chunk_results(text, chunks, results, include_spans=True)
         # today's behavior: the two windows' events are concatenated, not merged
         assert len(merged["event_extraction"]["Attack"]) == 2
+
+
+class TestEvalRouting:
+    """compute_metrics routes to the chunked long path only when chunk_size is set."""
+
+    class _RecordingModel:
+        def __init__(self, pred):
+            self.pred, self.calls = pred, []
+
+        def batch_extract(self, texts, schemas, batch_size=8, threshold=0.5):
+            self.calls.append(("batch_extract", {}))
+            return [self.pred] * len(texts)
+
+        def batch_extract_long(self, texts, schemas, batch_size=8, threshold=0.5,
+                               chunk_size=384, chunk_overlap=64,
+                               global_decode=False, global_decode_config=None):
+            self.calls.append(("batch_extract_long",
+                               {"chunk_size": chunk_size, "global_decode": global_decode}))
+            return [self.pred] * len(texts)
+
+    class _DS:
+        def __init__(self, pairs): self.pairs = pairs
+        def __len__(self): return len(self.pairs)
+        def __getitem__(self, i): return self.pairs[i]
+
+    def _ds(self):
+        return self._DS([("Marie Curie won.", {"entities": {"PER": ["Marie Curie"]}})])
+
+    def test_default_uses_single_pass_batch_extract(self):
+        from gliner2.training.metrics import compute_metrics
+        m = self._RecordingModel({"entities": {"PER": ["Marie Curie"]}})
+        out = compute_metrics(m, self._ds())
+        assert m.calls[0][0] == "batch_extract"
+        assert out["eval_entity_strict_micro_f1"] == 1.0
+
+    def test_chunk_size_routes_to_long_path_with_flags(self):
+        from gliner2.training.metrics import compute_metrics
+        m = self._RecordingModel({"entities": {"PER": ["Marie Curie"]}})
+        out = compute_metrics(m, self._ds(), chunk_size=384, chunk_overlap=128, global_decode=True)
+        assert m.calls[0][0] == "batch_extract_long"
+        assert m.calls[0][1] == {"chunk_size": 384, "global_decode": True}
+        assert out["eval_entity_strict_micro_f1"] == 1.0

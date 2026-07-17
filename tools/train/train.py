@@ -515,6 +515,10 @@ def _blind_test_by_language(
     test_data,
     eval_bs: int,
     eval_thr: float,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
 ) -> Dict:
     """Run the blind test per language then over all data; return aggregate metrics."""
     from collections import defaultdict
@@ -528,6 +532,11 @@ def _blind_test_by_language(
 
     _annotate_languages(test_data)
 
+    gd = dict(
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+        global_decode=global_decode, global_decode_config=global_decode_config,
+    )
+
     by_lang: Dict[str, List[Dict]] = defaultdict(list)
     for rec in test_data:
         by_lang[rec.get("_lang", "und")].append(rec)
@@ -540,13 +549,13 @@ def _blind_test_by_language(
         subset = by_lang[lang]
         print(f"\n[blind test] Processing language: {lang}  ({len(subset)} samples)")
         ds = ExtractorDataset(subset, shuffle=False, validate=False)
-        lang_metrics = compute_metrics(model, ds, batch_size=eval_bs, threshold=eval_thr) or {}
+        lang_metrics = compute_metrics(model, ds, batch_size=eval_bs, threshold=eval_thr, **gd) or {}
         per_lang[lang] = lang_metrics
         _print_blind_test(lang_metrics)
 
     print(f"\n[blind test] All languages combined ({len(test_data)} samples)")
     ds_all = ExtractorDataset(test_data, shuffle=False, validate=False)
-    all_metrics = compute_metrics(model, ds_all, batch_size=eval_bs, threshold=eval_thr) or {}
+    all_metrics = compute_metrics(model, ds_all, batch_size=eval_bs, threshold=eval_thr, **gd) or {}
     _print_blind_test(all_metrics)
 
     print("\n===== Blind test summary by language =====")
@@ -591,6 +600,24 @@ def main(config_path: str) -> None:
     # threshold_sweep: true -> DEFAULT_THRESHOLD_GRID, or an explicit list of
     # candidate thresholds. Unset/false keeps today's behavior (eval_thr as-is).
     threshold_sweep_cfg = eval_cfg.get("threshold_sweep")
+    # Windowed long-doc scoring for eval/blind-test. chunk_size (words) turns on
+    # chunking; global_decode (true, or a dict of GlobalDecodeConfig overrides)
+    # additionally reconnects events across windows (OneIE-style). Unset keeps
+    # today's whole-doc single pass. See tools/train/DOCUMENT_EXTRACTION_PLAN.md.
+    chunk_size = eval_cfg.get("chunk_size")
+    chunk_overlap = eval_cfg.get("chunk_overlap", 128)
+    gd_raw = eval_cfg.get("global_decode", False)
+    global_decode = bool(gd_raw)
+    global_decode_config = None
+    if isinstance(gd_raw, dict):
+        from gliner2.inference.global_decode import GlobalDecodeConfig
+        gd_params = {**gd_raw}
+        if "single_filler_roles" in gd_params:
+            gd_params["single_filler_roles"] = frozenset(gd_params["single_filler_roles"])
+        global_decode_config = GlobalDecodeConfig(**gd_params)
+    # global_decode implies chunking; default the window to the training max_len.
+    if global_decode and chunk_size is None:
+        chunk_size = (cfg.get("training") or {}).get("max_len", 384)
 
     eval_stopwords = _build_eval_stopwords(
         eval_cfg, config_path, corpus_data=train_data + eval_data + test_data,
@@ -601,6 +628,8 @@ def main(config_path: str) -> None:
         eval_data=eval_data,
         compute_metrics=make_compute_metrics(
             batch_size=eval_bs, threshold=eval_thr, stopwords=eval_stopwords,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
         ),
     )
     if is_main:
@@ -635,6 +664,8 @@ def main(config_path: str) -> None:
         sweep_ds = ExtractorDataset(eval_records, shuffle=False, validate=False)
         eval_thr, sweep_best_metrics, sweep_all = sweep_thresholds(
             sweep_model, sweep_ds, thresholds=thresholds, batch_size=eval_bs, stopwords=eval_stopwords,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
         )
         print(f"[threshold sweep] Chose threshold={eval_thr} "
               f"(support-weighted strict micro-F1={_selection_score(sweep_best_metrics):.4f}); "
@@ -647,11 +678,15 @@ def main(config_path: str) -> None:
         print(f"[threshold sweep] Wrote {sweep_path}")
         del sweep_model
 
+    gd_kwargs = dict(
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+        global_decode=global_decode, global_decode_config=global_decode_config,
+    )
     if eval_by_language:
-        test_metrics = _blind_test_by_language(best, test_data, eval_bs, eval_thr)
+        test_metrics = _blind_test_by_language(best, test_data, eval_bs, eval_thr, **gd_kwargs)
     else:
         print(f"\n[blind test] Loading {best} and scoring against {len(test_data)} held-out samples...")
-        test_metrics = evaluate_checkpoint(best, test_data, batch_size=eval_bs, threshold=eval_thr) or {}
+        test_metrics = evaluate_checkpoint(best, test_data, batch_size=eval_bs, threshold=eval_thr, **gd_kwargs) or {}
         _print_blind_test(test_metrics)
 
     if test_metrics:

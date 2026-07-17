@@ -70,16 +70,23 @@ def make_compute_metrics(
     batch_size: int = 8,
     threshold: float = 0.5,
     stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
 ) -> Callable[[Any, Any], Dict[str, Any]]:
     """Return a ``compute_metrics`` callable bound to the given inference settings.
 
     The returned function has the signature ``(model, eval_dataset) -> dict``
-    expected by :class:`GLiNER2Trainer`.
+    expected by :class:`GLiNER2Trainer`. ``chunk_size``/``chunk_overlap``/
+    ``global_decode`` opt into windowed (long-doc) scoring; see ``compute_metrics``.
     """
     def _hook(model, eval_dataset) -> Dict[str, Any]:
         return compute_metrics(
             model, eval_dataset,
             batch_size=batch_size, threshold=threshold, stopwords=stopwords,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
         )
     return _hook
 
@@ -90,6 +97,10 @@ def compute_metrics(
     batch_size: int = 8,
     threshold: float = 0.5,
     stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
 ) -> Dict[str, Any]:
     """Score ``eval_dataset`` and return a flat metrics dict.
 
@@ -98,8 +109,18 @@ def compute_metrics(
         eval_dataset: An indexable dataset where ``eval_dataset[i]`` yields
             ``(text, gold_output_dict)``. The trainer's ``ExtractorDataset``
             satisfies this contract.
-        batch_size: Forwarded to ``model.batch_extract``.
-        threshold: Forwarded to ``model.batch_extract``.
+        batch_size: Forwarded to the extraction call.
+        threshold: Forwarded to the extraction call.
+        chunk_size: When set, score long documents through the chunked long
+            path (``model.batch_extract_long``) with overlapping windows of this
+            word length instead of one whole-doc pass -- matches training's
+            windowing and avoids the position-cap overflow on >512-token docs.
+            ``None`` keeps today's single-pass behavior.
+        chunk_overlap: Window overlap (words) when ``chunk_size`` is set.
+        global_decode: When chunking, opt into OneIE-style document-level event
+            assembly (reconnect events across windows) rather than the naive
+            concatenate/dedupe merge. Requires ``chunk_size``.
+        global_decode_config: Optional ``GlobalDecodeConfig``.
 
     Returns:
         Flat ``{metric_name: value}`` dict. Empty if the eval set has no
@@ -123,9 +144,16 @@ def compute_metrics(
     if not texts:
         return {}
 
-    preds = model.batch_extract(
-        texts, schemas, batch_size=batch_size, threshold=threshold,
-    )
+    if chunk_size is not None:
+        preds = model.batch_extract_long(
+            texts, schemas, batch_size=batch_size, threshold=threshold,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
+        )
+    else:
+        preds = model.batch_extract(
+            texts, schemas, batch_size=batch_size, threshold=threshold,
+        )
 
     # strict (exact) and relaxed (partial-overlap) TP/FP/FN per category.
     ent_s, ent_r = _counters(), _counters()
@@ -741,6 +769,10 @@ def evaluate_checkpoint(
     threshold: float = 0.5,
     map_location: str = None,
     stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
 ) -> Dict[str, Any]:
     """Load a saved GLiNER2 checkpoint and run :func:`compute_metrics` on a test set.
 
@@ -769,6 +801,8 @@ def evaluate_checkpoint(
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
     return compute_metrics(
         model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+        global_decode=global_decode, global_decode_config=global_decode_config,
     )
 
 
@@ -807,6 +841,10 @@ def sweep_thresholds(
     thresholds: Iterable[float] = DEFAULT_THRESHOLD_GRID,
     batch_size: int = 8,
     stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
 ) -> Tuple[float, Dict[str, Any], Dict[float, Dict[str, Any]]]:
     """Score ``eval_dataset`` at each candidate threshold; return the best.
 
@@ -840,6 +878,8 @@ def sweep_thresholds(
     for t in thresholds:
         results[t] = compute_metrics(
             model, eval_dataset, batch_size=batch_size, threshold=t, stopwords=stopwords,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
         ) or {}
 
     best_threshold = max(results, key=lambda t: _selection_score(results[t]))
