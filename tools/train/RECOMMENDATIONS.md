@@ -95,6 +95,14 @@ Largest change in this section: a graph-construction step and a GNN / graph-atte
 
 ### Option 5: Global graph decoding over windowed candidates (OneIE-style)
 
+**Implemented (opt-in, default off).** `gliner2/inference/global_decode.py` plus
+`global_decode=True` on `extract_long`/`batch_extract_long`, the
+`eval.global_decode` yaml knob (with `chunk_size`/`chunk_overlap`), and
+`tools/infer.py --global-decode`. Design + verification in
+[`DOCUMENT_EXTRACTION_PLAN.md`](DOCUMENT_EXTRACTION_PLAN.md). Caveats hold: the
+beam's global-feature weights are heuristic/config-set (`GlobalDecodeConfig`),
+not learned, and recall is still bounded by within-window candidate recall.
+
 Rather than change how the model *links*, change how its outputs are **assembled**. Slide overlapping windows over the whole document with `include_confidence`/`include_spans`, remap to global offsets, treat every trigger, argument, and entity as a scored node in one document-level graph, then search that graph for the globally best set of event structures — the OneIE paradigm of local node/edge scoring plus a beam decoder under global constraints ([Lin et al., ACL 2020](https://aclanthology.org/2020.acl-main.713/)). Per event the structure is a tree (trigger root → role → argument); across events, shared arguments and coreference make it a graph.
 
 Pipeline: (1) windowed candidate generation — native: spans, confidences, and global offsets via `remap_result_spans`; (2) consolidate nodes detected across overlapping windows by span overlap, pooling confidence — this replaces the naive concatenate-and-dedupe in `merge_chunk_results`; (3) score edges — within-window trigger→argument edges come from the model, argument→entity edges from overlap/coref; (4) decode the best event assemblies under global constraints (valid roles per type, one-vs-multi per role, coref-merged arguments).

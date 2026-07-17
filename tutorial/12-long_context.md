@@ -174,6 +174,32 @@ results = extractor.batch_extract_long(
 )
 ```
 
+## Document-Level Events (Global Decoding)
+
+For events in long documents, a trigger and its arguments may fall in different
+windows, so the default chunk merge leaves them split. Pass `global_decode=True`
+to reconnect them: overlapping windows are clustered by trigger, their arguments
+unioned, and the result refined under global constraints (OneIE-style). Off by
+default; use overlapping windows so an event recurs across windows.
+
+```python
+results = extractor.batch_extract_long(
+    documents,
+    extractor.create_schema().events({"Attack": ["Attacker", "Target", "Place"]}),
+    chunk_size=384,
+    chunk_overlap=128,      # overlap so an event recurs across windows
+    global_decode=True,     # cross-window event assembly
+    include_spans=True,
+)
+```
+
+The beam's global-feature weights are heuristic (`GlobalDecodeConfig`), not
+learned, and recall is still bounded by within-window candidate recall — an
+argument more than one window from its trigger is never emitted. To score a
+held-out set this way during training, set `eval.global_decode: true` with
+`chunk_size`/`chunk_overlap` in the config. See
+[`tools/train/DOCUMENT_EXTRACTION_PLAN.md`](../tools/train/DOCUMENT_EXTRACTION_PLAN.md).
+
 ## Best Practices
 
 - Prefer `extract_entities_long(...)` for long entity extraction instead of `extract_entities(..., max_len=...)`; `max_len` truncates, while long-context extraction scans the full document.
