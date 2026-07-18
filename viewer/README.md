@@ -16,27 +16,42 @@ Browser ─▶ NextJS (:3000) ─fetch─▶ FastAPI (:8000) ─▶ GLiNER2 mode
 
 ## Run locally
 
-**1. Backend** (Python; first run downloads the model + torch into an isolated env):
+One-time setup (installs frontend deps): `cd viewer/frontend && npm install`.
+The backend's Python env (torch + the model) is set up on its first start.
+
+Then start and stop **both** services with a single script:
 
 ```bash
-cd viewer/backend
-uv run uvicorn app:app --host 127.0.0.1 --port 8000
-# model via env: GLINER2_MODEL=out/fastino/gliner2-base-v1-wikievents/best uv run uvicorn app:app ...
+bash viewer/viewer.sh start      # backend :8000 + frontend :3000 (waits until up)
+bash viewer/viewer.sh stop       # stop both
+bash viewer/viewer.sh restart
+bash viewer/viewer.sh status
+bash viewer/viewer.sh logs       # tail both logs (Ctrl-C to quit)
 ```
 
-**2. Frontend** (Node ≥ 18):
+Then open **http://localhost:3000**, pick a schema preset (or edit the schema
+JSON), enter text, and click **Extract**.
+
+Choose the model (blank uses `fastino/gliner2-base-v1`):
 
 ```bash
-cd viewer/frontend
-npm install          # first time only
-npm run dev          # http://localhost:3000
+GLINER2_MODEL=out/fastino/gliner2-base-v1-wikievents/best bash viewer/viewer.sh start
 ```
 
-Open **http://localhost:3000**, pick a schema preset (or edit the schema JSON),
-enter text, and click **Extract**.
+Logs + PIDs live in `viewer/.run/` (git-ignored). Requires `uv` and `npm` on PATH.
 
-Point the frontend at a non-default backend with
-`NEXT_PUBLIC_API_BASE` (e.g. `NEXT_PUBLIC_API_BASE=http://host:8000 npm run dev`).
+<details>
+<summary>Or run the two services by hand</summary>
+
+```bash
+# backend
+cd viewer/backend && uv run uvicorn app:app --host 127.0.0.1 --port 8000
+# frontend (separate terminal)
+cd viewer/frontend && npm run dev
+```
+Point the frontend at a non-default backend with `NEXT_PUBLIC_API_BASE`
+(e.g. `NEXT_PUBLIC_API_BASE=http://host:8000 npm run dev`).
+</details>
 
 ## Schema (what to extract)
 

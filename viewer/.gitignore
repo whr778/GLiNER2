@@ -10,6 +10,9 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
+# runtime (viewer.sh pids + logs)
+.run/
+
 # local registries / env
 models.json
 .env
