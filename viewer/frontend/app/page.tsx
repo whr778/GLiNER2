@@ -70,6 +70,7 @@ export default function Home() {
             onExtract={onExtract}
             models={models}
             onManage={() => setShowModels(true)}
+            resultData={resp}
           />
           <SchemaPanel presets={presets} schema={schema} setSchema={setSchema} />
         </div>

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { importUrl } from "@/lib/api";
-import type { ExtractOptions, ModelEntry } from "@/lib/types";
+import type { ExtractOptions, ExtractResponse, ModelEntry } from "@/lib/types";
 
 type Props = {
   text: string;
@@ -13,17 +13,22 @@ type Props = {
   onExtract: () => void;
   models: ModelEntry[];
   onManage: () => void;
+  resultData: ExtractResponse | null;
 };
 
-export default function InputPanel({ text, setText, options, setOptions, loading, onExtract, models, onManage }: Props) {
+export default function InputPanel({ text, setText, options, setOptions, loading, onExtract, models, onManage, resultData }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState("");
+  const [sourceName, setSourceName] = useState("");
   const [importing, setImporting] = useState(false);
   const [importErr, setImportErr] = useState<string | null>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) setText(await file.text());
+    if (file) {
+      setText(await file.text());
+      setSourceName(file.name);
+    }
     e.target.value = "";
   }
 
@@ -34,6 +39,7 @@ export default function InputPanel({ text, setText, options, setOptions, loading
     try {
       const res = await importUrl(url.trim());
       setText(res.text);
+      setSourceName(deriveUrlName(url.trim()));
     } catch (err: any) {
       setImportErr(err.message || "import failed");
     } finally {
@@ -41,35 +47,43 @@ export default function InputPanel({ text, setText, options, setOptions, loading
     }
   }
 
-  function suggestedName(): string {
-    const u = url.trim();
-    if (u) {
-      try {
-        const parsed = new URL(u);
-        const base = (parsed.hostname + parsed.pathname)
-          .replace(/[^\w.-]+/g, "_")
-          .replace(/_+/g, "_")
-          .replace(/^_|_$/g, "");
-        if (base) return base.slice(0, 80) + ".txt";
-      } catch {
-        /* not a URL — fall through */
-      }
+  function stripExt(name: string): string {
+    return name.replace(/\.[^./\\]+$/, "");
+  }
+
+  // A filename-ish slug for the imported URL, e.g. en.wikipedia.org_wiki_X.txt.
+  function deriveUrlName(u: string): string {
+    try {
+      const parsed = new URL(u);
+      const base = (parsed.hostname + parsed.pathname)
+        .replace(/[^\w.-]+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "");
+      if (base) return base.slice(0, 80) + ".txt";
+    } catch {
+      /* not a URL */
     }
     return "text.txt";
   }
 
-  async function saveText() {
-    if (!text.trim()) return;
-    const name = suggestedName();
+  // Base name (no extension) of the current input source: the uploaded file
+  // name, the imported URL, or "text" when pasted from scratch.
+  function baseName(): string {
+    return sourceName ? stripExt(sourceName) || "text" : "text";
+  }
+
+  // Save `contents` via the native save-as picker (Chrome/Edge), or a normal
+  // download (Firefox/Safari).
+  async function saveToFile(name: string, contents: string, mime: string, ext: string, desc: string) {
     const picker = (window as any).showSaveFilePicker;
     if (picker) {
       try {
         const handle = await picker({
           suggestedName: name,
-          types: [{ description: "Text", accept: { "text/plain": [".txt"] } }],
+          types: [{ description: desc, accept: { [mime]: [ext] } }],
         });
         const writable = await handle.createWritable();
-        await writable.write(text);
+        await writable.write(contents);
         await writable.close();
         return;
       } catch (e: any) {
@@ -77,14 +91,29 @@ export default function InputPanel({ text, setText, options, setOptions, loading
         // any other error: fall through to the download fallback
       }
     }
-    // Fallback (Firefox/Safari): a normal download.
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const blob = new Blob([contents], { type: `${mime};charset=utf-8` });
     const href = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = href;
     a.download = name;
     a.click();
     URL.revokeObjectURL(href);
+  }
+
+  function saveText() {
+    if (!text.trim()) return;
+    saveToFile(baseName() + ".txt", text, "text/plain", ".txt", "Text");
+  }
+
+  function saveResults() {
+    if (!resultData) return;
+    saveToFile(
+      baseName() + ".results.json",
+      JSON.stringify(resultData, null, 2),
+      "application/json",
+      ".json",
+      "Results JSON",
+    );
   }
 
   const set = <K extends keyof ExtractOptions>(k: K, v: ExtractOptions[K]) =>
@@ -103,6 +132,7 @@ export default function InputPanel({ text, setText, options, setOptions, loading
       <div className="field row">
         <button type="button" onClick={() => fileRef.current?.click()}>Upload .txt</button>
         <button type="button" onClick={saveText} disabled={!text.trim()} title="Save the current text to a file">Save text…</button>
+        <button type="button" onClick={saveResults} disabled={!resultData} title="Save the extracted results as <input>.results.json">Save results…</button>
         <input ref={fileRef} type="file" accept=".txt,text/plain" hidden onChange={handleFile} />
         <span className="spacer" />
         <span className="hint">{text.length.toLocaleString()} chars</span>
