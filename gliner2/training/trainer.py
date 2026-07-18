@@ -1462,7 +1462,7 @@ class GLiNER2Trainer:
         self._log_metrics(metrics, prefix="eval")
         self.eval_metrics_history.append(metrics)
 
-        metric_value = metrics.get(self.config.metric_for_best, metrics["eval_loss"])
+        metric_value = self._metric_for_best_value(metrics)
         is_best = (
             (self.config.greater_is_better and metric_value > self.best_metric) or
             (not self.config.greater_is_better and metric_value < self.best_metric)
@@ -1480,8 +1480,23 @@ class GLiNER2Trainer:
         self._free_memory()
         return metrics
 
+    def _metric_for_best_value(self, metrics: Dict[str, float]) -> float:
+        """Return ``metrics[metric_for_best]``, raising if the eval dict lacks it.
+
+        A missing key previously fell back silently to ``eval_loss``, which
+        inverts best-checkpoint selection under ``greater_is_better`` (the run
+        then maximises loss). Fail loud so the misconfiguration surfaces.
+        """
+        name = self.config.metric_for_best
+        if name not in metrics:
+            raise ValueError(
+                f"metric_for_best {name!r} not in eval metrics; "
+                f"available: {sorted(metrics)}"
+            )
+        return metrics[name]
+
     def _check_early_stopping(self, metrics: Dict[str, float], prev_best: Optional[float] = None) -> bool:
-        metric_value = metrics.get(self.config.metric_for_best, metrics["eval_loss"])
+        metric_value = self._metric_for_best_value(metrics)
         compare_against = prev_best if prev_best is not None else self.best_metric
         if self.config.greater_is_better:
             improved = metric_value > compare_against + self.config.early_stopping_threshold
