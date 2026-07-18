@@ -1,0 +1,120 @@
+"""FastAPI backend for the GLiNER2 extraction viewer.
+
+Loads a GLiNER2 model and exposes extraction over the long-document path so the
+frontend can render entities, relations, events, classifications, and
+structures. Reuses gliner2's ``Schema.from_dict`` + ``batch_extract_long`` (the
+same call as ``tools/infer.py``); the library itself is untouched.
+
+Run: ``uv run uvicorn app:app --reload --port 8000`` (from viewer/backend/).
+Model is chosen via env ``GLINER2_MODEL`` (default ``fastino/gliner2-base-v1``).
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, Optional
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, ConfigDict, Field
+
+DEFAULT_MODEL = os.environ.get("GLINER2_MODEL", "fastino/gliner2-base-v1")
+
+# Loaded models cached by id (loading torch weights is expensive).
+_models: Dict[str, Any] = {}
+
+
+def get_model(model_id: str):
+    from gliner2 import GLiNER2
+
+    if model_id not in _models:
+        _models[model_id] = GLiNER2.from_pretrained(model_id)
+    return _models[model_id]
+
+
+app = FastAPI(title="GLiNER2 Viewer API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class Options(BaseModel):
+    # ``model`` collides with pydantic's protected ``model_`` namespace; allow it.
+    model_config = ConfigDict(protected_namespaces=())
+    threshold: float = 0.5
+    chunk_size: int = 384
+    chunk_overlap: int = 128
+    global_decode: bool = False
+    beam_width: int = 8
+    model: Optional[str] = None
+
+
+class ExtractRequest(BaseModel):
+    # Accept the JSON key ``schema`` without shadowing BaseModel.schema.
+    model_config = ConfigDict(populate_by_name=True)
+    text: str
+    input_schema: Dict[str, Any] = Field(alias="schema")
+    options: Options = Field(default_factory=Options)
+
+
+class UrlRequest(BaseModel):
+    url: str
+
+
+@app.get("/health")
+def health() -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "default_model": DEFAULT_MODEL,
+        "loaded_models": list(_models),
+    }
+
+
+@app.post("/extract")
+def extract(req: ExtractRequest) -> Dict[str, Any]:
+    from gliner2.inference.global_decode import GlobalDecodeConfig
+    from gliner2.inference.schema import Schema
+
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text is empty")
+    try:
+        schema = Schema.from_dict(req.input_schema)
+    except Exception as e:  # noqa: BLE001 - surface schema errors to the client
+        raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
+
+    model = get_model(req.options.model or DEFAULT_MODEL)
+    result = model.batch_extract_long(
+        [req.text],
+        schema,
+        threshold=req.options.threshold,
+        chunk_size=req.options.chunk_size,
+        chunk_overlap=req.options.chunk_overlap,
+        include_spans=True,
+        include_confidence=True,
+        global_decode=req.options.global_decode,
+        global_decode_config=GlobalDecodeConfig(beam_width=req.options.beam_width),
+    )[0]
+    return {"text": req.text, "result": result}
+
+
+@app.post("/import-url")
+def import_url(req: UrlRequest) -> Dict[str, str]:
+    import trafilatura
+
+    downloaded = trafilatura.fetch_url(req.url)
+    if not downloaded:
+        raise HTTPException(status_code=400, detail=f"could not fetch: {req.url}")
+    text = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
+    if not text or not text.strip():
+        raise HTTPException(status_code=422, detail="no extractable text at that url")
+    return {"text": text}
+
+
+@app.get("/presets")
+def presets() -> Dict[str, Any]:
+    from presets import list_presets
+
+    return {"presets": list_presets()}

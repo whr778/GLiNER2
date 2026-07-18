@@ -1,0 +1,16 @@
+[project]
+name = "gliner2-viewer-backend"
+version = "0.1.0"
+description = "FastAPI backend for the GLiNER2 extraction viewer."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "trafilatura>=1.8",
+    "gliner2[local]",
+]
+
+# Resolve gliner2 from the repo root (editable) so the backend runs the local
+# library + its torch/transformers extra without a separate install.
+[tool.uv.sources]
+gliner2 = { path = "../..", editable = true }
