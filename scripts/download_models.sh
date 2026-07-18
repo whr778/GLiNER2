@@ -50,11 +50,11 @@ for d in $DIRS; do
   parent="$(dirname "$d")"
   mkdir -p "$parent"
   echo "-> $d"
-  rsync -az --info=progress2 -e "ssh -i $KEY" "$REMOTE:GLiNER2/$d" "$parent/"
+  rsync -az --progress -e "ssh -i $KEY" "$REMOTE:GLiNER2/$d" "$parent/"
 done
 
 echo "Pulling *_metrics.json (all configs) ..."
-rsync -az -m -e "ssh -i $KEY" \
+rsync -az --prune-empty-dirs -e "ssh -i $KEY" \
   --include='*/' --include='*_metrics.json' --exclude='*' \
   "$REMOTE:GLiNER2/out/fastino/" out/fastino/
 
