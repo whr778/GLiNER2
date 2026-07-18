@@ -341,6 +341,7 @@ as strict / relaxed / fair.
 | Config | entity | event_type | event_trigger | event_argument (S / R / Fair) | event | support |
 |---|--:|--:|--:|--:|--:|--:|
 <!-- SWEEP_START -->
+| `gliner2-base-v1-casie` | 0.553 | 0.928 | 0.413 | 0.058 / 0.450 / 0.426 | 0.207 | 3454 |
 <!-- SWEEP_END -->
 
 ## 11. Reproducibility
