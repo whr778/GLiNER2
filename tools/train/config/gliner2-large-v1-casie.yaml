@@ -9,7 +9,7 @@ model:
   # focal_alpha: 0.25
 
 training:
-  checkpoint_restart: None # highest, last, or None
+  checkpoint_restart: last # highest, last, or None
   output_dir: ./out/fastino/gliner2-large-v1-casie
   experiment_name: gliner2-large-v1_casie
   data_parallel: false

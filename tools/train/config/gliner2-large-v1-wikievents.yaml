@@ -9,7 +9,7 @@ model:
   # focal_alpha: 0.25
 
 training:
-  checkpoint_restart: None # hightest, last, or None
+  checkpoint_restart: last # hightest, last, or None
   output_dir: ./out/fastino/gliner2-large-v1-wikievents
   experiment_name: gliner2-large-v1_wikievents
   data_parallel: false

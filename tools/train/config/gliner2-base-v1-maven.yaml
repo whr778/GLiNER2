@@ -11,7 +11,7 @@ model:
   # focal_alpha: 0.25
 
 training:
-  checkpoint_restart: None # highest, last, or None
+  checkpoint_restart: last # highest, last, or None
   output_dir: ./out/fastino/gliner2-base-v1-maven
   experiment_name: gliner2-base-v1_maven
   data_parallel: false

@@ -51,6 +51,16 @@ if [ "$#" -gt 0 ]; then
   CONFIGS=("$@")
 fi
 
+# Refuse to start if another training is already running: two heavy trainings on
+# one MPS device exhaust the shared unified-memory pool and both get OOM-killed.
+existing="$(pgrep -f 'tools/train/train.py' 2>/dev/null || true)"
+if [ -n "$existing" ]; then
+  echo "ERROR: a training process is already running (PID(s): $existing)." >&2
+  echo "Two trainings share the MPS memory pool and will OOM. Wait for it to finish" >&2
+  echo "(or kill it), then re-run this script. Aborting." >&2
+  exit 1
+fi
+
 OK=()
 FAIL=()
 
