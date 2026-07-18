@@ -41,6 +41,52 @@ export default function InputPanel({ text, setText, options, setOptions, loading
     }
   }
 
+  function suggestedName(): string {
+    const u = url.trim();
+    if (u) {
+      try {
+        const parsed = new URL(u);
+        const base = (parsed.hostname + parsed.pathname)
+          .replace(/[^\w.-]+/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_|_$/g, "");
+        if (base) return base.slice(0, 80) + ".txt";
+      } catch {
+        /* not a URL — fall through */
+      }
+    }
+    return "text.txt";
+  }
+
+  async function saveText() {
+    if (!text.trim()) return;
+    const name = suggestedName();
+    const picker = (window as any).showSaveFilePicker;
+    if (picker) {
+      try {
+        const handle = await picker({
+          suggestedName: name,
+          types: [{ description: "Text", accept: { "text/plain": [".txt"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        return;
+      } catch (e: any) {
+        if (e?.name === "AbortError") return; // user cancelled the dialog
+        // any other error: fall through to the download fallback
+      }
+    }
+    // Fallback (Firefox/Safari): a normal download.
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(href);
+  }
+
   const set = <K extends keyof ExtractOptions>(k: K, v: ExtractOptions[K]) =>
     setOptions({ ...options, [k]: v });
 
@@ -56,6 +102,7 @@ export default function InputPanel({ text, setText, options, setOptions, loading
 
       <div className="field row">
         <button type="button" onClick={() => fileRef.current?.click()}>Upload .txt</button>
+        <button type="button" onClick={saveText} disabled={!text.trim()} title="Save the current text to a file">Save text…</button>
         <input ref={fileRef} type="file" accept=".txt,text/plain" hidden onChange={handleFile} />
         <span className="spacer" />
         <span className="hint">{text.length.toLocaleString()} chars</span>
