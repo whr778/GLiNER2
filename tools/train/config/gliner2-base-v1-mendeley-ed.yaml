@@ -1,0 +1,71 @@
+# Fine-tune the pretrained fastino/gliner2-base-v1 GLiNER2 model on the Mendeley
+# "Event Detection Dataset" (Maisonnave et al., 2020) -- English ongoing-event
+# TRIGGER detection over NYT economic news. There is one generic event type
+# ("Event") and no arguments, so metric_for_best is the event-TRIGGER F1 (the
+# only meaningful signal; event_type F1 would be trivially perfect).
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: last # highest, last, or None
+  output_dir: ./out/fastino/gliner2-base-v1-mendeley-ed
+  experiment_name: gliner2-base-v1_mendeley-ed
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5         # lower LR than from-scratch: fine-tuning a trained model
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_trigger_strict_micro_f1   # trigger-only dataset
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true
+  max_len: 384               # deberta-v3 caps at 512 positions; leave room for
+  window_stride: 256         # the prepended schema + special tokens (512 overflows)
+  gradient_checkpointing: false
+  pin_memory: false
+
+  early_stopping: true        # Enable early stopping.
+  early_stopping_patience: 3  # Patience for early stopping.
+
+
+eval:
+  batch_size: 1
+  threshold: 0.5
+  # Sentence-level, so chunking is a no-op; kept for config uniformity.
+  chunk_size: 384
+  chunk_overlap: 128
+  global_decode: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    mendeley_ed:
+      train: data/mendeley_ed.train.jsonl
+      val: data/mendeley_ed.val.jsonl
+      test: data/mendeley_ed.test.jsonl

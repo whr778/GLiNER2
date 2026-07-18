@@ -290,6 +290,35 @@ datasets:
     source_url: https://github.com/tongmeihan1995/docee
     language: [en]
     description: "Document-level event extraction; one event per document mapped to role-typed entities and document classification."
+  chfinann:
+    name: ChFinAnn
+    tasks: Event extraction (Chinese financial, doc-level)
+    license: MIT
+    source_url: https://github.com/dolphin-zs/Doc2EDAG
+    language: [zh]
+    description: "Trigger-free document-level Chinese financial event extraction (5 event types); mapped to role-typed entities and multi-label event-type classification."
+  docfee:
+    name: DocFEE
+    tasks: Event extraction (Chinese financial, doc-level)
+    license: cc-by-4.0
+    source_url: https://figshare.com/articles/dataset/28632464
+    language: [zh]
+    description: "Trigger-free document-level Chinese financial event extraction (9 event types); mapped to best-effort role-typed entities and multi-label event-type classification."
+  duee:
+    name: DuEE 1.0
+    tasks: Event extraction (Chinese, trigger + args)
+    license: see source
+    hf_id: nlhappy/DuEE
+    source_url: https://www.luge.ai/#/luge/dataDetail?id=6
+    language: [zh]
+    description: "Sentence-level Chinese event extraction (65 event types, 121 roles) via the no-login HuggingFace mirror; train + val only, no test."
+  mendeley_ed:
+    name: Event Detection Dataset (Mendeley)
+    tasks: Event detection (trigger)
+    license: cc-by-4.0
+    source_url: https://data.mendeley.com/datasets/7d54rvzxkr/1
+    language: [en]
+    description: "English ongoing-event trigger detection over NYT economic news; one generic event type, trigger-only."
   ace2005:
     name: ACE 2005
     tasks: NER + relations + events
