@@ -14,8 +14,8 @@ training:
   experiment_name: gliner2-base-v1_rams
   data_parallel: false
   num_epochs: 15
-  batch_size: 2
-  gradient_accumulation_steps: 16
+  batch_size: 16
+  gradient_accumulation_steps: 2
   encoder_lr: 1.0e-5         # lower LR than from-scratch: fine-tuning a trained model
   task_lr: 3.0e-4
   warmup_ratio: 0.05
@@ -34,7 +34,7 @@ training:
   sliding_window: true
   max_len: 384               # deberta-v3 caps at 512 positions; leave room for
   window_stride: 256         # the prepended schema + special tokens (512 overflows)
-  gradient_checkpointing: true
+  gradient_checkpointing: false
   pin_memory: false
 
   early_stopping: true        # Enable early stopping.

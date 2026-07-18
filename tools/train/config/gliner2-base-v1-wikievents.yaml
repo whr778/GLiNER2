@@ -48,7 +48,7 @@ eval:
   chunk_size: 384        # word window (matches training max_len)
   chunk_overlap: 128     # overlap so an event recurs across windows
   global_decode: true    # OneIE-style cross-window event assembly
-  eval_by_language: true   # default
+  eval_by_language: false   # default
   # stopword_languages: [eng, fra, deu, zho, jpn, kor, uzb, kat]
   # stopword_yaml: stopwords.yaml  # relative to this config file; defaults to stopwords.yaml
 
