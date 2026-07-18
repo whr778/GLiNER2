@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { importUrl } from "@/lib/api";
-import type { ExtractOptions } from "@/lib/types";
+import type { ExtractOptions, ModelEntry } from "@/lib/types";
 
 type Props = {
   text: string;
@@ -11,9 +11,11 @@ type Props = {
   setOptions: (o: ExtractOptions) => void;
   loading: boolean;
   onExtract: () => void;
+  models: ModelEntry[];
+  onManage: () => void;
 };
 
-export default function InputPanel({ text, setText, options, setOptions, loading, onExtract }: Props) {
+export default function InputPanel({ text, setText, options, setOptions, loading, onExtract, models, onManage }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState("");
   const [importing, setImporting] = useState(false);
@@ -99,12 +101,22 @@ export default function InputPanel({ text, setText, options, setOptions, loading
         </div>
         <div className="field">
           <label>Model (blank = server default)</label>
-          <input
-            type="text"
-            placeholder="fastino/gliner2-base-v1 or a local path"
-            value={options.model ?? ""}
-            onChange={(e) => set("model", e.target.value || null)}
-          />
+          <div className="row">
+            <input
+              type="text"
+              list="model-list"
+              placeholder="fastino/gliner2-base-v1 or a local path"
+              value={options.model ?? ""}
+              onChange={(e) => set("model", e.target.value || null)}
+            />
+            <datalist id="model-list">
+              {models.map((m) => (
+                <option key={m.path} value={m.path}>{m.label}</option>
+              ))}
+            </datalist>
+            <button type="button" onClick={onManage} title="Manage models">Manage</button>
+          </div>
+          <div className="hint">Used models are remembered; local checkpoints are auto-discovered.</div>
         </div>
       </details>
 

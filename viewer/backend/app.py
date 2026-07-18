@@ -118,3 +118,33 @@ def presets() -> Dict[str, Any]:
     from presets import list_presets
 
     return {"presets": list_presets()}
+
+
+class ModelEntry(BaseModel):
+    path: str
+    label: Optional[str] = None
+
+
+@app.get("/models")
+def get_models() -> Dict[str, Any]:
+    from models import list_models
+
+    return {"models": list_models(DEFAULT_MODEL)}
+
+
+@app.post("/models")
+def create_model(entry: ModelEntry) -> Dict[str, Any]:
+    from models import add_model, list_models
+
+    if not entry.path.strip():
+        raise HTTPException(status_code=400, detail="path is empty")
+    add_model(entry.path, entry.label)
+    return {"models": list_models(DEFAULT_MODEL)}
+
+
+@app.delete("/models")
+def delete_model(path: str) -> Dict[str, Any]:
+    from models import list_models, remove_model
+
+    remove_model(path)
+    return {"models": list_models(DEFAULT_MODEL)}

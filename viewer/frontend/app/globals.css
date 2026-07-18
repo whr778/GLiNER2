@@ -127,6 +127,17 @@ input:focus, textarea:focus, select:focus {
 .card.annotated.expanded .doc { max-height: none; flex: 1; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
+.modal {
+  position: fixed;
+  z-index: 50;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row.between { justify-content: space-between; }
 .spacer { flex: 1; }

@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import InputPanel from "@/components/InputPanel";
 import SchemaPanel from "@/components/SchemaPanel";
 import ResultView from "@/components/ResultView";
-import { extract, getPresets } from "@/lib/api";
+import ModelManager from "@/components/ModelManager";
+import { addModel, extract, getModels, getPresets } from "@/lib/api";
 import {
   DEFAULT_OPTIONS,
   type ExtractOptions,
   type ExtractResponse,
+  type ModelEntry,
   type Preset,
 } from "@/lib/types";
 
@@ -21,12 +23,15 @@ export default function Home() {
   const [schema, setSchema] = useState<Record<string, any>>(DEFAULT_SCHEMA);
   const [options, setOptions] = useState<ExtractOptions>(DEFAULT_OPTIONS);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [models, setModels] = useState<ModelEntry[]>([]);
+  const [showModels, setShowModels] = useState(false);
   const [resp, setResp] = useState<ExtractResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getPresets().then(setPresets).catch(() => {});
+    getModels().then(setModels).catch(() => {});
   }, []);
 
   async function onExtract() {
@@ -34,6 +39,11 @@ export default function Home() {
     setError(null);
     try {
       setResp(await extract(text, schema, options));
+      // Remember a newly-used model once it has successfully extracted.
+      const m = options.model?.trim();
+      if (m && !models.some((x) => x.path === m)) {
+        addModel(m).then(setModels).catch(() => {});
+      }
     } catch (e: any) {
       setError(e.message || "extraction failed");
       setResp(null);
@@ -58,6 +68,8 @@ export default function Home() {
             setOptions={setOptions}
             loading={loading}
             onExtract={onExtract}
+            models={models}
+            onManage={() => setShowModels(true)}
           />
           <SchemaPanel presets={presets} schema={schema} setSchema={setSchema} />
         </div>
@@ -79,6 +91,10 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {showModels && (
+        <ModelManager models={models} setModels={setModels} onClose={() => setShowModels(false)} />
+      )}
     </div>
   );
 }
