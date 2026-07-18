@@ -103,3 +103,4 @@ test_api_client.py
 
 # Personal / per-session notes — not project documentation
 /INSTRUCTIONS.md
+/.AWS_ENV.md
