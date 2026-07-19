@@ -5,6 +5,9 @@ import { fmtConf, tagStyle } from "@/lib/colors";
 import { buildSegments, type Layer, type Mark } from "@/lib/spans";
 
 type Line = { x1: number; y1: number; x2: number; y2: number };
+// A nested-endpoint marker: a small circle, plus (when the endpoint is a proper
+// sub-range) a thin vertical divider at its boundary.
+type Loop = { x: number; top: number; bottom: number; divider: boolean };
 
 // Renders the document with span highlights and, for the events/relations
 // layers, draws connection arcs from a mention's trigger (or a relation's head)
@@ -13,6 +16,7 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
   const docRef = useRef<HTMLDivElement>(null);
   const [hoverEids, setHoverEids] = useState<Set<string>>(() => new Set());
   const [lines, setLines] = useState<Line[]>([]);
+  const [loops, setLoops] = useState<Loop[]>([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   const segments = useMemo(() => buildSegments(text, marks), [text, marks]);
@@ -23,6 +27,7 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
     const cont = docRef.current;
     if (!cont || !hovering || !linkable) {
       setLines([]);
+      setLoops([]);
       return;
     }
     const crect = cont.getBoundingClientRect();
@@ -37,9 +42,41 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
         y: r.top - crect.top + cont.scrollTop + r.height / 2,
       };
     };
-    const topOf = (el: HTMLElement) => {
+    const boxOf = (el: HTMLElement) => {
       const r = rectOf(el);
-      return { x: r.left - crect.left + cont.scrollLeft, y: r.top - crect.top + cont.scrollTop, w: r.width };
+      return {
+        x: r.left - crect.left + cont.scrollLeft,
+        top: r.top - crect.top + cont.scrollTop,
+        bottom: r.bottom - crect.top + cont.scrollTop,
+        w: r.width,
+      };
+    };
+    // A relation whose two endpoints land on the same span (a tail nested in its
+    // head): mark the nested sub-range's boundary with a divider, else a circle
+    // centered on the span.
+    const selfLoop = (el: HTMLElement, eid: string): Loop => {
+      const tn = el.firstChild;
+      const nestedRaw = el.dataset.nested;
+      if (tn && tn.nodeType === 3 && nestedRaw) {
+        const len = tn.textContent?.length ?? 0;
+        for (const tok of nestedRaw.split(" ")) {
+          const [range, eids] = tok.split(":");
+          if (!eids || !eids.split(",").includes(eid)) continue;
+          const [s, e] = range.split("-").map(Number);
+          const rg = document.createRange();
+          rg.setStart(tn, Math.min(s, len));
+          rg.setEnd(tn, Math.min(e, len));
+          const rr = rg.getBoundingClientRect();
+          return {
+            x: rr.right - crect.left + cont.scrollLeft,
+            top: rr.top - crect.top + cont.scrollTop,
+            bottom: rr.bottom - crect.top + cont.scrollTop,
+            divider: true,
+          };
+        }
+      }
+      const b = boxOf(el);
+      return { x: b.x + b.w / 2, top: b.top, bottom: b.bottom, divider: false };
     };
     // Map each instance id -> the spans (and their head/tail role) that carry it.
     // A span's data-eids is "rel-0:head rel-3:tail" (one token per role).
@@ -56,16 +93,14 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
       }
     }
     const out: Line[] = [];
+    const loopsOut: Loop[] = [];
     for (const eid of hoverEids) {
       const els = byEid.get(eid);
       if (!els || els.length < 2) continue; // a relation has both endpoints
       const anchor = els.find((e) => e.kind === "head" || e.kind === "trigger") ?? els[0];
       const targets = els.filter((e) => e.el !== anchor.el);
       if (targets.length === 0) {
-        // Both endpoints landed on the same span (e.g. a tail nested inside the
-        // head): draw a small self-loop above it so the link is still visible.
-        const t = topOf(anchor.el);
-        out.push({ x1: t.x + t.w * 0.3, y1: t.y, x2: t.x + t.w * 0.7, y2: t.y });
+        loopsOut.push(selfLoop(anchor.el, eid));
         continue;
       }
       const a = center(anchor.el);
@@ -75,6 +110,7 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
       }
     }
     setLines(out);
+    setLoops(loopsOut);
     setSize({ w: cont.scrollWidth, h: cont.scrollHeight });
   }, [hoverEids, hovering, linkable]);
 
@@ -99,7 +135,7 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
 
   return (
     <div className="doc" ref={docRef} data-dim={hovering ? "1" : undefined}>
-      {linkable && lines.length > 0 && (
+      {linkable && (lines.length > 0 || loops.length > 0) && (
         <svg className="arcs" width={size.w} height={size.h} aria-hidden="true">
           <defs>
             <marker id="arc-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -121,6 +157,12 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
               />
             );
           })}
+          {loops.map((lp, i) => (
+            <g key={`loop-${i}`} stroke="var(--accent)" opacity={0.9}>
+              {lp.divider && <line x1={lp.x} y1={lp.top} x2={lp.x} y2={lp.bottom} strokeWidth={1.5} />}
+              <circle cx={lp.x} cy={lp.top - 5} r={4} fill="none" strokeWidth={1.5} />
+            </g>
+          ))}
         </svg>
       )}
 
@@ -133,11 +175,13 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
         const eidSet = new Set(mk.roles.map((r) => r.eid).filter(Boolean) as string[]);
         const active = [...eidSet].some((e) => hoverEids.has(e));
         const count = eidSet.size;
+        const nestedAttr = mk.nested?.map((n) => `${n.s}-${n.e}:${n.eids.join(",")}`).join(" ");
         return (
           <mark
             key={i}
             className={"tag" + (active ? " active" : "")}
             data-eids={eidTokens || undefined}
+            data-nested={nestedAttr || undefined}
             data-kind={p.kind}
             style={tagStyle(colorKey)}
             onMouseEnter={() => setHoverEids(eidSet)}

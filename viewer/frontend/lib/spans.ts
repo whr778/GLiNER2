@@ -89,6 +89,10 @@ export type SegMark = {
   end: number;
   roles: Role[];
   primary: Role; // drives color, sublabel, and data-kind (head/trigger win)
+  // Sub-ranges (local char offsets) that were folded in because they nest inside
+  // this span — e.g. "Seoul" inside "Seoul National University". Used to mark the
+  // boundary of a nested relation endpoint.
+  nested?: { s: number; e: number; eids: string[] }[];
 };
 
 export type Segment = { text: string; mark: SegMark | null };
@@ -117,8 +121,15 @@ export function buildSegments(text: string, marks: Mark[]): Segment[] {
   for (const g of sorted) {
     if (g.start < cursor) {
       // Nested/partial overlap: text can't render twice, so fold this range's
-      // roles into the covering span so those relations still light up on hover.
-      if (lastMark) lastMark.roles.push(...g.roles);
+      // roles into the covering span so those relations still light up on hover,
+      // and remember the sub-range so its boundary can be marked.
+      if (lastMark) {
+        lastMark.roles.push(...g.roles);
+        const s = Math.max(0, g.start - lastMark.start);
+        const e = Math.min(g.end, lastMark.end) - lastMark.start;
+        const eids = g.roles.map((r) => r.eid).filter(Boolean) as string[];
+        if (e > s && eids.length) (lastMark.nested ??= []).push({ s, e, eids });
+      }
       continue;
     }
     if (g.start > cursor) segs.push({ text: text.slice(cursor, g.start), mark: null });
