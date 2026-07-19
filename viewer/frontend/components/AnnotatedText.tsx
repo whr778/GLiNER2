@@ -11,25 +11,21 @@ type Line = { x1: number; y1: number; x2: number; y2: number };
 // to its arguments/tail when any span of that mention is hovered.
 export default function AnnotatedText({ text, marks, layer }: { text: string; marks: Mark[]; layer: Layer }) {
   const docRef = useRef<HTMLDivElement>(null);
-  const [hoverEid, setHoverEid] = useState<string | null>(null);
+  const [hoverEids, setHoverEids] = useState<Set<string>>(() => new Set());
   const [lines, setLines] = useState<Line[]>([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   const segments = useMemo(() => buildSegments(text, marks), [text, marks]);
   const linkable = layer === "events" || layer === "relations";
+  const hovering = hoverEids.size > 0;
 
   const compute = useCallback(() => {
     const cont = docRef.current;
-    if (!cont || !hoverEid || !linkable) {
+    if (!cont || !hovering || !linkable) {
       setLines([]);
       return;
     }
     const crect = cont.getBoundingClientRect();
-    const els = Array.from(cont.querySelectorAll(`[data-eid="${hoverEid}"]`)) as HTMLElement[];
-    if (els.length < 2) {
-      setLines([]);
-      return;
-    }
     const center = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
       return {
@@ -37,17 +33,35 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
         y: r.top - crect.top + cont.scrollTop + r.height / 2,
       };
     };
-    const anchorEl = els.find((e) => e.dataset.kind === "trigger" || e.dataset.kind === "head") ?? els[0];
-    const a = center(anchorEl);
+    // Map each instance id -> the spans (and their head/tail role) that carry it.
+    // A span's data-eids is "rel-0:head rel-3:tail" (one token per role).
+    const byEid = new Map<string, { el: HTMLElement; kind: string }[]>();
+    for (const el of Array.from(cont.querySelectorAll("mark.tag")) as HTMLElement[]) {
+      const raw = el.dataset.eids;
+      if (!raw) continue;
+      for (const tok of raw.split(" ")) {
+        const [eid, kind] = tok.split(":");
+        if (!eid) continue;
+        let arr = byEid.get(eid);
+        if (!arr) byEid.set(eid, (arr = []));
+        arr.push({ el, kind });
+      }
+    }
     const out: Line[] = [];
-    for (const el of els) {
-      if (el === anchorEl) continue;
-      const p = center(el);
-      out.push({ x1: a.x, y1: a.y, x2: p.x, y2: p.y });
+    for (const eid of hoverEids) {
+      const els = byEid.get(eid);
+      if (!els || els.length < 2) continue; // needs both endpoints (skip self-loops)
+      const anchor = els.find((e) => e.kind === "head" || e.kind === "trigger") ?? els[0];
+      const a = center(anchor.el);
+      for (const other of els) {
+        if (other.el === anchor.el) continue;
+        const p = center(other.el);
+        out.push({ x1: a.x, y1: a.y, x2: p.x, y2: p.y });
+      }
     }
     setLines(out);
     setSize({ w: cont.scrollWidth, h: cont.scrollHeight });
-  }, [hoverEid, linkable]);
+  }, [hoverEids, hovering, linkable]);
 
   useLayoutEffect(() => {
     compute();
@@ -69,7 +83,7 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
   }, [compute]);
 
   return (
-    <div className="doc" ref={docRef} data-dim={hoverEid ? "1" : undefined}>
+    <div className="doc" ref={docRef} data-dim={hovering ? "1" : undefined}>
       {linkable && lines.length > 0 && (
         <svg className="arcs" width={size.w} height={size.h} aria-hidden="true">
           <defs>
@@ -95,28 +109,35 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
         </svg>
       )}
 
-      {segments.map((s, i) =>
-        s.mark ? (
+      {segments.map((s, i) => {
+        const mk = s.mark;
+        if (!mk) return <span key={i}>{s.text}</span>;
+        const p = mk.primary;
+        const colorKey = p.colorKey ?? p.label;
+        const eidTokens = mk.roles.filter((r) => r.eid).map((r) => `${r.eid}:${r.kind}`).join(" ");
+        const eidSet = new Set(mk.roles.map((r) => r.eid).filter(Boolean) as string[]);
+        const active = [...eidSet].some((e) => hoverEids.has(e));
+        const count = eidSet.size;
+        return (
           <mark
             key={i}
-            className={"tag" + (hoverEid && s.mark.eid === hoverEid ? " active" : "")}
-            data-eid={s.mark.eid}
-            data-kind={s.mark.kind}
-            style={tagStyle(s.mark.colorKey ?? s.mark.label)}
-            onMouseEnter={() => s.mark!.eid && setHoverEid(s.mark!.eid!)}
-            onMouseLeave={() => setHoverEid(null)}
-            title={`${s.mark.label} · ${s.mark.kind}${s.mark.confidence != null ? ` · ${fmtConf(s.mark.confidence)}` : ""}`}
+            className={"tag" + (active ? " active" : "")}
+            data-eids={eidTokens || undefined}
+            data-kind={p.kind}
+            style={tagStyle(colorKey)}
+            onMouseEnter={() => setHoverEids(eidSet)}
+            onMouseLeave={() => setHoverEids(new Set())}
+            title={`${p.label} · ${p.kind}${count > 1 ? ` · ${count} links` : ""}${p.confidence != null ? ` · ${fmtConf(p.confidence)}` : ""}`}
           >
             {s.text}
-            <span className="taglabel" style={tagStyle(s.mark.colorKey ?? s.mark.label)}>
-              {s.mark.label}
-              {s.mark.kind === "trigger" && s.mark.idx ? <sup className="eidx">{s.mark.idx}</sup> : null}
+            <span className="taglabel" style={tagStyle(colorKey)}>
+              {p.label}
+              {p.kind === "trigger" && p.idx ? <sup className="eidx">{p.idx}</sup> : null}
+              {count > 1 ? <sup className="eidx">×{count}</sup> : null}
             </span>
           </mark>
-        ) : (
-          <span key={i}>{s.text}</span>
-        ),
-      )}
+        );
+      })}
       {segments.length === 0 && <span className="hint">(no text)</span>}
     </div>
   );

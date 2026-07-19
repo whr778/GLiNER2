@@ -71,18 +71,62 @@ export function collectMarks(result: ExtractionResult, layer: Layer): Mark[] {
   return marks;
 }
 
-export type Segment = { text: string; mark: Mark | null };
+// One participation of a rendered span: e.g. this span is the `head` of relation
+// `rel-3`. A single span can hold many roles (one entity is an endpoint of many
+// relations / an argument of many events).
+export type Role = {
+  eid?: string;
+  kind: string;
+  label: string;
+  colorKey?: string;
+  confidence?: number;
+  idx?: number;
+};
 
-// Non-overlapping segmentation: earliest start wins, then longest; overlaps skipped.
+// A rendered span, carrying every role that lands on its character range.
+export type SegMark = {
+  start: number;
+  end: number;
+  roles: Role[];
+  primary: Role; // drives color, sublabel, and data-kind (head/trigger win)
+};
+
+export type Segment = { text: string; mark: SegMark | null };
+
+// Segment the text so each character renders once, but MERGE all marks that
+// share a character range into one span carrying every role. A span that is an
+// endpoint of several relations (or an argument of several events) keeps them
+// all — an arc needs both endpoints present, so dropping duplicates hid links.
 export function buildSegments(text: string, marks: Mark[]): Segment[] {
-  const sorted = [...marks].sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));
+  const groups = new Map<string, { start: number; end: number; roles: Role[] }>();
+  for (const m of marks) {
+    if (m.start < 0 || m.start >= m.end || m.end > text.length) continue;
+    const key = m.start + ":" + m.end;
+    let g = groups.get(key);
+    if (!g) {
+      g = { start: m.start, end: m.end, roles: [] };
+      groups.set(key, g);
+    }
+    g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx });
+  }
+
+  const sorted = [...groups.values()].sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));
   const segs: Segment[] = [];
   let cursor = 0;
-  for (const m of sorted) {
-    if (m.start < cursor || m.start >= m.end || m.end > text.length) continue;
-    if (m.start > cursor) segs.push({ text: text.slice(cursor, m.start), mark: null });
-    segs.push({ text: text.slice(m.start, m.end), mark: m });
-    cursor = m.end;
+  let lastMark: SegMark | null = null;
+  for (const g of sorted) {
+    if (g.start < cursor) {
+      // Nested/partial overlap: text can't render twice, so fold this range's
+      // roles into the covering span so those relations still light up on hover.
+      if (lastMark) lastMark.roles.push(...g.roles);
+      continue;
+    }
+    if (g.start > cursor) segs.push({ text: text.slice(cursor, g.start), mark: null });
+    const primary = g.roles.find((r) => r.kind === "head" || r.kind === "trigger") ?? g.roles[0];
+    const mark: SegMark = { start: g.start, end: g.end, roles: g.roles, primary };
+    segs.push({ text: text.slice(g.start, g.end), mark });
+    lastMark = mark;
+    cursor = g.end;
   }
   if (cursor < text.length) segs.push({ text: text.slice(cursor), mark: null });
   return segs;

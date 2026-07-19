@@ -176,8 +176,10 @@ mark.tag .taglabel {
 }
 sup.eidx { font-size: 8px; margin-left: 1px; opacity: 0.85; }
 
-/* Event triggers get a full box border so they stand out from arguments. */
-mark.tag[data-kind="trigger"] {
+/* Event triggers and relation heads get a full box border + bold so they stand
+   out from their arguments / tails. */
+mark.tag[data-kind="trigger"],
+mark.tag[data-kind="head"] {
   border: 2px solid var(--tagc);
   border-radius: 5px;
   padding: 1px 4px;
