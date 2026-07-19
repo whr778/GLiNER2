@@ -30,6 +30,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [schemaNote, setSchemaNote] = useState<string | null>(null);
+  const [presetName, setPresetName] = useState("");
   const appliedModel = useRef<string | null>(null);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export default function Home() {
     const preset = matchCorpusPreset(m, presets);
     if (preset) {
       setSchema(preset.schema);
+      setPresetName(preset.name); // reflect it in the "Load a preset" dropdown
       setSchemaNote(`Schema loaded from ${preset.name} to match the selected model.`);
       appliedModel.current = m;
     }
@@ -94,6 +96,7 @@ export default function Home() {
             setSchema={setSchema}
             note={schemaNote}
             clearNote={() => setSchemaNote(null)}
+            selectedPreset={presetName}
           />
         </div>
 

@@ -9,12 +9,18 @@ type Props = {
   setSchema: (s: Record<string, any>) => void;
   note?: string | null;
   clearNote?: () => void;
+  selectedPreset?: string; // preset to reflect in the dropdown (e.g. matched to the model)
 };
 
-export default function SchemaPanel({ presets, schema, setSchema, note, clearNote }: Props) {
+export default function SchemaPanel({ presets, schema, setSchema, note, clearNote, selectedPreset }: Props) {
   const [text, setText] = useState(() => JSON.stringify(schema, null, 2));
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
+
+  // Follow the preset the parent picked (e.g. auto-matched to the model).
+  useEffect(() => {
+    if (selectedPreset) setSelected(selectedPreset);
+  }, [selectedPreset]);
 
   // Reflect schema changes that come from outside the editor (e.g. auto-loaded
   // to match the selected model). Ignore echoes of our own edits.
