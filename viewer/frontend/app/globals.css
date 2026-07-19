@@ -205,7 +205,23 @@ mark.tag[data-kind="head"] {
 .chip .conf { color: var(--muted); font-variant-numeric: tabular-nums; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
-.legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+/* Legend is its own scrollable, resizable sub-panel: with many event/relation
+   types it would otherwise push the text down. Drag the bottom edge to resize. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  margin-bottom: 10px;
+  max-height: 84px;
+  min-height: 34px;
+  overflow: auto;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
 .dot { width: 10px; height: 10px; border-radius: 3px; background: var(--tagc); display: inline-block; }
 
 /* Toggle group */
