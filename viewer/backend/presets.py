@@ -5,6 +5,8 @@ ontology a trained model expects."""
 
 from __future__ import annotations
 
+import itertools
+import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -77,6 +79,36 @@ def _raw_to_schema_input(raw: Dict[str, Any]) -> Dict[str, Any]:
     return si
 
 
+def _trigger_only_event_types(train_path: Path) -> List[str]:
+    """Event types that appear with a trigger but never carry a role.
+
+    ``_derive_schema`` drops role-less event types, so trigger-only corpora
+    (MAVEN, LEVEN, mendeley_ed) would otherwise yield no schema. Event
+    detection is typed-span detection, so we surface these as entity labels
+    the model can detect. The first-line check skips the full scan for
+    non-event corpora (every record in these sets carries events)."""
+    has_trigger: set = set()
+    has_role: set = set()
+    with open(train_path, encoding="utf-8") as f:
+        first = f.readline()
+        if '"events"' not in first:
+            return []
+        for line in itertools.chain([first], f):
+            line = line.strip()
+            if not line:
+                continue
+            for ev in (json.loads(line).get("output") or {}).get("events") or []:
+                etype = ev.get("event_type")
+                if not etype:
+                    continue
+                if ev.get("triggers"):
+                    has_trigger.add(etype)
+                for arg in ev.get("arguments") or []:
+                    if arg.get("role"):
+                        has_role.add(etype)
+    return sorted(has_trigger - has_role)
+
+
 def _corpus_presets() -> List[Dict[str, Any]]:
     sys.path.insert(0, str(_REPO / "scripts"))
     try:
@@ -94,6 +126,12 @@ def _corpus_presets() -> List[Dict[str, Any]]:
             si = _raw_to_schema_input(_derive_schema(str(train)))
         except Exception:
             continue
+        # Recover trigger-only event corpora (no role-bearing events, so
+        # `_derive_schema` returns nothing) as entity labels.
+        if "events" not in si:
+            trig = _trigger_only_event_types(train)
+            if trig:
+                si["entities"] = sorted(set(si.get("entities") or []) | set(trig))
         if si:
             out.append({"name": f"corpus: {name}", "schema": si, "source": "corpus"})
     return out

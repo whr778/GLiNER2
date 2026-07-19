@@ -101,7 +101,8 @@ offers:
 - The result JSON has **no copy of the input text** — the UI pairs
   `result` with the text it sent, using each span's char `start`/`end` to
   highlight in place.
-- Trigger-only / classification-only corpora (e.g. `mendeley_ed`) whose derived
-  schema has no role-bearing events won't appear as a corpus preset (their
-  schema is empty after role-less event types are dropped) — build a schema by
-  hand for those.
+- Every event corpus gets a schema preset. Full-event sets (casie, rams, duee,
+  cmnee, wikievents) expose their `events` (type + roles). Trigger-only sets
+  (maven, leven, mendeley_ed) have no roles, so event detection is offered as
+  **entities** (one label per event type) — the model detects the triggers as
+  typed spans.
