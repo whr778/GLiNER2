@@ -55,6 +55,7 @@ export default function Home() {
   async function onExtract() {
     setLoading(true);
     setError(null);
+    setResp(null); // clear the previous results immediately
     try {
       setResp(await extract(text, schema, options));
       // Remember a newly-used model once it has successfully extracted.
@@ -108,6 +109,10 @@ export default function Home() {
           )}
           {resp ? (
             <ResultView text={resp.text} result={resp.result} />
+          ) : loading ? (
+            <div className="card">
+              <div className="empty">Extracting…</div>
+            </div>
           ) : (
             !error && (
               <div className="card">
