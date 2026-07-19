@@ -348,6 +348,23 @@ as strict / relaxed / fair.
 | `gliner2-multi-v1-cmnee` | — | 0.986 | 0.874 | 0.221 / 0.709 / 0.671 | 0.466 | 27099 |
 <!-- SWEEP_END -->
 
+### 10.5 RE-DocRED relation extraction
+
+Fine-tuning `fastino/gliner2-{base,large}-v1` on RE-DocRED (re-annotated DocRED:
+document-level NER + relation extraction). Blind-test strict micro-F1; the
+checkpoint is selected on `eval_relation_strict_micro_f1` with windowed eval
+(`chunk_size 256`, matching the sliding-window training) so the ~500-word docs
+do not overflow the 512-position cap. 10 epochs, early stopping (patience 3).
+
+| Config | entity | relation | support (ent / rel) |
+|---|--:|--:|--:|
+| `gliner2-base-v1-redocred`  | 0.842 | 0.263 | 10705 / 17348 |
+| `gliner2-large-v1-redocred` | 0.860 | 0.287 | 10705 / 17348 |
+
+Document-level strict relation F1 is a hard metric for a span-based extractor
+(cross-window pairs and coreferent arguments are recall ceilings); the large
+model leads on both entity and relation F1.
+
 ## 11. Reproducibility
 
 - **Train** from a raw backbone: `uv run python tools/train/train.py --config
