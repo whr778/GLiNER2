@@ -16,6 +16,10 @@ import yaml
 
 PAPER = Path("tools/train/PAPER.md")
 START, END = "<!-- SWEEP_START -->", "<!-- SWEEP_END -->"
+# Header + delimiter live inside the markers so the whole table stays contiguous
+# (a comment line between the delimiter and the rows breaks GFM table rendering).
+HEADER = "| Config | entity | event_type | event_trigger | event_argument (S / R / Fair) | event | support |"
+DELIM = "|---|--:|--:|--:|--:|--:|--:|"
 
 
 def _fmt(x):
@@ -60,7 +64,7 @@ def main(cfg_name):
             rows[line.split("`")[1]] = line.rstrip()
     rows[cfg_name] = _row(cfg_name)
 
-    body = "\n".join(rows[k] for k in sorted(rows))
+    body = "\n".join([HEADER, DELIM] + [rows[k] for k in sorted(rows)])
     PAPER.write_text(f"{head}{START}\n{body}\n{END}{tail}")
     print(f"[paper] sweep row updated: {cfg_name}")
 

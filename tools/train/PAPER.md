@@ -338,10 +338,14 @@ the model is evaluated with windowed global decoding. Datasets without a
 held-out test split (MAVEN, LEVEN) show no blind test. `event_argument` is given
 as strict / relaxed / fair.
 
+<!-- SWEEP_START -->
 | Config | entity | event_type | event_trigger | event_argument (S / R / Fair) | event | support |
 |---|--:|--:|--:|--:|--:|--:|
-<!-- SWEEP_START -->
 | `gliner2-base-v1-casie` | 0.553 | 0.928 | 0.413 | 0.058 / 0.450 / 0.426 | 0.207 | 3454 |
+| `gliner2-base-v1-docee` | 0.333 | — | — | — / — / — | — | — |
+| `gliner2-base-v1-rams` | — | 0.993 | 0.935 | 0.462 / 0.686 / 0.614 | 0.693 | 3712 |
+| `gliner2-large-v1-casie` | 0.591 | 0.975 | 0.487 | 0.173 / 0.549 / 0.515 | 0.302 | 3454 |
+| `gliner2-multi-v1-cmnee` | — | 0.986 | 0.874 | 0.221 / 0.709 / 0.671 | 0.466 | 27099 |
 <!-- SWEEP_END -->
 
 ## 11. Reproducibility
