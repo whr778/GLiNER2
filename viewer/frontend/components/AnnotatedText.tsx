@@ -26,12 +26,20 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
       return;
     }
     const crect = cont.getBoundingClientRect();
+    // Anchor to the span's FIRST line fragment, not its full bounding box: a
+    // wrapped span's bounding box spans both lines and its center floats off the
+    // visible text, leaving arcs disconnected.
+    const rectOf = (el: HTMLElement) => el.getClientRects()[0] ?? el.getBoundingClientRect();
     const center = (el: HTMLElement) => {
-      const r = el.getBoundingClientRect();
+      const r = rectOf(el);
       return {
         x: r.left - crect.left + cont.scrollLeft + r.width / 2,
         y: r.top - crect.top + cont.scrollTop + r.height / 2,
       };
+    };
+    const topOf = (el: HTMLElement) => {
+      const r = rectOf(el);
+      return { x: r.left - crect.left + cont.scrollLeft, y: r.top - crect.top + cont.scrollTop, w: r.width };
     };
     // Map each instance id -> the spans (and their head/tail role) that carry it.
     // A span's data-eids is "rel-0:head rel-3:tail" (one token per role).
@@ -50,11 +58,18 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
     const out: Line[] = [];
     for (const eid of hoverEids) {
       const els = byEid.get(eid);
-      if (!els || els.length < 2) continue; // needs both endpoints (skip self-loops)
+      if (!els || els.length < 2) continue; // a relation has both endpoints
       const anchor = els.find((e) => e.kind === "head" || e.kind === "trigger") ?? els[0];
+      const targets = els.filter((e) => e.el !== anchor.el);
+      if (targets.length === 0) {
+        // Both endpoints landed on the same span (e.g. a tail nested inside the
+        // head): draw a small self-loop above it so the link is still visible.
+        const t = topOf(anchor.el);
+        out.push({ x1: t.x + t.w * 0.3, y1: t.y, x2: t.x + t.w * 0.7, y2: t.y });
+        continue;
+      }
       const a = center(anchor.el);
-      for (const other of els) {
-        if (other.el === anchor.el) continue;
+      for (const other of targets) {
         const p = center(other.el);
         out.push({ x1: a.x, y1: a.y, x2: p.x, y2: p.y });
       }
