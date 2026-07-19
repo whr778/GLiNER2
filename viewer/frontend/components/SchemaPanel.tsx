@@ -1,21 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Preset } from "@/lib/types";
 
 type Props = {
   presets: Preset[];
   schema: Record<string, any>;
   setSchema: (s: Record<string, any>) => void;
+  note?: string | null;
+  clearNote?: () => void;
 };
 
-export default function SchemaPanel({ presets, schema, setSchema }: Props) {
+export default function SchemaPanel({ presets, schema, setSchema, note, clearNote }: Props) {
   const [text, setText] = useState(() => JSON.stringify(schema, null, 2));
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
 
+  // Reflect schema changes that come from outside the editor (e.g. auto-loaded
+  // to match the selected model). Ignore echoes of our own edits.
+  useEffect(() => {
+    let current: unknown;
+    try {
+      current = JSON.parse(text);
+    } catch {
+      current = undefined;
+    }
+    if (JSON.stringify(current) !== JSON.stringify(schema)) {
+      setText(JSON.stringify(schema, null, 2));
+      setErr(null);
+    }
+  }, [schema]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function applyText(t: string) {
     setText(t);
+    clearNote?.();
     try {
       const parsed = JSON.parse(t);
       setSchema(parsed);
@@ -27,6 +45,7 @@ export default function SchemaPanel({ presets, schema, setSchema }: Props) {
 
   function loadPreset(name: string) {
     setSelected(name);
+    clearNote?.();
     const p = presets.find((x) => x.name === name);
     if (p) applyText(JSON.stringify(p.schema, null, 2));
   }
@@ -56,6 +75,7 @@ export default function SchemaPanel({ presets, schema, setSchema }: Props) {
             </optgroup>
           )}
         </select>
+        {note && <div className="hint" style={{ marginTop: 6, color: "var(--accent)" }}>{note}</div>}
       </div>
 
       <div className="field">

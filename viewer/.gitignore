@@ -10,6 +10,11 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
+# frontend/lib is source; un-ignore it (the root .gitignore's Python `lib/`
+# rule would otherwise swallow the whole directory).
+!frontend/lib/
+!frontend/lib/**
+
 # runtime (viewer.sh pids + logs)
 .run/
 

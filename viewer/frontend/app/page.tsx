@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import InputPanel from "@/components/InputPanel";
 import SchemaPanel from "@/components/SchemaPanel";
 import ResultView from "@/components/ResultView";
 import ModelManager from "@/components/ModelManager";
 import { addModel, extract, getModels, getPresets } from "@/lib/api";
+import { matchCorpusPreset } from "@/lib/models";
 import {
   DEFAULT_OPTIONS,
   type ExtractOptions,
@@ -28,11 +29,26 @@ export default function Home() {
   const [resp, setResp] = useState<ExtractResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [schemaNote, setSchemaNote] = useState<string | null>(null);
+  const appliedModel = useRef<string | null>(null);
 
   useEffect(() => {
     getPresets().then(setPresets).catch(() => {});
     getModels().then(setModels).catch(() => {});
   }, []);
+
+  // Selecting a model loads the schema it was trained on (e.g. the casie model
+  // -> the `corpus: casie` events), so its ontology matches out of the box.
+  useEffect(() => {
+    const m = options.model?.trim();
+    if (!m || m === appliedModel.current || presets.length === 0) return;
+    const preset = matchCorpusPreset(m, presets);
+    if (preset) {
+      setSchema(preset.schema);
+      setSchemaNote(`Schema loaded from ${preset.name} to match the selected model.`);
+      appliedModel.current = m;
+    }
+  }, [options.model, presets]);
 
   async function onExtract() {
     setLoading(true);
@@ -72,7 +88,13 @@ export default function Home() {
             onManage={() => setShowModels(true)}
             resultData={resp}
           />
-          <SchemaPanel presets={presets} schema={schema} setSchema={setSchema} />
+          <SchemaPanel
+            presets={presets}
+            schema={schema}
+            setSchema={setSchema}
+            note={schemaNote}
+            clearNote={() => setSchemaNote(null)}
+          />
         </div>
 
         <div>
