@@ -16,8 +16,8 @@ training:
   experiment_name: gliner2-multi-v1_leven
   data_parallel: false
   num_epochs: 15
-  batch_size: 16
-  gradient_accumulation_steps: 2
+  batch_size: 2
+  gradient_accumulation_steps: 16  # effective 32; small micro-batch fits fp32 on MPS (multi model)
   encoder_lr: 1.0e-5         # lower LR than from-scratch: fine-tuning a trained model
   task_lr: 3.0e-4
   warmup_ratio: 0.05
