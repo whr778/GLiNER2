@@ -151,7 +151,7 @@ UTF-8, NFKC-normalized records with stray Unicode line separators stripped
 - **Relations**: DocRED, Re-DocRED, SciERC, BioRED, sentence-REx, bio-NER-relations.
 - **Classification**: gliclass-logic, Scientific-text, paraloq schema extraction.
 - **Events**: ACE 2005 (with NAM/NOM/PRO mention-filter variants), WikiEvents,
-  DocEE, RAMS, MAVEN, CASIE, CMNEE (zh), LEVEN (zh).
+  DocEE, RAMS, MAVEN, CASIE, CMNEE (zh).
 
 Converters are config-driven (e.g. entity mention-type filtering, label
 roll-up/remap) and stratify train/val/test splits deterministically.
@@ -335,7 +335,7 @@ cardinality tuning.
 Blind-test micro-F1 per fine-tuned config, filled automatically as each run in
 `scripts/train_all_events.sh` finishes (via `scripts/update_paper_metrics.py`);
 the model is evaluated with windowed global decoding. Datasets without a
-held-out test split (MAVEN, LEVEN) show no blind test. `event_argument` is given
+held-out test split show no blind test. `event_argument` is given
 as strict / relaxed / fair.
 
 <!-- SWEEP_START -->
@@ -456,8 +456,6 @@ provenance in [`tools/data/TRAINING_DATA.md`](../data/TRAINING_DATA.md)):
   Dataset.* EMNLP. https://aclanthology.org/2020.emnlp-main.129/
 - Satyapanich, T., Ferraro, F., Finin, T. (2020). *CASIE: Extracting
   Cybersecurity Event Information from Text.* AAAI.
-- Yao, F., et al. (2022). *LEVEN: A Large-Scale Chinese Legal Event Detection
-  Dataset.* ACL Findings. https://aclanthology.org/2022.findings-acl.17/
 - Zhu, M., et al. (2024). *CMNEE: A Large-Scale Document-Level Event Extraction
   Dataset based on Open-Source Chinese Military News.* LREC-COLING.
   https://aclanthology.org/2024.lrec-main.299/

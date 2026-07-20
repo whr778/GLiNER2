@@ -1,5 +1,5 @@
 # Fine-tune the pretrained fastino/gliner2-multi-v1 GLiNER2 model jointly on all
-# Chinese event-extraction corpora (CMNEE, LEVEN). Uses the multilingual
+# Chinese event-extraction corpora (CMNEE). Uses the multilingual
 # checkpoint via from_pretrained; contrast with the mmbert-* configs, which
 # bootstrap fresh heads on a raw encoder via from_encoder.
 model:
@@ -74,6 +74,3 @@ data:
       train: data/cmnee.train.jsonl
       val: data/cmnee.val.jsonl
       test: data/cmnee.test.jsonl
-    leven:
-      train: data/leven.train.jsonl
-      val: data/leven.val.jsonl

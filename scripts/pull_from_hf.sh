@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 NAMESPACE="${GLINER2_HF_NAMESPACE:-whr778}"
 
-# The models that trained successfully in the event batch (maven/leven failed).
+# The models that trained successfully in the event batch.
 CONFIGS=(
   gliner2-base-v1-casie
   gliner2-base-v1-docee

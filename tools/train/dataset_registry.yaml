@@ -276,13 +276,6 @@ datasets:
     source_url: https://github.com/2086482524/CMNEE
     language: [zh]
     description: "Chinese military news event extraction; 8 event types, 11 argument roles."
-  leven:
-    name: LEVEN
-    tasks: Event detection (Chinese legal, trigger)
-    license: see source
-    source_url: https://github.com/thunlp/LEVEN
-    language: [zh]
-    description: "Chinese legal event detection; 108 event types, trigger-only."
   docee:
     name: DocEE
     tasks: Event extraction (doc-level)

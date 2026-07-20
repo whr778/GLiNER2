@@ -1,6 +1,6 @@
 """Reframe a trigger-only event dataset as an entity (typed-span) dataset.
 
-MAVEN / LEVEN / mendeley_ed are event *detection* corpora: a typed trigger with
+MAVEN / mendeley_ed are event *detection* corpora: a typed trigger with
 NO arguments. GLiNER2's event path needs >=1 role, so these can't train as
 events. Event detection is typed-span classification, so map each event to an
 entity: ``entity label = event_type``, ``mention = trigger surface``. Trigger

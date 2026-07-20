@@ -120,6 +120,6 @@ offers:
   highlight in place.
 - Every event corpus gets a schema preset. Full-event sets (casie, rams, duee,
   cmnee, wikievents) expose their `events` (type + roles). Trigger-only sets
-  (maven, leven, mendeley_ed) have no roles, so event detection is offered as
+  (maven, mendeley_ed) have no roles, so event detection is offered as
   **entities** (one label per event type) — the model detects the triggers as
   typed spans.

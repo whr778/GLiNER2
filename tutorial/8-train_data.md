@@ -414,7 +414,7 @@ Events capture ACE-style triggers and their typed arguments. Each event has an `
 
 ### Trigger Only (No Arguments)
 
-`arguments` may be empty — useful for event-detection-only corpora (e.g. MAVEN, LEVEN):
+`arguments` may be empty — useful for event-detection-only corpora (e.g. MAVEN):
 
 ```jsonl
 {"input": "The committee met on Friday.", "output": {"events": [{"event_type": "Meet", "triggers": ["met"], "arguments": []}]}}
@@ -445,7 +445,7 @@ entry must appear verbatim in `input`:
 {"input": "Rebels shot and killed the guard.", "output": {"events": [{"event_type": "Attack", "triggers": ["shot", "killed"], "arguments": [{"role": "Attacker", "entity": "Rebels"}, {"role": "Victim", "entity": "the guard"}]}]}}
 ```
 
-The converters under `tools/data/` (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, CMNEE, LEVEN, DocEE) already emit this format — see [TRAINING_DATA.md](../tools/data/TRAINING_DATA.md). None of the native source corpora annotate more than one trigger span per mention, so each converter emits a single-element `triggers` list; the multi-trigger shape is for hand-authored data or future corpora.
+The converters under `tools/data/` (ACE 2005, MAVEN, RAMS, WikiEvents, CASIE, CMNEE, DocEE) already emit this format — see [TRAINING_DATA.md](../tools/data/TRAINING_DATA.md). None of the native source corpora annotate more than one trigger span per mention, so each converter emits a single-element `triggers` list; the multi-trigger shape is for hand-authored data or future corpora.
 
 ---
 

@@ -83,7 +83,7 @@ def _trigger_only_event_types(train_path: Path) -> List[str]:
     """Event types that appear with a trigger but never carry a role.
 
     ``_derive_schema`` drops role-less event types, so trigger-only corpora
-    (MAVEN, LEVEN, mendeley_ed) would otherwise yield no schema. Event
+    (MAVEN, mendeley_ed) would otherwise yield no schema. Event
     detection is typed-span detection, so we surface these as entity labels
     the model can detect. The first-line check skips the full scan for
     non-event corpora (every record in these sets carries events)."""

@@ -1,6 +1,6 @@
 # Fine-tune the pretrained fastino/gliner2-multi-v1 GLiNER2 model jointly on ALL
 # event-extraction corpora, English + Chinese (CASIE, DocEE, MAVEN, RAMS,
-# WikiEvents, CMNEE, LEVEN). Uses the multilingual checkpoint because the mix is
+# WikiEvents, CMNEE). Uses the multilingual checkpoint because the mix is
 # not English-only; contrast with the mmbert-* configs, which bootstrap fresh
 # heads on a raw encoder via from_encoder.
 model:
@@ -93,6 +93,3 @@ data:
       train: data/cmnee.train.jsonl
       val: data/cmnee.val.jsonl
       test: data/cmnee.test.jsonl
-    leven:
-      train: data/leven.train.jsonl
-      val: data/leven.val.jsonl
