@@ -673,6 +673,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "gliner2", extra = ["local"] },
+    { name = "pyyaml" },
     { name = "trafilatura" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -681,6 +682,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
     { name = "gliner2", extras = ["local"], editable = "../../" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "trafilatura", specifier = ">=1.8" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
 ]
