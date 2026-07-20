@@ -22,7 +22,9 @@ training:
   fp16: false
   max_grad_norm: 1.0
   eval_strategy: epoch
-  metric_for_best: eval_event_trigger_strict_micro_f1   # trigger-only dataset
+  # Trigger-only event detection -> reframed as entities (single "Event" label),
+  # so select on entity F1, not the event metric it can't produce.
+  metric_for_best: eval_entity_strict_micro_f1
   greater_is_better: true
   save_best: true
   save_total_limit: 3
@@ -62,10 +64,9 @@ labels:
     separator: "."
     map: {}
 
+# Entity data reframed from the Mendeley event-detection corpus's trigger-only
+# events (tools/data/events_to_entities.py); train/val/test transformed 1:1.
 data:
-  corpora: []
-  event_files:
-    mendeley_ed:
-      train: data/mendeley_ed.train.jsonl
-      val: data/mendeley_ed.val.jsonl
-      test: data/mendeley_ed.test.jsonl
+  corpora:
+    - data/mendeley_ner
+  event_files: {}
