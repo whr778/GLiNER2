@@ -2,9 +2,9 @@
 #
 # Download the pushed GLiNER2 models from the Hugging Face Hub to this laptop,
 # into out/fastino/<name>/best/ (auto-discovered by the viewer's model registry).
-# Uses hf_transfer (parallel, CDN-accelerated) -- far faster than a single
-# rsync-over-SSH stream over a high-latency / per-flow-throttled path (a VPN).
-# The repos are public (whr778/<name>), so no auth is needed.
+# Uses Xet high-performance transfer (parallel, CDN-accelerated) -- far faster
+# than a single rsync-over-SSH stream over a high-latency / per-flow-throttled
+# path (a VPN). The repos are public (whr778/<name>), so no auth is needed.
 #
 #   bash scripts/pull_from_hf.sh                        # all default models
 #   bash scripts/pull_from_hf.sh gliner2-base-v1-casie  # only these
@@ -30,8 +30,8 @@ CONFIGS=(
 )
 [ "$#" -gt 0 ] && CONFIGS=("$@")
 
-export HF_HUB_ENABLE_HF_TRANSFER=1
-hf_cli() { uv run --no-project --with 'huggingface_hub[hf_transfer]' hf "$@"; }
+export HF_XET_HIGH_PERFORMANCE=1
+hf_cli() { uv run --no-project --with 'huggingface_hub[hf_xet]' hf "$@"; }
 
 OK=(); FAIL=()
 for name in "${CONFIGS[@]}"; do
