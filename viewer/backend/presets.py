@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-_REPO = Path(__file__).resolve().parents[2]
+from config import data_root, scripts_root
 
 # User-friendly SchemaInput dicts (entities / classifications / events /
 # relations / structures). These are what the /extract endpoint validates.
@@ -110,14 +110,14 @@ def _trigger_only_event_types(train_path: Path) -> List[str]:
 
 
 def _corpus_presets() -> List[Dict[str, Any]]:
-    sys.path.insert(0, str(_REPO / "scripts"))
+    sys.path.insert(0, str(scripts_root()))
     try:
         from infer_file import _derive_schema
     except Exception:
         return []
 
     out: List[Dict[str, Any]] = []
-    data_dir = _REPO / "data"
+    data_dir = data_root()
     if not data_dir.is_dir():
         return out
     for train in sorted(data_dir.glob("*.train.jsonl")):

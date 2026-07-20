@@ -40,6 +40,23 @@ GLINER2_MODEL=out/fastino/gliner2-base-v1-wikievents/best bash viewer/viewer.sh 
 
 Logs + PIDs live in `viewer/.run/` (git-ignored). Requires `uv` and `npm` on PATH.
 
+## Configuration
+
+The backend reads the data corpus and model-checkpoint locations from an
+optional `viewer/config.yaml` (git-ignored) — copy `viewer/config.example.yaml`
+and edit, or point `$GLINER2_VIEWER_CONFIG` at any file. Without one it uses
+repo-relative defaults, so it works out of the box.
+
+```yaml
+data_root: data      # scanned for <name>.train.jsonl -> corpus schema presets
+models_root: out     # scanned for **/best -> auto-discovered models
+default_model: fastino/gliner2-base-v1   # HF id or a checkpoint path
+```
+
+Relative paths resolve against the repo root; `~` and absolute paths work — so
+you can point the viewer at data/models anywhere. `GLINER2_MODEL` still overrides
+`default_model`. `GET /health` reports the resolved `data_root`/`models_root`.
+
 <details>
 <summary>Or run the two services by hand</summary>
 

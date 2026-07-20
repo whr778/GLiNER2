@@ -1,0 +1,19 @@
+# GLiNER2 viewer configuration (optional).
+#
+# Copy to viewer/config.yaml and edit, or point $GLINER2_VIEWER_CONFIG at any
+# file. With no config the viewer uses these repo-relative defaults, so it works
+# out of the box. Relative paths resolve against the repo root; ~ and absolute
+# paths are honored.
+
+# Directory scanned for <name>.train.jsonl files -> corpus schema presets.
+data_root: data
+
+# Directory scanned for **/best checkpoints -> auto-discovered models.
+models_root: out
+
+# Server default model: an HF id or a local checkpoint path.
+# The GLINER2_MODEL env var overrides this.
+default_model: fastino/gliner2-base-v1
+
+# Directory holding infer_file.py (schema derivation). Rarely changed.
+# scripts_root: scripts

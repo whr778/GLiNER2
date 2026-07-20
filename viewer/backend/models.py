@@ -2,7 +2,8 @@
 
 Merges three sources into one list the frontend combobox / manager uses:
 - the server default model,
-- auto-discovered local checkpoints (``out/**/best`` in the repo),
+- auto-discovered local checkpoints (``**/best`` under the configured
+  ``models_root``; see ``config.py``),
 - user-saved entries persisted to ``models.json`` (next to this file).
 
 Only user-saved entries can be removed; default/discovered are always offered.
@@ -14,7 +15,8 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-_REPO = Path(__file__).resolve().parents[2]
+from config import models_root
+
 _STORE = Path(__file__).resolve().parent / "models.json"
 
 
@@ -39,7 +41,7 @@ def _save(saved: List[Dict[str, str]]) -> None:
 
 def _discovered() -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
-    root = _REPO / "out"
+    root = models_root()
     if not root.is_dir():
         return out
     for best in sorted(root.glob("**/best")):

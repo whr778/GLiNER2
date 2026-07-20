@@ -6,19 +6,22 @@ structures. Reuses gliner2's ``Schema.from_dict`` + ``batch_extract_long`` (the
 same call as ``tools/infer.py``); the library itself is untouched.
 
 Run: ``uv run uvicorn app:app --reload --port 8000`` (from viewer/backend/).
-Model is chosen via env ``GLINER2_MODEL`` (default ``fastino/gliner2-base-v1``).
+The default model and the data/model roots are read from ``viewer/config.yaml``
+(see ``config.py`` / ``viewer/config.example.yaml``); ``GLINER2_MODEL`` overrides
+the default model.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-DEFAULT_MODEL = os.environ.get("GLINER2_MODEL", "fastino/gliner2-base-v1")
+import config
+
+DEFAULT_MODEL = config.default_model()
 
 # Loaded models cached by id (loading torch weights is expensive).
 _models: Dict[str, Any] = {}
@@ -69,6 +72,8 @@ def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "default_model": DEFAULT_MODEL,
+        "data_root": str(config.data_root()),
+        "models_root": str(config.models_root()),
         "loaded_models": list(_models),
     }
 

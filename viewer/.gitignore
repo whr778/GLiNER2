@@ -20,5 +20,6 @@ next-env.d.ts
 
 # local registries / env
 models.json
+config.yaml
 .env
 .env.local
