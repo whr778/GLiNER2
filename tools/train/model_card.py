@@ -15,6 +15,7 @@ flagged. A model card that asserts the wrong license is worse than none.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -156,9 +157,13 @@ def _metric(metrics: Dict[str, Any], cat: str, regime: str, m: str) -> Optional[
 # ---------------------------------------------------------------------------
 
 def _frontmatter(model_name, base_model, lang_codes, hf_ids, verdict) -> str:
+    # HF card YAML: with `license: other`, license_name must match
+    # /^[a-z0-9-.]+$/ (no spaces/em-dash) and license_link, if present, must be a
+    # valid https URI. Slugify the headline; omit the link (an in-card anchor is
+    # not a URI -- the human-readable license summary lives in the card body).
+    slug = re.sub(r"[^a-z0-9.]+", "-", verdict.headline.lower()).strip("-") or "other"
     lines = ["---", "library_name: gliner2", "license: other",
-             f"license_name: {verdict.headline.lower()}",
-             "license_link: \"#license\""]
+             f"license_name: {slug}"]
     if base_model:
         lines.append(f"base_model: {base_model}")
     if lang_codes:
