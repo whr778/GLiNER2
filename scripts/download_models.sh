@@ -15,7 +15,8 @@
 # number of concurrent streams. Set the count with GLINER2_JOBS. Flags combine
 # (e.g. --wait --parallel). The box IP defaults to the current instance; override
 # with GLINER2_AWS_IP. Pulls each config's best/ (+ final/ + last/ if present)
-# and every *_metrics.json, plus PAPER.md and the training logs.
+# and every *_metrics.json. It deliberately does NOT pull PAPER.md or the training
+# logs: the box's PAPER.md is usually stale and would clobber local paper edits.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -96,10 +97,6 @@ echo "Pulling *_metrics.json (all configs) ..."
 rsync -az --prune-empty-dirs -e "ssh -i $KEY" \
   --include='*/' --include='*_metrics.json' --exclude='*' \
   "$REMOTE:GLiNER2/out/fastino/" out/fastino/
-
-echo "Pulling PAPER.md + training logs ..."
-rsync -az -e "ssh -i $KEY" "$REMOTE:GLiNER2/tools/train/PAPER.md" tools/train/PAPER.md 2>/dev/null || true
-rsync -az -e "ssh -i $KEY" "$REMOTE:GLiNER2/out/train_logs/" out/train_logs/ 2>/dev/null || true
 
 echo ""
 echo "Done. Local checkpoints:"
