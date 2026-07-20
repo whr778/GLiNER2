@@ -32,7 +32,6 @@ CONFIGS=(
   gliner2-base-v1-maven
   # 2. multi -- Chinese per-dataset
   gliner2-multi-v1-cmnee
-  gliner2-multi-v1-leven
   # 3. combined
   gliner2-base-v1-events-english
   gliner2-multi-v1-events-chinese

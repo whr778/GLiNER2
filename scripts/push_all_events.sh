@@ -32,7 +32,6 @@ CONFIGS=(
   gliner2-base-v1-rams
   gliner2-base-v1-maven
   gliner2-multi-v1-cmnee
-  gliner2-multi-v1-leven
   gliner2-large-v1-casie
   gliner2-large-v1-docee
   gliner2-large-v1-rams
