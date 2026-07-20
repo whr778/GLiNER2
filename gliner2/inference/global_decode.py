@@ -11,7 +11,7 @@ Increment 1 (this module today) is the greedy assembler. The beam layer with
 global constraints (role validity, cardinality, span-conflict) lands on top of
 ``assemble_events_global`` in a later increment.
 
-See ``tools/train/DOCUMENT_EXTRACTION_PLAN.md``.
+See ``tools/events_working_papers/DOCUMENT_EXTRACTION_PLAN.md``.
 """
 
 from __future__ import annotations

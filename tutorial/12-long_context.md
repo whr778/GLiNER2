@@ -198,7 +198,7 @@ learned, and recall is still bounded by within-window candidate recall — an
 argument more than one window from its trigger is never emitted. To score a
 held-out set this way during training, set `eval.global_decode: true` with
 `chunk_size`/`chunk_overlap` in the config. See
-[`tools/train/DOCUMENT_EXTRACTION_PLAN.md`](../tools/train/DOCUMENT_EXTRACTION_PLAN.md).
+[`tools/events_working_papers/DOCUMENT_EXTRACTION_PLAN.md`](../tools/events_working_papers/DOCUMENT_EXTRACTION_PLAN.md).
 
 ## Best Practices
 

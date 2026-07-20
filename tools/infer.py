@@ -2,7 +2,7 @@
 
 Runs extraction over one or more texts through the long-document path, so long
 inputs are windowed automatically. Pass --global-decode to reconnect events
-across windows (OneIE-style, see tools/train/DOCUMENT_EXTRACTION_PLAN.md).
+across windows (OneIE-style, see tools/events_working_papers/DOCUMENT_EXTRACTION_PLAN.md).
 
 Examples:
   uv run python tools/infer.py --model fastino/gliner2-base-v1 \

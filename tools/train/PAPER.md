@@ -233,7 +233,7 @@ the beam uses **heuristic/config-set** weights (`GlobalDecodeConfig`). Recall is
 still bounded by within-window candidate recall — an argument more than ~one
 window from its trigger is never emitted and cannot be recovered by any
 post-hoc decode (this would require trigger-anchored windows or a two-stage
-document reader; see [`RECOMMENDATIONS.md`](RECOMMENDATIONS.md)). Trigger
+document reader; see [`RECOMMENDATIONS.md`](../events_working_papers/RECOMMENDATIONS.md)). Trigger
 clustering by span overlap can, rarely, merge two adjacent same-type events. The
 value the beam adds over greedy is cross-event conflict resolution.
 Correspondingly, the mode is only beneficial when documents exceed the encoder's
@@ -345,6 +345,9 @@ as strict / relaxed / fair.
 | `gliner2-base-v1-docee` | 0.333 | — | — | — / — / — | — | — |
 | `gliner2-base-v1-rams` | — | 0.993 | 0.935 | 0.462 / 0.686 / 0.614 | 0.693 | 3712 |
 | `gliner2-large-v1-casie` | 0.591 | 0.975 | 0.487 | 0.173 / 0.549 / 0.515 | 0.302 | 3454 |
+| `gliner2-large-v1-docee` | 0.360 | — | — | — / — / — | — | — |
+| `gliner2-large-v1-rams` | — | 1.000 | 0.903 | 0.444 / 0.697 / 0.627 | 0.684 | 3712 |
+| `gliner2-large-v1-wikievents` | 0.792 | 0.962 | 0.583 | 0.119 / 0.467 / 0.505 | 0.366 | 876 |
 | `gliner2-multi-v1-cmnee` | — | 0.986 | 0.874 | 0.221 / 0.709 / 0.671 | 0.466 | 27099 |
 <!-- SWEEP_END -->
 
@@ -376,8 +379,8 @@ model leads on both entity and relation F1.
 - **Infer** at the document level: `tools/infer.py --model <ckpt> --input
   <doc> --events '{"Attack":["Attacker","Target","Place"]}' --global-decode`.
 - Design and verification notes:
-  [`DOCUMENT_EXTRACTION_PLAN.md`](DOCUMENT_EXTRACTION_PLAN.md),
-  [`METRICS.md`](../../METRICS.md), [`CORE_CHANGES.md`](../../CORE_CHANGES.md).
+  [`DOCUMENT_EXTRACTION_PLAN.md`](../events_working_papers/DOCUMENT_EXTRACTION_PLAN.md),
+  [`METRICS.md`](../../METRICS.md), [`CORE_CHANGES.md`](../events_working_papers/CORE_CHANGES.md).
 
 ## 12. Limitations and future work
 
@@ -488,5 +491,42 @@ provenance in [`tools/data/TRAINING_DATA.md`](../data/TRAINING_DATA.md)):
 ## Appendix B: scope
 
 122 commits on `mmbert_training` vs. `main`. Core-package changes vs. `main` are
-catalogued in [`CORE_CHANGES.md`](../../CORE_CHANGES.md); the training tooling in
+catalogued in [`CORE_CHANGES.md`](../events_working_papers/CORE_CHANGES.md); the training tooling in
 `tools/train/` and `tools/data/` is net-new to this branch.
+
+## Appendix C: Running the models — Hub download and the viewer
+
+The fine-tuned checkpoints are published as public Hub repos `whr778/<config>`
+(e.g. `whr778/gliner2-large-v1-docee`). Two steps to obtain and run them.
+
+**Download from the Hub.** `scripts/pull_from_hf.sh` fetches each model into
+`out/fastino/<config>/best/` (where the viewer auto-discovers it) via `hf
+download` with Xet high-performance transfer — parallel and CDN-accelerated, so
+far faster than a single rsync-over-SSH stream on a high-latency link:
+
+```bash
+bash scripts/pull_from_hf.sh                         # all trained models
+bash scripts/pull_from_hf.sh gliner2-large-v1-docee  # or specific ones
+```
+
+**Launch the viewer.** An interactive app (NextJS + FastAPI) that runs any local
+checkpoint over pasted / uploaded / URL-imported text and renders entities,
+relations, events, classifications, and structures with confidences:
+
+```bash
+cd viewer/frontend && npm install     # one-time
+bash viewer/viewer.sh start           # backend :8000 + frontend :3000 (waits until up)
+# open http://localhost:3000 ; stop both with: bash viewer/viewer.sh stop
+```
+
+In the browser, pick a model in the **Model** box (downloaded checkpoints are
+listed automatically) — its training-time schema loads to match — then enter
+text and click **Extract**. Set a default model at launch with
+`GLINER2_MODEL=out/fastino/gliner2-large-v1-docee/best bash viewer/viewer.sh start`.
+
+**Or run headless** at the document level from the CLI:
+
+```bash
+uv run python tools/infer.py --model out/fastino/gliner2-large-v1-docee/best \
+  --input <doc.txt> --events '{"Attack":["Attacker","Target","Place"]}' --global-decode
+```
