@@ -48,14 +48,17 @@ wait_for_batch() {
 download_parallel() {
   echo "Downloading with $JOBS parallel streams (compression off) ..."
   export GL_KEY="$KEY" GL_REMOTE="$REMOTE"
-  echo "$DIRS" | xargs -P "$JOBS" -I{} sh -c '
-    parent=$(dirname "{}"); mkdir -p "$parent"
-    if rsync -a -e "ssh -i $GL_KEY" "$GL_REMOTE:GLiNER2/{}" "$parent/"; then
-      echo "  ok:   {}"
+  # Pass the dir positionally (-n 1 ... _) rather than -I{}: BSD/macOS xargs
+  # cannot assemble a long -I command ("command line ... too long").
+  echo "$DIRS" | xargs -P "$JOBS" -n 1 sh -c '
+    d="$1"
+    parent=$(dirname "$d"); mkdir -p "$parent"
+    if rsync -a -e "ssh -i $GL_KEY" "$GL_REMOTE:GLiNER2/$d" "$parent/"; then
+      echo "  ok:   $d"
     else
-      echo "  FAIL: {}"
+      echo "  FAIL: $d"
     fi
-  '
+  ' _
 }
 
 WAIT=0
