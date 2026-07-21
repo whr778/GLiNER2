@@ -1,42 +1,41 @@
 # GLiNER2 viewer -- one container running the FastAPI backend (:8000) and the
-# Next.js frontend (:3000). The build CONTEXT is the repo root, because the
-# backend installs the local gliner2 package (editable ../..) and reads scripts/.
+# Next.js frontend (:3000). Red Hat UBI9 base so it builds cleanly on a
+# FIPS-enabled RHEL9 host: dnf/rpm/OpenSSL are FIPS-certified, whereas the
+# earlier Debian base tripped libgcrypt's MD5-in-FIPS abort during `apt`
+# (_gcry_fatal_error "requested algo not in md context", SIGABRT/134). UBI
+# images pull freely (no subscription) and build anywhere, so this is also fine
+# on non-RHEL Docker hosts. Build CONTEXT is the repo root (the backend installs
+# the local gliner2 package [editable ../..] and reads scripts/).
 #
 #   # build (from the repo root):
 #   docker build -f viewer/Dockerfile -t gliner2-viewer .
 #
-#   # run (data/ + out/ are mounted, not baked in):
-#   docker run --rm -p 3000:3000 -p 8000:8000 \
+#   # run (data/ + out/ are mounted, not baked in; --gpus all for GPU):
+#   docker run --gpus all --rm -p 3000:3000 -p 8000:8000 \
 #     -v "$PWD/data:/app/data:ro" -v "$PWD/out:/app/out:ro" \
 #     -v gliner2-hf-cache:/root/.cache/huggingface \
 #     gliner2-viewer
+#   # drop --gpus all for CPU -- GLiNER2 picks the device on load.
 #
-#   # add --gpus all for GPU (the image ships CUDA torch; without the flag it
-#   # falls back to CPU automatically -- GLiNER2 picks the device on load):
-#   docker run --gpus all --rm -p 3000:3000 -p 8000:8000 ... gliner2-viewer
-#
-# For a remote host, rebuild the frontend against the reachable backend URL:
-#   docker build -f viewer/Dockerfile \
-#     --build-arg NEXT_PUBLIC_API_BASE=http://SERVER:8000 -t gliner2-viewer .
-#
-# The GPU box is x86_64; on an arm64 machine build for it with
-# --platform=linux/amd64 (or just build on the box).
+# Remote host? Rebuild the frontend against the reachable backend URL:
+#   docker build --build-arg NEXT_PUBLIC_API_BASE=http://SERVER:8000 \
+#     -f viewer/Dockerfile -t gliner2-viewer .
 
-FROM python:3.12-slim-bookworm
+FROM registry.access.redhat.com/ubi9/python-312
 
-# Node 20 (Next 15 needs >= 18.18); curl for the NodeSource installer; git for
-# any VCS-sourced pip deps; build-essential to compile the fasttext C++ ext
-# (gliner2 -> lumi-language-id-2 -> fasttext-numpy2 ships sdist only).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates git build-essential \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# uv (Python package manager).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
-
+USER 0
 WORKDIR /app
+
+# gcc-c++/make + python3.12-devel (Python.h) compile the fasttext C++ ext
+# (gliner2 -> lumi-language-id-2 -> fasttext-numpy2, sdist only); nodejs from
+# UBI9 appstream is >= 18.20, which satisfies Next 15's Node >= 18.18; git for
+# any VCS-sourced deps.
+RUN dnf install -y --setopt=install_weak_deps=False \
+        gcc-c++ make git nodejs npm python3.12-devel \
+    && dnf clean all
+
+# uv (copied from its published image -- no build-time network crypto here).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # --- backend deps (installs the local gliner2[local] -> torch/transformers) ---
 # The gliner2 editable build reads pyproject (version attr in __init__, LICENSE,
@@ -67,4 +66,6 @@ ENV HF_HOME=/root/.cache/huggingface
 EXPOSE 3000 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -sf http://127.0.0.1:8000/health || exit 1
+# Clear the UBI s2i entrypoint so the container runs start.sh directly.
+ENTRYPOINT []
 CMD ["/app/start.sh"]

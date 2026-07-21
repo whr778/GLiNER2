@@ -84,6 +84,12 @@ API_BASE=http://THIS_HOST:8000 viewer/docker-build.sh   # if accessed remotely
 Build on the box for a native, fast build (cross-building amd64 from an arm64
 Mac works but is slow -- then `docker save gliner2-viewer | ssh box docker load`).
 
+The image uses a **Red Hat UBI9 base**, so it builds cleanly even on a
+**FIPS-enabled RHEL9** host (a Debian base aborts here: `apt`'s libgcrypt refuses
+FIPS-disabled MD5 -> `_gcry_fatal_error`, exit 134). If you prefer not to build
+on the FIPS host at all, build off-host and `docker save | docker load` (the
+runtime only needs TLS, which is FIPS-fine).
+
 Host prerequisites on EL9 (once): Docker CE + the NVIDIA Container Toolkit.
 
 ```bash
