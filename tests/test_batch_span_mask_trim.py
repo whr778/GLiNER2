@@ -204,6 +204,7 @@ class TestTrainingBatchCollation:
                 eval_strategy="no",
                 logging_steps=9999,  # suppress normal logging
                 fp16=False,
+                num_workers=0,  # no DataLoader worker spawn (py3.14-safe; matches real configs)
             )
 
             trainer = GLiNER2Trainer(model, config)
@@ -277,6 +278,7 @@ class TestTrainingBatchCollation:
                     eval_strategy="no",
                     logging_steps=9999,
                     fp16=False,
+                    num_workers=0,  # no DataLoader worker spawn (py3.14-safe; matches real configs)
                 )
 
                 trainer = GLiNER2Trainer(model, config)
