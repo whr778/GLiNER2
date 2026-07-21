@@ -25,7 +25,10 @@ CONFIG_DIR = Path(__file__).resolve().parents[1] / "tools" / "train" / "config"
 # in sync when adding a variant.
 RECOGNIZED_STRUCT_LOSS = {"bce", "bce_posweight", "focal", "asl", "dice", "bce_dice"}
 
-CONFIG_FILES = sorted(CONFIG_DIR.glob("*.yaml"))
+# stopwords.yaml is a data file (per-language stopword lists) that lives here so
+# configs can reference it via ``stopword_yaml``; it is not a training config.
+NON_CONFIG_YAML = {"stopwords.yaml"}
+CONFIG_FILES = sorted(p for p in CONFIG_DIR.glob("*.yaml") if p.name not in NON_CONFIG_YAML)
 CONFIG_IDS = [p.name for p in CONFIG_FILES]
 
 

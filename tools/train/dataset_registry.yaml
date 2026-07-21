@@ -262,6 +262,13 @@ datasets:
     source_url: https://github.com/THU-KEG/MAVEN-dataset
     language: [en]
     description: "Large general-domain event trigger detection; 168 event types, trigger-only."
+  maven_ner:
+    name: MAVEN (entity-reframed)
+    tasks: NER (event types as entity labels)
+    license: see source
+    source_url: https://github.com/THU-KEG/MAVEN-dataset
+    language: [en]
+    description: "MAVEN trigger detection reframed as entity detection: each of the 168 event types is an entity label whose spans are the triggers."
   casie:
     name: CASIE
     tasks: Event extraction (cybersecurity)
@@ -312,6 +319,13 @@ datasets:
     source_url: https://data.mendeley.com/datasets/7d54rvzxkr/1
     language: [en]
     description: "English ongoing-event trigger detection over NYT economic news; one generic event type, trigger-only."
+  mendeley_ner:
+    name: Event Detection Dataset (Mendeley, entity-reframed)
+    tasks: NER (event types as entity labels)
+    license: cc-by-4.0
+    source_url: https://data.mendeley.com/datasets/7d54rvzxkr/1
+    language: [en]
+    description: "Mendeley event-trigger detection reframed as entity detection: the event type is an entity label whose spans are the triggers."
   ace2005:
     name: ACE 2005
     tasks: NER + relations + events
