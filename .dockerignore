@@ -1,0 +1,32 @@
+# Build context for viewer/Dockerfile is the repo root. Keep it small: the big,
+# gitignored artifacts (data/, out/ models) are volume-mounted at runtime, not
+# baked into the image.
+.git
+.gitignore
+
+# Large runtime data / checkpoints -- mounted, never copied (anchored to root).
+/data/
+/out/
+/train_logs/
+
+# Python
+**/.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+
+# Node / Next
+**/node_modules/
+**/.next/
+**/*.tsbuildinfo
+
+# Viewer local state (git-ignored) + runtime
+viewer/.run/
+viewer/backend/models.json
+viewer/config.yaml
+**/.env
+**/.env.local
+
+# Editor / OS cruft
+.DS_Store
+**/.claude/

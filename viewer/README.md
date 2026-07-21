@@ -40,6 +40,69 @@ GLINER2_MODEL=out/fastino/gliner2-base-v1-wikievents/best bash viewer/viewer.sh 
 
 Logs + PIDs live in `viewer/.run/` (git-ignored). Requires `uv` and `npm` on PATH.
 
+## Run with Docker
+
+One container runs both services (backend :8000 + frontend :3000). `data/` and
+the model checkpoints (`out/`) are **mounted**, not baked into the image, and
+GLiNER2 auto-selects the GPU when the container has one.
+
+```bash
+# build (from the repo root -- the backend installs the local gliner2 package):
+docker build -f viewer/Dockerfile -t gliner2-viewer .
+
+# run on CPU (data/ + out/ mounted read-only; HF cache persists downloads):
+docker run --rm -p 3000:3000 -p 8000:8000 \
+  -v "$PWD/data:/app/data:ro" -v "$PWD/out:/app/out:ro" \
+  -v gliner2-hf-cache:/root/.cache/huggingface \
+  gliner2-viewer
+
+# run on GPU: just add --gpus all -- the image ships CUDA torch, no rebuild.
+docker run --gpus all --rm -p 3000:3000 -p 8000:8000 \
+  -v "$PWD/data:/app/data:ro" -v "$PWD/out:/app/out:ro" \
+  -v gliner2-hf-cache:/root/.cache/huggingface \
+  gliner2-viewer
+```
+
+Then open **http://localhost:3000**. Set the default model with
+`-e GLINER2_MODEL=<hf-id-or-/app/out/...>`. Notes:
+
+- The GPU box is x86_64; on an arm64 machine build for it with
+  `docker build --platform=linux/amd64 ...`, or build on the box itself.
+- Serving the UI from a remote host? The browser must reach the backend, so
+  rebuild with `--build-arg NEXT_PUBLIC_API_BASE=http://SERVER:8000` (it is
+  inlined into the frontend at build time).
+
+### On an EL9 / Intel-64 GPU box
+
+`viewer/docker-build.sh` builds a `linux/amd64` image by default:
+
+```bash
+viewer/docker-build.sh                                  # -> gliner2-viewer
+API_BASE=http://THIS_HOST:8000 viewer/docker-build.sh   # if accessed remotely
+```
+
+Build on the box for a native, fast build (cross-building amd64 from an arm64
+Mac works but is slow -- then `docker save gliner2-viewer | ssh box docker load`).
+
+Host prerequisites on EL9 (once): Docker CE + the NVIDIA Container Toolkit.
+
+```bash
+# Docker CE
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+sudo systemctl enable --now docker
+
+# NVIDIA Container Toolkit (needs the NVIDIA driver already installed)
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+  | sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+sudo dnf install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi   # verify
+```
+
+Then build (script above) and `docker run --gpus all ...` as shown earlier.
+
 ## Configuration
 
 The backend reads the data corpus and model-checkpoint locations from an
