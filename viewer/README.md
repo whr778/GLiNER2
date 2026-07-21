@@ -46,6 +46,21 @@ One container runs both services (backend :8000 + frontend :3000). `data/` and
 the model checkpoints (`out/`) are **mounted**, not baked into the image, and
 GLiNER2 auto-selects the GPU when the container has one.
 
+Once the image is built, `viewer/docker.sh` is the easy way to run it (it wraps
+the `docker run` below with the ports, mounts, HF-cache volume, and GPU flag):
+
+```bash
+bash viewer/docker.sh start      # run the container, wait until it's up
+bash viewer/docker.sh stop       # stop + remove it
+bash viewer/docker.sh restart
+bash viewer/docker.sh status
+bash viewer/docker.sh logs       # follow container logs
+```
+
+GPU is auto-detected (adds `--gpus all` when `nvidia-smi` is present); force it
+with `GPU=1`, disable with `GPU=0`, and pick the model with `GLINER2_MODEL=...`.
+Or run the raw commands:
+
 ```bash
 # build (from the repo root -- the backend installs the local gliner2 package):
 docker build -f viewer/Dockerfile -t gliner2-viewer .
