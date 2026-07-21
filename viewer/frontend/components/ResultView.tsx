@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ExtractionResult } from "@/lib/types";
 import { fmtConf, labelColor, tagStyle } from "@/lib/colors";
-import { availableLayers, collectMarks, splitOtherKeys, type Layer } from "@/lib/spans";
+import { availableLayers, collectMarks, schemaLayers, splitOtherKeys, type Layer } from "@/lib/spans";
 import AnnotatedText from "./AnnotatedText";
 
 function spanText(x: any): string {
@@ -40,8 +40,21 @@ function EmptyNote({ names }: { names: string[] }) {
   return <div className="hint" style={{ marginTop: 8 }}>No matches: {names.join(", ")}</div>;
 }
 
-export default function ResultView({ text, result }: { text: string; result: ExtractionResult }) {
-  const layers = useMemo(() => availableLayers(result), [result]);
+export default function ResultView({
+  text,
+  result,
+  schema,
+}: {
+  text: string;
+  result: ExtractionResult;
+  schema?: Record<string, any> | null;
+}) {
+  // Tabs follow the REQUESTED schema (so a requested task with no matches still
+  // gets a tab -> "No X spans"); fall back to whatever the result contains.
+  const layers = useMemo(() => {
+    const requested = schemaLayers(schema);
+    return requested.length ? requested : availableLayers(result);
+  }, [schema, result]);
   const [layer, setLayer] = useState<Layer | null>(layers[0] ?? null);
   useEffect(() => {
     setLayer((cur) => (cur && layers.includes(cur) ? cur : layers[0] ?? null));

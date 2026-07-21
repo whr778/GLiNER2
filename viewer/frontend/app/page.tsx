@@ -27,6 +27,7 @@ export default function Home() {
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [showModels, setShowModels] = useState(false);
   const [resp, setResp] = useState<ExtractResponse | null>(null);
+  const [usedSchema, setUsedSchema] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [schemaNote, setSchemaNote] = useState<string | null>(null);
@@ -56,8 +57,11 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResp(null); // clear the previous results immediately
+    setUsedSchema(null);
     try {
       setResp(await extract(text, schema, options));
+      setUsedSchema(schema); // snapshot the schema these results came from
+
       // Remember a newly-used model once it has successfully extracted.
       const m = options.model?.trim();
       if (m && !models.some((x) => x.path === m)) {
@@ -108,7 +112,7 @@ export default function Home() {
             </div>
           )}
           {resp ? (
-            <ResultView text={resp.text} result={resp.result} />
+            <ResultView text={resp.text} result={resp.result} schema={usedSchema} />
           ) : loading ? (
             <div className="card">
               <div className="empty">Extracting…</div>

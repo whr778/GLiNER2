@@ -30,6 +30,20 @@ export function availableLayers(result: ExtractionResult): Layer[] {
   return layers;
 }
 
+// Highlightable layers the schema ASKED for, so the tabs reflect the request
+// even when a task found no matches (that tab then shows "No X spans"). Entities
+// and relations are lists; events is a {type: [roles]} object.
+export function schemaLayers(schema: Record<string, any> | null | undefined): Layer[] {
+  const has = (v: any) => (Array.isArray(v) ? v.length > 0 : v && Object.keys(v).length > 0);
+  const layers: Layer[] = [];
+  if (schema) {
+    if (has(schema.entities)) layers.push("entities");
+    if (has(schema.events)) layers.push("events");
+    if (has(schema.relations)) layers.push("relations");
+  }
+  return layers;
+}
+
 export function collectMarks(result: ExtractionResult, layer: Layer): Mark[] {
   const marks: Mark[] = [];
   if (layer === "entities") {
