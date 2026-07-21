@@ -11,7 +11,7 @@
 #   bash viewer/viewer.sh logs       # tail both logs (Ctrl-C to quit)
 #
 # Choose the model: export GLINER2_MODEL=<hf-id-or-path> before `start`.
-# Requires: uv, and npm with Node >= 18.18 (frontend deps auto-install on first start).
+# Requires: uv, npm (and `npm install` already run once in viewer/frontend).
 
 set -uo pipefail
 
@@ -30,20 +30,6 @@ start() {
   if is_up "$BACK_HEALTH" || is_up "$FRONT_URL"; then
     echo "Viewer already running (or ports $BACK_PORT/$FRONT_PORT in use). Run 'stop' first."
     return 1
-  fi
-
-  # First run needs the frontend deps (node_modules/.bin/next). Install once,
-  # else `npm run dev` fails cryptically with "next not found".
-  if [ ! -x "$VIEWER_DIR/frontend/node_modules/.bin/next" ]; then
-    if ! command -v npm >/dev/null; then
-      echo "npm not found. Install Node >= 18.18 (e.g. 'sudo dnf module install nodejs:20' on EL9)." >&2
-      return 1
-    fi
-    echo "Frontend deps missing -- running 'npm install' in viewer/frontend (one-time)..."
-    if ! ( cd "$VIEWER_DIR/frontend" && npm install ); then
-      echo "npm install failed. Check Node version: 'node --version' needs >= 18.18." >&2
-      return 1
-    fi
   fi
 
   echo "Starting backend  (uvicorn :$BACK_PORT)  model=${GLINER2_MODEL:-<default>}"
