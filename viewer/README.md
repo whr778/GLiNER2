@@ -124,6 +124,39 @@ docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi   # ve
 
 Then build (script above) and `docker run --gpus all ...` as shown earlier.
 
+#### Custom mount paths (restrictive EL9 hosts)
+
+On a locked-down box, `docker run` may fail preparing the `data/`/`out/` bind
+mounts — `error creating source path ... mkdir ...: permission denied` on a path
+that *already exists*, even though your own perms are fine. That's the engine
+(not you) unable to reach the source: an **NFS home with `root_squash`**, an
+**SELinux-restricted `/home`**, or **rootless Docker** (its user namespace maps
+your primary uid/gid but not your supplementary groups, and can't map NFS homes).
+
+Fix: mount from a **local path you own** and force the SELinux relabel.
+`docker.sh` takes `DATA_DIR`/`OUT_DIR` (mount sources) and `SELINUX_RELABEL=1`
+(force the `:z` relabel):
+
+```bash
+WORK=/var/tmp/gliner2                     # a LOCAL path you own (not NFS, not /home)
+mkdir -p "$WORK/data" "$WORK/out"
+cp -a data/*.jsonl "$WORK/data/" 2>/dev/null || true   # optional: schema presets
+cp -a out/*        "$WORK/out/"  2>/dev/null || true   # optional: your checkpoints
+
+bash viewer/docker-build.sh               # build the image (once)
+DATA_DIR="$WORK/data" OUT_DIR="$WORK/out" SELINUX_RELABEL=1 GPU=1 \
+  bash viewer/docker.sh start
+```
+
+Empty `data/`/`out/` are fine — the default `fastino/gliner2-base-v1` still runs
+(downloaded into the `gliner2-hf-cache` volume). The equivalent raw run:
+
+```bash
+docker run -d --name gliner2-viewer --gpus all -p 3000:3000 -p 8000:8000 \
+  -v "$WORK/data:/app/data:ro,z" -v "$WORK/out:/app/out:ro,z" \
+  -v gliner2-hf-cache:/root/.cache/huggingface gliner2-viewer
+```
+
 ## Configuration
 
 The backend reads the data corpus and model-checkpoint locations from an
