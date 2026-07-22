@@ -12,7 +12,8 @@
 #   bash viewer/docker.sh logs       # follow the container logs (Ctrl-C to quit)
 #
 # data/ and out/ (models) are mounted read-only -- with an SELinux :z relabel
-# when SELinux is enforcing (e.g. EL9), else the daemon rejects the bind mount.
+# when SELinux is enforcing (e.g. EL9), else the daemon rejects the bind mount
+# (force on/off with SELINUX_RELABEL=1 / =0).
 # HF downloads persist in the gliner2-hf-cache volume. GPU is auto-detected
 # (adds --gpus all when nvidia-smi
 # is present) -- force with GPU=1, disable with GPU=0. Pick the model with
@@ -78,9 +79,14 @@ start() {
   # bind-mount sources unless they're relabeled -- ":z" tells Docker to relabel
   # them to container_file_t. Without it you get a daemon-side "error creating
   # mount source path ... mkdir ... permission denied" (DAC perms look fine
-  # because it is SELinux/MAC denying). Skipped when SELinux isn't enforcing.
+  # because it is SELinux/MAC denying). Auto-applied when SELinux is enforcing;
+  # force on/off with SELINUX_RELABEL=1 / SELINUX_RELABEL=0.
   local vsuf="ro"
-  [ "$(getenforce 2>/dev/null)" = "Enforcing" ] && vsuf="ro,z"
+  case "${SELINUX_RELABEL:-auto}" in
+    1) vsuf="ro,z" ;;
+    0) vsuf="ro" ;;
+    *) [ "$(getenforce 2>/dev/null)" = "Enforcing" ] && vsuf="ro,z" ;;
+  esac
 
   local args=(run -d --name "$NAME")
   [ ${#gpu[@]} -gt 0 ] && args+=("${gpu[@]}")
