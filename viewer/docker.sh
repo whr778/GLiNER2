@@ -26,10 +26,21 @@ set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="${IMAGE:-gliner2-viewer}"
 NAME="${NAME:-gliner2-viewer}"
-# Host paths bind-mounted to /app/data and /app/out. Default to the repo's, but
-# override when the repo lives on storage the Docker daemon (root) can't reach --
-# e.g. an NFS home with root_squash, or an SELinux-restricted /home on EL9:
-#   DATA_DIR=/srv/gliner2/data OUT_DIR=/srv/gliner2/out bash viewer/docker.sh start
+# Host paths bind-mounted to /app/data and /app/out (default: the repo's).
+# Override when the Docker engine can't reach the repo -- a common EL9 failure is
+#   "error creating source path ... mkdir ...: permission denied"
+# on a path that already exists, even though your own perms look fine. Causes:
+#   - NFS home with root_squash: a rootful daemon runs as root -> squashed to
+#     nobody, so it cannot touch your home.
+#   - SELinux-restricted /home (the :z relabel below handles the local-fs case).
+#   - Rootless Docker: its user namespace maps your PRIMARY uid/gid to root-in-ns
+#     but NOT your supplementary groups, and can't map NFS homes -- so a shared,
+#     group-owned source (or anything on NFS) is unreachable. `namei -l "$PWD/out"`
+#     shows which component/group is the problem; `docker info` says if rootless.
+# Fix (no sudo, no daemon restart): point these at a LOCAL directory you OWN
+# outright (not a shared-group dir, not NFS home):
+#   mkdir -p /tmp/gliner2/{data,out}
+#   DATA_DIR=/tmp/gliner2/data OUT_DIR=/tmp/gliner2/out bash viewer/docker.sh start
 DATA_DIR="${DATA_DIR:-$REPO/data}"
 OUT_DIR="${OUT_DIR:-$REPO/out}"
 BACK_PORT=8000
