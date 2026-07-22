@@ -75,6 +75,23 @@ export default function Home() {
     }
   }
 
+  // Restore a previously-saved results snapshot (text + schema + result) so the
+  // viewer renders it without re-running the model. Older files (just
+  // {text, result}) still load; the tabs then fall back to the result's layers.
+  function onLoadResults(snap: {
+    text: string;
+    result: Record<string, any>;
+    schema?: Record<string, any>;
+    options?: ExtractOptions;
+  }) {
+    setError(null);
+    setText(snap.text);
+    if (snap.schema) setSchema(snap.schema);
+    if (snap.options) setOptions(snap.options);
+    setResp({ text: snap.text, result: snap.result });
+    setUsedSchema(snap.schema ?? null);
+  }
+
   return (
     <div className="app">
       <header>
@@ -94,6 +111,8 @@ export default function Home() {
             models={models}
             onManage={() => setShowModels(true)}
             resultData={resp}
+            resultSchema={usedSchema}
+            onLoadResults={onLoadResults}
           />
           <SchemaPanel
             presets={presets}

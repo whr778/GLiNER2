@@ -14,14 +14,18 @@ type Props = {
   models: ModelEntry[];
   onManage: () => void;
   resultData: ExtractResponse | null;
+  resultSchema?: Record<string, any> | null;
+  onLoadResults: (snap: any) => void;
 };
 
-export default function InputPanel({ text, setText, options, setOptions, loading, onExtract, models, onManage, resultData }: Props) {
+export default function InputPanel({ text, setText, options, setOptions, loading, onExtract, models, onManage, resultData, resultSchema, onLoadResults }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const loadRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [importing, setImporting] = useState(false);
   const [importErr, setImportErr] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -30,6 +34,26 @@ export default function InputPanel({ text, setText, options, setOptions, loading
       setSourceName(file.name);
     }
     e.target.value = "";
+  }
+
+  // Load a previously-saved .results.json back into the viewer (client-side; no
+  // model run). Restores the text, schema, options, and rendered results.
+  async function handleLoadResults(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setLoadErr(null);
+    try {
+      const snap = JSON.parse(await file.text());
+      if (typeof snap?.text !== "string" || !snap?.result || typeof snap.result !== "object") {
+        setLoadErr("Not a saved results file (expected text + result).");
+        return;
+      }
+      setSourceName(file.name.replace(/\.results\.json$/i, ".txt"));
+      onLoadResults(snap);
+    } catch {
+      setLoadErr("Could not parse that file as JSON.");
+    }
   }
 
   async function handleImport() {
@@ -107,9 +131,17 @@ export default function InputPanel({ text, setText, options, setOptions, loading
 
   function saveResults() {
     if (!resultData) return;
+    // Self-contained snapshot: text + schema + options + result, so "Load
+    // results" restores the full view (incl. the schema-driven tabs).
+    const snapshot = {
+      text: resultData.text,
+      schema: resultSchema ?? undefined,
+      options,
+      result: resultData.result,
+    };
     saveToFile(
       baseName() + ".results.json",
-      JSON.stringify(resultData, null, 2),
+      JSON.stringify(snapshot, null, 2),
       "application/json",
       ".json",
       "Results JSON",
@@ -133,10 +165,13 @@ export default function InputPanel({ text, setText, options, setOptions, loading
         <button type="button" onClick={() => fileRef.current?.click()}>Upload .txt</button>
         <button type="button" onClick={saveText} disabled={!text.trim()} title="Save the current text to a file">Save text…</button>
         <button type="button" onClick={saveResults} disabled={!resultData} title="Save the extracted results as <input>.results.json">Save results…</button>
+        <button type="button" onClick={() => loadRef.current?.click()} title="Load a saved <input>.results.json back into the viewer">Load results…</button>
         <input ref={fileRef} type="file" accept=".txt,text/plain" hidden onChange={handleFile} />
+        <input ref={loadRef} type="file" accept=".json,application/json" hidden onChange={handleLoadResults} />
         <span className="spacer" />
         <span className="hint">{text.length.toLocaleString()} chars</span>
       </div>
+      {loadErr && <div className="error">{loadErr}</div>}
 
       <div className="field">
         <label>Import from URL</label>
