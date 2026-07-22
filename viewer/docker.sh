@@ -26,6 +26,12 @@ set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="${IMAGE:-gliner2-viewer}"
 NAME="${NAME:-gliner2-viewer}"
+# Host paths bind-mounted to /app/data and /app/out. Default to the repo's, but
+# override when the repo lives on storage the Docker daemon (root) can't reach --
+# e.g. an NFS home with root_squash, or an SELinux-restricted /home on EL9:
+#   DATA_DIR=/srv/gliner2/data OUT_DIR=/srv/gliner2/out bash viewer/docker.sh start
+DATA_DIR="${DATA_DIR:-$REPO/data}"
+OUT_DIR="${OUT_DIR:-$REPO/out}"
 BACK_PORT=8000
 FRONT_PORT=3000
 BACK_HEALTH="http://127.0.0.1:$BACK_PORT/health"
@@ -45,7 +51,7 @@ start() {
     echo "  docker build -f viewer/Dockerfile -t $IMAGE .   (or bash viewer/docker-build.sh)" >&2
     return 1
   fi
-  mkdir -p "$REPO/data" "$REPO/out"
+  mkdir -p "$DATA_DIR" "$OUT_DIR" 2>/dev/null || true
 
   # GPU: auto (nvidia-smi present) unless forced with GPU=1 / disabled with GPU=0.
   local gpu=()
@@ -68,7 +74,7 @@ start() {
   local args=(run -d --name "$NAME")
   [ ${#gpu[@]} -gt 0 ] && args+=("${gpu[@]}")
   args+=(-p "$FRONT_PORT:3000" -p "$BACK_PORT:8000"
-         -v "$REPO/data:/app/data:$vsuf" -v "$REPO/out:/app/out:$vsuf"
+         -v "$DATA_DIR:/app/data:$vsuf" -v "$OUT_DIR:/app/out:$vsuf"
          -v gliner2-hf-cache:/root/.cache/huggingface)
   [ -n "${GLINER2_MODEL:-}" ] && args+=(-e "GLINER2_MODEL=$GLINER2_MODEL")
   args+=("$IMAGE")
