@@ -11,8 +11,10 @@
 #   bash viewer/docker.sh status
 #   bash viewer/docker.sh logs       # follow the container logs (Ctrl-C to quit)
 #
-# data/ and out/ (models) are mounted read-only; HF downloads persist in the
-# gliner2-hf-cache volume. GPU is auto-detected (adds --gpus all when nvidia-smi
+# data/ and out/ (models) are mounted read-only -- with an SELinux :z relabel
+# when SELinux is enforcing (e.g. EL9), else the daemon rejects the bind mount.
+# HF downloads persist in the gliner2-hf-cache volume. GPU is auto-detected
+# (adds --gpus all when nvidia-smi
 # is present) -- force with GPU=1, disable with GPU=0. Pick the model with
 # GLINER2_MODEL=<hf-id-or-/app/out/...>. Override the image/name with IMAGE=/NAME=.
 #
@@ -55,10 +57,18 @@ start() {
 
   local mode="CPU"; [ ${#gpu[@]} -gt 0 ] && mode="GPU"
 
+  # SELinux (EL9 defaults to Enforcing) denies the container runtime access to
+  # bind-mount sources unless they're relabeled -- ":z" tells Docker to relabel
+  # them to container_file_t. Without it you get a daemon-side "error creating
+  # mount source path ... mkdir ... permission denied" (DAC perms look fine
+  # because it is SELinux/MAC denying). Skipped when SELinux isn't enforcing.
+  local vsuf="ro"
+  [ "$(getenforce 2>/dev/null)" = "Enforcing" ] && vsuf="ro,z"
+
   local args=(run -d --name "$NAME")
   [ ${#gpu[@]} -gt 0 ] && args+=("${gpu[@]}")
   args+=(-p "$FRONT_PORT:3000" -p "$BACK_PORT:8000"
-         -v "$REPO/data:/app/data:ro" -v "$REPO/out:/app/out:ro"
+         -v "$REPO/data:/app/data:$vsuf" -v "$REPO/out:/app/out:$vsuf"
          -v gliner2-hf-cache:/root/.cache/huggingface)
   [ -n "${GLINER2_MODEL:-}" ] && args+=(-e "GLINER2_MODEL=$GLINER2_MODEL")
   args+=("$IMAGE")
