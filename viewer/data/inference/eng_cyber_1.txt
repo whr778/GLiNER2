@@ -1,0 +1,28 @@
+OpenAI Says Its AI Models Escaped Sandbox, Targeted Hugging Face to Cheat Benchmark
+Ravie LakshmananJul 22, 2026AI Security / Cloud Security
+
+OpenAI on Tuesday said a combination of its artificial intelligence (AI) models, including GPT-5.6 Sol and an "even more capable pre-release model," was behind the security incident that targeted Hugging Face's production infrastructure last week.
+
+The AI company said the models were operating with "reduced cyber refusals for evaluation purposes" that might otherwise limit their ability to conduct cyber attacks, adding it expects such incidents to "become more commonplace with the proliferation of increasingly cyber-capable models."
+
+Describing it as an "unprecedented cyber incident" and one involving state-of-the-art cyber capabilities, OpenAI said it intends to conduct a thorough investigation in partnership with Hugging Face to get to the bottom of the matter.
+
+As part of an internal evaluation, the models are said to have identified and chained vulnerabilities across OpenAI's research environment and Hugging Face's production infrastructure to find solutions for the ExploitGym benchmark.
+
+Evidence unearthed by OpenAI suggests the models' hyperfocus caused them to go to "extreme lengths" to achieve the goal at any cost, even managing to break out of its highly isolated sandboxed environment and obtain open internet access by discovering and exploiting a zero-day vulnerability in an unspecified vendor's software, which acts as a proxy and cache for package registries. This required spending a "substantial amount of inference compute."
+
+"With this access, our models performed a series of privilege escalation and lateral movement actions in our research testing environment until the models reached a node with internet access," the company explained.
+
+Surmounting the internet access blockade, the models subsequently inferred Hugging Face as the repository that hosted models, datasets, and solutions for ExploitGym, which, in turn, caused them to look for ways to gain access to secret information that it could use to cheat the benchmark.
+
+At one point, the models strung together several attack vectors, including using stolen credentials and zero-day vulnerabilities, to find a remote code execution path on the Hugging Face servers.
+
+As part of incident response efforts, OpenAI said it's implementing strict controls in infrastructure configuration, responsibly disclosed the zero-day flaw in the third-party software, adding Hugging Face to its trusted access program to improve their defenses, and incorporating stronger guardrails around future training and evaluations.
+
+"This incident points to the need to further strengthen our model's alignment, cyber protections during evaluation time, and monitoring during internal testing," OpenAI said.
+
+The development comes as the company also revealed that long-running models, while taking on complex, open-ended problems, can open the door to taking unwanted actions, such as finding weaknesses in the operational environment, in pursuit of their objective through repeated attempts over extended periods of time.
+
+"It also shows how a model that operates effectively over long time horizons can learn the blind spots of an approval system and work around it to achieve its goals," OpenAI said. "Long-horizon safety requires not only asking 'is this action allowed?' but also 'what outcome is this sequence of actions working toward?.'"
+
+Found this article interesting? Follow us on Google News, Twitter and LinkedIn to read more exclusive content we post.

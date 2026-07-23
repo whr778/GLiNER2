@@ -1,0 +1,30 @@
+The Hacker News Logo
+ Get the Latest News
+HomeVulnerabilitiesCyber AttacksExpert InsightsAwards
+Dormant GitHub Accounts Help Attackers Blend In While Mapping Corporate Orgs
+Ravie LakshmananJul 09, 2026Developer Security / Supply Chain Security
+
+Datadog Security Labs is warning of "several overlapping campaigns" that are systematically enumerating corporate GitHub organizations, repositories, and user accounts through the GitHub API.
+
+"Operators rely on automated scraping tooling with custom or legitimate-sounding user agents, leveraging GitHub 'ghost' accounts that are often years old, or compromised OAuth tokens and personal access tokens (PATs) from legitimate users," Julie Agnes Sparks, senior security engineer at Datadog, said.
+
+While the activity in most cases involves targeting public data, select instances have gone beyond public information enumeration to successfully clone private repositories.
+
+The campaign employs a mix of automated scanner tools, over 50 dormant accounts, and dozens of legitimate accounts that have had their personal access tokens (PATs) exposed unintentionally or compromised through some other method to facilitate the enumeration.
+
+What's notable about the "ghost" accounts is that they were created two to five years ago and intentionally left inactive for extended periods of time before weaponizing them to issue API traffic across multiple organizations. This technique is strategic as it aims to avoid raising any red flags and pass off the activity as legitimate, as opposed to creating new accounts and immediately using them for scraping.
+
+
+Because a large chunk of GitHub's API surface is reachable without authentication, the enumeration queries return the necessary data, while blending into normal API usage. Some of them include -
+
+Listing an organization's public repositories
+Walking a user's followers and following lists
+Enumerating gists, starred repos, and org memberships, and
+Running GraphQL queries against public objects
+This information can be used by a threat actor to conduct reconnaissance and programmatically map out an organization's GitHub-related activity, such as its public repositories, its members, who those members follow, and which projects they modify.
+
+Data access has been confirmed in a few scenarios, with the attackers taking steps to clone a private repository belonging to a single organization.
+
+"Individually, most of these requests are unremarkable. They hit public endpoints, authenticate cleanly or not at all, and return successful responses," Datadog said. "The concern lies in the aggregate: a group of accounts moving in sync across companies' GitHub organizations with versioned custom tooling iterating over weeks, and in the worst case, actors that stopped enumerating and started cloning."
+
+Found this article interesting? Follow us on Google News, Twitter and LinkedIn to read more exclusive content we post.

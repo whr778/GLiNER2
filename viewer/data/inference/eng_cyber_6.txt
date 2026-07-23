@@ -1,0 +1,34 @@
+The Hacker News Logo
+ Get the Latest News
+HomeVulnerabilitiesCyber AttacksExpert InsightsAwards
+Police Dismantle Kratos Phishing Kit Built to Steal Microsoft 365 Sessions and Bypass MFA
+Swati KhandelwalJul 22, 2026Law Enforcement / Cybercrime
+
+German and US law enforcement have taken down the core infrastructure of Kratos, described by German investigators as one of the world's most widely used criminal phishing kits, and Indonesian authorities arrested the man they say developed and ran it.
+
+In a joint announcement on Monday, the Frankfurt public prosecutor's cybercrime unit (ZIT) and Germany's Federal Criminal Police Office (BKA) said they pulled more than 200 servers offline. Investigators estimate roughly 1,800 paying customers used Kratos to run about 15,000 phishing campaigns a month.
+
+Kratos harvested more than passwords. The kit was designed to steal the session cookie along with the login, and that cookie is enough to walk past two-factor authentication into the account as the user, the BKA said.
+
+ANY.RUN, which reverse-engineered the kit, found operators could pick one of two modes: a plain PHP page that only harvests credentials, or a Node.js reverse proxy designed to relay the login to Microsoft in real time and capture the resulting session. That second mode is the adversary-in-the-middle technique that has made ordinary MFA a much weaker backstop than it looks.
+
+The operation ran like a franchise, with customers the BKA called franchisees. They paid in cryptocurrency and signed up through a dedicated website and a Telegram shop to manage their accounts and organize campaigns, so even low-skill actors could point a working AiTM kit at a target.
+
+The authorities put the number of victims since late 2024 in the hundreds of thousands, spread across more than 30 countries and concentrated in Europe and the United States. They estimate the operators earned more than 300,000 euros since 2024, and that each campaign could hit several thousand recipients.
+
+Kratos was already being tracked. Microsoft Threat Intelligence identifies the same kit as SneakyLog, a phishing-as-a-service platform it says has run credential-and-2FA theft against Microsoft 365 since at least early 2025, and it caught one campaign in the act.
+
+
+On February 10, operators sent tax-themed emails to about 100 organizations, mostly in the US, across manufacturing, retail, and healthcare, each carrying a W-2 document with a QR code personalized to the recipient that led to a fake Microsoft 365 login.
+
+Stolen Microsoft logins are rarely the end of the line. The BKA said the stolen credentials could be used for further phishing, sold to other criminals, or turned into a foothold inside companies by spreading through their Microsoft 365 environments, the familiar path from one phished inbox to business email compromise.
+
+Carsten Meywirth, who heads the BKA's cybercrime division, said the operation shows "that even highly professional phishing infrastructures can be effectively combated." The ZIT's Benjamin Krause framed it as proof of the office's "disruptive" approach of dismantling a criminal service outright rather than only charging the people behind it.
+
+Microsoft is notifying users caught in the campaigns. For anyone Microsoft is notifying, the fix depends on how they were hit. Where the kit only harvested credentials, a password reset and an MFA check cover it. Where its reverse-proxy mode lifted a live session, that session survives the reset, so it has to be revoked, with high-value accounts moved to phishing-resistant sign-in.
+
+Defenders hunting for exposure can look for the kit's tell: ANY.RUN found its login pages almost always load the paired assets barr.svg and lg.svg, then POST stolen credentials to endpoints like next.php or save.php. It rates that pairing at 90% recall with near-zero false positives.
+
+For now, the servers are offline and, the BKA says, Kratos-powered campaigns cannot continue. What the takedown did not touch is the roughly 1,800 customers or the kit code they already hold. ANY.RUN found Kratos running on disposable domains, compromised WordPress sites, and hosting shared with other adversary-in-the-middle kits, the kind of setup that reappears under a new name once the servers go down.
+
+Found this article interesting? Follow us on Google News, Twitter and LinkedIn to read more exclusive content we post.

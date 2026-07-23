@@ -1,0 +1,45 @@
+The Hacker News Logo
+ Get the Latest News
+HomeVulnerabilitiesCyber AttacksExpert InsightsAwards
+Critical NGINX Vulnerability Can Crash Workers and May Allow Remote Code Execution
+Swati KhandelwalJul 19, 2026Vulnerability / Server Security
+
+F5 has shipped fixes for a critical nginx flaw that lets a remote, unauthenticated attacker trigger a heap buffer overflow in the worker process with crafted HTTP requests. CVE-2026-42533 was patched on July 15 in nginx 1.30.4 (stable) and 1.31.3 (mainline), and in NGINX Plus 37.0.3.1; anyone on an earlier build should upgrade.
+
+Triggering it can crash or restart the worker, causing a denial of service; where ASLR is disabled or can be bypassed, F5 says it may also allow remote code execution.
+
+The overflow lives in nginx's script engine, the code that assembles strings from directives at request time. It only surfaces under a specific configuration: a regex-based map whose output variable is referenced in a string expression after a capture from an earlier regex match.
+
+Under that pattern the engine's two-pass evaluation comes apart. The first pass measures how many bytes the result needs and allocates a buffer to fit; the second pass writes the bytes in. Both read the same shared capture state, and evaluating the map's regex in between the two passes overwrites it.
+
+So the measuring pass sizes the buffer for the original capture, a reference like $1 from the location match, while the writing pass fills it from a different, attacker-sized one. The buffer is too small, and both the length and the content of the overrun come straight from the request.
+
+This does not hit every nginx server; exposure depends on the configuration, not just the version. F5's advisory lists the flaw as affecting NGINX Ingress Controller, Gateway Fabric, App Protect WAF, and Instance Manager alongside the core server and NGINX Plus, though at publication F5 had not listed fixed builds for those four products.
+
+F5 scores it 9.2 on CVSS v4 and 8.1 on the older v3.1 scale, and rates attack complexity high. Every nginx version from 0.9.6 through 1.31.2 is vulnerable, a range that reaches back to 2011, when map gained regex support.
+
+CVE-2026-42533 was reported to F5 independently by more than a dozen researchers; the vendor thanked them for "independently bringing this issue to our attention." nginx's own changelog credits the fix to Mufeed VH of Winfunc Research and to maintainer Maxim Dounin.
+
+One of the reporters, Stan Shaw, who publishes as cyberstan, put out a detailed writeup that goes further than the advisory. F5 conditions code execution on ASLR being disabled or bypassable, and Shaw's argument is that the flaw supplies the bypass itself. He told The Hacker News that the capture clobbering also runs in reverse: when the clobbered capture is smaller than the original, the oversized buffer hands back uninitialised heap data, and on a default Ubuntu 24.04 build a single unauthenticated GET recovers the addresses a payload needs.
+
+
+"A reader of the F5 advisory could reasonably conclude this is DoS-only on default systems. It is not," Shaw said. It is a stronger claim than F5 makes, one he says hit 10 out of 10 in his own testing, and he is withholding the exploitation details and a proof-of-concept for now, so no one can check it independently yet.
+
+The fix is to upgrade to nginx 1.30.4 or 1.31.3, or NGINX Plus 37.0.3.1. For anyone who cannot patch right away, F5's temporary mitigation is to switch affected regex maps to named captures, which Shaw says closes the main path and covers most configurations.
+
+But he told The Hacker News the mitigation leaves a narrower path open: a map that defines the same named group as the location regex reaches the same overflow through a second code path, which he confirmed with AddressSanitizer and which F5's advisory does not mention. "Upgrading to 1.30.4 / 1.31.3 is the only complete fix," he said.
+
+The exposure to grep for is narrow: a regex-based map whose variable appears in a string expression alongside a numbered capture ($1, $2) from an earlier regex, with the capture written ahead of the map variable.
+
+Shaw's own scanner automates that check across a config, follows includes, and flags only the exploitable ordering; it does not exploit anything, but as the reporter's tool it is not a vendor product.
+
+This is the third heap overflow in nginx's expression-evaluation code disclosed in about two months, after Rift (CVE-2026-42945) in May and an overlapping-captures bug in the rewrite module (CVE-2026-9256) days later.
+
+
+All three are the same class of flaw: nginx's two-pass script engine sizes a buffer in one pass and writes into it in the next, and each time the write outruns the size it measured. The trigger differs, a stale flag in Rift, overlapping captures in the rewrite bug, clobbered capture state here. The shared weakness, as the researcher notes, is a two-pass design that trusts its own measurement.
+
+As of July 20, CVE-2026-42533 was not on CISA's Known Exploited Vulnerabilities catalog and no public exploit code had appeared. Shaw says he will publish his own proof-of-concept 21 days after the patch, and Rift is the cautionary case: its exploit went public within days and drew active exploitation soon after. That is the reason to upgrade before this one's arrives.
+
+The Hacker News asked F5 whether switching to named captures fully closes CVE-2026-42533, given the variant Shaw documents, and when fixed builds for the affected downstream products will ship. F5 had not responded by publication.
+
+Found this article interesting? Follow us on Google News, Twitter and LinkedIn to read more exclusive content we post.

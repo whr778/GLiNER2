@@ -1,0 +1,46 @@
+A recent EvilTokens campaign targeting businesses across the US and Europe is exposing a new email security blind spot. This “ghost phishing” technique keeps the malicious page hidden until it decrypts and comes to life inside the victim’s browser.
+For security leaders, the risk is clear: traditional URL checks may miss the attack while Microsoft 365 access, sensitive data, and response time are already at stake.
+The Email Looks Safe. The Browser Tells a Different Story
+A recent EvilTokens attack shows how a phishing link can appear harmless during initial inspection while still leading to Microsoft 365 account takeover.
+The kit uses Microsoft Device Code Phishing to convince victims to complete a legitimate Microsoft login flow and unknowingly authorize access to their accounts. It does not need to steal the password directly.
+The real attack remains hidden until the page opens in the browser. Its HTML is encrypted with AES-GCM and becomes visible only after the browser decrypts it and renders the phishing content in the DOM.
+As a result, static URL checks and network-level controls may capture the initial response without seeing what the employee actually sees. This visibility gap can lead to:
+- Longer exposure to the Microsoft 365 account takeover
+- Delayed containment and response decisions
+- Unauthorized access to corporate email, files, and cloud services
+- More uncertain alerts escalated to senior analysts
+- Higher investigation workload and operational costs
+- Incomplete evidence for blocking related infrastructure
+The complete attack flow, however, was uncovered inside ANY.RUN’s Interactive Sandbox. Explore the analysis session to see what the browser revealed and how teams can use this evidence to respond faster.
+Check recent EvilTokens attack and get relevant IOCs
+Where Ghost Phishing Is Hitting Hardest
+ANY.RUN’s Threat Intelligence shows recent EvilTokens activity concentrated across the US and Europe, targeting technology, manufacturing, education, banking, consulting, financial services, and managed security providers.
+The overlap is hard to ignore. Based on ANY.RUN’s sandbox submissions data from 15,000 organizations, phishing exposure in 2026 reached 75.6% in consulting, 72.8% in financial services, 71.9% in manufacturing, 67.9% in technology, 66.7% in banking, and 66.1% among MSSPs.
+This makes hidden phishing especially dangerous for these sectors. One compromised Microsoft 365 account can expose sensitive data, enable business email compromise and fraud, and trigger costly incident response.
+The longer the attack stays hidden, the greater the chance that one account becomes a wider business incident.
+Stop hidden phishing before it costs your business.
+Reduce exposure, incident costs, and account takeover risk.
+Make the Ghost Visible Before the Business Pays the Price
+The most effective way to expose ghost phishing is to open suspicious links in a sandbox that supports in-browser data inspection.
+Inside ANY.RUN’s Interactive Sandbox, analysts move beyond the encrypted AES-GCM response and see what happens after the page decrypts. They can watch the phishing content appear in the DOM, connect the change to a Fetch/XHR request, and trace the Microsoft device code back to the /api/device/start endpoint.
+The in-browser data view brings the full attack flow into one investigation:
+- DOM snapshots show when the hidden page changes and the user code appears.
+- HTTP requests reveal the backend communication behind the device-code flow.
+- URL details expose the final destination and triggered detection signatures.
+- Indicators provide domains, endpoints, hashes, and infrastructure for further hunting.
+Instead of reconstructing the attack manually, teams get direct evidence of how the page behaves, what it requests, and which artifacts support containment and detection.
+From Browser-Level Evidence to a Clearer SOC Handoff
+To carry this evidence from Tier 1 to Tier 2, the investigation automatically generates a report with an AI summary and recommended next steps.
+Instead of rebuilding the case from raw browser data, senior analysts receive the key findings, observed behavior, indicators, and response context in one place. This makes handoffs faster, reduces repeated work, and helps teams move from validation to containment with less delay.
+Stop Ghost Phishing in the Browser Before It Reaches the Business
+The EvilTokens case exposes an uncomfortable truth: an email can pass inspection while the real attack waits inside the browser.
+Without browser-level visibility, the SOC is forced to make high-stakes decisions with partial evidence. That delay gives attackers more time to gain access, expand their reach, and turn one compromised Microsoft 365 account into a costly business incident.
+This helps security leaders:
+- Shrink the exposure window before a compromised account becomes a wider incident
+- Reduce pressure on senior analysts by giving Tier 1 enough evidence to resolve more cases
+- Accelerate containment with complete attack context available from the first escalation
+- Improve detection coverage using browser behavior, infrastructure, and repeatable attack patterns
+- Lower the cost of phishing response by cutting manual investigation and duplicated work
+- Make risk decisions with evidence instead of relying on clean scans or inconclusive verdicts
+Modern phishing no longer reveals itself fully in the email or initial URL response. Security teams need visibility that follows the attack into the browser and exposes it before the business pays the price.
+Reduce business exposure: Give analysts full browser evidence to contain ghost phishing faster and stop one compromised account from escalating into a costly incident.

@@ -1,0 +1,117 @@
+Training
+
+Learning Paths
+
+Free Resources
+
+For Organizations
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Search
+Group Purchasing
+Blog
+Agentic AI: The Weapon That No Longer Needs a Warrior
+Agentic AI: The Weapon That No Longer Needs a Warrior
+Jun 29 2026
+Authored by
+Foster Nethercott
+Foster Nethercott
+Share
+Share on X
+Share on linkedin
+Share on facebook
+
+Copy link
+Every weapon begins as an extension of the hand that holds it. The spear lengthened the reach of the arm. The bow sent the point flying without the throw. The rifle placed a man's death a quarter mile beyond his sight, and the aircraft carried that death across oceans. At each turn, the distance between the warrior and the wound grew wider, and yet one thing never moved: a human chose the target, and a human struck the blow. For the entire history of conflict, the cyber realm included, the hand has remained on the weapon.
+
+Offensive AI is the moment the weapon learns to aim itself.
+
+For three years, artificial intelligence (AI) has been an extension of the pen. It drafted the phishing email, proposed the exploit, sketched the malicious function, and then, like every tool that came before it, handed the work back to a human to carry out. In 2023, I published a whitepaper at the SANS Technology Institute showing how a person of almost no skill could coax a chatbot into producing malware that strolled past the controls built to stop it. That was the age of the assistant: dangerous, certainly, but still leashed to the operator who held it. Agentic AI severs the leash. It takes the objective and walks the steps itself. This single change, from a tool that drafts to a tool that acts, is reshaping offensive operations faster than the defenses built to catch them, and it cuts in two directions at once. It grants real capability to attackers who never possessed any, and it lends ferocious speed to those who were already deadly.
+
+If your trade is offensive work, this is the ground you now stand upon. The tooling an adversary turns against a target is the tooling you must be capable of turning yourself, and it has marched far beyond chatbots composing prettier phishing. It is worth studying, with clear and unsentimental eyes, what these agents can do today, how they let you operate at a pace that lately seemed impossible, and where they will quietly walk you off a cliff should you follow them with too much faith.
+
+The Gate Has Fallen
+Consider the entry-level threat actor, historically limited by a lack of technical expertise. Such individuals can now leverage agents to develop exploits and conduct campaigns autonomously. Technical mastery is no longer a prerequisite; intent and access to capable tools suffice. I refer to this phenomenon as 'script kiddie as a service,' signifying the emergence of sophisticated attacks from previously unskilled actors.
+
+A further implication is that the limitations of unskilled attackers are now defined by the capabilities of their chosen AI models rather than their own expertise. As numerous untrained actors employ similar models in comparable ways, their attack methodologies begin to converge, resulting in a behavioral monoculture. While this increases the volume of competent attacks, it also creates recognizable patterns, such as standardized phishing and exploit chains. Skilled adversaries will adapt beyond these defaults, but the majority will not. Consequently, defenders who understand these default behaviors can better anticipate and mitigate widespread threats.
+
+For experienced practitioners, artificial intelligence does not necessarily enhance skill, but it significantly increases operational speed. Training an agent on established tradecraft enables parallel execution of campaigns, reducing tasks that previously required weeks to mere hours. This dual effect, more attackers at the entry level and accelerated attacks from experts, broadens the overall threat landscape. For those conducting authorized offensive operations, this is now the prevailing standard. Adversaries already utilize these tools, and any engagement that neglects them fails to reflect current threats.
+
+The Hunt Runs Itself
+One of the most common examples I often give to people is autonomous social engineering. In this scenario, an attacker deploys an agent to gather publicly available information about a target, such as LinkedIn profiles, press releases, or conference recordings, to construct a detailed profile. This intelligence is then utilized by a second agent, which generates and sends personalized messages, manages responses, and conducts an ongoing conversation, incrementally advancing toward its objective. No human intervention is required in the communication process.
+
+The danger here is not speed; it is the quiet death of the signals we trusted. For years, our phishing defenses leaned on the tells of mass production: the clumsy grammar, the recycled template, the identical mail sent ten thousand times. Those are precisely the tells this arrangement erases. Each message arrives fluent, singular, and grounded in something genuinely true about its mark. Sure, the infrastructure signals endure; things like sender reputation, authentication, and the like still stand watch, but now as defenders, we have to lean on them harder than ever, and how long is it going to be before those defenses break under that pressure? The linguistic and template-level information tells us that so much of our detection, quietly depended upon, is gone.
+
+And it’s not just social engineering. The same automation is overtaking exploitation. As frontier models grow practiced at chaining tool calls and correcting themselves against a living environment, the bar for producing a working exploit is sinking lower with each release. So much so that the federal government is now getting involved and forcing models like Anthropic's Fable 5 to be taken off the market over fears of its capabilities. But this is only the tip of the iceberg. Tying even moderately capable models into a retrieval database of known vulnerabilities, and it will perform its own reconnaissance, judge what a target is likely exposed to, draw the matching exploit from the shelf, and report back like a hound that has caught a scent: I believe this will work, based on these indicators. Shall I run it? Malware is traveling the same road, growing agentic in its own right, and we are already watching agents rewrite existing malware into quieter strains bred to slip past the controls that knew the older form. This started years ago with the introduction of the “Guided Network Access Weapon (GNAW)” which I debuted at the Hackers Teaching Hackers conference.
+
+The Confidence of a False Oracle
+All of this makes the agents a very seductive thing to lean upon. They are swift, they run themselves, and they speak with unbroken authority from beginning to end. That last quality is the trap, and to call it lying is to flatter it with intent. The agent is not seeking the truth. It is seeking a finished task and an answer that wears the appearance of being right. It holds no privileged sight into whether a host is truly vulnerable; it matches indicators to a conclusion and delivers that conclusion in the same steady voice, whether the conclusion is sound or hollow. Marry it to a retrieval store of vulnerabilities, and the flaw compounds, for retrieval surfaces what is plausibly related, not what genuinely applies. It does not check the version, nor the configuration, nor whether the service can even be reached. 
+
+Where the Proof Is Made
+That problem of judgment is precisely why the place this work occupies matters. The SANS Secure AI Blueprint, authored by SANS Chief AI Officer Rob T. Lee, divides the wider challenge into three tracks: Protect AI, Utilize AI, and Govern AI. Govern produces the policy and the oversight that keep these systems accountable. Protecting hardens the systems an organization actually runs. Utilize is where AI is put to work for offense and defense alike, and offensive operations are its keenest edge.
+
+Leadership hears the words "AI security" and pictures policy binders and a governance committee in a quiet room. Yet Utilize is the only one of the three that yields proof: the actual attacks run against the actual systems, which reveal whether the policy and the hardening hold when they are struck. An organization may write every guideline it pleases and stand up every defense it can purchase, but until someone turns this tooling against its own walls, it does not yet know which of them will hold. A defense is a theory until it makes contact, and the operator is the one who brings it there. That is why the operators are, more and more, the ones who hold the whole program to account.
+
+What the Warrior Is For
+Return, then, to where we began. For the whole of human history, the hand stayed on the weapon because the weapon could not be trusted to choose, and that much has not changed. The machine can aim itself now, but it cannot tell you whether the shot should be taken. It will name a target that was never there and ask, in the same untroubled voice it uses when it is right, for permission to fire. Every mechanical part of this craft is passed to the machine. The one part that is not, the judgment to know a true thing from a confident lie and to hold your hand until you are certain, is becoming the whole of the work. The warrior has never stood farther from the wound, and the choice that joins them has never weighed more. The weapon no longer needs a warrior to swing it, but it has never needed a person to decide whether it should be swung at all more than now.
+
+Learn Offensive AI at SANS San Antonio 2026
+This August, I will take up these questions in depth during my SEC535: Offensive AI – Attack Tools and Techniques course run at SANS San Antonio 2026. Across three days of hands-on labs, we work the techniques described here from the operator's side of the line: AI-assisted reconnaissance and social engineering, deepfake and voice-cloning attacks, AI-supported vulnerability discovery, and the use of AI in the development and evasion of malware. You will drive the tooling with your own hands and come away with a true sense of its reach, its limits, and the precise points at which it must not be trusted. That is the distance between knowing these attacks exist and being able to carry them out.
+
+The machine will do the aiming. Be the judgment behind the shot.
+
+Register for SANS San Antonio 2026 here.
+
+
+Meet Your Author
+Foster NethercottFoster Nethercott
+Foster Nethercott
+Certified Instructor Candidate
+A Marine Corps veteran and founder of Fortisec, Foster Nethercott is a SANS course author and cybersecurity professional specializing in offensive operations and AI TTPs, bringing real-world experience into SEC535.
+
+Read more about Foster Nethercott

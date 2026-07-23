@@ -1,0 +1,30 @@
+The Hacker News Logo
+ Get the Latest News
+HomeVulnerabilitiesCyber AttacksExpert InsightsAwards
+China-Linked UAT-7810 Expands ORB Network With New LONGLEASH Malware
+Ravie LakshmananJul 08, 2026Malware / Network Security
+
+A Chinese threat actor tracked as UAT-7810 is actively refining its bespoke malware to expand its Operational Relay Box (ORB) network by breaking into internet-facing networking devices.
+
+According to findings from Cisco Talos, UAT-7810 is an advanced persistent threat (APT) actor that's responsible for maintaining and proliferating LapDogs, an ORB network that first came to light in June 2025.
+
+"UAT-7810 is most likely tasked with establishing Operational Relay Box (ORB) networks that can then be leveraged by associated secondary threat actors to conduct their own malicious attacks against high value targets," researchers Jungsoo An, Asheer Malhotra, Vanja Svajcer, and Brandon White said.
+
+One such China-nexus threat actor that has leveraged the infrastructure in its own attacks is UAT-5918, which has been linked to cyber attacks targeting critical infrastructure entities in Taiwan since at least 2023 with an aim to establish persistent access within victim environments.
+
+The latest findings indicate that UAT-7810 has continued to develop their custom malware dubbed ShortLeash with a newer version that's codenamed LONGLEASH. Also put to use by the threat actor are two other previously unreported tools -
+
+DOGLEASH, a passive backdoor that can execute arbitrary shellcode on a compromised Linux device
+LEASHTEST, an ELF binary that's used for testing certain functionality, like creating a thread, a child process, or an async timer, on MIPS-based embedded devices
+"UAT-7810 used at least four new servers to host a variety of minor variations of DOGLEASH to deploy against compromised targets," the researchers added. "An additional Java-based (JAR package) backdoor that we track as 'JARLEASH' was also deployed by UAT-7810 on at least one of the three servers for administration purposes, including file management, FTP, SFTP, and Netcat."
+
+Attack chains mounted by the hacking crew are known to weaponize known vulnerabilities in unpatched Ruckus wireless routers, such as CVE-2020-22653, CVE-2020-22658, and CVE-2023-25717. Campaigns observed earlier this year have also singled out ASUS AiCloud Routers susceptible to CVE-2025-2492, indicating potential attempts to broaden the ORB network.
+
+
+ShortLeash incorporates a backdoor capable of contacting an external server, hosting a web server, and acting as both a command-and-control (C2) server and client. Its successor, LONGLEASH, packs in additional functionality, pointing to an active development cycle. Some of the newer features are listed below -
+
+An executor component that enables proxying functions using HTTP, DNS, SOCKS, TCP, ICMP, and UDP protocols, manages network connections to other servers, authorizes clients, and removes the implant and all traces from the server if any tampering attempts are detected
+Act as an intermediate C2 server to relay commands and data from the primary C2 and forward it to its peers
+"The development and use of LEASHTEST signifies that even though they have developed LONGLEASH, a full-fledged backdoor framework, UAT-7810 is still actively testing functionality on MIPS platforms and may not be completely confident of its behavior on MIPS devices," Talos said.
+
+Found this article interesting? Follow us on Google News, Twitter and LinkedIn to read more exclusive content we post.
