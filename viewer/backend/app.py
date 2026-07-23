@@ -38,6 +38,11 @@ def get_model(model_id: str):
 app = FastAPI(title="GLiNER2 Viewer API")
 app.add_middleware(
     CORSMiddleware,
+    # The frontend proxies /api/* to this backend same-origin (see the viewer's
+    # next.config.mjs), so browser calls need no CORS. This localhost allowlist
+    # only covers pointing a browser directly at the backend during local dev;
+    # it deliberately does NOT allow arbitrary cross-origin reads of this
+    # unauthenticated API.
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["*"],
     allow_headers=["*"],

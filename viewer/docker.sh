@@ -88,9 +88,13 @@ start() {
     *) [ "$(getenforce 2>/dev/null)" = "Enforcing" ] && vsuf="ro,z" ;;
   esac
 
+  # Only the frontend (:3000) is published network-wide; the browser reaches the
+  # backend through the same-origin /api proxy, so :8000 is bound to loopback
+  # (local debugging + this script's health check) rather than exposed to the
+  # network -- the backend is unauthenticated, so it must not be world-reachable.
   local args=(run -d --name "$NAME")
   [ ${#gpu[@]} -gt 0 ] && args+=("${gpu[@]}")
-  args+=(-p "$FRONT_PORT:3000" -p "$BACK_PORT:8000"
+  args+=(-p "$FRONT_PORT:3000" -p "127.0.0.1:$BACK_PORT:8000"
          -v "$DATA_DIR:/app/data:$vsuf" -v "$OUT_DIR:/app/out:$vsuf"
          -v gliner2-hf-cache:/root/.cache/huggingface)
   [ -n "${GLINER2_MODEL:-}" ] && args+=(-e "GLINER2_MODEL=$GLINER2_MODEL")

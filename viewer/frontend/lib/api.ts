@@ -1,7 +1,12 @@
 import type { ExtractOptions, ExtractResponse, ModelEntry, Preset } from "./types";
 
+// Same-origin by default: "/api/*" is proxied to the backend by Next (see
+// next.config.mjs), so the browser only talks to the page's own origin -- no
+// baked host, no CORS, works however the viewer is reached. Set
+// NEXT_PUBLIC_API_BASE to an absolute URL only to point the client directly at
+// an external backend (bypasses the proxy).
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_API_BASE || "/api";
 
 async function jsonOrThrow(res: Response) {
   if (!res.ok) {

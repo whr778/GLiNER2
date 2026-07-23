@@ -10,16 +10,18 @@
 #   # build (from the repo root):
 #   docker build -f viewer/Dockerfile -t gliner2-viewer .
 #
-#   # run (data/ + out/ are mounted, not baked in; --gpus all for GPU):
-#   docker run --gpus all --rm -p 3000:3000 -p 8000:8000 \
+#   # run (data/ + out/ are mounted, not baked in; --gpus all for GPU). Only
+#   # :3000 needs publishing -- the browser reaches the backend through the
+#   # /api proxy; :8000 is loopback-only for local debugging:
+#   docker run --gpus all --rm -p 3000:3000 -p 127.0.0.1:8000:8000 \
 #     -v "$PWD/data:/app/data:ro" -v "$PWD/out:/app/out:ro" \
 #     -v gliner2-hf-cache:/root/.cache/huggingface \
 #     gliner2-viewer
 #   # drop --gpus all for CPU -- GLiNER2 picks the device on load.
 #
-# Remote host? Rebuild the frontend against the reachable backend URL:
-#   docker build --build-arg NEXT_PUBLIC_API_BASE=http://SERVER:8000 \
-#     -f viewer/Dockerfile -t gliner2-viewer .
+# Remote host? Nothing to rebuild: the browser calls /api/* on the page's own
+# origin and Next proxies to the co-located backend, so accessing the viewer at
+# http://SERVER:3000 works out of the box (no baked backend host, no CORS).
 
 FROM registry.access.redhat.com/ubi9/python-312
 
@@ -48,13 +50,23 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY viewer/backend/ ./viewer/backend/
 COPY scripts/ ./scripts/
 
-# --- frontend build (Next production build; API base is inlined at build) ---
+# --- frontend build (Next production build) ---
 COPY viewer/frontend/package.json viewer/frontend/package-lock.json ./viewer/frontend/
 RUN --mount=type=cache,target=/root/.npm \
     cd viewer/frontend && npm ci
 COPY viewer/frontend/ ./viewer/frontend/
-ARG NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000
+# No backend host is baked into the CLIENT: it calls /api/* same-origin and Next
+# proxies to the co-located backend (next.config.mjs), so the viewer works
+# however it is reached. Leave NEXT_PUBLIC_API_BASE empty; set it to an ABSOLUTE
+# URL only to bypass the proxy and point the client straight at an external
+# backend. GLINER2_BACKEND_ORIGIN retargets the proxy destination and is baked
+# into the build here (next start reads the built manifest, not a runtime env),
+# so a split-container deploy passes --build-arg GLINER2_BACKEND_ORIGIN=...;
+# empty -> the default http://127.0.0.1:8000 (co-located backend).
+ARG NEXT_PUBLIC_API_BASE=
 ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
+ARG GLINER2_BACKEND_ORIGIN=
+ENV GLINER2_BACKEND_ORIGIN=$GLINER2_BACKEND_ORIGIN
 RUN cd viewer/frontend && npm run build
 
 COPY viewer/start.sh /app/start.sh

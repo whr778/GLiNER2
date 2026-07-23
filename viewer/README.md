@@ -65,14 +65,16 @@ Or run the raw commands:
 # build (from the repo root -- the backend installs the local gliner2 package):
 docker build -f viewer/Dockerfile -t gliner2-viewer .
 
-# run on CPU (data/ + out/ mounted read-only; HF cache persists downloads):
-docker run --rm -p 3000:3000 -p 8000:8000 \
+# run on CPU (data/ + out/ mounted read-only; HF cache persists downloads).
+# Only :3000 is published -- the browser reaches the backend via the /api proxy;
+# :8000 is loopback-only (the backend is unauthenticated, keep it off the network):
+docker run --rm -p 3000:3000 -p 127.0.0.1:8000:8000 \
   -v "$PWD/data:/app/data:ro" -v "$PWD/out:/app/out:ro" \
   -v gliner2-hf-cache:/root/.cache/huggingface \
   gliner2-viewer
 
 # run on GPU: just add --gpus all -- the image ships CUDA torch, no rebuild.
-docker run --gpus all --rm -p 3000:3000 -p 8000:8000 \
+docker run --gpus all --rm -p 3000:3000 -p 127.0.0.1:8000:8000 \
   -v "$PWD/data:/app/data:ro" -v "$PWD/out:/app/out:ro" \
   -v gliner2-hf-cache:/root/.cache/huggingface \
   gliner2-viewer
@@ -83,9 +85,11 @@ Then open **http://localhost:3000**. Set the default model with
 
 - The GPU box is x86_64; on an arm64 machine build for it with
   `docker build --platform=linux/amd64 ...`, or build on the box itself.
-- Serving the UI from a remote host? The browser must reach the backend, so
-  rebuild with `--build-arg NEXT_PUBLIC_API_BASE=http://SERVER:8000` (it is
-  inlined into the frontend at build time).
+- Serving the UI from a remote host? Nothing to rebuild. The browser calls
+  `/api/*` on the page's own origin and Next proxies to the co-located backend,
+  so `http://SERVER:3000` works as-is (no baked backend host, no CORS). Just make
+  sure the host firewall allows port 3000 (`firewalld` on EL9 blocks it by
+  default), or tunnel it: `ssh -L 3000:localhost:3000 SERVER`.
 
 ### On an EL9 / Intel-64 GPU box
 
@@ -152,7 +156,7 @@ Empty `data/`/`out/` are fine — the default `fastino/gliner2-base-v1` still ru
 (downloaded into the `gliner2-hf-cache` volume). The equivalent raw run:
 
 ```bash
-docker run -d --name gliner2-viewer --gpus all -p 3000:3000 -p 8000:8000 \
+docker run -d --name gliner2-viewer --gpus all -p 3000:3000 -p 127.0.0.1:8000:8000 \
   -v "$WORK/data:/app/data:ro,z" -v "$WORK/out:/app/out:ro,z" \
   -v gliner2-hf-cache:/root/.cache/huggingface gliner2-viewer
 ```
@@ -183,8 +187,11 @@ cd viewer/backend && uv run uvicorn app:app --host 127.0.0.1 --port 8000
 # frontend (separate terminal)
 cd viewer/frontend && npm run dev
 ```
-Point the frontend at a non-default backend with `NEXT_PUBLIC_API_BASE`
-(e.g. `NEXT_PUBLIC_API_BASE=http://host:8000 npm run dev`).
+The frontend proxies `/api/*` to `http://127.0.0.1:8000` by default; point that
+proxy at a non-default backend with `GLINER2_BACKEND_ORIGIN`
+(e.g. `GLINER2_BACKEND_ORIGIN=http://host:8000 npm run dev`). To make the browser
+call an external backend directly (bypassing the proxy), set
+`NEXT_PUBLIC_API_BASE` to an absolute URL instead.
 </details>
 
 ## Schema (what to extract)

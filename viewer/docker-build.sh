@@ -5,8 +5,10 @@
 #
 #   viewer/docker-build.sh                       # linux/amd64 (the EL9 box)
 #   PLATFORM=linux/arm64 viewer/docker-build.sh  # build for this arch instead
-#   API_BASE=http://myserver:8000 viewer/docker-build.sh   # remote frontend URL
 #   TAG=gliner2-viewer:el9 viewer/docker-build.sh
+#   API_BASE=http://host:8000 viewer/docker-build.sh   # advanced: bypass the
+#       same-origin /api proxy and bake an absolute backend URL into the client.
+#       Not needed for remote access -- the proxy handles that (next.config.mjs).
 #
 # Building on the EL9 box itself is native + fast. Cross-building amd64 from an
 # Apple-Silicon Mac works via emulation (Docker Desktop / buildx) but is slow;
@@ -22,12 +24,16 @@ cd "$REPO_ROOT"
 
 PLATFORM="${PLATFORM:-linux/amd64}"
 TAG="${TAG:-gliner2-viewer}"
-API_BASE="${API_BASE:-http://127.0.0.1:8000}"
+API_BASE="${API_BASE:-}"   # empty -> client uses the same-origin /api proxy
 
-echo "Building $TAG for $PLATFORM  (NEXT_PUBLIC_API_BASE=$API_BASE)"
+# Only bake NEXT_PUBLIC_API_BASE when explicitly given (advanced escape hatch).
+build_args=()
+[ -n "$API_BASE" ] && build_args+=(--build-arg "NEXT_PUBLIC_API_BASE=$API_BASE")
+
+echo "Building $TAG for $PLATFORM${API_BASE:+  (NEXT_PUBLIC_API_BASE=$API_BASE)}"
 docker build \
   --platform "$PLATFORM" \
-  --build-arg NEXT_PUBLIC_API_BASE="$API_BASE" \
+  ${build_args[@]+"${build_args[@]}"} \
   -f viewer/Dockerfile \
   -t "$TAG" \
   .
