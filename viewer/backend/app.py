@@ -95,18 +95,32 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
     except Exception as e:  # noqa: BLE001 - surface schema errors to the client
         raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
 
-    model = get_model(req.options.model or DEFAULT_MODEL)
-    result = model.batch_extract_long(
-        [req.text],
-        schema,
-        threshold=req.options.threshold,
-        chunk_size=req.options.chunk_size,
-        chunk_overlap=req.options.chunk_overlap,
-        include_spans=True,
-        include_confidence=True,
-        global_decode=req.options.global_decode,
-        global_decode_config=GlobalDecodeConfig(beam_width=req.options.beam_width),
-    )[0]
+    model_id = req.options.model or DEFAULT_MODEL
+    try:
+        model = get_model(model_id)
+    except Exception as e:  # noqa: BLE001 - surface the real load error, not a bare 500
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"could not load model '{model_id}': {e}. Pass a local checkpoint "
+                "directory that exists in the server (see GET /models for valid "
+                "paths) or a HuggingFace repo id 'namespace/name'."
+            ),
+        ) from e
+    try:
+        result = model.batch_extract_long(
+            [req.text],
+            schema,
+            threshold=req.options.threshold,
+            chunk_size=req.options.chunk_size,
+            chunk_overlap=req.options.chunk_overlap,
+            include_spans=True,
+            include_confidence=True,
+            global_decode=req.options.global_decode,
+            global_decode_config=GlobalDecodeConfig(beam_width=req.options.beam_width),
+        )[0]
+    except Exception as e:  # noqa: BLE001 - surface extraction errors to the client
+        raise HTTPException(status_code=500, detail=f"extraction failed: {e}") from e
     return {"text": req.text, "result": result}
 
 
