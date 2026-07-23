@@ -95,7 +95,10 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
     except Exception as e:  # noqa: BLE001 - surface schema errors to the client
         raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
 
-    model_id = req.options.model or DEFAULT_MODEL
+    # Strip stray whitespace/newlines (a trailing \r from a shell pipeline makes
+    # os.path.isdir False -> gliner2 treats it as an HF id -> cryptic
+    # HFValidationError on a path that otherwise looks correct).
+    model_id = (req.options.model or DEFAULT_MODEL).strip()
     try:
         model = get_model(model_id)
     except Exception as e:  # noqa: BLE001 - surface the real load error, not a bare 500
