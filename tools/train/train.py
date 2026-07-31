@@ -77,7 +77,7 @@ import yaml
 
 from gliner2 import GLiNER2
 from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics, sweep_thresholds
-from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID, _selection_score
+from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID, _selection_score, make_sweeping_compute_metrics
 from gliner2.training.trainer import ExtractorDataset, GLiNER2Trainer, TrainingConfig
 
 
@@ -595,6 +595,7 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
         "threshold": overrides.get("threshold", eval_cfg.get("threshold", 0.5)),
         "by_language": eval_cfg.get("eval_by_language", False),
         "threshold_sweep": eval_cfg.get("threshold_sweep"),
+        "metric_sweep": eval_cfg.get("metric_sweep", False),
         "stopwords": _build_eval_stopwords(eval_cfg, config_path, corpus_data=corpus_data),
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
@@ -693,15 +694,35 @@ def main(config_path: str) -> None:
     global_decode = ev["global_decode"]
     global_decode_config = ev["global_decode_config"]
     eval_stopwords = ev["stopwords"]
+    metric_sweep_cfg = ev["metric_sweep"]
+
+    # metric_sweep: sweep the decision threshold each epoch and select the best
+    # checkpoint at its own best threshold. Needed when the loss (bce_posweight)
+    # shifts the score distribution so a fixed threshold no longer reflects the
+    # model's operating point (metric_for_best at 0.5 becomes near-zero noise).
+    if metric_sweep_cfg and eval_data:
+        sweep_grid = DEFAULT_THRESHOLD_GRID if metric_sweep_cfg is True else list(metric_sweep_cfg)
+        print(f"[metric sweep] per-epoch checkpoint selection sweeps threshold over "
+              f"{list(sweep_grid)}, maximizing {config.metric_for_best}")
+        compute_metrics_hook = make_sweeping_compute_metrics(
+            metric_key=config.metric_for_best,
+            thresholds=sweep_grid,
+            greater_is_better=config.greater_is_better,
+            batch_size=eval_bs, stopwords=eval_stopwords,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
+        )
+    else:
+        compute_metrics_hook = make_compute_metrics(
+            batch_size=eval_bs, threshold=eval_thr, stopwords=eval_stopwords,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
+        )
 
     trainer = GLiNER2Trainer(
         model, config,
         eval_data=eval_data,
-        compute_metrics=make_compute_metrics(
-            batch_size=eval_bs, threshold=eval_thr, stopwords=eval_stopwords,
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
-            global_decode=global_decode, global_decode_config=global_decode_config,
-        ),
+        compute_metrics=compute_metrics_hook,
     )
     if is_main:
         estimate_eta(model, train_data, config)

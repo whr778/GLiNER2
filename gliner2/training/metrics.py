@@ -101,6 +101,7 @@ def compute_metrics(
     chunk_overlap: int = 128,
     global_decode: bool = False,
     global_decode_config=None,
+    report: bool = True,
 ) -> Dict[str, Any]:
     """Score ``eval_dataset`` and return a flat metrics dict.
 
@@ -251,7 +252,8 @@ def compute_metrics(
     ):
         if present:
             metrics.update(_finalize_span_errors(prefix, err, conf))
-    _print_micro_report(metrics)
+    if report:
+        _print_micro_report(metrics)
     return metrics
 
 
@@ -884,6 +886,125 @@ def sweep_thresholds(
 
     best_threshold = max(results, key=lambda t: _selection_score(results[t]))
     return best_threshold, results[best_threshold], results
+
+
+def make_sweeping_compute_metrics(
+    metric_key: str,
+    thresholds: Iterable[float] = DEFAULT_THRESHOLD_GRID,
+    greater_is_better: bool = True,
+    batch_size: int = 8,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
+) -> Callable[[Any, Any], Dict[str, Any]]:
+    """A ``compute_metrics`` hook that sweeps the decision threshold each eval.
+
+    Returns the metrics at the threshold that optimizes ``metric_key`` (max when
+    ``greater_is_better`` else min). This is the fix for checkpoint selection
+    when the loss shifts the score distribution -- e.g. ``bce_posweight`` up-
+    weights positives so a fixed 0.5 threshold over-fires and ``metric_for_best``
+    at 0.5 collapses to near-zero noise for every epoch, making the saved "best"
+    effectively random. Selecting at each epoch's own best threshold matches the
+    operating point we actually deploy (the end-of-run sweep). The chosen
+    threshold is stamped into the returned dict as ``eval_chosen_threshold``.
+
+    Cost: one full eval pass per grid point, per epoch.
+    """
+    grid = tuple(thresholds)
+
+    def _hook(model, eval_dataset) -> Dict[str, Any]:
+        by_t = {
+            t: compute_metrics(
+                model, eval_dataset, batch_size=batch_size, threshold=t,
+                stopwords=stopwords, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+                global_decode=global_decode, global_decode_config=global_decode_config,
+                report=False,
+            ) or {}
+            for t in grid
+        }
+        score = lambda t: by_t[t].get(metric_key, 0.0)
+        best_t = (max if greater_is_better else min)(grid, key=score)
+        best = dict(by_t[best_t])
+        best["eval_chosen_threshold"] = best_t
+        print(f"\n[eval sweep] {metric_key}={score(best_t):.4f} at threshold={best_t}  "
+              f"(grid {list(grid)}; per-epoch checkpoint selection)")
+        _print_micro_report(best, label=f"swept@{best_t}")
+        return best
+
+    return _hook
+
+
+# Small default grid for the global-decode config sweep. The decoder is
+# model-free post-processing over windowed candidates, so it only moves the
+# event metrics -- _selection_score (support-weighted strict micro-F1) argmaxes
+# on those because every non-event category is byte-identical across configs.
+DEFAULT_DECODE_CONFLICT_GRID: Tuple[float, ...] = (0.0, 0.5, 1.0)
+DEFAULT_DECODE_TRIGGER_CONF_GRID: Tuple[float, ...] = (0.0, 0.2, 0.4)
+
+
+def default_global_decode_grid(
+    trigger_iou: float = 0.5,
+    single_filler_roles: frozenset = frozenset(),
+    beam_width: int = 8,
+    conflict_penalties: Iterable[float] = DEFAULT_DECODE_CONFLICT_GRID,
+    min_trigger_confs: Iterable[float] = DEFAULT_DECODE_TRIGGER_CONF_GRID,
+) -> List[Any]:
+    """Candidate ``GlobalDecodeConfig``s: the cross product of ``conflict_penalty``
+    and ``min_trigger_conf``, holding the clustering/cardinality knobs fixed."""
+    from gliner2.inference.global_decode import GlobalDecodeConfig
+    return [
+        GlobalDecodeConfig(
+            trigger_iou=trigger_iou, beam_width=beam_width,
+            conflict_penalty=cp, min_trigger_conf=mtc,
+            single_filler_roles=single_filler_roles,
+        )
+        for cp in conflict_penalties
+        for mtc in min_trigger_confs
+    ]
+
+
+def sweep_global_decode(
+    model,
+    eval_dataset,
+    configs: Iterable[Any] = None,
+    threshold: float = 0.5,
+    batch_size: int = 8,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+) -> Tuple[Any, Dict[str, Any], List[Tuple[Any, Dict[str, Any]]]]:
+    """Fit the global decoder's ``GlobalDecodeConfig`` on the validation set.
+
+    Scores ``eval_dataset`` under each candidate config (global decode on,
+    windowed) and returns the one maximizing ``_selection_score`` -- the
+    "learned-lite" answer to the paper's heuristic-weights limitation: fit the
+    decoder's knobs on held-out data, exactly as ``sweep_thresholds`` fits the
+    decision threshold. It does not retrain the model; it only re-selects the
+    post-hoc decode config.
+
+    Like ``sweep_thresholds``, each candidate re-runs the full windowed model
+    over ``eval_dataset`` (the decoder is model-free, but extraction is not
+    cached here), so keep the grid small -- a one-time calibration. Requires
+    ``chunk_size`` (global decode is only defined on windowed eval).
+
+    Returns ``(best_config, best_config's metrics, [(config, metrics), ...])``.
+    """
+    if chunk_size is None:
+        raise ValueError("sweep_global_decode requires chunk_size (windowed eval)")
+    candidates = list(configs) if configs is not None else default_global_decode_grid()
+    scored: List[Tuple[Any, Dict[str, Any]]] = []
+    for cfg in candidates:
+        metrics = compute_metrics(
+            model, eval_dataset, batch_size=batch_size, threshold=threshold,
+            stopwords=stopwords, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=True, global_decode_config=cfg,
+        ) or {}
+        scored.append((cfg, metrics))
+
+    best_cfg, best_metrics = max(scored, key=lambda cm: _selection_score(cm[1]))
+    return best_cfg, best_metrics, scored
 
 
 def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -> Dict[str, Any]:

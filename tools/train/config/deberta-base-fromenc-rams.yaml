@@ -1,0 +1,80 @@
+# DeBERTa-v3-base FROM_ENCODER on RAMS -- the ENCODER-ISOLATION CONTROL.
+#
+# Same from-scratch recipe as mmbert-base-rams (fresh GLiNER2 heads, bce_posweight
+# pos_weight 8, argument-based best checkpoint, no early stopping), but swapping in
+# the DeBERTa-v3 encoder with its native SHORT-context handling: 384-word sliding
+# windows + global decode (deberta-v3 caps at 512 positions, so it cannot see a
+# whole doc like mmBERT does).
+#
+# Purpose: the mmBERT-vs-DeBERTa gap on RAMS is confounded because the fastino
+# baselines fine-tune IE-curriculum-pretrained heads while mmbert trains fresh
+# heads. This control fixes head-init (fresh, both) to separate two effects:
+#   - vs fastino gliner2-base-v1-rams (pretrained heads) -> size of the HEAD-INIT gap.
+#   - vs mmbert-base-rams (from_encoder, long context)    -> the ENCODER + context effect.
+model:
+  encoder: microsoft/deberta-v3-base
+  max_width: 20
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0            # mirror mmbert-base-rams (tempered from 8)
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/deberta-base-fromenc-rams
+  experiment_name: deberta_base_fromenc_rams
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 16
+  gradient_accumulation_steps: 2   # effective batch 32 (matches mmbert-base-rams)
+  encoder_lr: 2.0e-5               # from_encoder: fresh heads (matches mmbert-base-rams)
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true            # deberta-v3 512-cap -> window long docs
+  max_len: 384                    # word window; leaves room for schema + specials
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false           # run all 15 epochs (matches mmbert-base-rams)
+
+eval:
+  batch_size: 1
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true              # per-epoch threshold sweep for ckpt selection (mirror mmbert)
+  chunk_size: 384                 # windowed eval + global decode (deberta native)
+  chunk_overlap: 128
+  global_decode: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl

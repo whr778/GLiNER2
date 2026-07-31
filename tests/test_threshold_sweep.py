@@ -1,6 +1,8 @@
 """Tests for gliner2.training.metrics.sweep_thresholds / _selection_score."""
 
-from gliner2.training.metrics import _selection_score, sweep_thresholds
+from gliner2.training.metrics import (
+    _selection_score, make_sweeping_compute_metrics, sweep_thresholds,
+)
 
 
 class _FakeModel:
@@ -73,3 +75,32 @@ class TestSweepThresholds:
     def test_default_grid_is_five_coarse_points(self):
         from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID
         assert DEFAULT_THRESHOLD_GRID == (0.1, 0.3, 0.5, 0.7, 0.9)
+
+
+class TestMakeSweepingComputeMetrics:
+    """The per-epoch hook selects the threshold that optimizes metric_for_best,
+    not a fixed 0.5 -- the fix for bce_posweight shifting the score distribution."""
+
+    def _model(self):
+        return _FakeModel({
+            0.1: [{"entities": {"PER": ["Marie Curie", "radium"]}}],  # 1 TP + 1 FP -> F1<1
+            0.5: [{"entities": {"PER": ["Marie Curie"]}}],            # exact match -> F1=1.0
+            0.9: [{"entities": {"PER": []}}],                         # nothing -> F1=0.0
+        })
+
+    def test_selects_threshold_maximizing_metric(self):
+        hook = make_sweeping_compute_metrics(
+            "eval_entity_strict_micro_f1", thresholds=(0.1, 0.5, 0.9),
+        )
+        out = hook(self._model(), _ds())
+        assert out["eval_chosen_threshold"] == 0.5
+        assert out["eval_entity_strict_micro_f1"] == 1.0
+
+    def test_greater_is_better_false_selects_min(self):
+        hook = make_sweeping_compute_metrics(
+            "eval_entity_strict_micro_f1", thresholds=(0.1, 0.5, 0.9),
+            greater_is_better=False,
+        )
+        out = hook(self._model(), _ds())
+        assert out["eval_chosen_threshold"] == 0.9
+        assert out["eval_entity_strict_micro_f1"] == 0.0

@@ -1,0 +1,76 @@
+# mmBERT-base on WikiEvents, WARM-STARTED from the RAMS mmBERT (from_pretrained
+# continues its trained heads). WikiEvents has only 206 train docs -- far too few
+# to train fresh GLiNER2 heads from a raw encoder -- so we inherit general
+# argument-extraction competence from mmbert-base-rams (7.3k docs) and let the
+# 206 WikiEvents docs adapt the ontology. GLiNER2's heads are schema-conditioned,
+# so competence transfers across event ontologies.
+#
+# Long-context (8192) counterpart to gliner2-large-v1-wikievents (DeBERTa-v3,
+# 512 cap + windowed global decode): mmBERT fits whole WikiEvents docs (median
+# ~700, p95 ~2.5k subword tokens) in one pass, capturing document-level events
+# NATIVELY -- no windowing, no global decoder (PAPER §9.5). Requires
+# out/mmbert-base-rams/best (train that config first).
+model:
+  pretrained: ./out/mmbert-base-rams/best   # warm-start from the RAMS mmBERT
+  struct_loss: bce_posweight   # inherit the RAMS loss (from_pretrained overrides
+  struct_pos_weight: 4.0       # the loaded config); matches mmbert-base-rams
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/mmbert-base-wikievents
+  experiment_name: mmbert_base_wikievents
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 2              # long docs -> small batch
+  gradient_accumulation_steps: 16  # effective batch 32
+  encoder_lr: 1.0e-5         # warm-started -> lower LR (fine-tuning, not from scratch)
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1  # select on arguments, not
+  greater_is_better: true                               # the trigger/type plateau
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # max_len holds ~all WikiEvents docs whole
+  max_len: 8192              # training window = full encoder context (whole doc)
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false      # run all epochs so the argument head fully develops
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 1
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true         # per-epoch threshold sweep for ckpt selection (mirror mmbert-rams)
+  # No chunk_size / global_decode: whole-doc single pass (native long context).
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    wikievents:
+      train: data/wikievents.train.jsonl
+      val: data/wikievents.dev.jsonl
+      test: data/wikievents.test.jsonl

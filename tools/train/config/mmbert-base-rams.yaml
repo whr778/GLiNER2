@@ -1,0 +1,88 @@
+# mmBERT-base on RAMS, from a raw encoder (from_encoder = fresh GLiNER2 heads).
+# The long-context (8192) counterpart to gliner2-base-v1-rams (DeBERTa-v3, 512
+# cap + windowed global decode): mmBERT fits each whole RAMS doc in one pass, so
+# the trigger and its scattered arguments are seen together -- document-level
+# events captured NATIVELY, no windowing and no global decoder (PAPER §9.5).
+# RAMS docs are short (max ~478 words), so a 2048-token window holds any doc plus
+# the schema prompt; eval is a single whole-doc pass (no chunk_size/global_decode).
+model:
+  encoder: jhu-clsp/mmBERT-base
+  max_width: 20
+  max_len: 8192            # encoder positional capacity (ModernBERT/RoPE)
+  # BCE with positive-class up-weighting (bce_posweight) to bootstrap the fresh
+  # from_encoder argument head. Plain "bce" ignores struct_pos_weight and left
+  # argument recall capped near 0 on fresh heads; focal (alpha 0.25) collapsed
+  # it entirely (arg strict 0.003). pos_weight 8 fixed recall but drove heavy
+  # over-prediction (arg precision ~0.008 at threshold 0.5); softened to 4 to
+  # temper the false-positive rate while keeping the positive lift. Paired with
+  # eval.metric_sweep so checkpoint selection reads the calibrated operating
+  # point, not the miscalibrated 0.5.
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+  # focal -- do NOT re-enable (alpha 0.25 down-weights positive spans):
+  # struct_loss: focal
+  # focal_gamma: 2.0
+  # focal_alpha: 0.25
+
+training:
+  output_dir: ./out/mmbert-base-rams
+  experiment_name: mmbert_base_rams
+  data_parallel: false
+  num_epochs: 15             # fresh heads need more passes than fine-tuning
+  batch_size: 8
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 2.0e-5         # from_encoder: training fresh heads (cf. mmbert-small)
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1  # save the checkpoint where
+  greater_is_better: true                               # arguments peak, not the
+                                                        # trigger/type plateau
+
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # RAMS docs fit in max_len -> no windowing
+  max_len: 2048              # training window; > any RAMS doc + schema prompt
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false      # run all 15 epochs so the argument head fully develops
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true      # calibrate the decision threshold on val (blind test)
+  metric_sweep: true         # per-epoch: sweep threshold + select best checkpoint
+                             # at its own best threshold (fixes metric_for_best
+                             # under bce_posweight; see model block). 5x eval/epoch.
+  # No chunk_size / global_decode: whole-doc single pass (native long context).
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl
