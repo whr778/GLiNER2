@@ -4,7 +4,7 @@
 
 ¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 4.8) — design, implementation, and drafting
 
-*Working paper — engineering and methodology contributions on the `mmbert_training` branch. Results tables are placeholders pending the current training run.*
+*Working paper — engineering and methodology contributions on the `mmbert_training` branch. The from-encoder / long-context mmBERT results and the head-initialization finding (§10.6) are complete (model: `whr778/mmbert-base-rams`); the §10.1–10.5 tables are the fastino DeBERTa-v3 baselines.*
 
 ---
 
@@ -302,6 +302,7 @@ path varies — over the full 20-document test set:
 | A. whole-doc single pass | 0.086 | 0.395 | 0.356 |
 | B. chunk (overlap 128) + simple merge | **0.143** | 0.433 | 0.373 |
 | C. chunk + OneIE global decode (beam) | 0.136 | 0.435 | 0.378 |
+| D. chunk + beam, config fit on val | 0.129 | 0.402 | 0.387 |
 
 **Windowing is the driver.** Chunking eval to match the model's trained window
 (A→B) lifts argument strict F1 **0.086 → 0.143** (+66% relative), fixing the
@@ -314,6 +315,19 @@ resolution under heuristic weights) is below the noise floor, and the default
 no-cardinality-cap union slightly over-generates arguments, nudging strict
 precision down. The `single_filler_roles` config is the lever to recover that;
 a learned global scorer would be the principled fix.
+
+**Fitting the decoder on validation (row D) does not change the verdict.**
+`sweep_global_decode` calibrates the beam's `GlobalDecodeConfig` on the dev set
+exactly as `sweep_thresholds` calibrates the decision threshold (§8) — a grid
+over `conflict_penalty` × `min_trigger_conf`, choosing the support-weighted
+strict micro-F1. The fit moves `conflict_penalty` 0.5 → 1.0, but
+`min_trigger_conf` is entirely inert (every WikiEvents trigger clears the floor),
+and on the test set the fitted config lands within noise of the default beam:
+event strict +0.009 (0.378 → 0.387), argument strict −0.006 (0.136 → 0.129),
+argument relaxed −0.033. So the flat response is **structural, not a tuning
+artifact** — the loss is recall-bound (§10.1: 231 FN), which no post-hoc
+re-ranking reaches. A fully learned OneIE scorer would optimize the same
+recall-bound dimension (§12).
 
 Decomposing the 0.068 → 0.136 change from the prior baseline (approx., since the
 prior run's exact config is inferred): ~+0.018 from 5x more training (prior
@@ -370,6 +384,65 @@ Document-level strict relation F1 is a hard metric for a span-based extractor
 (cross-window pairs and coreferent arguments are recall ceilings); the large
 model leads on both entity and relation F1.
 
+### 10.6 From-encoder training and the head-initialization bottleneck
+
+We ran the experiment §12 proposed: train events from a *raw* encoder via
+`from_encoder()` (fresh GLiNER2 heads) on RAMS, on the long-context mmBERT-base
+backbone (8192, whole document natively; §9.5). As an **encoder-isolation
+control** we ran the identical recipe on DeBERTa-v3-base — same fresh heads,
+same loss (`bce_posweight`, `pos_weight 4`), same 15 epochs and argument-strict
+checkpoint selection — but with DeBERTa's native short-context handling (384-word
+windows + global decode). Both contrast with fastino `gliner2-base-v1-rams`,
+whose heads are IE-curriculum-pretrained on ~254K examples (Zaratiana et al.,
+2025) *before* RAMS fine-tuning. RAMS blind test, strict micro-F1:
+
+| Model | Encoder | Heads | event_type | event_trigger | event_arg (S / R) | event |
+|---|---|---|--:|--:|--:|--:|
+| mmBERT-base `from_encoder` | mmBERT (8192, native) | fresh | 0.964 | 0.611 | **0.050** / 0.213 | 0.247 |
+| DeBERTa-v3-base `from_encoder` (control) | DeBERTa-v3 (384 window) | fresh | 0.981 | 0.612 | **0.042** / 0.204 | 0.340 |
+| `gliner2-base-v1-rams` (fastino) | DeBERTa-v3 (384 window) | **pretrained** | 0.993 | 0.935 | **0.462** / 0.686 | 0.693 |
+
+**The long-context model did not recover the argument bottleneck** — and the
+control says why. Hold the heads fresh and swap the *encoder* (mmBERT ↔ DeBERTa):
+arguments barely move (0.050 vs 0.042), triggers not at all (0.611 vs 0.612).
+Hold the *encoder* fixed (DeBERTa-v3) and swap fresh → pretrained heads:
+arguments jump ~11× (0.042 → 0.462) and triggers 0.612 → 0.935. The RAMS
+argument gap is therefore dominated by **head initialization** — the
+IE-curriculum pretraining of the fastino heads — **not** the encoder or the
+context window. mmBERT's 8192 tokens cannot help because the binding constraint
+is untrained extraction heads, not window-bound truncation (RAMS documents fit
+in 512 regardless). This refines §9.5: long context remedies window-bound
+*recall loss* on genuinely long documents, but it is **orthogonal** to the
+head-competence bottleneck that dominates argument extraction from a cold start.
+
+The implication is constructive: the remedy is to give a from-encoder model the
+same IE curriculum. [`tools/data/synthetic/`](../data/synthetic/) builds exactly
+that — broad-label, multi-task supervision (entities, relations, document-level
+events with triggers + arguments, classification, structures), either fully
+generated or projected as synthetic annotations onto real corpora, at the
+~10⁵–10⁶ scale the fastino heads saw. Head-init pretraining, *then* task
+fine-tuning, is the path to closing this gap on a long-context backbone.
+
+The WikiEvents from-encoder run (mmBERT, warm-started from the RAMS checkpoint
+above) reinforces the same point as a **documented negative result**: with only
+206 training documents the argument signal never rises above ~0, so
+argument-strict checkpoint selection is degenerate and the model is weak
+(entity 0.133, event_type 0.970, event_trigger 0.127, event_argument 0.000). It
+is reported here but **not released** — 206 documents cannot substitute for head
+pretraining. Only `whr778/mmbert-base-rams` is published.
+
+**Methodology — per-epoch threshold sweep.** `bce_posweight` up-weights positive
+spans, shifting the score distribution so a fixed 0.5 decision threshold no
+longer reflects the model's operating point: argument-strict F1 *at 0.5*
+collapses to near-zero noise for every epoch, making fixed-threshold checkpoint
+selection effectively random. We added `eval.metric_sweep`, which evaluates
+`metric_for_best` each epoch at the threshold that maximizes it over a small grid
+(0.1–0.9), so the saved checkpoint is the genuine argument peak at its own
+calibrated operating point. The end-of-run blind-test sweep keeps the aggregate
+support-weighted objective (§8) for apples-to-apples comparison with the
+baselines — which, for argument-sparse categories, *understates* the peak, so the
+from-encoder argument numbers above are conservative.
+
 ## 11. Reproducibility
 
 - **Train** from a raw backbone: `uv run python tools/train/train.py --config
@@ -386,16 +459,43 @@ model leads on both entity and relation F1.
 
 ## 12. Limitations and future work
 
-- The document-level event experiments here are on **short-context** DeBERTa-v3
-  checkpoints, where global decoding is the remedy (§9). The natural next
-  experiment is to fine-tune events on a **long-context mmBERT** model (8192
-  tokens, whole document in one pass; §9.5) and A/B it against
-  DeBERTa-v3 + global decoding — we expect the long-context model to recover the
-  argument bottleneck natively, making the decoder a fallback rather than the
-  primary path.
-- The global decoder's beam weights are heuristic, not learned; a learned
-  global scorer (true OneIE) would need a training signal over the candidate
-  graph.
+- We ran the long-context mmBERT experiment (§10.6) and the result overturned the
+  expectation: a from-encoder mmBERT does **not** recover the argument bottleneck,
+  because — as the DeBERTa-v3 encoder-isolation control shows — that bottleneck is
+  **head initialization** (IE-curriculum pretraining), not the context window.
+  Long context still remedies window-bound recall loss on genuinely long
+  documents (its intended role, §9.5), but it is orthogonal to head competence.
+  The open work is therefore **head-init pretraining**: run the broad-label,
+  multi-task synthetic curriculum in [`tools/data/synthetic/`](../data/synthetic/)
+  at ~10⁵–10⁶ scale to warm the extraction heads before task fine-tuning, then
+  re-run RAMS/WikiEvents from that checkpoint and A/B against the fastino heads.
+- The global decoder's weights are **heuristic, not learned**: the beam
+  optimizes one fixed objective — summed argument confidence minus a flat
+  `conflict_penalty` per reused span, under hard trigger-floor and single-filler
+  rules (`GlobalDecodeConfig`) — with no graph-level feature vector. A true
+  OneIE-style scorer would add global features over the candidate graph (role
+  co-occurrence, cross-event argument sharing, entity-type↔role compatibility)
+  with weights fit by **structured-perceptron beam training** against gold
+  document graphs; WikiEvents/RAMS supply the graphs, and the windowed candidates
+  this module already emits are the training substrate. We implemented the lighter
+  intermediate — `sweep_global_decode` fits the `GlobalDecodeConfig` scalars on
+  validation, as `sweep_thresholds` fits the decision threshold (§8) — and
+  measured it within noise on the WikiEvents test set (§10.2, row D), so the flat
+  response is structural, not a tuning artifact; only the fully learned scorer
+  remains open. Either way the gain is **precision, not recall**: the scorer only re-ranks candidates already generated, so it cannot
+  recover an argument that fell outside every window — the dominant error term
+  (§10.1: 231 FN vs. 123 FP) — which is why the beam is already neutral over the
+  greedy merge (§10.2). Crucially, a long-context backbone does **not** retire
+  this decoder: the windowed regime reappears on mmBERT whenever the *trained*
+  `max_len` is narrower than the document — from genuine overflow (documents past
+  8192: common for book-length corpora, rare for WikiEvents) or from training at
+  a reduced `max_len` for compute (8192-token attention is quadratic; §9.5). Long
+  context shrinks the population where the decoder fires, it does not eliminate
+  it; and as the window grows, more trigger↔argument pairs are already co-located
+  within it, so the residual decode collapses toward the dedup the greedy merge
+  already performs. The learned scorer is therefore the polish for the windowed
+  regime whenever it is active — second-order to the within-window recall ceiling
+  throughout.
 - Long-range arguments beyond one window remain an upstream recall ceiling;
   trigger-anchored windows or a two-stage document-level argument reader are the
   natural next steps (RECOMMENDATIONS Options 2–3).
