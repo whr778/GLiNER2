@@ -49,7 +49,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -60,7 +60,9 @@ from torch.amp import GradScaler  # device-typed; we instantiate it conditionall
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader, Dataset, DistributedSampler
+from torch.utils.data import (
+    DataLoader, Dataset, DistributedSampler, IterableDataset, get_worker_info,
+)
 from tqdm.auto import tqdm
 
 from gliner2.training.parallel import BatchDataParallel, _AutocastModule
@@ -389,6 +391,70 @@ class ExtractorDataset(Dataset):
     def from_dicts(cls, dicts: List[Dict], **kwargs) -> 'ExtractorDataset':
         """Create from list of dicts."""
         return cls(dicts, **kwargs)
+
+
+def _record_to_tuple(record: Dict) -> Tuple[str, Dict]:
+    """(text, schema) tuple for the collator -- mirrors ExtractorDataset.__getitem__."""
+    if "input" in record:
+        return record["input"], record["output"]
+    return record["text"], record["schema"]
+
+
+class StreamingExtractorDataset(IterableDataset):
+    """Lazily stream GLiNER2 records into training without materializing them.
+
+    Wraps a zero-arg ``make_iter`` factory returning a FRESH record iterator (one
+    HF stream) per epoch. ``__iter__`` shards records across DDP ranks and
+    DataLoader workers, applies a fixed-size buffer shuffle, and yields the same
+    ``(text, schema)`` tuples as ``ExtractorDataset`` so ``ExtractorCollator`` is
+    reused unchanged. There is no ``__len__`` -- the trainer must run by
+    ``max_steps`` (it detects an ``IterableDataset`` and skips length math).
+
+    Use ``num_workers=0`` (a streaming HF iterator per forked worker would
+    duplicate rows unless sharded, which we do handle, but 0 keeps epoch seeding
+    and connection count simple).
+    """
+
+    def __init__(self, make_iter: Callable[[], Iterator[Dict]],
+                 shuffle_buffer: int = 10000, seed: int = 42, shuffle: bool = True):
+        self.make_iter = make_iter
+        self.shuffle_buffer = max(1, int(shuffle_buffer))
+        self.seed = seed
+        self.shuffle = shuffle
+        self._epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        """Reseed the buffer shuffle per epoch (called by the trainer loop)."""
+        self._epoch = int(epoch)
+
+    def _shard(self) -> Tuple[int, int]:
+        rank, world = 0, 1
+        if dist.is_available() and dist.is_initialized():
+            rank, world = dist.get_rank(), dist.get_world_size()
+        wi = get_worker_info()
+        wid, nw = (wi.id, wi.num_workers) if wi is not None else (0, 1)
+        return rank * nw + wid, world * nw
+
+    def __iter__(self) -> Iterator[Tuple[str, Dict]]:
+        shard_id, num_shards = self._shard()
+        source = (rec for i, rec in enumerate(self.make_iter())
+                  if i % num_shards == shard_id)
+        if not self.shuffle or self.shuffle_buffer <= 1:
+            for rec in source:
+                yield _record_to_tuple(rec)
+            return
+        rng = random.Random(self.seed + self._epoch * 100003 + shard_id)
+        buf: List[Dict] = []
+        for rec in source:
+            if len(buf) < self.shuffle_buffer:
+                buf.append(rec)
+            else:
+                j = rng.randrange(self.shuffle_buffer)
+                out, buf[j] = buf[j], rec
+                yield _record_to_tuple(out)
+        rng.shuffle(buf)
+        for rec in buf:
+            yield _record_to_tuple(rec)
 
 
 # =============================================================================
@@ -832,18 +898,28 @@ class GLiNER2Trainer:
     
     def _validate_training_setup(self, train_dataset: ExtractorDataset, eval_dataset: Optional[ExtractorDataset]):
         """Validate training setup and raise informative errors for edge cases."""
-        # Check if dataset is empty
-        if len(train_dataset) == 0:
-            raise ValueError("Training dataset is empty. Please provide at least one training example.")
-        
-        # Check if dataset is smaller than batch size
-        if len(train_dataset) < self.config.batch_size:
-            logger.warning(
-                f"Training dataset size ({len(train_dataset)}) is smaller than batch_size "
-                f"({self.config.batch_size}). Adjusting batch_size to {len(train_dataset)}."
+        # A streaming IterableDataset has no length and runs by max_steps, so the
+        # length-based train-set checks below do not apply to it.
+        streaming = isinstance(train_dataset, IterableDataset)
+        if streaming and self.config.max_steps <= 0:
+            raise ValueError(
+                "Streaming (IterableDataset) training requires config.max_steps > 0 "
+                "(there is no dataset length to derive it from)."
             )
-            # We'll handle this in _create_dataloader by adjusting drop_last
-        
+
+        if not streaming:
+            # Check if dataset is empty
+            if len(train_dataset) == 0:
+                raise ValueError("Training dataset is empty. Please provide at least one training example.")
+
+            # Check if dataset is smaller than batch size
+            if len(train_dataset) < self.config.batch_size:
+                logger.warning(
+                    f"Training dataset size ({len(train_dataset)}) is smaller than batch_size "
+                    f"({self.config.batch_size}). Adjusting batch_size to {len(train_dataset)}."
+                )
+                # We'll handle this in _create_dataloader by adjusting drop_last
+
         # Check early stopping configuration
         if self.config.early_stopping:
             if eval_dataset is None:
@@ -862,7 +938,7 @@ class GLiNER2Trainer:
             )
         
         # Warn about very small datasets
-        if len(train_dataset) < self.config.gradient_accumulation_steps:
+        if not streaming and len(train_dataset) < self.config.gradient_accumulation_steps:
             logger.warning(
                 f"Training dataset size ({len(train_dataset)}) is smaller than "
                 f"gradient_accumulation_steps ({self.config.gradient_accumulation_steps}). "
@@ -921,7 +997,11 @@ class GLiNER2Trainer:
         if data is None:
             return None
 
-        if isinstance(data, ExtractorDataset):
+        # An already-built dataset passes through untouched. A streaming
+        # IterableDataset yields raw (text, schema) tuples and manages its own
+        # shuffling/sharding, so it skips the record-level chunk/shuffle below
+        # (streaming assumes short inputs / sliding_window off).
+        if isinstance(data, (ExtractorDataset, IterableDataset)):
             return data
 
         max_samples = self.config.max_train_samples if is_train else self.config.max_eval_samples
@@ -1007,10 +1087,14 @@ class GLiNER2Trainer:
             )
 
     def _create_dataloader(self, dataset: ExtractorDataset, batch_size: int, shuffle: bool = True, is_training: bool = True) -> DataLoader:
+        # A streaming IterableDataset shards internally (by rank + worker) and has
+        # no length, so it takes no sampler and none of the len()-based sizing below.
+        streaming = isinstance(dataset, IterableDataset)
+
         sampler = None
         # Shard only the training data across ranks. Evaluation runs on rank 0
         # over the full set (see _evaluate), so eval loaders stay unsharded.
-        if self.is_distributed and is_training:
+        if self.is_distributed and is_training and not streaming:
             sampler = DistributedSampler(dataset, shuffle=shuffle)
             shuffle = False
 
@@ -1024,13 +1108,21 @@ class GLiNER2Trainer:
             max_len = self.config.max_len or getattr(self.model.config, "max_len", None)
         collator = ExtractorCollator(self.processor, is_training=is_training, max_len=max_len)
 
-        # Fix Bug #1 & #9: Handle small datasets
-        # If dataset is smaller than batch_size, adjust to prevent empty dataloader
-        effective_batch_size = min(batch_size, len(dataset))
-        drop_last = is_training and len(dataset) > batch_size
-        
-        # Adjust num_workers for small datasets
-        effective_num_workers = self.config.num_workers if len(dataset) > self.config.num_workers else 0
+        if streaming:
+            # IterableDataset: no shuffle/sampler at the loader (the dataset
+            # buffer-shuffles and shards itself); can't measure length.
+            effective_batch_size = batch_size
+            drop_last = is_training
+            effective_num_workers = self.config.num_workers
+            shuffle = False
+        else:
+            # Fix Bug #1 & #9: Handle small datasets
+            # If dataset is smaller than batch_size, adjust to prevent empty dataloader
+            effective_batch_size = min(batch_size, len(dataset))
+            drop_last = is_training and len(dataset) > batch_size
+
+            # Adjust num_workers for small datasets
+            effective_num_workers = self.config.num_workers if len(dataset) > self.config.num_workers else 0
 
         # pin_memory is a no-op on MPS/CPU; only enable when targeting CUDA.
         pin_memory = self.config.pin_memory and self.device.type == "cuda"
@@ -1089,25 +1181,35 @@ class GLiNER2Trainer:
 
         train_loader = self._create_dataloader(train_dataset, self.config.batch_size, shuffle=True, is_training=True)
 
-        # Fix Bug #1: Check if dataloader is empty
-        if len(train_loader) == 0:
-            raise ValueError(
-                f"Training dataloader is empty. Dataset size: {len(train_dataset)}, "
-                f"Batch size: {self.config.batch_size}. Please reduce batch_size or add more data."
-            )
+        # A streaming IterableDataset has no length: the run is bounded by
+        # max_steps (required), each outer "epoch" re-opens the stream, and
+        # eval/save/early-stop run step-based (eval_strategy="steps"/eval_steps).
+        streaming = isinstance(train_dataset, IterableDataset)
 
-        # Calculate steps
-        num_update_steps_per_epoch = len(train_loader) // self.config.gradient_accumulation_steps
-        
-        # Fix Bug #1: Handle case where num_update_steps_per_epoch is 0
-        if num_update_steps_per_epoch == 0:
-            # If gradient accumulation is larger than dataloader, we have at least the batches we can process
+        if streaming:
+            # num_epochs becomes max_steps (see below); the global_step>=max_steps
+            # break terminates. No length-based sizing.
             num_update_steps_per_epoch = 1
-            logger.warning(
-                f"gradient_accumulation_steps ({self.config.gradient_accumulation_steps}) is larger than "
-                f"batches per epoch ({len(train_loader)}). Setting to 1 update step per epoch."
-            )
-        
+        else:
+            # Fix Bug #1: Check if dataloader is empty
+            if len(train_loader) == 0:
+                raise ValueError(
+                    f"Training dataloader is empty. Dataset size: {len(train_dataset)}, "
+                    f"Batch size: {self.config.batch_size}. Please reduce batch_size or add more data."
+                )
+
+            # Calculate steps
+            num_update_steps_per_epoch = len(train_loader) // self.config.gradient_accumulation_steps
+
+            # Fix Bug #1: Handle case where num_update_steps_per_epoch is 0
+            if num_update_steps_per_epoch == 0:
+                # If gradient accumulation is larger than dataloader, we have at least the batches we can process
+                num_update_steps_per_epoch = 1
+                logger.warning(
+                    f"gradient_accumulation_steps ({self.config.gradient_accumulation_steps}) is larger than "
+                    f"batches per epoch ({len(train_loader)}). Setting to 1 update step per epoch."
+                )
+
         if self.config.max_steps > 0:
             max_steps = self.config.max_steps
             num_epochs = math.ceil(max_steps / num_update_steps_per_epoch)
@@ -1152,8 +1254,8 @@ class GLiNER2Trainer:
 
         # Logging
         logger.info("***** Running Training *****")
-        logger.info(f"  Num examples = {len(train_dataset)}")
-        logger.info(f"  Num epochs = {num_epochs}")
+        logger.info(f"  Num examples = {'streaming' if streaming else len(train_dataset)}")
+        logger.info(f"  Num epochs = {'max_steps-bounded' if streaming else num_epochs}")
         logger.info(f"  Batch size = {self.config.batch_size}")
         logger.info(f"  Gradient accumulation steps = {self.config.gradient_accumulation_steps}")
         logger.info(f"  Effective batch size = {self.config.effective_batch_size}")
@@ -1195,8 +1297,12 @@ class GLiNER2Trainer:
             # MPS/CUDA high-water mark does not climb across epochs.
             self._free_memory()
 
-            if self.is_distributed:
+            if self.is_distributed and not streaming:
                 train_loader.sampler.set_epoch(epoch)
+            elif streaming:
+                # Reseed the streaming buffer shuffle for this epoch (the dataset
+                # shards itself by rank; there is no DistributedSampler).
+                train_dataset.set_epoch(epoch)
 
             epoch_loss = 0.0
             epoch_steps = 0
@@ -1265,7 +1371,7 @@ class GLiNER2Trainer:
                         # Fix Bug #2: Safe division for metrics
                         avg_loss = self._safe_divide(tr_loss, self.config.logging_steps, default=tr_loss)
                         # Fix Bug #5: Safe division for epoch progress
-                        epoch_progress = self._safe_divide(step, len(train_loader), default=0.0)
+                        epoch_progress = 0.0 if streaming else self._safe_divide(step, len(train_loader), default=0.0)
                         metrics = TrainingMetrics(
                             loss=avg_loss,
                             classification_loss=outputs.get("classification_loss", torch.tensor(0)).item(),

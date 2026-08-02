@@ -14,6 +14,7 @@
 model:
   encoder: microsoft/deberta-v3-base
   max_width: 20
+  max_len: 512                     # deberta-v3-base positional cap (windowed via sliding_window)
   struct_loss: bce_posweight
   struct_pos_weight: 4.0            # mirror mmbert-base-rams (tempered from 8)
 

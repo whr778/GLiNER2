@@ -38,6 +38,14 @@ base_models:
     name: gliner2-multi-v1
     license: see model card
     source_url: https://huggingface.co/fastino/gliner2-multi-v1
+  microsoft/deberta-v3-base:
+    name: DeBERTa-v3-base
+    license: mit
+    source_url: https://huggingface.co/microsoft/deberta-v3-base
+  whr778/mmbert-base-rams:
+    name: mmBERT-base RAMS (GLiNER2)
+    license: see model card
+    source_url: https://huggingface.co/whr778/mmbert-base-rams
 
 datasets:
   # --- NER ---
@@ -333,3 +341,19 @@ datasets:
     source_url: https://catalog.ldc.upenn.edu/LDC2006T06
     language: [en]
     description: "LDC-licensed NER + relations + events; not redistributable — convert from your own licensed copy."
+  masakhaner:
+    name: MasakhaNER 2.0
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    hf_id: masakhane/masakhaner2
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    language: [bam, bbj, ewe, fon, hau, ibo, kin, lug, luo, mos, nya, pcm, sna, swa, tsn, twi, wol, xho, yor, zul]
+    description: "Human-annotated NER over 20 African languages; PER/ORG/LOC/DATE mapped to person/organization/location/date; official per-language splits."
+  masakhanews:
+    name: MasakhaNEWS
+    tasks: Classification (16 African languages, 7 topics)
+    license: afl-3.0
+    hf_id: masakhane/masakhanews
+    source_url: https://huggingface.co/datasets/masakhane/masakhanews
+    language: [amh, eng, fra, hau, ibo, lin, lug, orm, pcm, run, sna, som, swa, tir, xho, yor]
+    description: "News-topic classification over 16 African languages; 7 topics (business/entertainment/health/politics/religion/sports/technology)."

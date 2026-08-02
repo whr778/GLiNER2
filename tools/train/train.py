@@ -119,6 +119,42 @@ def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[st
     return paths
 
 
+def _build_streaming_data(hf_streaming: Dict, config: TrainingConfig):
+    """Resolve a ``data.hf_streaming`` block into a streaming train dataset and
+    bounded in-memory val/test lists. Nothing is written to disk.
+
+    Returns ``(train_dataset, val_records, test_records)`` where the train set is
+    a ``StreamingExtractorDataset`` (lazy, low-memory) and val/test are lists
+    capped by label class via ``eval_min_per_class``.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
+    from hf_stream import SOURCES, cap_by_class
+    from gliner2.training.trainer import StreamingExtractorDataset
+
+    name = hf_streaming.get("source")
+    if name not in SOURCES:
+        raise ValueError(f"unknown hf_streaming source {name!r}; have {sorted(SOURCES)}")
+    if config.max_steps <= 0:
+        raise ValueError("data.hf_streaming requires training.max_steps > 0 "
+                         "(a streaming dataset has no length to derive epochs from).")
+
+    src = SOURCES[name]
+    langs = hf_streaming.get("langs", "all")
+    cap = int(hf_streaming.get("eval_min_per_class", 0) or 0)
+    buf = int(hf_streaming.get("shuffle_buffer", 10000) or 10000)
+    classes = set(src.classes)
+
+    train_ds = StreamingExtractorDataset(
+        make_iter=lambda: src.records(langs, "train"), shuffle_buffer=buf)
+    val = list(cap_by_class(src.records(langs, "validation"), cap, src.classes_of, classes))
+    test = list(cap_by_class(src.records(langs, "test"), cap, src.classes_of, classes))
+    print(f"[hf_streaming] source={name} langs={langs} eval_min_per_class={cap} "
+          f"-> val={len(val)} test={len(test)} records (train streams lazily; "
+          f"nothing written to disk)")
+    return train_ds, val, test
+
+
 def _write_model_card(
     cfg, config, corpora, event_files, results, test_metrics, best: Path,
     threshold: float, threshold_calibrated: bool,
@@ -681,10 +717,21 @@ def main(config_path: str) -> None:
         print(f"[labels] transforms: {', '.join(sorted(fns))}; "
               f"transformed {len(train_data)}/{len(eval_data)}/{len(test_data)} train/val/test records")
 
+    # Streaming source (data.hf_streaming): the train set streams lazily from HF
+    # (never written to disk, never fully resident), val/test are bounded in-memory
+    # lists capped by label class. Replaces any disk train corpora for this run.
+    streaming = bool(data.get("hf_streaming"))
+    if streaming:
+        if corpora or event_files:
+            print("[hf_streaming] note: disk corpora/event_files are ignored for the "
+                  "train stream (streaming replaces the train source).")
+        train_data, eval_data, test_data = _build_streaming_data(data["hf_streaming"], config)
+
     # Resolve the eval: block (threshold_sweep, windowed chunk_size/chunk_overlap,
     # global_decode, stopwords) into inference settings. See the eval CLI in
     # tools/train/eval.py for scoring a checkpoint without retraining.
-    ev = _parse_eval_settings(cfg, config_path, corpus_data=train_data + eval_data + test_data)
+    corpus_data = (eval_data + test_data) if streaming else (train_data + eval_data + test_data)
+    ev = _parse_eval_settings(cfg, config_path, corpus_data=corpus_data)
     eval_bs = ev["batch_size"]
     eval_thr = ev["threshold"]
     eval_by_language = ev["by_language"]
@@ -724,7 +771,8 @@ def main(config_path: str) -> None:
         eval_data=eval_data,
         compute_metrics=compute_metrics_hook,
     )
-    if is_main:
+    if is_main and not streaming:
+        # ETA counts records up front; a streaming source has no length.
         estimate_eta(model, train_data, config)
     results = trainer.train(train_data=train_data)
     # pprint(results)

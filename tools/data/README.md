@@ -419,6 +419,34 @@ The 16 codes are `amh, eng, fra, hau, ibo, lin, lug, orm, pcm, run, sna, som, sw
 
 The candidate `labels` set is the **union of categories over the selected languages**, so every record shares one consistent schema (a language whose data lacks a topic still offers it as a candidate negative). Like MasakhaNER it loads the parquet export, preserves official splits, and writes per-language (`data/masakhanews_<lang>.*`) plus combined (`data/masakhanews.*`) files. Trainer configs: `tools/train/config/gliner2-multi-v1-masakhanews.yaml` and `mmbert-base-masakhanews.yaml`.
 
+## unimelb-nlp/wikiann (PAN-X) — streamed, NOT written to disk
+
+WikiANN / PAN-X (`unimelb-nlp/wikiann`; Pan et al. 2017, Rahimi et al. 2019) is token-BIO NER over **176 languages**, three entity types (PER/ORG/LOC → person/organization/location), with official per-language train/validation/test splits.
+
+Unlike every converter above, WikiANN is **not** written to `data/*.jsonl`. It is streamed lazily from HuggingFace **at train time** by [`hf_stream.py`](hf_stream.py), so the train set is never fully resident in memory and nothing is cached to disk. You enable it from a training config's `data.hf_streaming` block rather than by running a converter:
+
+```yaml
+data:
+  hf_streaming:
+    source: wikiann
+    langs: [en, de, es, fr, ru, ar, zh, hi, sw, yo]   # a listed subset, or: all
+    eval_min_per_class: 3000    # val/test keep >=3000 samples per entity type
+    shuffle_buffer: 10000       # streaming buffer-shuffle size
+  corpora: []
+training:
+  max_steps: 20000             # REQUIRED (a stream has no length)
+  eval_strategy: steps
+  eval_steps: 1000
+```
+
+How it works (`tools/data/hf_stream.py` + `gliner2.training.trainer.StreamingExtractorDataset`, wired in `tools/train/train.py`):
+
+- **Language selection**: `langs` is a listed subset of Wikipedia codes, or `all` for the 176 languages (`all` opens one stream per language — prefer a subset). `list_wikiann_languages()` enumerates them; a typo is rejected up front.
+- **Lazy train stream**: records stream round-robin across the selected languages (`tokens`+`ner_tags` folded via the shared `bio_to_entities`), sharded across DDP ranks + DataLoader workers, buffer-shuffled. No length ⇒ training is bounded by `max_steps` and eval/save run step-based.
+- **Bounded val/test**: `cap_by_class` streams val/test only until **every entity type has ≥ `eval_min_per_class`** records (frequent classes overshoot), keeping eval memory small and class coverage balanced.
+
+Trainer configs: `tools/train/config/gliner2-multi-v1-wikiann.yaml` (from_pretrained) and `mmbert-base-wikiann.yaml` (from_encoder). Add more streaming datasets by registering a `StreamSource` in `hf_stream.SOURCES`.
+
 ## Output format
 
 Both scripts produce GLiNER2 JSONL that can be passed directly to

@@ -1,0 +1,79 @@
+# mmBERT-base on WikiANN / PAN-X (unimelb-nlp/wikiann), from a raw encoder
+# (from_encoder = fresh GLiNER2 heads). WikiANN is token-BIO NER over 176
+# languages, three entity types (PER/ORG/LOC -> person/organization/location).
+#
+# STREAMED, NOT WRITTEN TO DISK: data.hf_streaming streams the train set lazily
+# from HF epoch-by-epoch (never fully resident, no data/*.jsonl). Because a
+# stream has no length, training is bounded by `max_steps` and eval/save/
+# early-stop run step-based (eval_strategy: steps + eval_steps). Val/test are
+# bounded in-memory samples capped by label class (eval_min_per_class).
+#
+# LANGUAGE SELECTION lives in data.hf_streaming.langs: a listed subset (edit it)
+# or `all` for the 176 languages (opens one stream per language -- prefer a
+# subset). Codes are Wikipedia language codes (en, de, sw, yo, ...).
+model:
+  encoder: jhu-clsp/mmBERT-base
+  max_width: 20
+  max_len: 8192            # encoder positional capacity (ModernBERT/RoPE)
+  struct_loss: bce         # entity NER: plain BCE
+
+training:
+  output_dir: ./out/mmbert-base-wikiann
+  experiment_name: mmbert_base_wikiann
+  data_parallel: false
+  max_steps: 20000          # REQUIRED for streaming (no dataset length); total optimizer steps
+  num_epochs: 1             # ignored under streaming (the run is bounded by max_steps)
+  batch_size: 16
+  gradient_accumulation_steps: 2   # effective batch 32
+  encoder_lr: 2.0e-5        # from_encoder: training fresh heads
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: steps      # streaming: eval/save/early-stop are step-based
+  eval_steps: 1000          # eval + checkpoint (+ save_best) every 1000 steps
+  metric_for_best: eval_entity_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 0            # keep 0 for streaming (avoids per-worker duplicate HF streams)
+  validate_data: false
+  sliding_window: false     # NER sentences are short -> no windowing
+  max_len: 256              # training window; sentences fit easily
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true     # calibrate the decision threshold on the capped val set
+  # Blind test scores the capped test set (bounded by eval_min_per_class).
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  hf_streaming:
+    source: wikiann
+    # A listed subset (edit), or `langs: all` for all 176 languages.
+    langs: [en, de, es, fr, ru, ar, zh, hi, sw, yo]
+    eval_min_per_class: 3000   # val/test keep >=3000 samples per entity type (some more)
+    shuffle_buffer: 10000      # streaming buffer-shuffle size
+  corpora: []                  # streaming replaces the disk train source
+  event_files: {}

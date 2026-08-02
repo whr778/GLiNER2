@@ -26,6 +26,7 @@ train/dev/test splits.
 | FiNER-ORD | NER (financial, PER/LOC/ORG) | 1,427 | 184 | 171 | **cc-by-nc-4.0** | [HF](https://huggingface.co/datasets/gtfintechlab/finer-ord) |
 | KLUE-NER | NER (Korean, 6 types) | 16,782 | 2,116 | 2,104 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
 | MasakhaNER 2.0 | NER (20 African langs, 4 types) | 67,865 | 9,951 | 20,511 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhaner2) |
+| WikiANN (PAN-X) | NER (176 langs) | _streamed_§ | _streamed_§ | _streamed_§ | see card | [HF](https://huggingface.co/datasets/unimelb-nlp/wikiann) |
 | **Relation extraction** | | | | | | |
 | sentence_rex | Relation extraction | 34,314 | 4,269 | 4,282 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
@@ -60,6 +61,11 @@ ACE 2005 is LDC-licensed and not generated here.
 ‡ "see card" = the HuggingFace dataset card declares no explicit license — verify
 before redistribution. "see source" = manual-download corpora governed by their
 original release terms.
+
+§ WikiANN is **streamed at train time**, not written to `data/`, so it has no
+generated split counts and is excluded from the generated total. See
+[README.md](README.md) → *unimelb-nlp/wikiann* and the `data.hf_streaming` config
+block.
 
 ---
 
@@ -137,6 +143,17 @@ export and kept on the **official** per-language train/validation/test splits;
 `--langs` selects a subset (default all 20). Per-language corpora are also written
 to `data/masakhaner_<lang>.*` so a config can train on one language or a subset.
 *Stats: 4 entity types, avg 1.6 types/record; ~152.4k mentions over 67.9k train sentences (20 languages combined).*
+
+### WikiANN (PAN-X) — `unimelb-nlp/wikiann` (streamed)
+Token-BIO NER over **176 languages** (Pan et al. 2017; Rahimi et al. 2019 balanced
+splits), three entity types (PER/ORG/LOC → person/organization/location).
+**Streamed lazily from HF at train time — never written to `data/`** — via
+`tools/data/hf_stream.py` and a config `data.hf_streaming` block, so the train set
+is never fully resident. Select a subset of languages or `all`; val/test are
+bounded in-memory samples capped by label class (`eval_min_per_class`). See
+[README.md](README.md) → *unimelb-nlp/wikiann*. Configs:
+`tools/train/config/{gliner2-multi-v1,mmbert-base}-wikiann.yaml`.
+*Stats: 3 entity types; silver-standard (Wikipedia-derived).*
 
 ## Relation extraction
 

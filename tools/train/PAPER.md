@@ -580,6 +580,11 @@ provenance in [`tools/data/TRAINING_DATA.md`](../data/TRAINING_DATA.md)):
 - Adelani, D.I., et al. (2023). *MasakhaNEWS: News Topic Classification for
   African Languages.* IJCNLP-AACL.
   https://aclanthology.org/2023.ijcnlp-main.10/
+- Pan, X., Zhang, B., May, J., Nothman, J., Knight, K., Ji, H. (2017).
+  *Cross-lingual Name Tagging and Linking for 282 Languages* (WikiANN). ACL.
+  https://aclanthology.org/P17-1178/
+- Rahimi, A., Li, Y., Cohn, T. (2019). *Massively Multilingual Transfer for NER*
+  (PAN-X balanced splits). ACL. https://aclanthology.org/P19-1015/
 
 ## Appendix A: module map
 
