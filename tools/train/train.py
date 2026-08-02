@@ -174,13 +174,26 @@ def _write_model_card(
             name for name, by_split in (event_files or {}).items()
             if any(p and Path(p).is_file() for p in by_split.values())
         ]
+        # A streamed source (data.hf_streaming) is a real training dataset too;
+        # add it and override its registry language with the run's actual langs.
+        registry = None
+        hf_streaming = (cfg.get("data") or {}).get("hf_streaming")
+        if hf_streaming and hf_streaming.get("source"):
+            from model_card import load_registry
+            src_key = hf_streaming["source"]
+            dataset_keys.append(src_key)
+            registry = load_registry()
+            entry = (registry.get("datasets") or {}).get(src_key)
+            langs = hf_streaming.get("langs", "all")
+            if entry is not None and isinstance(langs, list) and langs:
+                registry["datasets"][src_key] = {**entry, "language": [str(x) for x in langs]}
         model_cfg = cfg.get("model") or {}
         card = build_model_card(
             model_name=getattr(config, "experiment_name", None) or Path(config.output_dir).name,
             base_model=model_cfg.get("encoder") or model_cfg.get("pretrained"),
             cfg=cfg, config=config, dataset_keys=dataset_keys, results=results,
             eval_metrics=eval_metrics, test_metrics=test_metrics or None,
-            generated_at=datetime.now().strftime("%Y-%m-%d"),
+            generated_at=datetime.now().strftime("%Y-%m-%d"), registry=registry,
             dataset_counts=_dataset_counts(corpora, event_files),
             threshold=threshold, threshold_calibrated=threshold_calibrated,
         )

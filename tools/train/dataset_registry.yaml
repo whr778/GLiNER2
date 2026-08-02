@@ -357,3 +357,11 @@ datasets:
     source_url: https://huggingface.co/datasets/masakhane/masakhanews
     language: [amh, eng, fra, hau, ibo, lin, lug, orm, pcm, run, sna, som, swa, tir, xho, yor]
     description: "News-topic classification over 16 African languages; 7 topics (business/entertainment/health/politics/religion/sports/technology)."
+  wikiann:
+    name: WikiANN (PAN-X)
+    tasks: NER (176 languages, PER/ORG/LOC)
+    license: see card
+    hf_id: unimelb-nlp/wikiann
+    source_url: https://huggingface.co/datasets/unimelb-nlp/wikiann
+    language: [multilingual]
+    description: "Silver-standard Wikipedia NER over 176 languages (Pan et al. 2017; Rahimi et al. 2019 balanced splits); PER/ORG/LOC mapped to person/organization/location. Streamed at train time via data.hf_streaming, never written to disk; the trained language subset is set per run and shown above."
