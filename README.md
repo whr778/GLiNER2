@@ -1107,6 +1107,13 @@ uv run python tools/data/convert_nuner.py --split full --out data/nuner.jsonl
 uv run python tools/data/convert_pile_ner_definition.py --out data/pile_ner.jsonl
 ```
 
+For multilingual training there are two African-language benchmarks — **MasakhaNER 2.0** (NER, 20 languages) and **MasakhaNEWS** (news-topic classification, 16 languages). Both keep their official splits and let you pick languages with `--langs` (or `all`), and ship ready-to-run configs for `gliner2-multi-v1` and `mmbert-base`:
+
+```bash
+uv run python tools/data/convert_masakhaner.py  --out data/masakhaner.jsonl  --langs all
+uv run python tools/data/convert_masakhanews.py --out data/masakhanews.jsonl --langs swa,hau,yor
+```
+
 ## 📄 License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.

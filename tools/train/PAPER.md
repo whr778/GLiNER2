@@ -574,6 +574,12 @@ provenance in [`tools/data/TRAINING_DATA.md`](../data/TRAINING_DATA.md)):
   Dataset.* Briefings in Bioinformatics.
 - Park, S., et al. (2021). *KLUE: Korean Language Understanding Evaluation.*
   NeurIPS Datasets and Benchmarks.
+- Adelani, D.I., et al. (2022). *MasakhaNER 2.0: Africa-centric Transfer Learning
+  for Named Entity Recognition.* EMNLP.
+  https://aclanthology.org/2022.emnlp-main.298/
+- Adelani, D.I., et al. (2023). *MasakhaNEWS: News Topic Classification for
+  African Languages.* IJCNLP-AACL.
+  https://aclanthology.org/2023.ijcnlp-main.10/
 
 ## Appendix A: module map
 

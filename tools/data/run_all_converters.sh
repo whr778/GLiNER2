@@ -87,6 +87,13 @@ run_step stockmark_jpn       uv run python tools/data/convert_stockmark_ner.py -
 # finer-ord is cc-by-nc-4.0 (non-commercial).
 run_step finer_ord           uv run python tools/data/convert_finer_ord.py --out data/finer_ord.jsonl
 
+# MasakhaNER 2.0 (NER, 20 African languages) + MasakhaNEWS (news-topic
+# classification, 16 African languages). Both keep their OFFICIAL splits and
+# also emit per-language corpora (data/masakhaner_<lang>.*, data/masakhanews_<lang>.*).
+# Pass --langs to subset; default 'all'. CC-BY-4.0 / AfricaNLP.
+run_step masakhaner          uv run python tools/data/convert_masakhaner.py --out data/masakhaner.jsonl
+run_step masakhanews         uv run python tools/data/convert_masakhanews.py --out data/masakhanews.jsonl
+
 # KLUE (Korean) NER + RE, read from the canonical KLUE-benchmark GitHub
 # (its HF loader is broken). CC-BY-SA-4.0.
 run_step klue_ner            uv run python tools/data/convert_klue.py --task ner --out data/klue_ner.jsonl

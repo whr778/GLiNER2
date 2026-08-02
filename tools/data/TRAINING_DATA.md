@@ -5,7 +5,8 @@ scripts under [`tools/data/`](.) (see [TRAINING.md](../train/TRAINING.md) §2 fo
 the conversion commands). Sample counts below are the **actual line counts of the
 generated `data/*.jsonl` splits**; type statistics are computed from the same
 files. Most corpora are partitioned 80/10/10 by a seeded `SplitWriter`; the event
-corpora keep their canonical train/dev/test splits.
+corpora and the MasakhaNER 2.0 / MasakhaNEWS benchmarks keep their canonical
+train/dev/test splits.
 
 ## Summary
 
@@ -24,6 +25,7 @@ corpora keep their canonical train/dev/test splits.
 | stockmark-jpn | NER (Japanese, 8 types) | 3,900 | 486 | 473 | cc-by-sa-3.0 | [HF](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset) |
 | FiNER-ORD | NER (financial, PER/LOC/ORG) | 1,427 | 184 | 171 | **cc-by-nc-4.0** | [HF](https://huggingface.co/datasets/gtfintechlab/finer-ord) |
 | KLUE-NER | NER (Korean, 6 types) | 16,782 | 2,116 | 2,104 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
+| MasakhaNER 2.0 | NER (20 African langs, 4 types) | 67,865 | 9,951 | 20,511 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhaner2) |
 | **Relation extraction** | | | | | | |
 | sentence_rex | Relation extraction | 34,314 | 4,269 | 4,282 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
@@ -37,6 +39,7 @@ corpora keep their canonical train/dev/test splits.
 | GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) |
 | Scientific-text-classification | Classification (single-label) | 40,047 | 4,997 | 4,956 | see card | [HF](https://huggingface.co/datasets/knowledgator/Scientific-text-classification) |
 | events_classification_biotech | Classification (multi-label) | 2,216 | 271 | 272 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
+| MasakhaNEWS | Classification (16 African langs, 7 topics) | 21,734 | 3,112 | 6,242 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhanews) |
 | **Structured extraction** | | | | | | |
 | text2json-training-data | Schema-driven structured extraction | 7,817 | 962 | 958 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
 | json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) |
@@ -48,7 +51,7 @@ corpora keep their canonical train/dev/test splits.
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,724,332** | **215,414** | **216,154** | | |
+| **Total (generated)** | | **1,813,931** | **228,477** | **242,907** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard).
@@ -125,6 +128,16 @@ release (the HF loader is broken). Char-level BIO; text is the concatenated char
 6 entity types (PS, LC, OG, DT, TI, QT).
 *Stats: 6 entity types, avg 1.7 types/record; ~39.8k mentions over 16.8k train sentences.*
 
+### MasakhaNER 2.0 — `masakhane/masakhaner2`
+Human-annotated NER over **20 African languages** (Adelani et al., EMNLP 2022),
+four entity types mapped to `person`/`organization`/`location`/`date`. BIO token
+tags fold into `{type: [surface]}` entities via the shared `bio_to_entities` helper
+(sentences with no entities are dropped). Loaded from the datasets-server parquet
+export and kept on the **official** per-language train/validation/test splits;
+`--langs` selects a subset (default all 20). Per-language corpora are also written
+to `data/masakhaner_<lang>.*` so a config can train on one language or a subset.
+*Stats: 4 entity types, avg 1.6 types/record; ~152.4k mentions over 67.9k train sentences (20 languages combined).*
+
 ## Relation extraction
 
 ### sentence_rex — `knowledgator/sentence_rex`
@@ -188,6 +201,16 @@ Single-label classification of scientific abstracts over 10 broad domains.
 Multi-label biotech "event-type" classification (despite the name, no structured
 event extraction).
 *Stats: 1 task, 29 labels, 100% classification.*
+
+### MasakhaNEWS — `masakhane/masakhanews`
+News-topic classification over **16 African languages** (Adelani et al.,
+IJCNLP-AACL 2023). Each article's `category` becomes the true label under a single
+`news topic` task; the candidate `labels` set is the union of categories over the
+selected languages (7 topics: business, entertainment, health, politics, religion,
+sports, technology). Input is `headline + text` by default (`--text-field` to change).
+Kept on the official per-language splits; `--langs` selects a subset (default all 16),
+with per-language corpora in `data/masakhanews_<lang>.*`.
+*Stats: 1 task, 7 labels (fixed vocabulary), single-label, 100% classification (21.7k train articles, 16 languages combined).*
 
 ## Structured extraction
 

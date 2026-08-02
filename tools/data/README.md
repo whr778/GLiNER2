@@ -371,6 +371,54 @@ Nested dicts and list-of-dicts values are skipped — their leaves typically don
 
 Because text2json field names are highly bespoke (each document defines its own schema), the type cardinality grows fast. Mixing this corpus with the others helps the model generalise to arbitrary, schema-driven extraction prompts at inference time.
 
+## masakhane/masakhaner2
+
+MasakhaNER 2.0 (Adelani et al., EMNLP 2022) — human-annotated **NER over 20 African languages** with four entity types (mapped to `person` / `organization` / `location` / `date`) and official train/validation/test splits per language.
+
+```bash
+# All 20 languages (default)
+uv run python tools/data/convert_masakhaner.py --out data/masakhaner.jsonl
+
+# Only the languages you want (ISO 639-3 codes)
+uv run python tools/data/convert_masakhaner.py --out data/masakhaner.jsonl \
+    --langs hau,yor,swa
+
+# Keep the terse source tags (PER/ORG/LOC/DATE) instead of natural-language names
+uv run python tools/data/convert_masakhaner.py --out data/masakhaner.jsonl --raw-labels
+```
+
+The 20 codes are `bam, bbj, ewe, fon, hau, ibo, kin, lug, luo, mos, nya, pcm, sna, swa, tsn, twi, wol, xho, yor, zul`. Each row's `tokens` + `ner_tags` fold into `{type: [surface]}` entities with the shared `bio_to_entities` helper (sentences with no entities are dropped). The upstream repo is a dataset script, so the converter loads the datasets-server parquet export (`refs/convert/parquet`) and preserves the **official** splits (no random re-split).
+
+For **every selected language** the official splits are written to `data/masakhaner_<lang>.{train,val,test}.jsonl`, and all selected languages are merged into `data/masakhaner.{train,val,test}.jsonl`. A training config can then pick one language (`data/masakhaner_hau`), a subset, or all (`data/masakhaner`) via its `data.corpora` list. Trainer configs: `tools/train/config/gliner2-multi-v1-masakhaner.yaml` (from_pretrained) and `mmbert-base-masakhaner.yaml` (from_encoder).
+
+## masakhane/masakhanews
+
+MasakhaNEWS (Adelani et al., IJCNLP-AACL 2023) — **news-topic classification over 16 African languages**, a 7-topic ontology (business, entertainment, health, politics, religion, sports, technology) with official train/validation/test splits per language. This trains GLiNER2's **classification** head, not the entity extractor.
+
+```bash
+# All 16 languages (default)
+uv run python tools/data/convert_masakhanews.py --out data/masakhanews.jsonl
+
+# Subset of languages
+uv run python tools/data/convert_masakhanews.py --out data/masakhanews.jsonl \
+    --langs swa,hau,yor
+
+# Classify the headline only (default 'both' = headline + body)
+uv run python tools/data/convert_masakhanews.py --out data/masakhanews.jsonl \
+    --text-field headline
+```
+
+The 16 codes are `amh, eng, fra, hau, ibo, lin, lug, orm, pcm, run, sna, som, swa, tir, xho, yor`. Each record emits
+
+```json
+{"input": "<headline>\n\n<text>",
+ "output": {"classifications": [
+     {"task": "news topic", "labels": ["business", "entertainment", "health", "politics", "religion", "sports", "technology"], "true_label": ["<category>"]}
+ ]}}
+```
+
+The candidate `labels` set is the **union of categories over the selected languages**, so every record shares one consistent schema (a language whose data lacks a topic still offers it as a candidate negative). Like MasakhaNER it loads the parquet export, preserves official splits, and writes per-language (`data/masakhanews_<lang>.*`) plus combined (`data/masakhanews.*`) files. Trainer configs: `tools/train/config/gliner2-multi-v1-masakhanews.yaml` and `mmbert-base-masakhanews.yaml`.
+
 ## Output format
 
 Both scripts produce GLiNER2 JSONL that can be passed directly to

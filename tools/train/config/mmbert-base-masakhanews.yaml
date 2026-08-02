@@ -1,0 +1,77 @@
+# mmBERT-base on MasakhaNEWS, from a raw encoder (from_encoder = fresh GLiNER2
+# heads). MasakhaNEWS (Adelani et al., IJCNLP-AACL 2023) is news-topic
+# classification over 16 African languages, 7 topics (business/entertainment/
+# health/politics/religion/sports/technology). mmBERT is a massively
+# multilingual backbone with an 8192 context, so it can read the whole article
+# (headline + body) in one pass. Contrast the gliner2-multi-v1 variant, which
+# fine-tunes an already-trained classification head.
+#
+# LANGUAGE SELECTION lives in `data.corpora` below: `data/masakhanews` is all
+# languages the converter emitted; swap in per-language corpora (e.g.
+# `data/masakhanews_swa`) to train on a subset. Regenerate with:
+#   uv run python tools/data/convert_masakhanews.py --out data/masakhanews.jsonl \
+#       --langs all            # or e.g. --langs swa,hau,yor
+model:
+  encoder: jhu-clsp/mmBERT-base
+  max_width: 20
+  max_len: 8192            # encoder positional capacity (ModernBERT/RoPE)
+  struct_loss: bce         # classification uses its own head; struct_loss is inert here
+
+training:
+  output_dir: ./out/mmbert-base-masakhanews
+  experiment_name: mmbert_base_masakhanews
+  data_parallel: false
+  num_epochs: 10             # fresh heads need more passes than fine-tuning
+  batch_size: 8
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 2.0e-5         # from_encoder: training fresh heads
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_classification_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # one label per article -> classify the doc, don't window
+  max_len: 2048              # training window; holds a whole news article + headline
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false      # run all epochs so the fresh classification head develops
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 8
+  threshold: 0.5             # single-label classification is argmax-based
+  # Blind test reports the combined (all-language) accuracy/F1. For per-language
+  # numbers, evaluate each data/masakhanews_<lang>.test.jsonl the converter emits.
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  # All converted languages. For a subset, list per-language corpora instead, e.g.
+  #   - data/masakhanews_swa
+  #   - data/masakhanews_hau
+  #   - data/masakhanews_yor
+  corpora:
+    - data/masakhanews
+  event_files: {}
