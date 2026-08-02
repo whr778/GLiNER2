@@ -51,7 +51,7 @@ training:
 eval:
   batch_size: 8
   threshold: 0.5
-  eval_by_language: false
+  eval_by_language: true
 
 labels:
   entities:
