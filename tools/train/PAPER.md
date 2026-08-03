@@ -494,7 +494,16 @@ tasks — strict micro-F1: entity 0.904, relation 0.657, event-type 0.956, event
 corpus is coherent and learnable (in-distribution — this is not a claim about the public
 benchmarks); the combined-base null result is about the **head-init regime** (2 epochs,
 `eval_loss` selection, NER dilution), not the data. Checkpoint:
-`whr778/gliner2-base-v1-synthetic` (private).
+`whr778/gliner2-base-v1-synthetic`.
+
+**Conversely, the synthetic data cannot bootstrap fresh heads.** Training the *same* data
+from a raw DeBERTa-v3-base encoder (`from_encoder`, fresh heads, 15 epochs) instead of
+warm-starting collapses every span/relation task: strict micro-F1 entity 0.141, relation
+0.000, event-trigger 0.221, event-argument 0.000 (0.168 relaxed), classification 0.356 —
+only coarse event-type (0.998, few classes) survives. So ~1.5K synthetic records are an
+*adaptation* corpus, not a from-scratch pretraining set: the extraction heads need either
+a warm start or the fastino curriculum's ~10⁵–10⁶ scale. This restates the head-init
+thesis (§10.6) from the data side. Checkpoint: `whr778/deberta-base-fromenc-synthetic`.
 
 ## 11. Reproducibility
 

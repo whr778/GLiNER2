@@ -1,0 +1,67 @@
+# DeBERTa-v3-base FROM_ENCODER (fresh GLiNER2 heads) on synthetic_sonnet5_1k ONLY.
+# Follow-up to gliner2-base-v1-synthetic (warm-start): tests whether our synthetic
+# data ALONE can teach all five tasks FROM SCRATCH (the data's standalone teaching
+# signal), rather than fine-tuning the already-trained fastino heads. DeBERTa-v3-base,
+# 512-position cap -> 384-word sliding window.
+model:
+  encoder: microsoft/deberta-v3-base
+  max_width: 20
+  max_len: 512
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/deberta-base-fromenc-synthetic
+  experiment_name: deberta_base_fromenc_synthetic
+  data_parallel: false
+  num_epochs: 15             # fresh heads need more epochs than warm-start
+  batch_size: 8              # A10 22GB: deberta disentangled attn is seq^2-heavy (batch 16 OOM'd)
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 2.0e-5         # from_encoder: training fresh heads
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss   # multi-task corpus: best all-round checkpoint
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true       # deberta-v3 512-cap -> window long docs
+  max_len: 384               # word window; leaves room for the schema prompt
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false      # run all 15 epochs so each epoch reports
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true      # calibrate the decision threshold on val for the blind test
+  global_decode: false       # synthetic passages are short + local; no cross-window assembly
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/synthetic_sonnet5_1k   # our multi-task synthetic corpus (all 5 task types)
+  event_files: {}
