@@ -96,6 +96,9 @@ def main() -> int:
     ap.add_argument("--limit", type=int, help="Alias for a small --count (smoke run).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Use the keyless mock provider (no API calls, no spend).")
+    ap.add_argument("--batch", action="store_true",
+                    help="Submit all documents via the provider's Batch API (-50%% "
+                         "pricing, async). Anthropic only; mock supports it for dry runs.")
     ap.add_argument("--estimate", action="store_true",
                     help="Print the cost estimate and exit (no generation).")
     ap.add_argument("--annotate-from", type=Path,
@@ -158,28 +161,50 @@ def main() -> int:
     stats: Counter = Counter()
     written = 0
     failed = 0
+
+    def _record_from(raw, text_override, base_output):
+        """Parse a raw reply into a GLiNER2 record (or None); updates stats."""
+        reply = parse_reply(raw)
+        if reply is None:
+            stats["parse_error"] += 1
+            return None
+        return build_record(reply, tasks, stats,
+                            text_override=text_override, base_output=base_output)
+
+    # SplitWriter writes normalized UTF-8 JSONL (dumps_record: NFKC,
+    # ensure_ascii=False, encoding=utf-8) for both the sync and batch paths.
     with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
-        for i, (system, user, text_override, base_output) in enumerate(_jobs()):
-            try:
-                raw = provider.complete(system, user)
-            except Exception as e:  # network / API errors: log and continue
-                failed += 1
-                print(f"[{i}] API error: {e}", file=sys.stderr)
-                continue
-            reply = parse_reply(raw)
-            if reply is None:
-                failed += 1
-                stats["parse_error"] += 1
-                continue
-            record = build_record(reply, tasks, stats,
-                                  text_override=text_override, base_output=base_output)
-            if record is None:
-                failed += 1
-                continue
-            writer.write(record)
-            written += 1
-            if written % 50 == 0:
-                print(f"  ...{written} written ({failed} failed)")
+        if args.batch:
+            jobs = list(_jobs())
+            meta = {f"doc-{i}": (t, b) for i, (_, _, t, b) in enumerate(jobs)}
+            items = [(f"doc-{i}", system, user)
+                     for i, (system, user, _, _) in enumerate(jobs)]
+            replies = provider.complete_batch(items)
+            failed = len(items) - len(replies)  # requests that errored/expired
+            for cid, raw in replies.items():
+                text_override, base_output = meta[cid]
+                record = _record_from(raw, text_override, base_output)
+                if record is None:
+                    failed += 1
+                    continue
+                writer.write(record)
+                written += 1
+        else:
+            for i, (system, user, text_override, base_output) in enumerate(_jobs()):
+                try:
+                    raw = provider.complete(system, user)
+                except Exception as e:  # network / API errors: log and continue
+                    failed += 1
+                    print(f"[{i}] API error: {e}", file=sys.stderr)
+                    continue
+                record = _record_from(raw, text_override, base_output)
+                if record is None:
+                    failed += 1
+                    continue
+                writer.write(record)
+                written += 1
+                if written % 50 == 0:
+                    print(f"  ...{written} written ({failed} failed)")
         summary = writer.summary()
 
     print(f"\nDone. written={written} failed={failed}")

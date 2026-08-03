@@ -24,7 +24,12 @@ _VERBATIM = (
     "CRITICAL: every annotated span (entity text, event trigger, argument entity, "
     "relation head/tail, extractive structure value) must be copied VERBATIM as an "
     "exact substring of the document text -- same casing, same punctuation, no "
-    "paraphrase. Reply with a SINGLE JSON object and nothing else."
+    "paraphrase. "
+    "Reply with ONE strictly valid, parseable JSON object (RFC 8259) and NOTHING "
+    "else: no markdown code fences, no comments, no trailing commas. Inside every "
+    "string value, escape all double quotes as \\\", backslashes as \\\\, and "
+    "newlines as \\n so the entire reply parses with a strict JSON parser. Before "
+    "responding, verify the JSON is complete and valid."
 )
 
 SYSTEM = (

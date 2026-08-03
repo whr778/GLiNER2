@@ -29,6 +29,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "anthropic>=0.120.2",
     "datasets>=3.1.0",
     "gliner",
     "huggingface_hub",
