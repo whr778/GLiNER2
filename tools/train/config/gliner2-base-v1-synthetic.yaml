@@ -1,0 +1,64 @@
+# SANITY CHECK: fine-tune the pretrained fastino/gliner2-base-v1 GLiNER2 model on
+# ONLY our multi-task synthetic corpus (synthetic_sonnet5_1k: entities, relations,
+# events, classification, structures). from_pretrained continues the model's trained
+# heads (the standard base-v1 recipe). Question: does fine-tuning the good base-v1
+# model on our synthetic data preserve or degrade it? DeBERTa-v3-base, 512-position
+# cap -> 384-word sliding window.
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/gliner2-base-v1-synthetic
+  experiment_name: gliner2_base_v1_synthetic
+  data_parallel: false
+  num_epochs: 10             # small synthetic set; run all epochs for per-epoch reporting
+  batch_size: 8              # A10 22GB: batch 16 OOM'd in deberta disentangled attn (seq^2); halved
+  gradient_accumulation_steps: 4   # effective batch 32 (unchanged)
+  encoder_lr: 1.0e-5         # lower LR: fine-tuning a trained model
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss   # multi-task corpus: select the best all-round checkpoint
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true       # deberta-v3 caps at 512 positions
+  max_len: 384               # word window (leaves room for the schema prompt)
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false      # run all 10 epochs so each epoch reports
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true      # calibrate the decision threshold on val for the blind test
+  global_decode: false       # synthetic passages are short + local; no cross-window assembly
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/synthetic_sonnet5_1k   # our multi-task synthetic corpus (all 5 task types)
+  event_files: {}

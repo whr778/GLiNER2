@@ -485,6 +485,17 @@ records), and argument dilution mean the argument head was never warmed at the
 combined checkpoints are retained privately (`whr778/mmbert-base-combined`,
 `whr778/mmbert-base-combined-wikievents`), not released.
 
+**Sanity check — the synthetic data itself trains cleanly.** To rule out "bad
+synthetic data" as the cause of the null result above, we fine-tuned the pretrained
+`fastino/gliner2-base-v1` on `synthetic_sonnet5_1k` *alone* (warm-start, 10 epochs,
+`eval_loss` selection). On the synthetic held-out split it scores well across all five
+tasks — strict micro-F1: entity 0.904, relation 0.657, event-type 0.956, event-trigger
+0.838, event-argument **0.702** (0.894 relaxed), classification 0.835. So the synthetic
+corpus is coherent and learnable (in-distribution — this is not a claim about the public
+benchmarks); the combined-base null result is about the **head-init regime** (2 epochs,
+`eval_loss` selection, NER dilution), not the data. Checkpoint:
+`whr778/gliner2-base-v1-synthetic` (private).
+
 ## 11. Reproducibility
 
 - **Train** from a raw backbone: `uv run python tools/train/train.py --config
