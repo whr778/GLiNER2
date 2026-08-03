@@ -1,0 +1,70 @@
+# TREATMENT arm of the head-init A/B: mmBERT-base on WikiEvents, warm-started from
+# the BROAD combined base (mmbert-base-combined: synthetic + multilingual +
+# multi-task + RAMS) instead of the RAMS-only base. Byte-identical recipe to
+# mmbert-base-wikievents.yaml (the control, warm-started from whr778/mmbert-base-rams)
+# EXCEPT the `pretrained` checkpoint -- isolating the base-data effect on the
+# downstream WikiEvents model. Requires out/mmbert-base-combined/best on disk.
+model:
+  pretrained: ./out/mmbert-base-combined/best   # warm-start from the combined base
+  struct_loss: bce_posweight   # inherit the loss (from_pretrained overrides the
+  struct_pos_weight: 4.0       # loaded config); matches the control arm
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/mmbert-base-wikievents-combined
+  experiment_name: mmbert_base_wikievents_combined
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 2              # long docs -> small batch
+  gradient_accumulation_steps: 16  # effective batch 32
+  encoder_lr: 1.0e-5         # warm-started -> lower LR (fine-tuning, not from scratch)
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1  # select on arguments, not
+  greater_is_better: true                               # the trigger/type plateau
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # max_len holds ~all WikiEvents docs whole
+  max_len: 8192              # training window = full encoder context (whole doc)
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false      # run all epochs so the argument head fully develops
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 1
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true         # per-epoch threshold sweep for ckpt selection (mirror control)
+  # No chunk_size / global_decode: whole-doc single pass (native long context).
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    wikievents:
+      train: data/wikievents.train.jsonl
+      val: data/wikievents.dev.jsonl
+      test: data/wikievents.test.jsonl

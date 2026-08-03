@@ -1,0 +1,75 @@
+# mmBERT-base from a raw encoder (from_encoder = fresh GLiNER2 heads), warmed on
+# a BROAD multi-task corpus: our synthetic multi-task data + GLiNER multilingual
+# NER + GLiNER multi-task NER + RAMS document-level events. Purpose: test the
+# head-initialization hypothesis (PAPER §10.6) -- does broad + synthetic base
+# training produce a better downstream WikiEvents model than the RAMS-only base
+# (whr778/mmbert-base-rams)? The bce_posweight-4 event/argument recipe mirrors
+# mmbert-base-rams so the argument head is warmed comparably.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  max_width: 20
+  max_len: 8192            # encoder positional capacity (ModernBERT/RoPE)
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/mmbert-base-combined
+  experiment_name: mmbert_base_combined
+  data_parallel: false
+  num_epochs: 2              # broad head-warming over ~96k records (not deep single-task)
+  batch_size: 4              # smaller batch: long RAMS docs at 2048 OOM'd the 40GB A100 at batch 8
+  gradient_accumulation_steps: 8   # effective batch 32 (unchanged)
+  encoder_lr: 2.0e-5         # from_encoder: training fresh heads
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss   # multi-task base: select the best all-round checkpoint
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # RAMS docs (<=478 words) + short NER fit in max_len
+  max_len: 2048              # training window; holds any record + schema prompt
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false
+
+eval:
+  batch_size: 2              # long RAMS docs padded x8 OOM'd the epoch-end eval at 8; training at batch 4 is fine
+  threshold: 0.5
+  threshold_sweep: true      # calibrate the decision threshold on val (blind test)
+  # No metric_sweep: the combined eval set is large (~12k records); a per-epoch
+  # 5-point sweep would be too costly. eval_loss selection + a final threshold
+  # sweep for the blind test is sufficient for a base checkpoint.
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/synthetic_sonnet5_1k   # our synthetic multi-task data (all 5 task types)
+    - data/gliner_multilingual    # GLiNER multilingual synthetic NER
+    - data/knowledgator_gliner    # GLiNER multi-task synthetic NER
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl

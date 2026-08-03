@@ -4,7 +4,7 @@
 
 ¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 4.8) — design, implementation, and drafting
 
-*Working paper — engineering and methodology contributions on the `mmbert_training` branch. The from-encoder / long-context mmBERT results and the head-initialization finding (§10.6) are complete (model: `whr778/mmbert-base-rams`); the §10.1–10.5 tables are the fastino DeBERTa-v3 baselines.*
+*Working paper — engineering and methodology contributions on the `mmbert_training` branch. The from-encoder / long-context mmBERT results and the head-initialization finding (§10.6), plus a first broad-data head-init A/B (§10.7, a documented negative result), are complete (model: `whr778/mmbert-base-rams`); the §10.1–10.5 tables are the fastino DeBERTa-v3 baselines.*
 
 ---
 
@@ -443,6 +443,48 @@ support-weighted objective (§8) for apples-to-apples comparison with the
 baselines — which, for argument-sparse categories, *understates* the peak, so the
 from-encoder argument numbers above are conservative.
 
+### 10.7 Head-init pretraining: a first broad-data A/B (negative result)
+
+§10.6 argued the remedy for the argument bottleneck is to give a from-encoder
+model the same IE curriculum the fastino heads saw. We ran a first, deliberately
+cheap version of that experiment and report it as a **negative result**.
+
+A broad **combined base** — mmBERT-base `from_encoder`, warmed for 2 epochs on our
+multi-task synthetic corpus (`synthetic_sonnet5`: entities, relations, events,
+classification, structures), GLiNER multilingual NER, GLiNER multi-task NER, and
+RAMS document events (~96K records, `eval_loss` checkpoint selection) — was then
+fine-tuned on WikiEvents under the **identical** 15-epoch, argument-strict recipe
+used for the RAMS-only base (`whr778/mmbert-base-rams`). Only the base checkpoint
+differs, isolating the base-data effect. WikiEvents blind test (20 docs; 239
+trigger / 515 argument mentions), strict micro-F1:
+
+| WikiEvents fine-tune | base | event_type | event_trigger | event_argument (S) |
+|---|---|--:|--:|--:|
+| control | RAMS-only (`mmbert-base-rams`) | **0.944** | 0.085 | 0.0046 |
+| treatment | broad combined base | 0.573 | **0.133** | 0.0066 |
+
+The control reproduces the near-floor WikiEvents-from-RAMS result of §10.6
+(event_argument ~0, event_type ~0.95, event_trigger ~0.1) within run-to-run noise
+on 20 documents. **The broad+synthetic base gave no reliable downstream lift.**
+Argument-strict F1
+stays at the floor for both (0.007 vs 0.005; identical 0.004 recall — roughly two
+correct arguments each, i.e. noise on 20 documents). The trigger edge to the
+treatment (0.133 vs 0.085) is precision-only on 239 mentions, within run-to-run
+noise, and the broad base *regressed* event_type (0.573 vs 0.944). For context, the
+combined base's own RAMS argument head was also weak (arg-strict 0.028) — though
+under a lighter regime than the 0.050 RAMS-only figure in §10.6 (2 epochs +
+`eval_loss` selection vs 15 epochs + argument-strict selection), so it is context,
+not a controlled base-to-base claim; the controlled comparison is the WikiEvents
+A/B above.
+
+This does **not** refute §10.6 — it shows a *light* broad-data pass is not a
+substitute for real head-init pretraining. The confounds point the same way: only
+2 base epochs, `eval_loss` selection (dominated by the ~77K multilingual-NER
+records), and argument dilution mean the argument head was never warmed at the
+~10⁵–10⁶ scale, argument-strict-selected, that the fastino curriculum used. Both
+combined checkpoints are retained privately (`whr778/mmbert-base-combined`,
+`whr778/mmbert-base-combined-wikievents`), not released.
+
 ## 11. Reproducibility
 
 - **Train** from a raw backbone: `uv run python tools/train/train.py --config
@@ -465,10 +507,14 @@ from-encoder argument numbers above are conservative.
   **head initialization** (IE-curriculum pretraining), not the context window.
   Long context still remedies window-bound recall loss on genuinely long
   documents (its intended role, §9.5), but it is orthogonal to head competence.
-  The open work is therefore **head-init pretraining**: run the broad-label,
-  multi-task synthetic curriculum in [`tools/data/synthetic/`](../data/synthetic/)
-  at ~10⁵–10⁶ scale to warm the extraction heads before task fine-tuning, then
-  re-run RAMS/WikiEvents from that checkpoint and A/B against the fastino heads.
+  We ran a first, cheap version of the head-init A/B (§10.7): a 2-epoch,
+  `eval_loss`-selected broad+synthetic base did **not** lift downstream WikiEvents
+  events (arguments stayed at the floor; event_type regressed). The open work is
+  therefore a *heavier* head-init pass — the broad-label, multi-task synthetic
+  curriculum in [`tools/data/synthetic/`](../data/synthetic/) at ~10⁵–10⁶ scale
+  with **argument-strict checkpoint selection**, matching the fastino curriculum —
+  rather than a light multi-task warm-up, then re-run RAMS/WikiEvents and A/B
+  against the fastino heads.
 - The global decoder's weights are **heuristic, not learned**: the beam
   optimizes one fixed objective — summed argument confidence minus a flat
   `conflict_penalty` per reused span, under hard trigger-floor and single-filler
