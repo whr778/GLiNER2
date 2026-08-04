@@ -115,6 +115,12 @@ run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split
 # CASIE auto-downloads the GitHub tarball and emits stratified splits — no manual prep.
 run_step casie            uv run python tools/data/convert_casie.py --out data/casie.jsonl
 
+# ChFinAnn / DocFEE / DuEE / Mendeley-ED auto-download (zip / GitHub / HF / tarball) — no manual prep.
+run_step chfinann         uv run python tools/data/convert_chfinann.py --out data/chfinann.jsonl
+run_step docfee           uv run python tools/data/convert_docfee.py --out data/docfee.jsonl
+run_step duee             uv run python tools/data/convert_duee.py --out data/duee.jsonl
+run_step mendeley_ed      uv run python tools/data/convert_mendeley_ed.py --out data/mendeley_ed.jsonl
+
 # CMNEE — Chinese military event extraction. Manual Google Drive download.
 run_optional cmnee_train data/cmnee/CMNEE/train.json \
     uv run python tools/data/convert_cmnee.py \
