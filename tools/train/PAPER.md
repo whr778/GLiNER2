@@ -546,18 +546,18 @@ is no fastino-scale warm-start on mmBERT). RAMS blind test (871 docs), strict mi
 | Stage-A size N | event_argument (S) | event_trigger (S) | event_type (S) |
 |--:|--:|--:|--:|
 | 0 (fresh → RAMS) | 0.050 | 0.611 | — |
-| 10K | **0.050** | 0.598 | 0.952 |
-| 40K | _(running)_ | | |
+| 10K | 0.050 | 0.598 | 0.952 |
+| 40K | **0.115** | 0.706 | 0.931 |
 | ~100K | _(running)_ | | |
 | 254K (DeBERTa ref) | 0.462 | 0.935 | — |
 
 **10K of head-warming moved the argument head essentially zero** (0.050, identical
-to the N=0 floor; trigger and type unchanged). This is consistent with the
-prediction that a cold multilingual encoder needs *more* warming than DeBERTa — the
-knee, if any, sits above 10K. The 40K and 100K points are training; this section
-will report whether the argument head lifts at larger N or stays at the floor (which
-would indicate mmBERT-from-encoder needs fastino's ~10⁵–10⁶ scale, or that the
-DeBERTa warm-start path is the pragmatic route). Checkpoints (private):
+to the N=0 floor), but **40K lifts it ~2.3× to 0.115** (trigger 0.611 → 0.706 as
+well), so **the knee falls between 10K and 40K**: mmBERT's argument head *does* warm
+from broad structure/argument data, just at a higher threshold than DeBERTa and
+confirming the prediction that a cold multilingual encoder needs more of it. The
+~100K point is training; it will show whether the curve keeps climbing toward the
+DeBERTa reference (0.462) or plateaus. Checkpoints (private):
 `whr778/scaling-mmbert-{10k,40k,100k}` and `-rams`.
 
 ## 11. Reproducibility
