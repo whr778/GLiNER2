@@ -1,0 +1,69 @@
+# mmBERT head-init scaling curve -- Stage B, 10K point. Fine-tune the warmed 10K
+# base (scaling-mmbert-10k Stage A) on RAMS. See SCALING_CURVE_EXPERIMENT.md.
+# Byte-identical downstream recipe to mmbert-base-rams (the recipe that produced the
+# N=0 endpoint 0.050) EXCEPT the warm-start source: from_pretrained on the local
+# Stage-A checkpoint instead of from_encoder. The RAMS arg-strict F1 this produces is
+# the 10K point's y-value on the curve.
+model:
+  pretrained: ./out/scaling-mmbert-10k/best
+  # keep the same argument-head loss the base was warmed with (mirror mmbert-base-rams)
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  checkpoint_restart: last
+  output_dir: ./out/scaling-mmbert-10k-rams
+  experiment_name: scaling_mmbert_10k_rams
+  data_parallel: false
+  num_epochs: 15             # match mmbert-base-rams (the 0.050 endpoint recipe)
+  batch_size: 8              # if the A100 OOMs, drop to 4 + accum 8 (eff batch 32 unchanged)
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 2.0e-5         # identical to mmbert-base-rams so the curve is single-variable
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1  # save where arguments peak
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # RAMS docs fit in max_len -> native long context
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false      # run all 15 epochs so the argument head fully develops
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true      # calibrate the decision threshold on val (blind test)
+  metric_sweep: true         # per-epoch threshold sweep + best-checkpoint selection
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl

@@ -1,0 +1,74 @@
+# mmBERT head-init scaling curve -- Stage A, ~40K point (Option B, assembled on-disk).
+# See tools/events_working_papers/SCALING_CURVE_EXPERIMENT.md.
+# from_encoder on a nested, proportional 40K subsample of the on-disk event pool
+# (build_scaling_mix.py; the 10K slice is a prefix of these, so the mixes nest).
+# Only the Stage-A corpus size differs from scaling-mmbert-100k.yaml -- recipe held
+# fixed. RAMS/WikiEvents excluded (leakage). Fine-tune on RAMS via scaling-mmbert-40k-rams.yaml.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  max_width: 20
+  max_len: 8192
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/scaling-mmbert-40k
+  experiment_name: scaling_mmbert_40k
+  data_parallel: false
+  num_epochs: 5              # held equal across the curve (only corpus size varies)
+  batch_size: 4
+  gradient_accumulation_steps: 8
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: false
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+
+eval:
+  batch_size: 2
+  threshold: 0.5
+  threshold_sweep: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    chfinann:       {train: data/scaling/chfinann.s40k.train.jsonl,       val: data/scaling/chfinann.val.jsonl}
+    docee:          {train: data/scaling/docee.s40k.train.jsonl,          val: data/scaling/docee.val.jsonl}
+    docfee:         {train: data/scaling/docfee.s40k.train.jsonl,         val: data/scaling/docfee.val.jsonl}
+    duee:           {train: data/scaling/duee.s40k.train.jsonl,           val: data/scaling/duee.val.jsonl}
+    cmnee:          {train: data/scaling/cmnee.s40k.train.jsonl,          val: data/scaling/cmnee.val.jsonl}
+    text2json:      {train: data/scaling/text2json.s40k.train.jsonl,      val: data/scaling/text2json.val.jsonl}
+    maven:          {train: data/scaling/maven.s40k.train.jsonl}
+    events_biotech: {train: data/scaling/events_biotech.s40k.train.jsonl, val: data/scaling/events_biotech.val.jsonl}
+    mendeley_ed:    {train: data/scaling/mendeley_ed.s40k.train.jsonl,    val: data/scaling/mendeley_ed.val.jsonl}
+    casie:          {train: data/scaling/casie.s40k.train.jsonl,          val: data/scaling/casie.val.jsonl}

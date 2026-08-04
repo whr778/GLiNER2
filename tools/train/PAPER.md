@@ -524,6 +524,42 @@ only coarse event-type (0.998, few classes) survives. So ~1.5K synthetic records
 a warm start or the fastino curriculum's ~10⁵–10⁶ scale. This restates the head-init
 thesis (§10.6) from the data side. Checkpoint: `whr778/deberta-base-fromenc-synthetic`.
 
+### 10.8 How much data warms the head? An mmBERT data-scaling curve
+
+§10.7's light broad pass did not lift arguments, but it was confounded (2 epochs,
+NER-diluted, `eval_loss`-selected). This experiment isolates the one variable that
+matters — **Stage-A corpus size** — and measures it directly. We warm mmBERT-base
+fresh heads (`from_encoder`) on a structure/argument-dense event corpus of size N,
+then fine-tune each on RAMS under the **fixed** `mmbert-base-rams` recipe (15 epochs,
+`bce_posweight` 4.0, native long-context, argument-strict selection), and read RAMS
+blind-test argument-strict F1 vs N. The Stage-A corpus is assembled from the
+multilingual event corpora already on disk (docee, chfinann, docfee, duee, cmnee,
+maven, text2json, events_biotech, mendeley_ed, casie), nested and proportional at
+10K/40K/100K, with RAMS/WikiEvents held out (leakage). Spec:
+`events_working_papers/SCALING_CURVE_EXPERIMENT.md`.
+
+Two endpoints are already known on their respective encoders: **N=0 = 0.050**
+(mmBERT `from_encoder` straight to RAMS, §10.6); the DeBERTa-v3 fastino warm-start
+(254K) reaches **0.462** as a *cross-encoder reference*, not an mmBERT point (there
+is no fastino-scale warm-start on mmBERT). RAMS blind test (871 docs), strict micro-F1:
+
+| Stage-A size N | event_argument (S) | event_trigger (S) | event_type (S) |
+|--:|--:|--:|--:|
+| 0 (fresh → RAMS) | 0.050 | 0.611 | — |
+| 10K | **0.050** | 0.598 | 0.952 |
+| 40K | _(running)_ | | |
+| ~100K | _(running)_ | | |
+| 254K (DeBERTa ref) | 0.462 | 0.935 | — |
+
+**10K of head-warming moved the argument head essentially zero** (0.050, identical
+to the N=0 floor; trigger and type unchanged). This is consistent with the
+prediction that a cold multilingual encoder needs *more* warming than DeBERTa — the
+knee, if any, sits above 10K. The 40K and 100K points are training; this section
+will report whether the argument head lifts at larger N or stays at the floor (which
+would indicate mmBERT-from-encoder needs fastino's ~10⁵–10⁶ scale, or that the
+DeBERTa warm-start path is the pragmatic route). Checkpoints (private):
+`whr778/scaling-mmbert-{10k,40k,100k}` and `-rams`.
+
 ## 11. Reproducibility
 
 - **Train** from a raw backbone: `uv run python tools/train/train.py --config
