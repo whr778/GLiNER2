@@ -5,8 +5,8 @@ scripts under [`tools/data/`](.) (see [TRAINING.md](../train/TRAINING.md) §2 fo
 the conversion commands). Sample counts below are the **actual line counts of the
 generated `data/*.jsonl` splits**; type statistics are computed from the same
 files. Most corpora are partitioned 80/10/10 by a seeded `SplitWriter`; the event
-corpora and the MasakhaNER 2.0 / MasakhaNEWS benchmarks keep their canonical
-train/dev/test splits.
+corpora, the MTL-Bioinformatics-2016 biomedical-NER corpora, and the MasakhaNER 2.0 /
+MasakhaNEWS benchmarks keep their canonical train/dev/test splits.
 
 ## Summary
 
@@ -27,6 +27,20 @@ train/dev/test splits.
 | KLUE-NER | NER (Korean, 6 types) | 16,782 | 2,116 | 2,104 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
 | MasakhaNER 2.0 | NER (20 African langs, 4 types) | 67,865 | 9,951 | 20,511 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhaner2) |
 | WikiANN (PAN-X) | NER (176 langs) | _streamed_§ | _streamed_§ | _streamed_§ | see card | [HF](https://huggingface.co/datasets/unimelb-nlp/wikiann) |
+| **NER (biomedical — MTL-Bioinformatics-2016)** | | | | | | |
+| AnatEM | NER (anatomy) | 3,514 | 1,122 | 2,308 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BC2GM | NER (genes) | 6,428 | 1,292 | 2,570 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BioNLP09 | NER (proteins) | 4,711 | 1,014 | 1,700 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BioNLP11EPI | NER (proteins) | 3,797 | 1,241 | 2,836 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BioNLP11ID | NER (4 types) | 1,850 | 586 | 1,389 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BioNLP13CG | NER (16 types) | 2,936 | 964 | 1,829 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BioNLP13GE | NER (proteins) | 1,504 | 1,663 | 1,941 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BioNLP13PC | NER (4 types) | 2,365 | 812 | 1,575 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| CRAFT | NER (6 ontologies) | 8,344 | 2,756 | 5,694 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| Ex-PTM | NER (proteins) | 857 | 279 | 1,160 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| JNLPBA | NER (5 types) | 15,150 | 1,514 | 3,202 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| NCBI-disease | NER (disease) | 2,923 | 489 | 539 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| linnaeus | NER (species) | 1,556 | 524 | 1,034 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | **Relation extraction** | | | | | | |
 | sentence_rex | Relation extraction | 34,314 | 4,269 | 4,282 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
@@ -35,6 +49,7 @@ train/dev/test splits.
 | KLUE-RE | NER + relations (Korean) | 26,028 | 3,237 | 3,205 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
 | BioRED | NER + relations (biomedical) | 308 | 47 | 45 | NLM / NCBI | [NCBI](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/) |
 | SciERC | NER + relations (scientific) | 265 | 46 | 38 | research use (AI2) | [AI2](http://nlp.cs.washington.edu/sciIE/) |
+| ProfessorBob relation_extraction | Relation extraction (passage-level) | 13,926 | 1,737 | 1,728 | see card | [HF](https://huggingface.co/datasets/ProfessorBob/relation_extraction) |
 | **Classification** | | | | | | |
 | GLiClass v3 logic | Classification (multiple-choice) | 4,566 | 550 | 548 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset) |
 | GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) |
@@ -51,8 +66,12 @@ train/dev/test splits.
 | CASIE | Event extraction (cybersecurity) | 795 | 98 | 107 | see source | [GitHub](https://github.com/Ebiquity/CASIE) |
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
 | DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
+| ChFinAnn | Event extraction (Chinese financial) | 25,632 | 3,204 | 3,204 | see source | [Doc2EDAG](https://github.com/dolphin-zs/Doc2EDAG) |
+| DocFEE | Event extraction (Chinese financial) | 16,420 | 1,824 | 800 | cc-by-4.0 | [GitHub](https://github.com/tongzhou21/DocFEE) |
+| DuEE 1.0 | Event extraction (Chinese) | 11,603 | 1,453 | — | see source | [LUGE](https://www.luge.ai/) |
+| Mendeley-ED | Event detection (English, trigger-only) | 1,431 | 159 | 156 | cc-by-4.0 | [Mendeley](https://doi.org/10.17632/7d54rvzxkr.1) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Total (generated)** | | **1,813,931** | **228,477** | **242,907** | | |
+| **Total (generated)** | | **1,933,577** | **249,880** | **276,572** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard).
@@ -155,6 +174,17 @@ bounded in-memory samples capped by label class (`eval_min_per_class`). See
 `tools/train/config/{gliner2-multi-v1,mmbert-base}-wikiann.yaml`.
 *Stats: 3 entity types; silver-standard (Wikipedia-derived).*
 
+### MTL-Bioinformatics-2016 (13 biomedical NER corpora) — [cambridgeltl/MTL-Bioinformatics-2016](https://github.com/cambridgeltl/MTL-Bioinformatics-2016)
+The Crichton et al. (2017) multi-task benchmark: CoNLL BIO biomedical NER corpora,
+converted by `convert_mtl_bio.py` on their **canonical** train/devel/test splits
+(the `-IOB` folders; JNLPBA from its plain folder). Each corpus keeps its own entity
+types — single-type (BC2GM: GENE; NCBI-disease: Disease; linnaeus: Species; AnatEM:
+Anatomy; the BioNLP protein sets) through rich multi-type (BioNLP13CG: 16 types;
+CRAFT: 6 ontologies CHEBI/CL/GGP/GO/SO/Taxon; JNLPBA: 5). BC4CHEMD and BC5CDR are
+covered separately above; the POS corpus (GENIA-pos) and per-entity-type subset
+folders are excluded. All-`O` sentences are dropped.
+*Stats: 13 corpora, ~55.9k train sentences, ~243k entity mentions; CC BY 4.0.*
+
 ## Relation extraction
 
 ### sentence_rex — `knowledgator/sentence_rex`
@@ -198,6 +228,14 @@ Scientific NER + RE over abstracts, from the [AI2 release](http://nlp.cs.washing
 (processed JSON). 6 entity types (Task, Method, Material, Metric, OtherScientificTerm,
 Generic), 7 relation types (USED-FOR, CONJUNCTION, HYPONYM-OF, …).
 *Stats: 6 entity types, 7 relation types, avg 4.4 entity types/doc; 99% carry relations, ~2.4k relations over 265 train docs.*
+
+### ProfessorBob relation_extraction — `ProfessorBob/relation_extraction`
+Passage-level relation extraction over Wikidata-style properties. The source ships
+one `[subject, relation, object]` triple per row; `convert_professorbob_re.py` groups
+triples by passage into multi-relation records (`{label: {head, tail}}`), keeping only
+triples whose surfaces appear verbatim (~47% of source triples name canonical entities
+absent from the passage text and are dropped). No license is declared on the card.
+*Stats: 198 relation types, ~39k relations over 17.4k passages, 100% carry relations.*
 
 ## Classification
 
@@ -276,6 +314,27 @@ Google Drive download).
 Largest doc-level event corpus; one event per doc, no triggers — mapped to
 role-typed entities + 59-way document classification (manual Google Drive download).
 *Stats: 356 role-entity types, 59 document classes, avg 4.7 types/record, 100% carry both entity and classification annotations.*
+
+### ChFinAnn — [Doc2EDAG](https://github.com/dolphin-zs/Doc2EDAG)
+Large Chinese financial document-level event extraction (Zheng et al., EMNLP 2019);
+trigger-free (an event is an event-type label plus a role→value table). Auto-downloads
+the release zip.
+*Stats: 5 event types, 24 role types; 25.6k train docs.*
+
+### DocFEE — [tongzhou21/DocFEE](https://github.com/tongzhou21/DocFEE)
+Chinese financial document-level event extraction (Chen et al., Scientific Data 2025);
+trigger-free and offset-free. Auto-downloads the GitHub zip.
+*Stats: 9 event types; 16.4k train docs. CC BY 4.0.*
+
+### DuEE 1.0 — [Baidu LUGE](https://www.luge.ai/)
+Sentence-level Chinese event extraction (Li et al., NLPCC 2020) with triggers + typed
+argument roles. Public test labels are held out (no test split).
+*Stats: 65 event types, 121 argument roles; 11.6k train sentences.*
+
+### Mendeley Event Detection — [Mendeley 7d54rvzxkr](https://doi.org/10.17632/7d54rvzxkr.1)
+English ongoing-event **trigger detection** over NYT economic/crisis news (Maisonnave
+et al., 2020); word-level triggers only (no argument roles). Auto-downloads the tarball.
+*Stats: trigger-only; 1.4k train sentences. CC BY 4.0.*
 
 ### ACE 2005 — [LDC2006T06](https://catalog.ldc.upenn.edu/LDC2006T06)
 LDC-licensed; not redistributable and not generated here. Convert from your own
