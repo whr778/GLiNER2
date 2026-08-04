@@ -415,13 +415,32 @@ in 512 regardless). This refines §9.5: long context remedies window-bound
 *recall loss* on genuinely long documents, but it is **orthogonal** to the
 head-competence bottleneck that dominates argument extraction from a cold start.
 
-The implication is constructive: the remedy is to give a from-encoder model the
-same IE curriculum. [`tools/data/synthetic/`](../data/synthetic/) builds exactly
-that — broad-label, multi-task supervision (entities, relations, document-level
-events with triggers + arguments, classification, structures), either fully
-generated or projected as synthetic annotations onto real corpora, at the
-~10⁵–10⁶ scale the fastino heads saw. Head-init pretraining, *then* task
-fine-tuning, is the path to closing this gap on a long-context backbone.
+**What the fastino head-init actually is** (verified against Zaratiana et al., 2025;
+see [`FASTINO_GLINER2_TRAINING.md`](../events_working_papers/FASTINO_GLINER2_TRAINING.md)).
+The fastino heads were trained **fully supervised** on **254,334 examples** — 53% real
+text (news/Wikipedia/legal/PubMed/ArXiv) and 47% synthetic, *all* GPT-4o-annotated
+(LLM knowledge-distillation, not human labels) — for just **5 epochs** with a
+**differential learning rate** (task heads 2×10⁻⁵, encoder 1×10⁻⁵, so heads adapt ~2×
+faster). Crucially, the training tasks were **entities, hierarchical structure
+extraction, and classification — no events and no relations.** The competence that
+transfers is the **hierarchical-structure head**: a shared span-matching scorer
+(bilinear dot-product + sigmoid), a 20-way instance-count MLP, and occurrence-ID
+conditioning for per-instance fields. Our event path *reuses those exact heads*
+(trigger/argument = the span scorer, multiple mentions = the count head, per-event
+arguments = occurrence-ID conditioning), which is why warm-starting a model that never
+saw an event still lifts RAMS/WikiEvents arguments — the head-init effect is
+**structural, not event-specific**.
+
+The implication is constructive: the remedy is to give a from-encoder model the same
+*scale* of structure-extraction supervision. Because it is the structure head that
+transfers, the target is **not** ~10⁵–10⁶ *event* documents but a large
+**hierarchical-structure / argument** curriculum in the fastino mold (mixed
+real+synthetic text, LLM-annotated and validated). [`tools/data/synthetic/`](../data/synthetic/)
+builds exactly that shape — broad-label, multi-task supervision (entities, relations,
+document-level events with triggers + arguments, classification, structures), either
+fully generated or projected as synthetic annotations onto real corpora, at the
+~10⁵–10⁶ scale the fastino heads saw. Head-init pretraining, *then* task fine-tuning,
+is the path to closing this gap on a long-context backbone.
 
 The WikiEvents from-encoder run (mmBERT, warm-started from the RAMS checkpoint
 above) reinforces the same point as a **documented negative result**: with only
