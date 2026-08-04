@@ -90,8 +90,13 @@ def main() -> int:
                     help="YAML config (bare name resolves to synthetic/config/).")
     ap.add_argument("--out", type=Path, help="Output JSONL base path (writes .train/.val/.test).")
     ap.add_argument("--count", type=int, help="Number of documents to generate.")
-    ap.add_argument("--provider", help="Override provider (openai|anthropic|mock).")
+    ap.add_argument("--provider",
+                    help="Override provider (openai|anthropic|mock|vllm|ollama|mlx).")
     ap.add_argument("--model", help="Override model name.")
+    ap.add_argument("--base-url",
+                    help="OpenAI-compatible endpoint for local backends "
+                         "(vllm|ollama|mlx); overrides the per-backend default and "
+                         "*_BASE_URL env var.")
     ap.add_argument("--tasks", help="Comma-separated task subset (default: all).")
     ap.add_argument("--limit", type=int, help="Alias for a small --count (smoke run).")
     ap.add_argument("--dry-run", action="store_true",
@@ -138,6 +143,8 @@ def main() -> int:
         provider=provider_name, model=model,
         temperature=prov_cfg.get("temperature", ProviderConfig.temperature),
         max_tokens=prov_cfg.get("max_tokens", ProviderConfig.max_tokens),
+        base_url=args.base_url or prov_cfg.get("base_url", ""),
+        json_object=prov_cfg.get("json_object", True),
     )
     provider = build_provider(pcfg)
     annotate = args.annotate_from is not None

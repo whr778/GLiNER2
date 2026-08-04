@@ -18,10 +18,24 @@ from dataclasses import dataclass
 
 @dataclass
 class ProviderConfig:
-    provider: str = "openai"          # openai | anthropic | mock
+    provider: str = "openai"          # openai | anthropic | mock | vllm | ollama | mlx
     model: str = "gpt-4o"
     temperature: float = 0.9
     max_tokens: int = 2048
+    base_url: str = ""                # OpenAI-compatible endpoint (local backends)
+    json_object: bool = True          # request response_format=json_object;
+                                      # disable for servers that reject it (some MLX builds)
+
+
+# OpenAI-compatible local servers reachable through the OpenAI SDK by pointing
+# base_url at them: (base-url env override, default local URL, key env). Local
+# servers accept any token, so a dedicated *_API_KEY env is used (default "EMPTY")
+# and the real OPENAI_API_KEY is NEVER sent to a local endpoint.
+LOCAL_OPENAI_BACKENDS = {
+    "vllm":   ("VLLM_BASE_URL",   "http://localhost:8000/v1",  "VLLM_API_KEY"),
+    "ollama": ("OLLAMA_BASE_URL", "http://localhost:11434/v1", "OLLAMA_API_KEY"),
+    "mlx":    ("MLX_BASE_URL",    "http://localhost:8080/v1",  "MLX_API_KEY"),
+}
 
 
 def build_provider(cfg: ProviderConfig) -> "LLMProvider":
@@ -33,7 +47,14 @@ def build_provider(cfg: ProviderConfig) -> "LLMProvider":
         return AnthropicProvider(cfg)
     if name == "mock":
         return MockProvider(cfg)
-    raise ValueError(f"unknown provider {cfg.provider!r} (use openai|anthropic|mock)")
+    if name in LOCAL_OPENAI_BACKENDS:
+        env_url, default_url, env_key = LOCAL_OPENAI_BACKENDS[name]
+        base_url = cfg.base_url or os.environ.get(env_url) or default_url
+        api_key = os.environ.get(env_key) or "EMPTY"
+        return OpenAIProvider(cfg, base_url=base_url, require_key=False, api_key=api_key)
+    raise ValueError(
+        f"unknown provider {cfg.provider!r} "
+        f"(use openai|anthropic|mock|vllm|ollama|mlx)")
 
 
 class LLMProvider:
@@ -55,29 +76,48 @@ class LLMProvider:
 
 
 class OpenAIProvider(LLMProvider):
-    """Chat Completions with JSON-object response format (GPT-4o / GPT-4.1 / mini)."""
+    """Chat Completions with JSON-object response format.
 
-    def __init__(self, cfg: ProviderConfig) -> None:
+    Drives the OpenAI API and any OpenAI-compatible local server (vLLM, Ollama,
+    ``mlx_lm.server``). Pass ``base_url`` to target a local endpoint and
+    ``require_key=False`` so a real ``OPENAI_API_KEY`` is optional (local servers
+    accept any token; ``EMPTY`` is used when none is set).
+    """
+
+    def __init__(self, cfg: ProviderConfig, *, base_url: str | None = None,
+                 require_key: bool = True, api_key: str | None = None) -> None:
         super().__init__(cfg)
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise RuntimeError("OPENAI_API_KEY is not set in the environment.")
         try:
             from openai import OpenAI
         except ImportError as e:
             raise RuntimeError("openai SDK missing -- run: uv add openai") from e
-        self._client = OpenAI()
+        url = base_url or cfg.base_url or None
+        if require_key and not url:
+            # Real OpenAI: needs a key (the SDK still honors OPENAI_BASE_URL if set).
+            if not os.environ.get("OPENAI_API_KEY"):
+                raise RuntimeError("OPENAI_API_KEY is not set in the environment.")
+            self._client = OpenAI()
+        else:
+            # OpenAI-compatible endpoint: use the explicit key when given (local
+            # backends pass "EMPTY"); else fall back to OPENAI_API_KEY for a custom
+            # cloud-compatible URL.
+            self._client = OpenAI(
+                base_url=url,
+                api_key=api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY")
 
     def complete(self, system: str, user: str) -> str:
-        resp = self._client.chat.completions.create(
+        kwargs = dict(
             model=self.cfg.model,
             temperature=self.cfg.temperature,
             max_tokens=self.cfg.max_tokens,
-            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         )
+        if self.cfg.json_object:
+            kwargs["response_format"] = {"type": "json_object"}
+        resp = self._client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or ""
 
 
