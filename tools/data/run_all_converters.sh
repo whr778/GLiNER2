@@ -106,6 +106,18 @@ run_step biored              uv run python tools/data/convert_biored.py --out da
 # ~695 MB (bundles ELMo); pre-extract once and pass --json to skip it.
 run_step scierc              uv run python tools/data/convert_scierc.py --out data/scierc.jsonl
 
+# MTL-Bioinformatics-2016 biomedical NER (Crichton et al. 2017; CoNLL BIO, CC BY 4.0).
+# One auto-downloading converter per corpus. Overlaps (BC4CHEMD, BC5CDR) and the POS
+# corpus (GENIA-pos) are intentionally omitted; per-entity-type subset folders are
+# skipped in favor of the full-type corpora (<DATASET>:<output-name>).
+for mtl in AnatEM:anatem BC2GM:bc2gm BioNLP09:bionlp09 BioNLP11EPI:bionlp11epi \
+           BioNLP11ID:bionlp11id BioNLP13CG:bionlp13cg BioNLP13GE:bionlp13ge \
+           BioNLP13PC:bionlp13pc CRAFT:craft Ex-PTM:ex_ptm JNLPBA:jnlpba \
+           NCBI-disease:ncbi_disease linnaeus:linnaeus; do
+  run_step "mtl_${mtl##*:}" uv run python tools/data/convert_mtl_bio.py \
+      --dataset "${mtl%%:*}" --out "data/${mtl##*:}.jsonl"
+done
+
 # Event corpora.
 # WikiEvents auto-downloads from the public S3 bucket — no manual prep.
 run_step wikievents_train uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
