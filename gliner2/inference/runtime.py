@@ -137,8 +137,10 @@ class ExtractorRuntimeMixin:
                     meta = metadata_list[sample_idx + i]
                     requested_relations = meta.get("relation_order", [])
                     classification_tasks = meta.get("classification_tasks", [])
+                    requested_events = meta.get("event_order", [])
                     batch_results[i] = self.format_results(
-                        result, include_confidence, requested_relations, classification_tasks
+                        result, include_confidence, requested_relations, classification_tasks,
+                        requested_events=requested_events,
                     )
 
             all_results.extend(batch_results)
@@ -174,6 +176,12 @@ class ExtractorRuntimeMixin:
                     "entity_attribute_labels": getattr(
                         schema, "_entity_attribute_labels", set()
                     ),
+                    "event_metadata": getattr(schema, "_event_metadata", {}),
+                    "event_role_orders": {
+                        name: list(schema_dict.get("events", {}).get(name, []))
+                        for name in getattr(schema, "_event_order", [])
+                    },
+                    "event_order": getattr(schema, "_event_order", []),
                 }
             else:
                 schema_dict = schema
@@ -190,6 +198,12 @@ class ExtractorRuntimeMixin:
                     "entity_attribute_groups": {},
                     "entity_attribute_prompt_labels": {},
                     "entity_attribute_labels": set(),
+                    "event_metadata": {},
+                    "event_role_orders": {
+                        name: list(roles)
+                        for name, roles in (schema_dict.get("events") or {}).items()
+                    },
+                    "event_order": list((schema_dict.get("events") or {}).keys()),
                 }
 
             classifications = schema_dict.get("classifications")
@@ -410,11 +424,11 @@ class ExtractorRuntimeMixin:
         """Extract span-based results."""
         field_names = []
         for j in range(len(schema_tokens) - 1):
-            if schema_tokens[j] in ("[E]", "[C]", "[R]"):
+            if schema_tokens[j] in ("[E]", "[C]", "[R]", "[V]"):
                 field_names.append(schema_tokens[j + 1])
 
         if not field_names:
-            results[schema_name] = [] if schema_name == "entities" else {}
+            results[schema_name] = [] if (schema_name == "entities" or task_type == "events") else {}
             return
 
         count_logits = self.count_pred(embs[0].unsqueeze(0))
@@ -423,7 +437,7 @@ class ExtractorRuntimeMixin:
         if pred_count <= 0 or span_info is None:
             if schema_name == "entities":
                 results[schema_name] = []
-            elif task_type == "relations":
+            elif task_type in ("relations", "events"):
                 results[schema_name] = []
             else:
                 results[schema_name] = {}
@@ -450,6 +464,12 @@ class ExtractorRuntimeMixin:
                 )
         elif task_type == "relations":
             results[schema_name] = self._extract_relations(
+                schema_name, field_names, span_scores, pred_count,
+                text_len, text_tokens, original_text, start_mapping, end_mapping,
+                threshold, metadata, include_confidence, include_spans
+            )
+        elif task_type == "events":
+            results[schema_name] = self._extract_events(
                 schema_name, field_names, span_scores, pred_count,
                 text_len, text_tokens, original_text, start_mapping, end_mapping,
                 threshold, metadata, include_confidence, include_spans
@@ -748,6 +768,86 @@ class ExtractorRuntimeMixin:
 
         return instances
 
+    def _extract_events(
+        self,
+        event_type: str,
+        field_names: List[str],
+        span_scores: torch.Tensor,
+        count: int,
+        text_len: int,
+        text_tokens: List[str],
+        text: str,
+        start_map: List[int],
+        end_map: List[int],
+        threshold: float,
+        metadata: Dict,
+        include_confidence: bool,
+        include_spans: bool,
+    ) -> List[Dict[str, Any]]:
+        """Extract event mentions for one event type.
+
+        Field 0 of the schema is the trigger; fields 1..N are the typed argument
+        roles. For each predicted instance, take every span above threshold for the
+        trigger field, and every span above threshold for each role field (both are
+        multi-valued, decoded identically).
+        """
+        event_meta = metadata.get("event_metadata", {}).get(event_type, {})
+        trigger_threshold = event_meta.get("trigger_threshold")
+        if trigger_threshold is None:
+            trigger_threshold = threshold
+        argument_threshold = event_meta.get("argument_threshold")
+        if argument_threshold is None:
+            argument_threshold = threshold
+
+        roles_ordered = metadata.get("event_role_orders", {}).get(event_type)
+        if roles_ordered is None:
+            roles_ordered = field_names[1:] if len(field_names) > 1 else []
+
+        def _format_span(text_val: str, conf: float, char_start: int, char_end: int):
+            if include_spans and include_confidence:
+                return {"text": text_val, "confidence": conf,
+                        "start": char_start, "end": char_end}
+            if include_spans:
+                return {"text": text_val, "start": char_start, "end": char_end}
+            if include_confidence:
+                return {"text": text_val, "confidence": conf}
+            return text_val
+
+        events: List[Dict[str, Any]] = []
+        for inst in range(count):
+            scores = span_scores[inst, :, -text_len:]
+
+            trigger_spans = self._find_spans(
+                scores[0], trigger_threshold, text_len, text, start_map, end_map
+            )
+            if not trigger_spans:
+                continue
+            triggers = [
+                _format_span(t_text, t_conf, t_start, t_end)
+                for t_text, t_conf, t_start, t_end in trigger_spans
+            ]
+
+            arguments: List[Dict[str, Any]] = []
+            for role in roles_ordered:
+                if role not in field_names:
+                    continue
+                fidx = field_names.index(role)
+                if fidx >= scores.shape[0]:
+                    continue
+                arg_spans = self._find_spans(
+                    scores[fidx], argument_threshold,
+                    text_len, text, start_map, end_map
+                )
+                for a_text, a_conf, a_start, a_end in arg_spans:
+                    arguments.append({
+                        "role": role,
+                        "entity": _format_span(a_text, a_conf, a_start, a_end),
+                    })
+
+            events.append({"triggers": triggers, "arguments": arguments})
+
+        return events
+
     def _extract_structures(
         self,
         struct_name: str,
@@ -933,19 +1033,32 @@ class ExtractorRuntimeMixin:
         results: Dict,
         include_confidence: bool = False,
         requested_relations: List[str] = None,
-        classification_tasks: List[str] = None
+        classification_tasks: List[str] = None,
+        requested_events: List[str] = None,
     ) -> Dict[str, Any]:
         """Format extraction results."""
         formatted = {}
         relations = {}
+        events_out = {}
         requested_relations = requested_relations or []
         classification_tasks = classification_tasks or []
+        requested_events = requested_events or []
 
         for key, value in results.items():
             is_classification = key in classification_tasks
+            is_event = False
             is_relation = False
 
             if not is_classification:
+                # Events take priority over relation heuristics (distinct shape).
+                if key in requested_events:
+                    is_event = True
+                elif (isinstance(value, list) and len(value) > 0
+                      and isinstance(value[0], dict)
+                      and "triggers" in value[0] and "arguments" in value[0]):
+                    is_event = True
+
+            if not is_classification and not is_event:
                 if key in requested_relations:
                     is_relation = True
                 elif isinstance(value, list) and len(value) > 0:
@@ -965,6 +1078,8 @@ class ExtractorRuntimeMixin:
                     formatted[key] = {"label": label, "confidence": conf} if include_confidence else label
                 else:
                     formatted[key] = value
+            elif is_event:
+                events_out[key] = value if isinstance(value, list) else []
             elif is_relation:
                 if isinstance(value, list):
                     relations[key] = value
@@ -1000,8 +1115,15 @@ class ExtractorRuntimeMixin:
             if rel not in relations:
                 relations[rel] = []
 
+        for evt in requested_events:
+            if evt not in events_out:
+                events_out[evt] = []
+
         if relations:
             formatted["relation_extraction"] = relations
+
+        if events_out:
+            formatted["event_extraction"] = events_out
 
         return formatted
 
@@ -1386,6 +1508,28 @@ class ExtractorRuntimeMixin:
                                max_len: Optional[int] = None) -> List[Dict]:
         """Batch extract relations."""
         schema = self.create_schema().relations(relation_types)
+        return self.batch_extract(texts, schema, batch_size, threshold, 0, format_results, include_confidence, include_spans, max_len=max_len)
+
+    def extract_events(self, text: str, event_types, threshold: float = 0.5,
+                       format_results: bool = True, include_confidence: bool = False,
+                       include_spans: bool = False, max_len: Optional[int] = None) -> Dict:
+        """Extract events.
+
+        Args:
+            text: Input text.
+            event_types: dict ``{event_type: [role, ...]}`` or rich
+                ``{event_type: {"roles": [...], "description": ...,
+                "role_descriptions": {...}}}``.
+        """
+        schema = self.create_schema().events(event_types)
+        return self.extract(text, schema, threshold, format_results, include_confidence, include_spans, max_len=max_len)
+
+    def batch_extract_events(self, texts: List[str], event_types, batch_size: int = 8,
+                             threshold: float = 0.5, format_results: bool = True,
+                             include_confidence: bool = False, include_spans: bool = False,
+                             max_len: Optional[int] = None) -> List[Dict]:
+        """Batch extract events."""
+        schema = self.create_schema().events(event_types)
         return self.batch_extract(texts, schema, batch_size, threshold, 0, format_results, include_confidence, include_spans, max_len=max_len)
 
     def _parse_field_spec(self, spec: Union[str, Dict]) -> Tuple[str, str, Optional[List[str]], Optional[str]]:
