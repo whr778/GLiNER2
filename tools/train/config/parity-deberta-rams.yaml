@@ -1,0 +1,76 @@
+# SHORT parity validation of the feature port onto main's boundary architecture.
+# A single run exercises the whole port on a real encoder at scale:
+#   from_encoder + bce_posweight + eval_metrics sweep + global_decode eval +
+#   sliding_window (train/val/test) + EVENTS, on RAMS (deberta-v3-base, A10).
+# Not for quality -- 6 epochs, select by eval_loss (avoids the bce_posweight
+# threshold-0.5 miscalibration for checkpoint pick); the final threshold sweep
+# on the blind test reveals the true non-zero event F1 that proves the ported
+# event pipeline LEARNS. Derived from deberta-base-fromenc-rams.yaml.
+model:
+  encoder: microsoft/deberta-v3-base
+  max_width: 20
+  max_len: 512
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/parity-deberta-rams
+  experiment_name: parity_deberta_rams
+  data_parallel: false
+  num_epochs: 6
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false
+
+eval:
+  batch_size: 1
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: false
+  chunk_size: 384
+  chunk_overlap: 128
+  global_decode: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl
