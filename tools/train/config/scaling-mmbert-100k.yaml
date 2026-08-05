@@ -4,7 +4,7 @@
 # already on disk (~100,080 records, multilingual -- mmBERT handles the zh sets). This
 # is the top of the curve; it needs NO subsampling. RAMS/WikiEvents excluded (leakage).
 # Fixes the combined base's confounds: structure/argument-dense (not NER-heavy), 5
-# epochs (not 2). Then fine-tune on RAMS via scaling-mmbert-100k-rams.yaml (Stage B).
+# epochs (not 2). Downstream RAMS fine-tune warm-starts from this run's ./out/scaling-mmbert-100k/best (Stage B).
 # Small shared vals come from build_scaling_mix.py (run it first).
 model:
   encoder: jhu-clsp/mmBERT-base

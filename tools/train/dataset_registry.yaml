@@ -365,3 +365,118 @@ datasets:
     source_url: https://huggingface.co/datasets/unimelb-nlp/wikiann
     language: [multilingual]
     description: "Silver-standard Wikipedia NER over 176 languages (Pan et al. 2017; Rahimi et al. 2019 balanced splits); PER/ORG/LOC mapped to person/organization/location. Streamed at train time via data.hf_streaming, never written to disk; the trained language subset is set per run and shown above."
+  # MTL-Bioinformatics-2016 biomedical NER corpora (Crichton et al. 2017),
+  # converted by tools/data/convert_mtl_bio.py. Individual corpus licenses vary;
+  # kept as unverified ("see source").
+  anatem:
+    name: AnatEM
+    tasks: NER (biomedical, anatomy)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "Anatomical Entity Mention corpus (single Anatomy type). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  bc2gm:
+    name: BC2GM
+    tasks: NER (biomedical, gene/protein)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "BioCreative II Gene Mention; gene/protein spans. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  bionlp09:
+    name: BioNLP'09
+    tasks: NER (biomedical, protein)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "BioNLP 2009 shared task (GENIA) protein mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  bionlp11epi:
+    name: BioNLP'11 EPI
+    tasks: NER (biomedical, protein)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "BioNLP 2011 Epigenetics and Post-translational Modifications; protein mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  bionlp11id:
+    name: BioNLP'11 ID
+    tasks: NER (biomedical)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "BioNLP 2011 Infectious Diseases; genes/proteins, chemicals, organisms, regulons. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  bionlp13cg:
+    name: BioNLP'13 CG
+    tasks: NER (biomedical, 16 types)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "BioNLP 2013 Cancer Genetics; 16 entity types (cell, gene/protein, cancer, organ, etc.). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  bionlp13ge:
+    name: BioNLP'13 GE
+    tasks: NER (biomedical, protein)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "BioNLP 2013 GENIA Event; gene/protein mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  bionlp13pc:
+    name: BioNLP'13 PC
+    tasks: NER (biomedical)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "BioNLP 2013 Pathway Curation; genes/proteins, chemicals, complexes. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  craft:
+    name: CRAFT
+    tasks: NER (biomedical, 6 ontologies)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "Colorado Richly Annotated Full-Text; 6 ontology types (chemical, cell, protein/gene, species, sequence ontology, gene ontology). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  ex_ptm:
+    name: Ex-PTM
+    tasks: NER (biomedical, protein)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "Ex-PTM protein mentions (post-translational modification). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  jnlpba:
+    name: JNLPBA
+    tasks: NER (biomedical, 5 types)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "JNLPBA; protein, DNA, RNA, cell line, cell type. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  linnaeus:
+    name: LINNAEUS
+    tasks: NER (biomedical, species)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "LINNAEUS species mention corpus. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  ncbi_disease:
+    name: NCBI Disease
+    tasks: NER (biomedical, disease)
+    license: see source
+    hf_id: null
+    source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    language: [en]
+    description: "NCBI Disease corpus; disease mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
+  synthetic_sonnet5_1k:
+    name: Synthetic Sonnet-5 multi-task
+    tasks: multi-task IE (NER, relations, classification, events)
+    license: see source
+    hf_id: null
+    source_url: null
+    language: [en]
+    description: "Locally generated synthetic multi-task IE corpus (~1.9K records) covering entities, relations, text classification, and document-level events; produced with Claude Sonnet 5."

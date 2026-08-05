@@ -3,7 +3,7 @@
 # from_encoder on a nested, proportional 10K subsample of the on-disk event pool
 # (build_scaling_mix.py; these records are a prefix of the 40K slice, so the mixes
 # nest). Only the Stage-A corpus size differs from scaling-mmbert-100k.yaml -- recipe
-# held fixed. RAMS/WikiEvents excluded (leakage). Fine-tune on RAMS via scaling-mmbert-10k-rams.yaml.
+# held fixed. RAMS/WikiEvents excluded (leakage). Downstream RAMS fine-tune warm-starts from this run's ./out/scaling-mmbert-10k/best.
 model:
   encoder: jhu-clsp/mmBERT-base
   max_width: 20
