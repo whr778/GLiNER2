@@ -58,7 +58,7 @@ local = [
 
 [tool.pytest.ini_options]
 markers = [
-    "slow: end-to-end tests that load models or are otherwise slow",
+    "slow: end-to-end tests that load or download models or are otherwise slow",
     "quality: checkpoint-dependent inference quality expectations",
     "compile: torch.compile / export-path tests (platform dependent)",
 ]
@@ -72,9 +72,4 @@ dev = [
     "datasets>=2.14",
     "pytest>=7.0",
     "pytest-timeout>=2.1",
-]
-
-[tool.pytest.ini_options]
-markers = [
-    "slow: tests that download models or are otherwise too slow for default runs",
 ]
