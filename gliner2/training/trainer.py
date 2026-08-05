@@ -44,6 +44,7 @@ import logging
 import math
 import os
 import random
+import re
 import shutil
 import sys
 import time
@@ -59,6 +60,7 @@ import torch.nn as nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
+from torch.nn.parallel import DistributedDataParallel
 import torch.distributed as dist
 from tqdm.auto import tqdm
 
@@ -736,12 +738,7 @@ class ExtractorTrainer:
         self.lora_layers = {}
         self._setup_lora()
         base_model = self.model
-        if config.gradient_checkpointing:
-            encoder = getattr(base_model, "encoder", None)
-            enable = getattr(encoder, "gradient_checkpointing_enable", None)
-            if enable is None:
-                raise ValueError("encoder does not support gradient checkpointing")
-            enable()
+        self._setup_gradient_checkpointing()
         if config.compile_model:
             compile_method = getattr(base_model, "compile", None)
             if compile_method is None:
@@ -779,11 +776,17 @@ class ExtractorTrainer:
 
     def _setup_device(self):
         if self.config.local_rank >= 0:
-            torch.cuda.set_device(self.config.local_rank)
-            self.device = torch.device("cuda", self.config.local_rank)
             self.is_distributed = True
+            # nccl on CUDA; gloo on CPU (portable, no-GPU path used by the tests).
+            if torch.cuda.is_available():
+                torch.cuda.set_device(self.config.local_rank)
+                self.device = torch.device("cuda", self.config.local_rank)
+                backend = "nccl"
+            else:
+                self.device = torch.device("cpu")
+                backend = "gloo"
             if not dist.is_initialized():
-                dist.init_process_group(backend="nccl", init_method="env://")
+                dist.init_process_group(backend=backend, init_method="env://")
                 logger.info(f"Initialized distributed training: rank {dist.get_rank()}/{dist.get_world_size()}")
         elif torch.cuda.is_available():
             self.device = torch.device("cuda")
@@ -856,13 +859,112 @@ class ExtractorTrainer:
         pct = (lora_params / total_params * 100) if total_params > 0 else 0.0
         logger.info(f"LoRA setup complete: {lora_params:,} trainable / {total_params:,} total ({pct:.2f}%)")
 
+    def _setup_gradient_checkpointing(self) -> None:
+        """Enable gradient checkpointing on the encoder when configured.
+
+        Recomputes activations in the backward pass instead of storing them,
+        cutting training-activation memory. Disables the KV cache (incompatible
+        with checkpointing) and prefers non-reentrant checkpointing. Called from
+        __init__ and re-applied by load_checkpoint (from_pretrained returns a
+        fresh model with checkpointing off, so a resume would otherwise silently
+        lose the activation-memory fix and re-OOM).
+        """
+        if not getattr(self.config, "gradient_checkpointing", False):
+            return
+        encoder = getattr(self.model, "encoder", None)
+        enable = getattr(encoder, "gradient_checkpointing_enable", None)
+        if enable is None:
+            raise ValueError("encoder does not support gradient checkpointing")
+        if hasattr(encoder, "config"):
+            encoder.config.use_cache = False  # KV cache is incompatible with checkpointing
+        try:
+            enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        except TypeError:  # older transformers without the kwargs argument
+            enable()
+
+    def _find_resume_checkpoint(self) -> Optional[Path]:
+        """Pick a resumable checkpoint per ``config.checkpoint_restart``.
+
+        Considers numbered ``checkpoint-*`` dirs carrying a ``training_state.pt``
+        (``best``/``final`` are excluded, being model-only). ``highest`` = largest
+        trailing number, ``last`` = newest by mtime. Returns None (with a warning)
+        when the mode is set but nothing resumable exists.
+        """
+        mode = getattr(self.config, "checkpoint_restart", None)
+        if not mode:
+            return None
+        candidates = [
+            d for d in self.output_dir.glob("checkpoint-*")
+            if d.is_dir() and (d / "training_state.pt").is_file()
+        ]
+        if not candidates:
+            logger.warning(
+                "checkpoint_restart=%r but no resumable checkpoint (with "
+                "training_state.pt) found in %s; starting a fresh run.",
+                mode, self.output_dir,
+            )
+            return None
+        if mode == "last":
+            return max(candidates, key=lambda d: d.stat().st_mtime)
+        if mode == "highest":
+            def _num(d: Path) -> int:
+                m = re.search(r"(\d+)$", d.name)
+                return int(m.group(1)) if m else -1
+            return max(candidates, key=_num)
+        logger.warning(
+            "Unknown checkpoint_restart=%r (use 'highest' or 'last'); starting fresh.", mode
+        )
+        return None
+
+    def _save_training_state(self, checkpoint_dir: Path) -> None:
+        """Save optimizer/scheduler/counters/RNG for mid-run resume.
+
+        Written only into numbered ``checkpoint-*`` dirs (not ``best``/``final``,
+        which stay model-only and publishable). For Adam this roughly doubles a
+        checkpoint's size (two moments per parameter). No-op without an optimizer.
+        """
+        if self.optimizer is None:
+            return
+        state = {
+            "epoch": self.epoch,
+            "global_step": self.global_step,
+            "best_metric": self.best_metric,
+            "patience_counter": self.patience_counter,
+            "optimizer": self.optimizer.state_dict(),
+            "scheduler": self.scheduler.state_dict() if self.scheduler is not None else None,
+            "torch_rng": torch.get_rng_state(),
+            "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        }
+        torch.save(state, checkpoint_dir / "training_state.pt")
+
+    def _restore_training_state(self, state: dict) -> int:
+        """Restore optimizer/scheduler/counters/RNG; return the epoch to resume at."""
+        self.optimizer.load_state_dict(state["optimizer"])
+        # Optimizer tensors were loaded on CPU; move them to the training device.
+        for opt_state in self.optimizer.state.values():
+            for k, v in opt_state.items():
+                if isinstance(v, torch.Tensor):
+                    opt_state[k] = v.to(self.device)
+        if self.scheduler is not None and state.get("scheduler") is not None:
+            self.scheduler.load_state_dict(state["scheduler"])
+        self.global_step = int(state.get("global_step", 0))
+        self.best_metric = state.get("best_metric", self.best_metric)
+        self.patience_counter = int(state.get("patience_counter", 0))
+        if state.get("torch_rng") is not None:
+            torch.set_rng_state(state["torch_rng"])
+        if state.get("cuda_rng") is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(state["cuda_rng"])
+        return int(state.get("epoch", -1)) + 1
+
     def _setup_distributed(self):
         """Setup distributed training if enabled."""
         if self.is_distributed:
-            self.model = torch.nn.parallel.DistributedDataParallel(
+            # CUDA DDP pins the rank's GPU via device_ids; CPU/gloo DDP takes none.
+            on_cuda = self.device.type == "cuda"
+            self.model = DistributedDataParallel(
                 self.model,
-                device_ids=[self.config.local_rank],
-                output_device=self.config.local_rank,
+                device_ids=[self.config.local_rank] if on_cuda else None,
+                output_device=self.config.local_rank if on_cuda else None,
                 find_unused_parameters=self.config.ddp_find_unused_parameters,
                 static_graph=self.config.ddp_static_graph,
                 gradient_as_bucket_view=True,
@@ -1530,9 +1632,28 @@ class ExtractorTrainer:
 
         warmup_steps = self.config.warmup_steps or int(max_steps * self.config.warmup_ratio)
 
+        # Mid-run resume: load model weights BEFORE building the optimizer (its
+        # param groups reference the loaded model). Optimizer/scheduler/counter
+        # state is restored just after they are created, below.
+        resume_state = None
+        resume_dir = self._find_resume_checkpoint()
+        if resume_dir is not None:
+            logger.info("Resuming (checkpoint_restart=%r) from %s",
+                        self.config.checkpoint_restart, resume_dir)
+            self.load_checkpoint(str(resume_dir))
+            resume_state = torch.load(
+                resume_dir / "training_state.pt", map_location="cpu", weights_only=False,
+            )
+
         # Create optimizer and scheduler
         self.optimizer = self._create_optimizer()
         self.scheduler = get_scheduler(self.optimizer, self.config.scheduler_type, max_steps, warmup_steps, self.config.num_cycles)
+
+        start_epoch = 0
+        if resume_state is not None:
+            start_epoch = self._restore_training_state(resume_state)
+            logger.info("Resumed at epoch %d, global step %d (best_metric=%.4f)",
+                        start_epoch, self.global_step, self.best_metric)
 
         # Mixed precision
         use_amp = self.config.fp16 or self.config.bf16
@@ -1564,20 +1685,22 @@ class ExtractorTrainer:
         else:
             logger.info(f"  Trainable parameters: {trainable_params:,} / {total_params:,} ({percentage:.2f}%)")
 
-        # Training state
+        # Training state (a resume already restored global_step/epoch/counters).
         self.model.train()
         self.processor.change_mode(is_training=True)
-        self.global_step = 0
-        self.epoch = 0
+        if resume_state is None:
+            self.global_step = 0
+            self.epoch = 0
         tr_loss = torch.zeros((), device=self.device)
 
         start_time = time.time()
         samples_seen = 0
 
-        self.progress_bar = tqdm(total=max_steps, desc="Training", disable=not self.is_main_process)
+        self.progress_bar = tqdm(total=max_steps, initial=self.global_step,
+                                 desc="Training", disable=not self.is_main_process)
 
         should_stop = False
-        for epoch in range(num_epochs):
+        for epoch in range(start_epoch, num_epochs):
             self.epoch = epoch
 
             set_epoch = getattr(train_loader.sampler, "set_epoch", None)
@@ -2028,6 +2151,11 @@ class ExtractorTrainer:
             f"{trainable_params:,} params | {checkpoint_size_mb:.1f}MB | {save_time:.1f}s"
         )
 
+        # Numbered checkpoints carry resume state (optimizer/scheduler/counters);
+        # best/final stay model-only and publishable.
+        if name.startswith("checkpoint-"):
+            self._save_training_state(checkpoint_dir)
+
         # Save model artifacts to W&B for best and final checkpoints
         if self.config.report_to_wandb and name in ["best", "final"]:
             try:
@@ -2079,13 +2207,20 @@ class ExtractorTrainer:
             self.lora_layers = {n: m for n, m in self.model.named_modules() if isinstance(m, _PeftLoraLayer)}
             self.model._lora_layers = self.lora_layers
         else:
-            self.model = self.model.__class__.from_pretrained(str(checkpoint_dir))
+            # Unwrap a DDP wrapper so from_pretrained resolves the real model class.
+            base_cls = (self.model.module if hasattr(self.model, "module") else self.model).__class__
+            self.model = base_cls.from_pretrained(str(checkpoint_dir))
             self.model.to(self.device)
             if self.config.use_lora:
                 logger.info("Applying LoRA to loaded model...")
                 self.lora_layers = {}
                 self._setup_lora()
 
+        # from_pretrained returns a fresh model with gradient checkpointing off and
+        # unwrapped; a mid-run resume must re-apply both or it silently loses the
+        # activation-memory fix and the DDP wrap.
+        self._setup_gradient_checkpointing()
+        self._setup_distributed()
         logger.info("Loaded checkpoint: %s", checkpoint_path)
 
 

@@ -28,10 +28,10 @@ class _TestProcessor:
     def change_mode(self, is_training: bool) -> None:
         self.is_training = is_training
 
-    def collate_fn_train(self, batch, max_len=None):
+    def collate_fn_train(self, batch, max_len=None, **kwargs):
         return self._collate(batch)
 
-    def collate_fn_inference(self, batch, max_len=None):
+    def collate_fn_inference(self, batch, max_len=None, **kwargs):
         return self._collate(batch)
 
     @staticmethod

@@ -100,7 +100,7 @@ def test_load_checkpoint_reapplies_gradient_checkpointing(tmp_path):
         model=FakeModel(),
         device=torch.device("cpu"),
         config=types.SimpleNamespace(use_lora=False, gradient_checkpointing=True),
-        _setup_parallel=lambda: None,
+        _setup_distributed=lambda: None,
         lora_layers={},
     )
     stub._setup_gradient_checkpointing = lambda: T._setup_gradient_checkpointing(stub)

@@ -1,11 +1,11 @@
 """Unit tests for the trainer's DistributedDataParallel setup (mocked -- no real
 process group or GPUs).
 
-Targets this branch's DDP design: the raw module stays on ``trainer.model``
-(optimizer, grad-clipping, and checkpointing all use it) and only the forward
-pass is wrapped in ``trainer._fwd_model``. DDP is auto-detected from
-``LOCAL_RANK`` (falling back to ``config.local_rank``) and picks nccl on CUDA /
-gloo on CPU. See ``_setup_device`` and ``_setup_parallel`` in the trainer.
+Targets the trainer's DDP design: ``_setup_distributed`` wraps the model in
+place, so ``trainer.model`` becomes the ``DistributedDataParallel`` wrapper and
+the raw module is reachable via ``trainer.model.module`` (save/eval/grad-clip all
+unwrap ``.module``). DDP activates when ``config.local_rank >= 0`` and picks nccl
+on CUDA / gloo on CPU. See ``_setup_device`` and ``_setup_distributed``.
 """
 
 from __future__ import annotations
@@ -66,22 +66,22 @@ def _cfg(config: TrainingConfig, rank: int) -> TrainingConfig:
     return replace(config, local_rank=rank)
 
 
-def test_ddp_wraps_fwd_model_and_keeps_model_raw(base_config, monkeypatch):
+def test_ddp_wraps_model_in_place_and_exposes_module(base_config, monkeypatch):
     m = _mock_cuda_ddp(monkeypatch, rank=0)
     stub = _StubModel()
 
     trainer = GLiNER2Trainer(model=stub, config=_cfg(base_config, 0))
 
-    m.init_pg.assert_called_once_with(backend="nccl")
+    m.init_pg.assert_called_once_with(backend="nccl", init_method="env://")
     m.set_device.assert_called_once_with(0)
     m.ddp_cls.assert_called_once()
     assert m.ddp_cls.call_args.kwargs["device_ids"] == [0]
-    assert m.ddp_cls.call_args.kwargs["find_unused_parameters"] is True
+    assert m.ddp_cls.call_args.kwargs["find_unused_parameters"] == base_config.ddp_find_unused_parameters
 
-    # Our design: the wrapper is _fwd_model; trainer.model stays the raw stub.
-    assert trainer.model is stub
-    assert trainer._fwd_model is not stub
-    assert trainer._fwd_model.module is stub
+    # The DDP wrapper replaces trainer.model in place; the raw module stays
+    # reachable via trainer.model.module (save/eval/grad-clip unwrap it).
+    assert trainer.model is not stub
+    assert trainer.model.module is stub
     assert trainer.is_distributed is True
     assert trainer.is_main_process is True
 
@@ -115,7 +115,8 @@ def test_single_device_is_not_distributed(base_config, monkeypatch):
     monkeypatch.setattr("gliner2.training.trainer.torch.cuda.is_available", lambda: True)
     monkeypatch.setattr("gliner2.training.trainer.torch.backends.cuda.enable_cudnn_sdp", Mock())
 
-    trainer = GLiNER2Trainer(model=_StubModel(), config=_cfg(base_config, -1))
+    stub = _StubModel()
+    trainer = GLiNER2Trainer(model=stub, config=_cfg(base_config, -1))
 
     assert trainer.is_distributed is False
-    assert trainer._fwd_model is trainer.model  # no wrap on a single device
+    assert trainer.model is stub  # no DDP wrap on a single device
