@@ -1172,26 +1172,66 @@ class ExtractorTrainer:
         if isinstance(data, ExtractorDataset):
             return data
 
-        if (is_train and self.config.sliding_window
-                and not getattr(self, "_sliding_window_warned", False)):
-            self._sliding_window_warned = True
-            logger.warning(
-                "sliding_window=True is set, but training-time document windowing is "
-                "not yet wired on the new data pipeline; long docs fall back to max_len "
-                "truncation. This is a no-op when docs fit in max_len (e.g. mmBERT 2048), "
-                "but a short-context encoder (DeBERTa-v3 512) will truncate. See "
-                "gliner2/training/chunking.py::chunk_records for the deferred wiring."
-            )
-
         max_samples = self.config.max_train_samples if is_train else self.config.max_eval_samples
 
-        return ExtractorDataset(
+        if not self.config.sliding_window:
+            return ExtractorDataset(
+                data=data,
+                max_samples=max_samples,
+                shuffle=is_train,
+                seed=self.config.seed,
+                validate=self.config.validate_data if is_train else False,
+            )
+
+        # Sliding window: load records, expand each into overlapping subword windows
+        # (max_len window / window_stride step; each chunk keeps only annotations whose
+        # surfaces fall inside it), then reshuffle before building the dataset -- so a
+        # short-context encoder can train/eval/test on long docs without truncation.
+        # (Inference-time windowing is handled by extract_long/batch_extract_long.)
+        from gliner2.training.chunking import chunk_records
+        records = DataLoader_Factory.load(
             data=data,
             max_samples=max_samples,
-            shuffle=is_train,
+            shuffle=False,  # reshuffled after chunking
             seed=self.config.seed,
-            validate=self.config.validate_data if is_train else False
+            validate=self.config.validate_data if is_train else False,
         )
+        window_size = int(self.config.max_len or 512)
+        stride = int(self.config.window_stride or window_size)
+        split = "train" if is_train else "eval"
+        n_in = len(records)
+        records = chunk_records(
+            records,
+            tokenizer=self.processor.tokenizer,
+            window_size=window_size,
+            stride=stride,
+            desc=f"chunking {split}",
+            show_progress=self.is_main_process,
+        )
+        if self.is_main_process:
+            logger.info(
+                "[sliding-window] %s: %d records -> %d chunks (window_size=%d subwords, stride=%d)",
+                split, n_in, len(records), window_size, stride,
+            )
+        random.Random(self.config.seed).shuffle(records)
+
+        return ExtractorDataset(
+            data=records,
+            max_samples=-1,   # already applied
+            shuffle=False,    # already shuffled
+            seed=self.config.seed,
+            validate=False,   # already validated
+        )
+
+    def _write_eval_metrics(self, metrics: Dict) -> None:
+        """Persist eval metrics as JSON: ``eval_metrics.json`` in ``output_dir``
+        (always) and, when the ``best/`` checkpoint folder exists, into it too, so
+        the metrics travel with the saved model. Caller guards on is_main_process."""
+        payload = json.dumps(metrics, indent=2, default=str)
+        (self.output_dir / "eval_metrics.json").write_text(payload, encoding="utf-8")
+        best_dir = self.output_dir / "best"
+        if best_dir.is_dir():
+            (best_dir / "eval_metrics.json").write_text(payload, encoding="utf-8")
 
     def _create_optimizer(self) -> AdamW:
         """Create optimizer with appropriate parameters based on LoRA configuration."""
