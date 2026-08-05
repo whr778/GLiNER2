@@ -547,17 +547,22 @@ is no fastino-scale warm-start on mmBERT). RAMS blind test (871 docs), strict mi
 |--:|--:|--:|--:|
 | 0 (fresh → RAMS) | 0.050 | 0.611 | — |
 | 10K | 0.050 | 0.598 | 0.952 |
-| 40K | **0.115** | 0.706 | 0.931 |
-| ~100K | _(running)_ | | |
+| 40K | 0.115 | 0.706 | 0.931 |
+| ~100K | **0.158** | 0.732 | 0.949 |
 | 254K (DeBERTa ref) | 0.462 | 0.935 | — |
 
 **10K of head-warming moved the argument head essentially zero** (0.050, identical
-to the N=0 floor), but **40K lifts it ~2.3× to 0.115** (trigger 0.611 → 0.706 as
-well), so **the knee falls between 10K and 40K**: mmBERT's argument head *does* warm
-from broad structure/argument data, just at a higher threshold than DeBERTa and
-confirming the prediction that a cold multilingual encoder needs more of it. The
-~100K point is training; it will show whether the curve keeps climbing toward the
-DeBERTa reference (0.462) or plateaus. Checkpoints (private):
+to the N=0 floor), but **40K lifts it ~2.3× to 0.115** and **100K to 0.158**
+(trigger climbs 0.611 → 0.732 alongside). Two conclusions: (i) the **knee is between
+10K and 40K** — mmBERT's argument head *does* warm from broad structure/argument
+data, at a higher data threshold than DeBERTa (confirming a cold multilingual
+encoder needs more of it); and (ii) the curve **keeps climbing through 100K with no
+plateau** — roughly log-linear, each ~2.5× of data adding ~0.04-0.05 argument-F1.
+So 100K is still well short of saturation: more structure/argument data would keep
+helping, though gradually, and matching the DeBERTa-v3 fastino warm-start (0.462) on
+mmBERT would take substantially more than 100K. The practical read for a shippable
+multilingual event model: warm mmBERT on a large structure/argument curriculum (≥40K,
+more is better), then fine-tune. Checkpoints (private):
 `whr778/scaling-mmbert-{10k,40k,100k}` and `-rams`.
 
 ## 11. Reproducibility
