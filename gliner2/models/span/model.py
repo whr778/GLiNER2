@@ -720,6 +720,53 @@ class SpanExtractorModel(BaseExtractorModel):
 
         return model
 
+    @classmethod
+    def from_encoder(
+        cls,
+        encoder_name_or_path: str,
+        max_width: int = 8,
+        max_len: Optional[int] = None,
+        map_location: Optional[str] = None,
+        trust_remote_code: bool = True,
+        **config_kwargs,
+    ):
+        """Bootstrap a fresh span extractor on top of a raw HuggingFace encoder.
+
+        Use this to train from scratch (e.g. ``jhu-clsp/mmBERT-base``): the encoder
+        weights are pretrained but all task heads are randomly initialized. For a
+        saved GLiNER2 checkpoint use :meth:`from_pretrained`.
+
+        Args:
+            encoder_name_or_path: HF repo id or local path of the base encoder.
+            max_width: Max span width for the span representation layer.
+            max_len: Optional max sequence length override.
+            map_location: Device to place the model on (default CUDA -> MPS -> CPU).
+            trust_remote_code: Forwarded to ``AutoConfig.from_pretrained``.
+            **config_kwargs: Extra fields forwarded to :class:`ExtractorConfig`
+                (e.g. ``token_pooling`` and the span-head loss fields).
+        """
+        encoder_config = AutoConfig.from_pretrained(
+            encoder_name_or_path, trust_remote_code=trust_remote_code,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(encoder_name_or_path)
+        config = cls.config_class(
+            model_name=encoder_name_or_path,
+            architecture="span",
+            max_width=max_width,
+            max_len=max_len,
+            **config_kwargs,
+        )
+        model = cls(config, encoder_config=encoder_config, tokenizer=tokenizer)
+
+        if map_location is None:
+            if torch.cuda.is_available():
+                map_location = "cuda"
+            elif torch.backends.mps.is_available():
+                map_location = "mps"
+            else:
+                map_location = "cpu"
+        return model.to(map_location)
+
     # =========================================================================
     # Quantization
     # =========================================================================
