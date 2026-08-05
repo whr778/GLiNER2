@@ -72,7 +72,9 @@ def test_config_builds(path):
         )
 
     # training.* -> TrainingConfig (a dataclass; raises on an unknown field).
-    tc = TrainingConfig(**cfg["training"])
+    # Force precision off: bf16/fp16 are device-validated in __post_init__, and this
+    # config-shape check must run on any machine (CPU/CI), not only a bf16-capable GPU.
+    tc = TrainingConfig(**{**cfg["training"], "bf16": False, "fp16": False})
     assert isinstance(tc.encoder_lr, float), f"{path.name}: encoder_lr is not a float"
     assert isinstance(tc.task_lr, float), f"{path.name}: task_lr is not a float"
 

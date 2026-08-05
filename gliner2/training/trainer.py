@@ -225,6 +225,18 @@ class TrainingConfig:
     validate_data: bool = True
     max_len: Optional[int] = None
 
+    # Restored feature knobs (pre-boundary; consumed by tools/train/train.py).
+    # checkpoint_restart: resume selection ('last' | 'highest' | None).
+    checkpoint_restart: Optional[str] = None
+    # sliding_window/window_stride: window long training docs (word-level) so a
+    # short-context encoder (e.g. DeBERTa-v3 512-cap) doesn't overflow; each window
+    # carries its own gold. False -> single pass with max_len truncation.
+    sliding_window: bool = False
+    window_stride: int = 256
+    # data_parallel: DEPRECATED no-op. The trainer now uses DistributedDataParallel
+    # (torchrun / local_rank); the old single-process nn.DataParallel path is gone.
+    data_parallel: bool = False
+
     # Strict training invariants (boundary architecture; harmless for span).
     # When strict_training is True: processor/model exceptions propagate, a
     # non-finite loss raises, and batch-size discrepancies raise.
