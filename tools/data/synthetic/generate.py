@@ -91,7 +91,8 @@ def main() -> int:
     ap.add_argument("--out", type=Path, help="Output JSONL base path (writes .train/.val/.test).")
     ap.add_argument("--count", type=int, help="Number of documents to generate.")
     ap.add_argument("--provider",
-                    help="Override provider (openai|anthropic|mock|vllm|ollama|mlx).")
+                    help="Override provider "
+                         "(openai|anthropic|mock|vllm|ollama|mlx|ollama_native).")
     ap.add_argument("--model", help="Override model name.")
     ap.add_argument("--base-url",
                     help="OpenAI-compatible endpoint for local backends "
@@ -145,6 +146,7 @@ def main() -> int:
         max_tokens=prov_cfg.get("max_tokens", ProviderConfig.max_tokens),
         base_url=args.base_url or prov_cfg.get("base_url", ""),
         json_object=prov_cfg.get("json_object", True),
+        think=prov_cfg.get("think", False),
     )
     provider = build_provider(pcfg)
     annotate = args.annotate_from is not None

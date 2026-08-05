@@ -18,13 +18,15 @@ from dataclasses import dataclass
 
 @dataclass
 class ProviderConfig:
-    provider: str = "openai"          # openai | anthropic | mock | vllm | ollama | mlx
+    provider: str = "openai"          # openai|anthropic|mock|vllm|ollama|mlx|ollama_native
     model: str = "gpt-4o"
     temperature: float = 0.9
     max_tokens: int = 2048
     base_url: str = ""                # OpenAI-compatible endpoint (local backends)
     json_object: bool = True          # request response_format=json_object;
                                       # disable for servers that reject it (some MLX builds)
+    think: bool = False               # ollama_native only: enable model "thinking";
+                                      # default off so reasoning models emit the answer
 
 
 # OpenAI-compatible local servers reachable through the OpenAI SDK by pointing
@@ -52,9 +54,13 @@ def build_provider(cfg: ProviderConfig) -> "LLMProvider":
         base_url = cfg.base_url or os.environ.get(env_url) or default_url
         api_key = os.environ.get(env_key) or "EMPTY"
         return OpenAIProvider(cfg, base_url=base_url, require_key=False, api_key=api_key)
+    if name in ("ollama_native", "ollama-native"):
+        base = (cfg.base_url or os.environ.get("OLLAMA_BASE_URL")
+                or os.environ.get("OLLAMA_HOST") or "http://localhost:11434")
+        return OllamaNativeProvider(cfg, base_url=base)
     raise ValueError(
         f"unknown provider {cfg.provider!r} "
-        f"(use openai|anthropic|mock|vllm|ollama|mlx)")
+        f"(use openai|anthropic|mock|vllm|ollama|mlx|ollama_native)")
 
 
 class LLMProvider:
@@ -119,6 +125,49 @@ class OpenAIProvider(LLMProvider):
             kwargs["response_format"] = {"type": "json_object"}
         resp = self._client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or ""
+
+
+class OllamaNativeProvider(LLMProvider):
+    """Ollama's NATIVE /api/chat endpoint (not the OpenAI-compatible /v1 path).
+
+    Exists so reasoning models can run with **thinking disabled** (`think: false`):
+    the /v1 path ignores that toggle, so a reasoning model there burns its whole
+    token budget on hidden reasoning and returns empty content. Uses Ollama's native
+    JSON mode (`format: "json"`) when cfg.json_object. Stdlib HTTP -- no extra deps.
+    """
+
+    def __init__(self, cfg: ProviderConfig, *,
+                 base_url: str = "http://localhost:11434") -> None:
+        super().__init__(cfg)
+        root = base_url.rstrip("/")
+        if root.endswith("/v1"):          # tolerate an OpenAI-style base_url
+            root = root[:-3].rstrip("/")
+        self._url = root + "/api/chat"
+
+    def complete(self, system: str, user: str) -> str:
+        import json
+        import urllib.request
+        body = {
+            "model": self.cfg.model,
+            "stream": False,
+            "think": self.cfg.think,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "options": {
+                "temperature": self.cfg.temperature,
+                "num_predict": self.cfg.max_tokens,
+            },
+        }
+        if self.cfg.json_object:
+            body["format"] = "json"
+        req = urllib.request.Request(
+            self._url, data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=1800) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+        return (resp.get("message") or {}).get("content") or ""
 
 
 class AnthropicProvider(LLMProvider):

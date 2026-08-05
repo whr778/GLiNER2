@@ -63,10 +63,11 @@ Everything is set in `config/default.yaml` and overridable at the CLI:
 
 | Config | CLI | Meaning |
 |---|---|---|
-| `provider.provider` | `--provider` | `openai` \| `anthropic` \| `mock` \| `vllm` \| `ollama` \| `mlx` |
+| `provider.provider` | `--provider` | `openai` \| `anthropic` \| `mock` \| `vllm` \| `ollama` \| `mlx` \| `ollama_native` |
 | `provider.model` | `--model` | e.g. `gpt-4o`, `claude-sonnet-5`, or a local model name |
 | `provider.base_url` | `--base-url` | OpenAI-compatible endpoint for local backends (else per-backend default / `*_BASE_URL`) |
 | `provider.json_object` | — | request `response_format=json_object` (set `false` for MLX builds that reject it) |
+| `provider.think` | — | `ollama_native` only: enable model "thinking" (default `false` so reasoning models emit the answer) |
 | `generation.count` | `--count` / `--limit` | documents to generate |
 | `generation.tasks` | `--tasks` | subset of `entities,relations,events,classifications,structures` |
 | `generation.min_words`/`max_words` | — | document length |
@@ -124,6 +125,22 @@ uv run python tools/data/synthetic/generate.py \
 # if the server 400s on response_format, set provider.json_object: false in the config
 ```
 
+### Reasoning models (`ollama_native`)
+Reasoning models (e.g. `gemma4`, `gpt-oss`) burn their whole token budget on hidden
+thinking and return **empty content** through the OpenAI `/v1` path — so every doc is
+dropped (`written=0`). Use **`--provider ollama_native`**, which calls Ollama's
+**native `/api/chat`** with **`think: false`** (config `provider.think`, default off),
+so the model emits the JSON answer directly:
+```bash
+uv run python tools/data/synthetic/generate.py \
+    --provider ollama_native --model gemma4:12b --tasks events \
+    --out data/synthetic.jsonl --count 50
+```
+Non-reasoning models work here too (the flag is a no-op for them). The base URL comes
+from `--base-url` / `OLLAMA_BASE_URL` / `OLLAMA_HOST` (default `http://localhost:11434`;
+an OpenAI-style `.../v1` URL is accepted and stripped). Native JSON mode
+(`format: "json"`) is used when `provider.json_object` is set (the default).
+
 ### Env-var alternative (no `--provider`)
 The OpenAI SDK honors `OPENAI_BASE_URL`, so any OpenAI-compatible server also works
 through the plain `openai` provider — the "no code, only env vars" path:
@@ -147,7 +164,7 @@ no other module hard-codes labels.
 | File | Role |
 |---|---|
 | `generate.py` | CLI orchestration → `SplitWriter` JSONL |
-| `providers.py` | Configurable LLM clients (openai / anthropic / mock + OpenAI-compatible vllm / ollama / mlx) |
+| `providers.py` | Configurable LLM clients (openai / anthropic / mock + OpenAI-compatible vllm / ollama / mlx + native ollama_native for reasoning models) |
 | `prompts.py` | Prompt construction + the LLM JSON output contract |
 | `schema_spec.py` | The broad label ontology and domains |
 | `validate.py` | Verbatim-substring + ontology validation → strict record |
