@@ -1101,6 +1101,8 @@ class ExtractorRuntimeMixin:
         include_confidence: bool = False,
         include_spans: bool = False,
         overlap_policy: Optional[str] = None,
+        global_decode: bool = False,
+        global_decode_config: Any = None,
     ) -> Dict:
         """Extract from a long document with overlapping word chunks."""
         return self.batch_extract_long(
@@ -1115,6 +1117,8 @@ class ExtractorRuntimeMixin:
             overlap_policy=overlap_policy,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            global_decode=global_decode,
+            global_decode_config=global_decode_config,
         )[0]
 
     def batch_extract_long(
@@ -1130,8 +1134,16 @@ class ExtractorRuntimeMixin:
         chunk_size: int = 384,
         chunk_overlap: int = 64,
         overlap_policy: Optional[str] = None,
+        global_decode: bool = False,
+        global_decode_config: Any = None,
     ) -> List[Dict[str, Any]]:
-        """Extract from long documents by scanning overlapping word chunks."""
+        """Extract from long documents by scanning overlapping word chunks.
+
+        ``global_decode`` opts into OneIE-style document-level event assembly
+        (cluster event mentions across windows, union arguments) instead of the
+        naive concatenate/dedupe merge; ``global_decode_config`` is an optional
+        ``GlobalDecodeConfig``.
+        """
         if not format_results:
             raise ValueError("batch_extract_long currently requires format_results=True")
         if not texts:
@@ -1181,6 +1193,9 @@ class ExtractorRuntimeMixin:
                     results_for_doc,
                     include_confidence=include_confidence,
                     include_spans=include_spans,
+                    global_decode=global_decode,
+                    event_roles=self._schema_event_roles(schema) if global_decode else None,
+                    global_decode_config=global_decode_config,
                     scalar_entity_labels=self._scalar_entity_labels(schema),
                 )
             )
@@ -1199,6 +1214,32 @@ class ExtractorRuntimeMixin:
             for name, meta in entity_metadata.items()
             if isinstance(meta, dict) and meta.get("dtype", "list") != "list"
         }
+
+    @staticmethod
+    def _schema_event_roles(schema) -> Dict[str, List[str]]:
+        """``{event_type: [valid role]}`` for a Schema object or a raw schema dict
+        -- the role-validity constraint for global (cross-window) event decoding."""
+        if hasattr(schema, "build"):
+            schema_dict = schema.build()
+            return {
+                name: list(schema_dict.get("events", {}).get(name, []))
+                for name in getattr(schema, "_event_order", [])
+            }
+        events_block = (schema or {}).get("events") or {}
+        roles: Dict[str, List[str]] = {}
+        if isinstance(events_block, dict):
+            for name, spec in events_block.items():
+                if not isinstance(name, str):
+                    continue
+                if isinstance(spec, list):
+                    role_list = [r for r in spec if isinstance(r, str)]
+                elif isinstance(spec, dict) and isinstance(spec.get("roles"), list):
+                    role_list = [r for r in spec["roles"] if isinstance(r, str)]
+                else:
+                    role_list = []
+                if role_list:
+                    roles[name] = role_list
+        return roles
 
     def extract_entities(self, text: str, entity_types, threshold: float = 0.5,
                         format_results: bool = True, include_confidence: bool = False,
