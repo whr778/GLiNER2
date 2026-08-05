@@ -1172,6 +1172,17 @@ class ExtractorTrainer:
         if isinstance(data, ExtractorDataset):
             return data
 
+        if (is_train and self.config.sliding_window
+                and not getattr(self, "_sliding_window_warned", False)):
+            self._sliding_window_warned = True
+            logger.warning(
+                "sliding_window=True is set, but training-time document windowing is "
+                "not yet wired on the new data pipeline; long docs fall back to max_len "
+                "truncation. This is a no-op when docs fit in max_len (e.g. mmBERT 2048), "
+                "but a short-context encoder (DeBERTa-v3 512) will truncate. See "
+                "gliner2/training/chunking.py::chunk_records for the deferred wiring."
+            )
+
         max_samples = self.config.max_train_samples if is_train else self.config.max_eval_samples
 
         return ExtractorDataset(
