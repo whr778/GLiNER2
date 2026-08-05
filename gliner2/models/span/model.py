@@ -603,7 +603,15 @@ class SpanExtractorModel(BaseExtractorModel):
                         if 0 <= start < scores.shape[2] and 0 <= width < scores.shape[3]:
                             labs[i, k, start, width] = 1
 
-        # Apply negative masking
+        variant = getattr(self.config, "struct_loss", "bce")
+
+        # Region-based dice variants operate over valid spans directly and do not
+        # use the random negative masking.
+        if variant in ("dice", "bce_dice"):
+            return self._dice_struct_loss(
+                scores, labs, span_mask, include_bce=(variant == "bce_dice"))
+
+        # Apply negative masking (per-cell variants)
         if masking_rate > 0.0 and self.training:
             negative = (labs == 0)
             random_mask = torch.rand_like(scores) < masking_rate
@@ -612,12 +620,90 @@ class SpanExtractorModel(BaseExtractorModel):
         else:
             loss_mask = torch.ones_like(scores)
 
-        # Compute masked loss
-        loss = F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+        # Compute masked loss (bce | bce_posweight | focal | asl)
+        loss = self._struct_loss_term(scores, labs, variant=variant)
         loss = loss * loss_mask
         loss = loss.view(loss.shape[0], loss.shape[1], -1) * (~span_mask[0]).float()
 
         return loss.sum()
+
+    def _struct_loss_term(
+            self,
+            scores: torch.Tensor,
+            labs: torch.Tensor,
+            variant: str = None,
+            pos_weight: float = None,
+    ) -> torch.Tensor:
+        """Per-cell structure loss (unreduced); the caller applies masking.
+
+        - ``bce`` (default): plain BCE-with-logits.
+        - ``bce_posweight``: BCE up-weighting positives by ``config.struct_pos_weight``.
+        - ``focal``: focal loss (config.focal_gamma / focal_alpha) with an extra
+          positive multiplier from config.struct_pos_weight (1.0 = no-op).
+        - ``asl``: asymmetric loss (config.asl_gamma_pos/neg, asl_clip).
+        """
+        variant = variant or getattr(self.config, "struct_loss", "bce")
+
+        if variant == "bce_posweight":
+            pw = pos_weight if pos_weight is not None else getattr(self.config, "struct_pos_weight", 1.0)
+            return F.binary_cross_entropy_with_logits(
+                scores, labs, pos_weight=scores.new_tensor(pw), reduction="none")
+
+        if variant == "focal":
+            gamma = getattr(self.config, "focal_gamma", 2.0)
+            alpha = getattr(self.config, "focal_alpha", 0.25)
+            pw = pos_weight if pos_weight is not None else getattr(self.config, "struct_pos_weight", 1.0)
+            ce = F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+            p = torch.sigmoid(scores)
+            p_t = p * labs + (1 - p) * (1 - labs)
+            loss = ce * (1 - p_t).pow(gamma)
+            if alpha is not None and alpha >= 0:
+                alpha_t = alpha * labs + (1 - alpha) * (1 - labs)
+                loss = alpha_t * loss
+            pos_weight_t = pw * labs + (1 - labs)
+            return pos_weight_t * loss
+
+        if variant == "asl":
+            eps = 1e-8
+            xs_pos = torch.sigmoid(scores)
+            xs_neg = 1.0 - xs_pos
+            clip = getattr(self.config, "asl_clip", 0.05)
+            if clip and clip > 0:
+                xs_neg = (xs_neg + clip).clamp(max=1.0)
+            los_pos = labs * torch.log(xs_pos.clamp(min=eps))
+            los_neg = (1 - labs) * torch.log(xs_neg.clamp(min=eps))
+            loss = los_pos + los_neg
+            pt = xs_pos * labs + xs_neg * (1 - labs)
+            gamma = (getattr(self.config, "asl_gamma_pos", 0.0) * labs
+                     + getattr(self.config, "asl_gamma_neg", 4.0) * (1 - labs))
+            loss = loss * (1 - pt).pow(gamma)
+            return -loss
+
+        return F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+
+    def _dice_struct_loss(
+            self,
+            scores: torch.Tensor,
+            labs: torch.Tensor,
+            span_mask: torch.Tensor,
+            include_bce: bool = False,
+    ) -> torch.Tensor:
+        """Soft-Dice structure loss over valid spans, optionally plus BCE (bce_dice)."""
+        g, f = scores.shape[0], scores.shape[1]
+        span_valid = (~span_mask[0]).float()
+        smooth = getattr(self.config, "dice_smooth", 1.0)
+
+        probs = torch.sigmoid(scores).view(g, f, -1) * span_valid
+        target = labs.view(g, f, -1) * span_valid
+
+        num = 2.0 * (probs * target).sum(-1) + smooth
+        den = probs.sum(-1) + target.sum(-1) + smooth
+        loss = (1.0 - num / den).sum()
+
+        if include_bce:
+            bce = F.binary_cross_entropy_with_logits(scores, labs, reduction="none")
+            loss = loss + (bce.view(g, f, -1) * span_valid).sum()
+        return loss
 
     # =========================================================================
     # Hugging Face Methods
