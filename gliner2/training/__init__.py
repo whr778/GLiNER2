@@ -9,6 +9,16 @@ from gliner2.training.trainer import (
     ExtractorCollator,
     train_gliner2,
 )
+from gliner2.training.eta import estimate_eta
+from gliner2.training.stopwords import build_stopwords
+from gliner2.training.metrics import (
+    compute_metrics,
+    evaluate_checkpoint,
+    make_compute_metrics,
+    make_sweeping_compute_metrics,
+    sweep_thresholds,
+    sweep_global_decode,
+)
 
 __all__ = [
     "ExtractorTrainer",
@@ -18,4 +28,12 @@ __all__ = [
     "ExtractorDataset",
     "ExtractorCollator",
     "train_gliner2",
+    "estimate_eta",
+    "build_stopwords",
+    "compute_metrics",
+    "evaluate_checkpoint",
+    "make_compute_metrics",
+    "make_sweeping_compute_metrics",
+    "sweep_thresholds",
+    "sweep_global_decode",
 ]

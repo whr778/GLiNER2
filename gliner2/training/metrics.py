@@ -145,4 +145,24 @@ __all__ = [
     "f1_from_counts",
     "exact_span_counts",
     "gold_from_target_graphs",
+    # Evaluation-metrics API (restored; implemented in eval_metrics.py)
+    "compute_metrics",
+    "make_compute_metrics",
+    "make_sweeping_compute_metrics",
+    "sweep_thresholds",
+    "sweep_global_decode",
+    "evaluate_checkpoint",
+    "DEFAULT_THRESHOLD_GRID",
 ]
+
+# Strict/relaxed micro-F1 + threshold/metric-sweep evaluation, restored from the
+# pre-boundary architecture. Implemented in eval_metrics.py (kept separate from
+# this module's boundary-training internals). Surface ALL of its names here --
+# including the private helpers the test-suite imports directly -- so
+# ``gliner2.training.metrics`` keeps its full historical API. No name collides
+# with the boundary metrics defined above.
+from gliner2.training import eval_metrics as _eval_metrics  # noqa: E402
+globals().update(
+    {k: v for k, v in vars(_eval_metrics).items() if not k.startswith("__")}
+)
+del _eval_metrics
