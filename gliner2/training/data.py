@@ -38,7 +38,7 @@ Create relation examples:
 
 Build and validate dataset:
     >>> dataset = TrainingDataset(examples)
-    >>> dataset.validate()  # Raises ValidationError if invalid
+    >>> dataset.validate()  # Raises DataValidationError if invalid
     >>> dataset.save("train.jsonl")
 
 Load from JSONL:
@@ -58,11 +58,13 @@ from collections import Counter
 from tqdm import tqdm
 
 if TYPE_CHECKING:
-    # Forward declarations for type checking only
-    pass
+    # Import-only (avoids a circular import with the trainer at runtime) so the
+    # ``'ExtractorDataset'`` forward reference in ``DataInput`` resolves for
+    # static type checkers / ``get_type_hints``.
+    from gliner2.training.trainer import ExtractorDataset
 
 
-class ValidationError(Exception):
+class DataValidationError(Exception):
     """Raised when training data validation fails."""
 
     def __init__(self, message: str, errors: List[str] = None):
@@ -497,10 +499,39 @@ class Structure:
     _fields: Dict[str, Any] = field(default_factory=dict)
     descriptions: Optional[Dict[str, str]] = None
 
-    def __init__(self, struct_name: str, _descriptions: Dict[str, str] = None, **fields):
+    def __init__(
+        self,
+        struct_name: str,
+        _descriptions: Dict[str, str] = None,
+        *,
+        mode: Optional[str] = None,
+        anchor: Optional[str] = None,
+        occurrence_policy: Optional[str] = None,
+        **fields,
+    ):
         self.struct_name = struct_name
         self._fields = fields
         self.descriptions = _descriptions
+        # Instance Formation metadata (optional; absence == legacy behavior).
+        self.mode = mode
+        self.anchor = anchor
+        self.occurrence_policy = occurrence_policy
+
+    def get_record_metadata(self) -> Optional[Dict[str, Any]]:
+        """Return this structure's record-metadata entry, if any mode is set."""
+        if not self.mode:
+            return None
+        entry: Dict[str, Any] = {"mode": self.mode}
+        anchor = self.anchor
+        if self.mode == "natural" and not anchor:
+            # Default anchor = first declared field, in declaration order
+            # (kwargs order, captured before any training-time field shuffling).
+            anchor = next(iter(self._fields), None)
+        if anchor is not None:
+            entry["anchor"] = anchor
+        if self.occurrence_policy is not None:
+            entry["occurrence_policy"] = self.occurrence_policy
+        return {self.struct_name: entry}
 
     def validate(self, text: str) -> List[str]:
         """
@@ -880,7 +911,7 @@ class InputExample:
             for entity_type, mentions in self.entities.items():
                 if not entity_type:
                     types_to_remove.append(entity_type)
-                    warnings.append(f"Entity type is empty")
+                    warnings.append("Entity type is empty")
                     continue
                 
                 # Check if any mention is not in text
@@ -920,7 +951,7 @@ class InputExample:
             valid_structures = []
             for struct in self.structures:
                 if not struct.struct_name:
-                    warnings.append(f"Structure has empty name - dropping")
+                    warnings.append("Structure has empty name - dropping")
                     continue
                 
                 if not struct._fields:
@@ -965,7 +996,7 @@ class InputExample:
             valid_relations = []
             for rel in self.relations:
                 if not rel.name:
-                    warnings.append(f"Relation has empty name - dropping")
+                    warnings.append("Relation has empty name - dropping")
                     continue
 
                 if not rel._fields:
@@ -1060,12 +1091,18 @@ class InputExample:
         if self.structures:
             output["json_structures"] = [struct.to_dict() for struct in self.structures]
             all_descriptions = {}
+            record_metadata: Dict[str, Any] = {}
             for struct in self.structures:
                 desc = struct.get_descriptions()
                 if desc:
                     all_descriptions.update(desc)
+                meta = struct.get_record_metadata()
+                if meta:
+                    record_metadata.update(meta)
             if all_descriptions:
                 output["json_descriptions"] = all_descriptions
+            if record_metadata:
+                output["record_metadata"] = record_metadata
         if self.relations:
             output["relations"] = [rel.to_dict() for rel in self.relations]
         if self.events:
@@ -1098,6 +1135,7 @@ class InputExample:
 
         structures = []
         json_descriptions = output.get("json_descriptions", {})
+        record_metadata = output.get("record_metadata", {})
         for struct_data in output.get("json_structures", []):
             for struct_name, fields in struct_data.items():
                 parsed_fields = {}
@@ -1106,7 +1144,15 @@ class InputExample:
                         parsed_fields[field_name] = ChoiceField(value["value"], value["choices"])
                     else:
                         parsed_fields[field_name] = value
-                structures.append(Structure(struct_name, _descriptions=json_descriptions.get(struct_name), **parsed_fields))
+                meta = record_metadata.get(struct_name, {})
+                structures.append(Structure(
+                    struct_name,
+                    _descriptions=json_descriptions.get(struct_name),
+                    mode=meta.get("mode"),
+                    anchor=meta.get("anchor"),
+                    occurrence_policy=meta.get("occurrence_policy"),
+                    **parsed_fields,
+                ))
 
         relations = []
         for rel_data in output.get("relations", []):
@@ -1197,7 +1243,7 @@ class TrainingDataset:
         Parameters
         ----------
         raise_on_error : bool, default=True
-            If True, raises ValidationError when invalid examples are found.
+            If True, raises DataValidationError when invalid examples are found.
             If False, returns validation report without raising.
         
         Returns
@@ -1227,7 +1273,7 @@ class TrainingDataset:
         }
 
         if all_errors and raise_on_error:
-            raise ValidationError(f"Dataset validation failed: {len(invalid_indices)} invalid examples", all_errors)
+            raise DataValidationError(f"Dataset validation failed: {len(invalid_indices)} invalid examples", all_errors)
 
         return report
 
@@ -1319,7 +1365,7 @@ class TrainingDataset:
         """Print formatted statistics."""
         s = self.stats()
         print(f"\n{'='*60}")
-        print(f"GLiNER2 Training Dataset Statistics")
+        print("GLiNER2 Training Dataset Statistics")
         print(f"{'='*60}")
         print(f"Total examples: {s['total_examples']}")
 
@@ -1327,7 +1373,7 @@ class TrainingDataset:
             tls = s['text_length_stats']
             print(f"\nText lengths: min={tls['min']}, max={tls['max']}, mean={tls['mean']:.1f}")
 
-        print(f"\nTask Distribution:")
+        print("\nTask Distribution:")
         for task, count in s['task_distribution'].items():
             if count > 0:
                 print(f"  {task}: {count} ({100*count/s['total_examples']:.1f}%)")
@@ -1338,7 +1384,7 @@ class TrainingDataset:
                 print(f"  {etype}: {count}")
 
         if s['classification_tasks']:
-            print(f"\nClassification Tasks:")
+            print("\nClassification Tasks:")
             for task, count in s['classification_tasks'].items():
                 print(f"  {task}: {count} examples")
                 if task in s['classification_labels']:
@@ -1346,12 +1392,12 @@ class TrainingDataset:
                         print(f"    - {label}: {lcount}")
 
         if s['structure_types']:
-            print(f"\nStructure Types:")
+            print("\nStructure Types:")
             for stype, count in s['structure_types'].items():
                 print(f"  {stype}: {count}")
 
         if s['relation_types']:
-            print(f"\nRelation Types:")
+            print("\nRelation Types:")
             for rtype, count in s['relation_types'].items():
                 print(f"  {rtype}: {count}")
 

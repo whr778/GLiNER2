@@ -56,6 +56,13 @@ local = [
     "peft",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "slow: end-to-end tests that load models or are otherwise slow",
+    "quality: checkpoint-dependent inference quality expectations",
+    "compile: torch.compile / export-path tests (platform dependent)",
+]
+
 [project.urls]
 Homepage = "https://github.com/fastino-ai/GLiNER2"
 Repository = "https://github.com/fastino-ai/GLiNER2"

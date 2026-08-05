@@ -1,6 +1,10 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.pyd
 *$py.class
 
 # C extensions
@@ -90,6 +94,7 @@ Thumbs.db
 *.bin
 *.onnx
 *.safetensors
+!/tests/models/boundary/_golden/*.safetensors
 
 # Logs
 *.log
@@ -104,3 +109,11 @@ test_api_client.py
 # Personal / per-session notes — not project documentation
 /INSTRUCTIONS.md
 /.AWS_ENV.md
+
+# From main's boundary / joint-ie work
+/docs/boundary_architecture.md
+/benchmarks/
+/scripts/*
+!/scripts/check_public_surface.py
+!/scripts/surface_snapshot.py
+!/scripts/preflight_gold_capacity.py
