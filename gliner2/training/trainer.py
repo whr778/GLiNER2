@@ -771,8 +771,14 @@ class ExtractorTrainer:
         if self.config.deterministic:
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
+            # Enforce deterministic CUDA kernels too (scatter/gather in the
+            # boundary head are non-deterministic by default and otherwise make
+            # a seeded run non-reproducible). warn_only keeps ops without a
+            # deterministic impl from raising.
+            torch.use_deterministic_algorithms(True, warn_only=True)
         else:
             torch.backends.cudnn.benchmark = True
+            torch.use_deterministic_algorithms(False)
 
     def _setup_device(self):
         if self.config.local_rank >= 0:

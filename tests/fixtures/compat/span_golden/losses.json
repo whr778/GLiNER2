@@ -1,7 +1,7 @@
 {
-  "total_loss": 126.26435089111328,
-  "classification_loss": 2.0536904335021973,
-  "structure_loss": 121.15960693359375,
-  "count_loss": 3.051057815551758,
+  "total_loss": 122.8479995727539,
+  "classification_loss": 2.0978968143463135,
+  "structure_loss": 117.7586898803711,
+  "count_loss": 2.9914093017578125,
   "batch_size": 2
 }

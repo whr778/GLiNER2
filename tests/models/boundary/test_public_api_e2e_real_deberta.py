@@ -113,7 +113,7 @@ def test_boundary_public_api_lifecycle_real_deberta(tmp_path):
 
     config = TrainingConfig(
         output_dir=str(tmp_path / "run"),
-        max_steps=250,
+        max_steps=1000,  # classification overfit needs ~800 steps to converge here
         batch_size=4,
         gradient_accumulation_steps=1,
         encoder_lr=2e-5,

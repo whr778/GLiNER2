@@ -91,7 +91,12 @@ class SpanExtractorModel(BaseExtractorModel):
             getattr(config, "attn_implementation", "sdpa"),
         )
 
-        self.encoder.resize_token_embeddings(len(self.processor.tokenizer))
+        self.encoder.resize_token_embeddings(len(self.processor.tokenizer), mean_resizing=True)
+        # Re-tie embeddings after the resize for models with tied input/output
+        # weights (deberta-v3, mmBERT). A no-op for base encoders with no output
+        # head, but correct for any encoder that exposes an lm head.
+        if hasattr(self.encoder, "tie_weights"):
+            self.encoder.tie_weights()
         self.hidden_size = self.encoder.config.hidden_size
 
         # Span representation layer

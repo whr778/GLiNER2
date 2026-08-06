@@ -141,7 +141,11 @@ class BaseExtractorModel(PreTrainedModel):
             return FlashDebertaV2Model.from_pretrained(model_name)
 
         def load(implementation: Optional[str]) -> nn.Module:
-            kwargs = {"trust_remote_code": True}
+            # Load the encoder in fp32 to match the fp32 task heads. transformers>=5
+            # otherwise loads a checkpoint in its stored dtype (e.g. deberta-v3 ships
+            # fp16), which then mismatches the fp32 heads at F.linear. Reduced-precision
+            # training is applied at runtime via autocast, not the loaded weights.
+            kwargs = {"trust_remote_code": True, "dtype": torch.float32}
             if implementation:
                 kwargs["attn_implementation"] = implementation
             if encoder_config is not None:
