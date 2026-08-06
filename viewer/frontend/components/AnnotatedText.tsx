@@ -17,6 +17,7 @@ export default function AnnotatedText({
   marks,
   layer,
   activeEid = null,
+  onSelectEid,
 }: {
   text: string;
   marks: Mark[];
@@ -25,6 +26,10 @@ export default function AnnotatedText({
   // the highlight set so a single mention can be isolated out of an overlapping
   // (merged ×N) span.
   activeEid?: string | null;
+  // Select/cycle which mention is isolated by clicking a span in the text; called
+  // with the next eid, or null to clear. Lets you pick one of several events that
+  // overlap on the same span, right from the document.
+  onSelectEid?: (eid: string | null) => void;
 }) {
   const docRef = useRef<HTMLDivElement>(null);
   const [spanHover, setSpanHover] = useState<Set<string>>(() => new Set());
@@ -191,10 +196,23 @@ export default function AnnotatedText({
         const p = mk.primary;
         const colorKey = p.colorKey ?? p.label;
         const eidTokens = mk.roles.filter((r) => r.eid).map((r) => `${r.eid}:${r.kind}`).join(" ");
-        const eidSet = new Set(mk.roles.map((r) => r.eid).filter(Boolean) as string[]);
+        // Distinct eids on this span, in role order, so clicks cycle deterministically.
+        const eidList: string[] = [];
+        for (const r of mk.roles) if (r.eid && !eidList.includes(r.eid)) eidList.push(r.eid);
+        const eidSet = new Set(eidList);
         const active = [...eidSet].some((e) => hoverEids.has(e));
         const count = eidSet.size;
         const nestedAttr = mk.nested?.map((n) => `${n.s}-${n.e}:${n.eids.join(",")}`).join(" ");
+        // 0-based position of the currently-selected mention within this span (-1
+        // if the selection is elsewhere / nothing selected).
+        const selPos = activeEid ? eidList.indexOf(activeEid) : -1;
+        const clickable = linkable && eidList.length > 0 && !!onSelectEid;
+        // Cycle: nothing here selected -> first; selected -> next; past the last -> clear.
+        const cycle = () => {
+          if (!clickable) return;
+          const next = selPos < 0 ? eidList[0] : selPos + 1 < eidList.length ? eidList[selPos + 1] : null;
+          onSelectEid!(next);
+        };
         return (
           <mark
             key={i}
@@ -202,16 +220,23 @@ export default function AnnotatedText({
             data-eids={eidTokens || undefined}
             data-nested={nestedAttr || undefined}
             data-kind={p.kind}
-            style={tagStyle(colorKey)}
+            style={clickable ? { ...tagStyle(colorKey), cursor: "pointer" } : tagStyle(colorKey)}
             onMouseEnter={() => setSpanHover(eidSet)}
             onMouseLeave={() => setSpanHover(new Set())}
-            title={`${p.label} · ${p.kind}${count > 1 ? ` · ${count} links` : ""}${p.confidence != null ? ` · ${fmtConf(p.confidence)}` : ""}`}
+            onClick={clickable ? cycle : undefined}
+            title={
+              `${p.label} · ${p.kind}` +
+              (count > 1 ? ` · ${count} events here — click to view one at a time` : "") +
+              (p.confidence != null ? ` · ${fmtConf(p.confidence)}` : "")
+            }
           >
             {s.text}
             <span className="taglabel" style={tagStyle(colorKey)}>
               {p.label}
               {p.kind === "trigger" && p.idx ? <sup className="eidx">{p.idx}</sup> : null}
-              {count > 1 ? <sup className="eidx">×{count}</sup> : null}
+              {count > 1 ? (
+                <sup className="eidx">{selPos >= 0 ? `${selPos + 1}/${count}` : `×${count}`}</sup>
+              ) : null}
             </span>
           </mark>
         );
