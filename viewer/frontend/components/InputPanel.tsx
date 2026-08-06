@@ -10,6 +10,7 @@ type Props = {
   options: ExtractOptions;
   setOptions: (o: ExtractOptions) => void;
   loading: boolean;
+  schemaLoading?: boolean; // a model's schema is being fetched; block extraction
   onExtract: () => void;
   models: ModelEntry[];
   onManage: () => void;
@@ -18,7 +19,7 @@ type Props = {
   onLoadResults: (snap: any) => void;
 };
 
-export default function InputPanel({ text, setText, options, setOptions, loading, onExtract, models, onManage, resultData, resultSchema, onLoadResults }: Props) {
+export default function InputPanel({ text, setText, options, setOptions, loading, schemaLoading, onExtract, models, onManage, resultData, resultSchema, onLoadResults }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const loadRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState("");
@@ -234,8 +235,13 @@ export default function InputPanel({ text, setText, options, setOptions, loading
 
       <div className="field row between">
         <span className="hint">Runs the model on the backend.</span>
-        <button className="primary" onClick={onExtract} disabled={loading || !text.trim()}>
-          {loading ? "Extracting…" : "Extract"}
+        <button
+          className="primary"
+          onClick={onExtract}
+          disabled={loading || schemaLoading || !text.trim()}
+          title={schemaLoading ? "Loading the selected model's schema…" : undefined}
+        >
+          {loading ? "Extracting…" : schemaLoading ? "Loading schema…" : "Extract"}
         </button>
       </div>
     </div>

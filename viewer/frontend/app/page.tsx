@@ -34,6 +34,7 @@ export default function Home() {
   const [schemaNote, setSchemaNote] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
   const [modelPreset, setModelPreset] = useState<Record<string, any> | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
   const appliedModel = useRef<string | null>(null);
 
   useEffect(() => {
@@ -50,9 +51,11 @@ export default function Home() {
     const m = options.model?.trim();
     if (!m || m === appliedModel.current) return;
     let cancelled = false;
+    setSchemaLoading(true); // disable extraction until this model's schema resolves
     (async () => {
       const shipped = await getModelSchema(m);
       if (cancelled) return;
+      setSchemaLoading(false); // network resolved; the schema apply below is synchronous
       if (shipped && Object.keys(shipped).length > 0) {
         // Open-vocab task types ship as an `open_vocab` marker; scaffold them into
         // empty fields the user can fill (pruned back out at extract time).
@@ -140,6 +143,7 @@ export default function Home() {
             options={options}
             setOptions={setOptions}
             loading={loading}
+            schemaLoading={schemaLoading}
             onExtract={onExtract}
             models={models}
             onManage={() => setShowModels(true)}
