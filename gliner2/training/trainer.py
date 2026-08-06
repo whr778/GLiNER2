@@ -1538,6 +1538,17 @@ class ExtractorTrainer:
         if self.device.type == "mps" or sys.platform == "darwin":
             effective_num_workers = 0
 
+        # Python 3.14 changed Linux's default multiprocessing start method to
+        # 'forkserver', which pickles the collator to each worker. The collator
+        # holds the transformers tokenizer, whose lru_cache-wrapped tokenize
+        # method is not picklable, so a num_workers>0 loader raises PicklingError.
+        # 'fork' (workers inherit memory, no pickling) restores the pre-3.14
+        # behavior; scoped to Linux where fork is available and the default shifted.
+        mp_context = (
+            "fork"
+            if effective_num_workers > 0 and sys.platform.startswith("linux")
+            else None
+        )
         return DataLoader(
             dataset,
             batch_size=effective_batch_size,
@@ -1549,6 +1560,7 @@ class ExtractorTrainer:
             collate_fn=collator,
             drop_last=drop_last,
             persistent_workers=effective_num_workers > 0,
+            multiprocessing_context=mp_context,
         )
 
     def train(
