@@ -22,7 +22,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import config
 
-logger = logging.getLogger("gliner2.viewer")
+# Log through uvicorn's configured logger so lines like "Loaded model ... on
+# device mps" actually surface in the server console (a bare getLogger has no
+# handler under uvicorn and is swallowed).
+logger = logging.getLogger("uvicorn.error")
 
 DEFAULT_MODEL = config.default_model()
 
@@ -132,7 +135,8 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
         )[0]
     except Exception as e:  # noqa: BLE001 - surface extraction errors to the client
         raise HTTPException(status_code=500, detail=f"extraction failed: {e}") from e
-    return {"text": req.text, "result": result}
+    device = str(next(model.parameters()).device)
+    return {"text": req.text, "result": result, "device": device}
 
 
 @app.post("/import-url")

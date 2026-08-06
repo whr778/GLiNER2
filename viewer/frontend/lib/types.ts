@@ -46,4 +46,4 @@ export const DEFAULT_OPTIONS: ExtractOptions = {
   model: null,
 };
 
-export type ExtractResponse = { text: string; result: ExtractionResult };
+export type ExtractResponse = { text: string; result: ExtractionResult; device?: string };

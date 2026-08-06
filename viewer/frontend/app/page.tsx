@@ -169,7 +169,15 @@ export default function Home() {
             </div>
           )}
           {resp ? (
-            <ResultView text={resp.text} result={resp.result} schema={usedSchema} />
+            <>
+              {resp.device && (
+                <div className="hint" style={{ marginBottom: 8 }}>
+                  Ran on <span className="mono">{resp.device}</span>
+                  {resp.device.startsWith("mps") && " (Apple Silicon GPU)"}
+                </div>
+              )}
+              <ResultView text={resp.text} result={resp.result} schema={usedSchema} />
+            </>
           ) : loading ? (
             <div className="card">
               <div className="empty">Extracting…</div>
