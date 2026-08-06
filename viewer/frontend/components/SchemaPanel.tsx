@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Preset } from "@/lib/types";
+import { MODEL_PRESET_VALUE } from "@/lib/schema";
 
 type Props = {
   presets: Preset[];
@@ -10,9 +11,10 @@ type Props = {
   note?: string | null;
   clearNote?: () => void;
   selectedPreset?: string; // preset to reflect in the dropdown (e.g. matched to the model)
+  modelPreset?: Record<string, any> | null; // the selected model's shipped schema, if any
 };
 
-export default function SchemaPanel({ presets, schema, setSchema, note, clearNote, selectedPreset }: Props) {
+export default function SchemaPanel({ presets, schema, setSchema, note, clearNote, selectedPreset, modelPreset }: Props) {
   const [text, setText] = useState(() => JSON.stringify(schema, null, 2));
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
@@ -52,6 +54,10 @@ export default function SchemaPanel({ presets, schema, setSchema, note, clearNot
   function loadPreset(name: string) {
     setSelected(name);
     clearNote?.();
+    if (name === MODEL_PRESET_VALUE) {
+      if (modelPreset) applyText(JSON.stringify(modelPreset, null, 2));
+      return;
+    }
     const p = presets.find((x) => x.name === name);
     if (p) applyText(JSON.stringify(p.schema, null, 2));
   }
@@ -66,6 +72,11 @@ export default function SchemaPanel({ presets, schema, setSchema, note, clearNot
         <label>Load a preset</label>
         <select value={selected} onChange={(e) => loadPreset(e.target.value)}>
           <option value="">— choose a preset —</option>
+          {modelPreset && (
+            <optgroup label="Selected model">
+              <option value={MODEL_PRESET_VALUE}>this model&apos;s schema</option>
+            </optgroup>
+          )}
           {builtin.length > 0 && (
             <optgroup label="Built-in">
               {builtin.map((p) => (

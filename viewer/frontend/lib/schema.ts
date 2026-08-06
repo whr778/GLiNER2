@@ -7,6 +7,10 @@
 // knows to supply specifics; pruneSchema strips those still-empty fields (and the
 // marker) before extraction, since the backend rejects empty dimensions.
 
+// Dropdown value for the "this model's schema" entry (the schema a model ships in
+// its config), distinct from any named corpus/built-in preset.
+export const MODEL_PRESET_VALUE = "__model__";
+
 const EMPTY: Record<string, any> = {
   entities: [],
   relations: [],

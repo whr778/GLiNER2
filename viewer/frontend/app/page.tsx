@@ -7,7 +7,7 @@ import ResultView from "@/components/ResultView";
 import ModelManager from "@/components/ModelManager";
 import { addModel, extract, getModelSchema, getModels, getPresets } from "@/lib/api";
 import { matchCorpusPreset } from "@/lib/models";
-import { pruneSchema, scaffoldSchema } from "@/lib/schema";
+import { MODEL_PRESET_VALUE, pruneSchema, scaffoldSchema } from "@/lib/schema";
 import {
   DEFAULT_OPTIONS,
   type ExtractOptions,
@@ -33,6 +33,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [schemaNote, setSchemaNote] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
+  const [modelPreset, setModelPreset] = useState<Record<string, any> | null>(null);
   const appliedModel = useRef<string | null>(null);
 
   useEffect(() => {
@@ -56,8 +57,10 @@ export default function Home() {
         // Open-vocab task types ship as an `open_vocab` marker; scaffold them into
         // empty fields the user can fill (pruned back out at extract time).
         const ov: string[] = shipped.open_vocab || [];
-        setSchema(scaffoldSchema(shipped));
-        setPresetName(""); // the shipped schema is not a named preset
+        const scaffolded = scaffoldSchema(shipped);
+        setSchema(scaffolded);
+        setModelPreset(scaffolded); // selectable "this model's schema" dropdown entry
+        setPresetName(MODEL_PRESET_VALUE); // reflect it as the active selection
         setSchemaNote(
           ov.length
             ? `Loaded the schema shipped with this model. It is open-vocabulary for ${ov.join(", ")} -- add labels to the empty field${ov.length > 1 ? "s" : ""}. You can still pick another below.`
@@ -67,6 +70,7 @@ export default function Home() {
         return;
       }
       if (presets.length === 0) return; // fallback needs presets; wait for them
+      setModelPreset(null); // older model: no shipped schema to offer
       const preset = matchCorpusPreset(m, presets);
       if (preset) {
         setSchema(preset.schema);
@@ -150,6 +154,7 @@ export default function Home() {
             note={schemaNote}
             clearNote={() => setSchemaNote(null)}
             selectedPreset={presetName}
+            modelPreset={modelPreset}
           />
         </div>
 
