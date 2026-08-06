@@ -33,17 +33,33 @@ DEFAULT_MODEL = config.default_model()
 _models: Dict[str, Any] = {}
 
 
-def get_model(model_id: str):
+def _map_location(requested: Optional[str]) -> Optional[str]:
+    """Requested device -> from_pretrained map_location. ``None``/``auto`` lets the
+    library pick (CUDA -> MPS -> CPU); an unavailable accelerator falls back to
+    auto rather than erroring. Note: for many-label event models MPS is markedly
+    slower than CPU (per-op sync overhead), so 'cpu' is often the fast choice."""
+    import torch
+
+    if requested in (None, "", "auto"):
+        return None
+    if requested == "cuda" and not torch.cuda.is_available():
+        return None
+    if requested == "mps" and not torch.backends.mps.is_available():
+        return None
+    return requested
+
+
+def get_model(model_id: str, device: Optional[str] = None):
     from gliner2 import GLiNER2
 
-    if model_id not in _models:
-        model = GLiNER2.from_pretrained(model_id)
-        # from_pretrained auto-selects CUDA -> MPS -> CPU; log it so the operator
-        # can confirm the GPU (e.g. Apple Silicon MPS) is being used.
-        device = next(model.parameters()).device
-        logger.info("Loaded model %s on device %s", model_id, device)
-        _models[model_id] = model
-    return _models[model_id]
+    map_location = _map_location(device)
+    key = (model_id, map_location or "auto")  # cache one copy per (model, device)
+    if key not in _models:
+        model = GLiNER2.from_pretrained(model_id, map_location=map_location)
+        dev = next(model.parameters()).device
+        logger.info("Loaded model %s on device %s (requested %s)", model_id, dev, device or "auto")
+        _models[key] = model
+    return _models[key]
 
 
 app = FastAPI(title="GLiNER2 Viewer API")
@@ -69,6 +85,7 @@ class Options(BaseModel):
     global_decode: bool = False
     beam_width: int = 8
     model: Optional[str] = None
+    device: Optional[str] = None  # auto | cpu | mps | cuda (unavailable -> auto)
 
 
 class ExtractRequest(BaseModel):
@@ -111,7 +128,7 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
     # HFValidationError on a path that otherwise looks correct).
     model_id = (req.options.model or DEFAULT_MODEL).strip()
     try:
-        model = get_model(model_id)
+        model = get_model(model_id, req.options.device)
     except Exception as e:  # noqa: BLE001 - surface the real load error, not a bare 500
         raise HTTPException(
             status_code=502,

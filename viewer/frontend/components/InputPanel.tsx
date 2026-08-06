@@ -213,6 +213,19 @@ export default function InputPanel({ text, setText, options, setOptions, loading
           </label>
         </div>
         <div className="field">
+          <label>Device</label>
+          <select value={options.device ?? "auto"} onChange={(e) => set("device", e.target.value)}>
+            <option value="auto">auto (CUDA → MPS → CPU)</option>
+            <option value="cpu">cpu</option>
+            <option value="mps">mps (Apple Silicon GPU)</option>
+            <option value="cuda">cuda (NVIDIA GPU)</option>
+          </select>
+          <div className="hint">
+            For many-label event models, cpu is often much faster than mps (which has
+            high per-op overhead). Unavailable devices fall back to auto.
+          </div>
+        </div>
+        <div className="field">
           <label>Model (blank = server default)</label>
           <div className="row">
             <input

@@ -35,6 +35,7 @@ export type ExtractOptions = {
   global_decode: boolean;
   beam_width: number;
   model?: string | null;
+  device?: string; // auto | cpu | mps | cuda
 };
 
 export const DEFAULT_OPTIONS: ExtractOptions = {
@@ -44,6 +45,7 @@ export const DEFAULT_OPTIONS: ExtractOptions = {
   global_decode: false,
   beam_width: 8,
   model: null,
+  device: "auto",
 };
 
 export type ExtractResponse = { text: string; result: ExtractionResult; device?: string };
