@@ -12,9 +12,28 @@ type Loop = { x: number; top: number; bottom: number; divider: boolean };
 // Renders the document with span highlights and, for the events/relations
 // layers, draws connection arcs from a mention's trigger (or a relation's head)
 // to its arguments/tail when any span of that mention is hovered.
-export default function AnnotatedText({ text, marks, layer }: { text: string; marks: Mark[]; layer: Layer }) {
+export default function AnnotatedText({
+  text,
+  marks,
+  layer,
+  activeEid = null,
+}: {
+  text: string;
+  marks: Mark[];
+  layer: Layer;
+  // An event/relation mention hovered or pinned in the list below. Folded into
+  // the highlight set so a single mention can be isolated out of an overlapping
+  // (merged ×N) span.
+  activeEid?: string | null;
+}) {
   const docRef = useRef<HTMLDivElement>(null);
-  const [hoverEids, setHoverEids] = useState<Set<string>>(() => new Set());
+  const [spanHover, setSpanHover] = useState<Set<string>>(() => new Set());
+  const hoverEids = useMemo(() => {
+    if (!activeEid) return spanHover;
+    const s = new Set(spanHover);
+    s.add(activeEid);
+    return s;
+  }, [spanHover, activeEid]);
   const [lines, setLines] = useState<Line[]>([]);
   const [loops, setLoops] = useState<Loop[]>([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -184,8 +203,8 @@ export default function AnnotatedText({ text, marks, layer }: { text: string; ma
             data-nested={nestedAttr || undefined}
             data-kind={p.kind}
             style={tagStyle(colorKey)}
-            onMouseEnter={() => setHoverEids(eidSet)}
-            onMouseLeave={() => setHoverEids(new Set())}
+            onMouseEnter={() => setSpanHover(eidSet)}
+            onMouseLeave={() => setSpanHover(new Set())}
             title={`${p.label} · ${p.kind}${count > 1 ? ` · ${count} links` : ""}${p.confidence != null ? ` · ${fmtConf(p.confidence)}` : ""}`}
           >
             {s.text}
