@@ -18,6 +18,14 @@
 const BACKEND_ORIGIN = (process.env.GLINER2_BACKEND_ORIGIN || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 const nextConfig = {
+  // Rewrites proxy each /api/* request to the backend. Next's default proxy
+  // timeout is 30s, which cuts long extractions (a many-event model on a long
+  // doc can take 30-90s, esp. on MPS) and surfaces as an opaque 500. Raise it so
+  // slow extractions complete instead of failing. (Prefer cpu for event-heavy
+  // models via the viewer's Device selector -- much faster than mps.)
+  experimental: {
+    proxyTimeout: 300_000, // 5 minutes, in ms
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${BACKEND_ORIGIN}/:path*` }];
   },
