@@ -4,9 +4,11 @@ The corpora used to train GLiNER2, converted to the unified JSONL format by the
 scripts under [`tools/data/`](.) (see [TRAINING.md](../train/TRAINING.md) §2 for
 the conversion commands). Sample counts below are the **actual line counts of the
 generated `data/*.jsonl` splits**; type statistics are computed from the same
-files. Most corpora are partitioned 80/10/10 by a seeded `SplitWriter`; the event
-corpora, the MTL-Bioinformatics-2016 biomedical-NER corpora, and the MasakhaNER 2.0 /
-MasakhaNEWS benchmarks keep their canonical train/dev/test splits.
+files. Most corpora are partitioned 80/10/10 by a seeded `SplitWriter` (or a
+greedy stratified splitter for CASIE and ACE 2005); corpora that ship official
+train/dev/test splits — including WikiEvents, RAMS, CMNEE, DocEE, DuEE, Re-DocRED,
+the MTL-Bioinformatics-2016 corpora, and the MasakhaNER 2.0 / MasakhaNEWS
+benchmarks — keep their canonical splits (noted per corpus below).
 
 ## Summary
 

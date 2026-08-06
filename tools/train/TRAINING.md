@@ -8,9 +8,13 @@ End-to-end instructions for training a custom GLiNER2 model on top of `jhu-clsp/
 
 ```bash
 git clone <this-repo> GLiNER2 && cd GLiNER2
-uv sync                       # installs torch>=2.1, transformers>=4.48, gliner, etc.
-uv add datasets               # one-time, only needed for the dataset converters
+uv sync                       # core deps (gliner, datasets, ...)
+uv sync --extra local         # adds the training/runtime stack: torch + transformers
 ```
+
+`torch` and `transformers` live in the `local` optional-dependency group (both
+unpinned), so a plain `uv sync` does not install them — use `--extra local`.
+`datasets` is a core dependency and is installed by `uv sync` (no separate step).
 
 The first training run downloads the mmBERT weights (~550 MB for small, ~1.2 GB for base) into the HuggingFace cache.
 
@@ -304,7 +308,7 @@ Swap `.train.jsonl` for `.val.jsonl` to build the `eval_data` list, and `.test.j
 
 ## 3. Pick a hardware profile
 
-The committed training scripts use **`max_len=8192`** — mmBERT's full sequence window. ModernBERT's local-global attention keeps memory near-linear in sequence length, but activations and the optimizer state still scale with it, so batch sizes at 8192 are much smaller than at 512. The cells below assume `max_len=8192`. To regain bigger batches at the cost of context window, lower `max_len` in `TrainingConfig` (e.g. `max_len=2048` or `1024`) and roughly 2–4× each batch-size cell.
+The base config (`mmbert-base.yaml`) trains at **`max_len=8192`** — mmBERT's full sequence window. (The `mmbert-small*` configs train at `max_len=1024` with `sliding_window: true`, and `gliner2-multi-wikievents.yaml` at 256; in those, 8192 is only the encoder's positional cap, not the training window.) mmBERT's local-global attention keeps memory near-linear in sequence length, but activations and the optimizer state still scale with it, so batch sizes at 8192 are much smaller than at 512. The cells below assume `max_len=8192`. To regain bigger batches at the cost of context window, lower `max_len` in `TrainingConfig` (e.g. `max_len=2048` or `1024`) and roughly 2–4× each batch-size cell.
 
 | Device | mmBERT-small (148 M params) | mmBERT-base (314 M params) |
 |---|---|---|
@@ -334,13 +338,13 @@ A single entry point, `tools/train/train.py`, runs any training setup from a YAM
 uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
 ```
 
-Each YAML has four sections:
+Each YAML has five sections (the last, `labels`, is optional):
 
 | section    | maps to                                  | notes |
 |------------|------------------------------------------|-------|
 | `model`    | `from_encoder` or `from_pretrained`      | Set **`encoder`** (raw HF encoder → fresh heads; plus `max_width`, `max_len`, and the struct-loss knobs — see the structure-loss section below) **or** `pretrained` (a saved GLiNER2 checkpoint → continue its trained heads; remaining keys like `struct_loss` override the loaded config). Exactly one. |
 | `training` | `TrainingConfig(**training)`             | any `TrainingConfig` field (epochs, LRs, `bf16`, `sliding_window`, `logging_steps`, ...). Omitted fields take their defaults. |
-| `eval`     | `make_compute_metrics()` + blind test    | `batch_size`, `threshold`. |
+| `eval`     | inference/eval settings + blind test     | `threshold`, `threshold_sweep`, `metric_sweep`, `eval_by_language`, `chunk_size`/`chunk_overlap` + `global_decode` (windowed long-doc eval), `stopword_languages`/`stopword_yaml`. Parsed by `_parse_eval_settings`; see the `train.py` module docstring. |
 | `data`     | corpus / event-file lists                | `corpora` (base paths, expanded to `<name>.{train,val,test}.jsonl`) and `event_files` (a `{name: {train,val,test}}` map; each split is used only if the file is present on disk). |
 | `labels`   | label roll-up / remap (optional)         | `rollup`, `separator`, `map` — applied identically to train/val/test. See the label-transforms section below. |
 
@@ -349,7 +353,7 @@ Provided configs:
 | config | model | `struct_loss` | data |
 |--------|-------|---------------|------|
 | `mmbert-base.yaml` | mmBERT-base (from_encoder) | focal | full multi-corpus + all event corpora |
-| `mmbert-small.yaml` | mmBERT-small | focal | ACE 2005 |
+| `mmbert-small.yaml` | mmBERT-small | focal | ACE 2005 (+ stockmark_jpn, klue_re) |
 | `mmbert-small-bce.yaml` | mmBERT-small | bce | WikiEvents |
 | `mmbert-small-bce-posweight.yaml` | mmBERT-small | bce_posweight | WikiEvents |
 | `mmbert-small-focal.yaml` | mmBERT-small | focal | WikiEvents |
@@ -359,6 +363,10 @@ Provided configs:
 | `gliner2-multi-wikievents.yaml` | fastino/gliner2-multi-v1 (from_pretrained) | from checkpoint | WikiEvents |
 
 The six `mmbert-small-*` configs share encoder, hyperparameters, and data — they differ only in `struct_loss` and write to separate `output_dir`s, so they form a ready-made loss-variant sweep. `gliner2-multi-wikievents.yaml` instead **fine-tunes the pretrained `fastino/gliner2-multi-v1`** GLiNER2 model on WikiEvents (lower LRs, the checkpoint's own loss) — the `pretrained` form of the `model` section.
+
+The table above is representative — `tools/train/config/` holds ~46 configs, including the `gliner2-base-v1-*` / `gliner2-large-v1-*` / `gliner2-multi-v1-*` per-corpus checkpoint recipes, the `mmbert-base-*` and `scaling-mmbert-*` runs (`scaling-mmbert-*` mixes are built by `build_scaling_mix.py`), and `deberta-base-fromenc-*`. Browse that directory for the full set.
+
+> **Two architectures.** This guide covers the **span** head (`from_encoder` training with `max_width` / `struct_loss`, described throughout). The pretrained `gliner2-base-v1` / `gliner2-large-v1` checkpoints that the `gliner2-*-v1-*` configs load via `pretrained:` use the newer **boundary** architecture, whose `model:` block differs (`boundary_head`, no `struct_loss`/`max_width`). `GLiNER2.from_pretrained` loads span checkpoints; use `AutoExtractor.from_pretrained` for architecture dispatch (span or boundary).
 
 #### Label transforms (roll-up and remap)
 
@@ -419,7 +427,7 @@ Notes:
 * Docs that fit in the window are emitted as a single record (no chunking).
 * With `window_stride < max_len`, annotations whose surfaces fall in the overlap region naturally repeat across multiple adjacent chunks — that's intentional, just slightly more supervision on those spans.
 * Chunks that wind up with **no usable supervision** after filtering are dropped (e.g. a generic-prose chunk that contains none of the gold spans).
-* Currently training-only; evaluation and the blind-test path still truncate at `max_len` as today.
+* Applies to eval too: when `sliding_window` is on, during-training eval is chunked the same way as train (`_prepare_data(..., is_train=False)`). The final blind-test path can independently window long docs via the `eval:` block's `chunk_size`/`chunk_overlap` + `global_decode` settings.
 
 ### Per-split deterministic shuffle
 
@@ -427,7 +435,7 @@ After the trainer aggregates JSONLs into a single `TRAIN_DATA` / `EVAL_DATA` / `
 
 ### 4a. mmBERT-small
 
-Recommended baseline — runs on a single 24 GB GPU and converges in 2–3 epochs of mixed NuNER + Pile-NER-definition.
+Recommended small baseline — runs on a single 24 GB GPU. `mmbert-small.yaml` trains an ACE 2005 event-extraction run (plus the `stockmark_jpn` and `klue_re` corpora); the broader full multi-corpus recipe is `mmbert-base.yaml`.
 
 ```bash
 uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
@@ -452,11 +460,25 @@ uv run python tools/train/train.py --config tools/train/config/mmbert-base.yaml
 
 Edit `tools/train/config/mmbert-base.yaml` to retune for your hardware. Defaults use `bf16: true` (prefer on Ampere+/Hopper; switch to `fp16: true` elsewhere) and `max_len: 8192`. Eval-on-val and final blind test on `best` work the same way as for the small variant.
 
+### Schema co-location (`default_schema`)
+
+Every non-streaming run derives the union of its training ontology (entities / events + roles / relations / classifications) and writes it into the model's `config.json` as `default_schema`, so the schema the model was trained on ships with the checkpoint — on disk and on the HF Hub. It is a recommended default, not a constraint: GLiNER2 stays open-vocabulary at inference. Task types with too many distinct labels to pin down (e.g. broad open-vocabulary entity sets) are recorded under an `open_vocab` marker instead of a concrete label set. Checkpoints trained before this feature can be retrofitted with `tools/train/backfill_schema.py` (dry-run by default; `--apply` to write, `--filter <substr>` to target specific configs).
+
+### Evaluate a checkpoint without retraining
+
+`tools/train/eval.py` scores a saved checkpoint against a config's val/test split without running training — handy for threshold and windowing ablations:
+
+```bash
+uv run python tools/train/eval.py --config tools/train/config/mmbert-small.yaml \
+    [--split val|test] [--checkpoint <path>] [--threshold 0.5] \
+    [--chunk-size N] [--chunk-overlap N] [--global-decode | --no-global-decode]
+```
+
+`--split` defaults to `test` and `--checkpoint` to `<output_dir>/best`; the other flags override the config's `eval:` settings for that run only.
+
 ### 4c. Multi-GPU training
 
-Two options, mutually exclusive:
-
-**DistributedDataParallel (recommended).** One process per GPU, launched with `torchrun`. Each process holds the full model and trains on a shard of the data (`DistributedSampler`); gradients are all-reduced in place. No per-step model replication, so it avoids DataParallel's memory growth and is the right choice for large/long runs.
+Multi-GPU training uses **DistributedDataParallel** via `torchrun` (the old single-process `nn.DataParallel` path was removed; `data_parallel` is now an ignored no-op). One process per GPU: each holds the full model and trains on a shard of the data (`DistributedSampler`); gradients are all-reduced in place.
 
 ```bash
 # 2 GPUs on one node
@@ -464,13 +486,12 @@ uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
     --config tools/train/config/mmbert-base.yaml
 ```
 
-`uv run torchrun` uses the project venv's `torchrun`, which launches each rank with the venv's Python (`uv run python -m torch.distributed.run ...` is equivalent). DDP is auto-detected from the `torchrun` environment (`LOCAL_RANK`) — no config flag needed; leave `data_parallel: false`. Notes:
+`uv run torchrun` uses the project venv's `torchrun`, which launches each rank with the venv's Python (`uv run python -m torch.distributed.run ...` is equivalent). DDP is auto-detected from the `torchrun` environment: `train.py` copies each process's `LOCAL_RANK` into `config.local_rank`, and the trainer starts DDP whenever `local_rank >= 0` — no config flag needed. Notes:
 
 * `batch_size` in the config is **per GPU** under DDP (unlike DataParallel, where it's the total split across GPUs). Effective global batch = `batch_size × nproc_per_node × gradient_accumulation_steps`. Keep the per-GPU `batch_size` the same as your single-GPU value.
 * Only rank 0 logs, evaluates, and writes checkpoints / `train_results.json` / `test_metrics.json`; the early-stop decision is broadcast so all ranks stop together.
-* Backend is `nccl` on CUDA. `bf16`/`fp16` autocast works normally (DDP runs forward in-process, so the DataParallel autocast-dtype caveat does not apply).
-
-**nn.DataParallel (simple, single-process).** Set `data_parallel: true` and launch normally (`uv run python tools/train/train.py ...`). Easiest for a quick 2-GPU run, but it replicates the model every step and gathers on GPU 0 — higher memory and slower than DDP. Prefer DDP for anything large.
+* Backend is `nccl` on CUDA (`gloo` on CPU). `bf16`/`fp16` autocast works normally (DDP runs forward in-process).
+* The wrap defaults to `ddp_static_graph: true` / `ddp_find_unused_parameters: false`. If some steps don't exercise every task head (e.g. batches with only entities), set `ddp_find_unused_parameters: true` and `ddp_static_graph: false` to avoid a "parameter did not receive grad" / static-graph error.
 
 ### Structure-loss variant (span scoring for entities/relations/events)
 
@@ -690,7 +711,8 @@ print(model.extract_entities("Marie Curie discovered radium in Paris.",
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ModuleNotFoundError: datasets` | Converters need the HF `datasets` lib | `uv add datasets` |
+| `ModuleNotFoundError: datasets` | Core deps not installed (bare checkout) | `uv sync` — `datasets` is a core dependency |
+| `ModuleNotFoundError: torch`/`transformers` | The `local` extra isn't installed | `uv sync --extra local` |
 | `FileNotFoundError: '<stdin>'` + `BrokenPipeError` | Running training inside a heredoc (`python - <<PY`) with `num_workers>0`; spawn workers can't re-import stdin | Save the script as a `.py` file and run `uv run python <file>.py`, or set `num_workers=0` |
 | `out of memory` on CUDA | Batch too large | Halve `batch_size`, double `gradient_accumulation_steps` |
 | `out of memory` on MPS | Same | Same; also try `max_len=384` and `num_workers=0` |

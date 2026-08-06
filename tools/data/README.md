@@ -1,10 +1,15 @@
 # Dataset Converters
 
-Converters that transform public HuggingFace NER datasets into the GLiNER2
-JSONL training format (`{"input": ..., "output": {"entities": {...}, "entity_descriptions": {...}}}`).
+The ~36 `convert_*.py` scripts here transform public datasets (mostly
+HuggingFace, plus GitHub / S3 / Google-Drive / LDC sources) into the GLiNER2
+JSONL training format, whose `output` may carry `entities`,
+`entity_descriptions`, `relations`, `events`, and `classifications`
+(`{"input": ..., "output": {"entities": {...}, ...}}`).
 
-Both scripts stream from HuggingFace so they don't need to fit the dataset in RAM.
-They install one dep on first run: `uv add datasets`.
+HuggingFace-backed converters stream where possible so they don't need to hold
+the dataset in RAM. Converters install their own deps on first run as needed
+(`huggingface_hub`, `pandas`, `gdown`, `pyyaml`); `datasets` is already a core
+dependency (`uv sync`).
 
 ## Text normalization & encoding
 
@@ -21,7 +26,6 @@ does two things:
 - Strips stray Unicode line separators (NEL U+0085, U+2028, U+2029) to a space.
   Left in, `json.dumps` writes them literally and they fragment a JSONL record
   across physical lines for any `splitlines()`-based reader.
-- When using json.dump or json.dumps ensure_ascii should always be set to False unless I have directed otherwise.
 
 ## Mention-type filtering
 
@@ -53,6 +57,9 @@ filter dropped. Default (no `--filter-config`) keeps every type — byte-identic
 to before. The shared plumbing is `tools/data/_mention_filter.py`; a new
 converter opts in by reading its per-mention type and calling
 `load_mention_filter(path, "<name>").allows(m_type)`.
+
+Surfaces default to the **head** span of each mention (drops determiners/modifiers
+like articles); pass `--extent-offsets` to use the full mention extent instead.
 
 > ACE 2005 support assumes raw-LDC APF: the mention type is the `TYPE` attribute
 > on `<entity_mention>`, and `event_mention_argument` `REFID`s are mention-level
@@ -293,14 +300,14 @@ uv run python tools/data/convert_biomed_ner.py \
     --out data/biomed_ner.jsonl
 ```
 
-Biomedical NER with 35 entity classes (CHEMICALS, ACTIVITY, PHENOTYPE, FUNCTION, GROUP, DISORDER, GENE AND GENE PRODUCTS, ANATOMICAL STRUCTURE, etc.). 4,840 abstracts, averaging ~46 spans each — dense annotation.
+Biomedical NER with 33 entity classes (CHEMICALS, ACTIVITY, PHENOTYPE, FUNCTION, GROUP, DISORDER, GENE AND GENE PRODUCTS, ANATOMICAL STRUCTURE, etc.). 4,840 abstracts, averaging ~46 spans each — dense annotation.
 
 Source rows are `{text, entities: [{start, end, class}]}` with end-exclusive character offsets, so surfaces are sliced directly from `text`. Light cleanup:
 
 - Class names with trailing whitespace are normalised (the source has `"ORGANISMS "` and `"ORGANISMS"` as separate buckets).
 - The `"Unlabelled"` class (~190 spans, no training signal) is skipped.
 
-This is the only domain-specific (biomedical) corpus in the recipe. Mixing it with the general-domain corpora keeps the model strong on plain text while adding biomedical extraction headroom.
+This is one of several biomedical corpora in the recipe (alongside PubMedAbstractsNER, BC4CHEMD, BC5CDR, BioRED, bio-NER-relations, and the MTL-Bioinformatics-2016 set). Mixing them with the general-domain corpora adds biomedical extraction headroom while keeping the model strong on plain text.
 
 ## knowledgator/PubMedAbstractsNER
 
@@ -447,9 +454,36 @@ How it works (`tools/data/hf_stream.py` + `gliner2.training.trainer.StreamingExt
 
 Trainer configs: `tools/train/config/gliner2-multi-v1-wikiann.yaml` (from_pretrained) and `mmbert-base-wikiann.yaml` (from_encoder). Add more streaming datasets by registering a `StreamSource` in `hf_stream.SOURCES`.
 
+## Other converters
+
+The sections above cover the most-used converters in prose. The remaining
+converters follow the same JSONL contract; their exact invocations and the full
+build order live in `run_all_converters.sh`, and every dataset is cataloged in
+`TRAINING_DATA.md`. Quick reference:
+
+| Converter | Command |
+|---|---|
+| Generic token-NER (backs KazNERD, BC4CHEMD, BC5CDR, …) | `convert_hf_token_ner.py --repo <hf_repo> [--revision …] --out data/<name>.jsonl` |
+| MTL-Bioinformatics-2016 (13 biomedical NER corpora) | `convert_mtl_bio.py --dataset <NAME> --out data/<name>.jsonl` |
+| BioRED (biomedical NER + relations) | `convert_biored.py --out data/biored.jsonl` |
+| SciERC (scientific NER + relations) | `convert_scierc.py --out data/scierc.jsonl` |
+| Re-DocRED (document relations, canonical splits) | `convert_redocred.py --split train\|validation\|test --out data/redocred.<split>.jsonl` |
+| KLUE (Korean NER / RE) | `convert_klue.py --task ner\|re --out data/klue_<task>.jsonl` |
+| finer_ord (financial NER, CC-BY-NC) | `convert_finer_ord.py --out data/finer_ord.jsonl` |
+| stockmark (Japanese NER) | `convert_stockmark_ner.py --out data/stockmark_jpn.jsonl` |
+| paraloq_json (structured JSON extraction) | `convert_paraloq_json.py --out data/paraloq_json.jsonl` |
+| professorbob_re (relations) | `convert_professorbob_re.py --out data/professorbob_re.jsonl` |
+| mendeley_ed (event detection) | `convert_mendeley_ed.py --out data/mendeley_ed.jsonl` |
+| DuEE / DocFEE / ChFinAnn (Chinese document/event corpora) | `convert_<name>.py --out data/<name>.jsonl` |
+| MAVEN (event detection, needs local download — see `../train/TRAINING.md` §2) | `convert_maven.py --input data/maven/train.jsonl --out data/maven.train.jsonl` |
+| RAMS (event arguments, needs local download) | `convert_rams.py --input data/RAMS_1.0c/data/<split>.jsonlines --out data/rams.<split>.jsonl` |
+
+`events_to_entities.py` reframes event corpora (e.g. MAVEN, mendeley_ed) as
+entity/trigger records; see `run_all_converters.sh` for how it is chained.
+
 ## Output format
 
-Both scripts produce GLiNER2 JSONL that can be passed directly to
+All converters produce GLiNER2 JSONL that can be passed directly to
 `GLiNER2Trainer.train(train_data=...)`:
 
 ```python

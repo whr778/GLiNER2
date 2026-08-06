@@ -715,6 +715,12 @@ def main(config_path: str) -> None:
 
     config = TrainingConfig(**cfg["training"])
 
+    # DDP auto-detect: torchrun sets LOCAL_RANK per process; copy it into the
+    # config so the trainer's distributed path (config.local_rank >= 0) engages.
+    # Absent (single-process) -> config keeps its default -1 -> single-device.
+    if "LOCAL_RANK" in os.environ:
+        config.local_rank = int(os.environ["LOCAL_RANK"])
+
     data = cfg.get("data") or {}
     corpora = data.get("corpora") or []
     event_files = data.get("event_files") or {}

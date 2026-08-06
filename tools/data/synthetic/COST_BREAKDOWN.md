@@ -21,9 +21,11 @@ standard (non-batch) tier unless noted, as published **July 2026**.
 These figures are **measured**, not guessed: a `claude-sonnet-5` all-five-task run
 averages ~1,614 input and ~2,438 output tokens per document (a full document plus
 five task blocks is verbose — events with typed arguments dominate the output).
-They are the defaults in `cost.py` (`DEFAULT_INPUT_TOKENS` / `DEFAULT_OUTPUT_TOKENS`)
-and `config/default.yaml` (`cost:` block). Adjust them there if you change the
-document length, the task subset, or the ontology size. Fewer tasks or shorter
+The 1,600 input figure is `cost.py`'s `DEFAULT_INPUT_TOKENS`; the 2,500 output
+figure is set in `config/default.yaml`'s `cost:` block (`est_output_tokens`),
+which the estimator reads and which reproduces the tables below (`cost.py`'s own
+`DEFAULT_OUTPUT_TOKENS` is 1,400 — the config overrides it). Adjust them there if
+you change the document length, the task subset, or the ontology size. Fewer tasks or shorter
 docs → fewer output tokens; a trimmed ontology → fewer input tokens.
 
 **Annotate mode (`--annotate-from`)** has a different profile: the model does

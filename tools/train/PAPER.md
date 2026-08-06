@@ -716,10 +716,10 @@ provenance in [`tools/data/TRAINING_DATA.md`](../data/TRAINING_DATA.md)):
 
 | Area | Location |
 |---|---|
-| Events (schema/engine/api/data) | `gliner2/inference/schema.py`, `engine.py`, `api_client.py`, `training/data.py` |
-| Encoder-agnostic loading, losses | `gliner2/model.py` |
+| Events (schema/engine/api/data) | `gliner2/inference/schema.py`, `engine.py`, `runtime.py` (extract methods), `gliner2/api_client.py`, `training/data.py` |
+| Encoder-agnostic loading, losses | `gliner2/models/span/model.py` + `gliner2/configuration.py` (re-exported via the `gliner2/model.py` shim) |
 | Training infrastructure | `gliner2/training/trainer.py`, `parallel.py`, `eta.py`, `chunking.py` |
-| Metrics + fair error analysis | `gliner2/training/metrics.py`, `METRICS.md` |
+| Metrics + fair error analysis | `gliner2/training/eval_metrics.py` (re-exported via `metrics.py`), `METRICS.md` |
 | Global event decoder | `gliner2/inference/global_decode.py`, `chunking.py` |
 | Config-driven training | `tools/train/train.py`, `tools/train/config/` |
 | Data converters | `tools/data/convert_*.py` |
