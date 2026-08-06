@@ -353,7 +353,7 @@ results = extractor.extract(text, schema)
 results = extractor.batch_extract_events(texts, {"Attack": ["Attacker", "Target"]})
 ```
 
-See the [Event Extraction tutorial](12-events.md) for the full events API.
+See the [Event Extraction tutorial](13-events.md) for the full events API.
 
 ## Combined Schemas
 

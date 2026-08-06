@@ -110,7 +110,7 @@ results = extractor.extract(text, schema)
 # }
 ```
 
-See the [Event Extraction tutorial](12-events.md) for the full events API.
+See the [Event Extraction tutorial](13-events.md) for the full events API.
 
 ## Advanced Multi-Task Schemas
 
