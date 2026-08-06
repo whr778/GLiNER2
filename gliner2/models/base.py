@@ -25,6 +25,23 @@ from gliner2.configuration import ExtractorConfig
 logger = logging.getLogger(__name__)
 
 
+def resolve_device(map_location: Optional[str] = None) -> str:
+    """Resolve where to place a model, defaulting to the best available device.
+
+    An explicit ``map_location`` is honored as-is; otherwise pick CUDA, then MPS
+    (Apple Silicon GPU), then CPU. Shared by the model ``from_pretrained`` /
+    ``from_encoder`` loaders so inference (the extractor and the viewer) uses the
+    GPU without the caller having to ask.
+    """
+    if map_location is not None:
+        return map_location
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 # =============================================================================
 # Query metadata
 # =============================================================================

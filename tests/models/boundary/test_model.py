@@ -63,7 +63,9 @@ def test_boundary_save_reload_preserves_architecture_and_weights(tmp_path):
     b = dict(reloaded.state_dict())
     assert a.keys() == b.keys()
     for k in a:
-        assert torch.equal(a[k], b[k]), f"weight mismatch for {k}"
+        # Compare on CPU: from_pretrained auto-selects a device (CUDA/MPS), so the
+        # reloaded weights may live elsewhere than the freshly-built model.
+        assert torch.equal(a[k].cpu(), b[k].cpu()), f"weight mismatch for {k}"
 
 
 def test_boundary_public_entity_inference_uses_standard_span_keys():

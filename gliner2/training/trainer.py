@@ -797,6 +797,19 @@ class ExtractorTrainer:
         elif torch.cuda.is_available():
             self.device = torch.device("cuda")
             self.is_distributed = False
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+            self.is_distributed = False
+            if self.config.fp16 or self.config.bf16:
+                logger.warning(
+                    "Mixed precision disabled on MPS (fp16/bf16 with GradScaler is "
+                    "CUDA-only)."
+                )
+                self.config.fp16 = False
+                self.config.bf16 = False
+            if self.config.pin_memory:
+                logger.info("Disabling pin_memory on MPS (not supported).")
+                self.config.pin_memory = False
         else:
             self.device = torch.device("cpu")
             self.is_distributed = False

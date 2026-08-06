@@ -40,7 +40,7 @@ from transformers import (
 # ``ExtractorConfig`` lives in ``gliner2.configuration`` so both span and
 # boundary architectures share one validated config.
 from gliner2.configuration import ExtractorConfig
-from gliner2.models.base import BaseExtractorModel
+from gliner2.models.base import BaseExtractorModel, resolve_device
 
 
 class SpanExtractorModel(BaseExtractorModel):
@@ -800,8 +800,9 @@ class SpanExtractorModel(BaseExtractorModel):
         model.config._name_or_path = repo_or_dir
         model.name_or_path = repo_or_dir
 
-        if map_location is not None:
-            model = model.to(map_location)
+        # Default to the best available device (CUDA -> MPS -> CPU) so inference
+        # uses the GPU; an explicit map_location still wins.
+        model = model.to(resolve_device(map_location))
 
         if quantize:
             model.quantize()
@@ -848,15 +849,7 @@ class SpanExtractorModel(BaseExtractorModel):
             **config_kwargs,
         )
         model = cls(config, encoder_config=encoder_config, tokenizer=tokenizer)
-
-        if map_location is None:
-            if torch.cuda.is_available():
-                map_location = "cuda"
-            elif torch.backends.mps.is_available():
-                map_location = "mps"
-            else:
-                map_location = "cpu"
-        return model.to(map_location)
+        return model.to(resolve_device(map_location))
 
     # =========================================================================
     # Quantization

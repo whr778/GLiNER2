@@ -420,7 +420,9 @@ def test_boundary_full_lifecycle_real_deberta(tmp_path):
     # ---- Save -> Load (public architecture-aware loader) ----------------------
     save_dir = tmp_path / "boundary_ckpt"
     model.save_pretrained(str(save_dir))
-    reloaded = AutoExtractor.from_pretrained(str(save_dir))
+    # This test drives the model with hand-built CPU tensors, so pin CPU rather
+    # than let from_pretrained auto-select a GPU (CUDA/MPS) and mismatch them.
+    reloaded = AutoExtractor.from_pretrained(str(save_dir), map_location="cpu")
     assert reloaded.architecture == "boundary"
     assert type(reloaded).__name__ == "BoundaryExtractor"
     reloaded.eval()

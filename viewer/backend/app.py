@@ -13,6 +13,7 @@ the default model.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -20,6 +21,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 import config
+
+logger = logging.getLogger("gliner2.viewer")
 
 DEFAULT_MODEL = config.default_model()
 
@@ -31,7 +34,12 @@ def get_model(model_id: str):
     from gliner2 import GLiNER2
 
     if model_id not in _models:
-        _models[model_id] = GLiNER2.from_pretrained(model_id)
+        model = GLiNER2.from_pretrained(model_id)
+        # from_pretrained auto-selects CUDA -> MPS -> CPU; log it so the operator
+        # can confirm the GPU (e.g. Apple Silicon MPS) is being used.
+        device = next(model.parameters()).device
+        logger.info("Loaded model %s on device %s", model_id, device)
+        _models[model_id] = model
     return _models[model_id]
 
 

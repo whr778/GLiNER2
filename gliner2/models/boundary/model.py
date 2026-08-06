@@ -26,7 +26,7 @@ from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from gliner2.configuration import BoundaryHeadSettings, ExtractorConfig
 from gliner2.layers import create_mlp
-from gliner2.models.base import BaseExtractorModel, EncodedBatch
+from gliner2.models.base import BaseExtractorModel, EncodedBatch, resolve_device
 from gliner2.models.boundary.encoding import BoundaryEncoder
 from gliner2.models.boundary.constants import MASK_LOGIT
 from gliner2.models.boundary.heads import BoundaryMarginals, BoundaryQueryHead
@@ -1774,8 +1774,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
 
         model.config._name_or_path = repo_or_dir
         model.name_or_path = repo_or_dir
-        if map_location is not None:
-            model = model.to(map_location)
+        # Default to the best available device (CUDA -> MPS -> CPU) so inference
+        # uses the GPU; an explicit map_location still wins.
+        model = model.to(resolve_device(map_location))
         if compile_model:
             model.compile(dynamic=True)
         return model
