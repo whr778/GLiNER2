@@ -124,6 +124,84 @@ def test_nam_only_drops_nom_and_pro(tmp_path):
     assert _roles(out["events"][0]) == {"Place", "Time-Within"}
 
 
+# Fixture WITH <head> spans that differ from <extent>, to exercise head vs extent
+# offsets across entities, relations, and event arguments.
+SGM_HEAD = """<DOC>
+<TEXT>
+The vice president met Acme Corp in Paris .
+</TEXT>
+</DOC>
+"""
+
+APF_HEAD = """<?xml version="1.0"?>
+<source_file>
+ <document DOCID="TESTHEAD">
+  <entity ID="E1" TYPE="PER">
+    <entity_mention ID="E1-1" TYPE="NOM">
+      <extent><charseq>The vice president</charseq></extent>
+      <head><charseq>president</charseq></head>
+    </entity_mention>
+  </entity>
+  <entity ID="E2" TYPE="ORG">
+    <entity_mention ID="E2-1" TYPE="NAM">
+      <extent><charseq>Acme Corp</charseq></extent>
+      <head><charseq>Acme Corp</charseq></head>
+    </entity_mention>
+  </entity>
+  <entity ID="E3" TYPE="GPE">
+    <entity_mention ID="E3-1" TYPE="NAM">
+      <extent><charseq>Paris</charseq></extent>
+      <head><charseq>Paris</charseq></head>
+    </entity_mention>
+  </entity>
+  <relation ID="R1" TYPE="ORG-AFF">
+    <relation_mention ID="R1-1">
+      <relation_mention_argument REFID="E1-1" ROLE="Arg-1"/>
+      <relation_mention_argument REFID="E2-1" ROLE="Arg-2"/>
+    </relation_mention>
+  </relation>
+  <event ID="EV1" TYPE="Contact" SUBTYPE="Meet">
+    <event_mention ID="EV1-1">
+      <anchor><charseq>met</charseq></anchor>
+      <event_mention_argument REFID="E1-1" ROLE="Entity"><extent><charseq>The vice president</charseq></extent></event_mention_argument>
+      <event_mention_argument REFID="E3-1" ROLE="Place"><extent><charseq>Paris</charseq></extent></event_mention_argument>
+    </event_mention>
+  </event>
+ </document>
+</source_file>
+"""
+
+
+def _write_head_pair(tmp_path):
+    (tmp_path / "doc.sgm").write_text(SGM_HEAD, encoding="utf-8")
+    apf = tmp_path / "doc.apf.xml"
+    apf.write_text(APF_HEAD, encoding="utf-8")
+    return apf
+
+
+def test_head_offsets_are_the_default(tmp_path):
+    # Default: head spans, so "The vice president" -> "president" everywhere.
+    out = parse_apf(_write_head_pair(tmp_path), keep_subtypes=True)["output"]
+    assert out["entities"]["PER"] == ["president"]
+    assert out["entities"]["ORG"] == ["Acme Corp"]  # head == extent
+    # Relation Arg-1 uses the same head surface.
+    assert out["relations"] == [{"ORG-AFF": {"head": "president", "tail": "Acme Corp"}}]
+    # Event entity-argument inherits the head surface too.
+    ev = out["events"][0]
+    entity_arg = next(a for a in ev["arguments"] if a["role"] == "Entity")
+    assert entity_arg["entity"] == "president"
+
+
+def test_extent_offsets_flag_keeps_full_span(tmp_path):
+    # use_head=False -> full extent, determiners/modifiers retained.
+    out = parse_apf(_write_head_pair(tmp_path), keep_subtypes=True, use_head=False)["output"]
+    assert out["entities"]["PER"] == ["The vice president"]
+    assert out["relations"] == [{"ORG-AFF": {"head": "The vice president", "tail": "Acme Corp"}}]
+    ev = out["events"][0]
+    entity_arg = next(a for a in ev["arguments"] if a["role"] == "Entity")
+    assert entity_arg["entity"] == "The vice president"
+
+
 def test_iter_apf_files_only_reads_adj_folder(tmp_path):
     """The raw ACE 2005 LDC delivery re-annotates the same documents in
     several sibling folders per genre (adj, fp1, fp2, timex2norm, ...).

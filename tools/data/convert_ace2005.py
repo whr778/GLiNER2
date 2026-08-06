@@ -21,8 +21,14 @@ Relations are resolved through their ``<relation_mention_argument>``
 REFIDs: the converter walks the entity-mention table once, then looks up
 each REFID to recover the argument's surface text. ROLE ``Arg-1`` maps to
 ``head`` and ``Arg-2`` to ``tail``. Relations whose either argument
-cannot be resolved (REFID missing, extent text missing from the body)
+cannot be resolved (REFID missing, surface text missing from the body)
 are dropped.
+
+Entity surfaces use each mention's **head** span by default (dropping
+determiners and modifiers: "the vice president" -> "president"), which keeps
+the surface vocabulary tight; pass ``--extent-offsets`` to use the full extent
+instead. Relation and event entity-arguments inherit the same choice so every
+surface in a record is consistent.
 
 By default the converter stratifies the resulting records into
 80/10/10 train/test/val splits using a greedy multi-label algorithm:
@@ -126,6 +132,21 @@ def _first_charseq_text(parent: ET.Element, sub_tag: str) -> Optional[str]:
     return WS_RE.sub(" ", cs.text).strip() or None
 
 
+def _mention_surface(emention: ET.Element, use_head: bool) -> Optional[str]:
+    """Surface text for an entity mention: its ``head`` or full ``extent``.
+
+    The head is the minimal syntactic span (e.g. "president"); the extent adds
+    modifiers and determiners (e.g. "the vice president"). Head is the default so
+    articles and modifiers don't inflate the surface vocabulary. Falls back to the
+    extent when no head charseq is present (value/time mentions have no head).
+    """
+    if use_head:
+        head = _first_charseq_text(emention, "head")
+        if head:
+            return head
+    return _first_charseq_text(emention, "extent")
+
+
 def _pair_sgm(apf_path: Path) -> Optional[Path]:
     stem = apf_path.name
     if stem.endswith(".apf.xml"):
@@ -140,6 +161,7 @@ def parse_apf(
     keep_subtypes: bool,
     mention_filter: Optional[MentionFilter] = None,
     stats: Optional[Counter] = None,
+    use_head: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """Parse one .apf.xml + .sgm pair into a single GLiNER2 record.
 
@@ -149,6 +171,11 @@ def parse_apf(
     ``mention_filter`` keeps only the allowed entity mention types (NAM/NOM/PRO);
     a dropped mention cascades to its relations and event arguments. ``stats``
     accumulates the per-category drop counts for the caller's summary.
+
+    ``use_head`` (default) takes each entity mention's head span, dropping
+    determiners/modifiers ("the vice president" -> "president"); set it False to
+    keep the full extent. Relation and event entity-arguments inherit the same
+    choice via their mention lookup, so a record's surfaces stay consistent.
     """
     if mention_filter is None:
         mention_filter = MentionFilter(None)
@@ -193,17 +220,17 @@ def parse_apf(
                 continue
             m_type = (emention.get("TYPE") or "").strip()
             entity_mention_type[mid] = m_type
-            extent_text = _first_charseq_text(emention, "extent")
-            if not extent_text or extent_text not in text:
+            span_text = _mention_surface(emention, use_head)
+            if not span_text or span_text not in text:
                 continue
             if not mention_filter.allows(m_type):
                 filtered_mids.add(mid)
                 stats["filtered_mentions"] += 1
                 continue
-            entity_mention_text[mid] = extent_text
+            entity_mention_text[mid] = span_text
             bucket = entities_by_type.setdefault(full_type, [])
-            if extent_text not in bucket:
-                bucket.append(extent_text)
+            if span_text not in bucket:
+                bucket.append(span_text)
 
     # ----- relations -----
     relations_out: List[Dict[str, Dict[str, str]]] = []
@@ -269,7 +296,12 @@ def parse_apf(
                 ):
                     stats["filtered_event_args"] += 1
                     continue
-                arg_text = _first_charseq_text(arg, "extent")
+                # In head mode reuse the entity mention's head surface so a filler
+                # matches its entity form; value/time args (no entity mention) and
+                # extent mode fall back to the argument's own extent charseq.
+                arg_text = entity_mention_text.get(refid) if use_head else None
+                if not arg_text:
+                    arg_text = _first_charseq_text(arg, "extent")
                 if not arg_text or arg_text not in text:
                     continue
                 key = (role, arg_text)
@@ -335,6 +367,12 @@ def main() -> int:
     parser.add_argument("--no-subtypes", action="store_true",
                         help="Use only top-level event/entity/relation types "
                              "(drop SUBTYPE everywhere).")
+    parser.add_argument("--extent-offsets", action="store_true",
+                        help="Use each mention's full extent span (with "
+                             "determiners/modifiers, e.g. 'the vice president') "
+                             "instead of the default head span ('president'). "
+                             "Head is the default because it drops articles and "
+                             "modifiers that inflate the surface vocabulary.")
     parser.add_argument("--no-stratify", action="store_true",
                         help="Disable stratified split; write a single file at --out.")
     parser.add_argument("--split-ratios", type=parse_ratios, default=(0.8, 0.1, 0.1),
@@ -354,6 +392,7 @@ def main() -> int:
         raise SystemExit(f"input directory not found: {args.input}")
 
     keep_subtypes = not args.no_subtypes
+    use_head = not args.extent_offsets
     mention_filter = load_mention_filter(args.filter_config, "ace2005")
     stats: Counter = Counter()
 
@@ -364,7 +403,8 @@ def main() -> int:
         if 0 <= args.max_records <= len(records):
             break
         rec = parse_apf(apf_path, keep_subtypes=keep_subtypes,
-                        mention_filter=mention_filter, stats=stats)
+                        mention_filter=mention_filter, stats=stats,
+                        use_head=use_head)
         if rec is None:
             skipped += 1
             continue
