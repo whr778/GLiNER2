@@ -139,6 +139,11 @@ class SpanExtractorModel(BaseExtractorModel):
             )
         elif config.counting_layer == "count_lstm_v2":
             self.count_embed = CountLSTMv2(hidden_size=self.hidden_size)
+        else:
+            raise ValueError(
+                f"unknown counting_layer {config.counting_layer!r}; expected one of "
+                "'count_lstm', 'count_lstm_moe', 'count_lstm_v2'"
+            )
 
         # LoRA adapter state
         self._lora_layers = {}

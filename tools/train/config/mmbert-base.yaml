@@ -7,6 +7,7 @@ model:
   struct_pos_weight: 8.0
   focal_gamma: 2.0
   focal_alpha: 0.25
+  counting_layer: count_lstm_v2
 
 training:
   output_dir: ./out/mmbert-base
