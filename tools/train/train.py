@@ -76,6 +76,7 @@ from typing import Dict, List
 import yaml
 
 from gliner2 import GLiNER2
+from gliner2.inference.schema import derive_schema
 from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics, sweep_thresholds
 from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID, _selection_score, make_sweeping_compute_metrics
 from gliner2.training.trainer import ExtractorDataset, GLiNER2Trainer, TrainingConfig
@@ -739,6 +740,22 @@ def main(config_path: str) -> None:
             print("[hf_streaming] note: disk corpora/event_files are ignored for the "
                   "train stream (streaming replaces the train source).")
         train_data, eval_data, test_data = _build_streaming_data(data["hf_streaming"], config)
+
+    # Co-locate the training schema on the model so it ships in config.json (best/
+    # final checkpoints + HF Hub) and every consumer -- the extractor, the viewer --
+    # gets the ontology this model was trained on. Open-vocabulary default, not a
+    # limit. Skipped for streaming (no bounded record set to union over).
+    if is_main and not streaming and train_data:
+        recs = train_data if isinstance(train_data[0], dict) else _read_records(train_data)
+        model.config.default_schema = derive_schema(recs) or None
+        sch = model.config.default_schema or {}
+        ov = sch.get("open_vocab") or []
+        print(f"[schema] co-located training schema on the model -> config.json: "
+              f"{len(sch.get('entities') or [])} entity types, "
+              f"{len(sch.get('events') or {})} event types, "
+              f"{len(sch.get('relations') or [])} relations, "
+              f"{len(sch.get('classifications') or [])} classification tasks"
+              + (f"; open-vocab: {', '.join(ov)}" if ov else ""))
 
     # Resolve the eval: block (threshold_sweep, windowed chunk_size/chunk_overlap,
     # global_decode, stopwords) into inference settings. See the eval CLI in

@@ -5,7 +5,7 @@ import InputPanel from "@/components/InputPanel";
 import SchemaPanel from "@/components/SchemaPanel";
 import ResultView from "@/components/ResultView";
 import ModelManager from "@/components/ModelManager";
-import { addModel, extract, getModels, getPresets } from "@/lib/api";
+import { addModel, extract, getModelSchema, getModels, getPresets } from "@/lib/api";
 import { matchCorpusPreset } from "@/lib/models";
 import {
   DEFAULT_OPTIONS,
@@ -39,18 +39,37 @@ export default function Home() {
     getModels().then(setModels).catch(() => {});
   }, []);
 
-  // Selecting a model loads the schema it was trained on (e.g. the casie model
-  // -> the `corpus: casie` events), so its ontology matches out of the box.
+  // Selecting a model loads the schema it was trained on so its ontology matches
+  // out of the box. Prefer the schema the model SHIPS in its config
+  // (default_schema); fall back to corpus-name matching for older checkpoints
+  // that predate co-located schemas. Either way the user can still pick another
+  // preset or edit the JSON below.
   useEffect(() => {
     const m = options.model?.trim();
-    if (!m || m === appliedModel.current || presets.length === 0) return;
-    const preset = matchCorpusPreset(m, presets);
-    if (preset) {
-      setSchema(preset.schema);
-      setPresetName(preset.name); // reflect it in the "Load a preset" dropdown
-      setSchemaNote(`Schema loaded from ${preset.name} to match the selected model.`);
+    if (!m || m === appliedModel.current) return;
+    let cancelled = false;
+    (async () => {
+      const shipped = await getModelSchema(m);
+      if (cancelled) return;
+      if (shipped && Object.keys(shipped).length > 0) {
+        setSchema(shipped);
+        setPresetName(""); // the shipped schema is not a named preset
+        setSchemaNote("Loaded the schema shipped with this model. You can still pick another below.");
+        appliedModel.current = m;
+        return;
+      }
+      if (presets.length === 0) return; // fallback needs presets; wait for them
+      const preset = matchCorpusPreset(m, presets);
+      if (preset) {
+        setSchema(preset.schema);
+        setPresetName(preset.name); // reflect it in the "Load a preset" dropdown
+        setSchemaNote(`Schema loaded from ${preset.name} to match the selected model.`);
+      }
       appliedModel.current = m;
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [options.model, presets]);
 
   async function onExtract() {

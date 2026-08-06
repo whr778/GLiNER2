@@ -185,6 +185,13 @@ class BaseExtractorModel(PreTrainedModel):
     def task_module_names(self) -> Tuple[str, ...]:
         raise NotImplementedError
 
+    def default_schema(self) -> Optional[dict]:
+        """The extraction schema this model was trained on, if one shipped in the
+        config (entities / events / relations / classifications). A recommended
+        default -- the model is open-vocabulary and not limited to it. ``None`` for
+        checkpoints saved before schemas were co-located."""
+        return getattr(self.config, "default_schema", None)
+
     def save_pretrained(self, *args, **kwargs):
         self.config.architecture = getattr(self, "architecture", self.config.architecture)
         self.config.architectures = [type(self).__name__]

@@ -691,6 +691,11 @@ class ExtractorConfig(PretrainedConfig):
         max_width: int = None,
         counting_layer: str = None,
         config_version: int = None,
+        # The extraction schema this model was trained on (entities / events /
+        # relations / classifications). Open-vocabulary at inference, so this is a
+        # recommended default ontology, not a constraint. Ships in config.json so
+        # it travels with the checkpoint (disk + HF Hub).
+        default_schema: Mapping[str, Any] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -703,6 +708,7 @@ class ExtractorConfig(PretrainedConfig):
         self.model_name = model_name
         self.token_pooling = token_pooling
         self.max_len = max_len
+        self.default_schema = dict(default_schema) if default_schema else None
         # Transformers may serialize its reserved attention field as null;
         # treat that as this extractor's documented default.
         self.attn_implementation = str(attn_implementation or "sdpa")

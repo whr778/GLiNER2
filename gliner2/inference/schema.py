@@ -13,9 +13,87 @@ import json
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Pattern, Union
+from typing import Any, Dict, Iterable, List, Literal, Optional, Pattern, Union
 
 from gliner2.inference.schema_model import SchemaInput
+
+
+# Beyond this many distinct labels a dimension is open-vocabulary, not a fixed
+# ontology: the broad gliner corpora carry ~19k-40k distinct entity strings, so
+# unioning them yields a meaningless "schema". Its concrete labels are omitted
+# (not capped -- a truncated list would look like a complete ontology) and the
+# task type is instead recorded under the ``open_vocab`` marker. The largest
+# curated ontology here is docee at 356 entity types, so 1000 keeps real
+# ontologies with generous headroom.
+_OPEN_VOCAB_LIMIT = 1000
+
+
+def derive_schema(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Union a multi-task extraction schema from the gold ``output`` of records.
+
+    Collects every entity label, every event type with its argument roles, every
+    relation name, and every classification task + labels seen across the records.
+    Trigger-only event types (no roles) are dropped, matching eval. A dimension
+    with more than ``_OPEN_VOCAB_LIMIT`` distinct labels is open-vocabulary: its
+    concrete labels are omitted and the task type is listed under an ``open_vocab``
+    marker instead, so consumers still see the model does that task (and can
+    scaffold the field) while the concrete dims stay runnable. ``Schema.from_dict``
+    ignores ``open_vocab``. Used to co-locate the schema a model was trained on
+    into its config, and by the viewer to derive corpus presets.
+    """
+    entities: set = set()
+    events: Dict[str, set] = {}
+    relations: set = set()
+    classifications: Dict[str, set] = {}
+    for rec in records:
+        out = (rec or {}).get("output") or {}
+        for label in out.get("entities") or {}:
+            entities.add(label)
+        for ev in out.get("events") or []:
+            etype = ev.get("event_type")
+            if not etype:
+                continue
+            roles = events.setdefault(etype, set())
+            for arg in ev.get("arguments") or []:
+                if arg.get("role"):
+                    roles.add(arg["role"])
+        for rel in out.get("relations") or []:
+            relations.update(rel or {})
+        for c in out.get("classifications") or []:
+            if c.get("task") and c.get("labels"):
+                classifications.setdefault(c["task"], set()).update(c["labels"])
+
+    schema: Dict[str, Any] = {}
+    open_vocab: list = []
+    if len(entities) > _OPEN_VOCAB_LIMIT:
+        open_vocab.append("entities")
+    elif entities:
+        schema["entities"] = sorted(entities)
+    typed = {t: sorted(r) for t, r in events.items() if r}
+    if len(typed) > _OPEN_VOCAB_LIMIT:
+        open_vocab.append("events")
+    elif typed:
+        schema["events"] = {t: typed[t] for t in sorted(typed)}
+    if len(relations) > _OPEN_VOCAB_LIMIT:
+        open_vocab.append("relations")
+    elif relations:
+        # relations schema is a list of relation names (Schema.from_dict form).
+        schema["relations"] = sorted(relations)
+    # A classification task needs >= 2 labels to be a valid entry; drop degenerate
+    # single-label tasks (as trigger-only events are dropped above). A task past the
+    # limit is open-vocabulary.
+    multi = {t: sorted(labels) for t, labels in classifications.items()
+             if 2 <= len(labels) <= _OPEN_VOCAB_LIMIT}
+    if multi:
+        schema["classifications"] = [{"task": t, "labels": multi[t]} for t in sorted(multi)]
+    if any(len(labels) > _OPEN_VOCAB_LIMIT for labels in classifications.values()):
+        open_vocab.append("classifications")
+    # Task types seen in training but too open-vocabulary to pin to a label set:
+    # recorded (not dropped) so consumers advertise the capability and scaffold the
+    # field. Concrete dims above stay runnable; Schema.from_dict ignores this key.
+    if open_vocab:
+        schema["open_vocab"] = open_vocab
+    return schema
 
 
 # =============================================================================

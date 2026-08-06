@@ -32,48 +32,13 @@ from typing import Any, Dict, Optional
 def _derive_schema(jsonl_path: str) -> Dict[str, Any]:
     """Build a full multi-task schema from the gold ``output`` of a JSONL corpus:
     every entity label, every event type with its roles, every relation name,
-    and every classification task+labels the model was trained on."""
-    entities: set = set()
-    events: Dict[str, set] = {}
-    relations: set = set()
-    classifications: Dict[str, set] = {}
+    and every classification task+labels the model was trained on. Thin wrapper
+    over ``gliner2.inference.schema.derive_schema`` (the shared union logic)."""
+    from gliner2.inference.schema import derive_schema
 
     with open(jsonl_path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            out = json.loads(line).get("output") or {}
-            for label in out.get("entities") or {}:
-                entities.add(label)
-            for ev in out.get("events") or []:
-                etype = ev.get("event_type")
-                if not etype:
-                    continue
-                roles = events.setdefault(etype, set())
-                for arg in ev.get("arguments") or []:
-                    if arg.get("role"):
-                        roles.add(arg["role"])
-            for rel in out.get("relations") or []:
-                relations.update(rel or {})
-            for c in out.get("classifications") or []:
-                if c.get("task") and c.get("labels"):
-                    classifications.setdefault(c["task"], set()).update(c["labels"])
-
-    schema: Dict[str, Any] = {}
-    if entities:
-        schema["entities"] = sorted(entities)
-    # An event type needs >= 1 role; trigger-only types are dropped (as in eval).
-    typed = {t: sorted(r) for t, r in events.items() if r}
-    if typed:
-        schema["events"] = {t: typed[t] for t in sorted(typed)}
-    if relations:
-        schema["relations"] = [{n: {"head": "", "tail": ""}} for n in sorted(relations)]
-    if classifications:
-        schema["classifications"] = [
-            {"task": t, "labels": sorted(classifications[t])} for t in sorted(classifications)
-        ]
-    return schema
+        records = [json.loads(line) for line in f if line.strip()]
+    return derive_schema(records)
 
 
 def _autodiscover_schema_file(model_path: str) -> Optional[str]:

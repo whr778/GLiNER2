@@ -167,6 +167,21 @@ def get_models() -> Dict[str, Any]:
     return {"models": list_models(DEFAULT_MODEL)}
 
 
+@app.get("/model-schema")
+def model_schema(model: str) -> Dict[str, Any]:
+    """The extraction schema co-located in a model's config, if any.
+
+    Read from config.json only (no weights loaded) so the frontend can offer the
+    model's own ontology the instant a model is selected. ``None`` for models
+    saved before schemas were co-located; the frontend then falls back to
+    corpus-name matching.
+    """
+    from gliner2.configuration import ExtractorConfig
+
+    cfg = ExtractorConfig.from_pretrained(model)
+    return {"model": model, "schema": getattr(cfg, "default_schema", None)}
+
+
 @app.post("/models")
 def create_model(entry: ModelEntry) -> Dict[str, Any]:
     from models import add_model, list_models

@@ -56,6 +56,20 @@ export async function getModels(): Promise<ModelEntry[]> {
   return body.models ?? [];
 }
 
+// The schema a model ships in its config (default_schema), or null if it has
+// none / can't be read. Null on failure by design: the caller falls back to
+// corpus-name matching, so a missing endpoint or bad model id degrades quietly.
+export async function getModelSchema(model: string): Promise<Record<string, any> | null> {
+  try {
+    const res = await fetch(`${API_BASE}/model-schema?model=${encodeURIComponent(model)}`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body.schema ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function addModel(path: string, label?: string): Promise<ModelEntry[]> {
   const res = await fetch(`${API_BASE}/models`, {
     method: "POST",
