@@ -19,8 +19,8 @@ training:
   task_lr: 3.0e-4
   warmup_ratio: 0.05
   scheduler_type: cosine_restarts
-  bf16: true
-  fp16: false
+  bf16: false
+  fp16: true
   max_grad_norm: 1.0
   eval_strategy: epoch
   metric_for_best: eval_loss   # multi-task corpus: select the best all-round checkpoint
