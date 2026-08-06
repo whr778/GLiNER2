@@ -7,6 +7,7 @@ import ResultView from "@/components/ResultView";
 import ModelManager from "@/components/ModelManager";
 import { addModel, extract, getModelSchema, getModels, getPresets } from "@/lib/api";
 import { matchCorpusPreset } from "@/lib/models";
+import { pruneSchema, scaffoldSchema } from "@/lib/schema";
 import {
   DEFAULT_OPTIONS,
   type ExtractOptions,
@@ -52,9 +53,16 @@ export default function Home() {
       const shipped = await getModelSchema(m);
       if (cancelled) return;
       if (shipped && Object.keys(shipped).length > 0) {
-        setSchema(shipped);
+        // Open-vocab task types ship as an `open_vocab` marker; scaffold them into
+        // empty fields the user can fill (pruned back out at extract time).
+        const ov: string[] = shipped.open_vocab || [];
+        setSchema(scaffoldSchema(shipped));
         setPresetName(""); // the shipped schema is not a named preset
-        setSchemaNote("Loaded the schema shipped with this model. You can still pick another below.");
+        setSchemaNote(
+          ov.length
+            ? `Loaded the schema shipped with this model. It is open-vocabulary for ${ov.join(", ")} -- add labels to the empty field${ov.length > 1 ? "s" : ""}. You can still pick another below.`
+            : "Loaded the schema shipped with this model. You can still pick another below.",
+        );
         appliedModel.current = m;
         return;
       }
@@ -78,8 +86,10 @@ export default function Home() {
     setResp(null); // clear the previous results immediately
     setUsedSchema(null);
     try {
-      setResp(await extract(text, schema, options));
-      setUsedSchema(schema); // snapshot the schema these results came from
+      // Prune empty scaffold fields + the open_vocab marker; send a valid schema.
+      const sent = pruneSchema(schema);
+      setResp(await extract(text, sent, options));
+      setUsedSchema(sent); // snapshot the schema these results actually ran with
 
       // Remember a newly-used model once it has successfully extracted.
       const m = options.model?.trim();
