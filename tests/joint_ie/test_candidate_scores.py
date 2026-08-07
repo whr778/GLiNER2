@@ -10,6 +10,7 @@ from gliner2.joint_ie.candidate_scores import (
     CandidateScoreSet,
     MentionScore,
     ScoredRelationEdge,
+    boundary_candidates_to_candidate_score_set,
     candidate_score_set_to_problem,
     score_lattice_to_candidate_score_set,
 )
@@ -78,3 +79,28 @@ def test_score_lattice_to_candidate_score_set_maps_halfopen_spans():
     assert len(high) == 1
     m = high[0]
     assert (m.entity_type, m.start, m.end) == ("a", 0, 1)  # inclusive 0 -> half-open [0,1)
+
+
+def test_boundary_candidates_to_candidate_score_set_maps_sparse():
+    # A minimal boundary CandidateTensorBatch: B=1, Q=2 ("person","org"), C=2.
+    from gliner2.models.outputs import CandidateTensorBatch
+
+    indices = torch.tensor([[[[0, 2], [3, 5]], [[0, 2], [0, 0]]]])   # [1,2,2,2] half-open
+    pair = torch.tensor([[[5.0, -5.0], [5.0, 0.0]]])                 # [1,2,2] mention scores
+    valid = torch.tensor([[[True, True], [True, False]]])            # [1,2,2]
+    qmask = torch.tensor([[True, True]])                             # [1,2]
+    cands = CandidateTensorBatch(
+        indices=indices, proposal_logits=None, pair_logits=pair,
+        valid_mask=valid, query_mask=qmask,
+    )
+
+    css = boundary_candidates_to_candidate_score_set(
+        cands, ["person", "org"], "Alice works at Acme"
+    )
+    assert len(css.mentions) == 3  # query0: 2 valid, query1: 1 valid (second is padding)
+    high = {(m.entity_type, m.start, m.end) for m in css.mentions if m.probability > 0.5}
+    assert high == {("person", 0, 2), ("org", 0, 2)}
+
+    problem = candidate_score_set_to_problem(css)  # shared builder, unchanged
+    assert len(problem.nodes) == 2
+    assert {n.entity_type for n in problem.nodes} == {"person", "org"}

@@ -106,6 +106,51 @@ def score_lattice_to_candidate_score_set(lattice: Any) -> CandidateScoreSet:
     return CandidateScoreSet(text=lattice.text, mentions=tuple(mentions))
 
 
+def boundary_candidates_to_candidate_score_set(
+    candidates: Any,
+    query_types: Sequence[str],
+    text: str,
+    sample_index: int = 0,
+    *,
+    pair_temperature: float = 1.0,
+) -> CandidateScoreSet:
+    """Map one sample's boundary ``CandidateTensorBatch`` to a sparse score set (mentions).
+
+    The boundary architecture produces sparse candidates directly, so this is a flat walk
+    over real ``(query, candidate)`` cells -- no lattice. Each candidate becomes a
+    :class:`MentionScore` typed by ``query_types[query_id]`` (the schema field/role of that
+    query), with the span from ``indices`` and the score from ``pair_logits`` (the
+    mention-in-context score the boundary decode itself uses). Relation edges are built
+    separately from the relation pair generator -> :class:`ScoredRelationEdge`.
+    """
+    idx = candidates.indices[sample_index]          # [Q, C, 2]
+    pair = candidates.pair_logits[sample_index]     # [Q, C]
+    valid = candidates.valid_mask[sample_index]     # [Q, C]
+    qmask = candidates.query_mask[sample_index]     # [Q]
+    num_queries, num_cands = int(valid.shape[0]), int(valid.shape[1])
+
+    mentions: List[MentionScore] = []
+    for q in range(num_queries):
+        if not bool(qmask[q]):
+            continue
+        entity_type = query_types[q] if q < len(query_types) else str(q)
+        for c in range(num_cands):
+            if not bool(valid[q, c]):
+                continue
+            logit = float(pair[q, c]) / pair_temperature
+            mentions.append(
+                MentionScore(
+                    query_id=q,
+                    entity_type=entity_type,
+                    start=int(idx[q, c, 0]),
+                    end=int(idx[q, c, 1]),
+                    logit=logit,
+                    probability=sigmoid(logit),
+                )
+            )
+    return CandidateScoreSet(text=text, mentions=tuple(mentions))
+
+
 @dataclass(frozen=True)
 class ScoredRelationEdge:
     """A scored (head, tail) relation proposal referencing mention keys."""
@@ -174,5 +219,6 @@ __all__ = [
     "CandidateScoreSet",
     "ScoredRelationEdge",
     "score_lattice_to_candidate_score_set",
+    "boundary_candidates_to_candidate_score_set",
     "candidate_score_set_to_problem",
 ]
