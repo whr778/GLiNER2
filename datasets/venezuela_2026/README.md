@@ -44,9 +44,29 @@ USGS PAGER predicted a possible >10,000 — treated as a forecast bound, **not**
 
 ## Status / remaining (V1 → V5)
 
-- **V1 (this):** layout + GT skeleton + starter sources + `ingest.py` scaffold. ✅
+- **V1:** layout + GT skeleton + starter sources + `ingest.py` scaffold. ✅
+- **V3 first pass (4 of 6 starter sources; 2 CNN URLs are HTTP-451 legally blocked):** ✅
 - **V2:** expand + finalize the GT (more official points, source-attributed).
-- **V3:** expand `sources.jsonl` (hourly Jun 24-~Jul 1 liveblog snapshots, daily after),
-  cache text, run `ingest.py` → `observations.jsonl`. Also run the zero-shot base as an arm.
+- **V3 full:** expand `sources.jsonl` (hourly Jun 24-~Jul 1 liveblog snapshots, daily after),
+  cache text, re-run `ingest.py`. Also run the zero-shot base as an arm.
 - **V4:** track + score vs `trajectory.jsonl` at official timestamps, vs baselines.
 - **V5:** write up as Paper 1's real double-blind.
+
+## V3 first-pass finding — synthetic→real transfer (4 sources)
+
+The fine-tuned extractor (synthetic sonnet-5 training) on **real** Venezuela news:
+- **dead / injured transfer holds.** Bound the correct figures amid heavy distractors —
+  **188, 1,520/1,500, 164, 1,719, 5,034** — not the USGS 10,000 *forecast*, the 1812
+  historical 30,000, 15,866 homeless, 30,000 workers, 2,700 experts, or magnitudes 7.2/7.5.
+- **Two real-world failure modes** the synthetic data didn't cover:
+  1. **Predictions.** A USGS "probability of exceeding 10,000" was mis-bound to `dead`/
+     `missing` — a forecast, not a current toll. Needs a filter (or the tracker's innovation
+     gate should reject the implausible-high spike).
+  2. **`missing`.** Real articles state missing as "thousands"/"tens of thousands" with **no
+     clean number**, so the model grabs a nearby figure (10,000, 164, 30,000). `missing` is
+     unreliable on real news — as on synthetic, but here for a different reason (no figure to
+     bind). Recommend: drop `missing` for the real eval, or add an "abstain when no number"
+     behavior.
+- **Implication:** dead/injured are trackable on real news; predictions + `missing` are the
+  gaps. Confidence (0.9 cut) did *not* filter the mis-binds — the tracker's outlier gate is
+  the defense.

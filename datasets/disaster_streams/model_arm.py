@@ -79,6 +79,15 @@ def normalize(text: str, spans: dict, source_span: str, thr: float):
     return out, src
 
 
+def extract_one(ex, schema, text: str, thr: float = 0.0):
+    """Single-text extraction -> ({role:{value,qualifier,confidence}}, source). Same
+    normalize path as the cached batch flow, so external callers (e.g. the Venezuela
+    ingest) match the synthetic eval exactly."""
+    rec = (ex.extract(text, schema, include_confidence=True).get("casualty_report") or [{}])[0]
+    spans = {r: dict(zip(("span", "confidence"), _cell(rec.get(r)))) for r in ROLES}
+    return normalize(text, spans, _cell(rec.get("source"))[0], thr)
+
+
 def _load_groups(src_dir: Path, n_streams: int):
     groups = defaultdict(lambda: {"text": "", "gt": {}})
     for line in (src_dir / "observations.jsonl").open(encoding="utf-8"):

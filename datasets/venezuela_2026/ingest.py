@@ -58,7 +58,7 @@ def main(argv=None) -> None:
         if not cp.exists():
             missing.append(s)
             continue
-        pred, _ = model_arm.model_extract(ex, schema, cp.read_text(encoding="utf-8"), args.threshold)
+        pred, _ = model_arm.extract_one(ex, schema, cp.read_text(encoding="utf-8"), args.threshold)
         th = t_hours(s["published"])
         for role in ROLES:
             if role in pred:
