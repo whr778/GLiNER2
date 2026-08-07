@@ -30,6 +30,25 @@ SOURCES = ("official", "major_outlet", "preliminary")
 SOURCE_NOISE = {"official": (0.05, 0.97), "major_outlet": (0.12, 1.0), "preliminary": (0.25, 1.0)}
 GRID_HOURS = 6  # ground-truth trajectory sampling interval
 
+# Regime knobs: rate0 (reports/day), source weights (official, major, preliminary),
+# qualifier weights for rising roles (point, at_least, about, interval) and for
+# missing (feared, about, interval, at_least). "hard" = sparse + unreliable + hedged.
+_NORMAL = dict(rate0=(8.0, 30.0), src_w=(0.50, 0.35, 0.15),
+               qual_rise=(0.40, 0.25, 0.20, 0.15), qual_miss=(0.40, 0.30, 0.20, 0.10))
+_HARD_KNOBS = dict(rate0=(2.0, 6.0), src_w=(0.20, 0.30, 0.50),
+                   qual_rise=(0.15, 0.40, 0.15, 0.30), qual_miss=(0.50, 0.15, 0.25, 0.10))
+# "hard" flips all three knobs; the single-knob regimes isolate each cause. Trajectory
+# params draw before rate0, so ALL regimes share byte-identical trajectories (paired eval).
+REGIMES = {
+    "normal": dict(_NORMAL),
+    "hard":   dict(_HARD_KNOBS),
+    "sparse":     {**_NORMAL, "rate0": _HARD_KNOBS["rate0"]},
+    "unreliable": {**_NORMAL, "src_w": _HARD_KNOBS["src_w"]},
+    "censored":   {**_NORMAL, "qual_rise": _HARD_KNOBS["qual_rise"],
+                              "qual_miss": _HARD_KNOBS["qual_miss"]},
+}
+REGIME = REGIMES["normal"]  # set in main()
+
 
 @dataclass
 class StreamParams:
@@ -53,7 +72,7 @@ def _sample_params(rng: random.Random) -> StreamParams:
         gamma=rng.uniform(0.10, 0.40),
         lam=rng.uniform(0.08, 0.25),
         days=rng.uniform(14.0, 45.0),
-        rate0=rng.uniform(8.0, 30.0),
+        rate0=rng.uniform(*REGIME["rate0"]),
     )
 
 
@@ -90,12 +109,12 @@ def _bucket(v: float) -> Tuple[str, int]:
 
 def _observe(role: str, true_val: float, rng: random.Random) -> Dict:
     """One hedged, source-attributed observation of a role's true value."""
-    src = rng.choice(SOURCES)
+    src = rng.choices(SOURCES, weights=REGIME["src_w"])[0]
     sigma, bias = SOURCE_NOISE[src]
     if role == "missing":
-        q = rng.choices(["feared", "about", "interval", "at_least"], [0.4, 0.3, 0.2, 0.1])[0]
+        q = rng.choices(["feared", "about", "interval", "at_least"], REGIME["qual_miss"])[0]
     else:
-        q = rng.choices(["point", "at_least", "about", "interval"], [0.4, 0.25, 0.2, 0.15])[0]
+        q = rng.choices(["point", "at_least", "about", "interval"], REGIME["qual_rise"])[0]
     base = max(0.0, true_val * bias)
     bucket: Optional[str] = None
     if q == "point":
@@ -171,15 +190,21 @@ def main(argv=None) -> None:
     ap.add_argument("--n-val", type=int, default=60)
     ap.add_argument("--n-test", type=int, default=60)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--regime", choices=list(REGIMES), default="normal",
+                    help="'hard' = sparse reporting + unreliable sources + heavy censoring")
     ap.add_argument("--text", choices=["none", "template"], default="none",
                     help="attach a 'text' field per observation (template = free placeholder; "
                          "the sonnet5 LLM realizer is a separate step)")
     args = ap.parse_args(argv)
 
+    global REGIME
+    REGIME = REGIMES[args.regime]
     out = Path(args.out)
     with_text = args.text == "template"
     counts = {}
     for split, n in (("train", args.n_train), ("val", args.n_val), ("test", args.n_test)):
+        if n <= 0:
+            continue
         obs_all: List[Dict] = []
         traj_all: List[Dict] = []
         for i in range(n):
@@ -193,8 +218,9 @@ def main(argv=None) -> None:
         counts[split] = {"streams": n, "observations": len(obs_all), "trajectory_points": len(traj_all)}
         print(f"[{split}] {n} streams, {len(obs_all)} observations, {len(traj_all)} traj points")
 
-    config = {"seed": args.seed, "text": args.text, "grid_hours": GRID_HOURS,
-              "roles": list(ROLES), "sources": list(SOURCES), "counts": counts}
+    config = {"seed": args.seed, "regime": args.regime, "text": args.text,
+              "grid_hours": GRID_HOURS, "roles": list(ROLES), "sources": list(SOURCES),
+              "regime_params": REGIME, "counts": counts}
     (out).mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[config] wrote {out / 'config.json'}")

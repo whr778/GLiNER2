@@ -117,7 +117,8 @@ synthetic-corpus direction.
 ## 10. Still open (the crux)
 
 - **Finalize the state vector + dynamics models** per target domain (§3, decision #2) —
-  this is the "does the EKF earn its keep" crux.
+  the "does the EKF earn its keep" crux. **Answered for mass-casualty streams in §14**
+  (yes; edge widens under unreliability/censoring, shrinks under sparsity).
 - **Domain/dataset anchor** — which evolving-quantitative events; synthetic vs a real
   corpus (e.g. cross-doc event coref, ECB+).
 - **Normalization layer** design (numbers/dates/amounts → continuous + noise model).
@@ -184,3 +185,38 @@ datasets/venezuela_2026/sources.jsonl         # url, outlet, timestamp (no full 
 
 Generator: `datasets/disaster_streams/generate.py` (parametric = free; `--realize`
 adds the sonnet-5 text layer for the val/test subset).
+
+## 14. Harder-regime ablation — the EKF earns its keep (+ a measurement-model fix)
+
+Date: 2026-08-07. Free/CPU, validated on val + held-out test. Resolves the §10 crux.
+
+`generate.py --regime` stresses the *observation* regime by flipping three knobs from
+`normal`: **sparse** reporting (rate0 8-30 → 2-6), **unreliable** sources (official/major/
+prelim 50/35/15 → 20/30/50), **heavy censoring** (more at_least/interval/feared).
+Trajectory params draw before rate0, so **every regime shares byte-identical ground
+truth** — the same 40 disasters, only the reporting differs (paired eval).
+
+**The naive prediction (edge widens under stress) was falsified — and the failure was a
+bug, not a regime effect.** Single-knob decomposition isolated it (rise-role EKF penalty
+over `last_value`): sparse **+0.064**, unreliable **+0.110 (dominant)**, censored **+0.010
+(negligible)**. Root cause: measurement noise `R = (sig·value)²` scaled by the *observed*
+value → a low report got a small R (over-trusted) → systematic **downward drag on a rising
+toll**, amplified by noisy sources. The one-sided `at_least` handling for censoring was fine.
+
+**Fix:** scale R by the *estimate*, not the raw reading (`_R_at(o, ref)` — linearize the
+measurement noise around the state). Tracker then beats `last_value` in every regime:
+
+| regime | last_value | EKF | MoE_gate |
+|---|---|---|---|
+| normal | 0.194 | **0.121** | 0.123 |
+| hard | 0.265 | 0.244 | **0.240** |
+| hard-test (held out) | 0.285 | 0.236 | **0.234** |
+
+(overall normalized RMSE, lower better; ~25-40% over the baseline, decay unregressed).
+
+**Answer to §10:** the EKF earns its keep — and the edge **widens under unreliability +
+censoring** (noise-weighting + one-sided updates pay off) and **shrinks under sparsity**
+(less to fuse → converges to `last_value`). Two follow-ons: (a) the fixed EKF now *ties*
+the hand-set MoE gate → motivates a **learned router** (decision #3, next build);
+(b) the win rides on a correct measurement model → **Venezuela** (real, model-mismatched)
+is the true test.

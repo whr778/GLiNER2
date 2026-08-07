@@ -1,6 +1,6 @@
 {
   "seed": 42,
-  "regime": "normal",
+  "regime": "hard",
   "text": "none",
   "grid_hours": 6,
   "roles": [
@@ -15,41 +15,41 @@
   ],
   "regime_params": {
     "rate0": [
-      8.0,
-      30.0
+      2.0,
+      6.0
     ],
     "src_w": [
-      0.5,
-      0.35,
-      0.15
+      0.2,
+      0.3,
+      0.5
     ],
     "qual_rise": [
+      0.15,
       0.4,
-      0.25,
-      0.2,
-      0.15
+      0.15,
+      0.3
     ],
     "qual_miss": [
-      0.4,
-      0.3,
-      0.2,
+      0.5,
+      0.15,
+      0.25,
       0.1
     ]
   },
   "counts": {
     "train": {
       "streams": 200,
-      "observations": 35814,
+      "observations": 7483,
       "trajectory_points": 23929
     },
     "val": {
       "streams": 40,
-      "observations": 7635,
+      "observations": 1622,
       "trajectory_points": 4702
     },
     "test": {
       "streams": 40,
-      "observations": 6223,
+      "observations": 1413,
       "trajectory_points": 4607
     }
   }

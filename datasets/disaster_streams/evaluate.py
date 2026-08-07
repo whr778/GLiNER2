@@ -27,8 +27,7 @@ ROLES = RISE_ROLES + DECAY_ROLES
 
 SRC_REL_SIGMA = {"official": 0.06, "major_outlet": 0.12, "preliminary": 0.25}
 QUAL_FACTOR = {"point": 1.0, "about": 1.6, "interval": 2.0, "feared": 2.5, "at_least": 1.2}
-BETA = 0.15   # rise-rate prior (per day) -- gentle; the asymptote x* is estimated
-GAMMA = 0.25  # decay-rate prior (per day)
+GAMMA = 0.25  # missing-decay rate prior (per day)
 
 # MoE gate (Reading B): weight on the tracked state = 1 - trust(last report)*recency.
 SRC_TRUST = {"official": 1.0, "major_outlet": 0.7, "preliminary": 0.4}
@@ -36,9 +35,13 @@ QUAL_TRUST = {"point": 1.0, "about": 0.8, "at_least": 0.5, "interval": 0.4, "fea
 GATE_TAU = 12.0  # hours; recency half-scale
 
 
-def _R(o: Dict) -> float:
+def _R_at(o: Dict, ref: float) -> float:
+    """Measurement-noise variance scaled by a reference LEVEL (the current estimate),
+    not the observed value. Multiplicative noise -> linearize R around the state; scaling
+    by the raw report over-trusts a low reading and drags a rising estimate downward
+    (the failure the harder-regime ablation exposed under unreliable sources)."""
     sig = SRC_REL_SIGMA[o["source"]] * QUAL_FACTOR[o["qualifier"]]
-    return (sig * max(o["value"], 1.0)) ** 2
+    return (sig * max(ref, 1.0)) ** 2
 
 
 # --------------------------------------------------------------------------- #
@@ -75,28 +78,6 @@ def est_running_max(obs: List[Dict], grid: List[float]) -> List[float]:
 # --------------------------------------------------------------------------- #
 # EKF
 # --------------------------------------------------------------------------- #
-def _predict_rise(mu, P, t_cur, t_new):
-    dt = max(0.0, (t_new - t_cur) / 24.0)
-    F = np.array([[1 - BETA * dt, BETA * dt], [0.0, 1.0]])
-    q = max(dt, 1e-3)
-    Q = np.diag([(0.10 * max(mu[0], 1.0) * q) ** 2, (0.04 * max(mu[1], 1.0) * q) ** 2])
-    return F @ mu, F @ P @ F.T + Q, t_new
-
-
-def _update_rise(mu, P, o):
-    z, R = o["value"], _R(o)
-    H = np.array([[1.0, 0.0]])
-    pred = float(mu[0])                    # H = [1,0]
-    if o["qualifier"] == "at_least" and z <= pred:
-        return mu, P                      # a lower bound below our estimate is uninformative
-    S = float(P[0, 0]) + R
-    K = (P @ H.T) / S
-    mu = mu + K.flatten() * (z - pred)
-    P = (np.eye(2) - K @ H) @ P
-    mu[1] = max(mu[1], mu[0])             # asymptote >= current (rise, not a hard monotone clamp on x)
-    return mu, P
-
-
 def est_ekf_rise(obs: List[Dict], grid: List[float]) -> List[float]:
     """1D random-walk smoother, censoring-aware. Holds between reports (no rise
     over-shoot); fuses reports weighted by source/qualifier; ignores 'at least'
@@ -117,7 +98,7 @@ def est_ekf_rise(obs: List[Dict], grid: List[float]) -> List[float]:
                 continue
             P = grow(mu, P, t_cur, o["t_hours"]); t_cur = o["t_hours"]
             if not (o["qualifier"] == "at_least" and z <= mu):   # else: uninformative lower bound
-                R = _R(o); K = P / (P + R); mu = mu + K * (z - mu); P = (1 - K) * P
+                R = _R_at(o, mu); K = P / (P + R); mu = mu + K * (z - mu); P = (1 - K) * P
             j += 1
         if mu is None:
             out.append(0.0)
@@ -138,7 +119,7 @@ def est_ekf_decay(obs: List[Dict], grid: List[float]) -> List[float]:
             else:
                 dt = max(0.0, (o["t_hours"] - t_cur) / 24.0); f = math.exp(-GAMMA * dt)
                 mu = f * mu; P = f * f * P + (0.10 * max(mu, 1.0) * max(dt, 1e-3)) ** 2; t_cur = o["t_hours"]
-            R = _R(o); S = P + R; K = P / S
+            R = _R_at(o, mu); S = P + R; K = P / S
             mu = mu + K * (o["value"] - mu); P = (1 - K) * P; j += 1
         if mu is None:
             out.append(0.0)
