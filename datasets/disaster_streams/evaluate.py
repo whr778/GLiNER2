@@ -139,7 +139,7 @@ def est_ekf_decay(obs: List[Dict], grid: List[float]) -> List[float]:
                 dt = max(0.0, (o["t_hours"] - t_cur) / 24.0); f = math.exp(-GAMMA * dt)
                 mu = f * mu; P = f * f * P + (0.10 * max(mu, 1.0) * max(dt, 1e-3)) ** 2; t_cur = o["t_hours"]
             R = _R_at(o, mu); S = P + R
-            # one-sided gate: a decaying count is non-increasing, so reject only readings
+            # one-sided gate: a decaying count is non-increasing, so reject readings
             # implausibly ABOVE the estimate; admit real drops.
             if REJECT_SIGMA is None or (o["value"] - mu) <= REJECT_SIGMA * math.sqrt(S):
                 K = P / S; mu = mu + K * (o["value"] - mu); P = (1 - K) * P

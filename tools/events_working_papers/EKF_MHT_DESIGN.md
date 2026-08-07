@@ -376,3 +376,26 @@ Residual weak role: **missing** (test 0.46). Record-mode precision needs a *boun
 (span decoder ignores `mode`). The model pass is cached (`raw.jsonl`) so normalization
 re-runs free (`--from-raw`); a paid batch whose poll dies is recoverable by id
 (`providers.fetch_batch` / `realize --batch-id`) — no re-spend.
+
+## 19. `missing`-role probe ($0) — it's confidence-cut selection, not extraction
+
+Date: 2026-08-07. `missing` is the residual weak role (test EKF 0.46, val 0.23 vs structured
+ceiling ~0.12). Diagnosed on the cached raw spans + GT:
+
+- **Extraction quality is fine.** At conf 0.99: missing **value-exact 0.996, precision 0.96**
+  (as good as dead/injured). What differs: **recall 0.55** (lowest) and **qualifier acc 0.48**
+  ("feared" follows the number, so a small right-window labels it "point").
+- **The qualifier fix does NOT help.** Recovering "feared" (wide right window: qual 0.48→0.83)
+  and treating it as a one-sided upper bound made missing *worse* (0.23→0.29): a sparse decay
+  filter needs "feared" readings as usable anchors, not down-weighted/skipped. Reverted.
+- **Sparsity alone doesn't explain it.** Random 55%-recall subsample of the *structured*
+  missing obs → 0.138 (vs model 0.233).
+- **It's selection bias.** Structured missing (perfect values + quals) restricted to the exact
+  time-points the model retained → **0.252** — worse than the model itself. So *which*
+  report-times survive the confidence cut is the whole story: the cut drops the (hedged/vague)
+  late reports that anchor the decay tail, leaving an early/high-skewed set that over-estimates
+  the tail.
+
+**Conclusion:** not a $0 normalization fix. The lever is recall/**calibration** of the retained
+set (extractor fine-tune, or a role-aware threshold) or a stronger decay-tail prior — all
+bigger than $0. Pipeline stays at the validated val 0.172 / test 0.291.
