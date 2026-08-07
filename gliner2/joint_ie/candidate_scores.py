@@ -162,6 +162,34 @@ class ScoredRelationEdge:
     probability: float
 
 
+def boundary_relation_pairs_to_edges(
+    pairs: Any,
+    logits: Sequence[float],
+    *,
+    relation_temperature: float = 1.0,
+) -> List["ScoredRelationEdge"]:
+    """Map a boundary ``RelationPairBatch`` + per-pair relation logits to scored edges.
+
+    Each proposed pair already records ``head_keys`` / ``tail_keys`` as
+    ``(query role_name, start, end)`` — the *same* key `boundary_candidates_to_candidate_
+    score_set` uses for its mentions — so the edges reference the mention nodes directly.
+    ``head_keys`` / ``tail_keys`` are populated on the decode-time (compact) pair batch.
+    """
+    edges: List[ScoredRelationEdge] = []
+    for i in range(len(pairs)):
+        logit = float(logits[i]) / relation_temperature
+        edges.append(
+            ScoredRelationEdge(
+                relation_type=pairs.relation_types[i],
+                head=tuple(pairs.head_keys[i]),
+                tail=tuple(pairs.tail_keys[i]),
+                logit=logit,
+                probability=sigmoid(logit),
+            )
+        )
+    return edges
+
+
 def candidate_score_set_to_problem(
     score_set: CandidateScoreSet,
     edges: Sequence[ScoredRelationEdge] = (),
@@ -220,5 +248,6 @@ __all__ = [
     "ScoredRelationEdge",
     "score_lattice_to_candidate_score_set",
     "boundary_candidates_to_candidate_score_set",
+    "boundary_relation_pairs_to_edges",
     "candidate_score_set_to_problem",
 ]

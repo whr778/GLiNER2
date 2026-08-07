@@ -11,6 +11,7 @@ from gliner2.joint_ie.candidate_scores import (
     MentionScore,
     ScoredRelationEdge,
     boundary_candidates_to_candidate_score_set,
+    boundary_relation_pairs_to_edges,
     candidate_score_set_to_problem,
     score_lattice_to_candidate_score_set,
 )
@@ -104,3 +105,36 @@ def test_boundary_candidates_to_candidate_score_set_maps_sparse():
     problem = candidate_score_set_to_problem(css)  # shared builder, unchanged
     assert len(problem.nodes) == 2
     assert {n.entity_type for n in problem.nodes} == {"person", "org"}
+
+
+def test_boundary_relation_pairs_to_edges_link_to_mentions():
+    from gliner2.models.boundary.relations import RelationPairBatch
+
+    pairs = RelationPairBatch(
+        batch_index=torch.tensor([0]), relation_index=torch.tensor([0]),
+        head_start=torch.tensor([0]), head_end=torch.tensor([2]),
+        tail_start=torch.tensor([3]), tail_end=torch.tensor([5]),
+        head_prob=torch.tensor([0.9]), tail_prob=torch.tensor([0.9]),
+        head_keys=[("person", 0, 2)], tail_keys=[("org", 3, 5)],
+        relation_types=["works_for"],
+    )
+    edges = boundary_relation_pairs_to_edges(pairs, [3.0])
+    assert len(edges) == 1
+    assert (edges[0].relation_type, edges[0].head, edges[0].tail) == (
+        "works_for", ("person", 0, 2), ("org", 3, 5),
+    )
+    assert edges[0].probability > 0.9
+
+    # edge keys match mention keys -> the shared builder + beam select the relation
+    css = CandidateScoreSet(
+        text="Alice works at Acme",
+        mentions=(
+            MentionScore(0, "person", 0, 2, 4.0, 0.98),
+            MentionScore(1, "org", 3, 5, 4.0, 0.98),
+        ),
+    )
+    constraints = [TypedEndpoints("works_for", ("person",), ("org",))]
+    problem = candidate_score_set_to_problem(css, edges, constraints=constraints)
+    assert len(problem.edges) == 1
+    solution = BeamOptimizer(beam_width=8).optimize(problem)
+    assert {e.relation_type for e in solution.edges} == {"works_for"}
