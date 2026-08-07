@@ -46,6 +46,28 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
 
+### Decode-wiring integration notes (scoped from the engine read)
+
+Hooks in `BoundaryExtractor._extract_from_batch` (`models/boundary/engine.py`):
+- **query_types** from `core["ext_specs"][i]` (per-query `field_name`/`roles`) → `query_id →
+  role_name`, passed to `boundary_candidates_to_candidate_score_set`.
+- **edges** reuse the pairs + logits already computed in `_decode_relations`
+  (`relation_pair_generator.generate` + `relation_scorer`) → `boundary_relation_pairs_to_edges`.
+- **⚠ GOTCHA**: `_decode_relations` calls `generate(..., [QueryLayout(queries=())], ...)` — an
+  **empty** layout — so `head_keys`/`tail_keys` types are `str(query_id)`, **not** role names.
+  Fix: build a real `QueryLayout` from `ext_specs` and pass it to `generate` so the endpoint
+  keys carry `role_name` (matching the mention keys); else `TypedEndpoints` constraints won't
+  bind. (Type mentions by the same source.)
+- **constraints** = `TypedEndpoints(rel, head_types, tail_types)` from the relation schema
+  (`rel_specs`).
+- **format**: `BeamOptimizer(...).optimize(problem)` → solution nodes/edges (typed token
+  spans) → char offsets via `start_map`/`end_map` (as greedy does) → `{entities:{type:[…]},
+  <rel>:[(head,tail)]}`.
+- **flag**: a `decode_mode`/`--joint-decode` setting gates a new `_decode_joint` beside the
+  greedy entity+relation decode (default OFF → zero risk to the shipped path).
+- **test**: build a `BoundaryExtractor` per `tests/models/boundary/test_end_to_end_real_
+  deberta.py`, run greedy vs joint on a simple + a constraint case.
+
 ## 4. Experiment (Phase A — decode-only)
 
 - **Bases:** boundary `from_encoder` mmBERT-base, sizes {10,40,100}K on the event+relation
