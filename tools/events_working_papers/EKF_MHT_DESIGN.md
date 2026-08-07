@@ -291,3 +291,38 @@ the GLiNER2 model → a comparison (parser ceiling vs model), not a single-arm t
 prompt sonnet-5 with **distractor numbers** (dates, magnitude, other roles' figures) so the
 test is discriminating, conditioning tuple = known GT; (c) decide whether the realizer
 passes `value` for interval obs (else intervals stay number-free).
+
+## 17. Sonnet-5 realizer + the parser's binding collapse (why the model is needed)
+
+Date: 2026-08-07. `realize.py`, 12 val streams → 1322 multi-fact snippets (~$1-2 batch,
+`claude-sonnet-5`, -50% batch tier). Each snippet groups a report's roles and states each
+figure's **exact digits + hedge + distractor numbers** (date, magnitude 7.5, a displaced
+count), so extraction must **bind** numbers to roles. Ground truth = the conditioning tuple.
+Interval obs now carry a number (design decision (c) resolved).
+
+**The surface parser collapses on multi-fact prose** (vs 100% on single-fact templates):
+
+| metric | templated | sonnet-5 |
+|---|---|---|
+| role accuracy | 1.00 | 0.56 |
+| qualifier accuracy | 1.00 | 0.57 |
+| value exact (point) | 1.00 | 0.005 |
+| value rel-err (point) | 0.00 | 1.90 |
+
+first-integer/first-role grabs the magnitude, the date, or the displaced count. End-to-end
+the tracker is destroyed: EKF **0.14 → 1.16** (overall RMSE > 1 = worse than predicting the
+peak). **This is the number-to-role binding problem the GLiNER2 model exists to solve** —
+now proven, not asserted. The realizer + this harness are the eval; the model is the fix.
+
+**Innovation gate (the "3-sigma" question).** A **symmetric** N-sigma gate is catastrophic
+on rising tolls (clean EKF 0.121 → **0.595**): a rising toll's large positive innovations
+*are* the signal. Fixed to a **one-sided, dynamics-aware** gate (rise → reject
+implausibly-low; decay → reject implausibly-high; generalizes the `at_least` rule).
+Near-transparent on clean data (EKF 0.124 at K=4). But it **cannot rescue the broken parser**
+(from-text EKF 1.16 → 1.56): gating defends a *good* signal against **sparse** outliers, not
+one that is mostly mis-bound — so the gate's real test is the model arm, on its occasional
+errors.
+
+**Next:** the GLiNER2-model extraction arm (does a trained extractor bind numbers to roles
+here?), parser as baseline, gate measured against the model's outliers. Data committed
+(`datasets/disaster_streams_sonnet5`) for reproducibility.

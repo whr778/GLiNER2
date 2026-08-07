@@ -37,6 +37,11 @@ SRC_TRUST = {"official": 1.0, "major_outlet": 0.7, "preliminary": 0.4}
 QUAL_TRUST = {"point": 1.0, "about": 0.8, "at_least": 0.5, "interval": 0.4, "feared": 0.3}
 GATE_TAU = 12.0  # hours; recency half-scale
 
+# Innovation (N-sigma) gate: reject a reading whose |z-pred|/sqrt(S) exceeds this.
+# None = off (default). Defends the filter against gross extraction outliers (a mis-bound
+# date/magnitude/other-role figure); P-growth between reports keeps real jumps admissible.
+REJECT_SIGMA = None
+
 
 def _R_at(o: Dict, ref: float) -> float:
     """Measurement-noise variance scaled by a reference LEVEL (the current estimate),
@@ -101,7 +106,11 @@ def est_ekf_rise(obs: List[Dict], grid: List[float]) -> List[float]:
                 continue
             P = grow(mu, P, t_cur, o["t_hours"]); t_cur = o["t_hours"]
             if not (o["qualifier"] == "at_least" and z <= mu):   # else: uninformative lower bound
-                R = _R_at(o, mu); K = P / (P + R); mu = mu + K * (z - mu); P = (1 - K) * P
+                R = _R_at(o, mu); S = P + R
+                # one-sided gate: a rising toll is non-decreasing, so reject only readings
+                # implausibly BELOW the estimate (a mis-bound low figure); admit real jumps.
+                if REJECT_SIGMA is None or (mu - z) <= REJECT_SIGMA * math.sqrt(S):
+                    K = P / S; mu = mu + K * (z - mu); P = (1 - K) * P
             j += 1
         if mu is None:
             out.append(0.0)
@@ -122,8 +131,12 @@ def est_ekf_decay(obs: List[Dict], grid: List[float]) -> List[float]:
             else:
                 dt = max(0.0, (o["t_hours"] - t_cur) / 24.0); f = math.exp(-GAMMA * dt)
                 mu = f * mu; P = f * f * P + (0.10 * max(mu, 1.0) * max(dt, 1e-3)) ** 2; t_cur = o["t_hours"]
-            R = _R_at(o, mu); S = P + R; K = P / S
-            mu = mu + K * (o["value"] - mu); P = (1 - K) * P; j += 1
+            R = _R_at(o, mu); S = P + R
+            # one-sided gate: a decaying count is non-increasing, so reject only readings
+            # implausibly ABOVE the estimate; admit real drops.
+            if REJECT_SIGMA is None or (o["value"] - mu) <= REJECT_SIGMA * math.sqrt(S):
+                K = P / S; mu = mu + K * (o["value"] - mu); P = (1 - K) * P
+            j += 1
         if mu is None:
             out.append(0.0)
         else:
@@ -288,8 +301,13 @@ def main(argv=None) -> None:
     ap.add_argument("--from-text", action="store_true",
                     help="feed the tracker observations recovered by the text extractor "
                          "(render->extract round-trip) instead of the structured obs")
+    ap.add_argument("--reject-sigma", type=float, default=None,
+                    help="innovation gate: reject a reading whose |z-pred|/sqrt(S) exceeds "
+                         "this (e.g. 3.0). Off by default.")
     args = ap.parse_args(argv)
 
+    global REJECT_SIGMA
+    REJECT_SIGMA = args.reject_sigma
     methods = list(METHODS)
     if args.learn_gate:
         roots = (args.gate_train or args.data).split(",")
@@ -307,6 +325,8 @@ def main(argv=None) -> None:
     final_err = {m: {r: [] for r in ROLES} for m in methods}
 
     for s, tps in traj.items():
+        if s not in obs:      # subset runs: score only streams we have observations for
+            continue
         grid = [tp["t_hours"] for tp in tps]
         for role in ROLES:
             true = np.array([tp[role] for tp in tps])
@@ -317,7 +337,8 @@ def main(argv=None) -> None:
                 nrmse[m][role].append(float(np.sqrt(np.mean((est - true) ** 2)) / peak))
                 final_err[m][role].append(abs(est[-1] - true[-1]) / peak)
 
-    print(f"\n== {args.split}: {len(traj)} streams == (normalized RMSE, lower is better)\n")
+    scored = sum(1 for s in traj if s in obs)
+    print(f"\n== {args.split}: {scored} streams == (normalized RMSE, lower is better)\n")
     hdr = f"{'method':14s}" + "".join(f"{r:>11s}" for r in ROLES) + f"{'overall':>11s}"
     print(hdr); print("-" * len(hdr))
     for m in methods:
