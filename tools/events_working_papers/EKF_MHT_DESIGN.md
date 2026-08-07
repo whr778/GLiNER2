@@ -245,5 +245,10 @@ hand-table can't adapt. The learned weights recover the ablation's lesson (unrel
 source / coarse qualifier / `at_least` → trust the tracker) and add role-dependence + a
 disagreement regularizer the hand table lacked. This is the piece meant to transfer to
 the real boundary model / **Venezuela**, where hand-set trust constants won't.
-(Honest caveat: it optimizes trajectory RMSE and trades a hair of final-value accuracy on
-hard-test; and it's fit + eval'd in-regime — cross-regime transfer is the next check.)
+
+**Transfer (caveat resolved).** Cross-regime the gate never collapses to `last_value`:
+normal-trained → hard still beats the EKF (val 0.238 vs 0.244); hard-trained → normal
+~ties it. A single **union gate** (`--gate-train normal,hard`) matches the in-regime gates
+on *both* (normal/val 0.121, hard/val 0.228) — one regime-agnostic router is best
+everywhere, which is what **Venezuela** (unknown regime) needs. (It optimizes trajectory
+RMSE, trading a hair of final-value accuracy on hard-test.)

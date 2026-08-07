@@ -186,20 +186,24 @@ def _gate_feats(obs: List[Dict], grid: List[float], role: str,
     return rows
 
 
-def fit_gate(train_dir: Path, steps: int = 2000, lr: float = 0.5):
-    """Fit the router on peak-normalized blend MSE (matches the eval metric)."""
-    obs, traj = _load(train_dir)
+def fit_gate(train_dirs, steps: int = 2000, lr: float = 0.5):
+    """Fit the router on peak-normalized blend MSE (matches the eval metric). Accepts
+    one dir or several (union of regimes -> a gate that isn't tuned to one regime)."""
+    if isinstance(train_dirs, (str, Path)):
+        train_dirs = [train_dirs]
     X, E, L, Y = [], [], [], []
-    for s, tps in traj.items():
-        grid = [tp["t_hours"] for tp in tps]
-        for role in ROLES:
-            true = np.array([tp[role] for tp in tps]); peak = max(true.max(), 1.0)
-            obs_r = sorted(obs[s].get(role, []), key=lambda o: o["t_hours"])
-            ekf = est_ekf(obs_r, grid, role); lv = est_last_value(obs_r, grid)
-            for i, r in enumerate(_gate_feats(obs_r, grid, role, ekf, lv)):
-                if r is None:
-                    continue
-                X.append(r); E.append(ekf[i] / peak); L.append(lv[i] / peak); Y.append(true[i] / peak)
+    for train_dir in train_dirs:
+        obs, traj = _load(Path(train_dir))
+        for s, tps in traj.items():
+            grid = [tp["t_hours"] for tp in tps]
+            for role in ROLES:
+                true = np.array([tp[role] for tp in tps]); peak = max(true.max(), 1.0)
+                obs_r = sorted(obs[s].get(role, []), key=lambda o: o["t_hours"])
+                ekf = est_ekf(obs_r, grid, role); lv = est_last_value(obs_r, grid)
+                for i, r in enumerate(_gate_feats(obs_r, grid, role, ekf, lv)):
+                    if r is None:
+                        continue
+                    X.append(r); E.append(ekf[i] / peak); L.append(lv[i] / peak); Y.append(true[i] / peak)
     X = np.array(X); E = np.array(E); L = np.array(L); Y = np.array(Y)
     mu = X.mean(0); sd = X.std(0); sd[sd < 1e-6] = 1.0; mu[0] = 0.0; sd[0] = 1.0  # keep bias
     Xs = (X - mu) / sd
@@ -258,13 +262,19 @@ def main(argv=None) -> None:
     ap.add_argument("--split", default="val")
     ap.add_argument("--learn-gate", action="store_true",
                     help="fit the logistic router on <data>/train and add MoE_learned")
+    ap.add_argument("--gate-train", default=None,
+                    help="comma-separated data root(s) whose train split fits the gate "
+                         "(default: --data). One other root = transfer test; several = a "
+                         "regime-union gate.")
     args = ap.parse_args(argv)
 
     methods = list(METHODS)
     if args.learn_gate:
-        GATE = fit_gate(Path(args.data) / "train")
+        roots = (args.gate_train or args.data).split(",")
+        GATE = fit_gate([Path(r) / "train" for r in roots])
         methods.append("MoE_learned")
-        print(f"[gate] fit on {GATE['n']} points; w={np.round(GATE['w'], 3).tolist()}")
+        print(f"[gate] fit on {', '.join(roots)} ({GATE['n']} points); "
+              f"w={np.round(GATE['w'], 3).tolist()}")
 
     obs, traj = _load(Path(args.data) / args.split)
     # per-(method, role) list of per-stream normalized RMSE (by peak true value)
