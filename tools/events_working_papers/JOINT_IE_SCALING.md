@@ -37,11 +37,16 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
   → `ScoredRelationEdge`s. The pair batch's `head_keys`/`tail_keys` are `(role_name, start,
   end)` = the mention keys, so edges reference the nodes directly; unit-tested. (commit
   `332a86a`)
-- ⬜ **Decode wiring** — `BoundaryExtractor` + a `--joint-decode` flag: build `query_types`
-  from the layout, run both adapters + the relation scorer, `candidate_score_set_to_problem`
-  → `BeamOptimizer`, format results.
+- ✅ **`joint_decode`** — end-to-end composition: candidates + relation pairs/logits +
+  constraints → both adapters → `candidate_score_set_to_problem` → `BeamOptimizer` → the
+  selected node/edge solution. Unit-tested from synthetic boundary outputs. (commit `e8f2bad`)
+  **The joint_ie side is now complete.**
+- ⬜ **Engine plumbing** (the remaining piece, engine-side) — in `BoundaryExtractor`: build
+  `query_types` from `ext_specs`, fix the empty-`QueryLayout` key typing, call `joint_decode`,
+  convert the solution's token spans → char offsets (as greedy does), format the output dict,
+  gate behind `--joint-decode` (default off).
 - ⬜ **Integration test** on a shipped boundary checkpoint (greedy vs beam parity + a
-  constraint case).
+  constraint case) via the real-deberta fixture.
 
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
