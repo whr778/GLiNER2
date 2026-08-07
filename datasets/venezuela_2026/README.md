@@ -68,5 +68,23 @@ The fine-tuned extractor (synthetic sonnet-5 training) on **real** Venezuela new
      bind). Recommend: drop `missing` for the real eval, or add an "abstain when no number"
      behavior.
 - **Implication:** dead/injured are trackable on real news; predictions + `missing` are the
-  gaps. Confidence (0.9 cut) did *not* filter the mis-binds — the tracker's outlier gate is
-  the defense.
+  gaps. Confidence (0.9 cut) did *not* filter the mis-binds.
+
+## V4 mini-run — track the dead toll (`track.py`)
+
+Irregular-timestamp real-data tracking of `dead` vs the official GT (`evaluate.py` estimators
+reused; they handle arbitrary grids).
+
+- **The 10,000 prediction corrupts the tracker** — EKF **9,190** vs GT 188 at t=24h. The
+  one-sided innovation gate does **not** defend it: it rejects implausibly-*low* readings (to
+  admit real jumps), so a spuriously-*high* prediction sails through. (Corrects an earlier
+  optimistic claim that the gate would reject it.)
+- **A dynamics/rate filter fixes it** (`--max-rate`): drop an upward reading whose accrual
+  rate from the last kept value is impossible (188→10,000 in ~0h ≫ any plausible rate;
+  188→1,719 over 4 days is fine). Dead then tracks **188 → 1,719** correctly.
+- **Residual gaps are coverage, not tracker:** t=48h shows 188 not the official 920 because
+  the CNN report was HTTP-451 blocked; nothing past t=120h because collection stops there.
+  → V3-full (more, non-CNN sources) is the lever, not more tracker tuning.
+- **Candidate for the main tracker:** the rate filter is a general defense against high
+  outliers on rising signals (the one-sided gate's blind spot) — consider folding into
+  `evaluate.py`.
