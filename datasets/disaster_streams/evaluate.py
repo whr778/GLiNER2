@@ -304,6 +304,9 @@ def main(argv=None) -> None:
     ap.add_argument("--reject-sigma", type=float, default=None,
                     help="innovation gate: reject a reading whose |z-pred|/sqrt(S) exceeds "
                          "this (e.g. 3.0). Off by default.")
+    ap.add_argument("--min-conf", type=float, default=0.0,
+                    help="drop observations whose extractor 'confidence' is below this "
+                         "(sweeps the model arm's precision threshold in post)")
     args = ap.parse_args(argv)
 
     global REJECT_SIGMA
@@ -320,6 +323,10 @@ def main(argv=None) -> None:
     if args.from_text:
         obs = _from_text(obs)
         print("[from-text] observations round-tripped through the text extractor")
+    if args.min_conf > 0:
+        obs = {s: {r: [o for o in lst if o.get("confidence", 1.0) >= args.min_conf]
+                   for r, lst in by_role.items()}
+               for s, by_role in obs.items()}
     # per-(method, role) list of per-stream normalized RMSE (by peak true value)
     nrmse = {m: {r: [] for r in ROLES} for m in methods}
     final_err = {m: {r: [] for r in ROLES} for m in methods}

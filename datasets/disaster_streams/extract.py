@@ -61,16 +61,21 @@ def _detect_qualifier(t: str) -> str:
     return "point"
 
 
-def extract_obs(text: str) -> Dict:
-    """Surface extraction + normalization: text -> {role, value, qualifier, source}."""
+def value_qualifier(text: str):
+    """Normalize a span/snippet to (value, qualifier). The normalization layer (design
+    #9): reused both by the surface parser and to parse a model-bound field span."""
     qual = _detect_qualifier(text)
     if qual == "interval":
         tl = text.lower()
         bucket = next((b for b in _BUCKET_VALUE if b in tl), "few")
-        value = _BUCKET_VALUE[bucket]
-    else:
-        m = re.search(r"\d[\d,]*", text)
-        value = int(m.group(0).replace(",", "")) if m else 0
+        return _BUCKET_VALUE[bucket], qual
+    m = re.search(r"\d[\d,]*", text)
+    return (int(m.group(0).replace(",", "")) if m else 0), qual
+
+
+def extract_obs(text: str) -> Dict:
+    """Surface extraction + normalization: text -> {role, value, qualifier, source}."""
+    value, qual = value_qualifier(text)
     return {"role": _detect_role(text), "value": value,
             "qualifier": qual, "source": _detect_source(text)}
 

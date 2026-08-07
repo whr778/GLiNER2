@@ -326,3 +326,35 @@ errors.
 **Next:** the GLiNER2-model extraction arm (does a trained extractor bind numbers to roles
 here?), parser as baseline, gate measured against the model's outliers. Data committed
 (`datasets/disaster_streams_sonnet5`) for reproducibility.
+
+## 18. Model extraction arm — zero-shot binding works; precision is the knob
+
+Date: 2026-08-07. `model_arm.py`, `fastino/gliner2-base-v1` (zero-shot), 12 val streams /
+1316 reports / CPU. The model fills a `casualty_report` structure {dead, injured, missing,
+source}; `extract.value_qualifier` normalizes each **bound** span → (value, qualifier).
+
+**The model solves binding the parser couldn't:** on true-positive roles **value exact =
+0.991** (parser 0.005), recall 0.91. But **precision = 0.65** — the structure over-fills
+(a distractor like the displaced count bound to an absent role), and those FPs, concentrated
+on small-valued `dead`, wreck end-to-end tracking (EKF 1.54).
+
+**Confidence is the separator and the fix.** Field confidence is bimodal (TP ~0.9999,
+FP ~0.605). Sweeping a min-confidence cut (`evaluate.py --min-conf`) recovers tracking:
+
+| min-conf | EKF overall | dead | injured | missing |
+|---|---|---|---|---|
+| 0.0 | 1.54 | 3.12 | 0.30 | 1.19 |
+| 0.90 | 0.78 | 1.11 | 0.19 | 1.05 |
+| 0.95 | 0.47 | 0.54 | 0.16 | 0.72 |
+| 0.99 | **0.29** | 0.25 | 0.15 | 0.48 |
+
+From "destroyed" (parser 1.16) to **usable 0.29** at conf ≥ 0.99, vs the structured
+ceiling 0.14. Residual gap = remaining FPs + **qualifier loss** (the model extracts the bare
+number, not the hedge → qualifier acc 0.31) + missing-role error.
+
+**Confidence is used as a HARD threshold here — and it's a scalar field probability, not a
+covariance.** Principled next steps: (a) fold the extraction confidence into the measurement
+noise `R` (soft down-weighting) instead of a hard cut; (b) recover the qualifier from the
+bound number's local context (the hedge sits beside it); (c) optionally a joint
+{dead,injured,missing} state with a covariance matrix (roles co-evolve). Model output
+committed (`datasets/disaster_streams_model`).
