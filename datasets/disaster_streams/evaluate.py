@@ -15,11 +15,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Dict, List
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).parent))  # sibling scripts (extract)
 
 RISE_ROLES = ("dead", "injured")
 DECAY_ROLES = ("missing",)
@@ -246,6 +249,22 @@ def _load(split_dir: Path):
     return obs, traj
 
 
+def _from_text(obs):
+    """Round-trip each obs through the text extractor (render -> extract), keeping
+    stream_id/t_hours metadata and regrouping by the recovered role. Measures how
+    extraction loss propagates end-to-end vs the structured-obs baseline."""
+    import extract
+    new = defaultdict(lambda: defaultdict(list))
+    for sid, by_role in obs.items():
+        for _, lst in by_role.items():
+            for o in lst:
+                r = extract.extract_obs(extract._render(o))
+                if r["role"] is None:
+                    continue
+                new[sid][r["role"]].append({**o, **r})
+    return new
+
+
 def _estimate(method: str, obs, grid, role):
     if method == "last_value": return est_last_value(obs, grid)
     if method == "weighted_avg": return est_weighted_avg(obs, grid)
@@ -266,6 +285,9 @@ def main(argv=None) -> None:
                     help="comma-separated data root(s) whose train split fits the gate "
                          "(default: --data). One other root = transfer test; several = a "
                          "regime-union gate.")
+    ap.add_argument("--from-text", action="store_true",
+                    help="feed the tracker observations recovered by the text extractor "
+                         "(render->extract round-trip) instead of the structured obs")
     args = ap.parse_args(argv)
 
     methods = list(METHODS)
@@ -277,6 +299,9 @@ def main(argv=None) -> None:
               f"w={np.round(GATE['w'], 3).tolist()}")
 
     obs, traj = _load(Path(args.data) / args.split)
+    if args.from_text:
+        obs = _from_text(obs)
+        print("[from-text] observations round-tripped through the text extractor")
     # per-(method, role) list of per-stream normalized RMSE (by peak true value)
     nrmse = {m: {r: [] for r in ROLES} for m in methods}
     final_err = {m: {r: [] for r in ROLES} for m in methods}

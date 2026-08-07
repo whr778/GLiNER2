@@ -252,3 +252,42 @@ normal-trained → hard still beats the EKF (val 0.238 vs 0.244); hard-trained �
 on *both* (normal/val 0.121, hard/val 0.228) — one regime-agnostic router is best
 everywhere, which is what **Venezuela** (unknown regime) needs. (It optimizes trajectory
 RMSE, trading a hair of final-value accuracy on hard-test.)
+
+## 16. Text → observation extraction — the normalization layer (single-fact ceiling)
+
+Date: 2026-08-07. Free/CPU. `extract.py`; `evaluate.py --from-text`. Builds design #9.
+
+Surface extractor (first integer + hedge/source keyword cues) + normalizer (bucket word →
+representative value). Validated by rendering each structured obs back to text with the
+generator's own templater and extracting it.
+
+**Extraction ceiling (single-fact templated text):** role / qualifier / source **100%**;
+value **100% exact** for point/at_least/about/feared; **interval 67%** — the bare bucket
+word ("thousands of people") carries no number, unrecoverable by construction. Realistic
+text *reduces* number-free phrasing but does not eliminate it ("dozens feared trapped").
+
+**End-to-end (render→extract→track) vs structured, normal/val overall RMSE:**
+
+| method | structured | from-text | Δ |
+|---|---|---|---|
+| last_value | 0.194 | 0.236 | +0.042 |
+| EKF | 0.121 | 0.144 | +0.022 |
+
+**The tracker's margin over `last_value` *widens* under extraction noise** (0.073 → 0.092):
+`QUAL_FACTOR["interval"]=2.0` down-weights exactly the lossy (bucket) observations while
+`last_value` eats them raw — the measurement model absorbing extraction error is the §3
+design claim working. The structured-trained gate still helps on extracted obs
+(MoE_learned 0.145 ≈ EKF 0.144). Loss concentrates on **injured** (largest counts → most
+"thousands").
+
+**Scope / open risk.** This is the ceiling for *single-fact* text only: the parser takes
+the first integer and first role keyword, valid because each snippet states one fact.
+**Number-to-role binding on multi-fact text is untested** ("killed at least 40 and injured
+hundreds") — the real extraction risk the GLiNER2 model exists to solve. De-risked: *given
+reasonable obs, the tracker holds up.* Extraction on realistic text is the open question.
+
+**Sonnet-5 step (locked design):** (a) keep the surface parser as a **baseline arm** beside
+the GLiNER2 model → a comparison (parser ceiling vs model), not a single-arm test; (b)
+prompt sonnet-5 with **distractor numbers** (dates, magnitude, other roles' figures) so the
+test is discriminating, conditioning tuple = known GT; (c) decide whether the realizer
+passes `value` for interval obs (else intervals stay number-free).
