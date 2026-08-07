@@ -31,19 +31,6 @@ def load(root: Path, role: str, min_conf: float):
     return obs, gt
 
 
-def rate_filter(obs, max_rate):
-    """Drop an observation whose implied UPWARD accrual rate from the last kept value
-    exceeds max_rate/hour -- a dynamics bound the one-sided gate lacks."""
-    kept, last = [], None
-    for o in obs:
-        if last is not None and o["value"] > last[1]:
-            dt = max(o["t_hours"] - last[0], 1.0)
-            if (o["value"] - last[1]) / dt > max_rate:
-                continue
-        kept.append(o); last = (o["t_hours"], o["value"])
-    return kept
-
-
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="datasets/venezuela_2026")
@@ -56,7 +43,7 @@ def main(argv=None) -> None:
     root = Path(args.data)
     obs, gt = load(root, args.role, args.min_conf)
     if args.max_rate is not None:
-        n0 = len(obs); obs = rate_filter(obs, args.max_rate)
+        n0 = len(obs); obs = E.rate_filter(obs, args.max_rate)
         print(f"[rate-filter] dropped {n0 - len(obs)} implausible upward spike(s) (>{args.max_rate}/h)")
     grid = sorted(gt)
     E.REJECT_SIGMA = args.reject_sigma

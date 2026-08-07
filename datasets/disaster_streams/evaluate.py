@@ -46,6 +46,12 @@ REJECT_SIGMA = None
 # R -> the reading is down-weighted instead of hard-dropped. False = off (default).
 CONF_R = False
 
+# Dynamics/rate filter: drop an observation whose UPWARD accrual rate from the last kept
+# value exceeds MAX_RATE per hour -- an impossible jump (e.g. a mis-bound forecast like the
+# Venezuela USGS ">10,000") that the one-sided gate ADMITS (it only rejects lows). Gradual
+# rises over time pass. None = off (default).
+MAX_RATE = None
+
 
 def _R_at(o: Dict, ref: float) -> float:
     """Measurement-noise variance scaled by a reference LEVEL (the current estimate),
@@ -88,6 +94,20 @@ def est_running_max(obs: List[Dict], grid: List[float]) -> List[float]:
             mx = max(mx, obs[j]["value"]); j += 1
         out.append(mx)
     return out
+
+
+def rate_filter(obs: List[Dict], max_rate: float) -> List[Dict]:
+    """Drop observations whose UPWARD accrual rate from the last kept value exceeds
+    max_rate/hour -- a dynamics bound the one-sided gate lacks (it admits high outliers).
+    Gradual rises over time pass; instant spikes (a mis-bound forecast) are dropped."""
+    kept, last = [], None
+    for o in obs:
+        if last is not None and o["value"] > last["value"]:
+            dt = max(o["t_hours"] - last["t_hours"], 1.0)
+            if (o["value"] - last["value"]) / dt > max_rate:
+                continue
+        kept.append(o); last = o
+    return kept
 
 
 # --------------------------------------------------------------------------- #
@@ -317,11 +337,15 @@ def main(argv=None) -> None:
     ap.add_argument("--conf-r", action="store_true",
                     help="fold extractor confidence into R (soft down-weight) instead of "
                          "a hard --min-conf cut")
+    ap.add_argument("--max-rate", type=float, default=None,
+                    help="dynamics filter: drop obs whose upward accrual rate exceeds this "
+                         "per hour (defends rising signals against mis-bound high outliers)")
     args = ap.parse_args(argv)
 
-    global REJECT_SIGMA, CONF_R
+    global REJECT_SIGMA, CONF_R, MAX_RATE
     REJECT_SIGMA = args.reject_sigma
     CONF_R = args.conf_r
+    MAX_RATE = args.max_rate
     methods = list(METHODS)
     if args.learn_gate:
         roots = (args.gate_train or args.data).split(",")
@@ -350,6 +374,8 @@ def main(argv=None) -> None:
             true = np.array([tp[role] for tp in tps])
             peak = max(true.max(), 1.0)
             obs_r = sorted(obs[s].get(role, []), key=lambda o: o["t_hours"])
+            if MAX_RATE is not None:
+                obs_r = rate_filter(obs_r, MAX_RATE)
             for m in methods:
                 est = np.array(_estimate(m, obs_r, grid, role))
                 nrmse[m][role].append(float(np.sqrt(np.mean((est - true) ** 2)) / peak))
