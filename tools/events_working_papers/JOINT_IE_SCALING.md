@@ -53,15 +53,19 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
   - **QueryLayout gotcha**: `_decode_relations` passes an *empty* `QueryLayout`, so
     `head_keys`/`tail_keys` types are `str(query_id)`. Build a real layout
     (`QuerySpec.role_name`; `processing/layouts.py` builds one from the schema).
-  - **⚠ THE CRUX (design, not plumbing)**: boundary types **relation endpoints by head/tail
-    query role** ("acquiring company") but **entity mentions by entity type** ("company") —
-    *distinct queries*. So edges keyed by the role name won't match mention-node keys, and the
-    beam prunes every edge. `_decode_joint` must reconcile the node/edge key model first —
-    e.g. nodes = entity mentions with relation head/tail candidates mapped to them by span
-    overlap, OR define the beam over head/tail candidates directly with head/tail-role
-    `TypedEndpoints`. This is the real remaining decision; everything else above is mechanical.
-- ⬜ **Integration test** — relation-enabled boundary model on the real-deberta fixture:
-  greedy vs beam, once the key model is chosen.
+  - **Key consistency (resolvable, mechanical)**: boundary types relation endpoints by the
+    head/tail query `role_name` and entity mentions by the entity query `role_name`. Build ONE
+    real `QueryLayout` and type BOTH the mention adapter's `query_types` and the pair
+    `head_keys`/`tail_keys` from it (same source) → a head candidate from query *q* keys as
+    `(role_name_q, start, end)` on both sides, so edges reference the mention nodes by
+    construction. (An earlier note here over-called this a design blocker; it is not — one
+    layout used consistently resolves it.)
+  - So the whole hook is mechanical: build the real layout, type mentions + edges from it,
+    reuse pairs/logits, `joint_decode`, char-offset format, gate the flag.
+- ⬜ **Integration test** — relation-enabled boundary model (`enable_relations` config + a
+  relation schema) on the real-deberta fixture: assert the joint path runs + honors a
+  `TypedEndpoints` constraint (untrained = structure/constraint check; the scaling runs give
+  the greedy-vs-beam quality curve).
 
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
