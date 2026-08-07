@@ -41,12 +41,27 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
   constraints → both adapters → `candidate_score_set_to_problem` → `BeamOptimizer` → the
   selected node/edge solution. Unit-tested from synthetic boundary outputs. (commit `e8f2bad`)
   **The joint_ie side is now complete.**
-- ⬜ **Engine plumbing** (the remaining piece, engine-side) — in `BoundaryExtractor`: build
-  `query_types` from `ext_specs`, fix the empty-`QueryLayout` key typing, call `joint_decode`,
-  convert the solution's token spans → char offsets (as greedy does), format the output dict,
-  gate behind `--joint-decode` (default off).
-- ⬜ **Integration test** on a shipped boundary checkpoint (greedy vs beam parity + a
-  constraint case) via the real-deberta fixture.
+- ⬜ **Engine plumbing** (remaining, engine-side) — mapped from a full engine read:
+  - **Relations ARE wired** (not a blocker): `enable_relations` in config
+    (`model.py:1006`) builds `relation_pair_generator` + `relation_scorer`; `_decode_relations`
+    runs. The public-api e2e test just never enabled relations, so a relation-enabled boundary
+    model (config + a relation schema) is the fixture.
+  - **Hooks**: `query_types` from `core["ext_specs"][qid]["field_name"]`; reuse the pairs +
+    logits `_decode_relations` already computes; format token spans → char offsets via
+    `token_boundaries_to_character_offsets` / `_format_spans`; gate behind a `decode_mode`
+    setting (default off).
+  - **QueryLayout gotcha**: `_decode_relations` passes an *empty* `QueryLayout`, so
+    `head_keys`/`tail_keys` types are `str(query_id)`. Build a real layout
+    (`QuerySpec.role_name`; `processing/layouts.py` builds one from the schema).
+  - **⚠ THE CRUX (design, not plumbing)**: boundary types **relation endpoints by head/tail
+    query role** ("acquiring company") but **entity mentions by entity type** ("company") —
+    *distinct queries*. So edges keyed by the role name won't match mention-node keys, and the
+    beam prunes every edge. `_decode_joint` must reconcile the node/edge key model first —
+    e.g. nodes = entity mentions with relation head/tail candidates mapped to them by span
+    overlap, OR define the beam over head/tail candidates directly with head/tail-role
+    `TypedEndpoints`. This is the real remaining decision; everything else above is mechanical.
+- ⬜ **Integration test** — relation-enabled boundary model on the real-deberta fixture:
+  greedy vs beam, once the key model is chosen.
 
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
