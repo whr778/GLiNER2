@@ -399,3 +399,33 @@ ceiling ~0.12). Diagnosed on the cached raw spans + GT:
 **Conclusion:** not a $0 normalization fix. The lever is recall/**calibration** of the retained
 set (extractor fine-tune, or a role-aware threshold) or a stronger decay-tail prior — all
 bigger than $0. Pipeline stays at the validated val 0.172 / test 0.291.
+
+## 20. Fine-tuned extractor closes the gap (the §19 prediction, delivered)
+
+Date: 2026-08-07. Fine-tuned `fastino/gliner2-base-v1` on **29,198** casualty-structure
+examples (250 sonnet-5 train streams), A100 · 8 epochs · ~$2 GPU + ~$19 data. Same held-out
+test harness (`model_arm.py` → `evaluate.py`). §19 said the bottleneck was extractor
+precision + confidence calibration (the `missing` selection bias) — extractor-side. It was:
+
+| held-out test | zero-shot | fine-tuned |
+|---|---|---|
+| role precision | 0.627 | **0.914** |
+| role recall | 0.906 | **0.965** |
+| value exact (binding) | 0.991 | **1.000** |
+| qualifier acc | 0.724 | 0.691 |
+
+End-to-end (EKF, normalized RMSE; structured ceiling **0.115**):
+
+| | zero-shot | fine-tuned |
+|---|---|---|
+| best (min-conf 0.99) | 0.291 | **0.165** |
+| **no cut** (min-conf 0) | 1.16 | **0.193** |
+| **`missing`** role | 0.458 | **0.122** |
+
+The fine-tune closed **~75% of the gap** to the structured ceiling and **fixed the `missing`
+selection bias** (0.458 → 0.122 ≈ the structured `missing` ceiling) — exactly §19's
+prediction. High precision (0.91) means it barely needs the confidence cut (0.19 *uncut*);
+number binding is perfect (1.000). **Caveat:** fine-tuned + tested on sonnet-5 text (same
+distribution) — **Venezuela (real news) remains the true generalization test**. This is the
+end of the synthetic arc: text → extraction → tracking, held-out, at ~1.4× the clean-obs
+ceiling.
