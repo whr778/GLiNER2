@@ -153,6 +153,76 @@ def est_moe(obs: List[Dict], grid: List[float], role: str) -> List[float]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Learned gate: a logistic router alpha = sigmoid(w.x) that replaces the hand-set
+# SRC_TRUST/QUAL_TRUST/GATE_TAU tables. Trained on the train split by gradient
+# descent to minimize the blend's normalized MSE against ground truth.
+# --------------------------------------------------------------------------- #
+GATE = None  # fitted {"w","mu","sd"}, set by --learn-gate
+
+
+def _gate_feats(obs: List[Dict], grid: List[float], role: str,
+                ekf: List[float], lv: List[float]):
+    """One feature row per grid point (None before the first report). Same builder
+    used at fit and apply time -> single source of truth."""
+    obs = sorted(obs, key=lambda o: o["t_hours"])
+    rows, j, last, n = [], 0, None, 0
+    for i, t in enumerate(grid):
+        while j < len(obs) and obs[j]["t_hours"] <= t:
+            last = obs[j]; j += 1; n += 1
+        if last is None:
+            rows.append(None); continue
+        gap = (ekf[i] - lv[i]) / max(abs(lv[i]), 1.0)
+        rows.append(np.array([
+            1.0,                                           # bias
+            math.log1p(max(t - last["t_hours"], 0.0)),     # staleness (hours)
+            SRC_REL_SIGMA[last["source"]],                 # source unreliability
+            QUAL_FACTOR[last["qualifier"]],                # qualifier coarseness
+            1.0 if last["qualifier"] == "at_least" else 0.0,  # censored lower bound
+            1.0 if role in DECAY_ROLES else 0.0,           # decay vs rise role
+            max(-3.0, min(3.0, gap)),                      # ekf-vs-lastvalue disagreement
+            math.log1p(n),                                 # reports seen so far
+        ]))
+    return rows
+
+
+def fit_gate(train_dir: Path, steps: int = 2000, lr: float = 0.5):
+    """Fit the router on peak-normalized blend MSE (matches the eval metric)."""
+    obs, traj = _load(train_dir)
+    X, E, L, Y = [], [], [], []
+    for s, tps in traj.items():
+        grid = [tp["t_hours"] for tp in tps]
+        for role in ROLES:
+            true = np.array([tp[role] for tp in tps]); peak = max(true.max(), 1.0)
+            obs_r = sorted(obs[s].get(role, []), key=lambda o: o["t_hours"])
+            ekf = est_ekf(obs_r, grid, role); lv = est_last_value(obs_r, grid)
+            for i, r in enumerate(_gate_feats(obs_r, grid, role, ekf, lv)):
+                if r is None:
+                    continue
+                X.append(r); E.append(ekf[i] / peak); L.append(lv[i] / peak); Y.append(true[i] / peak)
+    X = np.array(X); E = np.array(E); L = np.array(L); Y = np.array(Y)
+    mu = X.mean(0); sd = X.std(0); sd[sd < 1e-6] = 1.0; mu[0] = 0.0; sd[0] = 1.0  # keep bias
+    Xs = (X - mu) / sd
+    w = np.zeros(Xs.shape[1])
+    for _ in range(steps):
+        a = 1.0 / (1.0 + np.exp(-(Xs @ w)))
+        p = a * E + (1 - a) * L
+        w -= lr * (Xs.T @ (2.0 * (p - Y) * (E - L) * a * (1 - a))) / len(Y)
+    return {"w": w, "mu": mu, "sd": sd, "n": len(Y)}
+
+
+def est_moe_learned(obs: List[Dict], grid: List[float], role: str) -> List[float]:
+    ekf = est_ekf(obs, grid, role); lv = est_last_value(obs, grid)
+    w, mu, sd = GATE["w"], GATE["mu"], GATE["sd"]
+    out = []
+    for i, r in enumerate(_gate_feats(obs, grid, role, ekf, lv)):
+        if r is None:
+            out.append(ekf[i]); continue
+        a = 1.0 / (1.0 + math.exp(-float(((r - mu) / sd) @ w)))
+        out.append(a * ekf[i] + (1.0 - a) * lv[i])
+    return out
+
+
 METHODS = {"last_value": None, "weighted_avg": None, "running_max": None,
            "EKF": None, "MoE_gate": None}
 
@@ -177,19 +247,29 @@ def _estimate(method: str, obs, grid, role):
     if method == "weighted_avg": return est_weighted_avg(obs, grid)
     if method == "running_max": return est_running_max(obs, grid)
     if method == "MoE_gate": return est_moe(obs, grid, role)
+    if method == "MoE_learned": return est_moe_learned(obs, grid, role)
     return est_ekf(obs, grid, role)
 
 
 def main(argv=None) -> None:
+    global GATE
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="datasets/disaster_streams")
     ap.add_argument("--split", default="val")
+    ap.add_argument("--learn-gate", action="store_true",
+                    help="fit the logistic router on <data>/train and add MoE_learned")
     args = ap.parse_args(argv)
+
+    methods = list(METHODS)
+    if args.learn_gate:
+        GATE = fit_gate(Path(args.data) / "train")
+        methods.append("MoE_learned")
+        print(f"[gate] fit on {GATE['n']} points; w={np.round(GATE['w'], 3).tolist()}")
 
     obs, traj = _load(Path(args.data) / args.split)
     # per-(method, role) list of per-stream normalized RMSE (by peak true value)
-    nrmse = {m: {r: [] for r in ROLES} for m in METHODS}
-    final_err = {m: {r: [] for r in ROLES} for m in METHODS}
+    nrmse = {m: {r: [] for r in ROLES} for m in methods}
+    final_err = {m: {r: [] for r in ROLES} for m in methods}
 
     for s, tps in traj.items():
         grid = [tp["t_hours"] for tp in tps]
@@ -197,7 +277,7 @@ def main(argv=None) -> None:
             true = np.array([tp[role] for tp in tps])
             peak = max(true.max(), 1.0)
             obs_r = sorted(obs[s].get(role, []), key=lambda o: o["t_hours"])
-            for m in METHODS:
+            for m in methods:
                 est = np.array(_estimate(m, obs_r, grid, role))
                 nrmse[m][role].append(float(np.sqrt(np.mean((est - true) ** 2)) / peak))
                 final_err[m][role].append(abs(est[-1] - true[-1]) / peak)
@@ -205,12 +285,12 @@ def main(argv=None) -> None:
     print(f"\n== {args.split}: {len(traj)} streams == (normalized RMSE, lower is better)\n")
     hdr = f"{'method':14s}" + "".join(f"{r:>11s}" for r in ROLES) + f"{'overall':>11s}"
     print(hdr); print("-" * len(hdr))
-    for m in METHODS:
+    for m in methods:
         per_role = {r: float(np.mean(nrmse[m][r])) for r in ROLES}
         overall = float(np.mean([per_role[r] for r in ROLES]))
         print(f"{m:14s}" + "".join(f"{per_role[r]:11.4f}" for r in ROLES) + f"{overall:11.4f}")
     print("\nfinal-value normalized error:")
-    for m in METHODS:
+    for m in methods:
         overall = float(np.mean([np.mean(final_err[m][r]) for r in ROLES]))
         print(f"  {m:14s} {overall:.4f}")
 

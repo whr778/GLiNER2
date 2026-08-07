@@ -220,3 +220,30 @@ censoring** (noise-weighting + one-sided updates pay off) and **shrinks under sp
 the hand-set MoE gate → motivates a **learned router** (decision #3, next build);
 (b) the win rides on a correct measurement model → **Venezuela** (real, model-mismatched)
 is the true test.
+
+## 15. Learned gate — a trained router beats the hand-set tables
+
+Date: 2026-08-07. Free/CPU. `evaluate.py --learn-gate`. Realizes decision #3 (Reading B).
+
+Replaces §4's hand tables (`SRC_TRUST`/`QUAL_TRUST`/`GATE_TAU`) with a logistic router
+`alpha = sigmoid(w·x)`, `x = [staleness, source σ, qualifier factor, at_least flag,
+decay-role flag, ekf−lastvalue gap, #reports]`. Trained on the train split by GD to
+minimize the peak-normalized blend MSE (the eval metric). ~8 params, ~70k points, <1s.
+
+Best method in every regime/split (overall normalized RMSE):
+
+| | last_value | EKF | MoE_hand | **MoE_learned** |
+|---|---|---|---|---|
+| normal/val | 0.194 | 0.121 | 0.123 | **0.120** |
+| normal/test | 0.186 | 0.114 | 0.115 | **0.113** |
+| hard/val | 0.265 | 0.244 | 0.241 | **0.228** |
+| hard/test | 0.285 | 0.236 | 0.234 | **0.231** |
+
+Margin over the fixed EKF is tiny in normal (the corrected measurement model is already
+near-optimal there) but real in the **hard** regime (0.228 vs 0.244) — where a static
+hand-table can't adapt. The learned weights recover the ablation's lesson (unreliable
+source / coarse qualifier / `at_least` → trust the tracker) and add role-dependence + a
+disagreement regularizer the hand table lacked. This is the piece meant to transfer to
+the real boundary model / **Venezuela**, where hand-set trust constants won't.
+(Honest caveat: it optimizes trajectory RMSE and trades a hair of final-value accuracy on
+hard-test; and it's fit + eval'd in-regime — cross-regime transfer is the next check.)
