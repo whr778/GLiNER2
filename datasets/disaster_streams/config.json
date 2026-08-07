@@ -1,0 +1,32 @@
+{
+  "seed": 42,
+  "text": "none",
+  "grid_hours": 6,
+  "roles": [
+    "dead",
+    "injured",
+    "missing"
+  ],
+  "sources": [
+    "official",
+    "major_outlet",
+    "preliminary"
+  ],
+  "counts": {
+    "train": {
+      "streams": 200,
+      "observations": 36057,
+      "trajectory_points": 23929
+    },
+    "val": {
+      "streams": 40,
+      "observations": 7515,
+      "trajectory_points": 4702
+    },
+    "test": {
+      "streams": 40,
+      "observations": 6290,
+      "trajectory_points": 4607
+    }
+  }
+}
