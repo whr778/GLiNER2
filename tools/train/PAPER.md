@@ -255,6 +255,8 @@ reassembly, no boundary loss. On such a model global decoding is not merely
 unnecessary but counter-productive (it would fragment context the encoder could
 use whole), which is why it is off by default and gated on `chunk_size`.
 
+One residual limit is orthogonal to context length: the span model's count head is a 20-way classifier (`count_pred`), so it emits at most **19 instances per schema type per document** (higher gold counts are clamped to 19 in training), and the native single-pass path hits this ceiling hardest — it has no cross-window union to exceed it. It is a hard cap for high-cardinality tasks such as document-level relations (Re-DocRED routinely exceeds 19 triples per document). The boundary architecture's continuous per-query count log-rate removes the cap.
+
 The two paths are complementary, selected by the deployment constraint:
 
 | Regime | Encoder | Document-level events via |
