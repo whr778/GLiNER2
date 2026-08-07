@@ -30,6 +30,11 @@ QUAL_FACTOR = {"point": 1.0, "about": 1.6, "interval": 2.0, "feared": 2.5, "at_l
 BETA = 0.15   # rise-rate prior (per day) -- gentle; the asymptote x* is estimated
 GAMMA = 0.25  # decay-rate prior (per day)
 
+# MoE gate (Reading B): weight on the tracked state = 1 - trust(last report)*recency.
+SRC_TRUST = {"official": 1.0, "major_outlet": 0.7, "preliminary": 0.4}
+QUAL_TRUST = {"point": 1.0, "about": 0.8, "at_least": 0.5, "interval": 0.4, "feared": 0.3}
+GATE_TAU = 12.0  # hours; recency half-scale
+
 
 def _R(o: Dict) -> float:
     sig = SRC_REL_SIGMA[o["source"]] * QUAL_FACTOR[o["qualifier"]]
@@ -148,7 +153,27 @@ def est_ekf(obs, grid, role):
     return est_ekf_decay(obs, grid) if role in DECAY_ROLES else est_ekf_rise(obs, grid)
 
 
-METHODS = {"last_value": None, "weighted_avg": None, "running_max": None, "EKF": None}
+def est_moe(obs: List[Dict], grid: List[float], role: str) -> List[float]:
+    """Gate the local read (last_value) and the tracked state (EKF): alpha =
+    weight on the tracked state = 1 - trust(last report) * recency. Fresh+reliable
+    -> local read; stale/censored/unreliable -> tracked state."""
+    ekf = est_ekf(obs, grid, role)
+    lv = est_last_value(obs, grid)
+    obs = sorted(obs, key=lambda o: o["t_hours"])
+    out, j, last = [], 0, None
+    for i, t in enumerate(grid):
+        while j < len(obs) and obs[j]["t_hours"] <= t:
+            last = obs[j]; j += 1
+        if last is None:
+            out.append(ekf[i]); continue
+        tau = SRC_TRUST[last["source"]] * QUAL_TRUST[last["qualifier"]]
+        alpha = 1.0 - tau * math.exp(-(t - last["t_hours"]) / GATE_TAU)
+        out.append(alpha * ekf[i] + (1.0 - alpha) * lv[i])
+    return out
+
+
+METHODS = {"last_value": None, "weighted_avg": None, "running_max": None,
+           "EKF": None, "MoE_gate": None}
 
 
 # --------------------------------------------------------------------------- #
@@ -170,6 +195,7 @@ def _estimate(method: str, obs, grid, role):
     if method == "last_value": return est_last_value(obs, grid)
     if method == "weighted_avg": return est_weighted_avg(obs, grid)
     if method == "running_max": return est_running_max(obs, grid)
+    if method == "MoE_gate": return est_moe(obs, grid, role)
     return est_ekf(obs, grid, role)
 
 
