@@ -88,3 +88,19 @@ reused; they handle arbitrary grids).
 - **Candidate for the main tracker:** the rate filter is a general defense against high
   outliers on rising signals (the one-sided gate's blind spot) — consider folding into
   `evaluate.py`.
+
+## V3-full progress — denser stream to August
+
+Added the August article (Al Jazeera Aug 3 → dead **6,125**, 61,000 hospitalized) and enriched
+the GT with the July/August official points (2,954 Jul 4; 5,546 late Jul; 6,125 Aug 4 — the
+Bloomberg/CNN/New Arab article *text* is 403/451-blocked, so those figures are GT-only).
+Re-tracked (`--max-rate 100`, dropping the 10,000 prediction):
+
+- **dead:** EKF **188 / 1,680 / 6,122** vs official **188 / 1,719 / 6,125** at the covered
+  timestamps (t=24/120/984h) — near-perfect where there is coverage.
+- **injured:** **1,518 / 4,913 / 60,978** vs **1,520 / 5,034 / 61,000**.
+- The estimate **flatlines t=120→984h** (no obs — July sources blocked) and misses t=48h
+  (920, CNN-blocked). **Residual error is collection coverage, not method** — the pipeline
+  reconstructs the real toll at every point it has data for.
+- **Remaining V3-full lever:** fill the July gap from non-blocked outlets (Reuters/AP/BBC/
+  Guardian/local) so the mid-curve isn't flat.

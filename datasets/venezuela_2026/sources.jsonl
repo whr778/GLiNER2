@@ -4,3 +4,4 @@
 {"url": "https://www.cnn.com/2026/06/26/world/live-news/venezuela-earthquake-hnk", "outlet": "CNN", "published": "2026-06-26", "tier": "major_outlet", "note": "over 900 killed"}
 {"url": "https://news.un.org/en/story/2026/06/1167815", "outlet": "UN News", "published": "2026-06-26", "tier": "official", "note": "UN situation update"}
 {"url": "https://www.aljazeera.com/news/2026/6/29/aftershock-hits-caracas-during-critical-hours-for-venezuela-rescue-efforts", "outlet": "Al Jazeera", "published": "2026-06-29", "tier": "major_outlet", "note": "toll 1719, thousands missing"}
+{"url": "https://www.aljazeera.com/news/2026/8/3/death-toll-from-venezuela-earthquakes-passes-6000", "outlet": "Al Jazeera", "published": "2026-08-03", "tier": "major_outlet", "note": "toll passes 6000 -> 6125, 61000 hospitalized"}
