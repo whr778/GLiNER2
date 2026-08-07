@@ -241,6 +241,36 @@ def candidate_score_set_to_problem(
     )
 
 
+def joint_decode(
+    candidates: Any,
+    query_types: Sequence[str],
+    pairs: Any,
+    relation_logits: Sequence[float],
+    *,
+    constraints: Sequence[Any] = (),
+    sample_index: int = 0,
+    text: str = "",
+    mention_threshold: float = 0.5,
+    beam_width: int = 16,
+    pair_temperature: float = 1.0,
+    relation_temperature: float = 1.0,
+):
+    """End-to-end boundary joint decode: candidates + relation pairs → mentions + edges →
+    typed-constraint beam → the selected node/edge solution. Composes the two boundary
+    adapters with the shared `BeamOptimizer`; this is the joint_ie side of the boundary
+    ``--joint-decode`` wiring. The engine caller converts the solution's token spans to
+    char offsets and formats the output dict (the remaining `BoundaryExtractor` piece)."""
+    from gliner2.joint_ie.optimizers import BeamOptimizer
+
+    css = boundary_candidates_to_candidate_score_set(
+        candidates, query_types, text, sample_index, pair_temperature=pair_temperature)
+    edges = boundary_relation_pairs_to_edges(
+        pairs, relation_logits, relation_temperature=relation_temperature)
+    problem = candidate_score_set_to_problem(
+        css, edges, mention_threshold=mention_threshold, constraints=constraints)
+    return BeamOptimizer(beam_width=beam_width).optimize(problem)
+
+
 __all__ = [
     "MentionScore",
     "RelationRoleScore",
@@ -250,4 +280,5 @@ __all__ = [
     "boundary_candidates_to_candidate_score_set",
     "boundary_relation_pairs_to_edges",
     "candidate_score_set_to_problem",
+    "joint_decode",
 ]

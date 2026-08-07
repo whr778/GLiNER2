@@ -13,6 +13,7 @@ from gliner2.joint_ie.candidate_scores import (
     boundary_candidates_to_candidate_score_set,
     boundary_relation_pairs_to_edges,
     candidate_score_set_to_problem,
+    joint_decode,
     score_lattice_to_candidate_score_set,
 )
 from gliner2.joint_ie.constraints import TypedEndpoints
@@ -137,4 +138,33 @@ def test_boundary_relation_pairs_to_edges_link_to_mentions():
     problem = candidate_score_set_to_problem(css, edges, constraints=constraints)
     assert len(problem.edges) == 1
     solution = BeamOptimizer(beam_width=8).optimize(problem)
+    assert {e.relation_type for e in solution.edges} == {"works_for"}
+
+
+def test_joint_decode_end_to_end_from_boundary_outputs():
+    from gliner2.models.boundary.relations import RelationPairBatch
+    from gliner2.models.outputs import CandidateTensorBatch
+
+    # boundary candidates: person [0,2), org [3,5) (both confident)
+    cands = CandidateTensorBatch(
+        indices=torch.tensor([[[[0, 2], [0, 0]], [[3, 5], [0, 0]]]]),
+        proposal_logits=None,
+        pair_logits=torch.tensor([[[5.0, -5.0], [5.0, -5.0]]]),
+        valid_mask=torch.tensor([[[True, False], [True, False]]]),
+        query_mask=torch.tensor([[True, True]]),
+    )
+    pairs = RelationPairBatch(
+        batch_index=torch.tensor([0]), relation_index=torch.tensor([0]),
+        head_start=torch.tensor([0]), head_end=torch.tensor([2]),
+        tail_start=torch.tensor([3]), tail_end=torch.tensor([5]),
+        head_prob=torch.tensor([0.9]), tail_prob=torch.tensor([0.9]),
+        head_keys=[("person", 0, 2)], tail_keys=[("org", 3, 5)],
+        relation_types=["works_for"],
+    )
+    solution = joint_decode(
+        cands, ["person", "org"], pairs, [3.0],
+        constraints=[TypedEndpoints("works_for", ("person",), ("org",))],
+        text="Alice works at Acme",
+    )
+    assert {n.entity_type for n in solution.nodes} == {"person", "org"}
     assert {e.relation_type for e in solution.edges} == {"works_for"}
