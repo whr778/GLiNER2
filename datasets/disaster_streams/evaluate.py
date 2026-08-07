@@ -42,6 +42,10 @@ GATE_TAU = 12.0  # hours; recency half-scale
 # date/magnitude/other-role figure); P-growth between reports keeps real jumps admissible.
 REJECT_SIGMA = None
 
+# Fold the extractor's confidence into measurement noise R (soft): low confidence -> larger
+# R -> the reading is down-weighted instead of hard-dropped. False = off (default).
+CONF_R = False
+
 
 def _R_at(o: Dict, ref: float) -> float:
     """Measurement-noise variance scaled by a reference LEVEL (the current estimate),
@@ -49,7 +53,10 @@ def _R_at(o: Dict, ref: float) -> float:
     by the raw report over-trusts a low reading and drags a rising estimate downward
     (the failure the harder-regime ablation exposed under unreliable sources)."""
     sig = SRC_REL_SIGMA[o["source"]] * QUAL_FACTOR[o["qualifier"]]
-    return (sig * max(ref, 1.0)) ** 2
+    R = (sig * max(ref, 1.0)) ** 2
+    if CONF_R and "confidence" in o:
+        R /= max(o["confidence"], 1e-3) ** 2   # low extraction confidence -> larger R
+    return R
 
 
 # --------------------------------------------------------------------------- #
@@ -307,10 +314,14 @@ def main(argv=None) -> None:
     ap.add_argument("--min-conf", type=float, default=0.0,
                     help="drop observations whose extractor 'confidence' is below this "
                          "(sweeps the model arm's precision threshold in post)")
+    ap.add_argument("--conf-r", action="store_true",
+                    help="fold extractor confidence into R (soft down-weight) instead of "
+                         "a hard --min-conf cut")
     args = ap.parse_args(argv)
 
-    global REJECT_SIGMA
+    global REJECT_SIGMA, CONF_R
     REJECT_SIGMA = args.reject_sigma
+    CONF_R = args.conf_r
     methods = list(METHODS)
     if args.learn_gate:
         roots = (args.gate_train or args.data).split(",")

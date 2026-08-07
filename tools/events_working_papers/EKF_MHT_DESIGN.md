@@ -352,9 +352,14 @@ From "destroyed" (parser 1.16) to **usable 0.29** at conf ≥ 0.99, vs the struc
 ceiling 0.14. Residual gap = remaining FPs + **qualifier loss** (the model extracts the bare
 number, not the hedge → qualifier acc 0.31) + missing-role error.
 
-**Confidence is used as a HARD threshold here — and it's a scalar field probability, not a
-covariance.** Principled next steps: (a) fold the extraction confidence into the measurement
-noise `R` (soft down-weighting) instead of a hard cut; (b) recover the qualifier from the
-bound number's local context (the hedge sits beside it); (c) optionally a joint
-{dead,injured,missing} state with a covariance matrix (roles co-evolve). Model output
-committed (`datasets/disaster_streams_model`).
+**Confidence is a scalar field probability, not a covariance; used here as a HARD cut.**
+Tested folding it into `R` as soft measurement uncertainty (`--conf-r`, `R /= conf^2`): it
+does **not** beat the hard cut (EKF: hard-cut **0.29** vs soft 1.29, soft+gate 1.76,
+soft+mild-cut+gate 0.68). Reason: the zero-shot errors are **gross** mis-bindings (a wrong
+number entirely), and no confidence weighting in (0,1) neutralizes a categorically-wrong
+value — only removal does. Soft-`R` is the right tool for *graded* noise, not gross FPs.
+Corollary: the one-sided gate can't catch high FPs on *rising* roles (it admits highs as
+real jumps), so gross `dead` FPs specifically need the hard cut. **Real lever = extractor
+precision at the source** (fine-tune / record-mode schema) + qualifier recovery (the hedge
+sits beside the bound number). A joint {dead,injured,missing} covariance matrix (roles
+co-evolve) is a separate extension. Model output committed (`datasets/disaster_streams_model`).
