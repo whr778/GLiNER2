@@ -73,6 +73,21 @@ def value_qualifier(text: str):
     return (int(m.group(0).replace(",", "")) if m else 0), qual
 
 
+def qualifier_near(text: str, span: str, window: int = 45) -> str:
+    """Detect the hedge local to a model-bound number. The model located the digits; the
+    qualifier ('at least'/'feared'/'about'/a bucket word) sits right beside them, usually
+    outside the extracted span -- so read the qualifier from the number's context, not the
+    bare span. Falls back to the span if the number can't be located."""
+    m = re.search(r"\d[\d,]*", span)
+    key = m.group(0) if m else span
+    i = text.find(key)
+    if i < 0:
+        return _detect_qualifier(span)
+    # the hedge usually precedes the number ("at least 40", "about 300"); a small right
+    # margin avoids pulling in an adjacent fact's hedge in multi-fact prose.
+    return _detect_qualifier(text[max(0, i - window): i + len(key) + 8])
+
+
 def extract_obs(text: str) -> Dict:
     """Surface extraction + normalization: text -> {role, value, qualifier, source}."""
     value, qual = value_qualifier(text)

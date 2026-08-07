@@ -363,3 +363,16 @@ real jumps), so gross `dead` FPs specifically need the hard cut. **Real lever = 
 precision at the source** (fine-tune / record-mode schema) + qualifier recovery (the hedge
 sits beside the bound number). A joint {dead,injured,missing} covariance matrix (roles
 co-evolve) is a separate extension. Model output committed (`datasets/disaster_streams_model`).
+
+**$0 extractor wins + held-out validation.** Two normalization/schema wins, no training:
+(1) **qualifier recovery** — read the hedge from the bound number's local context
+(`extract.qualifier_near`): qual-acc 0.31 → 0.74; (2) **distractor-excluding field
+descriptions** ("injured, *not* displaced"). Val end-to-end EKF: 0.29 → 0.20 → **0.172**
+(min-conf 0.99). Confirmed on a **held-out test** split (12 fresh sonnet-5 streams, never
+seen): extraction stable (P 0.63, value 0.991, qual 0.72); end-to-end **EKF 0.291** — beats
+parser (~1+) and last_value (1.09), but ~2.5× the test structured ceiling (0.115) and worse
+than val's 0.172 (the val figure was optimistic — threshold/descriptions were val-informed).
+Residual weak role: **missing** (test 0.46). Record-mode precision needs a *boundary* model
+(span decoder ignores `mode`). The model pass is cached (`raw.jsonl`) so normalization
+re-runs free (`--from-raw`); a paid batch whose poll dies is recoverable by id
+(`providers.fetch_batch` / `realize --batch-id`) — no re-spend.

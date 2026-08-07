@@ -204,9 +204,8 @@ class AnthropicProvider(LLMProvider):
         until the batch ends, then return {custom_id: raw_text} for successes.
 
         Runs asynchronously on Anthropic's side (usually < 1h). The batch id is
-        printed up front so a killed run can be recovered from the Hub.
+        printed up front so a killed run can be recovered via ``fetch_batch``.
         """
-        import time
         from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
         from anthropic.types.messages.batch_create_params import Request
 
@@ -218,8 +217,22 @@ class AnthropicProvider(LLMProvider):
         batch = self._client.messages.batches.create(requests=requests)
         print(f"[batch] submitted {len(requests)} requests as {batch.id} "
               f"(-50% pricing); polling every 30s...")
+        return self.fetch_batch(batch.id)
+
+    def fetch_batch(self, batch_id):
+        """Poll an already-submitted batch to completion and collect its results.
+        Recovers a batch whose original poll loop died (network timeout) -- no
+        resubmission, no extra spend. Transient poll errors are retried, not fatal.
+        """
+        import time
+        from anthropic import APIConnectionError, APITimeoutError
+
         while True:
-            b = self._client.messages.batches.retrieve(batch.id)
+            try:
+                b = self._client.messages.batches.retrieve(batch_id)
+            except (APITimeoutError, APIConnectionError) as e:
+                print(f"[batch] transient poll error, retrying: {e}")
+                time.sleep(15); continue
             if b.processing_status == "ended":
                 break
             c = b.request_counts
@@ -229,14 +242,14 @@ class AnthropicProvider(LLMProvider):
 
         out: dict = {}
         errored = 0
-        for result in self._client.messages.batches.results(batch.id):
+        for result in self._client.messages.batches.results(batch_id):
             if result.result.type == "succeeded":
                 msg = result.result.message
                 out[result.custom_id] = "".join(
                     bl.text for bl in msg.content if bl.type == "text")
             else:
                 errored += 1
-        print(f"[batch] {batch.id} ended: {len(out)} succeeded, {errored} errored/expired")
+        print(f"[batch] {batch_id} ended: {len(out)} succeeded, {errored} errored/expired")
         return out
 
 

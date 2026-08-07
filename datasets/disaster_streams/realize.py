@@ -92,6 +92,8 @@ def main(argv=None) -> None:
     ap.add_argument("--max-tokens", type=int, default=300)
     ap.add_argument("--out", default="datasets/disaster_streams_sonnet5")
     ap.add_argument("--estimate", action="store_true", help="print cost estimate and exit")
+    ap.add_argument("--batch-id", default=None,
+                    help="recover an already-submitted batch by id (no resubmission/spend)")
     args = ap.parse_args(argv)
 
     src_dir = Path(args.data) / args.split
@@ -109,7 +111,8 @@ def main(argv=None) -> None:
     cfg = providers.ProviderConfig(provider=args.provider, model=args.model,
                                    max_tokens=args.max_tokens, json_object=False)
     provider = providers.build_provider(cfg)
-    texts = provider.complete_batch(items)  # {custom_id: raw_json}
+    texts = (provider.fetch_batch(args.batch_id) if args.batch_id
+             else provider.complete_batch(items))  # {custom_id: raw_json}
 
     out_dir = Path(args.out) / args.split
     out_dir.mkdir(parents=True, exist_ok=True)
