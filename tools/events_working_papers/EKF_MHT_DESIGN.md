@@ -122,3 +122,65 @@ synthetic-corpus direction.
   corpus (e.g. cross-doc event coref, ECB+).
 - **Normalization layer** design (numbers/dates/amounts → continuous + noise model).
 - **Router supervision** signal.
+
+## 11. Synthetic stream generator — specification (the $0 backbone)
+
+Anchored on mass-casualty tracking; parameters seeded from the real Venezuela 2026
+trajectory (920 → 1,719 → 6,000+ dead) so synthetic streams look like real disasters.
+
+**Per stream:**
+1. **Sample the truth.** Draw asymptotes `d*, i*` (dead/injured; log-normal, magnitude-
+   scaled), initial missing `m0`, dynamics rates `β` (approach), `γ` (missing decay),
+   coupling `κ` (resolved missing → dead), attention decay `λ`, duration `T`. Integrate
+   the linear ODEs (§3) on a fine grid → the **ground-truth trajectory** `x(t)`.
+2. **Sample report times** `t_k` ~ inhomogeneous Poisson with intensity ∝ salience
+   `s(t)` (dense early, sparse late).
+3. **Emit observations.** At each `t_k` pick reported roles ⊆ {dead, injured, missing,
+   displaced}, a **qualifier** ∈ {point ("rises to"), lower_bound ("at least"),
+   interval ("dozens/hundreds"), coarse}, and a **source** ∈ {official, major_outlet,
+   preliminary} → `value` = censored/noisy read of `x(t_k)` (noise & bias scaled by
+   source; lower_bound ⇒ value ≤ truth). Record `(stream_id, t_k, role, value,
+   qualifier, source)`.
+
+**Outputs (committable, small):**
+- `observations.jsonl` — one row per observation (the tracker's input).
+- `trajectory.jsonl` — ground-truth `x(t)` on the grid (the eval target).
+- `config.json` + seed (reproducible).
+
+**LLM-realistic layer (sonnet-5, ~$9, only for the end-to-end val/test subset):**
+render each observation as a short realistic news snippet conditioned on
+`(role, value, qualifier, source)`; reuse `tools/data/synthetic/` infra. The boundary
+model extracts figures from this text; the tracker consumes the figures. Parametric
+streams (no text) cover train + controlled ablations for free.
+
+**Eval (vs `trajectory.jsonl`):** trajectory RMSE over time, final-toll error, CI
+calibration; baselines = last-value, weighted-average, heuristic merge.
+
+## 12. Venezuela 2026 — the double-blind real test (copyright-aware)
+
+Validated real event (7.5+7.2, 24 Jun 2026; official toll 920→1,719→6,000+→~6,125).
+Sources: CNN hourly liveblogs (map onto hourly buckets), UN News, USGS, Al Jazeera,
+Wikipedia timeline.
+
+- **Held out entirely** (blind) — never in train/val.
+- **Ground truth** = the *official-source* figure trajectory (govt/UN/USGS over time) +
+  settled toll, annotated separately from the reporting stream.
+- **Copyright:** commit only **extracted observations + timestamps + source URLs +
+  the GT trajectory** — NOT full article text. Text is fetched at eval time from the
+  stored URLs.
+
+## 13. Data layout + git
+
+`/data/` is git-ignored; committable tracking data lives under a new top-level
+**`datasets/`**:
+
+```
+datasets/disaster_streams/{train,val,test}/{observations,trajectory}.jsonl   # synthetic
+datasets/disaster_streams/config.json
+datasets/venezuela_2026/observations.jsonl   # extracted (role,value,qualifier,source,ts,url)
+datasets/venezuela_2026/trajectory.jsonl      # official GT toll over time
+datasets/venezuela_2026/sources.jsonl         # url, outlet, timestamp (no full text)
+```
+
+Generator: `datasets/disaster_streams/generate.py` (parametric = free; `--realize`
+adds the sonnet-5 text layer for the val/test subset).

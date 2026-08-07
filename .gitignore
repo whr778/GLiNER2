@@ -102,8 +102,14 @@ Thumbs.db
 test_api_client.py
 
 # Local training inputs/outputs (large, machine-specific). Root-anchored so
-# `tools/data/` (the dataset-converter package) is NOT excluded.
-/data/
+# `tools/data/` (the dataset-converter package) is NOT excluded. Use `/data/*`
+# (not `/data/`) so specific small corpora can be re-included below; a whole dir
+# can't be re-included once its parent is excluded. Committed tracking-experiment
+# data lives OUTSIDE /data/, under /datasets/ (not ignored).
+/data/*
+!/data/synthetic_sonnet5_1k.train.jsonl
+!/data/synthetic_sonnet5_1k.val.jsonl
+!/data/synthetic_sonnet5_1k.test.jsonl
 /raw_data/
 /out/
 
