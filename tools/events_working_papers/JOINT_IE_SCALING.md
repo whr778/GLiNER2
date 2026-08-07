@@ -27,18 +27,24 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
 
 `candidate_scores.py` already defines the **architecture-agnostic contract**:
 `CandidateScoreSet` → `candidate_score_set_to_problem` → `JointProblem` → `BeamOptimizer`
-+ `TypedEndpoints`/constraints + `Calibrator`. The **span** direction is built
-(`score_lattice_to_candidate_score_set`; dense width lattice → sparse). Net-new:
++ `TypedEndpoints`/constraints + `Calibrator`. The **span** direction was built
+(`score_lattice_to_candidate_score_set`; dense width lattice → sparse). Progress:
 
-- `boundary_candidates_to_candidate_score_set(candidates, schema) → CandidateScoreSet` —
-  map the boundary `CandidateTensorBatch` (`indices`, `proposal_logits`, `pair_logits`,
-  `candidate_states`) → `MentionScore` + `RelationRoleScore` (boundary candidates are
-  already sparse, so no lattice walk).
-- A decode wiring: `BoundaryExtractor` + a `--joint-decode` flag running the beam.
-- Tests on a shipped boundary checkpoint (greedy vs beam parity + a constraint case).
+- ✅ **`boundary_candidates_to_candidate_score_set`** — one sample's `CandidateTensorBatch`
+  (`indices`/`pair_logits`/`valid_mask`/`query_mask`) → `MentionScore`s, typed by the query's
+  schema `role_name`. Duck-typed; unit-tested. (commit `508880d`)
+- ✅ **`boundary_relation_pairs_to_edges`** — a `RelationPairBatch` + per-pair relation logits
+  → `ScoredRelationEdge`s. The pair batch's `head_keys`/`tail_keys` are `(role_name, start,
+  end)` = the mention keys, so edges reference the nodes directly; unit-tested. (commit
+  `332a86a`)
+- ⬜ **Decode wiring** — `BoundaryExtractor` + a `--joint-decode` flag: build `query_types`
+  from the layout, run both adapters + the relation scorer, `candidate_score_set_to_problem`
+  → `BeamOptimizer`, format results.
+- ⬜ **Integration test** on a shipped boundary checkpoint (greedy vs beam parity + a
+  constraint case).
 
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
-rebuild.
+rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
 
 ## 4. Experiment (Phase A — decode-only)
 
