@@ -110,6 +110,9 @@ test_api_client.py
 !/data/synthetic_sonnet5_1k.train.jsonl
 !/data/synthetic_sonnet5_1k.val.jsonl
 !/data/synthetic_sonnet5_1k.test.jsonl
+!/data/casualty_ft.train.jsonl
+!/data/casualty_ft.val.jsonl
+!/data/casualty_ft.test.jsonl
 /raw_data/
 /out/
 

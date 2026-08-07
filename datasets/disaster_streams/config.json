@@ -38,9 +38,9 @@
   },
   "counts": {
     "train": {
-      "streams": 200,
-      "observations": 35814,
-      "trajectory_points": 23929
+      "streams": 250,
+      "observations": 45338,
+      "trajectory_points": 29548
     },
     "val": {
       "streams": 40,

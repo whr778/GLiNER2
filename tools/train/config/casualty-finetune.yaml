@@ -1,0 +1,54 @@
+# Fine-tune fastino/gliner2-base-v1 on the disaster casualty-structure corpus
+# (realized sonnet-5 text -> casualty_report{dead,injured,missing}). Targets the
+# extraction bottleneck the EKF/MHT probes identified: zero-shot precision 0.63 +
+# confidence-cut selection bias on `missing`. Same recipe as gliner2-base-v1-synthetic
+# (from_pretrained continues the base heads); DeBERTa-v3-base, 512-pos -> 384-word window.
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-finetune
+  experiment_name: casualty_finetune
+  data_parallel: false
+  num_epochs: 8
+  batch_size: 16            # A100 40GB fits deberta-base b16 at seq 384; grad-accum -> eff 32
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5        # fine-tuning a trained model
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: false
+  fp16: true
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss   # structure-only corpus; best all-round checkpoint
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  sliding_window: true       # deberta-v3 caps at 512 positions
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: true
+  early_stopping: false
+
+eval:
+  batch_size: 16
+  threshold: 0.5
+  threshold_sweep: true      # calibrate the decision threshold on val
+  global_decode: false       # short single-report snippets; no cross-window assembly
+  eval_by_language: false
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  corpora:
+    - data/casualty_ft
+  event_files: {}
