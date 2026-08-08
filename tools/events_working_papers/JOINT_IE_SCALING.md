@@ -149,6 +149,81 @@ Hooks in `BoundaryExtractor._extract_from_batch` (`models/boundary/engine.py`):
 
 </details>
 
+## 3b. Structures, relations and events in the beam (the Phase A blocker)
+
+Status: designed 2026-08-08, building. Unblocks decision 4b.
+
+### The finding that shapes it: no new candidate class is needed
+
+The obvious design — add a `RecordCandidate` to `JointProblem` and teach the beam a third
+candidate class — is **not** required. Reading `optimizers/beam.py` + `base.py` shows the
+contract already expresses instances:
+
+- The beam **expands over edges**, pulling nodes in as endpoints; `_finish_nodes` then adds
+  any leftover positive-score nodes.
+- `EdgeCandidate` already carries **`slot`**, **`hypothesis`** and `count_alternative`, with
+  `exclusion_keys = ("slot", hypothesis, count_alternative, slot)`. The compiler already
+  emits `UniqueRelationSlot(name, "slot")`.
+- `base.py:90-100` runs whole-result **`validate(relations, nodes)`** hooks after
+  construction, in *both* optimizers — so constraints are **not** rejection-only. "At least"
+  semantics (required roles, required anchor) have a home.
+
+So an **event is a trigger node plus role edges**:
+
+| record concept | joint_ie realization |
+|---|---|
+| event instance | the **trigger node** (a real mention candidate) |
+| role assignment | `EdgeCandidate(head=trigger, tail=argument, slot=role)` |
+| instance identity | `hypothesis` = **trigger node id** |
+| scalar role cardinality | falls out of `edge_conflicts` via `exclusion_keys` — free |
+| required roles / anchor | a `validate`-hook constraint |
+| relation | unchanged — plain edges, as shipped |
+
+Zero contract change for events (`natural` mode). This is the paper's thesis applied to
+itself: reuse the optimizer/constraint stack rather than rebuild it.
+
+### Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| A | `hypothesis` = **trigger node id**, not a synthetic instance index | `EdgeCandidate.key` is `(relation_type, head, tail, slot, count_alternative)` — `hypothesis` is **not** in it, so two instances sharing a trigger would collapse their edges. Trigger-as-identity makes instance identity and `head` coincide, so nothing collapses. |
+| B | **scalar** role → `slot=role`; **list** role → `slot=None`, role in `relation_type` (`f"{task}::{role}"` uniformly) | `slot=role` gives scalar cardinality free, but would wrongly block the 2nd filler of a `ZERO_OR_MORE` role. Uniform `relation_type` means the output formatter never parses slots. |
+| C | Edge utility: **scalar** = `logit_c - logit_ABSENT`; **list** = `center_logit(logit_c)` | `_scalar_field_nll` is `log_softmax` over {ABSENT, candidates} (competitive), `_list_field_bce` is BCE over candidates only. Centering a softmax logit would be wrong; this silently determines beam behaviour. |
+| D | v1 **ignores `object_logits`** — the trigger mention score is the existence evidence | Keeps one score per decision. Adding the centered per-instance logit uniformly to that instance's role edges is the alternative; deferred as a **Phase-B calibration item**, not silently dropped. |
+| E | Source is **`RecordGroupOutput`** (raw `object_logits`/`assign_logits`/`field_spans`), never `decode_group` output | Adapting `DecodedRecord` would re-rank already-greedy decisions — the exact trap the relation path avoided. |
+
+### Known v1 behaviour, recorded not hidden
+
+- **A sub-threshold trigger kills its whole event.** `candidate_score_set_to_problem` drops
+  nodes below `mention_threshold`, then drops edges referencing them — so an event whose
+  trigger mention scores 0.4 vanishes even if the record head is confident. Consistent with
+  how relations already behave, but a live failure mode for RAMS. Belongs to the
+  arm-comparability family above.
+- **`latent` mode is deferred, not broken** — v1 covers `natural` (events) then `anchorless`
+  (structures). `latent` must keep working through the greedy path; it is simply not
+  exercised in the beam yet.
+
+### Increments
+
+1. **Adapter** `boundary_records_to_role_edges(RecordGroupOutput, layout)` → role edges +
+   the trigger/argument nodes they reference, keyed `(role_name, start, end)` from the
+   **same layout** as the mention adapter. **Key probe required** — mis-keyed layout must
+   drop every role edge, proven the way §3's relation crux was.
+2. **`RequiredRoles`** constraint via the `validate` hook + registration in
+   `_CONSTRAINT_TYPES` (`constraints.py:304`), with a compiler hook beside the existing
+   `UniqueRelationSlot` emission.
+3. **Engine**: factor raw `RecordGroupOutput` computation out of `_decode_records` (the
+   `_relation_pairs_and_logits` analogue); in joint mode **stop emitting the greedy record
+   output** or records double-emit; format back to greedy's exact record shape so the eval
+   harness runs both arms unchanged.
+4. **Integration test** on the tiny-encoder fixture with an event schema — events first
+   (RAMS is what blocks), structures next.
+
+Anchorless structures need the one genuinely new piece: a synthetic instance node
+(`candidate_id = ("__instance__", task, i)`) with a fake span — check `EntityOverlapPolicy`
+treatment of it under `flat` before shipping, since a fake span can collide with real
+mentions.
+
 ## 4. Experiment (Phase A — decode-only)
 
 - **Bases:** boundary `from_encoder` mmBERT-base, sizes {10,40,100}K on the event+relation
