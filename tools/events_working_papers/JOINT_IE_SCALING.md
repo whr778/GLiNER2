@@ -234,6 +234,39 @@ itself: reuse the optimizer/constraint stack rather than rebuild it.
 
 **Decision 4b is met**: structures, relations and events all decode through the beam.
 
+## 3c. ⛔ BLOCKER: the training harness cannot build a boundary model
+
+Found 2026-08-08 while scoping the scaling configs. Decision 1 says the architecture is
+**boundary**; decision 3 says the bases are retrained `from_encoder`. **Neither is
+reachable from a training config today.** Evidence:
+
+| check | result |
+|---|---|
+| `AutoExtractor` / `architecture` / `boundary` in `tools/train/train.py` | **0 occurrences** |
+| `_build_model` (`train.py:397`) | calls `GLiNER2.from_encoder(...)` |
+| `GLiNER2` | `class GLiNER2(SpanExtractor)` — `from_encoder` hardcodes `architecture="span"` |
+| `max_width: 20`, set by every `scaling-mmbert-*.yaml` | a **`span_head`** field (`configuration.py:33`; the validator message reads `span_head.max_width`) |
+| anything under `tools/` referencing `BoundaryExtractor` | none — only these working papers |
+
+So **`tools/train/config/scaling-mmbert-{10k,40k,100k}.yaml` train the SPAN architecture.**
+The published head-init scaling curve (arg F1 0.050/0.115/0.158) is a *span* curve — which
+is consistent with it being the head-init finding's baseline, but it is **not** a boundary
+base and cannot warm-start the joint_ie experiment.
+
+Consequences, in order:
+1. **Writing new scaling YAMLs alone does not work.** `train.py` needs architecture
+   dispatch (`AutoExtractor` / a boundary `from_encoder`) before any boundary config can
+   train. That is the actual first task, ahead of the configs.
+2. `max_width` must **not** be carried into boundary configs — the boundary head has no
+   span-width cap ([[COUNTING_LAYER]]); that cap is the thing the architecture removes.
+3. `decode_mode: joint` is a *decode* setting. It belongs on the eval/inference side, not
+   in the training recipe — the two decode arms are an eval-time switch over one trained
+   model, so the arms must not be baked into separate training runs.
+
+Until (1) lands, the 10K/40K/100K/~137K cold-start configs cannot be written honestly:
+they would silently train span models and produce a curve that answers a different
+question.
+
 ## 4. Experiment (Phase A — decode-only)
 
 - **Bases:** boundary `from_encoder` mmBERT-base, sizes {10,40,100}K on the event+relation
