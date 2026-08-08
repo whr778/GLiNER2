@@ -92,6 +92,7 @@ def test_joint_decode_links_relation_to_its_mention_nodes():
     """
     model = _relation_model()
     decoded = model._decode_joint(
+        None,  # batch: unused here, records are disabled on this fixture
         0,
         _core(model),
         _candidates(),
@@ -126,7 +127,7 @@ def test_joint_decode_matches_greedy_on_the_same_candidates():
         layout=_layout_from_ext_specs(SPECS),
     )
     joint = model._decode_joint(
-        0, _core(model), _candidates(), threshold=0.5, specs=SPECS, **common
+        None, 0, _core(model), _candidates(), threshold=0.5, specs=SPECS, **common
     )
     greedy = model._decode_relations(
         0, _core(model), _candidates(), {"relation_metadata": {}},

@@ -331,6 +331,7 @@ def joint_decode(
     beam_width: int = 16,
     pair_temperature: float = 1.0,
     relation_temperature: float = 1.0,
+    extra_edges: Sequence["ScoredRelationEdge"] = (),
 ):
     """End-to-end boundary joint decode: candidates + relation pairs → mentions + edges →
     typed-constraint beam → the selected node/edge solution. Composes the two boundary
@@ -343,6 +344,7 @@ def joint_decode(
         candidates, query_types, text, sample_index, pair_temperature=pair_temperature)
     edges = boundary_relation_pairs_to_edges(
         pairs, relation_logits, relation_temperature=relation_temperature)
+    edges.extend(extra_edges)  # record role edges (sec 3b), already scored
     problem = candidate_score_set_to_problem(
         css, edges, mention_threshold=mention_threshold, constraints=constraints)
     return BeamOptimizer(beam_width=beam_width).optimize(problem)

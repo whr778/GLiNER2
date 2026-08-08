@@ -14,6 +14,7 @@ from gliner2.models.boundary.model import (
     BoundaryExtractorModel,
     _group_scored_candidates,
 )
+from gliner2.joint_ie.candidate_scores import _query_type_name
 from gliner2.models.base import QueryLayout, QuerySpec
 from gliner2.models.boundary.records import decode_group
 
@@ -190,20 +191,24 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             text = batch.original_texts[i]
             text_len = len(start_map)
 
-            record_results = self._decode_records(
-                batch, i, core, candidates, offset, start_map, end_map,
-                text, text_len, include_confidence, include_spans,
-            )
-            for name, instances in record_results.items():
-                if instances:
-                    sample[name] = instances
-
-            if (
+            joint = (
                 self.boundary_settings.decode_mode == "joint"
                 and candidates is not None
-            ):
+            )
+            if not joint:
+                # In joint mode records come out of the beam instead, via role
+                # edges -- running this too would double-emit them.
+                record_results = self._decode_records(
+                    batch, i, core, candidates, offset, start_map, end_map,
+                    text, text_len, include_confidence, include_spans,
+                )
+                for name, instances in record_results.items():
+                    if instances:
+                        sample[name] = instances
+
+            if joint:
                 sample.update(self._decode_joint(
-                    i, core, candidates, threshold, offset, start_map, end_map,
+                    batch, i, core, candidates, threshold, offset, start_map, end_map,
                     text, text_len, include_confidence, include_spans,
                     layout, specs,
                 ))
@@ -375,6 +380,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
 
     def _decode_joint(
         self,
+        batch,
         sample_index: int,
         core: Dict[str, Any],
         candidates,
@@ -399,7 +405,9 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         Returns the same output shape as the greedy path. Note that adaptive
         thresholding and null-abstention remain greedy-only.
         """
-        from gliner2.joint_ie.candidate_scores import joint_decode
+        from gliner2.joint_ie.candidate_scores import (
+            boundary_record_groups_to_role_edges, joint_decode,
+        )  # noqa: F401 -- imported here to keep joint_ie optional on the greedy path
         from gliner2.joint_ie.constraints import TypedEndpoints
 
         pairs, logits = self._relation_pairs_and_logits(
@@ -407,6 +415,9 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         )
         if logits is None:
             logits = []
+        query_types = [spec["field_name"] for spec in specs]
+        groups = self._record_groups(batch, sample_index, core, candidates)
+        role_edges = boundary_record_groups_to_role_edges(groups, query_types)
         constraints = [
             TypedEndpoints(
                 entry["spec"].relation_type,
@@ -417,7 +428,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         ]
         solution = joint_decode(
             candidates,
-            [spec["field_name"] for spec in specs],
+            query_types,
             pairs,
             logits,
             constraints=constraints,
@@ -427,6 +438,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             beam_width=self.boundary_settings.joint_beam_width,
             pair_temperature=self.boundary_settings.pair_temperature,
             relation_temperature=self.boundary_settings.relation_temperature,
+            extra_edges=role_edges,
         )
 
         sample: Dict[str, Any] = {}
@@ -462,6 +474,8 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             sample["entities"] = [formatted]
 
         for edge in solution.edges:
+            if "::" in edge.relation_type:
+                continue  # a record role edge, emitted as a record below
             head, tail = chars.get(edge.head), chars.get(edge.tail)
             if head is None or tail is None:
                 continue
@@ -471,7 +485,107 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     include_confidence, include_spans,
                 )
             )
+
+        sample.update(self._format_joint_records(
+            groups, solution, query_types, offset, start_map, end_map,
+            text, text_len, include_confidence, include_spans,
+        ))
         return sample
+
+    def _format_joint_records(
+        self, groups, solution, query_types: List[str], offset: int,
+        start_map, end_map, text: str, text_len: int,
+        include_confidence: bool, include_spans: bool,
+    ) -> Dict[str, Any]:
+        """Rebuild record instances from the solution's role edges (§3b).
+
+        Role edges carry ``hypothesis`` = the trigger node key, so grouping by it
+        reconstitutes instances. Output matches the greedy record shape exactly, so
+        the eval harness runs both arms unchanged.
+        """
+        by_task: Dict[str, Dict[Any, Dict[str, List]]] = {}
+        for edge in solution.edges:
+            task, sep, role = edge.relation_type.partition("::")
+            if not sep:
+                continue
+            instances = by_task.setdefault(task, {}).setdefault(edge.hypothesis, {})
+            instances.setdefault(role, []).append((edge.tail[1], edge.tail[2]))
+
+        out: Dict[str, Any] = {}
+        for spec, _group in groups:
+            found = by_task.get(spec.task_name)
+            if not found:
+                continue
+            instances = []
+            for trigger, roles in found.items():
+                inst: "OrderedDict[str, Any]" = OrderedDict()
+                for fspec in spec.fields:
+                    role = _query_type_name(query_types, fspec.query_id)
+                    spans = [(trigger[1], trigger[2])] if fspec.is_anchor \
+                        else roles.get(role, [])
+                    value = self._format_record_field(
+                        spans, fspec.cardinality.is_scalar, offset, start_map,
+                        end_map, text, text_len, include_confidence, include_spans,
+                    )
+                    if not fspec.cardinality.is_scalar and value is None:
+                        value = []
+                    inst[fspec.name] = value
+                if any(v is not None and v != [] for v in inst.values()):
+                    instances.append(inst)
+            if instances:
+                out[spec.task_name] = instances
+        return out
+
+    def _format_record_field(
+        self, spans, is_scalar: bool, offset: int, start_map, end_map,
+        text: str, text_len: int, include_confidence: bool, include_spans: bool,
+    ):
+        """Format one record field's token spans; shared by the greedy and joint paths.
+
+        Scalar -> str/dict/None, list -> the standard span list.
+        """
+        formatted: List[Tuple[str, float, int, int]] = []
+        for (ts_raw, te_raw) in spans:
+            span = self._token_span_to_char(
+                ts_raw, te_raw, offset, start_map, end_map, text, text_len
+            )
+            if span is not None:
+                formatted.append((span[0], 1.0, span[1], span[2]))
+        if is_scalar:
+            if not formatted:
+                return None
+            s, conf, cs, ce = formatted[0]
+            if include_spans and include_confidence:
+                return {"text": s, "confidence": conf, "start": cs, "end": ce}
+            if include_spans:
+                return {"text": s, "start": cs, "end": ce}
+            if include_confidence:
+                return {"text": s, "confidence": conf}
+            return s
+        return self._format_spans(
+            formatted, include_confidence, include_spans, already_finalized=True
+        )
+
+    def _record_groups(self, batch, sample_index: int, core: Dict[str, Any], candidates):
+        """Raw ``(spec, RecordGroupOutput)`` pairs for one sample.
+
+        The pre-greedy record lattice, shared by the greedy record decode and the
+        joint path -- the `_relation_pairs_and_logits` analogue. Feeding the joint
+        path from `decode_group` output instead would only re-rank greedy decisions.
+        """
+        if not getattr(self, "enable_records", False):
+            return []
+        if candidates is None or candidates.candidate_states is None:
+            return []
+        record_specs = getattr(batch, "record_specs", ())
+        if sample_index >= len(record_specs) or not record_specs[sample_index]:
+            return []
+        query_states_i = core["query_states"][sample_index]
+        return [
+            (spec, self.record_decoder.forward_group(
+                spec, query_states_i, candidates, sample_index))
+            for spec in record_specs[sample_index].values()
+        ]
 
     def _decode_records(
         self,
@@ -488,47 +602,14 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         include_spans: bool,
     ) -> Dict[str, Any]:
         """Decode record/event groups into public structure output shapes."""
-        if not getattr(self, "enable_records", False):
-            return {}
-        if candidates is None or candidates.candidate_states is None:
-            return {}
-        record_specs = getattr(batch, "record_specs", ())
-        if sample_index >= len(record_specs) or not record_specs[sample_index]:
+        groups = self._record_groups(batch, sample_index, core, candidates)
+        if not groups:
             return {}
 
         settings = self.boundary_settings
-        query_states_i = core["query_states"][sample_index]
         out: Dict[str, Any] = {}
 
-        def _format_field(spans, is_scalar):
-            formatted: List[Tuple[str, float, int, int]] = []
-            for (ts_raw, te_raw) in spans:
-                ts, te = ts_raw - offset, te_raw - offset
-                if ts < 0 or te > text_len or te <= ts:
-                    continue
-                cs, ce = token_boundaries_to_character_offsets(ts, te, start_map, end_map)
-                surface = text[cs:ce].strip()
-                if surface:
-                    formatted.append((surface, 1.0, cs, ce))
-            if is_scalar:
-                if not formatted:
-                    return None
-                s, conf, cs, ce = formatted[0]
-                if include_spans and include_confidence:
-                    return {"text": s, "confidence": conf, "start": cs, "end": ce}
-                if include_spans:
-                    return {"text": s, "start": cs, "end": ce}
-                if include_confidence:
-                    return {"text": s, "confidence": conf}
-                return s
-            return self._format_spans(
-                formatted, include_confidence, include_spans, already_finalized=True
-            )
-
-        for task_index, spec in record_specs[sample_index].items():
-            group = self.record_decoder.forward_group(
-                spec, query_states_i, candidates, sample_index
-            )
+        for spec, group in groups:
             decoded = decode_group(
                 group,
                 anchor_threshold=settings.record_anchor_threshold,
@@ -543,7 +624,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 # scalar -> str/None, list -> list[str] (possibly empty).
                 for fspec in spec.fields:
                     spans = rec.fields.get(fspec.query_id, [])
-                    value = _format_field(spans, fspec.cardinality.is_scalar)
+                    value = self._format_record_field(
+                        spans, fspec.cardinality.is_scalar, offset, start_map,
+                        end_map, text, text_len, include_confidence, include_spans,
+                    )
                     if not fspec.cardinality.is_scalar and value is None:
                         value = []
                     inst[fspec.name] = value
