@@ -392,9 +392,55 @@ point is safe to run. DocRED itself stays excluded.
 
 ## 6. Cost / time
 
-- Data + wiring: **$0**.
-- A100: 3 bases + 3 Re-DocRED fine-tunes + evals ≈ **6-10 hr ≈ $12-20** (reuse the casualty
-  instance after that job frees it).
+Re-estimated 2026-08-08. *(The previous figure — "3 bases + 3 Re-DocRED fine-tunes ≈ 6-10 hr
+≈ $12-20" — predated the fourth base, the second downstream, and 15-epoch warm-starts. It is
+superseded, not merely refined: the run is now **12 jobs, not 6**.)*
+
+- **Data + wiring: $0.** Slices are on disk (`build_joint_scaling_mix.py`), no generation.
+
+**Throughput anchor — measured, not assumed.** [[SCALING_CURVE_EXPERIMENT]] §"Memory"
+records the combined base (~96K records × 2 epochs) at **~5 h on an A100** under this exact
+recipe (mmBERT-base, 2048 window, `batch_size 4` × `grad_accum 8`, gradient checkpointing,
+bf16) → **10.7 samples/s**. Everything below scales from that one number.
+
+**Workload** — 12 runs: 4 bases + 4 RAMS + 4 Re-DocRED warm-starts.
+
+| | record-epochs |
+|---|---|
+| cold-start, 5 epochs × 4 bases | 1,435K |
+| RAMS warm-start, 15 epochs × 4 | 440K |
+| Re-DocRED warm-start, 15 epochs × 4 (**×2.5**, it runs at `max_len 4096` not 2048) | 458K equiv |
+| + 15% for per-epoch eval and the threshold/metric sweeps | **2,683K** |
+
+→ **~70 GPU-hours on 1× A100.**
+
+**Lambda on-demand** (rates verified 2026-08; ±30% on the anchor gives **$80-282 / 14-91 h**):
+
+| config | wall-clock | cost | note |
+|---|---|---|---|
+| 1× A100 40GB | ~70 h | $139 | **OOM risk** — see below |
+| 2× A100 40GB | ~39 h | $154 | DDP ~1.8×, not 2× |
+| 1× A100 80GB | ~70 h | $195 | no OOM risk |
+| 2× A100 80GB | ~39 h | $217 | safest A100 option |
+| 1× H100 PCIe | ~35 h | $115 | ~2× A100 on bf16 |
+| **2× H100 PCIe** | **~19 h** | **$128** | **recommended** — best time per dollar |
+
+**Recommendation: 2× H100 PCIe.** The whole curve lands inside a day and it is *cheaper*
+than 2× A100 80GB. 1× H100 saves $13 and costs 16 extra hours — not worth it. The DDP path
+is already validated on 2× A10G, so multi-GPU is not new ground.
+
+Three constraints that matter more than the arithmetic:
+
+1. **Lambda sells H100/A100 *SXM* only as 8-GPU nodes** — requesting "2 GPUs" bills for
+   eight. The table prices **H100 PCIe @ $3.29/h**, which is available in small counts.
+   Re-price at 8× if SXM is actually wanted.
+2. **1× A100 40GB will likely OOM on the Re-DocRED arm.** [[SCALING_CURVE_EXPERIMENT]]
+   already records mmBERT-base OOM-ing 40GB at batch 8 / 2048; `joint-boundary-redocred.yaml`
+   runs at **4096**. Take 80GB, or drop that arm to `batch_size 2` × `grad_accum 16`. The
+   $56 gap is cheaper than discovering it three hours in.
+3. **The estimate is deliberately conservative.** 27% of every base mix is now `sentence_rex`
+   — single sentences, far shorter than event documents — so real throughput on the
+   relation-carrying mixes should *beat* the event-only anchor. No discount was applied.
 
 ## 7. Phase B (deferred — only if A is positive)
 
