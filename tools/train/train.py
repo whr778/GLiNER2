@@ -7,10 +7,16 @@ Run::
 The config has four sections:
 
 * ``model``    - either ``encoder`` (a raw HF encoder bootstrapped with fresh
-  heads via ``GLiNER2.from_encoder``; remaining keys like ``max_width`` /
+  heads via ``AutoExtractor.from_encoder``; remaining keys like ``max_width`` /
   ``struct_loss`` are forwarded to it) or ``pretrained`` (a saved GLiNER2
-  checkpoint continued via ``GLiNER2.from_pretrained``; remaining keys override
+  checkpoint continued via ``AutoExtractor.from_pretrained``; remaining keys override
   the loaded ``model.config``). Exactly one of the two must be set.
+  Optional ``architecture`` picks the head stack: ``span`` (default, unchanged
+  behaviour) or ``boundary``. Boundary configs take a ``boundary_head:`` block
+  and must NOT set ``max_width`` -- that is a span-head field, and removing the
+  span width cap is the point of the boundary architecture. On the ``pretrained``
+  path a declared ``architecture`` is checked against the checkpoint, so warm
+  starting the wrong architecture fails loudly instead of silently.
 * ``training`` - fields forwarded verbatim to :class:`TrainingConfig`. Multi-GPU:
   preferred is DistributedDataParallel via ``uv run torchrun --nproc_per_node=N
   tools/train/train.py --config ...`` (auto-detected from ``LOCAL_RANK``; here
@@ -75,7 +81,7 @@ from typing import Dict, List
 
 import yaml
 
-from gliner2 import GLiNER2
+from gliner2 import AutoExtractor
 from gliner2.inference.schema import derive_schema
 from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics, sweep_thresholds
 from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID, _selection_score, make_sweeping_compute_metrics
@@ -397,9 +403,15 @@ def _annotate_languages(records: List[Dict]) -> List[Dict]:
 def _build_model(model_cfg: Dict):
     """Build the model from the ``model`` config section.
 
-    ``pretrained`` loads a saved GLiNER2 checkpoint (continue/fine-tune its
-    trained heads via ``from_pretrained``); ``encoder`` bootstraps fresh heads
-    on a raw HF encoder via ``from_encoder``. Exactly one must be set.
+    ``pretrained`` loads a saved checkpoint (continue/fine-tune its trained heads
+    via ``from_pretrained``); ``encoder`` bootstraps fresh heads on a raw HF
+    encoder via ``from_encoder``. Exactly one must be set.
+
+    ``architecture`` selects the head stack (``"span"`` default, ``"boundary"``
+    for the boundary head). Both paths dispatch through ``AutoExtractor``: on the
+    ``pretrained`` path a declared ``architecture`` is passed through, so a config
+    asking for ``boundary`` against a span checkpoint fails loudly instead of
+    silently training the wrong architecture.
 
     On the ``pretrained`` path, ``map_location`` / ``quantize`` / ``compile`` go
     to ``from_pretrained``; any remaining keys (e.g. ``struct_loss``) override
@@ -407,15 +419,20 @@ def _build_model(model_cfg: Dict):
     structural ones like ``max_width`` that are baked into the saved weights.
     """
     model_cfg = dict(model_cfg)
+    architecture = model_cfg.pop("architecture", None)
     pretrained = model_cfg.pop("pretrained", None)
     if pretrained is not None:
         load_kwargs = {k: model_cfg.pop(k) for k in ("map_location", "quantize", "compile") if k in model_cfg}
-        model = GLiNER2.from_pretrained(pretrained, **load_kwargs)
+        if architecture is not None:
+            load_kwargs["architecture"] = architecture
+        model = AutoExtractor.from_pretrained(pretrained, **load_kwargs)
         for key, value in model_cfg.items():
             setattr(model.config, key, value)
         return model
     encoder = model_cfg.pop("encoder")
-    return GLiNER2.from_encoder(encoder, **model_cfg)
+    return AutoExtractor.from_encoder(
+        encoder, architecture=architecture or "span", **model_cfg
+    )
 
 
 def _collect_lang_codes(data) -> set:
@@ -572,7 +589,7 @@ def _blind_test_by_language(
 ) -> Dict:
     """Run the blind test per language then over all data; return aggregate metrics."""
     from collections import defaultdict
-    from gliner2 import GLiNER2
+    from gliner2 import AutoExtractor
     from gliner2.training.metrics import compute_metrics, _print_micro_report
     from gliner2.training.trainer import ExtractorDataset
 
@@ -592,7 +609,7 @@ def _blind_test_by_language(
         by_lang[rec.get("_lang", "und")].append(rec)
 
     print(f"\n[blind test] Loading {best} for per-language evaluation...")
-    model = GLiNER2.from_pretrained(str(best))
+    model = AutoExtractor.from_pretrained(str(best))
 
     per_lang: Dict[str, Dict] = {}
     for lang in sorted(by_lang):
@@ -835,7 +852,7 @@ def main(config_path: str) -> None:
         thresholds = DEFAULT_THRESHOLD_GRID if threshold_sweep_cfg is True else list(threshold_sweep_cfg)
         print(f"\n[threshold sweep] Loading {best} to calibrate against "
               f"{len(eval_data)} val samples over {thresholds}...")
-        sweep_model = GLiNER2.from_pretrained(str(best))
+        sweep_model = AutoExtractor.from_pretrained(str(best))
         eval_records = _read_records(eval_data) if eval_data and isinstance(eval_data[0], str) else eval_data
         sweep_ds = ExtractorDataset(eval_records, shuffle=False, validate=False)
         eval_thr, sweep_best_metrics, sweep_all = sweep_thresholds(

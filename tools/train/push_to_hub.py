@@ -9,7 +9,7 @@ Run::
 
 Authentication: log in once with ``uv run huggingface-cli login`` (or set the
 ``HF_TOKEN`` env var). The script uploads via ``HfApi.upload_folder``, so the
-target repo layout matches what ``GLiNER2.from_pretrained`` expects.
+target repo layout matches what ``AutoExtractor.from_pretrained`` expects.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
-from gliner2 import GLiNER2
+from gliner2 import AutoExtractor
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,7 +61,7 @@ def main() -> None:
         raise SystemExit(f"checkpoint not found: {checkpoint}")
 
     print(f"Loading checkpoint from {checkpoint}")
-    model = GLiNER2.from_pretrained(str(checkpoint), map_location="cpu")
+    model = AutoExtractor.from_pretrained(str(checkpoint), map_location="cpu")
 
     api = HfApi()
     print(f"Ensuring repo '{args.repo_id}' exists (private={args.private})")

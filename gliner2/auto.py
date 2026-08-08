@@ -92,6 +92,55 @@ class AutoExtractor:
         return model_class(config, **kwargs)
 
     @classmethod
+    def from_encoder(
+        cls,
+        encoder_name_or_path: str,
+        *,
+        architecture: str = "span",
+        max_len: Optional[int] = None,
+        map_location: Optional[str] = None,
+        trust_remote_code: bool = True,
+        **config_kwargs: Any,
+    ):
+        """Bootstrap a fresh extractor of any architecture on a raw HF encoder.
+
+        The architecture-dispatching counterpart to the per-class ``from_encoder``:
+        encoder weights are pretrained, task heads are randomly initialized. This
+        is what lets a training config choose ``boundary`` -- ``GLiNER2`` is the
+        span class and hardcodes ``architecture="span"``.
+
+        Args:
+            encoder_name_or_path: HF repo id or local path of the base encoder.
+            architecture: Registered architecture name (``"span"`` default keeps
+                existing callers unchanged; ``"boundary"`` for the boundary head).
+            max_len: Optional max sequence length override.
+            map_location: Device to place the model on.
+            trust_remote_code: Forwarded to ``AutoConfig.from_pretrained``.
+            **config_kwargs: Extra fields forwarded to the architecture's config
+                (e.g. ``span_head``/``boundary_head`` blocks, ``token_pooling``).
+        """
+        from transformers import AutoConfig, AutoTokenizer
+
+        from gliner2.models.base import resolve_device
+
+        name = normalize_architecture(architecture)
+        model_class = cls._resolve_class(name)
+        encoder_config = AutoConfig.from_pretrained(
+            encoder_name_or_path, trust_remote_code=trust_remote_code,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(encoder_name_or_path)
+        config = model_class.config_class(
+            model_name=encoder_name_or_path,
+            architecture=name,
+            max_len=max_len,
+            **config_kwargs,
+        )
+        model = model_class(
+            config, encoder_config=encoder_config, tokenizer=tokenizer,
+        )
+        return model.to(resolve_device(map_location))
+
+    @classmethod
     def from_pretrained(
         cls,
         pretrained_model_name_or_path,

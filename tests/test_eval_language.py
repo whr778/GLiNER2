@@ -251,7 +251,7 @@ def test_blind_test_by_language_returns_aggregate_metrics(tmp_path):
     mock_metrics = {"eval_entity_f1": 0.8}
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value=mock_metrics), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -264,7 +264,7 @@ def test_blind_test_by_language_alphabetical_order(tmp_path, capsys):
     records = _make_records(["spa", "eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value={}), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -278,7 +278,7 @@ def test_blind_test_by_language_loads_model_once(tmp_path):
     records = _make_records(["eng", "fra", "spa"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()) as mock_load, \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()) as mock_load, \
          patch("gliner2.training.metrics.compute_metrics", return_value={}), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -291,7 +291,7 @@ def test_blind_test_by_language_combined_pass(tmp_path, capsys):
     records = _make_records(["eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value={}), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -305,7 +305,7 @@ def test_blind_test_by_language_compute_metrics_per_lang_plus_combined(tmp_path)
     records = _make_records(["eng", "eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value={}) as mock_cm, \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -322,7 +322,7 @@ def test_blind_test_by_language_materialises_file_paths(tmp_path):
     jsonl.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r) as mock_ann, \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value={}), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -341,7 +341,7 @@ def test_blind_test_by_language_recap_header_present(tmp_path, capsys):
     records = _make_records(["eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -354,7 +354,7 @@ def test_blind_test_by_language_recap_contains_each_language(tmp_path, capsys):
     records = _make_records(["eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -369,7 +369,7 @@ def test_blind_test_by_language_recap_includes_combined_row(tmp_path, capsys):
     records = _make_records(["eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -383,7 +383,7 @@ def test_blind_test_by_language_recap_order_languages_then_all(tmp_path, capsys)
     records = _make_records(["spa", "eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -397,7 +397,7 @@ def test_blind_test_by_language_recap_appears_after_combined_pass(tmp_path, caps
     records = _make_records(["eng"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value=_entity_metrics()), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
@@ -414,7 +414,7 @@ def test_blind_test_by_language_recap_omits_language_with_no_metrics(tmp_path, c
     records = _make_records(["eng", "fra"])
 
     with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
-         patch("gliner2.GLiNER2.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
          patch("gliner2.training.metrics.compute_metrics", return_value={}), \
          patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
          patch.object(train, "_print_blind_test"):
