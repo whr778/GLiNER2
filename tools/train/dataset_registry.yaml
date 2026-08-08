@@ -18,6 +18,22 @@
 # description (one-sentence qualitative summary for the model card).
 
 base_models:
+  ./out/joint-boundary-mmbert-10k/best:
+    name: joint-boundary-mmbert-10k
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/joint-boundary-mmbert-10k.yaml)
+  ./out/joint-boundary-mmbert-40k/best:
+    name: joint-boundary-mmbert-40k
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/joint-boundary-mmbert-40k.yaml)
+  ./out/joint-boundary-mmbert-100k/best:
+    name: joint-boundary-mmbert-100k
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/joint-boundary-mmbert-100k.yaml)
+  ./out/joint-boundary-mmbert-137k/best:
+    name: joint-boundary-mmbert-137k
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/joint-boundary-mmbert-137k.yaml)
   jhu-clsp/mmBERT-base:
     name: mmBERT-base
     license: see model card        # confirm upstream and replace if known

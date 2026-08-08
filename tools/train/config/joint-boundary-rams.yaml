@@ -1,0 +1,81 @@
+# joint_ie x head-init scaling -- RAMS warm-start (the EVENT downstream).
+# See tools/events_working_papers/JOINT_IE_SCALING.md sec 4.
+#
+# Run this ONCE PER BASE, changing ONLY `pretrained` and the two output names:
+#   ./out/joint-boundary-mmbert-{10k,40k,100k,137k}/best
+# The recipe is held fixed across the curve so the only varying factor is the
+# base's training volume (head-init). Same rule as the Re-DocRED arm.
+#
+# NEW output paths/names: does not touch mmbert-base-rams, gliner2-base-v1-rams,
+# their ./out dirs, or anything already on HF.
+#
+# Both decode arms (greedy vs joint beam) are evaluated on THIS ONE trained model
+# via the eval-time decode_mode switch -- there is no separate "joint" training run.
+model:
+  pretrained: ./out/joint-boundary-mmbert-137k/best
+  architecture: boundary     # checked against the checkpoint: warm-starting a span
+                             # checkpoint here raises ArchitectureMismatchError rather
+                             # than silently training the wrong architecture.
+  # bce_posweight bootstraps the argument head; plain bce left argument recall near 0
+  # on fresh heads and focal collapsed it (see mmbert-base-rams for the ablation).
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/joint-boundary-rams-137k
+  experiment_name: joint_boundary_rams_137k
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 8
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1  # arguments are the head-init
+  greater_is_better: true                               # sensitive number, not the
+                                                        # trigger/type plateau
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # RAMS docs fit in max_len -> no windowing
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true         # select the checkpoint at its own best threshold
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl

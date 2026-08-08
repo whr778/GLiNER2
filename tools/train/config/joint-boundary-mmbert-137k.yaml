@@ -1,0 +1,101 @@
+# joint_ie x head-init scaling -- BOUNDARY cold-start base, ~137K point.
+# See tools/events_working_papers/JOINT_IE_SCALING.md (sec 3b design, sec 4 experiment).
+#
+# NEW output paths/names on purpose: this does NOT overwrite the span-architecture
+# scaling-mmbert-*.yaml runs, their ./out/scaling-mmbert-* dirs, or anything already
+# pushed to HF. Those were span bases (see sec 3c); these are the boundary bases the
+# joint_ie decode arms need.
+#
+# Only the Stage-A corpus size varies across {10k,40k,100k,137k} -- recipe held fixed.
+# RAMS / Re-DocRED / WikiEvents excluded from the base mix (they are the downstreams).
+#
+# The FOURTH point, and the only one that is not events-only: it adds the ~37K of
+# non-leaking relation corpora on disk (sentence_rex 34,314 + bio_ner_relations 2,085
+# + biored 308 + scierc 265), reaching ~137K for $0 of generation AND warming the
+# relation head, which the event-only corpora cannot do (sec 5, decision 6).
+#
+# Leakage checked, not assumed: sentence_rex is knowledgator/sentence_rex --
+# sentence-level Wikidata-property RE, a different dataset and granularity from
+# thunlp/docred. A 3,000-sentence sample had ZERO verbatim occurrences anywhere in
+# Re-DocRED's 3.2M chars of train text. DocRED itself stays EXCLUDED (Re-DocRED
+# re-annotates the same documents).
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary     # NOT span -- no max_width here on purpose: that is a
+                             # span_head field, and removing the span width cap is
+                             # the point of the boundary head (COUNTING_LAYER).
+  max_len: 8192
+  boundary_head:
+    enable_relations: true   # load-bearing: relations decode as edges in the beam
+    enable_records: true     # load-bearing: events decode as trigger + role edges
+  # No decode_mode here. decode_mode is an EVAL-time switch selecting the greedy or
+  # joint arm over ONE trained model (JOINT_IE_SCALING sec 3c); baking it into a
+  # training run would make the two arms different models and void the comparison.
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/joint-boundary-mmbert-137k
+  experiment_name: joint_boundary_mmbert_137k
+  data_parallel: false
+  num_epochs: 5              # held equal across the curve (only corpus size varies)
+  batch_size: 4
+  gradient_accumulation_steps: 8
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: false
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+
+eval:
+  batch_size: 2
+  threshold: 0.5
+  threshold_sweep: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/sentence_rex
+    - data/bio_ner_relations
+    - data/biored
+    - data/scierc
+  event_files:
+    chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling/chfinann.val.jsonl}
+    docee:           {train: data/docee.train.jsonl, val: data/scaling/docee.val.jsonl}
+    docfee:          {train: data/docfee.train.jsonl, val: data/scaling/docfee.val.jsonl}
+    duee:            {train: data/duee.train.jsonl, val: data/scaling/duee.val.jsonl}
+    cmnee:           {train: data/cmnee.train.jsonl, val: data/scaling/cmnee.val.jsonl}
+    text2json:       {train: data/text2json.train.jsonl, val: data/scaling/text2json.val.jsonl}
+    events_biotech:  {train: data/events_biotech.train.jsonl, val: data/scaling/events_biotech.val.jsonl}
+    mendeley_ed:     {train: data/mendeley_ed.train.jsonl, val: data/scaling/mendeley_ed.val.jsonl}
+    casie:           {train: data/casie.train.jsonl, val: data/scaling/casie.val.jsonl}
+    maven:           {train: data/maven.train.jsonl}

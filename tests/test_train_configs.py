@@ -58,14 +58,25 @@ def test_config_builds(path):
             )
     else:
         # from_encoder path: mirror train.py, model.* (minus encoder) -> ExtractorConfig.
+        # ``architecture`` is popped exactly as _build_model does. ``max_width`` is a
+        # span_head field, so it is optional and must be ABSENT on boundary configs --
+        # the boundary head has no span width cap (COUNTING_LAYER).
         encoder = model.pop("encoder")
         assert isinstance(encoder, str) and encoder, f"{path.name}: empty encoder"
+        architecture = model.pop("architecture", "span")
+        if architecture == "boundary":
+            assert "max_width" not in model, (
+                f"{path.name}: boundary configs must not set max_width (a span_head "
+                f"field); removing that cap is the point of the boundary head"
+            )
         ec = ExtractorConfig(
             model_name=encoder,
-            max_width=model.pop("max_width"),
+            architecture=architecture,
+            max_width=model.pop("max_width", 8),
             max_len=model.pop("max_len"),
             **model,
         )
+        assert ec.architecture == architecture, f"{path.name}: architecture not applied"
         assert ec.struct_loss in RECOGNIZED_STRUCT_LOSS, (
             f"{path.name}: struct_loss={ec.struct_loss!r} is not recognized; "
             f"it would silently train as plain BCE"
