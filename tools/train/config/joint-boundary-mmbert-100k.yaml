@@ -1,4 +1,4 @@
-# joint_ie x head-init scaling -- BOUNDARY cold-start base, ~100K TOTAL records.
+# joint_ie x head-init scaling -- BOUNDARY cold-start base, 100,000 TOTAL records.
 # See tools/events_working_papers/JOINT_IE_SCALING.md (sec 3b design, sec 4 experiment).
 #
 # NEW output paths/names on purpose: this does NOT overwrite the span-architecture
@@ -11,7 +11,7 @@
 # varying across the curve is volume -- not whether the relation head was warmed at
 # all. Slices built by tools/train/build_joint_scaling_mix.py (seed 42, nested).
 #
-#   this point: 73,022 event + 26,977 relation records
+#   this point: 73,166 event + 26,835 relation records
 #
 # RAMS / Re-DocRED / WikiEvents excluded from the base mix (they are the downstreams).
 # DocRED excluded too: Re-DocRED re-annotates the same documents (leakage).
@@ -85,7 +85,6 @@ data:
     - data/scaling_joint/sentence_rex.j100k
     - data/scaling_joint/bio_ner_relations.j100k
     - data/scaling_joint/biored.j100k
-    - data/scaling_joint/scierc.j100k
   event_files:
     chfinann:        {train: data/scaling_joint/chfinann.j100k.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl}
     docee:           {train: data/scaling_joint/docee.j100k.train.jsonl, val: data/scaling_joint/docee.val.jsonl}

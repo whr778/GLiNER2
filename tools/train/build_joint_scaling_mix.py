@@ -38,7 +38,13 @@ EVENT_CORPORA = [
 ]
 # Non-leaking relation corpora. DocRED is EXCLUDED: Re-DocRED re-annotates the
 # same documents, so including it would leak the downstream.
-RELATION_CORPORA = ["sentence_rex", "bio_ner_relations", "biored", "scierc"]
+#
+# SciERC is EXCLUDED on licensing grounds (decided 2026-08-08), not leakage: its
+# "research use (AI2)" terms alone forced every model card to a "Research use only"
+# verdict, and it contributed 265 of 37,237 relation records (0.19% of the mix).
+# Dropping it moves the verdict to "Unverified -- review required" for a negligible
+# data cost, which matters because these models are intended to go public.
+RELATION_CORPORA = ["sentence_rex", "bio_ner_relations", "biored"]
 
 DATA = Path("data")
 OUT = DATA / "scaling_joint"

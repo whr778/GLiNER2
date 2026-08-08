@@ -1,0 +1,79 @@
+# joint_ie x head-init scaling -- Re-DocRED warm-start (the RELATION downstream).
+# See tools/events_working_papers/JOINT_IE_SCALING.md sec 4.
+#
+# GENERATED per base (10k). Template: joint-boundary-redocred.yaml. Do not hand-edit;
+#   regenerate from the template if the recipe changes.
+# Recipe held fixed across the curve so the only varying factor is base volume.
+#
+# NEW output paths/names: does not touch gliner2-base-v1-redocred, gliner2-large-v1-
+# redocred, their ./out dirs, or anything already on HF.
+#
+# Both decode arms (greedy vs joint beam) are evaluated on THIS ONE trained model via
+# the eval-time decode_mode switch -- there is no separate "joint" training run.
+#
+# Dense document-level relations are where the span 20-instance cap bit hardest, so
+# this is the arm the boundary architecture is expected to help even before the beam.
+model:
+  pretrained: ./out/joint-boundary-mmbert-10k/best
+  architecture: boundary     # checked against the checkpoint: warm-starting a span
+                             # checkpoint here raises ArchitectureMismatchError rather
+                             # than silently training the wrong architecture.
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/joint-boundary-redocred-10k
+  experiment_name: joint_boundary_redocred_10k
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 4              # doc-level: longer inputs than the RAMS arm
+  gradient_accumulation_steps: 8   # effective batch 32
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_relation_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # mmBERT holds a whole Re-DocRED doc in one pass
+  max_len: 4096              # Re-DocRED docs run longer than RAMS
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 4
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+# Re-DocRED is a NER + relation corpus (no events), so it goes under `corpora`,
+# which auto-derives data/redocred.{train,val,test}.jsonl.
+data:
+  corpora:
+    - data/redocred
+  event_files: {}
