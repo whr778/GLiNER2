@@ -15,6 +15,9 @@
 # this is the arm the boundary architecture is expected to help even before the beam.
 model:
   pretrained: ./out/joint-boundary-mmbert-40k/best
+  # attn_implementation is NOT set here on purpose: on the pretrained path it would
+  # be applied to model.config AFTER the encoder is already built, so it would be a
+  # silent no-op. FlashAttention 2 is inherited from the base checkpoint's config.
   architecture: boundary     # checked against the checkpoint: warm-starting a span
                              # checkpoint here raises ArchitectureMismatchError rather
                              # than silently training the wrong architecture.

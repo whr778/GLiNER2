@@ -26,6 +26,12 @@ model:
                              # span_head field, and removing the span width cap is
                              # the point of the boundary head (COUNTING_LAYER).
   max_len: 8192
+  # FlashAttention 2 is required for CORRECTNESS here, not just speed. Measured on
+  # 1x H100, 60 steps of this exact config: sdpa+bf16 goes non-finite at step 15
+  # (start/end/pair/soft_iou/rerank all at once) and runs 2.0 samples/s; FA2+bf16
+  # is clean for 60 steps at 22.0 samples/s. mmBERT is ModernBERT and is built
+  # around FA2 + unpadding (arXiv 2509.06888 Table 8). Needs the 'kernels' package.
+  attn_implementation: flash_attention_2
   boundary_head:
     enable_relations: true   # load-bearing: relations decode as edges in the beam
     enable_records: true     # load-bearing: events decode as trigger + role edges

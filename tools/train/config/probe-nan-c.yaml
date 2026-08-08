@@ -4,12 +4,12 @@ model:
   encoder: jhu-clsp/mmBERT-base
   architecture: boundary
   max_len: 8192
+  attn_implementation: flash_attention_2
   boundary_head:
     enable_relations: true
     enable_records: true
   struct_loss: bce_posweight
   struct_pos_weight: 4.0
-  attn_implementation: flash_attention_2
 training:
   output_dir: ./out/probe-nan-c
   experiment_name: probe_nan_c

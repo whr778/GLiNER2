@@ -31,9 +31,14 @@ OUT = Path("tools/train/config")
 # per-micro-batch rate, and enough logged steps to time a stable s/it.
 MAX_STEPS = 60
 
+# Every probe pins attn_implementation explicitly. The source config now sets
+# flash_attention_2 (that was this matrix's finding), so inheriting it silently
+# would turn probes A and B into copies of C and quietly destroy the comparison.
 PROBES = {
-    "a": ("sdpa + bf16 (baseline)", {}, {"bf16": True, "fp16": False}),
-    "b": ("sdpa + fp32 (isolates dtype)", {}, {"bf16": False, "fp16": False}),
+    "a": ("sdpa + bf16 (baseline)", {"attn_implementation": "sdpa"},
+          {"bf16": True, "fp16": False}),
+    "b": ("sdpa + fp32 (isolates dtype)", {"attn_implementation": "sdpa"},
+          {"bf16": False, "fp16": False}),
     "c": ("flash_attention_2 + bf16", {"attn_implementation": "flash_attention_2"},
           {"bf16": True, "fp16": False}),
 }

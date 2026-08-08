@@ -169,18 +169,31 @@ class BaseExtractorModel(PreTrainedModel):
                 return AutoModel.from_config(config, **kwargs)
             return AutoModel.from_pretrained(model_name, **kwargs)
 
-        try:
-            return load(attn_implementation)
-        except (TypeError, ValueError, ImportError) as error:
-            if not attn_implementation or attn_implementation == "eager":
-                raise
-            warnings.warn(
-                f"Encoder rejected attn_implementation={attn_implementation!r}; "
-                f"falling back to 'eager' ({error})",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return load("eager")
+        # Degrade in speed order -- requested, then sdpa, then eager -- instead of
+        # dropping straight to eager, which is the slowest of the three and used to
+        # be the silent cost of a missing optional backend. eager stays the last
+        # rung because deberta-v2 supports neither FlashAttention 2 nor sdpa.
+        candidates = [attn_implementation]
+        if attn_implementation:
+            candidates += [c for c in ("sdpa", "eager") if c != attn_implementation]
+
+        last_error: Exception
+        for index, implementation in enumerate(candidates):
+            try:
+                return load(implementation)
+            except (TypeError, ValueError, ImportError) as error:
+                last_error = error
+                if index + 1 < len(candidates):
+                    warnings.warn(
+                        f"Encoder rejected attn_implementation={implementation!r}; "
+                        f"falling back to {candidates[index + 1]!r} ({error}). On a "
+                        f"ModernBERT encoder trained in bf16 this is a correctness "
+                        f"issue, not just speed: sdpa+bf16 there produces non-finite "
+                        f"losses (measured), so install 'kernels' to keep FA2.",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+        raise last_error
 
     def task_module_names(self) -> Tuple[str, ...]:
         raise NotImplementedError
