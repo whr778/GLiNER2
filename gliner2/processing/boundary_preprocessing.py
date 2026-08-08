@@ -30,7 +30,12 @@ from gliner2.processing.targets import (
 )
 from gliner2.processing.layouts import validate_target_graph
 
-_EXTRACTIVE_MARKERS = ("[E]", "[C]", "[R]")
+# Every marker the processor emits a QUERY MARKER for must appear here, or the layout
+# under-counts queries while `query_states`/`query_mask` still carry one entry per
+# marker -- and gold injection then compares a [B,Q_gold,G] mask against a [B,Q_marker]
+# one and dies. "[V]" (event roles: trigger + arguments) was missing, so every event
+# group produced ZERO layout queries; `inference/runtime.py` already listed all four.
+_EXTRACTIVE_MARKERS = ("[E]", "[C]", "[R]", "[V]")
 
 
 def _extractive_fields(schema_tokens: Sequence[str]) -> list[str]:
