@@ -404,6 +404,9 @@ class SchemaTransformer:
             result, architecture, is_training=True,
             max_gold_per_query=max_gold_per_query,
             on_capacity_exceeded=on_capacity_exceeded,
+            # A tolerant record policy implies tolerance for the alignment failures
+            # that would otherwise abort the whole run on one unlocatable surface.
+            on_missing_surface="skip" if error_policy != "raise" else "raise",
         )
 
     def collate_fn_inference(
@@ -453,6 +456,7 @@ class SchemaTransformer:
             max_gold_per_query: int = 32,
             build_targets: Optional[bool] = None,
             on_capacity_exceeded: str = "raise",
+            on_missing_surface: str = "raise",
     ) -> PreprocessedBatch:
         if architecture != "boundary" or len(batch) == 0:
             return batch
@@ -476,6 +480,7 @@ class SchemaTransformer:
             record_metadata_list=record_metadata_list if has_records else None,
             build_targets=build_targets,
             on_capacity_exceeded=on_capacity_exceeded,
+            on_missing_surface=on_missing_surface,
         )
         batch.query_layouts = layouts
         batch.targets = targets

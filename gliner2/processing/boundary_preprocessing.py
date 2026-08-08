@@ -28,6 +28,8 @@ from gliner2.processing.targets import (
     inclusive_tokens_to_boundary_pair,
     pad_target_graphs,
 )
+from collections import Counter
+
 from gliner2.processing.layouts import validate_target_graph
 
 # Every marker the processor emits a QUERY MARKER for must appear here, or the layout
@@ -36,6 +38,16 @@ from gliner2.processing.layouts import validate_target_graph
 # one and dies. "[V]" (event roles: trigger + arguments) was missing, so every event
 # group produced ZERO layout queries; `inference/runtime.py` already listed all four.
 _EXTRACTIVE_MARKERS = ("[E]", "[C]", "[R]", "[V]")
+
+# Unalignable entity surfaces skipped under on_missing_surface="skip", by field name.
+# Counted rather than silently dropped so the loss is reportable; read it with
+# `missing_surface_counts()`.
+_MISSING_SURFACES: "Counter[str]" = Counter()
+
+
+def missing_surface_counts() -> "Counter[str]":
+    """Entity fields whose surfaces could not be aligned, and how often."""
+    return _MISSING_SURFACES
 
 
 def _extractive_fields(schema_tokens: Sequence[str]) -> list[str]:
@@ -335,6 +347,7 @@ def build_boundary_batch_metadata(
     field_dtypes_list: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
     build_targets: Optional[bool] = None,
     on_capacity_exceeded: str = "raise",
+    on_missing_surface: str = "raise",
 ) -> tuple:
     """Build layouts, optional padded targets, and compiled record specs.
 
@@ -428,11 +441,19 @@ def build_boundary_batch_metadata(
                     if field_index >= len(field_query_ids):
                         break
                     if task_type == "entities":
-                        # Entities are always expected: a labeled surface that
-                        # cannot be located is a genuine annotation error and
-                        # must raise under strict training (never silently drop).
+                        # A labeled entity surface that cannot be located is
+                        # normally an annotation error and must raise rather than
+                        # silently shrink supervision. But boundary word-alignment
+                        # also fails on surfaces that ARE present verbatim -- most
+                        # often in languages without whitespace delimiters -- and
+                        # aborting a multi-hour run over those is worse than losing
+                        # the single mention. ``on_missing_surface="skip"`` drops
+                        # just that mention and keeps the record's other gold.
                         for start, end_inclusive in positions:
                             if (start, end_inclusive) == (-1, -1):
+                                if on_missing_surface == "skip":
+                                    _MISSING_SURFACES[fields[field_index]] += 1
+                                    continue
                                 raise ValueError(
                                     f"entity {fields[field_index]!r} was not found "
                                     f"in sample {sample_idx}"
