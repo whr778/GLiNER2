@@ -27,7 +27,10 @@ training:
   data_parallel: false
   num_epochs: 15
   batch_size: 4              # doc-level: longer inputs than the RAMS arm
-  gradient_accumulation_steps: 8   # effective batch 32
+  # NOTE: tuned for 2-GPU DDP (torchrun --nproc_per_node=2), where batch_size is
+  # PER-GPU. Accumulation is halved so the EFFECTIVE batch stays 32, matching the
+  # single-GPU recipe the throughput anchor and the rest of the curve use.
+  gradient_accumulation_steps: 4
   encoder_lr: 2.0e-5
   task_lr: 5.0e-4
   warmup_ratio: 0.05
