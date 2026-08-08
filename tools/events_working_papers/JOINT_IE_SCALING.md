@@ -254,11 +254,11 @@ itself: reuse the optimizer/constraint stack rather than rebuild it.
 
 **Decision 4b is met**: structures, relations and events all decode through the beam.
 
-## 3c. ⛔ BLOCKER: the training harness cannot build a boundary model
+## 3c. ✅ RESOLVED: the training harness can now build a boundary model
 
-Found 2026-08-08 while scoping the scaling configs. Decision 1 says the architecture is
-**boundary**; decision 3 says the bases are retrained `from_encoder`. **Neither is
-reachable from a training config today.** Evidence:
+Found *and fixed* 2026-08-08 while scoping the scaling configs. Decision 1 says the
+architecture is **boundary**; decision 3 says the bases are retrained `from_encoder`.
+Neither was reachable from a training config. Evidence as found:
 
 | check | result |
 |---|---|
@@ -283,15 +283,47 @@ Consequences, in order:
    in the training recipe — the two decode arms are an eval-time switch over one trained
    model, so the arms must not be baked into separate training runs.
 
-Until (1) lands, the 10K/40K/100K/~137K cold-start configs cannot be written honestly:
-they would silently train span models and produce a curve that answers a different
-question.
+### The fix (shipped)
+
+- **`AutoExtractor.from_encoder`** — the architecture-dispatching counterpart to the
+  per-class `from_encoder`. Dispatch lives in `auto.py` rather than duplicating hub
+  loading per model class.
+- **`_build_model` reads `model.architecture`** — default `"span"` keeps every existing
+  config byte-identical. On the `pretrained` path the declared architecture is passed
+  through, so a warm start against the wrong architecture raises
+  `ArchitectureMismatchError` instead of silently training the wrong thing.
+- The three remaining `GLiNER2.from_pretrained` sites (blind-test reload, threshold
+  sweep, `push_to_hub`) now use `AutoExtractor`, so boundary checkpoints can be
+  evaluated and pushed.
+- **Audited, not assumed:** `GLiNER2Trainer` already derives `architecture` from the
+  model (`trainer.py:1499`) and passes it to `ExtractorCollator` — trainer and collator
+  needed no change.
+
+### The configs (shipped)
+
+| config | role |
+|---|---|
+| `joint-boundary-mmbert-{10k,40k,100k,137k}.yaml` | boundary cold-start bases, recipe fixed |
+| `joint-boundary-rams.yaml` | **event** warm-start arm (`eval_event_argument_strict_micro_f1`) |
+| `joint-boundary-redocred.yaml` | **relation** warm-start arm (`eval_relation_strict_micro_f1`) |
+
+New names and `./out/joint-boundary-*` paths throughout — the span `scaling-mmbert-*`
+runs and anything on HF are untouched. No `max_width` (span-only field) and no
+`decode_mode` (eval-time arm switch) in any of them; `test_train_configs` now *enforces*
+both.
+
+**§5's open provenance question is closed, empirically.** `sentence_rex` is
+`knowledgator/sentence_rex` — sentence-level Wikidata-property RE, a different dataset
+and granularity from `thunlp/docred`. Measured, not argued: **3,000 sampled sentences,
+zero verbatim occurrences** anywhere in Re-DocRED's 3.2M chars of train text. The ~137K
+point is safe to run. DocRED itself stays excluded.
 
 ## 4. Experiment (Phase A — decode-only)
 
-- **Bases:** boundary `from_encoder` mmBERT-base, sizes {10,40,100}K on the event+relation
-  mix (Re-DocRED / any DocRED-derived set **excluded** — leakage). Config takes an arbitrary
-  size list.
+- **Bases:** boundary `from_encoder` mmBERT-base, sizes **{10K, 40K, 100K, ~137K}**
+  (Re-DocRED / any DocRED-derived set **excluded** — leakage). Configs shipped: see §3c.
+  Only ~137K carries relation corpora; 10/40/100K are events-only, so the relation head
+  is cold below the top point — expect that to show in the Re-DocRED arm's low end.
 - **Warm-start = Re-DocRED *and* RAMS** from each base (identical recipe; only `pretrained`
   differs). Two downstreams, not one: Re-DocRED exercises dense **relations**, RAMS exercises
   document-level **event arguments** (roles dispersed across sentences). Decision 2.
