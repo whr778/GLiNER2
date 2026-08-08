@@ -745,6 +745,8 @@ class ExtractorTrainer:
         self._last_train_outputs = None
         self._last_grad_norm = None
         self._skip_counter = None
+        # Which loss terms went non-finite, and how often (reported on flush).
+        self._nonfinite_terms: Dict[str, int] = {}
         self._loss_accum = None
         self._loss_finite_flag = None
         self._finite_grad_hook_handles = []
@@ -1185,6 +1187,19 @@ class ExtractorTrainer:
                         loss = loss.detach() * 0.0 + touch
 
                     finite = torch.isfinite(loss.detach()).all()
+                    if not bool(finite):
+                        # Record WHICH terms went non-finite. Without this the only
+                        # signal is a count, which costs a whole GPU run to localize.
+                        for _name, _value in (getattr(outputs, "losses", None) or {}).items():
+                            if _value is None:
+                                continue
+                            try:
+                                if not bool(torch.isfinite(_value.detach()).all()):
+                                    self._nonfinite_terms[_name] = (
+                                        self._nonfinite_terms.get(_name, 0) + 1
+                                    )
+                            except (AttributeError, RuntimeError):
+                                continue
                     if self.is_distributed and self.config.ddp_consensus_check:
                         bad = (~finite).to(dtype=torch.float32)
                         dist.all_reduce(bad, op=dist.ReduceOp.MAX)
@@ -1226,6 +1241,12 @@ class ExtractorTrainer:
         self._skip_counter.zero_()
         if skipped:
             message = f"{skipped} non-finite micro-batch loss(es) were zeroed"
+            if self._nonfinite_terms:
+                worst = sorted(self._nonfinite_terms.items(), key=lambda kv: -kv[1])
+                message += " -- offending terms: " + ", ".join(
+                    f"{name}x{count}" for name, count in worst[:6]
+                )
+                self._nonfinite_terms = {}
             if self.config.strict_training:
                 raise FloatingPointError(message)
             logger.warning(message)
