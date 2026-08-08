@@ -724,10 +724,19 @@ class ExtractorConfig(PretrainedConfig):
         # Transformers may serialize its reserved attention field as null;
         # treat that as this extractor's documented default.
         self.attn_implementation = str(attn_implementation or "sdpa")
-        if self.attn_implementation not in ("sdpa", "flash_attention_2", "eager"):
+        # A value containing "/" is a Hub kernel repo (e.g. "kernels-community/flash-attn"),
+        # which transformers resolves through the kernels library and registers with
+        # flash_attention_2's mask function -- i.e. unpadded, no dense attention mask.
+        # That is the only way to get FlashAttention 2 on torch builds with no prebuilt
+        # flash-attn wheel, so the set cannot be closed to the three built-in names.
+        if (
+            "/" not in self.attn_implementation
+            and self.attn_implementation not in ("sdpa", "flash_attention_2", "eager")
+        ):
             raise ValueError(
-                "attn_implementation must be 'sdpa', 'flash_attention_2', or "
-                f"'eager', got {self.attn_implementation!r}"
+                "attn_implementation must be 'sdpa', 'flash_attention_2', 'eager', "
+                f"or a Hub kernel repo like 'kernels-community/flash-attn', got "
+                f"{self.attn_implementation!r}"
             )
 
         if self.architecture == "span":
