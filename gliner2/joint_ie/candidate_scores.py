@@ -153,13 +153,21 @@ def boundary_candidates_to_candidate_score_set(
 
 @dataclass(frozen=True)
 class ScoredRelationEdge:
-    """A scored (head, tail) relation proposal referencing mention keys."""
+    """A scored (head, tail) relation proposal referencing mention keys.
+
+    ``slot``/``hypothesis`` carry record semantics: a *role edge* of an event
+    instance sets ``hypothesis`` to its trigger node key and, for a scalar role,
+    ``slot`` to the role name -- which is what makes scalar cardinality fall out of
+    the optimizer's ``exclusion_keys`` for free. Plain relations leave both ``None``.
+    """
 
     relation_type: str
     head: Hashable
     tail: Hashable
     logit: float
     probability: float
+    slot: Optional[Hashable] = None
+    hypothesis: Optional[Hashable] = None
 
 
 def boundary_relation_pairs_to_edges(
@@ -188,6 +196,73 @@ def boundary_relation_pairs_to_edges(
             )
         )
     return edges
+
+
+def boundary_record_groups_to_role_edges(
+    groups: Sequence[Any],
+    query_types: Sequence[str],
+) -> List["ScoredRelationEdge"]:
+    """Map boundary ``RecordGroupOutput``s to event **role edges** (design §3b).
+
+    An event instance *is* its trigger node, so a record needs no new candidate class:
+    each (instance, role, filler) assignment becomes an edge from the trigger node to
+    the argument node, both keyed ``(role_name, start, end)`` from the same layout the
+    mention adapter uses -- so role edges reference mention nodes by construction.
+
+    Reads the *raw* lattice (``object_logits``/``assign_logits``/``field_spans``), never
+    ``decode_group`` output, so the beam sees the scores rather than re-ranking already
+    greedy decisions.
+
+    Utilities follow the record head's own loss shapes: a **scalar** field row is a
+    ``log_softmax`` over ``{ABSENT, candidates}``, so its utility is the ABSENT-relative
+    log-odds ``logit_c - logit_ABSENT``; a **list** field is BCE over candidates alone, so
+    its raw logit is used and centers like a relation. (Both are already threshold-0.5
+    calibrated; a non-default ``decision_threshold`` would shift scalar roles, which is
+    why the engine leaves it at the default.)
+
+    Only ``natural`` (anchored/trigger) groups are emitted. ``anchorless`` structures need
+    a synthetic instance node and ``latent`` is deferred -- both keep working through the
+    greedy record path.
+    """
+    edges: List[ScoredRelationEdge] = []
+    for group in groups:
+        spec = group.spec
+        if spec.mode != "natural" or spec.anchor_query_id is None:
+            continue
+        anchor_type = _query_type_name(query_types, spec.anchor_query_id)
+        for inst in range(group.num_instances):
+            anchor_span = group.instance_spans[inst]
+            if anchor_span is None:
+                continue
+            trigger = (anchor_type, int(anchor_span[0]), int(anchor_span[1]))
+            for f, fspec in enumerate(group.field_specs):
+                if fspec.is_anchor:
+                    continue  # the trigger is not its own argument
+                role = _query_type_name(query_types, group.field_query_ids[f])
+                row = group.assign_logits[f][inst]
+                absent = float(row[0])
+                spans = group.field_spans[f]
+                mask = group.field_cand_mask[f]
+                for c in range(int(spans.shape[0])):
+                    if not bool(mask[c]):
+                        continue
+                    logit = float(row[1 + c])
+                    utility = logit - absent if fspec.is_scalar else logit
+                    edges.append(ScoredRelationEdge(
+                        relation_type=f"{spec.task_name}::{role}",
+                        head=trigger,
+                        tail=(role, int(spans[c][0]), int(spans[c][1])),
+                        logit=utility,
+                        probability=sigmoid(utility),
+                        slot=role if fspec.is_scalar else None,
+                        hypothesis=trigger,
+                    ))
+    return edges
+
+
+def _query_type_name(query_types: Sequence[str], query_id: int) -> str:
+    qid = int(query_id)
+    return query_types[qid] if qid < len(query_types) else str(qid)
 
 
 def candidate_score_set_to_problem(
@@ -231,6 +306,8 @@ def candidate_score_set_to_problem(
                 score=center_logit(e.logit, decision_threshold),
                 head_probability=e.probability,
                 tail_probability=e.probability,
+                slot=e.slot,
+                hypothesis=e.hypothesis,
             )
         )
 
@@ -279,6 +356,7 @@ __all__ = [
     "score_lattice_to_candidate_score_set",
     "boundary_candidates_to_candidate_score_set",
     "boundary_relation_pairs_to_edges",
+    "boundary_record_groups_to_role_edges",
     "candidate_score_set_to_problem",
     "joint_decode",
 ]
