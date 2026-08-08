@@ -65,6 +65,14 @@ training:
   gradient_checkpointing: true
   pin_memory: false
   early_stopping: false
+  # ~7-13% of records in chfinann/docfee/casie/text2json cannot be mapped to word
+  # token boundaries by the boundary preprocessor even though every surface IS
+  # present verbatim in the text (verified). That is an alignment limitation, not
+  # bad data, and it hits languages without whitespace delimiters hardest. Skip
+  # those records (counted, not silent) and skip gold-capacity overflows, rather
+  # than aborting a multi-hour run. Recorded in JOINT_IE_SCALING.
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
 
 eval:
   batch_size: 2

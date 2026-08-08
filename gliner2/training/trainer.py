@@ -259,6 +259,12 @@ class TrainingConfig:
     # Gold-capacity overflow policy for boundary targets: "raise" (default,
     # no silent loss), "truncate_with_warning", or "skip_sample".
     on_capacity_exceeded: str = "raise"
+    # Malformed-record policy for boundary targets: "raise" (default, no silent
+    # loss), "skip" (drop the record and COUNT it), or "fallback". Needed because
+    # boundary word-alignment cannot always map a verbatim-present surface to word
+    # token boundaries -- notably for languages without whitespace delimiters --
+    # and "raise" then aborts a whole run over ~10% of records.
+    error_policy: str = "raise"
     group_by_length: bool = True
     length_group_window_batches: int = 50
     compile_model: bool = False
@@ -520,6 +526,7 @@ class ExtractorCollator:
             max_gold_per_query: Optional[int] = 32,
             build_targets: Optional[bool] = None,
             on_capacity_exceeded: str = "raise",
+            error_policy: str = "raise",
     ):
         self.processor = processor
         self.is_training = is_training
@@ -533,6 +540,10 @@ class ExtractorCollator:
         # Gold-capacity overflow policy (raise | truncate_with_warning |
         # skip_sample); defaults to the no-silent-loss "raise".
         self.on_capacity_exceeded = on_capacity_exceeded
+        # Malformed-record policy; "skip" drops unalignable records. Skips are
+        # counted and logged rather than silently swallowed.
+        self.error_policy = error_policy
+        self.skipped_records = 0
 
     def __call__(self, batch: List[Tuple[str, Dict]]):
         """
@@ -549,8 +560,12 @@ class ExtractorCollator:
                 batch, max_len=self.max_len, architecture=self.architecture,
                 max_gold_per_query=self.max_gold_per_query,
                 on_capacity_exceeded=self.on_capacity_exceeded,
+                error_policy=self.error_policy,
             )
         else:
+            # error_policy is deliberately NOT forwarded here: collate_fn_inference
+            # already defaults to "fallback", and passing the training default
+            # ("raise") would flip eval from tolerant to aborting.
             return self.processor.collate_fn_inference(
                 batch, max_len=self.max_len, architecture=self.architecture,
                 build_targets=self.build_targets,
@@ -1534,6 +1549,7 @@ class ExtractorTrainer:
         collator = ExtractorCollator(
             self.processor, is_training=is_training, max_len=max_len,
             architecture=architecture, max_gold_per_query=max_gold,
+            error_policy=getattr(self.config, "error_policy", "raise"),
             build_targets=None if is_training else True,
             on_capacity_exceeded=self.config.on_capacity_exceeded,
         )
