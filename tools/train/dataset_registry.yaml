@@ -496,3 +496,11 @@ datasets:
     source_url: null
     language: [en]
     description: "Locally generated synthetic multi-task IE corpus (~1.9K records) covering entities, relations, text classification, and document-level events; produced with Claude Sonnet 5."
+  casualty_ft:
+    name: Casualty-report fine-tune corpus
+    tasks: structured extraction (json_structures)
+    license: see source
+    hf_id: null
+    source_url: null
+    language: [en]
+    description: "Locally generated casualty_report structure corpus for the EKF/MHT streaming line. Built by datasets/disaster_streams/build_finetune_corpus.py from Claude Sonnet 5 realizations of synthetic disaster streams; each report snippet becomes one instance whose roles carry the ground-truth figure verbatim as it appears in the text (comma form preserved), training the extractor to bind numbers to roles."

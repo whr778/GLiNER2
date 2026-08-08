@@ -406,7 +406,27 @@ decoding-*with* it?
 
 Applies to **both faces** (§1): the role edges of an event and the plain edges of a relation
 are the same `EdgeCandidate` in the same problem, so one structured objective covers events
-and relations without a second mechanism. Two calibration items deferred here from Phase A:
-**decision D** (`object_logits` currently unused for `natural` events — the trigger mention
-score carries existence) and **`RequiredRoles`** (§3b increment 5, deferred by decision
-2026-08-08: greedy permits unfilled required roles too, so it is not an arm-parity gap).
+and relations without a second mechanism.
+
+### Carried here from Phase A
+
+- ~~**decision D** (`object_logits` unused)~~ — **no longer deferred.** It was a live arm
+  confound, not calibration, and is fixed: the joint path now gates instance existence on
+  `object_logits` exactly as `decode_group` does (§3b decision D, revised 2026-08-08).
+- **`RequiredRoles`** — deferred (§3b increment 5). Greedy permits unfilled required roles
+  too, so it is not an arm-parity gap.
+
+  > **Worth recording because it is counter-intuitive:** building `RequiredRoles` as a
+  > **rejection** constraint would move the arms **further apart**, not closer — greedy
+  > never rejects such an instance. If parity is ever wanted there, it means matching
+  > greedy's **fill** semantics, not adding a rejection rule.
+
+  The reflex when reading "required role" is to add a constraint that throws the instance
+  away. That reflex is wrong here, and the code says why: `decode_group`'s scalar path runs
+  `if chosen is None or chosen == 0: continue` **before** the cardinality check, so when
+  ABSENT wins the argmax a `REQUIRED_ONE` field is simply left empty — exactly as an
+  optional one is. A rejection constraint would make the beam stricter than the decoder it
+  is being compared against, and the resulting precision/recall gap would be read as a
+  property of global decoding rather than of the constraint. Anyone implementing this in
+  Phase B should decide *fill vs reject* first, and know that only **fill** preserves
+  comparability with the greedy arm.
