@@ -29,8 +29,8 @@ head is the shared substrate — it removed the span 19-instance cap that made e
 ## The three papers
 
 - **Paper 0 — Foundation.** GLiNER2 + the boundary head + head-init / multi-corpus training —
-  the substrate both build on. Draft: [[PAPER]] (`tools/events_working_papers/PAPER.md`).
-  **Finish first** (no new experiments needed).
+  the substrate both build on. Draft: [[PAPER_0_FOUNDATION]] — "Schema-Driven Information
+  Extraction Beyond the Sentence". **Finish first** (no new experiments needed).
 - **Paper 1 — Real-time events (temporal).** EKF/MHT streaming tracker on the boundary head:
   censored measurement model, learned/union gate, text→obs normalization, held-out synthetic +
   the Venezuela 2026 double-blind. **Most mature — ships next.**

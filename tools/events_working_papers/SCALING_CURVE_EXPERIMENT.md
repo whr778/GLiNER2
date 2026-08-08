@@ -6,7 +6,7 @@ Goal: measure, not guess, how much structure/argument data it takes to warm
 turning the reasoned bracket in [`HEAD_INIT_DATA_SCALE.md`](HEAD_INIT_DATA_SCALE.md)
 into a curve on the encoder we actually want to ship (multilingual, native 8192
 long-context; the `mmbert_training` branch target). Companion to
-[`FASTINO_GLINER2_TRAINING.md`](FASTINO_GLINER2_TRAINING.md) and PAPER.md §10.6/§10.7.
+[`FASTINO_GLINER2_TRAINING.md`](FASTINO_GLINER2_TRAINING.md) and PAPER_0_FOUNDATION.md §10.6/§10.7.
 
 ---
 
@@ -169,6 +169,6 @@ larger spend, deliberately out of scope for this "decide before spending" probe.
 ## 7. Related
 - [`HEAD_INIT_DATA_SCALE.md`](HEAD_INIT_DATA_SCALE.md) — the estimate this measures (mmBERT knee predicted higher, §3.3).
 - [`FASTINO_GLINER2_TRAINING.md`](FASTINO_GLINER2_TRAINING.md) — the DeBERTa 254K reference recipe.
-- PAPER.md §10.6 (mmBERT N=0 = 0.050; DeBERTa reference band 0.042→0.462), §10.7 (the confounded ~96K combined point = 0.028).
+- PAPER_0_FOUNDATION.md §10.6 (mmBERT N=0 = 0.050; DeBERTa reference band 0.042→0.462), §10.7 (the confounded ~96K combined point = 0.028).
 - Configs to clone: `mmbert-base-combined.yaml` (Stage A), `mmbert-base-rams.yaml` (Stage B + N=0 endpoint).
 - Cost basis: `tools/data/synthetic/COST_BREAKDOWN.md`.

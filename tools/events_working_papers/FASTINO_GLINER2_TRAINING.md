@@ -6,7 +6,7 @@ Efficient Multi-Task Information Extraction System with Schema-Driven Interface*
 EMNLP 2025 System Demonstrations, pp. 130-140. https://aclanthology.org/2025.emnlp-demos.10/
 
 This documents the fastino base model's real training recipe (data, paradigm, heads)
-because our head-initialization thesis (PAPER.md §10.6/§10.7) depends on it, and our
+because our head-initialization thesis (PAPER_0_FOUNDATION.md §10.6/§10.7) depends on it, and our
 initial understanding was incomplete. All figures below are quoted from the paper's
 §3.1, Appendix A, Appendix B, and Tables 5-6.
 
@@ -85,8 +85,8 @@ trigger->argument extraction. Therefore:
 - **Warm-start from `fastino/gliner2-base-v1` lifts RAMS/WikiEvents arguments even
   though fastino trained on zero events** — the structure->span-attribute head is
   already trained (supervised, 254K, 5 epochs, differential LR). This is the
-  head-initialization effect of PAPER.md §10.6.
-- **From-encoder on ~1.5K synthetic records fails** (PAPER.md §10.7 / our
+  head-initialization effect of PAPER_0_FOUNDATION.md §10.6.
+- **From-encoder on ~1.5K synthetic records fails** (PAPER_0_FOUNDATION.md §10.7 / our
   `deberta-base-fromenc-synthetic` run: entity 0.14, relation 0.00, arg 0.00): the
   span + count + occurrence-ID heads cannot be trained from random init at that
   scale. The warm-start counterpart (`gliner2-base-v1-synthetic`) works (entity 0.90,
@@ -107,7 +107,7 @@ trigger->argument extraction. Therefore:
   structure/argument curriculum at scale is the right one.
 
 ## 6. Related
-- PAPER.md §10.6 (head-init bottleneck), §10.7 (combined A/B null + synthetic sanity +
+- PAPER_0_FOUNDATION.md §10.6 (head-init bottleneck), §10.7 (combined A/B null + synthetic sanity +
   from-encoder from-scratch failure).
 - Our synthetic pipeline: `tools/data/synthetic/`.
 - Prior head-init evidence and the two synthetic runs: memories

@@ -3,7 +3,7 @@
 Status: exploratory estimate (reasoned bracket, not a measured result). Date: 2026-08-03.
 Question: is fastino's **254K** the minimum to build a good warm-start GLiNER2 head, or
 would a smaller corpus be good enough? Companion to
-[`FASTINO_GLINER2_TRAINING.md`](FASTINO_GLINER2_TRAINING.md) and PAPER.md §10.6/§10.7.
+[`FASTINO_GLINER2_TRAINING.md`](FASTINO_GLINER2_TRAINING.md) and PAPER_0_FOUNDATION.md §10.6/§10.7.
 
 **Bottom line: 254K is well above the minimum.** It is fastino's choice for broad,
 three-task, many-domain, *zero-shot-generalizing* coverage — not the floor for a usable
@@ -84,6 +84,6 @@ confirm the knee before committing to the full generation cost.
 ## 6. Related
 - [`FASTINO_GLINER2_TRAINING.md`](FASTINO_GLINER2_TRAINING.md) — fastino's actual recipe
   (supervised LLM-distillation, shared span/count/occurrence heads, differential LR).
-- PAPER.md §10.6 (head-init bottleneck), §10.7 (combined null + synthetic sanity +
+- PAPER_0_FOUNDATION.md §10.6 (head-init bottleneck), §10.7 (combined null + synthetic sanity +
   from-encoder from-scratch failure).
 - Memories: `mmbert-head-init-finding`, `lambda-base-v1-synthetic-sanity`.
