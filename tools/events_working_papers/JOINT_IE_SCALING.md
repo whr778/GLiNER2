@@ -16,9 +16,10 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
 | # | Decision | Status |
 |---|---|---|
 | 1 | Architecture = **boundary** (no span, no 20-instance cap) | DECIDED |
-| 2 | Downstream target = **Re-DocRED** (dense relations, where the cap bites) | DECIDED |
+| 2 | Downstream target = **Re-DocRED + RAMS** (dense relations *and* document-level event arguments) | DECIDED (2026-08-08) |
 | 3 | Bases **retrained `from_encoder`** (mmBERT), NOT span | DECIDED |
-| 4 | joint_ie **wired to boundary** (new adapter; the contract already exists) | **DONE** (Phase A path ready) |
+| 4 | joint_ie **wired to boundary** — mentions + relation edges | **DONE** |
+| 4b | joint_ie must support **structures, relations, AND events** in the beam | **DECIDED (2026-08-08) — BLOCKS Phase A** |
 | 5 | **Phase A = decode-only** (paired greedy vs beam); **Phase B = joint training** only if A is positive | DECIDED |
 | 6 | Base mix = event corpora **+ relation-rich corpora** (warms the relation head; also pushes past 100K free) | DECIDED |
 | 7 | Sizes {10K,40K,100K} from the existing 100,080 pool; **>100K via a new config** once corpora are added; **NO LLM generation** (100K synthetic ≈ $400-860 batch) | DECIDED |
@@ -63,8 +64,16 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
   the relation to its mention nodes (the crux regression guard); joint == greedy on an
   unambiguous case; `decode_mode` defaults to `"greedy"`; the flag runs through the
   public `extract_relations` path.
+- ⛔ **BLOCKER for Phase A — events are not in the beam.** `JointProblem` models only
+  `NodeCandidate` (mentions) + `EdgeCandidate` (relations); there is no record/instance
+  concept. In joint mode today, `_decode_records` still runs *before* the joint branch, so
+  event/structure output is produced — but **greedily**, bypassing the beam entirely, and
+  record-field mentions get pulled into the beam as nodes only to have their selections
+  discarded. With **RAMS** now in the warm-start (decision 2), events are on the evaluated
+  path, so this blocks. Design in §3b. *(An earlier note here judged this non-blocking on
+  the assumption of a Re-DocRED-only downstream — that assumption is void.)*
 - ⚠ **Arm-comparability caveat (must settle before Phase A):** the joint path threads the
-  engine `threshold` through as `mention_threshold`, but three greedy-side threshold
+  engine `threshold` through as `mention_threshold`, but four greedy-side threshold
   behaviours are **not** mirrored:
   1. **adaptive thresholding** (`boundary_settings.adaptive_threshold`) — greedy-only;
   2. **null-abstention** (`abstention_threshold` on `null_logits`) — greedy-only;
@@ -72,6 +81,9 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
      them up per relation; `candidate_score_set_to_problem` centers edges at a fixed
      `decision_threshold=0.5`. Moot for a single-threshold Re-DocRED eval, but it is the
      same family of decisions.
+  4. **`decode_group`'s three record thresholds** (`anchor_threshold`, `field_threshold`,
+     `object_threshold`) — greedy-only, and they become live the moment records enter the
+     beam (§3b).
 
   The arms are therefore not yet threshold-identical. Decide whether to port these to the
   joint path or disable them in both arms **before** reading the greedy-vs-beam curve —
@@ -142,11 +154,18 @@ Hooks in `BoundaryExtractor._extract_from_batch` (`models/boundary/engine.py`):
 - **Bases:** boundary `from_encoder` mmBERT-base, sizes {10,40,100}K on the event+relation
   mix (Re-DocRED / any DocRED-derived set **excluded** — leakage). Config takes an arbitrary
   size list.
-- **Warm-start Re-DocRED** from each base (identical recipe; only `pretrained` differs).
+- **Warm-start = Re-DocRED *and* RAMS** from each base (identical recipe; only `pretrained`
+  differs). Two downstreams, not one: Re-DocRED exercises dense **relations**, RAMS exercises
+  document-level **event arguments** (roles dispersed across sentences). Decision 2.
 - **Decode arms** per model: (a) boundary greedy set-prediction; (b) boundary + joint_ie beam.
-- **Metric:** Re-DocRED relation-strict micro-F1 (+ F1-ign).
-- **Curves:** F1 vs base volume × decode arm → elbow + whether the beam lifts it, and where
-  (low-data = compensating weak head-init, vs high-data).
+- **Metrics:** Re-DocRED relation-strict micro-F1 (+ F1-ign); RAMS **argument F1** (the
+  head-init-sensitive number from [[mmbert-head-init-finding]] — the existing 10k/40k/100k
+  arg curve 0.050/0.115/0.158 is the greedy-arm baseline to beat).
+- **Curves:** F1 vs base volume × decode arm, per downstream → elbow + whether the beam lifts
+  it, and where (low-data = compensating weak head-init, vs high-data).
+- **Consequence:** the RAMS arm only means anything once events are in the beam (§3b);
+  until then arm (b) on RAMS is identical to arm (a) plus noise, because record decoding
+  bypasses the beam entirely.
 
 ## 5. Data (surveyed 2026-08-07)
 
