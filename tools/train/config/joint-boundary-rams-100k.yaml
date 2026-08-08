@@ -47,8 +47,14 @@ training:
   logging_steps: 10
   num_workers: 0
   validate_data: false
-  sliding_window: false      # RAMS docs fit in max_len -> no windowing
-  max_len: 2048
+  # Long documents are WINDOWED, not truncated: a 4096-subword window with a 3072
+  # stride (25% overlap) so cross-boundary structure is still seen. mmBERT supports
+  # 8192; 4096 keeps attention cost sane. window_stride is set explicitly because
+  # the default 256 would give 94% overlap at this window size -- ~16x redundant
+  # work on long docs. Docs under 4096 subwords yield a single window unchanged.
+  sliding_window: true
+  window_stride: 3072
+  max_len: 4096
   gradient_checkpointing: true
   pin_memory: false
   early_stopping: false
