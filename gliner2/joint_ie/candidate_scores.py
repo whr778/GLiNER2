@@ -227,14 +227,12 @@ def boundary_record_groups_to_role_edges(
     edges: List[ScoredRelationEdge] = []
     for group in groups:
         spec = group.spec
-        if spec.mode != "natural" or spec.anchor_query_id is None:
+        if spec.mode == "latent":
             continue
-        anchor_type = _query_type_name(query_types, spec.anchor_query_id)
         for inst in range(group.num_instances):
-            anchor_span = group.instance_spans[inst]
-            if anchor_span is None:
+            trigger = _instance_key(group, inst, query_types)
+            if trigger is None:
                 continue
-            trigger = (anchor_type, int(anchor_span[0]), int(anchor_span[1]))
             for f, fspec in enumerate(group.field_specs):
                 if fspec.is_anchor:
                     continue  # the trigger is not its own argument
@@ -265,6 +263,61 @@ def _query_type_name(query_types: Sequence[str], query_id: int) -> str:
     return query_types[qid] if qid < len(query_types) else str(qid)
 
 
+def _instance_key(group: Any, inst: int, query_types: Sequence[str]):
+    """Identity of one record instance, or ``None`` if it has none.
+
+    ``natural`` groups are identified by their **trigger span**, which is a real
+    mention node. ``anchorless`` structures have no anchor span, so they take a
+    synthetic key instead -- see :func:`boundary_record_instance_nodes`.
+    """
+    spec = group.spec
+    if spec.mode == "anchorless":
+        return ("__instance__", spec.task_name, inst)
+    if spec.anchor_query_id is None:
+        return None
+    span = group.instance_spans[inst]
+    if span is None:
+        return None
+    return (_query_type_name(query_types, spec.anchor_query_id),
+            int(span[0]), int(span[1]))
+
+
+def boundary_record_instance_nodes(
+    groups: Sequence[Any],
+    query_types: Sequence[str],
+    *,
+    decision_threshold: float = 0.5,
+) -> List[NodeCandidate]:
+    """Synthetic instance nodes for ``anchorless`` structures (design §3b).
+
+    A ``natural`` event is identified by its trigger, which is already a mention
+    node. An ``anchorless`` structure has no anchor span, so its role edges need
+    *some* node to hang off: one synthetic node per instance, scored by the record
+    head's own ``object_logits`` (this is where decision D's per-instance existence
+    signal is genuinely needed -- there is no trigger mention to carry it).
+
+    The span is positional filler, never emitted: these nodes are dropped from the
+    entity output by type and consumed only as role-edge heads. **Caveat:** under a
+    non-``allow`` :class:`EntityOverlapPolicy` a synthetic span participates in
+    overlap checks against real mentions. The boundary engine never sets that
+    policy on the joint path, so this is recorded rather than engineered around.
+    """
+    nodes: List[NodeCandidate] = []
+    for group in groups:
+        if group.spec.mode != "anchorless":
+            continue
+        for inst in range(group.num_instances):
+            logit = float(group.object_logits[inst])
+            nodes.append(NodeCandidate(
+                entity_type=f"__{group.spec.task_name}__",
+                start=inst, end=inst + 1,
+                score=center_logit(logit, decision_threshold),
+                probability=sigmoid(logit),
+                candidate_id=("__instance__", group.spec.task_name, inst),
+            ))
+    return nodes
+
+
 def candidate_score_set_to_problem(
     score_set: CandidateScoreSet,
     edges: Sequence[ScoredRelationEdge] = (),
@@ -272,6 +325,7 @@ def candidate_score_set_to_problem(
     mention_threshold: float = 0.5,
     constraints: Sequence[Any] = (),
     decision_threshold: float = 0.5,
+    extra_nodes: Sequence[NodeCandidate] = (),
 ) -> JointProblem:
     """Build a :class:`JointProblem` from sparse mention + edge scores.
 
@@ -293,6 +347,10 @@ def candidate_score_set_to_problem(
         )
         nodes.append(node)
         keep_ids.add(m.key)
+
+    for node in extra_nodes:  # synthetic record-instance nodes; not thresholded
+        nodes.append(node)
+        keep_ids.add(node.candidate_id)
 
     edge_cands: List[EdgeCandidate] = []
     for e in edges:
@@ -332,6 +390,7 @@ def joint_decode(
     pair_temperature: float = 1.0,
     relation_temperature: float = 1.0,
     extra_edges: Sequence["ScoredRelationEdge"] = (),
+    extra_nodes: Sequence[NodeCandidate] = (),
 ):
     """End-to-end boundary joint decode: candidates + relation pairs → mentions + edges →
     typed-constraint beam → the selected node/edge solution. Composes the two boundary
@@ -346,7 +405,8 @@ def joint_decode(
         pairs, relation_logits, relation_temperature=relation_temperature)
     edges.extend(extra_edges)  # record role edges (sec 3b), already scored
     problem = candidate_score_set_to_problem(
-        css, edges, mention_threshold=mention_threshold, constraints=constraints)
+        css, edges, mention_threshold=mention_threshold, constraints=constraints,
+        extra_nodes=extra_nodes)
     return BeamOptimizer(beam_width=beam_width).optimize(problem)
 
 

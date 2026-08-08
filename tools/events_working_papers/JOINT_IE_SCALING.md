@@ -199,30 +199,40 @@ itself: reuse the optimizer/constraint stack rather than rebuild it.
   trigger mention scores 0.4 vanishes even if the record head is confident. Consistent with
   how relations already behave, but a live failure mode for RAMS. Belongs to the
   arm-comparability family above.
-- **`latent` mode is deferred, not broken** — v1 covers `natural` (events) then `anchorless`
-  (structures). `latent` must keep working through the greedy path; it is simply not
-  exercised in the beam yet.
+- **`latent` mode is deferred, not broken** — it keeps working through the greedy record
+  path and is simply not exercised in the beam. Asserted by a test.
 
-### Increments
+### Increments — status
 
-1. **Adapter** `boundary_records_to_role_edges(RecordGroupOutput, layout)` → role edges +
-   the trigger/argument nodes they reference, keyed `(role_name, start, end)` from the
-   **same layout** as the mention adapter. **Key probe required** — mis-keyed layout must
-   drop every role edge, proven the way §3's relation crux was.
-2. **`RequiredRoles`** constraint via the `validate` hook + registration in
+1. ✅ **Adapter** `boundary_record_groups_to_role_edges` — role edges from the raw
+   `RecordGroupOutput`, endpoints keyed `(role_name, start, end)` from the **same layout**
+   as the mention adapter. **Key probe in place**: `test_miskeyed_query_types_drop_every_
+   role_edge` types endpoints from a different source and asserts all edges are pruned —
+   the §3 relation crux, guarded for records.
+2. ✅ **Engine** — `_record_groups` factors the raw lattice out of `_decode_records`;
+   `_decode_joint` feeds role edges + instance nodes into `joint_decode`;
+   `_format_joint_records` rebuilds instances by grouping on `hypothesis` and emits
+   greedy's exact shape. Joint mode **skips** the greedy record pass (else double-emit),
+   and role edges are excluded from relation output (matched by `::`).
+3. ✅ **Anchorless structures** — `boundary_record_instance_nodes` synthesizes one node per
+   instance, scored by `object_logits` (the one place decision D's per-instance signal is
+   genuinely needed — there is no trigger mention to carry it), injected via
+   `candidate_score_set_to_problem(extra_nodes=...)`. Proven load-bearing:
+   `test_anchorless_roles_are_pruned_without_the_instance_node`.
+   **⚠ Caveat:** a synthetic span participates in `EntityOverlapPolicy` checks under a
+   non-`allow` policy. The engine never sets that policy on the joint path, so this is
+   recorded, not engineered around.
+4. ✅ **Tests** — 10 across `tests/joint_ie/test_record_role_edges.py` +
+   `tests/models/boundary/test_joint_records.py`, incl. multi-valued roles keeping every
+   filler (guards decision B), two triggers not merging (guards decision A), and no
+   double-emission through `_extract_from_batch`.
+5. ⬜ **`RequiredRoles`** constraint via the `validate` hook + registration in
    `_CONSTRAINT_TYPES` (`constraints.py:304`), with a compiler hook beside the existing
-   `UniqueRelationSlot` emission.
-3. **Engine**: factor raw `RecordGroupOutput` computation out of `_decode_records` (the
-   `_relation_pairs_and_logits` analogue); in joint mode **stop emitting the greedy record
-   output** or records double-emit; format back to greedy's exact record shape so the eval
-   harness runs both arms unchanged.
-4. **Integration test** on the tiny-encoder fixture with an event schema — events first
-   (RAMS is what blocks), structures next.
+   `UniqueRelationSlot` emission. **Not yet built** — without it an instance can be emitted
+   with a required role unfilled, which the greedy path also permits, so this is a quality
+   improvement rather than a parity gap.
 
-Anchorless structures need the one genuinely new piece: a synthetic instance node
-(`candidate_id = ("__instance__", task, i)`) with a fake span — check `EntityOverlapPolicy`
-treatment of it under `flat` before shipping, since a fake span can collide with real
-mentions.
+**Decision 4b is met**: structures, relations and events all decode through the beam.
 
 ## 4. Experiment (Phase A — decode-only)
 

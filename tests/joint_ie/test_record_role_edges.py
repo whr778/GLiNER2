@@ -123,12 +123,47 @@ def test_miskeyed_query_types_drop_every_role_edge():
     assert len(problem.edges) == 0  # ...but reference nothing, so all are pruned
 
 
-def test_anchorless_and_latent_groups_are_skipped():
-    """v1 covers natural mode; the others keep working through the greedy path."""
+def _anchorless_group():
     anchorless = RecordSpec(
         task_index=0, task_name="order", task_type="json_structures",
         mode="anchorless", fields=(TARGET, INSTRUMENT), anchor_query_id=None,
     )
     group = _group()
     object.__setattr__(group, "spec", anchorless)
+    return group
+
+
+def test_anchorless_structures_hang_off_a_synthetic_instance_node():
+    """A structure has no trigger, so its roles hang off a synthetic instance node."""
+    from gliner2.joint_ie.candidate_scores import boundary_record_instance_nodes
+
+    group = _anchorless_group()
+    edges = boundary_record_groups_to_role_edges([group], QUERY_TYPES)
+    nodes = boundary_record_instance_nodes([group], QUERY_TYPES)
+
+    key = ("__instance__", "order", 0)
+    assert len(nodes) == 1 and nodes[0].candidate_id == key
+    assert all(e.head == key and e.hypothesis == key for e in edges)
+
+    # The synthetic node must be in the problem or every role edge is pruned.
+    problem = candidate_score_set_to_problem(_mentions(), edges, extra_nodes=nodes)
+    assert len(problem.edges) == len(edges) == 2
+
+
+def test_anchorless_roles_are_pruned_without_the_instance_node():
+    """Proves the synthetic node is load-bearing, not decorative."""
+    group = _anchorless_group()
+    edges = boundary_record_groups_to_role_edges([group], QUERY_TYPES)
+    problem = candidate_score_set_to_problem(_mentions(), edges)  # no extra_nodes
+    assert len(problem.edges) == 0
+
+
+def test_latent_groups_are_skipped():
+    """`latent` is deferred, not broken -- it keeps using the greedy record path."""
+    latent = RecordSpec(
+        task_index=0, task_name="deal", task_type="json_structures",
+        mode="latent", fields=(TARGET, INSTRUMENT), anchor_query_id=None,
+    )
+    group = _group()
+    object.__setattr__(group, "spec", latent)
     assert boundary_record_groups_to_role_edges([group], QUERY_TYPES) == []

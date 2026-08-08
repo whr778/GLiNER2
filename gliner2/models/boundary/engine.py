@@ -406,8 +406,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         thresholding and null-abstention remain greedy-only.
         """
         from gliner2.joint_ie.candidate_scores import (
-            boundary_record_groups_to_role_edges, joint_decode,
-        )  # noqa: F401 -- imported here to keep joint_ie optional on the greedy path
+            boundary_record_groups_to_role_edges,
+            boundary_record_instance_nodes,
+            joint_decode,
+        )
         from gliner2.joint_ie.constraints import TypedEndpoints
 
         pairs, logits = self._relation_pairs_and_logits(
@@ -418,6 +420,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         query_types = [spec["field_name"] for spec in specs]
         groups = self._record_groups(batch, sample_index, core, candidates)
         role_edges = boundary_record_groups_to_role_edges(groups, query_types)
+        instance_nodes = boundary_record_instance_nodes(groups, query_types)
         constraints = [
             TypedEndpoints(
                 entry["spec"].relation_type,
@@ -439,6 +442,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             pair_temperature=self.boundary_settings.pair_temperature,
             relation_temperature=self.boundary_settings.relation_temperature,
             extra_edges=role_edges,
+            extra_nodes=instance_nodes,
         )
 
         sample: Dict[str, Any] = {}
