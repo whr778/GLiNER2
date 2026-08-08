@@ -106,6 +106,10 @@ class BoundaryHeadSettings:
     count_loss_weight: float = 0.2
     adaptive_threshold: bool = False
     overlap_policy: str = "flat"  # "flat" | "nested" | "longest"
+    # "greedy" = the shipped per-query decode; "joint" routes entities +
+    # relations through the joint_ie typed-constraint beam instead.
+    decode_mode: str = "greedy"  # "greedy" | "joint"
+    joint_beam_width: int = 16
     pair_temperature: float = 1.0
     relation_temperature: float = 1.0
     record_temperature: float = 1.0
@@ -334,6 +338,10 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             values.get("adaptive_threshold", d.adaptive_threshold)
         ),
         "overlap_policy": str(values.get("overlap_policy", d.overlap_policy)),
+        "decode_mode": str(values.get("decode_mode", d.decode_mode)),
+        "joint_beam_width": int(
+            values.get("joint_beam_width", d.joint_beam_width)
+        ),
         "pair_temperature": float(
             values.get("pair_temperature", d.pair_temperature)
         ),
@@ -532,6 +540,10 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError(
             "boundary_head.overlap_policy must be 'flat', 'nested', or 'longest'"
         )
+    if result["decode_mode"] not in ("greedy", "joint"):
+        raise ValueError("boundary_head.decode_mode must be 'greedy' or 'joint'")
+    if result["joint_beam_width"] <= 0:
+        raise ValueError("boundary_head.joint_beam_width must be > 0")
     for temperature_key in (
         "pair_temperature",
         "relation_temperature",

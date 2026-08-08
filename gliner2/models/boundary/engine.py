@@ -14,8 +14,60 @@ from gliner2.models.boundary.model import (
     BoundaryExtractorModel,
     _group_scored_candidates,
 )
-from gliner2.models.base import QueryLayout
+from gliner2.models.base import QueryLayout, QuerySpec
 from gliner2.models.boundary.records import decode_group
+
+
+def _layout_from_ext_specs(specs: List[Dict[str, Any]]) -> QueryLayout:
+    """Build a `QueryLayout` from one sample's `ext_specs`.
+
+    `ext_specs` enumerates exactly the extractive queries in candidate-slot order
+    (classifications never take a slot), so `query_id == candidate query index`.
+    Deriving from it — rather than `batch.query_layouts`, which only the fast
+    routing path populates — types mentions and relation endpoints from a single
+    source, so edge keys reference mention keys by construction.
+    """
+    return QueryLayout(queries=tuple(
+        QuerySpec(
+            query_id=qid,
+            task_index=spec["group_index"],
+            task_type=spec["task_type"],
+            task_name=spec["task_name"],
+            role_index=spec["field_index"],
+            role_name=spec["field_name"],
+            field_path=(spec["task_name"], spec["field_name"]),
+            extractive=True,
+        )
+        for qid, spec in enumerate(specs)
+    ))
+
+
+def _relation_value(
+    head: Tuple[str, int, int],
+    tail: Tuple[str, int, int],
+    score: float,
+    include_confidence: bool,
+    include_spans: bool,
+):
+    """Format one decoded relation pair; shared by the greedy and joint paths.
+
+    ``head``/``tail`` are ``(surface, char_start, char_end)``.
+    """
+    if include_spans:
+        value = {
+            "head": {"text": head[0], "start": head[1], "end": head[2]},
+            "tail": {"text": tail[0], "start": tail[1], "end": tail[2]},
+        }
+        if include_confidence:
+            value["head"]["confidence"] = score
+            value["tail"]["confidence"] = score
+        return value
+    if include_confidence:
+        return {
+            "head": {"text": head[0], "confidence": score},
+            "tail": {"text": tail[0], "confidence": score},
+        }
+    return (head[0], tail[0])
 
 
 def _resolve_flat_spans(
@@ -131,6 +183,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 or self.boundary_settings.overlap_policy
             )
             specs = core["ext_specs"][i] if has_queries else []
+            layout = _layout_from_ext_specs(specs)
             offset = core["word_offsets"][i]
             start_map = batch.start_mappings[i]
             end_map = batch.end_mappings[i]
@@ -145,9 +198,23 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 if instances:
                     sample[name] = instances
 
+            if (
+                self.boundary_settings.decode_mode == "joint"
+                and candidates is not None
+            ):
+                sample.update(self._decode_joint(
+                    i, core, candidates, threshold, offset, start_map, end_map,
+                    text, text_len, include_confidence, include_spans,
+                    layout, specs,
+                ))
+                self._decode_classifications(sample, batch, core, i)
+                results.append(sample)
+                continue
+
             relation_results = self._decode_relations(
                 i, core, candidates, metadata_list[i], threshold, offset,
                 start_map, end_map, text, text_len, include_confidence, include_spans,
+                layout,
             )
             sample.update(relation_results)
 
@@ -182,17 +249,55 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             if entity_results:
                 sample["entities"] = [entity_results]
 
-            schema = batch.original_schemas[i]
-            for cls in core["cls_specs"][i]:
-                self._extract_classification_result(
-                    sample, cls["task_name"], schema,
-                    cls["group_embs"], cls["schema_tokens"],
-                    temperature=self.boundary_settings.classification_temperature,
-                )
-
+            self._decode_classifications(sample, batch, core, i)
             results.append(sample)
 
         return results
+
+    def _decode_classifications(
+        self, sample: Dict[str, Any], batch, core: Dict[str, Any], sample_index: int,
+    ) -> None:
+        """Add this sample's classification results in place."""
+        schema = batch.original_schemas[sample_index]
+        for cls in core["cls_specs"][sample_index]:
+            self._extract_classification_result(
+                sample, cls["task_name"], schema,
+                cls["group_embs"], cls["schema_tokens"],
+                temperature=self.boundary_settings.classification_temperature,
+            )
+
+    def _relation_pairs_and_logits(
+        self,
+        sample_index: int,
+        core: Dict[str, Any],
+        candidates,
+        layout: QueryLayout,
+    ):
+        """Propose typed relation pairs for one sample and score them.
+
+        Returns ``(pairs, logits)`` with *raw* logits — each caller applies its own
+        temperature. Shared by the greedy and joint decode paths. Passing the real
+        ``layout`` types the pair endpoint keys by `role_name`.
+        """
+        rel_specs = core["rel_specs"][sample_index]
+        sample_candidates = self._single_sample_candidates(candidates, sample_index)
+        pairs = self.relation_pair_generator.generate(
+            sample_candidates,
+            [layout],
+            [entry["spec"] for entry in rel_specs],
+        )
+        if not len(pairs):
+            return pairs, None
+        query_states = torch.stack(
+            [entry["query_state"] for entry in rel_specs]
+        ).unsqueeze(0)
+        logits = self.relation_scorer(
+            core["text_states"][sample_index:sample_index + 1],
+            query_states,
+            sample_candidates,
+            pairs,
+        )
+        return pairs, logits.detach()
 
     def _decode_relations(
         self,
@@ -208,30 +313,18 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         text_len: int,
         include_confidence: bool,
         include_spans: bool,
+        layout: QueryLayout,
     ) -> Dict[str, Any]:
         """Decode sparse relation pairs for one sample."""
         if not getattr(self, "enable_relations", False) or candidates is None:
             return {}
-        rel_specs = core["rel_specs"][sample_index]
-        if not rel_specs:
+        if not core["rel_specs"][sample_index]:
             return {}
-        sample_candidates = self._single_sample_candidates(candidates, sample_index)
-        pairs = self.relation_pair_generator.generate(
-            sample_candidates,
-            [QueryLayout(queries=())],
-            [entry["spec"] for entry in rel_specs],
+        pairs, logits = self._relation_pairs_and_logits(
+            sample_index, core, candidates, layout
         )
-        if not len(pairs):
+        if logits is None:
             return {}
-        query_states = torch.stack(
-            [entry["query_state"] for entry in rel_specs]
-        ).unsqueeze(0)
-        logits = self.relation_scorer(
-            core["text_states"][sample_index:sample_index + 1],
-            query_states,
-            sample_candidates,
-            pairs,
-        )
         probabilities = torch.sigmoid(
             logits / self.boundary_settings.relation_temperature
         )
@@ -247,34 +340,138 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             score = float(probability.detach())
             if score < relation_threshold:
                 continue
-            hs = int(pairs.head_start[pair_index]) - offset
-            he = int(pairs.head_end[pair_index]) - offset
-            ts = int(pairs.tail_start[pair_index]) - offset
-            te = int(pairs.tail_end[pair_index]) - offset
-            if not (0 <= hs < he <= text_len and 0 <= ts < te <= text_len):
+            head = self._token_span_to_char(
+                int(pairs.head_start[pair_index]), int(pairs.head_end[pair_index]),
+                offset, start_map, end_map, text, text_len,
+            )
+            tail = self._token_span_to_char(
+                int(pairs.tail_start[pair_index]), int(pairs.tail_end[pair_index]),
+                offset, start_map, end_map, text, text_len,
+            )
+            if head is None or tail is None:
                 continue
-            h0, h1 = token_boundaries_to_character_offsets(hs, he, start_map, end_map)
-            t0, t1 = token_boundaries_to_character_offsets(ts, te, start_map, end_map)
-            head, tail = text[h0:h1].strip(), text[t0:t1].strip()
-            if not head or not tail:
-                continue
-            if include_spans:
-                value = {
-                    "head": {"text": head, "start": h0, "end": h1},
-                    "tail": {"text": tail, "start": t0, "end": t1},
-                }
-                if include_confidence:
-                    value["head"]["confidence"] = score
-                    value["tail"]["confidence"] = score
-            elif include_confidence:
-                value = {
-                    "head": {"text": head, "confidence": score},
-                    "tail": {"text": tail, "confidence": score},
-                }
-            else:
-                value = (head, tail)
-            out.setdefault(relation_type, []).append(value)
+            out.setdefault(relation_type, []).append(
+                _relation_value(
+                    head, tail, score, include_confidence, include_spans
+                )
+            )
         return out
+
+    def _token_span_to_char(
+        self, start: int, end: int, offset: int, start_map, end_map,
+        text: str, text_len: int,
+    ):
+        """Token span in the pre-offset frame -> ``(surface, char_start, char_end)``.
+
+        Returns ``None`` when the span falls outside the chunk or is empty after
+        stripping — the same guard the greedy decode applies.
+        """
+        ts, te = start - offset, end - offset
+        if not (0 <= ts < te <= text_len):
+            return None
+        c0, c1 = token_boundaries_to_character_offsets(ts, te, start_map, end_map)
+        surface = text[c0:c1].strip()
+        return (surface, c0, c1) if surface else None
+
+    def _decode_joint(
+        self,
+        sample_index: int,
+        core: Dict[str, Any],
+        candidates,
+        threshold: float,
+        offset: int,
+        start_map,
+        end_map,
+        text: str,
+        text_len: int,
+        include_confidence: bool,
+        include_spans: bool,
+        layout: QueryLayout,
+        specs: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Decode one sample with the joint_ie typed-constraint beam.
+
+        Entities and relations are selected *together* over the boundary candidate
+        scores rather than per query, so a relation survives only with both of its
+        endpoints. Mentions and relation endpoints are typed from the same
+        ``layout``, so edges reference mention nodes by construction.
+
+        Returns the same output shape as the greedy path. Note that adaptive
+        thresholding and null-abstention remain greedy-only.
+        """
+        from gliner2.joint_ie.candidate_scores import joint_decode
+        from gliner2.joint_ie.constraints import TypedEndpoints
+
+        pairs, logits = self._relation_pairs_and_logits(
+            sample_index, core, candidates, layout
+        )
+        if logits is None:
+            logits = []
+        constraints = [
+            TypedEndpoints(
+                entry["spec"].relation_type,
+                tuple(layout.query(q).role_name for q in entry["spec"].head_query_ids),
+                tuple(layout.query(q).role_name for q in entry["spec"].tail_query_ids),
+            )
+            for entry in core["rel_specs"][sample_index]
+        ]
+        solution = joint_decode(
+            candidates,
+            [spec["field_name"] for spec in specs],
+            pairs,
+            logits,
+            constraints=constraints,
+            sample_index=sample_index,
+            text=text,
+            mention_threshold=threshold,
+            beam_width=self.boundary_settings.joint_beam_width,
+            pair_temperature=self.boundary_settings.pair_temperature,
+            relation_temperature=self.boundary_settings.relation_temperature,
+        )
+
+        sample: Dict[str, Any] = {}
+        # Relation head/tail-role queries are mentions too; only entity queries
+        # belong in the entities section.
+        entity_types = {
+            spec["field_name"] for spec in specs if spec["task_type"] == "entities"
+        }
+        entity_results: "OrderedDict[str, List]" = OrderedDict(
+            (spec["field_name"], [])
+            for spec in specs if spec["task_type"] == "entities"
+        )
+        chars: Dict[Any, Tuple[str, int, int]] = {}
+        for node in solution.nodes:
+            span = self._token_span_to_char(
+                node.start, node.end, offset, start_map, end_map, text, text_len
+            )
+            if span is None:
+                continue
+            chars[node.candidate_id] = span
+            if node.entity_type in entity_types:
+                entity_results[node.entity_type].append(
+                    (span[0], node.probability, span[1], span[2])
+                )
+
+        formatted = OrderedDict(
+            (name, self._format_spans(
+                spans, include_confidence, include_spans, already_finalized=True
+            ))
+            for name, spans in entity_results.items()
+        )
+        if formatted:
+            sample["entities"] = [formatted]
+
+        for edge in solution.edges:
+            head, tail = chars.get(edge.head), chars.get(edge.tail)
+            if head is None or tail is None:
+                continue
+            sample.setdefault(edge.relation_type, []).append(
+                _relation_value(
+                    head, tail, edge.head_probability,
+                    include_confidence, include_spans,
+                )
+            )
+        return sample
 
     def _decode_records(
         self,

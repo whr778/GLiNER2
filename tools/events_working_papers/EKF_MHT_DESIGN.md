@@ -429,3 +429,19 @@ number binding is perfect (1.000). **Caveat:** fine-tuned + tested on sonnet-5 t
 distribution) — **Venezuela (real news) remains the true generalization test**. This is the
 end of the synthetic arc: text → extraction → tracking, held-out, at ~1.4× the clean-obs
 ceiling.
+
+## 21. References
+
+- Kozak, M. C. *Multiple Model Methods for Cost Function Based Multiple Hypothesis
+  Trackers.* (Multiple-model MHT under an explicit cost function.) **Directly on this
+  design's two load-bearing choices:** the *cost-function* formulation of hypothesis
+  scoring is what §3's tracker optimizes, and *multiple model* methods (a bank of motion
+  models arbitrated per-hypothesis) are the classical form of the MoE gate decided in §4 —
+  our learned router over {local read, tracked state} experts (§15) is a learned
+  instantiation of the same idea, where the classical treatment uses fixed IMM mixing.
+  Read against §4's Reading B decision and the §14 regime ablation.
+- Reid, D. B. "An Algorithm for Tracking Multiple Targets." IEEE T-AC, 1979. (Seminal MHT;
+  the hypothesis-beam ancestor — see [[KALMAN_BEAM_SEARCH_EXPLORATION]] §3.)
+
+Fuller literature scan lives in [[KALMAN_BEAM_SEARCH_EXPLORATION]] §9; this section carries
+only what this design leans on directly.

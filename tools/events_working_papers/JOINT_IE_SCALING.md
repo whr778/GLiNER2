@@ -18,7 +18,7 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
 | 1 | Architecture = **boundary** (no span, no 20-instance cap) | DECIDED |
 | 2 | Downstream target = **Re-DocRED** (dense relations, where the cap bites) | DECIDED |
 | 3 | Bases **retrained `from_encoder`** (mmBERT), NOT span | DECIDED |
-| 4 | joint_ie **wired to boundary** (new adapter; the contract already exists) | building |
+| 4 | joint_ie **wired to boundary** (new adapter; the contract already exists) | **DONE** (Phase A path ready) |
 | 5 | **Phase A = decode-only** (paired greedy vs beam); **Phase B = joint training** only if A is positive | DECIDED |
 | 6 | Base mix = event corpora **+ relation-rich corpora** (warms the relation head; also pushes past 100K free) | DECIDED |
 | 7 | Sizes {10K,40K,100K} from the existing 100,080 pool; **>100K via a new config** once corpora are added; **NO LLM generation** (100K synthetic ≈ $400-860 batch) | DECIDED |
@@ -41,7 +41,35 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
   constraints → both adapters → `candidate_score_set_to_problem` → `BeamOptimizer` → the
   selected node/edge solution. Unit-tested from synthetic boundary outputs. (commit `e8f2bad`)
   **The joint_ie side is now complete.**
-- ⬜ **Engine plumbing** (remaining, engine-side) — mapped from a full engine read:
+- ✅ **Engine plumbing** — `_decode_joint` on `BoundaryExtractor`, gated by
+  `boundary_head.decode_mode` (`"greedy"` default | `"joint"`) + `joint_beam_width`.
+  A `_layout_from_ext_specs` helper builds the one real `QueryLayout` from
+  `core["ext_specs"]` — **not** `batch.query_layouts`, which only the `fast_routing`
+  path populates — and both the mention `query_types` and the pair `head_keys`/
+  `tail_keys` are typed from it. `_relation_pairs_and_logits` is now shared by the
+  greedy and joint paths (returns *raw* logits; each caller applies its own
+  temperature). The empty-`QueryLayout` call is gone, so both paths are un-forked.
+  **Key consistency proven, not assumed** — same fixture, real vs empty layout:
+
+  | layout | `head_keys` | edges kept |
+  |---|---|---|
+  | real | `('person', 0, 1)` | **1** |
+  | empty (old) | `('0', 0, 1)` | **0** |
+
+  Mention keys are `('person',0,1)`/`('org',3,4)`; the empty layout silently pruned
+  *every* edge. This is the failure the wiring had to avoid, and it is now guarded.
+- ✅ **Integration test** — `tests/models/boundary/test_joint_decode.py` (5 tests, tiny
+  encoder, no download): the layout builder types by `role_name`; the joint decode links
+  the relation to its mention nodes (the crux regression guard); joint == greedy on an
+  unambiguous case; `decode_mode` defaults to `"greedy"`; the flag runs through the
+  public `extract_relations` path.
+- ⚠ **Arm-comparability caveat (must settle before Phase A):** the joint path threads the
+  engine `threshold` through as `mention_threshold`, but **adaptive thresholding and
+  null-abstention remain greedy-only**. The two arms are therefore not yet threshold-
+  identical; decide whether to port both to the joint path or disable them in both arms
+  before reading the greedy-vs-beam curve.
+
+<details><summary>Original engine-read mapping (superseded by the above)</summary>
   - **Relations ARE wired** (not a blocker): `enable_relations` in config
     (`model.py:1006`) builds `relation_pair_generator` + `relation_scorer`; `_decode_relations`
     runs. The public-api e2e test just never enabled relations, so a relation-enabled boundary
@@ -62,10 +90,8 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
     layout used consistently resolves it.)
   - So the whole hook is mechanical: build the real layout, type mentions + edges from it,
     reuse pairs/logits, `joint_decode`, char-offset format, gate the flag.
-- ⬜ **Integration test** — relation-enabled boundary model (`enable_relations` config + a
-  relation schema) on the real-deberta fixture: assert the joint path runs + honors a
-  `TypedEndpoints` constraint (untrained = structure/constraint check; the scaling runs give
-  the greedy-vs-beam quality curve).
+
+</details>
 
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.

@@ -182,6 +182,7 @@ def test_boundary_model_wires_sparse_relation_loss():
         text_len=4,
         include_confidence=False,
         include_spans=True,
+        layout=_layout(["person", "org"]),
     )
     assert decoded["works_for"] == [{
         "head": {"text": "Alice", "start": 0, "end": 5},
