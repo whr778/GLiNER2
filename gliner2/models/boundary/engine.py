@@ -419,8 +419,16 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             logits = []
         query_types = [spec["field_name"] for spec in specs]
         groups = self._record_groups(batch, sample_index, core, candidates)
-        role_edges = boundary_record_groups_to_role_edges(groups, query_types)
-        instance_nodes = boundary_record_instance_nodes(groups, query_types)
+        # Mirror decode_group's instance gate exactly: it passes
+        # object_threshold=record_anchor_threshold for BOTH modes, so one threshold
+        # covers natural and anchorless. Without this the joint arm has no existence
+        # gate and emits events greedy would reject (JOINT_IE_SCALING decision D).
+        gate = dict(
+            instance_threshold=self.boundary_settings.record_anchor_threshold,
+            temperature=self.boundary_settings.record_temperature,
+        )
+        role_edges = boundary_record_groups_to_role_edges(groups, query_types, **gate)
+        instance_nodes = boundary_record_instance_nodes(groups, query_types, **gate)
         constraints = [
             TypedEndpoints(
                 entry["spec"].relation_type,

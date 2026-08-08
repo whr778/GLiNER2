@@ -201,6 +201,9 @@ def boundary_relation_pairs_to_edges(
 def boundary_record_groups_to_role_edges(
     groups: Sequence[Any],
     query_types: Sequence[str],
+    *,
+    instance_threshold: float = 0.5,
+    temperature: float = 1.0,
 ) -> List["ScoredRelationEdge"]:
     """Map boundary ``RecordGroupOutput``s to event **role edges** (design §3b).
 
@@ -220,9 +223,13 @@ def boundary_record_groups_to_role_edges(
     calibrated; a non-default ``decision_threshold`` would shift scalar roles, which is
     why the engine leaves it at the default.)
 
-    Only ``natural`` (anchored/trigger) groups are emitted. ``anchorless`` structures need
-    a synthetic instance node and ``latent`` is deferred -- both keep working through the
-    greedy record path.
+    **Instance-existence gate (decision D, revised 2026-08-08).** An instance is skipped
+    unless ``sigmoid(object_logits[inst] / temperature) >= instance_threshold`` -- the same
+    test ``decode_group`` applies before emitting a record. Without it the joint arm has no
+    existence gate at all and emits events surviving on a single positive role edge that
+    greedy would have rejected outright, biasing the decode-arm comparison against the beam.
+
+    ``latent`` is deferred -- it keeps working through the greedy record path.
     """
     edges: List[ScoredRelationEdge] = []
     for group in groups:
@@ -230,6 +237,8 @@ def boundary_record_groups_to_role_edges(
         if spec.mode == "latent":
             continue
         for inst in range(group.num_instances):
+            if sigmoid(float(group.object_logits[inst]) / temperature) < instance_threshold:
+                continue  # greedy would not emit this instance either
             trigger = _instance_key(group, inst, query_types)
             if trigger is None:
                 continue
@@ -287,6 +296,8 @@ def boundary_record_instance_nodes(
     query_types: Sequence[str],
     *,
     decision_threshold: float = 0.5,
+    instance_threshold: float = 0.5,
+    temperature: float = 1.0,
 ) -> List[NodeCandidate]:
     """Synthetic instance nodes for ``anchorless`` structures (design §3b).
 
@@ -301,6 +312,9 @@ def boundary_record_instance_nodes(
     non-``allow`` :class:`EntityOverlapPolicy` a synthetic span participates in
     overlap checks against real mentions. The boundary engine never sets that
     policy on the joint path, so this is recorded rather than engineered around.
+
+    Gated by the same instance-existence test as the role edges, so a below-threshold
+    instance contributes neither a node nor edges.
     """
     nodes: List[NodeCandidate] = []
     for group in groups:
@@ -308,6 +322,8 @@ def boundary_record_instance_nodes(
             continue
         for inst in range(group.num_instances):
             logit = float(group.object_logits[inst])
+            if sigmoid(logit / temperature) < instance_threshold:
+                continue
             nodes.append(NodeCandidate(
                 entity_type=f"__{group.spec.task_name}__",
                 start=inst, end=inst + 1,

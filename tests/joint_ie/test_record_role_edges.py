@@ -158,6 +158,47 @@ def test_anchorless_roles_are_pruned_without_the_instance_node():
     assert len(problem.edges) == 0
 
 
+def test_instance_below_the_existence_gate_emits_nothing():
+    """Decision D revised: joint must apply greedy's instance gate.
+
+    `decode_group` drops an instance whose object probability is below threshold.
+    Without the same gate the joint arm emits events surviving on a single positive
+    role edge that greedy would reject outright -- biasing the decode-arm comparison
+    against the beam on exactly the RAMS number Phase A reports.
+    """
+    group = _group()
+    object.__setattr__(group, "object_logits", torch.tensor([-3.0]))  # p ~ 0.047
+
+    assert boundary_record_groups_to_role_edges([group], QUERY_TYPES) == []
+    # ...and the same instance passes once it clears the gate.
+    object.__setattr__(group, "object_logits", torch.tensor([3.0]))   # p ~ 0.953
+    assert len(boundary_record_groups_to_role_edges([group], QUERY_TYPES)) == 2
+
+
+def test_instance_gate_honors_threshold_and_temperature():
+    """The gate must mirror decode_group's own sigmoid(logits/temperature) test."""
+    group = _group()
+    object.__setattr__(group, "object_logits", torch.tensor([0.4]))  # p ~ 0.599
+
+    assert len(boundary_record_groups_to_role_edges(
+        [group], QUERY_TYPES, instance_threshold=0.5)) == 2
+    assert boundary_record_groups_to_role_edges(
+        [group], QUERY_TYPES, instance_threshold=0.7) == []
+    # A high temperature flattens the logit toward p=0.5, dropping it below 0.599.
+    assert boundary_record_groups_to_role_edges(
+        [group], QUERY_TYPES, instance_threshold=0.55, temperature=10.0) == []
+
+
+def test_anchorless_instance_gate_drops_node_and_edges_together():
+    """A gated-out structure must contribute neither a node nor edges."""
+    from gliner2.joint_ie.candidate_scores import boundary_record_instance_nodes
+
+    group = _anchorless_group()
+    object.__setattr__(group, "object_logits", torch.tensor([-3.0]))
+    assert boundary_record_groups_to_role_edges([group], QUERY_TYPES) == []
+    assert boundary_record_instance_nodes([group], QUERY_TYPES) == []
+
+
 def test_latent_groups_are_skipped():
     """`latent` is deferred, not broken -- it keeps using the greedy record path."""
     latent = RecordSpec(

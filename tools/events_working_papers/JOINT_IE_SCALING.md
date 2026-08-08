@@ -101,9 +101,19 @@ as relations-only would break that symmetry and understate the shared claim.
      them up per relation; `candidate_score_set_to_problem` centers edges at a fixed
      `decision_threshold=0.5`. Moot for a single-threshold Re-DocRED eval, but it is the
      same family of decisions.
-  4. **`decode_group`'s three record thresholds** (`anchor_threshold`, `field_threshold`,
-     `object_threshold`) — greedy-only, and they become live the moment records enter the
-     beam (§3b).
+  4. **`decode_group`'s record thresholds** — *mostly resolved*. Audited 2026-08-08 with
+     both defaults at 0.5:
+
+     | behaviour | greedy | joint | parity |
+     |---|---|---|---|
+     | list-field selection | `sigmoid(logit) ≥ 0.5` | centered utility > 0 | **same** |
+     | scalar-field selection | argmax must beat ABSENT | `logit_c − logit_ABSENT > 0` | **same test** |
+     | required role unfilled | allowed (`decode_group` leaves the field empty when ABSENT wins the argmax, *regardless of cardinality*) | allowed | **same** |
+     | instance existence | `obj_prob ≥ threshold` | **now gated identically** (decision D revised) | **same** |
+
+     Residual, recorded not fixed: joint gates on the trigger **mention** score *and*
+     `obj_prob`, greedy on `obj_prob` alone. Two decoders cannot be made identical; the
+     goal is no *unaccounted* asymmetry on the headline path.
 
   The arms are therefore not yet threshold-identical. Decide whether to port these to the
   joint path or disable them in both arms **before** reading the greedy-vs-beam curve —
@@ -209,7 +219,7 @@ itself: reuse the optimizer/constraint stack rather than rebuild it.
 | A | `hypothesis` = **trigger node id**, not a synthetic instance index | `EdgeCandidate.key` is `(relation_type, head, tail, slot, count_alternative)` — `hypothesis` is **not** in it, so two instances sharing a trigger would collapse their edges. Trigger-as-identity makes instance identity and `head` coincide, so nothing collapses. |
 | B | **scalar** role → `slot=role`; **list** role → `slot=None`, role in `relation_type` (`f"{task}::{role}"` uniformly) | `slot=role` gives scalar cardinality free, but would wrongly block the 2nd filler of a `ZERO_OR_MORE` role. Uniform `relation_type` means the output formatter never parses slots. |
 | C | Edge utility: **scalar** = `logit_c - logit_ABSENT`; **list** = `center_logit(logit_c)` | `_scalar_field_nll` is `log_softmax` over {ABSENT, candidates} (competitive), `_list_field_bce` is BCE over candidates only. Centering a softmax logit would be wrong; this silently determines beam behaviour. |
-| D | v1 **ignores `object_logits`** — the trigger mention score is the existence evidence | Keeps one score per decision. Adding the centered per-instance logit uniformly to that instance's role edges is the alternative; deferred as a **Phase-B calibration item**, not silently dropped. |
+| D | ~~v1 ignores `object_logits`~~ → **REVISED 2026-08-08**: `object_logits` gates instance existence, mirroring `decode_group` exactly | The original call treated this as Phase-B calibration. It is not — it is a **live arm confound**. `decode_group:22` drops an instance whose object probability is below threshold; without the same gate the joint arm had *no* existence gate at all and would emit events surviving on a single positive role edge, biasing the RAMS number **against the beam** and inviting the wrong conclusion from a plumbing gap. Verified aligned: joint now emits an instance **iff** greedy does, across the threshold boundary. |
 | E | Source is **`RecordGroupOutput`** (raw `object_logits`/`assign_logits`/`field_spans`), never `decode_group` output | Adapting `DecodedRecord` would re-rank already-greedy decisions — the exact trap the relation path avoided. |
 
 ### Known v1 behaviour, recorded not hidden
@@ -248,9 +258,17 @@ itself: reuse the optimizer/constraint stack rather than rebuild it.
    double-emission through `_extract_from_batch`.
 5. ⏸ **`RequiredRoles`** constraint via the `validate` hook + registration in
    `_CONSTRAINT_TYPES` (`constraints.py:304`), with a compiler hook beside the existing
-   `UniqueRelationSlot` emission. **DEFERRED past Phase A** (decided 2026-08-08): without it
-   an instance can be emitted with a required role unfilled, but the greedy path permits
-   that too, so the arms stay comparable. Carried to Phase B (§7).
+   `UniqueRelationSlot` emission. **DEFERRED past Phase A** (decided 2026-08-08), and the
+   premise is now **verified in code**: `decode_group`'s scalar path does
+   `if chosen is None or chosen == 0: continue` *before* the cardinality check, so when
+   ABSENT wins the argmax a `REQUIRED_ONE` field is left empty exactly as an optional one
+   is. Greedy permits unfilled required roles, so the arms stay comparable. Carried to
+   Phase B (§7).
+
+   Worth stating because it is counter-intuitive: implementing `RequiredRoles` as a
+   *rejection* constraint would move the arms **further apart**, not closer — greedy never
+   rejects such an instance. Parity, if ever wanted, means matching greedy's fill
+   semantics, not adding a rejection rule.
 
 **Decision 4b is met**: structures, relations and events all decode through the beam.
 
