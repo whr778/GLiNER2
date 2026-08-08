@@ -64,10 +64,18 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
   unambiguous case; `decode_mode` defaults to `"greedy"`; the flag runs through the
   public `extract_relations` path.
 - ⚠ **Arm-comparability caveat (must settle before Phase A):** the joint path threads the
-  engine `threshold` through as `mention_threshold`, but **adaptive thresholding and
-  null-abstention remain greedy-only**. The two arms are therefore not yet threshold-
-  identical; decide whether to port both to the joint path or disable them in both arms
-  before reading the greedy-vs-beam curve.
+  engine `threshold` through as `mention_threshold`, but three greedy-side threshold
+  behaviours are **not** mirrored:
+  1. **adaptive thresholding** (`boundary_settings.adaptive_threshold`) — greedy-only;
+  2. **null-abstention** (`abstention_threshold` on `null_logits`) — greedy-only;
+  3. **per-relation-type thresholds** from `metadata["relation_metadata"]` — greedy looks
+     them up per relation; `candidate_score_set_to_problem` centers edges at a fixed
+     `decision_threshold=0.5`. Moot for a single-threshold Re-DocRED eval, but it is the
+     same family of decisions.
+
+  The arms are therefore not yet threshold-identical. Decide whether to port these to the
+  joint path or disable them in both arms **before** reading the greedy-vs-beam curve —
+  otherwise the curve confounds decode strategy with thresholding.
 
 <details><summary>Original engine-read mapping (superseded by the above)</summary>
   - **Relations ARE wired** (not a blocker): `enable_relations` in config
@@ -96,7 +104,13 @@ Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wi
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
 
-### Decode-wiring integration notes (scoped from the engine read)
+### Decode-wiring integration notes — SUPERSEDED (all implemented)
+
+> **Historical.** Every item below is done and shipped; the ⚠ GOTCHA in particular is
+> **fixed** (no empty `QueryLayout` remains in the engine). Kept only as the record of how
+> the hook was scoped. For current behaviour read the code and the ✅ entries above.
+
+<details><summary>Original scoping notes</summary>
 
 Hooks in `BoundaryExtractor._extract_from_batch` (`models/boundary/engine.py`):
 - **query_types** from `core["ext_specs"][i]` (per-query `field_name`/`roles`) → `query_id →
@@ -117,6 +131,11 @@ Hooks in `BoundaryExtractor._extract_from_batch` (`models/boundary/engine.py`):
   greedy entity+relation decode (default OFF → zero risk to the shipped path).
 - **test**: build a `BoundaryExtractor` per `tests/models/boundary/test_end_to_end_real_
   deberta.py`, run greedy vs joint on a simple + a constraint case.
+  *(Shipped as `tests/models/boundary/test_joint_decode.py` on the **tiny-encoder** fixture
+  instead — the check is structural/constraint-level on an untrained model, so the offline
+  deterministic fixture serves it better than a real-deberta download.)*
+
+</details>
 
 ## 4. Experiment (Phase A — decode-only)
 

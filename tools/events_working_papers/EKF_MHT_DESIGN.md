@@ -432,14 +432,32 @@ ceiling.
 
 ## 21. References
 
-- Kozak, M. C. *Multiple Model Methods for Cost Function Based Multiple Hypothesis
-  Trackers.* (Multiple-model MHT under an explicit cost function.) **Directly on this
-  design's two load-bearing choices:** the *cost-function* formulation of hypothesis
-  scoring is what §3's tracker optimizes, and *multiple model* methods (a bank of motion
-  models arbitrated per-hypothesis) are the classical form of the MoE gate decided in §4 —
-  our learned router over {local read, tracked state} experts (§15) is a learned
-  instantiation of the same idea, where the classical treatment uses fixed IMM mixing.
-  Read against §4's Reading B decision and the §14 regime ablation.
+- **Kozak, M. C. "Multiple Model Methods for Cost Function Based Multiple Hypothesis
+  Trackers." 2012.**
+  [Semantic Scholar](https://www.semanticscholar.org/paper/75221aef94167cb5797428d55cb01b826283e840)
+  Incorporates **multiple-model Kalman filters into an Integral Square Error (ISE)
+  cost-function-based MHT** to raise state-estimation fidelity. Finds the multiple-model
+  structure correctly identifies a target's maneuver mode **in dense clutter**, so an
+  appropriately tuned filter is used — large position/velocity RMS reductions vs. a
+  single-filter MHT during benign flight.
+
+  **Why it is the closest prior work to this design.** It is the same two choices we made,
+  in the classical setting: a *cost-function* hypothesis score (what §3's tracker
+  optimizes) plus a *bank of models arbitrated per hypothesis* — the classical form of the
+  §4 MoE gate. Our learned router over {local read, tracked state} experts (§15) is a
+  learned instantiation of what the classical treatment does with fixed IMM mixing; the
+  dense-clutter result is the analogue of the §14 harder-regime ablation, where the EKF
+  earns its keep precisely as conditions degrade.
+
+  **The honest negative to design against.** During *deferred decision periods* — when the
+  mixture mean drifts far from true target position — the multiple-model structures
+  **accumulate greater RMS error** than the single filter. That is a direct prediction
+  about our gate: a router is a liability exactly when the mixture is bimodal and no expert
+  is yet right. Worth probing against §15's learned gate before trusting it on the
+  Venezuela stream, where sparse contradictory reporting is the real-world deferred-decision
+  case. **Not yet tested.**
+- Williams, J. L. and Maybeck, P. S. "Cost-Function-Based Hypothesis Control Techniques for
+  Multiple Hypothesis Tracking." 2006. The cost-function MHT line Kozak builds on.
 - Reid, D. B. "An Algorithm for Tracking Multiple Targets." IEEE T-AC, 1979. (Seminal MHT;
   the hypothesis-beam ancestor — see [[KALMAN_BEAM_SEARCH_EXPLORATION]] §3.)
 
