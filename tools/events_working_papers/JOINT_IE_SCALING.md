@@ -1,15 +1,35 @@
 # joint_ie × Head-Init Scaling on the Boundary Head — Design
 
-Status: design + build. Date: 2026-08-07. Companion to [[BOUNDARY_DECODE_AND_EKF.md]]
-(the boundary decode map) and the mmBERT head-init scaling finding
-([[mmbert-head-init-finding]]). Sibling line to [[EKF_MHT_DESIGN]] — a *different* route to
-dense document-level extraction: a global typed-constraint decode instead of a tracker.
+Status: design + build. Date: 2026-08-07 (revised 2026-08-08). Companion to
+[[BOUNDARY_DECODE_AND_EKF.md]] (the boundary decode map) and the mmBERT head-init scaling
+finding ([[mmbert-head-init-finding]]). Sibling line to [[EKF_MHT_DESIGN]] — a *different*
+route to dense document-level extraction: a global typed-constraint decode instead of a
+tracker.
 
 ## 1. Thesis
 
 Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wired to the
-**boundary** head (no span 20-cap), improve dense **document-level relation** extraction
-(Re-DocRED), and how does that interact with base-training **data volume** (head-init)?
+**boundary** head (no span 20-cap), improve dense **document-level events *and* relations**,
+and how does that interact with base-training **data volume** (head-init)?
+
+Both, not either. The claim is about **structured output that does not fit a per-query
+greedy decode**, and events and relations are its two faces:
+
+| face | what is jointly decided | downstream |
+|---|---|---|
+| **relations** | which typed `(head, tail)` edges survive together | **Re-DocRED** (dense; the span 20-cap bites) |
+| **events** | which arguments bind to which trigger, under role typing and cardinality | **RAMS** (roles dispersed across sentences) |
+
+They share one mechanism, which is the point: in the beam an event is a **trigger node plus
+role edges** and a relation is a **plain edge** (§3b), so a single typed-constraint decode
+covers both. A win on only one face is a weaker but still reportable result; the honest
+negative — that global decoding helps relations and not events, or the reverse — is itself
+the finding, because it localizes where greedy per-query decoding actually costs you.
+
+This is also what makes the line the *document-level* half of the program
+([[RESEARCH_PROGRAM]]): [[EKF_MHT_DESIGN]] carries events **beyond** the document via a
+tracker, and this paper carries events **within** it via a global decode. Framing this half
+as relations-only would break that symmetry and understate the shared claim.
 
 ## 2. Decisions
 
@@ -226,11 +246,11 @@ itself: reuse the optimizer/constraint stack rather than rebuild it.
    `tests/models/boundary/test_joint_records.py`, incl. multi-valued roles keeping every
    filler (guards decision B), two triggers not merging (guards decision A), and no
    double-emission through `_extract_from_batch`.
-5. ⬜ **`RequiredRoles`** constraint via the `validate` hook + registration in
+5. ⏸ **`RequiredRoles`** constraint via the `validate` hook + registration in
    `_CONSTRAINT_TYPES` (`constraints.py:304`), with a compiler hook beside the existing
-   `UniqueRelationSlot` emission. **Not yet built** — without it an instance can be emitted
-   with a required role unfilled, which the greedy path also permits, so this is a quality
-   improvement rather than a parity gap.
+   `UniqueRelationSlot` emission. **DEFERRED past Phase A** (decided 2026-08-08): without it
+   an instance can be emitted with a required role unfilled, but the greedy path permits
+   that too, so the arms stay comparable. Carried to Phase B (§7).
 
 **Decision 4b is met**: structures, relations and events all decode through the beam.
 
@@ -317,3 +337,10 @@ Joint training: put the joint_ie beam **in the loss** via the boundary model's e
 `proposal.py`) — a structured-prediction objective. Feasible because that idiom already
 exists; a training-loop change, not a bolt-on. Answers: does training-*for* the beam beat
 decoding-*with* it?
+
+Applies to **both faces** (§1): the role edges of an event and the plain edges of a relation
+are the same `EdgeCandidate` in the same problem, so one structured objective covers events
+and relations without a second mechanism. Two calibration items deferred here from Phase A:
+**decision D** (`object_logits` currently unused for `natural` events — the trigger mention
+score carries existence) and **`RequiredRoles`** (§3b increment 5, deferred by decision
+2026-08-08: greedy permits unfilled required roles too, so it is not an arm-parity gap).
