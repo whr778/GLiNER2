@@ -9,6 +9,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "train"))
 from model_card import (  # noqa: E402
     build_model_card,
+    canonical_dataset_key,
     classify_license,
     load_registry,
     summarize_licenses,
@@ -57,7 +58,9 @@ def test_every_config_corpus_has_a_registry_entry():
         cfg = yaml.safe_load(Path(f).read_text()) or {}
         data = cfg.get("data") or {}
         for c in data.get("corpora") or []:
-            key = c.split("/")[-1]
+            # Scaling configs point at sliced copies (sentence_rex.j10k); the card
+            # credits the parent dataset, so the registry is checked the same way.
+            key = canonical_dataset_key(c.split("/")[-1])
             if key not in ds:
                 missing.add(key)
         for name in (data.get("event_files") or {}):

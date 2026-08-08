@@ -136,11 +136,27 @@ def _fmt_duration(seconds: Optional[float]) -> str:
     return f"{sec}s"
 
 
+_SLICE_SUFFIX = re.compile(r"\.j\d+k$")
+
+
+def canonical_dataset_key(key: str) -> str:
+    """Strip a scaling-slice suffix: ``sentence_rex.j10k`` -> ``sentence_rex``.
+
+    Scaling configs point ``data.corpora`` at sliced copies of a corpus (see
+    ``build_joint_scaling_mix.py``), and ``corpora`` derives its registry key from
+    the path rather than a map key. A slice is the same dataset under the same
+    license, so the card must credit the parent -- otherwise every sliced corpus
+    reports as an unknown dataset with no license and the license verdict is wrong.
+    """
+    return _SLICE_SUFFIX.sub("", key)
+
+
 def _resolve_datasets(registry: Dict[str, Any], keys: List[str]) -> List[tuple]:
     """Return [(key, entry_or_None)] preserving order, deduped."""
     ds = registry.get("datasets") or {}
     seen, out = set(), []
-    for k in keys:
+    for raw in keys:
+        k = canonical_dataset_key(raw)
         if k in seen:
             continue
         seen.add(k)

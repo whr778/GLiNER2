@@ -1,13 +1,20 @@
-# joint_ie x head-init scaling -- BOUNDARY cold-start base, ~40K point.
+# joint_ie x head-init scaling -- BOUNDARY cold-start base, ~40K TOTAL records.
 # See tools/events_working_papers/JOINT_IE_SCALING.md (sec 3b design, sec 4 experiment).
 #
 # NEW output paths/names on purpose: this does NOT overwrite the span-architecture
 # scaling-mmbert-*.yaml runs, their ./out/scaling-mmbert-* dirs, or anything already
-# pushed to HF. Those were span bases (see sec 3c); these are the boundary bases the
+# pushed to HF. Those were span bases (sec 3c); these are the boundary bases the
 # joint_ie decode arms need.
 #
-# Only the Stage-A corpus size varies across {10k,40k,100k,137k} -- recipe held fixed.
+# Sizes are TOTAL mix records, and EVERY point carries both event and relation data
+# at the pool's own ratio (events 73.02% / relations 26.98%), so the only factor
+# varying across the curve is volume -- not whether the relation head was warmed at
+# all. Slices built by tools/train/build_joint_scaling_mix.py (seed 42, nested).
+#
+#   this point: 29,209 event + 10,791 relation records
+#
 # RAMS / Re-DocRED / WikiEvents excluded from the base mix (they are the downstreams).
+# DocRED excluded too: Re-DocRED re-annotates the same documents (leakage).
 model:
   encoder: jhu-clsp/mmBERT-base
   architecture: boundary     # NOT span -- no max_width here on purpose: that is a
@@ -27,7 +34,7 @@ training:
   output_dir: ./out/joint-boundary-mmbert-40k
   experiment_name: joint_boundary_mmbert_40k
   data_parallel: false
-  num_epochs: 5              # held equal across the curve (only corpus size varies)
+  num_epochs: 5              # held equal across the curve (only total volume varies)
   batch_size: 4
   gradient_accumulation_steps: 8
   encoder_lr: 2.0e-5
@@ -72,15 +79,21 @@ labels:
     map: {}
 
 data:
-  corpora: []
+  # Relation corpora warm the relation head; the event corpora cannot.
+  # Every point carries BOTH, at the pool's own 73/27 ratio.
+  corpora:
+    - data/scaling_joint/sentence_rex.j40k
+    - data/scaling_joint/bio_ner_relations.j40k
+    - data/scaling_joint/biored.j40k
+    - data/scaling_joint/scierc.j40k
   event_files:
-    chfinann:        {train: data/scaling/chfinann.s40k.train.jsonl, val: data/scaling/chfinann.val.jsonl}
-    docee:           {train: data/scaling/docee.s40k.train.jsonl, val: data/scaling/docee.val.jsonl}
-    docfee:          {train: data/scaling/docfee.s40k.train.jsonl, val: data/scaling/docfee.val.jsonl}
-    duee:            {train: data/scaling/duee.s40k.train.jsonl, val: data/scaling/duee.val.jsonl}
-    cmnee:           {train: data/scaling/cmnee.s40k.train.jsonl, val: data/scaling/cmnee.val.jsonl}
-    text2json:       {train: data/scaling/text2json.s40k.train.jsonl, val: data/scaling/text2json.val.jsonl}
-    events_biotech:  {train: data/scaling/events_biotech.s40k.train.jsonl, val: data/scaling/events_biotech.val.jsonl}
-    mendeley_ed:     {train: data/scaling/mendeley_ed.s40k.train.jsonl, val: data/scaling/mendeley_ed.val.jsonl}
-    casie:           {train: data/scaling/casie.s40k.train.jsonl, val: data/scaling/casie.val.jsonl}
-    maven:           {train: data/scaling/maven.s40k.train.jsonl}
+    chfinann:        {train: data/scaling_joint/chfinann.j40k.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl}
+    docee:           {train: data/scaling_joint/docee.j40k.train.jsonl, val: data/scaling_joint/docee.val.jsonl}
+    docfee:          {train: data/scaling_joint/docfee.j40k.train.jsonl, val: data/scaling_joint/docfee.val.jsonl}
+    duee:            {train: data/scaling_joint/duee.j40k.train.jsonl, val: data/scaling_joint/duee.val.jsonl}
+    cmnee:           {train: data/scaling_joint/cmnee.j40k.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl}
+    text2json:       {train: data/scaling_joint/text2json.j40k.train.jsonl, val: data/scaling_joint/text2json.val.jsonl}
+    maven:           {train: data/scaling_joint/maven.j40k.train.jsonl}
+    events_biotech:  {train: data/scaling_joint/events_biotech.j40k.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl}
+    mendeley_ed:     {train: data/scaling_joint/mendeley_ed.j40k.train.jsonl, val: data/scaling_joint/mendeley_ed.val.jsonl}
+    casie:           {train: data/scaling_joint/casie.j40k.train.jsonl, val: data/scaling_joint/casie.val.jsonl}

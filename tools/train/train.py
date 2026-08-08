@@ -177,7 +177,10 @@ def _write_model_card(
         if ev.is_file():
             eval_metrics = json.loads(ev.read_text())
         # Datasets actually used: every corpus, plus event sets whose files exist.
-        dataset_keys = [Path(c).name for c in corpora] + [
+        # Scaling slices (sentence_rex.j10k) are credited to the parent dataset, so
+        # the card reports the real corpus and its real license.
+        from model_card import canonical_dataset_key
+        dataset_keys = [canonical_dataset_key(Path(c).name) for c in corpora] + [
             name for name, by_split in (event_files or {}).items()
             if any(p and Path(p).is_file() for p in by_split.values())
         ]

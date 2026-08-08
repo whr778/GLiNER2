@@ -42,7 +42,7 @@ as relations-only would break that symmetry and understate the shared claim.
 | 4b | joint_ie must support **structures, relations, AND events** in the beam | **DECIDED (2026-08-08) — BLOCKS Phase A** |
 | 5 | **Phase A = decode-only** (paired greedy vs beam); **Phase B = joint training** only if A is positive | DECIDED |
 | 6 | Base mix = event corpora **+ relation-rich corpora** (warms the relation head; also pushes past 100K free) | DECIDED |
-| 7 | Sizes {10K,40K,100K} from the existing 100,080 pool; **>100K via a new config** once corpora are added; **NO LLM generation** (100K synthetic ≈ $400-860 batch) | DECIDED |
+| 7 | Sizes {10K,40K,100K,137K} as **total mix records**, every point carrying events + relations at the pool's 73/27 ratio; **NO LLM generation** (100K synthetic ≈ $400-860 batch) | DECIDED (revised 2026-08-08) |
 
 ## 3. The wiring (joint_ie → boundary) — the net-new work
 
@@ -303,7 +303,7 @@ Consequences, in order:
 
 | config | role |
 |---|---|
-| `joint-boundary-mmbert-{10k,40k,100k,137k}.yaml` | boundary cold-start bases, recipe fixed |
+| `joint-boundary-mmbert-{10k,40k,100k,137k}.yaml` | boundary cold-start bases, **total** mix sizes, all carrying events + relations (§4) |
 | `joint-boundary-rams.yaml` | **event** warm-start arm (`eval_event_argument_strict_micro_f1`) |
 | `joint-boundary-redocred.yaml` | **relation** warm-start arm (`eval_relation_strict_micro_f1`) |
 
@@ -320,10 +320,26 @@ point is safe to run. DocRED itself stays excluded.
 
 ## 4. Experiment (Phase A — decode-only)
 
-- **Bases:** boundary `from_encoder` mmBERT-base, sizes **{10K, 40K, 100K, ~137K}**
-  (Re-DocRED / any DocRED-derived set **excluded** — leakage). Configs shipped: see §3c.
-  Only ~137K carries relation corpora; 10/40/100K are events-only, so the relation head
-  is cold below the top point — expect that to show in the Re-DocRED arm's low end.
+- **Bases:** boundary `from_encoder` mmBERT-base at **{10K, 40K, 100K, 137K} TOTAL mix
+  records** (Re-DocRED / any DocRED-derived set **excluded** — leakage). Configs shipped:
+  see §3c.
+- **Every point carries both event and relation data** at the pool's own ratio (events
+  73.02% / relations 26.98%), so the only factor varying across the curve is **volume**:
+
+  | total | events | relations |
+  |---|---|---|
+  | 10K | 7,302 | 2,697 |
+  | 40K | 29,209 | 10,791 |
+  | 100K | 73,022 | 26,977 |
+  | 137,052 | 100,080 | 36,972 (whole pool) |
+
+  Decided 2026-08-08, and it **removes a confound**: an earlier draft put relation
+  corpora only at the top point, which would have left the relation head cold at the low
+  end and made the Re-DocRED arm's slope partly an artifact of *whether* relations were
+  seen rather than *how much* data was. Slices are built by
+  `tools/train/build_joint_scaling_mix.py` (seed 42) and are **nested** — each corpus's
+  10K slice is a prefix of its 40K, and 40K of 100K — so the sizes are strictly
+  cumulative. Verified: nesting holds for all 14 corpora.
 - **Warm-start = Re-DocRED *and* RAMS** from each base (identical recipe; only `pretrained`
   differs). Two downstreams, not one: Re-DocRED exercises dense **relations**, RAMS exercises
   document-level **event arguments** (roles dispersed across sentences). Decision 2.
