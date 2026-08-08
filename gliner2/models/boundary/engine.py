@@ -512,7 +512,8 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             instances.setdefault(role, []).append((edge.tail[1], edge.tail[2]))
 
         out: Dict[str, Any] = {}
-        for spec, _group in groups:
+        for group in groups:
+            spec = group.spec
             found = by_task.get(spec.task_name)
             if not found:
                 continue
@@ -567,7 +568,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         )
 
     def _record_groups(self, batch, sample_index: int, core: Dict[str, Any], candidates):
-        """Raw ``(spec, RecordGroupOutput)`` pairs for one sample.
+        """Raw ``RecordGroupOutput``s for one sample (each carries its own ``spec``).
 
         The pre-greedy record lattice, shared by the greedy record decode and the
         joint path -- the `_relation_pairs_and_logits` analogue. Feeding the joint
@@ -582,8 +583,8 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             return []
         query_states_i = core["query_states"][sample_index]
         return [
-            (spec, self.record_decoder.forward_group(
-                spec, query_states_i, candidates, sample_index))
+            self.record_decoder.forward_group(
+                spec, query_states_i, candidates, sample_index)
             for spec in record_specs[sample_index].values()
         ]
 
@@ -609,7 +610,8 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         settings = self.boundary_settings
         out: Dict[str, Any] = {}
 
-        for spec, group in groups:
+        for group in groups:
+            spec = group.spec
             decoded = decode_group(
                 group,
                 anchor_threshold=settings.record_anchor_threshold,
