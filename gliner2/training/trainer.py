@@ -565,7 +565,9 @@ class ExtractorCollator:
         else:
             # error_policy is deliberately NOT forwarded here: collate_fn_inference
             # already defaults to "fallback", and passing the training default
-            # ("raise") would flip eval from tolerant to aborting.
+            # ("raise") would flip eval from tolerant to aborting. That tolerance
+            # now actually reaches surface alignment too -- it did not before, so
+            # eval aborted on any unalignable val mention regardless of policy.
             return self.processor.collate_fn_inference(
                 batch, max_len=self.max_len, architecture=self.architecture,
                 build_targets=self.build_targets,

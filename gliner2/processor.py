@@ -445,6 +445,13 @@ class SchemaTransformer:
             result, architecture, is_training=False,
             build_targets=build_targets, max_gold_per_query=max_gold_per_query,
             on_capacity_exceeded=on_capacity_exceeded,
+            # Same coupling as the training collator. Without this the parameter
+            # defaults to "raise" and NO caller can reach it, so one unalignable
+            # surface anywhere in the val set aborts training at the first
+            # epoch-end evaluation -- which is exactly what happened. Note that
+            # error_policy governs malformed RECORDS in _collate_batch and is a
+            # different knob from surface alignment; a tolerant one implies the other.
+            on_missing_surface="skip" if error_policy != "raise" else "raise",
         )
 
     @staticmethod

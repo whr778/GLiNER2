@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterable, List
 
+import torch
 from torch.utils.data import DataLoader
 
 from gliner2.training.data import InputExample
@@ -83,11 +84,22 @@ def estimate_eta(
         pin_memory=False,
     )
 
+    # Time the model the way training actually runs it. Outside autocast the
+    # encoder sees fp32 activations, and FlashAttention 2 accepts only fp16/bf16 --
+    # so on an FA2 encoder every warmup step raised and the estimate was silently
+    # lost. It also made the estimate wrong for any mixed-precision run.
+    device_type = next(model.parameters()).device.type
+    amp_dtype = torch.bfloat16 if getattr(config, "bf16", False) else torch.float16
+    use_amp = bool(getattr(config, "bf16", False) or getattr(config, "fp16", False))
+
     timed = 0
     t_start = None
     for i, batch in enumerate(loader):
         try:
-            outputs = model(batch)
+            with torch.amp.autocast(
+                device_type=device_type, enabled=use_amp, dtype=amp_dtype
+            ):
+                outputs = model(batch)
             loss = outputs.get("total_loss")
             if loss is not None and loss.requires_grad:
                 loss.backward()
