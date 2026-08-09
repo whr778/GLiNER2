@@ -15,6 +15,7 @@ target repo layout matches what ``AutoExtractor.from_pretrained`` expects.
 from __future__ import annotations
 
 import argparse
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -70,6 +71,17 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         print(f"Serializing model to {tmp_dir}")
         model.save_pretrained(tmp_dir)
+
+        # save_pretrained writes only weights/config/tokenizer, so without this the
+        # card train.py generated stays on disk and the Hub page renders EMPTY. The
+        # Hub reads the card from README.md specifically -- MODEL_CARD.md is ignored.
+        card = checkpoint / "MODEL_CARD.md"
+        if card.is_file():
+            shutil.copyfile(card, Path(tmp_dir) / "README.md")
+            print(f"Including model card ({card.stat().st_size} bytes) as README.md")
+        else:
+            print(f"WARNING: no MODEL_CARD.md in {checkpoint}; Hub page will be empty")
+
         print(f"Uploading to https://huggingface.co/{args.repo_id}")
         api.upload_folder(
             folder_path=tmp_dir,
