@@ -283,7 +283,8 @@ def _cell(v):
     return (v or ""), 1.0
 
 
-def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema) -> None:
+def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
+          event_key: str = "all") -> None:
     """Turn one casualty_report reading into observations, one per role per mode."""
     for role in ROLES:
         span, conf = _cell(rec.get(role))
@@ -293,7 +294,7 @@ def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema) ->
             value, qual, src = normalize(read_text, span, mode, cls_model, cls_schema)
             o = {"t_hours": row["t_hours"], "role": role, "value": value,
                  "qualifier": qual, "source": src, "confidence": conf,
-                 "span": span, "mode": mode}
+                 "span": span, "mode": mode, "event_key": event_key}
             per_mode[mode].append(o)
             # Keep EVERY mode on the article: retaining only the first made
             # `--normalizer both` unscoreable, which is the whole point of it.
@@ -359,7 +360,43 @@ def normalize(text: str, span: str, mode: str, cls_model=None, cls_schema=None):
 # --------------------------------------------------------------------------- #
 # Stage 4 - tracking
 # --------------------------------------------------------------------------- #
+_GENERIC_PLACE = {
+    "the region", "the area", "temporary camps", "temporary shelters",
+    "hardest-hit areas", "the country", "the city", "the district",
+}
+
+
+def association_key(events: Dict[str, Any], strategy: str) -> str:
+    """Which event stream an observation belongs to.
+
+    The tracker is single-stream: it assumes every observation describes the SAME
+    incident. Pooling a whole feed violates that, and the violation dominates
+    everything else -- on the multi-event feed ~half the extracted values came from
+    other disasters (injured up to 18,334 against a truth peaking at 316), driving
+    normalized RMSE to 102 while the same tracker scores 0.313 on clean observations.
+
+    So associate before tracking. This uses the OBSERVABLE label (DocEE event type,
+    plus a location when one is specific enough to identify a place) rather than
+    enumerating hypotheses: association is given here, not latent. Genuine ambiguity --
+    two earthquakes, or a feed with no event labels -- is the data-association problem
+    proper, and belongs to MHT (see EKF_MHT_DESIGN); reaching for that first would
+    build hypothesis machinery for hypotheses we do not yet need to enumerate.
+    """
+    if strategy == "none":
+        return "all"
+    etype = (events or {}).get("event_type") or "unknown"
+    if strategy == "type":
+        return etype
+    # type+location: a place name only helps if it names a place. DocEE's generic
+    # spans ("the region", "temporary camps") identify nothing and would split one
+    # event into several streams, which is worse than pooling it.
+    places = [_span_text(p).strip().lower() for p in (events or {}).get("location") or []]
+    places = [p for p in places if p and p not in _GENERIC_PLACE and not p[0].isdigit()]
+    return f"{etype}|{places[0]}" if places else etype
+
+
 def track(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
+    """Track one stream (all observations assumed to be the same event)."""
     import evaluate as ekf
     series: Dict[str, Any] = {}
     for role in ROLES:
@@ -370,6 +407,15 @@ def track(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
             "last_value": ekf.est_last_value(obs, grid) if obs else [0.0] * len(grid),
         }
     return series
+
+
+def track_by_event(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
+    """One tracked stream per association key, largest first."""
+    streams: Dict[str, List[Dict]] = {}
+    for o in observations:
+        streams.setdefault(o.get("event_key", "all"), []).append(o)
+    order = sorted(streams, key=lambda k: -len(streams[k]))
+    return {k: {"n_obs": len(streams[k]), **track(streams[k], grid)} for k in order}
 
 
 # --------------------------------------------------------------------------- #
@@ -390,6 +436,9 @@ def main() -> None:
     # Event models are 3-4x SLOWER on MPS than CPU (per-op sync overhead), so cpu is the
     # default rather than "best available".
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--associate", choices=("none", "type", "type+location"),
+                    default="none", help="group observations into per-event streams "
+                         "before tracking (needs --event-model for a real key)")
     ap.add_argument("--window", choices=("article", "event"), default="article",
                     help="event: pass each DocEE 'Casualties and Losses' window to stages "
                          "2-3 instead of the whole article (needs --event-model)")
@@ -454,9 +503,10 @@ def main() -> None:
                 # the same defect class as envelopes[0] above.
                 records = (cas_model.extract(read_text, cas_schema, include_confidence=True)
                            .get("casualty_report") or [])
+                key = association_key(events[i], args.associate)
                 for rec in (records or [{}]):
                     _emit(rec, read_text, row, entry, modes, per_mode,
-                          gate_model, cls_schema)
+                          gate_model, cls_schema, event_key=key)
         articles.append(entry)
         if (i + 1) % 20 == 0:
             print(f"           {i + 1}/{len(feed)} articles")
@@ -468,6 +518,8 @@ def main() -> None:
         "feed": args.feed, "grid": grid, "articles": articles,
         "n_articles": len(feed), "n_relevant": len(kept),
         "tracked": {m: track(per_mode[m], grid) for m in modes},
+        "tracked_by_event": {m: track_by_event(per_mode[m], grid) for m in modes},
+        "associate": args.associate,
         "n_observations": {m: len(per_mode[m]) for m in modes},
     }
 

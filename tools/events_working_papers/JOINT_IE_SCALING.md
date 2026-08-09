@@ -428,22 +428,35 @@ The cold-start bases are evaluated on a **fixed** blind test (identical across c
 points by construction, so support never moves and a metric change is attributable to
 training volume alone). Strict micro-F1:
 
-| | 10K | 40K |
-|---|--:|--:|
-| entity | 0.311 | **0.402** |
-| classification | 0.108 | **0.545** |
-| event_type | 0.497 | **0.830** |
-| event_trigger | 0.061 | **0.277** |
-| event_argument | 0.010 | **0.039** |
-| event (overall) | 0.070 | **0.186** |
-| **relation** | 0.007 | **0.012** |
+| | 10K | 40K | 100K |
+|---|--:|--:|--:|
+| entity | 0.311 | 0.402 | **0.459** |
+| classification | 0.108 | 0.545 | **0.586** |
+| event_type | 0.497 | **0.830** | 0.797 |
+| event_trigger | 0.061 | 0.277 | **0.327** |
+| event_argument | 0.010 | 0.039 | **0.079** |
+| event (overall) | 0.070 | 0.186 | **0.201** |
+| **relation** | 0.007 | 0.012 | **0.073** |
 
-Every head moves substantially from 10K to 40K — trigger 4.5×, event_type +0.333,
-classification +0.437 — **except relations, which stay at ~0.01 despite relation data
-being 27% of the mix**. If that persists at 100K it is a finding in its own right: the
-relation head is not warming from this curriculum at all, and the Re-DocRED arm's
-warm-start premise would need re-examining. With F1 ~0.01 the precision movement
-(0.214 → 0.071) is inside the noise; wait for 100K before concluding.
+All three calibrated to threshold **0.3**, so these columns are directly comparable
+(see the matched-threshold rule below).
+
+Two different knees, and that is the finding:
+
+- **Events and classification warm early.** Trigger 4.5× and classification +0.437 by
+  40K, then continue more slowly. The knee is between 10K and 40K.
+- **Relations warm LATE.** Flat at ~0.01 through 40K, then **6× at 100K** (0.012 →
+  0.073, precision 0.071 → 0.456). The knee is between 40K and 100K — an order of
+  magnitude later than events, on the same mixture.
+
+The earlier reading here ("relations may not be warming from this curriculum at all")
+was premature: they warm, just much later. Waiting for 100K rather than concluding at
+40K was the right call, and the practical consequence is concrete — a mixture that
+suffices to warm event heads can leave the relation head still cold, so the two faces
+of §1's thesis have genuinely different data requirements.
+
+Recall remains the relation bottleneck at every point (100K: P 0.456 / R 0.040), so the
+head is learning to be *right* well before it learns to be *complete*.
 
 **These numbers did not exist until the blind test was fixed.** No event corpus in the
 four base configs declared a `test:` key, so `_event_split` returned nothing and the
