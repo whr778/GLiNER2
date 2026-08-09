@@ -508,6 +508,32 @@ matters:
 | 0.5 | 0.0301 | **0.0422** | +0.0122 |
 | 0.7 | 0.0066 | 0.0063 | −0.0003 |
 
+The full Re-DocRED arm, at matched thresholds (the cards disagree because the three
+models calibrated to 0.1 / 0.3 / 0.1):
+
+| threshold | 10K base | 40K base | 100K base |
+|--:|--:|--:|--:|
+| 0.1 | 0.1637 | 0.1777 | **0.1905** |
+| 0.3 | 0.0890 | 0.1288 | **0.1302** |
+| 0.5 | 0.0301 | 0.0422 | **0.0437** |
+
+Monotonic at every operating point — more base volume does help relations — but the
+increments are small: **+8.6%** then **+7.2%**, for 10× the Stage-A data.
+
+Set against the base curve, that is the interesting part. Without a Re-DocRED fine-tune
+the bases score 0.007 / 0.012 / 0.073; with one they score 0.164 / 0.178 / 0.191. So the
+**downstream fine-tune supplies almost all of the relation capability, and base volume
+contributes ~16% on top of it.** Relations and events therefore fail in opposite ways:
+
+- **Events** — the *architecture* carries it. The boundary head reaches at 10K what the
+  span head needs >100K for, and its curve is nearly flat (§4b).
+- **Relations** — the *downstream data* carries it. Base warming moves the number
+  6× when there is no fine-tune, and barely 16% once there is one.
+
+The practical read for §1's two-faced thesis: an event model wants the right head, a
+relation model wants the right fine-tune, and neither is fixed by pouring more mixed
+Stage-A data into it.
+
 **Methodological rule for this paper: a per-model calibrated threshold is correct for
 shipping a checkpoint and wrong for reading a curve.** Card numbers are each model's own
 best operating point; curve comparisons must fix the threshold across points, or the
