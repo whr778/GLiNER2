@@ -66,7 +66,13 @@ def main() -> None:
     results_path = Path(config.output_dir) / "train_results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else None
 
+    # Reuse metrics already on disk when skipping the blind test, so regenerating a card
+    # (e.g. after a card-generator fix) costs no GPU and loses no numbers.
     test_metrics = None
+    saved = best / "test_metrics.json"
+    if args.skip_blind_test and saved.is_file():
+        test_metrics = json.loads(saved.read_text(encoding="utf-8"))
+        print(f"[finalize] Reusing {saved} ({len(test_metrics)} keys); blind test skipped")
     if not args.skip_blind_test:
         test_files = _split_files(corpora, "test") + _event_split(event_files, "test")
         test_data = _read_records(test_files) if test_files else []

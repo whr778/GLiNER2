@@ -172,6 +172,18 @@ def _metric(metrics: Dict[str, Any], cat: str, regime: str, m: str) -> Optional[
 # Sections
 # ---------------------------------------------------------------------------
 
+def _is_hub_id(name: str) -> bool:
+    """True for a Hugging Face repo id (``owner/model``), false for a local path.
+
+    Hub ids are exactly two non-empty segments with no path syntax; anything with a
+    leading ``.``/``/``, a backslash, or extra segments is a checkpoint on disk.
+    """
+    if not isinstance(name, str) or name.startswith((".", "/", "~")) or "\\" in name:
+        return False
+    parts = name.split("/")
+    return len(parts) == 2 and all(p and not p.startswith(".") for p in parts)
+
+
 def _frontmatter(model_name, base_model, lang_codes, hf_ids, verdict) -> str:
     # HF card YAML: with `license: other`, license_name must match
     # /^[a-z0-9-.]+$/ (no spaces/em-dash) and license_link, if present, must be a
@@ -180,7 +192,12 @@ def _frontmatter(model_name, base_model, lang_codes, hf_ids, verdict) -> str:
     slug = re.sub(r"[^a-z0-9.]+", "-", verdict.headline.lower()).strip("-") or "other"
     lines = ["---", "library_name: gliner2", "license: other",
              f"license_name: {slug}"]
-    if base_model:
+    # `base_model` must be a Hub repo id. A warm start trains from a LOCAL checkpoint
+    # ("./out/joint-boundary-mmbert-10k/best"), and emitting that path makes the Hub
+    # reject the whole upload with "Invalid metadata in README.md" -- which would block
+    # every warm-start model in a scaling curve. Keep the provenance in the card body
+    # (it is rendered there regardless) and omit the invalid YAML key.
+    if base_model and _is_hub_id(base_model):
         lines.append(f"base_model: {base_model}")
     if lang_codes:
         lines.append("language:")

@@ -1,0 +1,230 @@
+{
+  "feed": "datasets/ekf_showcase/feed.jsonl",
+  "grid": [
+    5.4,
+    11.4
+  ],
+  "articles": [
+    {
+      "t_hours": 5.4,
+      "text": "According to early, unconfirmed reports on 2026-06-24, at least 1 person was killed after a magnitude 7.5 earthquake struck the region, with officials estimating that 502 people have been displaced from their homes. Search and rescue efforts are ongoing as authorities work to assess the full scope of the disaster.",
+      "relevant": true,
+      "relevance": "mass_casualty",
+      "relevance_confidence": 1.0,
+      "disaster_type": "earthquake",
+      "events": {},
+      "observations": [
+        {
+          "t_hours": 5.4,
+          "role": "dead",
+          "value": 1,
+          "qualifier": "at_least",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "1",
+          "mode": "heuristic"
+        },
+        {
+          "t_hours": 5.4,
+          "role": "missing",
+          "value": 1,
+          "qualifier": "at_least",
+          "source": "official",
+          "confidence": 0.8753363490104675,
+          "span": "1",
+          "mode": "heuristic"
+        }
+      ]
+    },
+    {
+      "t_hours": 8.18,
+      "text": "The council approved 250 new housing units near the eastern rail corridor.",
+      "relevant": false,
+      "relevance": "other",
+      "relevance_confidence": 0.9883899688720703,
+      "disaster_type": "other",
+      "events": {},
+      "observations": []
+    },
+    {
+      "t_hours": 8.4,
+      "text": "A magnitude-7.5 earthquake struck the region on 2026-06-24, and an official government source reported that about 89 people remain missing as search efforts continue. The same source said roughly 722 people have been displaced and are being sheltered in temporary camps. Authorities cautioned that the missing figure could shift as rescue teams comb through affected areas.",
+      "relevant": true,
+      "relevance": "mass_casualty",
+      "relevance_confidence": 1.0,
+      "disaster_type": "earthquake",
+      "events": {},
+      "observations": [
+        {
+          "t_hours": 8.4,
+          "role": "missing",
+          "value": 89,
+          "qualifier": "about",
+          "source": "official",
+          "confidence": 0.9999970197677612,
+          "span": "89",
+          "mode": "heuristic"
+        }
+      ]
+    },
+    {
+      "t_hours": 11.4,
+      "text": "A government spokesperson confirmed that the magnitude-7.5 earthquake, which struck on June 24, 2026, left exactly 28 people injured. Officials also reported that 570 residents have been displaced from their homes as emergency shelters continue to receive families. Authorities said search and assessment operations remain ongoing across the affected region.",
+      "relevant": true,
+      "relevance": "mass_casualty",
+      "relevance_confidence": 1.0,
+      "disaster_type": "earthquake",
+      "events": {},
+      "observations": [
+        {
+          "t_hours": 11.4,
+          "role": "injured",
+          "value": 28,
+          "qualifier": "point",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "28",
+          "mode": "heuristic"
+        }
+      ]
+    },
+    {
+      "t_hours": 14.5,
+      "text": "According to early, unconfirmed reports, the magnitude 7.5 earthquake that struck on June 24, 2026, has left 5 people confirmed dead, while dozens -- around 32 -- are reported injured. As many as 90 others are feared missing, and officials say roughly 725 people have been displaced from their homes.",
+      "relevant": true,
+      "relevance": "mass_casualty",
+      "relevance_confidence": 1.0,
+      "disaster_type": "earthquake",
+      "events": {},
+      "observations": [
+        {
+          "t_hours": 14.5,
+          "role": "dead",
+          "value": 5,
+          "qualifier": "point",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "5",
+          "mode": "heuristic"
+        },
+        {
+          "t_hours": 14.5,
+          "role": "injured",
+          "value": 32,
+          "qualifier": "about",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "32",
+          "mode": "heuristic"
+        },
+        {
+          "t_hours": 14.5,
+          "role": "missing",
+          "value": 90,
+          "qualifier": "point",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "90",
+          "mode": "heuristic"
+        }
+      ]
+    },
+    {
+      "t_hours": 14.5,
+      "text": "According to early, unconfirmed reports, the magnitude 7.5 earthquake that struck on June 24, 2026, has left 5 people confirmed dead, while dozens -- around 32 -- are reported injured. As many as 90 others are feared missing, and officials say roughly 725 people have been displaced from their homes.",
+      "relevant": true,
+      "relevance": "mass_casualty",
+      "relevance_confidence": 1.0,
+      "disaster_type": "earthquake",
+      "events": {},
+      "observations": [
+        {
+          "t_hours": 14.5,
+          "role": "dead",
+          "value": 5,
+          "qualifier": "point",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "5",
+          "mode": "heuristic"
+        },
+        {
+          "t_hours": 14.5,
+          "role": "injured",
+          "value": 32,
+          "qualifier": "about",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "32",
+          "mode": "heuristic"
+        },
+        {
+          "t_hours": 14.5,
+          "role": "missing",
+          "value": 90,
+          "qualifier": "point",
+          "source": "official",
+          "confidence": 1.0,
+          "span": "90",
+          "mode": "heuristic"
+        }
+      ]
+    }
+  ],
+  "n_articles": 6,
+  "n_relevant": 5,
+  "tracked": {
+    "heuristic": {
+      "dead": {
+        "n_obs": 3,
+        "ekf": [
+          1.0,
+          1.0
+        ],
+        "last_value": [
+          1,
+          1
+        ]
+      },
+      "injured": {
+        "n_obs": 3,
+        "ekf": [
+          0.0,
+          28.0
+        ],
+        "last_value": [
+          0.0,
+          28
+        ]
+      },
+      "missing": {
+        "n_obs": 4,
+        "ekf": [
+          1.0,
+          30.664105290658384
+        ],
+        "last_value": [
+          1,
+          89
+        ]
+      }
+    }
+  },
+  "n_observations": {
+    "heuristic": 10
+  },
+  "truth": {
+    "dead": [
+      0.0,
+      2.335
+    ],
+    "injured": [
+      0.0,
+      15.143
+    ],
+    "missing": [
+      101.0,
+      93.597
+    ]
+  }
+}
