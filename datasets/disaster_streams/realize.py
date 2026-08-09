@@ -34,6 +34,27 @@ _HEDGE = {"point": "a confirmed, exact count", "at_least": "a lower bound ('at l
           "feared": "an alarming estimate ('feared')",
           "interval": "a rough figure stated with a bucket word (dozens/hundreds/thousands)"}
 
+def system_for(ctx) -> str:
+    """Newswire framing for THIS stream's disaster.
+
+    Without a context every stream is "an earthquake" with magnitude 7.5, so all streams
+    read alike and nothing in the text distinguishes two incidents -- which is why
+    association collapses into a single key on the showcase feed.
+    """
+    if not ctx:
+        return SYSTEM
+    return (
+        f"You are a newswire editor covering an ongoing {ctx['event_type'].lower()} "
+        f"disaster in {ctx['place']}. Given the structured facts of ONE report, write a "
+        "single realistic news snippet of 2-4 sentences that states each casualty figure "
+        "naturally with its hedge, attributed to the source. Rules: (1) use the EXACT "
+        "digits given for each figure -- you may add hedge words but never change a "
+        "number; (2) name the place; (3) weave in the listed distractor details as a real "
+        "report would; (4) do NOT invent extra casualty figures for the given roles. "
+        "Reply with a single JSON object: {\"text\": \"...\"}."
+    )
+
+
 SYSTEM = (
     "You are a newswire editor covering an ongoing earthquake disaster. Given the "
     "structured facts of ONE report, write a single realistic news snippet of 2-4 "
@@ -57,19 +78,30 @@ def _load_groups(split_dir: Path, n_streams: int) -> List[Tuple[str, str, float,
     return groups
 
 
-def _user_prompt(t_hours: float, obs: List[Dict]) -> str:
+def _user_prompt(t_hours: float, obs: List[Dict], ctx=None) -> str:
     d = QUAKE_DAY + timedelta(days=int(t_hours // 24))
     src = obs[0]["source"]
     facts = [{"role": o["role"], "value": o["value"], "hedge": o["qualifier"],
               "hedge_meaning": _HEDGE[o["qualifier"]]} for o in obs]
     displaced = int(max(o["value"] for o in obs) * 2.5) + 500  # a distractor, not a role value
-    return json.dumps({
+    payload = {
         "date": d.isoformat(),
         "source": _SRC_DESC[src],
         "casualty_facts": facts,
         "distractors_to_include": {"date": d.isoformat(), "magnitude": 7.5,
                                    "displaced_people": displaced},
-    }, ensure_ascii=False)
+    }
+    if ctx:
+        payload["event_type"] = ctx["event_type"]
+        payload["place"] = ctx["place"]
+        payload["phrasing_reference"] = ctx.get("phrasing_example", "")
+        # A type-appropriate distractor: magnitude belongs to an earthquake, not a fire.
+        payload["distractors_to_include"] = {
+            "date": d.isoformat(),
+            ctx["distractor_label"]: ctx["distractor_value"],
+            "displaced_people": displaced,
+        }
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _parse_text(raw: str) -> str:
@@ -92,13 +124,40 @@ def main(argv=None) -> None:
     ap.add_argument("--max-tokens", type=int, default=300)
     ap.add_argument("--out", default="datasets/disaster_streams_sonnet5")
     ap.add_argument("--estimate", action="store_true", help="print cost estimate and exit")
+    ap.add_argument("--contexts", default=None,
+                    help="contexts.json from sample_docee_contexts.py: real event "
+                         "type/place per stream, so streams read as different disasters")
+    ap.add_argument("--append", action="store_true",
+                    help="keep observations already realized in --out and generate only "
+                         "the missing streams (a larger run extends a smaller one "
+                         "instead of re-paying for it)")
     ap.add_argument("--batch-id", default=None,
                     help="recover an already-submitted batch by id (no resubmission/spend)")
     args = ap.parse_args(argv)
 
     src_dir = Path(args.data) / args.split
     groups = _load_groups(src_dir, args.streams)
-    items = [(cid, SYSTEM, _user_prompt(t, obs)) for cid, _, t, obs in groups]
+
+    contexts = (json.loads(Path(args.contexts).read_text(encoding="utf-8"))
+                if args.contexts else {})
+
+    # --append: streams already realized in --out are kept as-is and excluded from this
+    # batch. Context assignment is prefix-stable, so an existing stream's text remains
+    # consistent with what a single larger run would have produced.
+    existing_dir = Path(args.out) / args.split
+    kept_lines: List[str] = []
+    done_streams: set = set()
+    if args.append and (existing_dir / "observations.jsonl").is_file():
+        for line in (existing_dir / "observations.jsonl").open(encoding="utf-8"):
+            kept_lines.append(line)
+            done_streams.add(json.loads(line)["stream_id"])
+        before = len(groups)
+        groups = [g for g in groups if g[1] not in done_streams]
+        print(f"[realize] --append: {len(done_streams)} stream(s) already realized "
+              f"({len(kept_lines)} obs kept); {before - len(groups)} group(s) skipped")
+
+    items = [(cid, system_for(contexts.get(sid)), _user_prompt(t, obs, contexts.get(sid)))
+             for cid, sid, t, obs in groups]
     in_tok = int(sum(len(s) + len(u) for _, s, u in items) / 4 / len(items)) if items else 0
     est = cost.estimate(args.model, len(items), input_tokens=in_tok,
                         output_tokens=args.max_tokens, batch=True)
@@ -118,6 +177,8 @@ def main(argv=None) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     written = miss = 0
     with (out_dir / "observations.jsonl").open("w", encoding="utf-8") as f:
+        for line in kept_lines:            # preserved from a previous, smaller run
+            f.write(line)
         for cid, sid, t, obs in groups:
             text = _parse_text(texts.get(cid, ""))
             if not text:
@@ -127,7 +188,7 @@ def main(argv=None) -> None:
                 f.write(json.dumps({**o, "text": text}, ensure_ascii=False) + "\n")
                 written += 1
     # ground truth is unchanged -- copy the trajectory for the realized streams only
-    sids = {sid for _, sid, _, _ in groups}
+    sids = {sid for _, sid, _, _ in groups} | done_streams
     with (out_dir / "trajectory.jsonl").open("w", encoding="utf-8") as tf:
         for line in (src_dir / "trajectory.jsonl").open(encoding="utf-8"):
             if json.loads(line)["stream_id"] in sids:

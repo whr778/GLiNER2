@@ -1,0 +1,422 @@
+{
+  "train-00000": {
+    "event_type": "Air Crash",
+    "place": "Villa St. Louis in the community of Orléans, Ontario",
+    "phrasing_example": "15 people were killed in the crash",
+    "distractor_label": "flight number",
+    "distractor_value": "MH370"
+  },
+  "train-00001": {
+    "event_type": "Armed Conflict",
+    "place": "BAGHDAD",
+    "phrasing_example": "killing a traffic policeman and a bystander, and wounding 10 other people, including seven traffic officers",
+    "distractor_label": "districts affected",
+    "distractor_value": "3"
+  },
+  "train-00002": {
+    "event_type": "Fire",
+    "place": "Canecão Mineiro nightclub",
+    "phrasing_example": "killing 7 people and injuring 197 others",
+    "distractor_label": "hectares burned",
+    "distractor_value": "8600"
+  },
+  "train-00003": {
+    "event_type": "Gas Explosion",
+    "place": "MEXICO CITY",
+    "phrasing_example": "more than 70 were injured",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "6"
+  },
+  "train-00004": {
+    "event_type": "Mine Collapses",
+    "place": "the city of Mariana in the same state of Minas Gerais",
+    "phrasing_example": "the confirmed death toll to 58",
+    "distractor_label": "depth in metres",
+    "distractor_value": "180"
+  },
+  "train-00005": {
+    "event_type": "Road Crash",
+    "place": "Highway 101",
+    "phrasing_example": "Anderson Davis, 67, of Berkeley. Officers said he suffered moderate injuries",
+    "distractor_label": "vehicles involved",
+    "distractor_value": "5"
+  },
+  "train-00006": {
+    "event_type": "Shipwreck",
+    "place": "Yemen",
+    "phrasing_example": "42 refugees were reported dead and 39 wounded",
+    "distractor_label": "vessel capacity",
+    "distractor_value": "300"
+  },
+  "train-00007": {
+    "event_type": "Train Collisions",
+    "place": "Purley railway station",
+    "phrasing_example": "five dead and 88 injured",
+    "distractor_label": "carriages derailed",
+    "distractor_value": "11"
+  },
+  "train-00008": {
+    "event_type": "Air Crash",
+    "place": "approach to Aldan airport",
+    "phrasing_example": "killing all 24 people on board",
+    "distractor_label": "flight number",
+    "distractor_value": "MH370"
+  },
+  "train-00009": {
+    "event_type": "Armed Conflict",
+    "place": "the capital",
+    "phrasing_example": "The death toll has risen to 14, including 12 soldiers and two civilians",
+    "distractor_label": "districts affected",
+    "distractor_value": "5"
+  },
+  "train-00010": {
+    "event_type": "Fire",
+    "place": "a market in the Kenyan capital Nairobi",
+    "phrasing_example": "At least 15 people have been killed",
+    "distractor_label": "hectares burned",
+    "distractor_value": "8600"
+  },
+  "train-00011": {
+    "event_type": "Gas Explosion",
+    "place": "near downtown Durham",
+    "phrasing_example": "killing two people and injuring 25 others",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "27"
+  },
+  "train-00012": {
+    "event_type": "Mine Collapses",
+    "place": "JINAN",
+    "phrasing_example": "172 people missing",
+    "distractor_label": "depth in metres",
+    "distractor_value": "540"
+  },
+  "train-00013": {
+    "event_type": "Road Crash",
+    "place": "central Ghana",
+    "phrasing_example": "At least 50 people have died",
+    "distractor_label": "vehicles involved",
+    "distractor_value": "3"
+  },
+  "train-00014": {
+    "event_type": "Shipwreck",
+    "place": "central Vietnam",
+    "phrasing_example": "At least 40 people died",
+    "distractor_label": "vessel capacity",
+    "distractor_value": "120"
+  },
+  "train-00015": {
+    "event_type": "Train Collisions",
+    "place": "the city of Altamirano, Buenos Aires, Argentina",
+    "phrasing_example": "killing 34 people",
+    "distractor_label": "carriages derailed",
+    "distractor_value": "8"
+  },
+  "train-00016": {
+    "event_type": "Air Crash",
+    "place": "Khartoum International Airport",
+    "phrasing_example": "killing 30",
+    "distractor_label": "flight number",
+    "distractor_value": "AF447"
+  },
+  "train-00017": {
+    "event_type": "Armed Conflict",
+    "place": "eastern Syrian province of Hasakah",
+    "phrasing_example": "23 civilians, including some ten children, have been killed",
+    "distractor_label": "districts affected",
+    "distractor_value": "2"
+  },
+  "train-00018": {
+    "event_type": "Fire",
+    "place": "Hong Kong",
+    "phrasing_example": "four people, including two firefighters, and injuring a further 55 people",
+    "distractor_label": "hectares burned",
+    "distractor_value": "8600"
+  },
+  "train-00019": {
+    "event_type": "Gas Explosion",
+    "place": "Al Mankhool",
+    "phrasing_example": "death of a man and the 100 per cent disability of a young Indian woman",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "14"
+  },
+  "train-00020": {
+    "event_type": "Mine Collapses",
+    "place": "JINAN",
+    "phrasing_example": "172 people missing",
+    "distractor_label": "depth in metres",
+    "distractor_value": "250"
+  },
+  "train-00021": {
+    "event_type": "Road Crash",
+    "place": "Nepal",
+    "phrasing_example": "At least 23 people died",
+    "distractor_label": "vehicles involved",
+    "distractor_value": "12"
+  },
+  "train-00022": {
+    "event_type": "Shipwreck",
+    "place": "Tunisia",
+    "phrasing_example": "At least 20 African migrants died",
+    "distractor_label": "vessel capacity",
+    "distractor_value": "90"
+  },
+  "train-00023": {
+    "event_type": "Train Collisions",
+    "place": "a terminal station in Buenos Aires, Argentina",
+    "phrasing_example": "injuring 105 people",
+    "distractor_label": "carriages derailed",
+    "distractor_value": "8"
+  },
+  "train-00024": {
+    "event_type": "Air Crash",
+    "place": "Agadir",
+    "phrasing_example": "All 44 people on board were killed in the accident",
+    "distractor_label": "flight number",
+    "distractor_value": "JT610"
+  },
+  "train-00025": {
+    "event_type": "Armed Conflict",
+    "place": "in Guasave in the north-western state of Sinaloa",
+    "phrasing_example": "at least 12 people, including two soldiers, dead",
+    "distractor_label": "districts affected",
+    "distractor_value": "2"
+  },
+  "train-00026": {
+    "event_type": "Fire",
+    "place": "Canecão Mineiro nightclub",
+    "phrasing_example": "killing 7 people and injuring 197 others",
+    "distractor_label": "hectares burned",
+    "distractor_value": "8600"
+  },
+  "train-00027": {
+    "event_type": "Gas Explosion",
+    "place": "makeshift hospital",
+    "phrasing_example": "Fourteen people were killed and 12 seriously injured",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "27"
+  },
+  "train-00028": {
+    "event_type": "Mine Collapses",
+    "place": "BRUMADINHO, Brazil",
+    "phrasing_example": "The death toll from the collapse of a dam holding back mine waste in southeastern Brazil rose to 34",
+    "distractor_label": "depth in metres",
+    "distractor_value": "180"
+  },
+  "train-00029": {
+    "event_type": "Road Crash",
+    "place": "Perth on Western Australia's Kwinana Freeway",
+    "phrasing_example": "22-year-old Trey Flick",
+    "distractor_label": "vehicles involved",
+    "distractor_value": "12"
+  },
+  "train-00030": {
+    "event_type": "Shipwreck",
+    "place": "Padma River near the rural town of Shibchar",
+    "phrasing_example": "At least 26 people have been killed",
+    "distractor_label": "vessel capacity",
+    "distractor_value": "120"
+  },
+  "train-00031": {
+    "event_type": "Train Collisions",
+    "place": "Eccles, Greater Manchester",
+    "phrasing_example": "The driver of the express and two passengers were killed, and 68 people were injured",
+    "distractor_label": "carriages derailed",
+    "distractor_value": "3"
+  },
+  "train-00032": {
+    "event_type": "Air Crash",
+    "place": "the slopes of Mount Sumagaya in Gingoog",
+    "phrasing_example": "deaths of all 104 passengers and crew",
+    "distractor_label": "flight number",
+    "distractor_value": "AF447"
+  },
+  "train-00033": {
+    "event_type": "Armed Conflict",
+    "place": "the border town of Spin Boldak, southern Kandahar province",
+    "phrasing_example": "2,400 Afghan civilians were killed",
+    "distractor_label": "districts affected",
+    "distractor_value": "3"
+  },
+  "train-00034": {
+    "event_type": "Fire",
+    "place": "The Winter Cherry shopping and entertainment complex",
+    "phrasing_example": "It killed at least 60 people (more than half of which were children) according to official statements",
+    "distractor_label": "hectares burned",
+    "distractor_value": "300"
+  },
+  "train-00035": {
+    "event_type": "Gas Explosion",
+    "place": "Monticello, Utah",
+    "phrasing_example": "killed 16 people and injured another 30",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "6"
+  },
+  "train-00036": {
+    "event_type": "Mine Collapses",
+    "place": "BRUMADINHO, Brazil",
+    "phrasing_example": "the 40 bodies recovered",
+    "distractor_label": "depth in metres",
+    "distractor_value": "320"
+  },
+  "train-00037": {
+    "event_type": "Road Crash",
+    "place": "Tanzania",
+    "phrasing_example": "Twelve people were killed and 46 injured",
+    "distractor_label": "vehicles involved",
+    "distractor_value": "7"
+  },
+  "train-00038": {
+    "event_type": "Shipwreck",
+    "place": "Lamma Island",
+    "phrasing_example": "More than 90 people were hospitalised",
+    "distractor_label": "vessel capacity",
+    "distractor_value": "300"
+  },
+  "train-00039": {
+    "event_type": "Train Collisions",
+    "place": "Port Richmond section of Philadelphia",
+    "phrasing_example": "At least seven people were killed and over 200 people hurt",
+    "distractor_label": "carriages derailed",
+    "distractor_value": "3"
+  },
+  "train-00040": {
+    "event_type": "Air Crash",
+    "place": "Chuhuiv, Kharkiv Oblast, Ukraine",
+    "phrasing_example": "26 died",
+    "distractor_label": "flight number",
+    "distractor_value": "MH370"
+  },
+  "train-00041": {
+    "event_type": "Armed Conflict",
+    "place": "near the North Darfur town of Thabit",
+    "phrasing_example": "21 dead from both sides",
+    "distractor_label": "districts affected",
+    "distractor_value": "7"
+  },
+  "train-00042": {
+    "event_type": "Fire",
+    "place": "an educational materials warehouse in Peru",
+    "phrasing_example": "500,000 school textbooks and 60,000 laptop computers",
+    "distractor_label": "hectares burned",
+    "distractor_value": "1200"
+  },
+  "train-00043": {
+    "event_type": "Gas Explosion",
+    "place": "Pemex",
+    "phrasing_example": "At least 100 people were injured and an unknown number are trapped in rubble at the base of the 54-storey tower",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "40"
+  },
+  "train-00044": {
+    "event_type": "Mine Collapses",
+    "place": "Brumadinho, Brazil",
+    "phrasing_example": "death toll in nears 60, with hundreds still missing",
+    "distractor_label": "depth in metres",
+    "distractor_value": "250"
+  },
+  "train-00045": {
+    "event_type": "Road Crash",
+    "place": "the Perth Hills",
+    "phrasing_example": "31-year-old motorcyclist",
+    "distractor_label": "vehicles involved",
+    "distractor_value": "5"
+  },
+  "train-00046": {
+    "event_type": "Shipwreck",
+    "place": "in the Kerch Strait near Crimea",
+    "phrasing_example": "At least 11 people were killed",
+    "distractor_label": "vessel capacity",
+    "distractor_value": "480"
+  },
+  "train-00047": {
+    "event_type": "Train Collisions",
+    "place": "near Castlecary, Scotland",
+    "phrasing_example": "killing 35 people",
+    "distractor_label": "carriages derailed",
+    "distractor_value": "8"
+  },
+  "train-00048": {
+    "event_type": "Air Crash",
+    "place": "hill on approach to Santa Elena Airport, Flores, Guatemala",
+    "phrasing_example": "All 93 passengers and crew",
+    "distractor_label": "flight number",
+    "distractor_value": "JT610"
+  },
+  "train-00049": {
+    "event_type": "Armed Conflict",
+    "place": "the central province of Ghazni",
+    "phrasing_example": "20 others were wounded",
+    "distractor_label": "districts affected",
+    "distractor_value": "2"
+  },
+  "train-00050": {
+    "event_type": "Fire",
+    "place": "San Bernardino County in the U.S. state of California",
+    "phrasing_example": "17 minor injuries and 1 civilian fatality",
+    "distractor_label": "hectares burned",
+    "distractor_value": "300"
+  },
+  "train-00051": {
+    "event_type": "Gas Explosion",
+    "place": "a third floor flat in East Kilbride",
+    "phrasing_example": "one 52-year-old man had been hurt",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "6"
+  },
+  "train-00052": {
+    "event_type": "Mine Collapses",
+    "place": "BRUMADINHO, Brazil",
+    "phrasing_example": "Nearly 300 people are still missing",
+    "distractor_label": "depth in metres",
+    "distractor_value": "180"
+  },
+  "train-00053": {
+    "event_type": "Road Crash",
+    "place": "southeast of the country",
+    "phrasing_example": "13 foreign students",
+    "distractor_label": "vehicles involved",
+    "distractor_value": "12"
+  },
+  "train-00054": {
+    "event_type": "Shipwreck",
+    "place": "Padma River near the rural town of Shibchar",
+    "phrasing_example": "At least 26 people have been killed",
+    "distractor_label": "vessel capacity",
+    "distractor_value": "480"
+  },
+  "train-00055": {
+    "event_type": "Train Collisions",
+    "place": "San Bernardo",
+    "phrasing_example": "38 people were killed and over 58 wounded",
+    "distractor_label": "carriages derailed",
+    "distractor_value": "3"
+  },
+  "train-00056": {
+    "event_type": "Air Crash",
+    "place": "about 420 meters past the runway end",
+    "phrasing_example": "6 passengers and one member of the crew sustained serious injuries, 18 other occupants received minor injuries",
+    "distractor_label": "flight number",
+    "distractor_value": "AF447"
+  },
+  "train-00057": {
+    "event_type": "Armed Conflict",
+    "place": "gas station on Route 443",
+    "phrasing_example": "killed 20-year-old Ziv Mizrahi, an Israeli soldier",
+    "distractor_label": "districts affected",
+    "distractor_value": "7"
+  },
+  "train-00058": {
+    "event_type": "Fire",
+    "place": "Northern California",
+    "phrasing_example": "killed 44 people[4] and hospitalized at least 192 others",
+    "distractor_label": "hectares burned",
+    "distractor_value": "450"
+  },
+  "train-00059": {
+    "event_type": "Gas Explosion",
+    "place": "Jim Walters Resources Mine No. 5",
+    "phrasing_example": "claimed 13 lives",
+    "distractor_label": "buildings damaged",
+    "distractor_value": "14"
+  }
+}

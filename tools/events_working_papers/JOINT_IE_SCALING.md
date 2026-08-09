@@ -26,11 +26,11 @@ covers both. A win on only one face is a weaker but still reportable result; the
 negative — that global decoding helps relations and not events, or the reverse — is itself
 the finding, because it localizes where greedy per-query decoding actually costs you.
 
-> **First measured point (§4b):** the 10K *boundary* base reaches RAMS argument F1
-> **0.177**, above the span curve's ~100K point (0.158) and 3.5× its own 10K point
-> (0.050) — on ~27% fewer event records. If it holds at 40K/100K, the head-init deficit is
-> largely an artifact of the **span head**, not a data-volume law. Metric-selected, but
-> still one point and the greedy arm only; see §4b before citing.
+> **It held (§4b).** The *boundary* head beats the span curve on arguments at all three
+> points (10K 0.177 vs 0.050, 40K 0.191 vs 0.115, 100K 0.202 vs 0.158) and the curves have
+> opposite shapes: span **+216%** across the range and still climbing, boundary **+14%**
+> and nearly flat. The head-init deficit is largely a property of the **span head**, not a
+> data-volume law about mmBERT. Greedy arm only; the beam arm is still unmeasured.
 
 This is also what makes the line the *document-level* half of the program
 ([[RESEARCH_PROGRAM]]): [[EKF_MHT_DESIGN]] carries events **beyond** the document via a
@@ -389,26 +389,42 @@ directly comparable:
 | 10K | span (prior curve) | 0.050 | 0.598 | 0.952 |
 | 40K | span (prior curve) | 0.115 | 0.706 | 0.931 |
 | ~100K | span (prior curve) | 0.158 | 0.732 | 0.949 |
-| **10K** | **boundary (this work)** | **0.177** | **0.764** | **0.913** |
+| **10K** | **boundary (this work)** | **0.177** | **0.764** | 0.913 |
+| **40K** | **boundary (this work)** | **0.191** | **0.812** | 0.925 |
+| **100K** | **boundary (this work)** | **0.202** | **0.829** | 0.936 |
 
-**The boundary 10K point beats the span 100K point on arguments (0.177 vs 0.158) and
-on triggers (0.764 vs 0.732)** — at roughly a tenth of the Stage-A volume. Against the
-span curve's own 10K point the argument head is **3.5× higher** (0.177 vs 0.050), which
-is the more direct reading: at 10K the span architecture's argument head had not moved
-off its N=0 floor at all, while the boundary head is already past the span curve's
-100K value.
+All boundary points calibrated to threshold **0.3**, so they are mutually comparable.
 
-The gap is *understated* by the volume label. The boundary 10K mix is 7,316 event +
-2,684 relation records, so it contains **~27% fewer event records** than the span
-curve's 10K point (10,000, events-only — `build_scaling_mix.py` slices the event pool
-alone). The boundary point reaches a higher argument F1 on strictly less event data.
+**The boundary head wins on arguments and triggers at EVERY point**, and the margin is
+largest where data is scarcest:
 
-If this holds at 40K and 100K it is a **result about the architecture, not the data
-scale**: the head-init deficit that motivated the whole scaling curve is substantially
-an artifact of the span head's fixed-width span enumeration, and the boundary head's
-start/end factorization largely removes it. That would reframe the head-init finding
-from "mmBERT needs ≥40K of structure/argument warming" to "mmBERT needs a boundary
-head; warming is a much weaker second-order effect."
+| Stage-A | span arg | boundary arg | ratio |
+|--:|--:|--:|--:|
+| 10K | 0.050 | 0.177 | **3.54×** |
+| 40K | 0.115 | 0.191 | 1.66× |
+| 100K | 0.158 | 0.202 | 1.28× |
+
+Two readings, and together they answer §1's question about how the beam interacts with
+head-init:
+
+1. **The boundary 10K point (0.177) still beats the span ~100K point (0.158)** — a tenth
+   of the Stage-A volume, on ~27% fewer event records (the boundary mix is 73/27
+   events/relations; the span curve's slice is events-only).
+2. **The two curves have opposite shapes.** Span climbs **+216%** across the range
+   (0.050 → 0.158) and is still climbing; boundary moves **+14%** (0.177 → 0.202) and is
+   nearly flat. The span head spends the whole curve recovering from a low floor; the
+   boundary head starts near its ceiling.
+
+That is the finding: **the head-init data-scaling curve is largely a property of the SPAN
+head, not of mmBERT.** What looked like "a cold multilingual encoder needs ≥40K of
+structure/argument warming" is better read as "fixed-width span enumeration needs a great
+deal of data to compensate for it, and a start/end factorization mostly does not." The
+practical consequence flips the earlier recommendation: reach for the boundary head
+before reaching for more warm-up data.
+
+Event *type* is the exception — span is marginally ahead at 10K (0.952 vs 0.913) and 100K
+(0.949 vs 0.936). Type is a whole-document classification where the span head's width cap
+never bites, so no advantage is expected, and none appears.
 
 **Why provisional — do not cite yet:**
 - **Now metric-selected.** The point was retrained once the decode defect was fixed, so
