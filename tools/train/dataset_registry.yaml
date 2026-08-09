@@ -496,6 +496,15 @@ datasets:
     source_url: null
     language: [en]
     description: "Locally generated synthetic multi-task IE corpus (~1.9K records) covering entities, relations, text classification, and document-level events; produced with Claude Sonnet 5."
+  casualty_multi:
+    name: Multi-event casualty-report corpus
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    source_url: null
+    language: [en]
+    description: "Multi-event counterpart of casualty_ft for the EKF/MHT streaming line. Built by datasets/disaster_streams/build_multievent_corpus.py from the sonnet5 TRAIN streams only: each document concatenates 1-4 snippets drawn from DIFFERENT streams and carries one casualty_report instance per snippet (29,030 docs / 67,799 instances, mean 2.34). Values are located within their own snippet's slice and dropped when ambiguous across the document, so no instance is labelled with another event's number. Exists because casualty_ft is 100% single-instance, which trained the count head to always predict 1 and collapsed value binding to 0.369 on multi-event text."
+
   casualty_ft:
     name: Casualty-report fine-tune corpus
     tasks: structured extraction (json_structures)

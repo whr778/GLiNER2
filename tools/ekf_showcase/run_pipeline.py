@@ -448,10 +448,15 @@ def main() -> None:
             # the rest -- which is precisely the case the envelope exists to handle.
             reads = [e["text"] for e in envelopes] or [row["text"]]
             for read_text in reads:
-                rec = (cas_model.extract(read_text, cas_schema, include_confidence=True)
-                       .get("casualty_report") or [{}])[0]
-                _emit(rec, read_text, row, entry, modes, per_mode,
-                      gate_model, cls_schema)
+                # EVERY casualty_report instance, not just [0]. A multi-event-trained
+                # model emits one record per incident, and reading only the first would
+                # make it look identical to the single-instance model it replaces --
+                # the same defect class as envelopes[0] above.
+                records = (cas_model.extract(read_text, cas_schema, include_confidence=True)
+                           .get("casualty_report") or [])
+                for rec in (records or [{}]):
+                    _emit(rec, read_text, row, entry, modes, per_mode,
+                          gate_model, cls_schema)
         articles.append(entry)
         if (i + 1) % 20 == 0:
             print(f"           {i + 1}/{len(feed)} articles")

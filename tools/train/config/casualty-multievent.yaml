@@ -1,0 +1,77 @@
+# Fine-tune fastino/gliner2-base-v1 on MULTI-EVENT casualty documents.
+#
+# Why. The existing casualty model (casualty-finetune.yaml) was trained on a corpus in
+# which every one of 31,539 documents holds exactly ONE casualty_report -- verified. The
+# count head therefore only ever saw "1", and on a document describing several incidents
+# it must blend their competing figures into a single forced instance. Measured on the
+# multi-event showcase feed: value binding collapses from 1.000 on single-event text to
+# **0.369**, with **22.6%** of readings bound to the WRONG event's number.
+#
+# data/casualty_multi.* carries 29,030 documents / 67,799 instances (mean 2.34/doc,
+# distribution {1: 8079, 2: 8195, 3: 7694, 4: 5062}), built by
+# datasets/disaster_streams/build_multievent_corpus.py from the sonnet5 TRAIN streams
+# only -- the showcase feeds come from test, so the evaluation stays uncontaminated.
+# Single-event documents are kept in the mix so 1.000 single-event binding cannot
+# silently regress while multi-event improves.
+#
+# PASS/FAIL, fixed before spending (evaluate with tools/ekf_showcase/run_pipeline.py):
+#   multi-event correct binding   materially above 0.369
+#   multi-event wrong-event rate  below 0.226
+#   single-event binding          stays ~1.000
+#   EKF_MHT_DESIGN sec 20 harness roughly unchanged (no regression on its own test)
+#
+# Recipe is otherwise identical to casualty-finetune.yaml (the sec 20 recipe that closed
+# ~75% of the gap to the structured ceiling), so the only variable is the corpus.
+# Document lengths: median 132 words, max 258 -- 0% exceed the 384-word window, so no
+# multi-event document is ever split across windows, which would sever a record.
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-multievent
+  experiment_name: casualty_multievent
+  data_parallel: false
+  num_epochs: 8
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: false
+  fp16: true                 # DeBERTa-v3 / eager attention: the sec 20 recipe. The
+                             # sdpa+bf16 non-finite defect is a ModernBERT problem and
+                             # does not apply here.
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: true
+  early_stopping: false
+
+eval:
+  batch_size: 16
+  threshold: 0.5
+  threshold_sweep: true
+  global_decode: false
+  eval_by_language: false
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  corpora:
+    - data/casualty_multi
+  event_files: {}
