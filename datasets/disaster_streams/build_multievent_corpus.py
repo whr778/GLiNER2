@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -51,13 +52,29 @@ def _locate_in_slice(value: int, doc: str, lo: int, hi: int):
     to one instance, and guessing would teach the model the error it is meant to fix.
     """
     for cand in _variants(value):
-        inside = doc.find(cand, lo, hi)
-        if inside < 0:
-            continue
-        first, last = doc.find(cand), doc.rfind(cand)
-        if first == last:                    # unique in the whole document
+        hits = [m.start() for m in re.finditer(re.escape(cand), doc) if _standalone(doc, m.start(), m.end())]
+        if len(hits) == 1 and lo <= hits[0] < hi:      # unique AND inside this snippet
             return cand
     return None
+
+
+def _standalone(doc: str, a: int, b: int) -> bool:
+    """True when doc[a:b] is a whole number, not a fragment of a bigger one.
+
+    Without this, gold "66" matches inside "665 residents displaced" and the model is
+    taught to read a casualty count out of an unrelated figure. Rare (0.40% of spans)
+    but pure label noise, and scaling makes it likelier: small values collide more.
+    A comma only continues a number when a digit follows it (1,234 vs "108, while").
+    """
+    if a > 0 and doc[a - 1].isdigit():
+        return False
+    if b < len(doc) and doc[b].isdigit():
+        return False
+    if b + 1 < len(doc) and doc[b] == "," and doc[b + 1].isdigit():
+        return False
+    if a >= 1 and doc[a - 1] == "," and a >= 2 and doc[a - 2].isdigit():
+        return False
+    return True
 
 
 def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
