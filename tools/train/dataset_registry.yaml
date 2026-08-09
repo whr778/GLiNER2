@@ -496,6 +496,15 @@ datasets:
     source_url: null
     language: [en]
     description: "Locally generated synthetic multi-task IE corpus (~1.9K records) covering entities, relations, text classification, and document-level events; produced with Claude Sonnet 5."
+  casualty_docee:
+    name: Multi-event casualty corpus, DocEE-conditioned
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    source_url: null
+    language: [en]
+    description: "Realistic counterpart of casualty_multi. Synthetic stream trajectories (exact ground truth) are paired with REAL DocEE contexts -- actual event types and place names from 6,929 annotated articles -- and realized by claude-sonnet-5, so each stream reads as a different real disaster in a named place instead of a templated earthquake in 'the region'. Magnitudes are rescaled per event type (scale_streams_to_type.py) because the generator's single large-disaster regime made 80% of type pairings implausible (a road crash peaking at 52,447). Split at the STREAM level so no incident straddles train/val/test."
+
   casualty_multi:
     name: Multi-event casualty-report corpus
     tasks: structured extraction (json_structures, multi-instance)

@@ -1,0 +1,79 @@
+# Fine-tune fastino/gliner2-base-v1 on the DocEE-CONDITIONED multi-event casualty corpus.
+#
+# Successor to casualty-multievent.yaml. Same task, more realistic text: synthetic stream
+# trajectories (exact ground truth) paired with REAL DocEE contexts -- actual event types
+# and place names -- and realized by claude-sonnet-5, so each stream reads as a different
+# real disaster in a named place rather than a templated earthquake in "the region".
+#
+# Magnitudes are rescaled per event type first: the generator has one large-disaster
+# regime, which made 80% of type pairings implausible (a Road Crash peaking at 52,447).
+# After scaling, 0/250 are implausible.
+#
+# Corpus: 13,358 train / 1,682 val / 1,906 test documents, mean 1.88 casualty_report
+# instances per document, split at the STREAM level so no incident straddles a split
+# (verified: zero document overlap between splits).
+#
+# Two honest caveats carried from generation:
+#   - The batch landed 157 of 250 streams (63%); failures were uniform across all eight
+#     event types (61-66% each), so the corpus is smaller than planned but NOT skewed.
+#   - 39% of gold fields were dropped as ambiguous, up from 13% on the unscaled corpus.
+#     Scaling makes values small (a Road Crash peaks at 60), so the same integer collides
+#     across snippets far more often, and a colliding value is dropped rather than guessed.
+#
+# PASS/FAIL, fixed before spending -- evaluated with tools/ekf_showcase/run_pipeline.py
+# against out/casualty-multievent/best (the unscaled multi-event model):
+#   multi-event correct binding   >= 0.444   (the unscaled model's score)
+#   multi-event wrong-event rate  <= 0.190
+#   single-event binding          ~1.000, and no worse than 0.964
+#
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-docee
+  experiment_name: casualty_docee
+  data_parallel: false
+  num_epochs: 8
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: false
+  fp16: true                 # DeBERTa-v3 / eager attention: the sec 20 recipe. The
+                             # sdpa+bf16 non-finite defect is a ModernBERT problem and
+                             # does not apply here.
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: true
+  early_stopping: false
+
+eval:
+  batch_size: 16
+  threshold: 0.5
+  threshold_sweep: true
+  global_decode: false
+  eval_by_language: false
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  corpora:
+    - data/casualty_docee
+  event_files: {}
