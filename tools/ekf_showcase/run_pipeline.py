@@ -93,6 +93,32 @@ SOURCES = {
 # --------------------------------------------------------------------------- #
 # Stage 0 - gate
 # --------------------------------------------------------------------------- #
+# Label descriptions for the relevance gate, v2. v1 described the negative class as
+# "sport, markets, technology, weather, policy" -- topically distant filler invented for
+# the demo feed. Benchmarked against 21k REAL annotated disaster messages, that gate
+# admitted 58.5% of definitively non-disaster text at high confidence ("Your voice is
+# sweet like a morning kiss", 0.98). The negatives it actually meets are close-domain:
+# personal requests, translator notes, governance and policy news, aid-logistics
+# inventories carrying huge numbers (5,400,000 kg of rice), science and finance writing,
+# and single-casualty medical items. Two traps are explicit because they appear verbatim
+# in the data: a lone death ("the corpse arrives today") is not a mass-casualty event,
+# and disaster words are used metaphorically ("explosion in crowdfunding").
+GATE_LABELS_V2 = {
+    "mass_casualty": (
+        "a report of how many people were killed, injured, or are missing in a specific "
+        "disaster, accident or attack -- it states or estimates a TOLL for a group of people"
+    ),
+    "other": (
+        "anything else, including: personal messages, greetings, thanks and requests for "
+        "help, money, jobs or travel; notes from a translator about the message itself; "
+        "politics, elections, government policy, diplomacy and development or NGO reports; "
+        "aid logistics and supply inventories, even with very large quantities; business, "
+        "finance, science and environment writing; one individual's illness, injury or "
+        "death; and metaphorical use of disaster words such as an 'explosion' in an industry"
+    ),
+}
+
+
 def build_gate_schema(model):
     """Multiple classification tasks in one pass (tutorial 1, 'Multiple Tasks').
 
@@ -100,10 +126,7 @@ def build_gate_schema(model):
     classification tasks share the encoder pass.
     """
     return (model.create_schema()
-            .classification("relevance", {
-                "mass_casualty": "reports deaths, injuries or missing people from a disaster or attack",
-                "other": "any other topic: sport, markets, technology, weather, policy",
-            })
+            .classification("relevance", GATE_LABELS_V2)
             .classification("disaster_type", {
                 "earthquake": "an earthquake or its aftermath",
                 "flood": "flooding or storm surge",
