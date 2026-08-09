@@ -3,7 +3,7 @@
 Four stages, each swappable, so the demo is also an ablation:
 
   0. GATE          classification (multi-task)  is this article a mass-casualty report?
-  1. EVENT         boundary / joint_ie          event type + trigger + argument spans
+  1. EVENT         DocEE classification         event type + 'Casualties and Losses' spans
   2. EXTRACT       casualty structure model     bind NUMBERS to roles {dead,injured,missing}
   3. NORMALIZE     heuristic | classification   span -> (value, qualifier, source)
   4. TRACK         EKF (+ last_value baseline)  observations -> a state over time
@@ -24,6 +24,18 @@ classify`` is not a toy alternative; it targets a measured weak point, and
 Classification CANNOT produce ``value`` (an open-vocabulary number) or bind a number to
 a role on multi-fact text -- that is precisely the binding collapse of sec 17 that the
 structure model exists to solve. Hence stage 2 stays a structure extractor.
+
+**Measured on the 102-article demo feed** (81 observations matched to gold):
+
+    window            n   value  qualifier  source
+    whole article    81   1.000      0.654   0.494   <- best overall here
+    DocEE window     46   0.848      0.652   0.565
+
+Windowing improves SOURCE (+0.071) exactly as intended, but costs value binding and
+43% of observations -- because every article in this feed is a SINGLE-event snippet,
+so the article already is the envelope and the window only clips context. The window
+is for multi-event articles; this feed cannot show its benefit. Default stays
+``--window article``.
 
     uv run python tools/ekf_showcase/run_pipeline.py \
         --feed datasets/ekf_showcase/feed.jsonl \
@@ -101,24 +113,95 @@ def gate(model, texts: List[str], threshold: float) -> List[Dict[str, Any]]:
 # --------------------------------------------------------------------------- #
 # Stage 1 - event extraction (boundary)
 # --------------------------------------------------------------------------- #
-def build_event_schema() -> Dict[str, Any]:
-    """A boundary/joint_ie event schema. Roles are chosen to WINDOW the report -- the
-    trigger and the casualty-bearing arguments -- so stage 1 does real work rather than
-    only labelling."""
-    return {"events": {"MassCasualtyIncident": ["casualties", "location", "cause"]}}
+# DocEE's own vocabulary. Not an invented ontology: `docee_event` is a real 59-label
+# task in data/docee.*.jsonl, and models in this repo have trained on it. Restricted to
+# the mass-casualty subset plus a handful of decoys so the classifier is choosing among
+# plausible alternatives rather than being handed only the answer.
+DOCEE_TASK = "docee_event"
+DOCEE_CASUALTY_TYPES = [
+    "Air Crash", "Armed Conflict", "Disease Outbreaks", "Droughts", "Earthquakes",
+    "Famine", "Fire", "Floods", "Gas Explosion", "Insect Disaster", "Mass Poisoning",
+    "Mine Collapses", "Mudslides", "Riot", "Road Crash", "Shipwreck", "Storm",
+    "Train Collisions", "Tsunamis", "Volcano Eruption",
+]
+DOCEE_DECOYS = [
+    "Sports Competition", "Election", "Financial Crisis", "Diplomatic Talks",
+    "Awards Ceremony", "Organization Merge", "Government Policy Changes",
+]
+# The annotated casualty envelope. Values look like "35 dead and 24 injured" or
+# "killing 15 children" -- i.e. already the multi-fact string the casualty model binds
+# numbers from, so no min(start)/max(end) reconstruction is needed.
+DOCEE_ENTITIES = {
+    "Casualties and Losses": "people killed, injured, missing or otherwise harmed, with counts",
+    "Location": "where the event happened",
+    "Cause": "what caused the event",
+}
 
 
-def extract_events(model, texts: List[str], threshold: float,
-                   schema: Optional[Dict] = None) -> List[Dict[str, Any]]:
-    schema = schema or build_event_schema()
+def build_docee_schema(model):
+    """Stage 1 in DocEE's own shape: a 59-way event-type CLASSIFICATION plus entities.
+
+    DocEE does not annotate triggers and arguments -- it annotates a document-level event
+    type and entity roles. So the natural stage 1 here is exactly the "multiple
+    classification tasks" mechanism, and ``Casualties and Losses`` is the casualty
+    envelope, annotated rather than derived.
+    """
+    return (model.create_schema()
+            .classification(DOCEE_TASK, DOCEE_CASUALTY_TYPES + DOCEE_DECOYS)
+            .entities(DOCEE_ENTITIES))
+
+
+def extract_stage1(model, texts: List[str], threshold: float) -> List[Dict[str, Any]]:
+    """Per article: the DocEE event type plus its casualty/location/cause spans."""
+    schema = build_docee_schema(model)
     out = []
     for text in texts:
         try:
-            r = model.batch_extract([text], [schema], threshold=threshold,
-                                    include_spans=True)[0]
-            out.append(r.get("event_extraction") or {})
-        except Exception as exc:                      # a research checkpoint may not cope
+            r = model.extract(text, schema, threshold=threshold,
+                              include_confidence=True, include_spans=True)
+            ev = r.get(DOCEE_TASK)
+            ents = r.get("entities") or {}
+            if isinstance(ents, list):
+                ents = ents[0] if ents else {}
+            out.append({
+                "event_type": ev.get("label") if isinstance(ev, dict) else ev,
+                "event_confidence": float(ev.get("confidence", 1.0)) if isinstance(ev, dict) else None,
+                "casualties": ents.get("Casualties and Losses") or [],
+                "location": ents.get("Location") or [],
+                "cause": ents.get("Cause") or [],
+            })
+        except Exception as exc:
             out.append({"_error": f"{type(exc).__name__}: {exc}"})
+    return out
+
+
+def _span_text(v) -> str:
+    return v.get("text", "") if isinstance(v, dict) else (v or "")
+
+
+def casualty_windows(text: str, block: Dict[str, Any], margin: int = 60) -> List[Dict[str, Any]]:
+    """Context windows around each ``Casualties and Losses`` span.
+
+    The span itself carries the numbers; the surrounding text carries the hedge and the
+    attribution ("officials said", "early reports"), which qualifier/source need. So the
+    window is the span plus a margin, not the span alone.
+    """
+    out = []
+    for item in block.get("casualties") or []:
+        span = _span_text(item)
+        if not span:
+            continue
+        if isinstance(item, dict) and "start" in item:
+            lo, hi = item["start"], item["end"]
+        else:
+            i = text.find(span)
+            if i < 0:
+                out.append({"span": span, "text": span})
+                continue
+            lo, hi = i, i + len(span)
+        out.append({"span": span,
+                    "start": max(0, lo - margin), "end": min(len(text), hi + margin),
+                    "text": text[max(0, lo - margin): min(len(text), hi + margin)]})
     return out
 
 
@@ -271,8 +354,8 @@ def main() -> None:
     # default rather than "best available".
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--window", choices=("article", "event"), default="article",
-                    help="event: pass each event's min(start)..max(end) envelope to "
-                         "stages 2-3 instead of the whole article (needs --event-model)")
+                    help="event: pass each DocEE 'Casualties and Losses' window to stages "
+                         "2-3 instead of the whole article (needs --event-model)")
     ap.add_argument("--limit", type=int, default=0, help="first N articles only (smoke test)")
     args = ap.parse_args()
 
@@ -295,7 +378,7 @@ def main() -> None:
     if args.event_model:
         print(f"[stage 1] events          {args.event_model}")
         ev_model = AutoExtractor.from_pretrained(args.event_model, map_location=args.device)
-        found = extract_events(ev_model, [texts[i] for i in kept], args.event_threshold)
+        found = extract_stage1(ev_model, [texts[i] for i in kept], args.event_threshold)
         for i, e in zip(kept, found):
             events[i] = e
         n = sum(1 for e in events if e and "_error" not in e)
@@ -320,7 +403,8 @@ def main() -> None:
         if gates[i]["relevant"]:
             # --window event: hand stage 2/3 the event's own envelope instead of the whole
             # article, so per-reading attributes are judged on per-event text.
-            envelopes = event_envelopes(row["text"], events[i]) if args.window == "event" else []
+            envelopes = (casualty_windows(row["text"], events[i])
+                         if args.window == "event" and events[i] else [])
             entry["envelopes"] = envelopes
             read_text = envelopes[0]["text"] if envelopes else row["text"]
             rec = (cas_model.extract(read_text, cas_schema, include_confidence=True)
