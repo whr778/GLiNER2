@@ -219,3 +219,54 @@ def delete_model(path: str) -> Dict[str, Any]:
 
     remove_model(path)
     return {"models": list_models(DEFAULT_MODEL)}
+
+# --------------------------------------------------------------------------- #
+# EKF tracking (news feed -> observations -> tracked timeline)
+# --------------------------------------------------------------------------- #
+class EkfRequest(BaseModel):
+    """A tracking run. Defaults mirror tools/ekf_showcase/run_pipeline.py."""
+    model_config = ConfigDict(protected_namespaces=())
+
+    feed: str
+    truth: Optional[str] = None
+    gate_model: str = "fastino/gliner2-base-v1"
+    casualty_model: str = "whr778/gliner2-base-v1-casualty"
+    event_model: Optional[str] = None
+    window: str = "article"
+    normalizer: str = "hybrid"
+    gate_threshold: float = 0.5
+    event_threshold: float = 0.3
+    grid_step: float = 6.0
+    device: Optional[str] = "cpu"
+    limit: int = 0
+
+
+@app.get("/ekf-feeds")
+def ekf_feeds() -> Dict[str, Any]:
+    import ekf
+
+    return {"feeds": ekf.list_feeds()}
+
+
+@app.post("/ekf-track")
+def ekf_track(req: EkfRequest) -> Dict[str, Any]:
+    """Start a run. Returns a job id immediately -- a run is minutes long, well
+    past any sensible request timeout, so the frontend polls /ekf-track/{id}."""
+    import ekf
+
+    try:
+        ekf.resolve_feed(req.feed)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    job = ekf.start(req.model_dump())
+    return job.public()
+
+
+@app.get("/ekf-track/{job_id}")
+def ekf_status(job_id: str) -> Dict[str, Any]:
+    import ekf
+
+    job = ekf.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"unknown job {job_id}")
+    return job.public()

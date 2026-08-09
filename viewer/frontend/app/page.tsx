@@ -5,6 +5,7 @@ import InputPanel from "@/components/InputPanel";
 import SchemaPanel from "@/components/SchemaPanel";
 import ResultView from "@/components/ResultView";
 import ModelManager from "@/components/ModelManager";
+import EkfPanel from "@/components/EkfPanel";
 import { addModel, extract, getModelSchema, getModels, getPresets } from "@/lib/api";
 import { matchCorpusPreset } from "@/lib/models";
 import { MODEL_PRESET_VALUE, pruneSchema, scaffoldSchema } from "@/lib/schema";
@@ -27,6 +28,9 @@ export default function Home() {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [showModels, setShowModels] = useState(false);
+  // The viewer had a single view; EKF tracking is a different job (a feed over
+  // time, not one text), so it gets its own mode rather than more panels.
+  const [mode, setMode] = useState<"extract" | "ekf">("extract");
   const [resp, setResp] = useState<ExtractResponse | null>(null);
   const [usedSchema, setUsedSchema] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -133,7 +137,17 @@ export default function Home() {
       <header>
         <h1>GLiNER2 Viewer</h1>
         <span className="sub">entities · relations · events · classifications · structures</span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button className={mode === "extract" ? "" : "secondary"}
+                  onClick={() => setMode("extract")}>Extract</button>
+          <button className={mode === "ekf" ? "" : "secondary"}
+                  onClick={() => setMode("ekf")}>EKF tracking</button>
+        </div>
       </header>
+
+      {mode === "ekf" ? (
+        <EkfPanel />
+      ) : (
 
       <div className="grid">
         <div>
@@ -191,6 +205,8 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      )}
 
       {showModels && (
         <ModelManager models={models} setModels={setModels} onClose={() => setShowModels(false)} />

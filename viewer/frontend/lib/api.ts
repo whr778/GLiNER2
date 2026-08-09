@@ -87,3 +87,43 @@ export async function removeModel(path: string): Promise<ModelEntry[]> {
   const body = await jsonOrThrow(res);
   return body.models ?? [];
 }
+
+// --- EKF tracking -----------------------------------------------------------
+// A run takes minutes (N articles x several model calls), so the backend returns
+// a job id immediately and we poll it. Polling, not streaming, because the run is
+// coarse-grained: one progress tick per article is plenty.
+
+export type EkfFeed = { path: string; articles: number; truth: string | null };
+
+export type EkfJob = {
+  job_id: string;
+  status: "running" | "done" | "error";
+  stage: string;
+  done: number;
+  total: number;
+  error: string | null;
+  log: string[];
+  result: any | null;
+};
+
+export async function getEkfFeeds(): Promise<EkfFeed[]> {
+  const res = await fetch(`${API_BASE}/ekf-feeds`);
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()).feeds;
+}
+
+export async function startEkfTrack(body: Record<string, any>): Promise<EkfJob> {
+  const res = await fetch(`${API_BASE}/ekf-track`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getEkfJob(jobId: string): Promise<EkfJob> {
+  const res = await fetch(`${API_BASE}/ekf-track/${jobId}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
