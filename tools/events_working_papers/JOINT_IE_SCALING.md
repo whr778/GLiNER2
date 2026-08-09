@@ -422,6 +422,37 @@ head; warming is a much weaker second-order effect."
 - One point. The claim above is a *conditional* — 40K and 100K are still running.
 - Greedy arm only; the beam arm is not yet measured.
 
+### The base curve (2026-08-09) — everything scales except relations
+
+The cold-start bases are evaluated on a **fixed** blind test (identical across curve
+points by construction, so support never moves and a metric change is attributable to
+training volume alone). Strict micro-F1:
+
+| | 10K | 40K |
+|---|--:|--:|
+| entity | 0.311 | **0.402** |
+| classification | 0.108 | **0.545** |
+| event_type | 0.497 | **0.830** |
+| event_trigger | 0.061 | **0.277** |
+| event_argument | 0.010 | **0.039** |
+| event (overall) | 0.070 | **0.186** |
+| **relation** | 0.007 | **0.012** |
+
+Every head moves substantially from 10K to 40K — trigger 4.5×, event_type +0.333,
+classification +0.437 — **except relations, which stay at ~0.01 despite relation data
+being 27% of the mix**. If that persists at 100K it is a finding in its own right: the
+relation head is not warming from this curriculum at all, and the Re-DocRED arm's
+warm-start premise would need re-examining. With F1 ~0.01 the precision movement
+(0.214 → 0.071) is inside the noise; wait for 100K before concluding.
+
+**These numbers did not exist until the blind test was fixed.** No event corpus in the
+four base configs declared a `test:` key, so `_event_split` returned nothing and the
+bases — 73% event data — were scored only on relation corpora. Worse, adding the keys
+was not enough: `_event_split` filters on `Path(p).is_file()`, and the event test slices
+had never been copied to the training box, so the first regeneration silently reproduced
+the event-free metrics with no error. A missing-path filter that drops silently is
+indistinguishable from "this corpus has no test data".
+
 ### The defect that hid this, and why it matters methodologically
 
 Every event metric in this experiment read **0.0000 at every threshold, down to 0.01**,
