@@ -33,9 +33,29 @@ structure model exists to solve. Hence stage 2 stays a structure extractor.
 
 Windowing improves SOURCE (+0.071) exactly as intended, but costs value binding and
 43% of observations -- because every article in this feed is a SINGLE-event snippet,
-so the article already is the envelope and the window only clips context. The window
-is for multi-event articles; this feed cannot show its benefit. Default stays
-``--window article``.
+so the article already is the envelope and the window only clips context.
+
+**Multi-event feed** (``make_demo_feed.py --interference 2``: each article also carries
+two OTHER disasters' snippets, so their numbers compete), DocEE-large stage 1:
+
+    window            n  correct  wrong-event  qualifier  source
+    whole article    84    0.369        0.226      0.613   0.645
+    event envelope  351    0.399        0.177      0.636   0.479
+
+Two readings, and the second matters more than the first:
+
+1. The envelope does what it was designed to do -- **cross-event misbinding falls 0.226
+   -> 0.177 (-22% relative)** and correct binding rises -- but it emits 4x the
+   observations (each envelope read separately) and clips the attribution context that
+   ``source`` needs.
+2. Far larger: **value binding collapses from 1.000 on single-event text to 0.369 once
+   articles are multi-event.** That is sec 17's number-to-role binding collapse
+   reappearing at DOCUMENT level. The casualty model was fine-tuned on single-fact
+   snippets and does not transfer to multi-event documents -- a training-data gap, not
+   a decode gap, and the envelope only mitigates it.
+
+Default stays ``--window article``; use ``--window event`` when articles are genuinely
+multi-event and cross-event contamination costs more than attribution precision.
 
     uv run python tools/ekf_showcase/run_pipeline.py \
         --feed datasets/ekf_showcase/feed.jsonl \
@@ -263,6 +283,23 @@ def _cell(v):
     return (v or ""), 1.0
 
 
+def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema) -> None:
+    """Turn one casualty_report reading into observations, one per role per mode."""
+    for role in ROLES:
+        span, conf = _cell(rec.get(role))
+        if not span:
+            continue
+        for mode in modes:
+            value, qual, src = normalize(read_text, span, mode, cls_model, cls_schema)
+            o = {"t_hours": row["t_hours"], "role": role, "value": value,
+                 "qualifier": qual, "source": src, "confidence": conf,
+                 "span": span, "mode": mode}
+            per_mode[mode].append(o)
+            # Keep EVERY mode on the article: retaining only the first made
+            # `--normalizer both` unscoreable, which is the whole point of it.
+            entry["observations"].append(o)
+
+
 # --------------------------------------------------------------------------- #
 # Stage 3 - normalization
 # --------------------------------------------------------------------------- #
@@ -406,22 +443,15 @@ def main() -> None:
             envelopes = (casualty_windows(row["text"], events[i])
                          if args.window == "event" and events[i] else [])
             entry["envelopes"] = envelopes
-            read_text = envelopes[0]["text"] if envelopes else row["text"]
-            rec = (cas_model.extract(read_text, cas_schema, include_confidence=True)
-                   .get("casualty_report") or [{}])[0]
-            for role in ROLES:
-                span, conf = _cell(rec.get(role))
-                if not span:
-                    continue
-                for mode in modes:
-                    value, qual, src = normalize(read_text, span, mode, gate_model, cls_schema)
-                    o = {"t_hours": row["t_hours"], "role": role, "value": value,
-                         "qualifier": qual, "source": src, "confidence": conf,
-                         "span": span, "mode": mode}
-                    per_mode[mode].append(o)
-                    # Keep EVERY mode on the article: retaining only the first made
-                    # `--normalizer both` unscoreable, which is the whole point of it.
-                    entry["observations"].append(o)
+            # EVERY envelope is read, not just the first. A multi-event article carries
+            # one casualty span per incident, and reading only the first would discard
+            # the rest -- which is precisely the case the envelope exists to handle.
+            reads = [e["text"] for e in envelopes] or [row["text"]]
+            for read_text in reads:
+                rec = (cas_model.extract(read_text, cas_schema, include_confidence=True)
+                       .get("casualty_report") or [{}])[0]
+                _emit(rec, read_text, row, entry, modes, per_mode,
+                      gate_model, cls_schema)
         articles.append(entry)
         if (i + 1) % 20 == 0:
             print(f"           {i + 1}/{len(feed)} articles")

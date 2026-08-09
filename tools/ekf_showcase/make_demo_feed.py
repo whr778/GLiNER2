@@ -48,6 +48,9 @@ def main() -> None:
     ap.add_argument("--out", default="datasets/ekf_showcase/feed.jsonl")
     ap.add_argument("--distractor-ratio", type=float, default=1.0,
                     help="off-topic articles per on-topic one (1.0 = half the feed is noise)")
+    ap.add_argument("--interference", type=int, default=0,
+                    help="snippets from OTHER streams appended to each on-topic article, "
+                         "making it multi-event (0 = single-event, the original feed)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -69,13 +72,34 @@ def main() -> None:
         traj = sorted((t for t in traj if t["stream_id"] == stream), key=lambda t: t["t_hours"])
 
     rng = random.Random(args.seed)
+
+    # Interference pool: snippets from OTHER streams, i.e. other disasters with other
+    # numbers. Appending them makes each article genuinely MULTI-EVENT, which is the
+    # only condition under which a per-event envelope can beat reading the whole
+    # article -- on single-event text the article already is the envelope.
+    other = [o for o in obs if o["stream_id"] != stream and o.get("text")]
+    rng.shuffle(other)
+
     lines = []
-    for o in on_topic:
+    for idx, o in enumerate(on_topic):
+        text = o["text"]
+        interference = []
+        for k in range(args.interference):
+            if not other:
+                break
+            src = other[(idx * max(args.interference, 1) + k) % len(other)]
+            text = text + "\n\n" + src["text"]
+            interference.append({k2: src[k2] for k2 in ("stream_id", "role", "value")
+                                 if k2 in src})
         lines.append({
             "t_hours": o["t_hours"],
-            "text": o["text"],
+            "text": text,
             # Ground truth for scoring; a real feed would not have this.
             "_gt": {k: o[k] for k in ("role", "value", "qualifier", "source") if k in o},
+            # Values from the OTHER events in this article. Scoring uses these to tell
+            # "missed it" apart from "bound the wrong event's number", which is the
+            # failure mode the envelope is supposed to prevent.
+            "_interference": interference,
         })
 
     span = (on_topic[-1]["t_hours"] - on_topic[0]["t_hours"]) or 1.0
@@ -107,6 +131,8 @@ def main() -> None:
     print(f"  stream      : {stream}")
     print(f"  articles    : {len(lines)}  ({n_on} on-topic, {len(lines) - n_on} distractors)")
     print(f"  time span   : {lines[0]['t_hours']}h .. {lines[-1]['t_hours']}h")
+    if args.interference:
+        print(f"  interference: {args.interference} other-stream snippet(s) per on-topic article")
 
 
 if __name__ == "__main__":
