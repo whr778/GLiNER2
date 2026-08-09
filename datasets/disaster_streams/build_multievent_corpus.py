@@ -60,8 +60,15 @@ def _locate_in_slice(value: int, doc: str, lo: int, hi: int):
     return None
 
 
-def load_snippets(split_dir: Path):
-    """(stream_id, t_hours) -> {text, gt{role: value}}"""
+def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
+    """(stream_id, t_hours) -> {text, gt{role: value}}
+
+    ``stream_start``/``stream_end`` slice the sorted stream ids. Splitting at the STREAM
+    level, not the document level, is what keeps train and val disjoint: one stream's
+    snippets all describe the same incident, so letting them straddle a split leaks the
+    answer. Interference is drawn only from streams inside the same slice for the same
+    reason.
+    """
     groups = defaultdict(lambda: {"text": "", "gt": {}, "stream": ""})
     for line in (split_dir / "observations.jsonl").open(encoding="utf-8"):
         o = json.loads(line)
@@ -71,7 +78,11 @@ def load_snippets(split_dir: Path):
         g["text"] = o["text"]
         g["stream"] = o["stream_id"]
         g["gt"][o["role"]] = o["value"]
-    return [g for g in groups.values() if g["text"] and g["gt"]]
+    out = [g for g in groups.values() if g["text"] and g["gt"]]
+    if stream_end:
+        keep = set(sorted({g["stream"] for g in out})[stream_start:stream_end])
+        out = [g for g in out if g["stream"] in keep]
+    return out
 
 
 def build(snippets, max_interference: int, seed: int):
@@ -128,10 +139,14 @@ def main(argv=None) -> None:
     ap.add_argument("--split", default="train")
     ap.add_argument("--out", default="data/casualty_multi.train.jsonl")
     ap.add_argument("--max-interference", type=int, default=3)
+    ap.add_argument("--stream-start", type=int, default=0,
+                    help="index into the sorted stream ids (leak-free split)")
+    ap.add_argument("--stream-end", type=int, default=0, help="0 = all streams")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
 
-    snippets = load_snippets(Path(args.data) / args.split)
+    snippets = load_snippets(Path(args.data) / args.split,
+                             args.stream_start, args.stream_end)
     examples, stats = build(snippets, args.max_interference, args.seed)
 
     ds = TrainingDataset(examples)
