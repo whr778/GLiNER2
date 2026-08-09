@@ -26,6 +26,12 @@ covers both. A win on only one face is a weaker but still reportable result; the
 negative — that global decoding helps relations and not events, or the reverse — is itself
 the finding, because it localizes where greedy per-query decoding actually costs you.
 
+> **Provisional first point (§4b):** the 10K *boundary* base already reaches RAMS argument
+> F1 **0.182**, above the span curve's ~100K point (0.158) and 3.6× its own 10K point
+> (0.050) — on ~27% fewer event records. If it holds at 40K/100K, the head-init deficit is
+> largely an artifact of the **span head**, not a data-volume law. One point, greedy arm
+> only, not yet metric-selected; see §4b before citing.
+
 This is also what makes the line the *document-level* half of the program
 ([[RESEARCH_PROGRAM]]): [[EKF_MHT_DESIGN]] carries events **beyond** the document via a
 tracker, and this paper carries events **within** it via a global decode. Framing this half
@@ -370,6 +376,65 @@ point is safe to run. DocRED itself stays excluded.
 - **Consequence:** the RAMS arm only means anything once events are in the beam (§3b);
   until then arm (b) on RAMS is identical to arm (a) plus noise, because record decoding
   bypasses the beam entirely.
+
+## 4b. First measured point (PROVISIONAL — 2026-08-09)
+
+The 10K boundary base, warm-started on RAMS, on the **greedy arm** (arm (a); the beam
+arm is not yet measured). RAMS blind test, 871 docs, strict micro-F1 — the same test
+set and metric as the span curve in [[mmbert-head-init-finding]], so the columns are
+directly comparable:
+
+| Stage-A size | architecture | event_argument (S) | event_trigger (S) | event_type (S) |
+|--:|:--|--:|--:|--:|
+| 10K | span (prior curve) | 0.050 | 0.598 | 0.952 |
+| 40K | span (prior curve) | 0.115 | 0.706 | 0.931 |
+| ~100K | span (prior curve) | 0.158 | 0.732 | 0.949 |
+| **10K** | **boundary (this work)** | **0.182** | **0.764** | **0.946** |
+
+**The boundary 10K point beats the span 100K point on arguments (0.182 vs 0.158) and
+on triggers (0.764 vs 0.732)** — at roughly a tenth of the Stage-A volume. Against the
+span curve's own 10K point the argument head is **3.6× higher** (0.182 vs 0.050), which
+is the more direct reading: at 10K the span architecture's argument head had not moved
+off its N=0 floor at all, while the boundary head is already past the span curve's
+100K value.
+
+The gap is *understated* by the volume label. The boundary 10K mix is 7,316 event +
+2,684 relation records, so it contains **~27% fewer event records** than the span
+curve's 10K point (10,000, events-only — `build_scaling_mix.py` slices the event pool
+alone). The boundary point reaches a higher argument F1 on strictly less event data.
+
+If this holds at 40K and 100K it is a **result about the architecture, not the data
+scale**: the head-init deficit that motivated the whole scaling curve is substantially
+an artifact of the span head's fixed-width span enumeration, and the boundary head's
+start/end factorization largely removes it. That would reframe the head-init finding
+from "mmBERT needs ≥40K of structure/argument warming" to "mmBERT needs a boundary
+head; warming is a much weaker second-order effect."
+
+**Why provisional — do not cite yet:**
+- Measured on `final/` (epoch 15), *not* a metric-selected `best/`. The selection metric
+  was structurally 0.0 at the time (see the decode defect below), so `best/` was pinned
+  to epoch 1 and is meaningless. This point is being retrained with working selection.
+- Decision threshold 0.3, not the per-model calibrated threshold the span curve used.
+- One point. The claim above is a *conditional* — 40K and 100K are still running.
+
+### The defect that hid this, and why it matters methodologically
+
+Every event metric in this experiment read **0.0000 at every threshold, down to 0.01**,
+until 2026-08-09. Cause: the boundary engine skipped every non-entity query on the
+assumption the record head would decode it, but the record head is **inert for events** —
+an events schema never produces `record_metadata`, so `compile_record_specs` returns `{}`.
+Confirmed in *training* collation, not just inference, so `enable_records: true` never did
+anything for events at any stage.
+
+Events are in fact supervised as **mentions**: one extractive `[V]` query per trigger and
+per role. The models had learned trigger and role spans the whole time; nothing assembled
+them into output. Once assembled, the same checkpoint went from 0.0000 to the table above.
+
+Two lessons worth carrying: (i) a metric that cannot leave 0.0 is indistinguishable from a
+model that has learned nothing — `metric_for_best` pointed at exactly such a metric and
+silently pinned checkpoint selection to epoch 1; (ii) the failure was invisible to the test
+suite because it needs a trained boundary checkpoint plus a real event schema, which no
+unit test constructs.
 
 ## 5. Data (surveyed 2026-08-07)
 
