@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import bisect
 from collections import OrderedDict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -226,38 +226,134 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             entity_results: "OrderedDict[str, Any]" = OrderedDict()
             for qid, spec in enumerate(specs):
                 if spec["task_type"] != "entities":
-                    continue  # non-entity queries are decoded by the record head
-                scored = grouped_candidates[i][qid]
-                if (
-                    null_probs is not None
-                    and float(null_probs[i, qid])
-                    > self.boundary_settings.abstention_threshold
-                ):
-                    entity_results[spec["field_name"]] = []
-                    continue
-                spans: List[Tuple[str, float, int, int]] = []
-                for p, s, e in _resolve_spans(scored, overlap_policy):
-                    ts, te = s - offset, e - offset
-                    if ts < 0 or te > text_len or te <= ts:
-                        continue
-                    char_start, char_end = token_boundaries_to_character_offsets(
-                        ts, te, start_map, end_map
-                    )
-                    surface = text[char_start:char_end].strip()
-                    if surface:
-                        spans.append((surface, p, char_start, char_end))
-
+                    continue  # events are assembled below; records by the record head
+                spans = self._query_spans(
+                    qid, i, grouped_candidates, null_probs, overlap_policy,
+                    offset, start_map, end_map, text, text_len,
+                )
                 entity_results[spec["field_name"]] = self._format_spans(
-                    spans, include_confidence, include_spans, already_finalized=True
+                    spans or [], include_confidence, include_spans,
+                    already_finalized=True,
                 )
 
             if entity_results:
                 sample["entities"] = [entity_results]
 
+            event_results = self._decode_events(
+                specs, i, grouped_candidates, null_probs, overlap_policy,
+                offset, start_map, end_map, text, text_len,
+                include_confidence, include_spans,
+            )
+            for event_type, instances in event_results.items():
+                sample[event_type] = instances
+
             self._decode_classifications(sample, batch, core, i)
             results.append(sample)
 
         return results
+
+    def _query_spans(
+        self,
+        qid: int,
+        sample_index: int,
+        grouped_candidates,
+        null_probs,
+        overlap_policy,
+        offset: int,
+        start_map,
+        end_map,
+        text: str,
+        text_len: int,
+    ) -> Optional[List[Tuple[str, float, int, int]]]:
+        """Resolve one extractive query's candidates to character-anchored spans.
+
+        Returns ``None`` when the query abstains, which the caller distinguishes
+        from "decoded, found nothing" (an empty list).
+        """
+        if (
+            null_probs is not None
+            and float(null_probs[sample_index, qid])
+            > self.boundary_settings.abstention_threshold
+        ):
+            return None
+        spans: List[Tuple[str, float, int, int]] = []
+        for p, s, e in _resolve_spans(grouped_candidates[sample_index][qid], overlap_policy):
+            ts, te = s - offset, e - offset
+            if ts < 0 or te > text_len or te <= ts:
+                continue
+            char_start, char_end = token_boundaries_to_character_offsets(
+                ts, te, start_map, end_map
+            )
+            surface = text[char_start:char_end].strip()
+            if surface:
+                spans.append((surface, p, char_start, char_end))
+        return spans
+
+    def _decode_events(
+        self,
+        specs: List[Dict[str, Any]],
+        sample_index: int,
+        grouped_candidates,
+        null_probs,
+        overlap_policy,
+        offset: int,
+        start_map,
+        end_map,
+        text: str,
+        text_len: int,
+        include_confidence: bool,
+        include_spans: bool,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Assemble events from their ``[V]`` mention queries.
+
+        Events are supervised as MENTIONS -- one extractive query per trigger and
+        per role -- NOT as record instances: an events schema never produces
+        ``record_metadata``, so ``compile_record_specs`` returns ``{}`` and the
+        record head is inert for them (verified in training collation, not just
+        inference). Before this, event queries were skipped here on the assumption
+        the record head would decode them, so the trigger/role spans the model
+        genuinely learned were never emitted and every event metric read 0.0 at
+        every threshold -- including 0.01.
+
+        Shape mirrors the span engine's ``_extract_events``:
+        ``{event_type: [{"triggers": [...], "arguments": [{"role", "entity"}]}]}``.
+        Field 0 of a group is the trigger (as in the span engine, which reads
+        ``scores[0]``); the rest are roles. A group with no trigger span is
+        dropped, matching the span engine, since gold arguments are keyed by
+        their trigger.
+
+        One instance per event type: the mention path carries no instance
+        dimension, so multi-instance separation needs the record head.
+        """
+        groups: "OrderedDict[str, List[Tuple[int, Dict[str, Any]]]]" = OrderedDict()
+        for qid, spec in enumerate(specs):
+            if spec["task_type"] == "events":
+                groups.setdefault(spec["task_name"], []).append((qid, spec))
+
+        out: Dict[str, List[Dict[str, Any]]] = {}
+        for event_type, entries in groups.items():
+            triggers: List[Any] = []
+            arguments: List[Dict[str, Any]] = []
+            for qid, spec in sorted(entries, key=lambda e: e[1]["field_index"]):
+                spans = self._query_spans(
+                    qid, sample_index, grouped_candidates, null_probs,
+                    overlap_policy, offset, start_map, end_map, text, text_len,
+                )
+                if not spans:
+                    continue
+                formatted = self._format_spans(
+                    spans, include_confidence, include_spans, already_finalized=True
+                )
+                if spec["field_index"] == 0:
+                    triggers.extend(formatted)
+                else:
+                    arguments.extend(
+                        {"role": spec["field_name"], "entity": value}
+                        for value in formatted
+                    )
+            if triggers:
+                out[event_type] = [{"triggers": triggers, "arguments": arguments}]
+        return out
 
     def _decode_classifications(
         self, sample: Dict[str, Any], batch, core: Dict[str, Any], sample_index: int,
