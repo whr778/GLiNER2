@@ -456,6 +456,20 @@ def build_model_card(
     if threshold is not None:
         source = "calibrated against the validation set" if threshold_calibrated else "config default"
         parts += [f"Decision threshold: **{threshold}** ({source}).", ""]
+        if threshold_calibrated:
+            # A per-model calibrated threshold is right for shipping THIS checkpoint and
+            # wrong for comparing checkpoints: the operating point then moves along with
+            # whatever is being compared. Two sibling models in one scaling curve landed
+            # at 0.1 and 0.3, which alone reversed the apparent ordering of their F1.
+            parts += [
+                "> **Comparing models?** This threshold was calibrated for *this* "
+                "checkpoint alone. Sibling models often calibrate elsewhere, so numbers "
+                "quoted at each model's own threshold are read at different operating "
+                "points and are not directly comparable. Fix one threshold across models "
+                "before drawing a comparison; `best/threshold_sweep.json` holds the full "
+                "sweep for exactly this.",
+                "",
+            ]
 
     blind = _metrics_table(test_metrics or {}, "Blind test (held-out test splits)")
     val = _metrics_table(eval_metrics or {}, "Best checkpoint (validation)")
