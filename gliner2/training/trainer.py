@@ -2350,9 +2350,11 @@ def train_gliner2(
     >>> dataset = TrainingDataset.load("train.jsonl")
     >>> results = train_gliner2("model-path", dataset)
     """
-    from gliner2 import GLiNER2
+    # AutoExtractor dispatches on the checkpoint's own architecture; GLiNER2 would
+    # force the span head onto a boundary checkpoint and die on config.max_width.
+    from gliner2 import AutoExtractor
 
-    model = GLiNER2.from_pretrained(model_path)
+    model = AutoExtractor.from_pretrained(model_path)
     config = TrainingConfig(output_dir=output_dir, **config_kwargs)
 
     trainer = GLiNER2Trainer(model=model, config=config)

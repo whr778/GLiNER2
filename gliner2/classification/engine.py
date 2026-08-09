@@ -80,7 +80,8 @@ class Classifier:
     @classmethod
     def from_pretrained(cls, repo_or_dir: str, *, device=None, dtype=None,
                         **kwargs) -> "Classifier":
-        from gliner2 import GLiNER2
+        # AutoExtractor so a boundary checkpoint loads too; GLiNER2 is span-only.
+        from gliner2 import AutoExtractor
         unknown = sorted(set(kwargs) - _MODEL_LOAD_OPTIONS)
         if unknown:
             raise TypeError(
@@ -88,7 +89,7 @@ class Classifier:
                 f"belong in ClassificationConfig(...) passed as config= per call. "
                 f"from_pretrained accepts only {sorted(_MODEL_LOAD_OPTIONS)}."
             )
-        model = GLiNER2.from_pretrained(repo_or_dir, **kwargs)
+        model = AutoExtractor.from_pretrained(repo_or_dir, **kwargs)
         return cls(model, device=device, dtype=dtype)
 
     # ---- lifecycle -----------------------------------------------------

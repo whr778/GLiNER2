@@ -146,7 +146,10 @@ def test_from_pretrained_splits_wrapper_and_model_options(monkeypatch):
             captured.update(path=path, kwargs=kwargs)
             return FakeModel()
 
-    monkeypatch.setattr(gliner2, "GLiNER2", Loader)
+    # AutoExtractor, not GLiNER2: the engine dispatches on the checkpoint's own
+    # architecture because the joint decode arms are trained on BOUNDARY models.
+    # Patching the wrong symbol lets the call escape to a real network fetch.
+    monkeypatch.setattr(gliner2, "AutoExtractor", Loader)
     engine = JointIE.from_pretrained("repo", quantize=True, map_location="cpu")
     assert captured == {"path": "repo", "kwargs": {"quantize": True, "map_location": "cpu"}}
     assert engine.model is not None

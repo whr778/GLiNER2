@@ -788,7 +788,7 @@ def evaluate_checkpoint(
             don't have to build the dataset themselves.
         batch_size: Inference batch size.
         threshold: Confidence threshold for prediction.
-        map_location: Forwarded to ``GLiNER2.from_pretrained``.
+        map_location: Forwarded to ``AutoExtractor.from_pretrained``.
 
     Returns:
         Same metric dict as :func:`compute_metrics`, with keys namespaced
@@ -796,10 +796,14 @@ def evaluate_checkpoint(
         with usable gold structure.
     """
     # Imported here so this module stays importable without a model checkout.
-    from gliner2 import GLiNER2
+    # AutoExtractor, not GLiNER2: GLiNER2 IS the span class and hardcodes the span
+    # head, so loading a boundary checkpoint died on `config.max_width` (a span-only
+    # field) AFTER training had fully completed and saved -- losing only the blind
+    # test, but marking the whole job failed.
+    from gliner2 import AutoExtractor
     from gliner2.training.trainer import ExtractorDataset
 
-    model = GLiNER2.from_pretrained(str(checkpoint_dir), map_location=map_location)
+    model = AutoExtractor.from_pretrained(str(checkpoint_dir), map_location=map_location)
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
     return compute_metrics(
         model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,

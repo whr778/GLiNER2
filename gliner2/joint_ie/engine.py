@@ -152,7 +152,9 @@ class JointIEEngine:
     def from_pretrained(cls, repo_or_dir: str, *, device: Any = None,
                         dtype: Any = None, **kwargs: Any) -> "JointIEEngine":
         """Load a model; prediction controls belong in ``JointIEConfig`` per call."""
-        from gliner2 import GLiNER2
+        # AutoExtractor, not GLiNER2: GLiNER2 is the span class, and the joint decode
+        # arms this engine exists to serve are trained on the BOUNDARY architecture.
+        from gliner2 import AutoExtractor
         rejected = sorted(set(kwargs) & _PREDICTION_OPTIONS)
         if rejected:
             raise TypeError(
@@ -162,7 +164,7 @@ class JointIEEngine:
         unknown = sorted(set(kwargs) - _MODEL_LOAD_OPTIONS)
         if unknown:
             raise TypeError(f"unknown from_pretrained options: {unknown}")
-        model = GLiNER2.from_pretrained(repo_or_dir, **kwargs)
+        model = AutoExtractor.from_pretrained(repo_or_dir, **kwargs)
         return cls(model, device=device, dtype=dtype)
 
     @property
