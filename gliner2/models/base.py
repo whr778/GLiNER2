@@ -9,6 +9,7 @@ own encode path until parity is proven (per the blueprint).
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import logging
 import os
@@ -194,6 +195,26 @@ class BaseExtractorModel(PreTrainedModel):
                         stacklevel=2,
                     )
         raise last_error
+
+    def _encoder_autocast(self):
+        """Autocast context the encoder needs, or a no-op.
+
+        FlashAttention 2 kernels accept only fp16/bf16, but ``_load_encoder``
+        deliberately loads weights in fp32 to match the fp32 task heads -- reduced
+        precision is applied at runtime. Training wraps the forward in autocast, so
+        FA2 sees bf16 there; INFERENCE does not, so an FA2 encoder raises
+        "FlashAttention only support fp16 and bf16 data type" on every call. That
+        breaks eval metrics (compute_metrics goes through batch_extract) and the
+        public extract path alike. Supply the missing wrapper at the encoder call.
+
+        A no-op unless the encoder actually uses flash attention on CUDA, and safe
+        to nest inside the training autocast already in effect.
+        """
+        implementation = str(getattr(self.config, "attn_implementation", "") or "")
+        device_type = next(self.parameters()).device.type
+        if "flash" not in implementation or device_type != "cuda":
+            return contextlib.nullcontext()
+        return torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
 
     def task_module_names(self) -> Tuple[str, ...]:
         raise NotImplementedError

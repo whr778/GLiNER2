@@ -1080,7 +1080,10 @@ class BoundaryExtractorModel(BaseExtractorModel):
         """
         device = next(self.parameters()).device
         batch = batch.to(device)
-        outputs = self.encoder(input_ids=batch.input_ids, attention_mask=batch.attention_mask)
+        with self._encoder_autocast():
+            outputs = self.encoder(
+                input_ids=batch.input_ids, attention_mask=batch.attention_mask
+            )
         token_embeddings = outputs.last_hidden_state
         fast_routing = (
             getattr(self.processor, "token_pooling", None) == "first"

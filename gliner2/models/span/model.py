@@ -315,10 +315,11 @@ class SpanExtractorModel(BaseExtractorModel):
             - all_schema_embs: List of schema embeddings per sample
         """
         # Forward through encoder
-        outputs = self.encoder(
-            input_ids=batch.input_ids,
-            attention_mask=batch.attention_mask
-        )
+        with self._encoder_autocast():
+            outputs = self.encoder(
+                input_ids=batch.input_ids,
+                attention_mask=batch.attention_mask
+            )
         token_embeddings = outputs.last_hidden_state
 
         # Extract embeddings using processor

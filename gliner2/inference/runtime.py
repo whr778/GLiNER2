@@ -230,11 +230,13 @@ class ExtractorRuntimeMixin:
         include_spans: bool,
     ) -> List[Dict[str, Any]]:
         """Extract from preprocessed batch (span architecture path)."""
-        all_token_embs, all_schema_embs = self.processor.extract_embeddings_from_batch(
-            self.encoder(
+        with self._encoder_autocast():
+            hidden_states = self.encoder(
                 input_ids=batch.input_ids,
                 attention_mask=batch.attention_mask
-            ).last_hidden_state,
+            ).last_hidden_state
+        all_token_embs, all_schema_embs = self.processor.extract_embeddings_from_batch(
+            hidden_states,
             batch.input_ids,
             batch
         )
