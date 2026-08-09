@@ -201,6 +201,12 @@ export default function EkfPanel() {
 
   async function run() {
     setError(null);
+    // Clear the plot for the new run. Leaving the previous run on screen while a new
+    // one is in flight reads as "these are your results" when they are the old ones.
+    // Only the SELECTION is cleared -- finished runs stay in the Runs list, so a
+    // comparison is still one checkbox away once the new run lands.
+    setSelected([]);
+    setDetail(null);
     try {
       const started = await startEkfTrack({
         feed, casualty_model: casualtyModel, window: windowMode,
