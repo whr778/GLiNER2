@@ -453,6 +453,38 @@ had never been copied to the training box, so the first regeneration silently re
 the event-free metrics with no error. A missing-path filter that drops silently is
 indistinguishable from "this corpus has no test data".
 
+### The relation head works — and curve points must be read at a MATCHED threshold
+
+The bases score ~0.01 on relations (above), which invited the reading that the relation
+head is unwired or dead. It is neither. Verified directly: `relation_scorer` is built
+(2,952,193 params), relation queries appear in the layout, `edge_targets` carries real
+positive labels, `relation_loss` is finite and `requires_grad`, and it back-propagates
+into the scorer (4 parameter tensors, total |grad| 5030). The head is fine — the *base
+curriculum* simply does not teach relations, while a Re-DocRED warm start does:
+relation F1 **0.176** (10K-based) versus ~0.01 for the bases.
+
+The warm starts then appeared to REGRESS with more base data — 0.176 (10K) → 0.136
+(40K) — which would have been a striking negative. It is an artifact. Each model
+calibrates its own decision threshold on its own val set, and the two landed at
+**different operating points**: 10K at 0.1, 40K at 0.3. A 3× threshold fully accounts
+for the recall collapse (0.193 → 0.086) and the precision jump (0.161 → 0.327).
+
+At **matched** thresholds the ordering reverses and more base data helps everywhere it
+matters:
+
+| threshold | 10K base | 40K base | Δ |
+|--:|--:|--:|--:|
+| 0.1 | 0.1637 | **0.1777** | +0.0141 |
+| 0.3 | 0.0890 | **0.1288** | +0.0398 |
+| 0.5 | 0.0301 | **0.0422** | +0.0122 |
+| 0.7 | 0.0066 | 0.0063 | −0.0003 |
+
+**Methodological rule for this paper: a per-model calibrated threshold is correct for
+shipping a checkpoint and wrong for reading a curve.** Card numbers are each model's own
+best operating point; curve comparisons must fix the threshold across points, or the
+operating point moves with the variable under study and the comparison means nothing.
+Every scaling claim here should be quoted at a stated, matched threshold.
+
 ### The defect that hid this, and why it matters methodologically
 
 Every event metric in this experiment read **0.0000 at every threshold, down to 0.01**,
