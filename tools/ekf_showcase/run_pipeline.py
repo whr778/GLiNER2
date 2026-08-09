@@ -108,15 +108,51 @@ def build_event_schema() -> Dict[str, Any]:
     return {"events": {"MassCasualtyIncident": ["casualties", "location", "cause"]}}
 
 
-def extract_events(model, texts: List[str], threshold: float) -> List[Dict[str, Any]]:
-    schema = build_event_schema()
+def extract_events(model, texts: List[str], threshold: float,
+                   schema: Optional[Dict] = None) -> List[Dict[str, Any]]:
+    schema = schema or build_event_schema()
     out = []
     for text in texts:
         try:
-            r = model.batch_extract([text], [schema], threshold=threshold)[0]
+            r = model.batch_extract([text], [schema], threshold=threshold,
+                                    include_spans=True)[0]
             out.append(r.get("event_extraction") or {})
         except Exception as exc:                      # a research checkpoint may not cope
             out.append({"_error": f"{type(exc).__name__}: {exc}"})
+    return out
+
+
+def event_envelopes(text: str, block: Dict[str, Any], margin: int = 40) -> List[Dict[str, Any]]:
+    """`min(start) .. max(end)` over each event's trigger and argument spans.
+
+    The envelope is the slice of article the event actually occupies, so downstream
+    stages see one event's text instead of the whole article. That matters because
+    qualifier and source are per-reading attributes: a whole-article view has to emit
+    one label for readings that legitimately disagree, which is why the whole-text
+    keyword scan scores ~0.49 on source. An event-derived envelope is semantically
+    bounded rather than a fixed character window.
+
+    ``margin`` pads each side, since the hedge ("officials said", "feared") often sits
+    just outside the annotated spans.
+    """
+    out = []
+    for etype, instances in (block or {}).items():
+        if etype.startswith("_") or not isinstance(instances, list):
+            continue
+        for inst in instances:
+            offsets = []
+            for t in inst.get("triggers") or []:
+                if isinstance(t, dict) and "start" in t:
+                    offsets.append((t["start"], t["end"]))
+            for a in inst.get("arguments") or []:
+                e = a.get("entity")
+                if isinstance(e, dict) and "start" in e:
+                    offsets.append((e["start"], e["end"]))
+            if not offsets:
+                continue
+            lo = max(0, min(o[0] for o in offsets) - margin)
+            hi = min(len(text), max(o[1] for o in offsets) + margin)
+            out.append({"event_type": etype, "start": lo, "end": hi, "text": text[lo:hi]})
     return out
 
 
@@ -234,6 +270,9 @@ def main() -> None:
     # Event models are 3-4x SLOWER on MPS than CPU (per-op sync overhead), so cpu is the
     # default rather than "best available".
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--window", choices=("article", "event"), default="article",
+                    help="event: pass each event's min(start)..max(end) envelope to "
+                         "stages 2-3 instead of the whole article (needs --event-model)")
     ap.add_argument("--limit", type=int, default=0, help="first N articles only (smoke test)")
     args = ap.parse_args()
 
@@ -279,14 +318,19 @@ def main() -> None:
         entry = {"t_hours": row["t_hours"], "text": row["text"], **gates[i],
                  "events": events[i], "observations": []}
         if gates[i]["relevant"]:
-            rec = (cas_model.extract(row["text"], cas_schema, include_confidence=True)
+            # --window event: hand stage 2/3 the event's own envelope instead of the whole
+            # article, so per-reading attributes are judged on per-event text.
+            envelopes = event_envelopes(row["text"], events[i]) if args.window == "event" else []
+            entry["envelopes"] = envelopes
+            read_text = envelopes[0]["text"] if envelopes else row["text"]
+            rec = (cas_model.extract(read_text, cas_schema, include_confidence=True)
                    .get("casualty_report") or [{}])[0]
             for role in ROLES:
                 span, conf = _cell(rec.get(role))
                 if not span:
                     continue
                 for mode in modes:
-                    value, qual, src = normalize(row["text"], span, mode, gate_model, cls_schema)
+                    value, qual, src = normalize(read_text, span, mode, gate_model, cls_schema)
                     o = {"t_hours": row["t_hours"], "role": role, "value": value,
                          "qualifier": qual, "source": src, "confidence": conf,
                          "span": span, "mode": mode}
