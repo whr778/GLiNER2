@@ -26,11 +26,11 @@ covers both. A win on only one face is a weaker but still reportable result; the
 negative — that global decoding helps relations and not events, or the reverse — is itself
 the finding, because it localizes where greedy per-query decoding actually costs you.
 
-> **Provisional first point (§4b):** the 10K *boundary* base already reaches RAMS argument
-> F1 **0.182**, above the span curve's ~100K point (0.158) and 3.6× its own 10K point
+> **First measured point (§4b):** the 10K *boundary* base reaches RAMS argument F1
+> **0.177**, above the span curve's ~100K point (0.158) and 3.5× its own 10K point
 > (0.050) — on ~27% fewer event records. If it holds at 40K/100K, the head-init deficit is
-> largely an artifact of the **span head**, not a data-volume law. One point, greedy arm
-> only, not yet metric-selected; see §4b before citing.
+> largely an artifact of the **span head**, not a data-volume law. Metric-selected, but
+> still one point and the greedy arm only; see §4b before citing.
 
 This is also what makes the line the *document-level* half of the program
 ([[RESEARCH_PROGRAM]]): [[EKF_MHT_DESIGN]] carries events **beyond** the document via a
@@ -389,11 +389,11 @@ directly comparable:
 | 10K | span (prior curve) | 0.050 | 0.598 | 0.952 |
 | 40K | span (prior curve) | 0.115 | 0.706 | 0.931 |
 | ~100K | span (prior curve) | 0.158 | 0.732 | 0.949 |
-| **10K** | **boundary (this work)** | **0.182** | **0.764** | **0.946** |
+| **10K** | **boundary (this work)** | **0.177** | **0.764** | **0.913** |
 
-**The boundary 10K point beats the span 100K point on arguments (0.182 vs 0.158) and
+**The boundary 10K point beats the span 100K point on arguments (0.177 vs 0.158) and
 on triggers (0.764 vs 0.732)** — at roughly a tenth of the Stage-A volume. Against the
-span curve's own 10K point the argument head is **3.6× higher** (0.182 vs 0.050), which
+span curve's own 10K point the argument head is **3.5× higher** (0.177 vs 0.050), which
 is the more direct reading: at 10K the span architecture's argument head had not moved
 off its N=0 floor at all, while the boundary head is already past the span curve's
 100K value.
@@ -411,11 +411,16 @@ from "mmBERT needs ≥40K of structure/argument warming" to "mmBERT needs a boun
 head; warming is a much weaker second-order effect."
 
 **Why provisional — do not cite yet:**
-- Measured on `final/` (epoch 15), *not* a metric-selected `best/`. The selection metric
-  was structurally 0.0 at the time (see the decode defect below), so `best/` was pinned
-  to epoch 1 and is meaningless. This point is being retrained with working selection.
-- Decision threshold 0.3, not the per-model calibrated threshold the span curve used.
+- **Now metric-selected.** The point was retrained once the decode defect was fixed, so
+  `eval_event_argument_strict_micro_f1` is live during training and `best/` is a real
+  selection rather than epoch 1. The earlier provisional figure (0.182) came from
+  `final/`; the metric-selected `best/` gives **0.177**, and event_type moves 0.946 →
+  0.913. Normal val/test variance — the comparison against 0.158 survives either way,
+  and 0.177 is the number to cite because it is the checkpoint one would ship.
+- Decision threshold 0.3 (calibrated on val), not the per-model threshold the span
+  curve used.
 - One point. The claim above is a *conditional* — 40K and 100K are still running.
+- Greedy arm only; the beam arm is not yet measured.
 
 ### The defect that hid this, and why it matters methodologically
 

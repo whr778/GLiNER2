@@ -109,13 +109,13 @@ data:
     - data/scaling_joint/bio_ner_relations.j10k
     - data/scaling_joint/biored.j10k
   event_files:
-    chfinann:        {train: data/scaling_joint/chfinann.j10k.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl}
-    docee:           {train: data/scaling_joint/docee.j10k.train.jsonl, val: data/scaling_joint/docee.val.jsonl}
-    docfee:          {train: data/scaling_joint/docfee.j10k.train.jsonl, val: data/scaling_joint/docfee.val.jsonl}
+    chfinann:        {train: data/scaling_joint/chfinann.j10k.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/scaling_joint/chfinann.j10k.test.jsonl}
+    docee:           {train: data/scaling_joint/docee.j10k.train.jsonl, val: data/scaling_joint/docee.val.jsonl, test: data/scaling_joint/docee.j10k.test.jsonl}
+    docfee:          {train: data/scaling_joint/docfee.j10k.train.jsonl, val: data/scaling_joint/docfee.val.jsonl, test: data/scaling_joint/docfee.j10k.test.jsonl}
     duee:            {train: data/scaling_joint/duee.j10k.train.jsonl, val: data/scaling_joint/duee.val.jsonl}
-    cmnee:           {train: data/scaling_joint/cmnee.j10k.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl}
-    text2json:       {train: data/scaling_joint/text2json.j10k.train.jsonl, val: data/scaling_joint/text2json.val.jsonl}
+    cmnee:           {train: data/scaling_joint/cmnee.j10k.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl, test: data/scaling_joint/cmnee.j10k.test.jsonl}
+    text2json:       {train: data/scaling_joint/text2json.j10k.train.jsonl, val: data/scaling_joint/text2json.val.jsonl, test: data/scaling_joint/text2json.j10k.test.jsonl}
     maven:           {train: data/scaling_joint/maven.j10k.train.jsonl}
-    events_biotech:  {train: data/scaling_joint/events_biotech.j10k.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl}
-    mendeley_ed:     {train: data/scaling_joint/mendeley_ed.j10k.train.jsonl, val: data/scaling_joint/mendeley_ed.val.jsonl}
-    casie:           {train: data/scaling_joint/casie.j10k.train.jsonl, val: data/scaling_joint/casie.val.jsonl}
+    events_biotech:  {train: data/scaling_joint/events_biotech.j10k.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl, test: data/scaling_joint/events_biotech.j10k.test.jsonl}
+    mendeley_ed:     {train: data/scaling_joint/mendeley_ed.j10k.train.jsonl, val: data/scaling_joint/mendeley_ed.val.jsonl, test: data/scaling_joint/mendeley_ed.j10k.test.jsonl}
+    casie:           {train: data/scaling_joint/casie.j10k.train.jsonl, val: data/scaling_joint/casie.val.jsonl, test: data/scaling_joint/casie.j10k.test.jsonl}

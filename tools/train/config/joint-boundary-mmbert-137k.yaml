@@ -114,13 +114,13 @@ data:
     - data/bio_ner_relations
     - data/biored
   event_files:
-    chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl}
-    docee:           {train: data/docee.train.jsonl, val: data/scaling_joint/docee.val.jsonl}
-    docfee:          {train: data/docfee.train.jsonl, val: data/scaling_joint/docfee.val.jsonl}
+    chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}
+    docee:           {train: data/docee.train.jsonl, val: data/scaling_joint/docee.val.jsonl, test: data/docee.test.jsonl}
+    docfee:          {train: data/docfee.train.jsonl, val: data/scaling_joint/docfee.val.jsonl, test: data/docfee.test.jsonl}
     duee:            {train: data/duee.train.jsonl, val: data/scaling_joint/duee.val.jsonl}
-    cmnee:           {train: data/cmnee.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl}
-    text2json:       {train: data/text2json.train.jsonl, val: data/scaling_joint/text2json.val.jsonl}
+    cmnee:           {train: data/cmnee.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl, test: data/cmnee.test.jsonl}
+    text2json:       {train: data/text2json.train.jsonl, val: data/scaling_joint/text2json.val.jsonl, test: data/text2json.test.jsonl}
     maven:           {train: data/maven.train.jsonl}
-    events_biotech:  {train: data/events_biotech.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl}
-    mendeley_ed:     {train: data/mendeley_ed.train.jsonl, val: data/scaling_joint/mendeley_ed.val.jsonl}
-    casie:           {train: data/casie.train.jsonl, val: data/scaling_joint/casie.val.jsonl}
+    events_biotech:  {train: data/events_biotech.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl, test: data/events_biotech.test.jsonl}
+    mendeley_ed:     {train: data/mendeley_ed.train.jsonl, val: data/scaling_joint/mendeley_ed.val.jsonl, test: data/mendeley_ed.test.jsonl}
+    casie:           {train: data/casie.train.jsonl, val: data/scaling_joint/casie.val.jsonl, test: data/casie.test.jsonl}
