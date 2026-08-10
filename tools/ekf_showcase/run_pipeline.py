@@ -494,8 +494,31 @@ def track(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
     return series
 
 
+def merge_prefix_keys(observations: List[Dict]) -> None:
+    """Fold `Earthquakes|syr` into `Earthquakes|syria`, in place.
+
+    A clipped span is the same place under a shorter name, and splitting on it costs
+    observations to a stream too small to track: on the Turkiye-Syria feed 2 of Syria's
+    16 readings landed under `syr`. Merge only when one key is a strict PREFIX of a
+    longer one with the same event type -- that catches truncation without asserting
+    that similar-looking places are the same place.
+    """
+    keys = {o.get("event_key", "all") for o in observations}
+    canon = {}
+    for k in keys:
+        longer = [c for c in keys
+                  if c != k and c.startswith(k) and "|" in k and len(c) > len(k)]
+        if longer:
+            canon[k] = min(longer, key=len)
+    for o in observations:
+        k = o.get("event_key", "all")
+        if k in canon:
+            o["event_key"] = canon[k]
+
+
 def track_by_event(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
     """One tracked stream per association key, largest first."""
+    merge_prefix_keys(observations)
     streams: Dict[str, List[Dict]] = {}
     for o in observations:
         streams.setdefault(o.get("event_key", "all"), []).append(o)
