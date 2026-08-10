@@ -31,16 +31,23 @@ MHT's hypothesis beam and joint_ie's constraint beam are the **same machinery**;
 head is the shared substrate — it removed the span 19-instance cap that made either impossible
 ([[COUNTING_LAYER]]).
 
-### A sharpening under test (provisional, 2026-08-09)
+### A sharpening, now CONFIRMED (2026-08-10)
 
-The first measured boundary point ([[JOINT_IE_SCALING]] §4b) reaches RAMS argument F1 **0.182**
-at a 10K base — above the *span* curve's ~100K point (0.158), on ~27% fewer event records. If
-that holds at 40K/100K, the head-init deficit that motivated the scaling curve is largely an
-artifact of the **span head's fixed-width enumeration**, not a data-volume law. That would make
-"which head" a first-order claim for Paper 0 and reframe Paper 2's curve as
-*architecture × decode* rather than *data × decode*. One point, greedy arm only, not yet
-metric-selected — it does not change the thesis yet, and is recorded here so it is not
-quietly forgotten if it survives.
+It held. The full 12-arm curve completed 2026-08-10 ([[JOINT_IE_SCALING]] "The curve
+completes"), all points threshold-matched at 0.3. The *boundary* warm start reaches RAMS
+argument F1 **0.177 at 10K** — above the *span* curve's ~100K point (0.158) — and then
+barely moves: 0.191 / 0.202 / 0.192 through 137K. The span curve over the same range climbs
++216% and is still rising.
+
+So the head-init deficit that motivated the scaling curve is largely an artifact of the
+**span head's fixed-width enumeration**, not a data-volume law about mmBERT. "Which head"
+is a first-order claim for Paper 0, and Paper 2's curve is *architecture × decode* rather
+than *data × decode*.
+
+A second finding came with it: the cold base is **still climbing at 137K** (0.010 → 0.098)
+while the warm start is flat from 100K. Warm-starting and base-scaling are complements with
+different exhaustion points, not two routes to the same place. Greedy arm only — the beam
+arm remains unmeasured.
 
 ## The three papers
 
@@ -106,8 +113,10 @@ statement.
    attribution mechanism (the §10/MHT crux), not more extractor fine-tuning. Venezuela
    remains the blind test; it is no longer the *only* thing standing between here and a
    paper.
-3. **Paper 2** — joint_ie line: Phase A curve **running** (4 base sizes × RAMS/Re-DocRED warm
-   starts, greedy vs beam) → greedy-vs-beam comparison → (Phase B) joint training → write.
+3. **Paper 2** — joint_ie line: Phase A curve **COMPLETE** (12/12 arms, ~23h on one H100,
+   all on HF). The base-volume × architecture result is in hand; the **greedy-vs-beam
+   comparison is still unmeasured**, and that is the actual Phase A question — every number
+   so far is the greedy arm. Then (Phase B) joint training → write.
 
 ## Graduation rule
 
