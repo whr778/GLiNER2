@@ -37,7 +37,15 @@ dependencies = [
     # wheels stop at cp313/torch2.9, so on torch 2.11+cu128 this is the only way to
     # get FA2 -- and for the boundary architecture FA2 is required for correctness,
     # not just speed: sdpa+bf16 on mmBERT goes non-finite (measured, 1x H100).
-    # Range is transformers' own constraint; 0.16 breaks its import.
+    # kernels is pinned to TRANSFORMERS, not to itself: the compatible range moves with
+    # every transformers release. transformers 5.6 needs <0.13 (LayerRepository takes no
+    # revision); 5.13 needs >=0.15.2 and REJECTS 0.12. The two ranges are disjoint, so
+    # transformers must be pinned alongside it or the pair silently drifts apart.
+    #
+    # It drifted on 2026-08-10 and cost a GPU run: a fresh box resolved transformers to
+    # 5.13 while this pin still said <0.13, kernels never hooked, the encoder fell back to
+    # sdpa, and bf16 ModernBERT went non-finite at ~step 50 after running 11x slow
+    # (4.6 vs 51.4 samples/s). The only warning was one RuntimeWarning in the log.
     "kernels>=0.12,<0.13",
     "langcodes[data]",
     "lumi-language-id-2",
@@ -58,7 +66,11 @@ dynamic = ["version"]
 [project.optional-dependencies]
 local = [
     "torch",
-    "transformers",
+    # Pinned, and pinned TOGETHER with kernels above. Leaving this open is what broke
+    # the 2026-08-10 GPU run: a fresh box resolved 5.13 while the kernels pin still
+    # matched 5.6, so FA2 never hooked and bf16 ModernBERT went non-finite. Moving this
+    # range REQUIRES moving the kernels range in the same commit.
+    "transformers>=5.6,<5.7",
     "peft",
 ]
 

@@ -185,12 +185,32 @@ class BaseExtractorModel(PreTrainedModel):
             except (TypeError, ValueError, ImportError) as error:
                 last_error = error
                 if index + 1 < len(candidates):
+                    # A silent downgrade is how a whole training run gets lost. Measured
+                    # 2026-08-10: a stale `kernels` pin (0.12 against transformers 5.13,
+                    # which needs >=0.15.2) made FA2 unavailable, the loader fell back to
+                    # sdpa, and the run died at step ~50 with non-finite losses after
+                    # running 11x slow -- 4.6 samples/s where FA2 gives 51.4. The only
+                    # evidence beforehand was this one warning in a log full of them.
+                    #
+                    # So callers that require FA2 can demand it: GLINER2_STRICT_ATTN=1
+                    # turns the downgrade into a failure at load time, before any GPU
+                    # hours are spent. Default stays permissive because deberta-v2
+                    # supports neither FA2 nor sdpa and must reach eager.
+                    if os.environ.get("GLINER2_STRICT_ATTN") and index == 0:
+                        raise RuntimeError(
+                            f"attn_implementation={implementation!r} unavailable and "
+                            f"GLINER2_STRICT_ATTN is set, so the {candidates[index + 1]!r} "
+                            f"fallback is refused: on a bf16 ModernBERT that fallback is a "
+                            f"CORRECTNESS failure (non-finite losses), not a slowdown. "
+                            f"Underlying error: {error}"
+                        ) from error
                     warnings.warn(
                         f"Encoder rejected attn_implementation={implementation!r}; "
                         f"falling back to {candidates[index + 1]!r} ({error}). On a "
                         f"ModernBERT encoder trained in bf16 this is a correctness "
                         f"issue, not just speed: sdpa+bf16 there produces non-finite "
-                        f"losses (measured), so install 'kernels' to keep FA2.",
+                        f"losses (measured), so install 'kernels' to keep FA2. Set "
+                        f"GLINER2_STRICT_ATTN=1 to make this an error instead.",
                         RuntimeWarning,
                         stacklevel=2,
                     )
