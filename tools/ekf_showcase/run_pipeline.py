@@ -449,7 +449,9 @@ def main() -> None:
     ap.add_argument("--out", default="datasets/ekf_showcase/tracked.json")
     ap.add_argument("--gate-model", default="fastino/gliner2-base-v1",
                     help="general model for the relevance gate + normalizer classification")
-    ap.add_argument("--casualty-model", default="whr778/gliner2-base-v1-casualty")
+    ap.add_argument("--casualty-model", default="whr778/gliner2-base-v1-casualty-docee",
+                    help="best on all three showcase gates: multi-event correct 0.450, "
+                         "wrong-event 0.181, single-event 1.000")
     ap.add_argument("--event-model", default=None,
                     help="boundary checkpoint for stage 1; omit to skip event extraction")
     ap.add_argument("--normalizer", choices=("heuristic", "classify", "hybrid", "both"), default="heuristic")

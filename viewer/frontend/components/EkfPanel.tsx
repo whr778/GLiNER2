@@ -173,7 +173,7 @@ function ArticleDetail({ run, index, onClose }: { run: Run; index: number; onClo
 export default function EkfPanel() {
   const [feeds, setFeeds] = useState<EkfFeed[]>([]);
   const [feed, setFeed] = useState("");
-  const [casualtyModel, setCasualtyModel] = useState("whr778/gliner2-base-v1-casualty");
+  const [casualtyModel, setCasualtyModel] = useState("whr778/gliner2-base-v1-casualty-docee");
   const [eventModel, setEventModel] = useState("");
   const [windowMode, setWindowMode] = useState("article");
   const [normalizer, setNormalizer] = useState("hybrid");

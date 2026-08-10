@@ -230,7 +230,7 @@ class EkfRequest(BaseModel):
     feed: str
     truth: Optional[str] = None
     gate_model: str = "fastino/gliner2-base-v1"
-    casualty_model: str = "whr778/gliner2-base-v1-casualty"
+    casualty_model: str = "whr778/gliner2-base-v1-casualty-docee"
     event_model: Optional[str] = None
     window: str = "article"
     normalizer: str = "hybrid"
