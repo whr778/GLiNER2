@@ -79,12 +79,30 @@ def main() -> None:
     # Aggregate-vs-parts: a national total filed under one state is a specific error.
     totals = truth.get("Total", [])
     total_vals = {v for _, v in totals}
+    # A single-state stream is any key that is not the national scope. The earlier test
+    # required "|" in the key, which silently stopped matching once --rollup collapsed the
+    # event type and left a bare place -- reporting 0 misfiled totals while North Carolina's
+    # stream held 227, 230 and 250. A structural assumption about the key FORMAT quietly
+    # disabled the check that matters most.
+    state_names = {s.lower() for s in STATES}
     mis = [o for o in obs if int(o["value"]) in total_vals
-           and "|" in str(o.get("event_key", "")) ]
+           and str(o.get("event_key", "")).split("|")[-1].strip().lower() in state_names]
     print(f"[aggregate] observations whose value equals a NATIONAL TOTAL but are filed "
           f"under a single state: {len(mis)}")
     for o in mis[:6]:
         print(f"    t={o['t_hours']:>7.1f}h  value={int(o['value']):>4}  key={o['event_key']}")
+
+    # The national scope is scored against Total, not against a state -- comparing an
+    # aggregate to the nearest state is how a correct stream gets called wrong.
+    agg = res["tracked_by_event"][args.mode].get("__aggregate__")
+    if agg and "Total" in truth:
+        r = agg.get(args.role, {})
+        if r.get("ekf"):
+            e = nrmse(r["ekf"], truth["Total"], grid)
+            l = nrmse(r["last_value"], truth["Total"], grid)
+            print(f"\n[national] __aggregate__ n={r['n_obs']} vs the Total series: "
+                  f"ekf={e:.3f}  last_value={l:.3f}  "
+                  f"({'EKF' if e < l else 'last_value'} wins)")
 
     streams = res["tracked_by_event"][args.mode]
     print(f"\n[streams] {len(streams)} association key(s)")
