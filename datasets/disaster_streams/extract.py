@@ -61,16 +61,71 @@ def _detect_qualifier(t: str) -> str:
     return "point"
 
 
+# Spelled-out numbers. News prose writes small tolls as words -- "two people were
+# killed" -- and reading only digits turned every one of them into a FABRICATED ZERO.
+# Measured on the Helene feed once extract_long read whole articles rather than the lead:
+# 30 of 114 `dead` observations (26%) were zeros produced this way, from spans like
+# 'two', 'three', 'One', 'Nine', 'six'. A real extraction became a report of no deaths,
+# which is worse than missing it -- the filter cannot tell the difference.
+_UNITS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+    "eighteen": 18, "nineteen": 19,
+}
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+         "seventy": 70, "eighty": 80, "ninety": 90}
+_SCALES = {"hundred": 100, "thousand": 1000, "million": 1_000_000}
+
+
+def word_number(text: str) -> Optional[int]:
+    """Spelled-out cardinal in `text`, or None. Handles 'twenty-three', 'two hundred'.
+
+    Returns None rather than 0 when nothing parses, so "no number here" stays
+    distinguishable from "the number is zero" -- collapsing those is the defect this
+    exists to fix.
+    """
+    tokens = re.findall(r"[a-z]+", text.lower().replace("-", " "))
+    total = current = 0
+    seen = False
+    for tok in tokens:
+        if tok in _UNITS:
+            current += _UNITS[tok]; seen = True
+        elif tok in _TENS:
+            current += _TENS[tok]; seen = True
+        elif tok in _SCALES:
+            if not seen:                      # "hundreds of" is a BUCKET, not a count
+                return None
+            scale = _SCALES[tok]
+            if scale == 100:
+                current *= scale
+            else:
+                total += max(current, 1) * scale
+                current = 0
+        elif tok in ("and",) and seen:
+            continue
+        elif seen:
+            break                              # the number ended; do not run on
+    return (total + current) if seen else None
+
+
 def value_qualifier(text: str):
     """Normalize a span/snippet to (value, qualifier). The normalization layer (design
-    #9): reused both by the surface parser and to parse a model-bound field span."""
+    #9): reused both by the surface parser and to parse a model-bound field span.
+
+    A value of 0 now means the text really said zero. When nothing parses at all the
+    value is None, and callers drop the observation instead of recording a phantom
+    report of no casualties.
+    """
     qual = _detect_qualifier(text)
     if qual == "interval":
         tl = text.lower()
         bucket = next((b for b in _BUCKET_VALUE if b in tl), "few")
         return _BUCKET_VALUE[bucket], qual
     m = re.search(r"\d[\d,]*", text)
-    return (int(m.group(0).replace(",", "")) if m else 0), qual
+    if m:
+        return int(m.group(0).replace(",", "")), qual
+    return word_number(text), qual
 
 
 def qualifier_near(text: str, span: str, left: int = 45, right: int = 8) -> str:
@@ -109,8 +164,11 @@ def evaluate_extraction(split_dir: Path) -> None:
         for f in hit:
             hit[f] += int(r[f] == o[f])
         q = o["qualifier"]; bq = by_qual[q]; bq["n"] += 1
-        bq["val_exact"] += int(r["value"] == o["value"])
-        bq["val_relabs"] += abs(r["value"] - o["value"]) / max(o["value"], 1)
+        # value is None when nothing parsed. Score it as a MISS rather than crashing or
+        # coercing to 0 -- coercion is exactly the confusion this change removes.
+        bq["val_exact"] += int(r["value"] is not None and r["value"] == o["value"])
+        bq["val_relabs"] += (abs(r["value"] - o["value"]) / max(o["value"], 1)
+                             if r["value"] is not None else 1.0)
 
     print(f"\n== extraction on {split_dir} ({total} observations) ==\n")
     for f in ("role", "qualifier", "source"):

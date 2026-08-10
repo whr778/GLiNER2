@@ -299,8 +299,8 @@ def _from_text(obs):
         for _, lst in by_role.items():
             for o in lst:
                 r = extract.extract_obs(extract._render(o))
-                if r["role"] is None:
-                    continue
+                if r["role"] is None or r["value"] is None:
+                    continue          # no parsable number is not an observation of zero
                 new[sid][r["role"]].append({**o, **r})
     return new
 

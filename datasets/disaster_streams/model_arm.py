@@ -71,10 +71,14 @@ def normalize(text: str, spans: dict, source_span: str, thr: float):
     out = {}
     for role in ROLES:
         span, conf = spans[role]["span"], spans[role]["confidence"]
-        if conf >= thr and any(c.isdigit() for c in span):
+        # The old `any(c.isdigit())` gate silently dropped spelled-out tolls ("two
+        # people were killed"). value_qualifier now parses those, and returns None when
+        # nothing parses -- so gate on the VALUE rather than on the characters.
+        if conf >= thr:
             v, _ = extract.value_qualifier(span)
-            out[role] = {"value": v, "qualifier": extract.qualifier_near(text, span),
-                         "confidence": conf}
+            if v is not None:
+                out[role] = {"value": v, "qualifier": extract.qualifier_near(text, span),
+                             "confidence": conf}
     src = extract._detect_source(source_span) if source_span else None
     return out, src
 

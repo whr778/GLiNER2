@@ -338,6 +338,11 @@ def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
             continue
         for mode in modes:
             value, qual, src = normalize(read_text, span, mode, cls_model, cls_schema)
+            if value is None:
+                # No number in the span at all. Emitting 0 here is what turned 30 of 114
+                # Helene observations into fabricated reports of no deaths; a missing
+                # observation is recoverable, an invented zero is not.
+                continue
             o = {"t_hours": row["t_hours"], "role": role, "value": value,
                  "qualifier": qual, "source": src, "confidence": conf,
                  "span": span, "mode": mode, "event_key": event_key}
@@ -574,7 +579,11 @@ def main() -> None:
                          "pairs. The default 60 sits in the starved regime")
     ap.add_argument("--lead-chars", type=int, default=1100,
                     help="with --window lead: how much of the article head to read")
-    ap.add_argument("--window", choices=("article", "event", "lead"), default="article",
+    ap.add_argument("--chunk-size", type=int, default=200,
+                    help="with --window long: words per chunk. 200 is the measured band; "
+                         "the library default 384 loses one binding on Turkiye")
+    ap.add_argument("--chunk-overlap", type=int, default=50)
+    ap.add_argument("--window", choices=("article", "event", "lead", "long"), default="article",
                     help="event: pass each DocEE 'Casualties and Losses' window to stages "
                          "2-3 instead of the whole article (needs --event-model)")
     ap.add_argument("--limit", type=int, default=0, help="first N articles only (smoke test)")
@@ -625,6 +634,25 @@ def main() -> None:
         if gates[i]["relevant"]:
             # --window event: hand stage 2/3 the event's own envelope instead of the whole
             # article, so per-reading attributes are judged on per-event text.
+            if args.window == "long":
+                # extract_long chunks the WHOLE document with overlap and merges, so it
+                # reads text the lead window never sees. Proven on Turkiye: 16/16 on both
+                # countries over the full article at chunk_size 200, versus 15/16 at the
+                # default 384 -- the framing curve's band, not a guess.
+                records = (cas_model.extract_long(
+                    row["text"], cas_schema, threshold=args.event_threshold,
+                    chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
+                ).get("casualty_report") or [])
+                entry["envelopes"] = [{"text": f"<extract_long chunks of {args.chunk_size} words>"}]
+                for rec in records:
+                    key = (record_key(events[i], rec) if args.associate == "record"
+                           else association_key(events[i], args.associate, {}))
+                    _emit(rec, row["text"], row, entry, modes, per_mode,
+                          gate_model, cls_schema, event_key=key)
+                articles.append(entry)
+                if (i + 1) % 20 == 0:
+                    print(f"           {i + 1}/{len(feed)} articles")
+                continue
             if args.window == "lead":
                 # The article LEAD, not envelopes scattered through the whole piece.
                 # Measured on Turkiye-Syria: reading standfirst + ~1000 chars with a
