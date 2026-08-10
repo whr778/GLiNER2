@@ -430,7 +430,71 @@ distribution) — **Venezuela (real news) remains the true generalization test**
 end of the synthetic arc: text → extraction → tracking, held-out, at ~1.4× the clean-obs
 ceiling.
 
-## 21. References
+## 21. Turkiye–Syria 2023 — the first real event, and the first real defeat
+
+Everything above §20 was measured on text we generated. This is the arc's first run
+against a real event with an externally sourced trajectory, and it **reverses the
+standing conclusion**: on real news the EKF *loses to the trivial baseline*, and the
+binding component that §17–§20 spent the most effort on is not the thing that breaks.
+
+Full write-up and provenance: `datasets/turkey2023/{PREREGISTRATION,RESULTS}.md`. The
+configuration and four predictions were committed **before** the run.
+
+**Ground truth.** 16 daily points, 6–21 Feb 2023, one Al Jazeera live-tracker page
+sampled through the Wayback Machine, one archive URL per point. Turkiye 1,014 → 41,000,
+Syria 783 → 5,800, both monotonic. Truncated at 21 Feb, where the page froze at 41,000
+and reported it into April while the real toll reached 53,537 — the *source* going stale,
+not the event plateauing. Search-result summaries were rejected as a source outright after
+they disagreed with each other on the same dates.
+
+**Results** (`dead`, nRMSE vs the Turkiye trajectory, 6-hour grid):
+
+| Run | Streams | EKF | `last_value` | 1999 toll bound |
+|---|---|---|---|---|
+| Pre-registered config | 1 | 0.288 | 0.343 | 12 / 20 obs |
+| `+ --event-model` | 1 | 0.208 | **0.136** | 16 / 91 obs |
+| `+ --associate envelope` | 5 | 0.228 / 0.196 | — | 16 / 91 obs |
+
+Three findings, in order of how much they should change what we do next:
+
+1. **Attribution is the bottleneck — not extraction, not the filter.** Extraction reads
+   the real trajectory almost point-for-point (1,014 / 2,316 / 5,434 / 9,057 / 17,674 /
+   … / 41,020). The filter is sound on clean observations (§14). What fails is deciding
+   *which event a number belongs to*.
+2. **The tracker loses to "repeat the last number you read"** (0.208 vs 0.136), ending at
+   26,972 against a truth of 41,000 while the baseline ends at 40,642. Not because the
+   filter is wrong, but because its noise model assumes error roughly zero-mean about the
+   truth, and the observation stream is *contaminated*, not noisy.
+3. **A death toll from a different earthquake is tracked as this one.** The article's
+   historical round-up mentions the 1999 Izmit quake's 17,500 dead; that value is bound
+   as a 2023 observation in every configuration, and is the single most frequent value in
+   the set. The gate answers "is this article about a mass-casualty event" (correctly,
+   16/16). Nothing answers "does this number belong to *that* event."
+
+**Syria is never recovered.** `association_key` was computed once per *document*, outside
+the envelope loop, while `casualty_windows` directly above builds one envelope per
+incident. Every article names Turkey before Syria, so all 16 documents keyed to
+`Earthquakes|turkey`. Syria *was* detected — 123 location spans — it never reached the key.
+Keying per envelope by nearest location (`--associate envelope`, opt-in) splits the feed
+into 5 streams and still does not fix it: the resulting `syria` stream carries 17,674,
+20,213, 35,418 and 41,000. Character distance is not syntactic attachment.
+
+**This is the §10 crux arriving in the wild.** The file already reserved genuine
+attachment ambiguity for MHT proper. Turkiye–Syria says that case is not exotic — it is
+what one ordinary news sentence looks like: *"At least 41,000 deaths have been reported
+in Turkey, while 5,800 people have died in Syria."*
+
+**Method note that outlived the experiment.** A pre-registered prediction *failed*: pooling
+was predicted to drive nRMSE past 1.0 and it read 0.288. Range-normalized RMSE never
+noticed that 12 of 20 readings came from a 1999 earthquake, because 17,500 happens to sit
+mid-range of a 1,014 → 41,000 trajectory. **A badly wrong observation scored well.** Only
+carrying `est_last_value` alongside exposed it. Report the baseline, always.
+
+**Caveat.** Known-answer, not blind: Feb 2023 precedes the assistant's cutoff, which is
+why every figure is sourced and cited rather than written from memory. §12's Venezuela
+2026 remains the genuinely blind test.
+
+## 22. References
 
 - **Kozak, M. C. "Multiple Model Methods for Cost Function Based Multiple Hypothesis
   Trackers." 2012.**

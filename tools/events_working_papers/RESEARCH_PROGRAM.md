@@ -74,6 +74,7 @@ statement.
 | [[BOUNDARY_DECODE_AND_EKF]] | 1, 2 | verified boundary decode map + where global inference plugs in |
 | [[EKF_MHT_DESIGN]] §1-13 | 1 | tracker design + decisions |
 | [[EKF_MHT_DESIGN]] §14-20 | 1 | **results** (regime ablation, learned gate, normalization, model arm, missing probe, fine-tuned extractor) |
+| [[EKF_MHT_DESIGN]] §21 | 1 | **first real event** (Turkiye–Syria 2023): pre-registered, negative, attribution is the bottleneck |
 | [[JOINT_IE_SCALING]] §1-3c | 2 | thesis + boundary wiring (events, relations, structures in one beam) |
 | [[JOINT_IE_SCALING]] §4, §4b | 2 | experiment design + **first measured point** |
 | [[KALMAN_BEAM_SEARCH_EXPLORATION]] | 1 (+ framing) | the beam↔filter origin analysis |
@@ -97,7 +98,13 @@ statement.
 
 1. **Paper 0** — finish the existing draft (it's the substrate; no new runs). If §4b survives,
    add the head-architecture claim to §10.
-2. **Paper 1** — EKF line: fine-tuned extractor **done** (§20) → Venezuela double-blind → write.
+2. **Paper 1** — EKF line: fine-tuned extractor **done** (§20); first real event **run and
+   lost** ([[EKF_MHT_DESIGN]] §21, Turkiye–Syria 2023). The tracker is beaten by
+   `est_last_value` on real news (0.208 vs 0.136) and a 1999 death toll is tracked as a
+   2023 one. **Attribution, not filtering, is the bottleneck** — so the next step is an
+   attribution mechanism (the §10/MHT crux), not more extractor fine-tuning. Venezuela
+   remains the blind test; it is no longer the *only* thing standing between here and a
+   paper.
 3. **Paper 2** — joint_ie line: Phase A curve **running** (4 base sizes × RAMS/Re-DocRED warm
    starts, greedy vs beam) → greedy-vs-beam comparison → (Phase B) joint training → write.
 
