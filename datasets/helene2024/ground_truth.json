@@ -1,0 +1,452 @@
+{
+  "event": "Hurricane Helene (2024)",
+  "onset_utc": "2024-09-26T23:10:00Z",
+  "source": "English Wikipedia casualty table, sampled via the Wayback Machine",
+  "note": "per-state streams plus a Total row; the total is an AGGREGATE of the parts",
+  "points": [
+    {
+      "snapshot": "2024-09-28T00:29:01Z",
+      "deaths": {
+        "Florida": 8,
+        "Georgia": 15,
+        "South Carolina": 19,
+        "North Carolina": 6,
+        "Tennessee": 0,
+        "Virginia": 1,
+        "Total": 49
+      },
+      "archive_url": "https://web.archive.org/web/20240928002901/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-09-29T01:03:26Z",
+      "deaths": {
+        "Florida": 12,
+        "Georgia": 17,
+        "South Carolina": 23,
+        "North Carolina": 6,
+        "Tennessee": 0,
+        "Virginia": 1,
+        "Total": 58
+      },
+      "archive_url": "https://web.archive.org/web/20240929010326/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-09-30T02:59:11Z",
+      "deaths": {
+        "Florida": 13,
+        "Georgia": 23,
+        "South Carolina": 27,
+        "North Carolina": 46,
+        "Tennessee": 2,
+        "Virginia": 2,
+        "Indiana": 0,
+        "Total": 113
+      },
+      "archive_url": "https://web.archive.org/web/20240930025911/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-01T00:51:33Z",
+      "deaths": {
+        "Florida": 13,
+        "Georgia": 25,
+        "South Carolina": 30,
+        "North Carolina": 47,
+        "Tennessee": 4,
+        "Virginia": 2,
+        "Indiana": 0,
+        "Total": 133
+      },
+      "archive_url": "https://web.archive.org/web/20241001005133/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-02T01:53:57Z",
+      "deaths": {
+        "Florida": 17,
+        "Georgia": 25,
+        "South Carolina": 36,
+        "North Carolina": 73,
+        "Tennessee": 9,
+        "Virginia": 2,
+        "Indiana": 0,
+        "Total": 162
+      },
+      "archive_url": "https://web.archive.org/web/20241002015357/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-03T05:39:57Z",
+      "deaths": {
+        "Florida": 19,
+        "Georgia": 25,
+        "South Carolina": 39,
+        "North Carolina": 95,
+        "Tennessee": 11,
+        "Virginia": 2,
+        "Indiana": 0,
+        "Total": 191
+      },
+      "archive_url": "https://web.archive.org/web/20241003053957/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-04T01:06:28Z",
+      "deaths": {
+        "Florida": 22,
+        "Georgia": 33,
+        "South Carolina": 39,
+        "North Carolina": 99,
+        "Tennessee": 11,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 206
+      },
+      "archive_url": "https://web.archive.org/web/20241004010628/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-05T01:50:06Z",
+      "deaths": {
+        "Florida": 21,
+        "Georgia": 33,
+        "South Carolina": 41,
+        "North Carolina": 108,
+        "Tennessee": 11,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 232
+      },
+      "archive_url": "https://web.archive.org/web/20241005015006/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-06T07:07:58Z",
+      "deaths": {
+        "Florida": 25,
+        "Georgia": 33,
+        "South Carolina": 46,
+        "North Carolina": 119,
+        "Tennessee": 13,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 239
+      },
+      "archive_url": "https://web.archive.org/web/20241006070758/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-07T00:49:22Z",
+      "deaths": {
+        "Florida": 25,
+        "Georgia": 33,
+        "South Carolina": 48,
+        "North Carolina": 94,
+        "_ranges": {
+          "North Carolina": [
+            70,
+            119
+          ]
+        },
+        "Tennessee": 13,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 241
+      },
+      "archive_url": "https://web.archive.org/web/20241007004922/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-08T03:06:36Z",
+      "deaths": {
+        "Florida": 25,
+        "Georgia": 33,
+        "South Carolina": 48,
+        "North Carolina": 98,
+        "_ranges": {
+          "North Carolina": [
+            77,
+            119
+          ]
+        },
+        "Tennessee": 13,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 241
+      },
+      "archive_url": "https://web.archive.org/web/20241008030636/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-09T01:19:02Z",
+      "deaths": {
+        "Florida": 25,
+        "Georgia": 33,
+        "South Carolina": 48,
+        "North Carolina": 84,
+        "Tennessee": 15,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 208
+      },
+      "archive_url": "https://web.archive.org/web/20241009011902/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-10T03:39:23Z",
+      "deaths": {
+        "Florida": 25,
+        "Georgia": 33,
+        "South Carolina": 49,
+        "North Carolina": 89,
+        "Tennessee": 15,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 214
+      },
+      "archive_url": "https://web.archive.org/web/20241010033923/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-10-15T07:52:36Z",
+      "deaths": {
+        "Florida": 25,
+        "Georgia": 33,
+        "South Carolina": 49,
+        "North Carolina": 123,
+        "Tennessee": 17,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 250
+      },
+      "archive_url": "https://web.archive.org/web/20241015075236/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-11-07T12:52:48Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 102,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 233
+      },
+      "archive_url": "https://web.archive.org/web/20241107125248/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-11-12T21:56:47Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 102,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 233
+      },
+      "archive_url": "https://web.archive.org/web/20241112215647/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-11-13T21:23:05Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 102,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 233
+      },
+      "archive_url": "https://web.archive.org/web/20241113212305/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-11-16T16:09:21Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 102,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 233
+      },
+      "archive_url": "https://web.archive.org/web/20241116160921/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-11-18T22:53:26Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 102,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 233
+      },
+      "archive_url": "https://web.archive.org/web/20241118225326/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-11-22T17:34:48Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241122173448/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-11-27T04:42:20Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241127044220/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-02T21:02:51Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241202210251/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-06T11:22:00Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241206112200/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-08T11:53:02Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241208115302/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-10T01:50:34Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241210015034/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-11T18:43:40Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241211184340/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-12T15:13:07Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241212151307/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-18T08:23:51Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241218082351/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-20T04:27:34Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 33,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 234
+      },
+      "archive_url": "https://web.archive.org/web/20241220042734/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-24T15:40:54Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 34,
+        "South Carolina": 51,
+        "North Carolina": 103,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 235
+      },
+      "archive_url": "https://web.archive.org/web/20241224154054/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    },
+    {
+      "snapshot": "2024-12-31T05:28:32Z",
+      "deaths": {
+        "Florida": 26,
+        "Georgia": 34,
+        "South Carolina": 51,
+        "North Carolina": 96,
+        "Tennessee": 18,
+        "Virginia": 2,
+        "Indiana": 1,
+        "Total": 228
+      },
+      "archive_url": "https://web.archive.org/web/20241231052832/https://en.wikipedia.org/wiki/Hurricane_Helene"
+    }
+  ]
+}
