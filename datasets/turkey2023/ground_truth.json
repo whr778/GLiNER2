@@ -1,0 +1,134 @@
+{
+  "event": "2023 Turkiye-Syria earthquakes",
+  "onset_utc": "2023-02-06T01:17:00Z",
+  "source": "Al Jazeera live tracker, sampled via the Wayback Machine",
+  "note": "turkey and syria are separate reporting authorities; keep as separate streams",
+  "coverage": {
+    "window": [
+      "2023-02-06T13:48:43Z",
+      "2023-02-21T05:48:58Z"
+    ],
+    "truncated_after": "source stopped updating; flat tail to 2023-04-09 dropped",
+    "staleness_evidence": "Al Jazeera reported 44,218 for Turkiye as of 24 Feb 2023 (aljazeera.com/news/2023/2/25/death-toll-climbs-above-50000-after-turkey-syria-earthquakes) while this tracker still showed 41,000 on 26 Feb",
+    "settled_final_not_in_series": {
+      "turkiye": 53537,
+      "syria_government": 1414,
+      "syria_rebel_held": 4537,
+      "source": "en.wikipedia.org/wiki/2023_Turkey-Syria_earthquakes"
+    }
+  },
+  "points": [
+    {
+      "snapshot": "2023-02-06T13:48:43Z",
+      "turkey": 1014,
+      "syria": 783,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230206134843/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-07T00:41:18Z",
+      "turkey": 2316,
+      "syria": 1293,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230207004118/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-08T01:17:55Z",
+      "turkey": 5434,
+      "syria": 1832,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230208011755/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-09T01:36:58Z",
+      "turkey": 9057,
+      "syria": 2530,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230209013658/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-10T01:49:58Z",
+      "turkey": 17674,
+      "syria": 3317,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230210014958/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-11T02:19:01Z",
+      "turkey": 20213,
+      "syria": 3553,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230211021901/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-12T02:36:18Z",
+      "turkey": 21848,
+      "syria": 3553,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230212023618/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-13T04:01:01Z",
+      "turkey": 29605,
+      "syria": 4500,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230213040101/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-14T02:59:24Z",
+      "turkey": 31643,
+      "syria": 4614,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230214025924/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-15T03:08:26Z",
+      "turkey": 31643,
+      "syria": 4614,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230215030826/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-16T03:34:52Z",
+      "turkey": 35418,
+      "syria": 5800,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230216033452/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-17T04:16:52Z",
+      "turkey": 36187,
+      "syria": 5800,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230217041652/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-18T02:23:38Z",
+      "turkey": 38000,
+      "syria": 5800,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230218022338/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-19T02:33:35Z",
+      "turkey": 38000,
+      "syria": 5800,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230219023335/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-20T07:20:17Z",
+      "turkey": 40000,
+      "syria": 5800,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230220072017/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    },
+    {
+      "snapshot": "2023-02-21T05:48:58Z",
+      "turkey": 41000,
+      "syria": 5800,
+      "source_url": "https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker",
+      "archive_url": "https://web.archive.org/web/20230221054858/https://www.aljazeera.com/news/2023/2/6/turkey-syria-earthquake-death-toll-and-devastation-live-tracker"
+    }
+  ]
+}

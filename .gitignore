@@ -128,3 +128,6 @@ test_api_client.py
 !/scripts/check_public_surface.py
 !/scripts/surface_snapshot.py
 !/scripts/preflight_gold_capacity.py
+
+# Wayback HTML cache for the Turkiye-Syria validation (derived facts are committed, not article text)
+datasets/turkey2023/_cache/
