@@ -505,6 +505,33 @@ datasets:
     language: [en]
     description: "Realistic counterpart of casualty_multi. Synthetic stream trajectories (exact ground truth) are paired with REAL DocEE contexts -- actual event types and place names from 6,929 annotated articles -- and realized by claude-sonnet-5, so each stream reads as a different real disaster in a named place instead of a templated earthquake in 'the region'. Magnitudes are rescaled per event type (scale_streams_to_type.py) because the generator's single large-disaster regime made 80% of type pairings implausible (a road crash peaking at 52,447). Split at the STREAM level so no incident straddles train/val/test."
 
+  warmstart_mix:
+    name: Warm-start mixture (structure + NER + replay)
+    tasks: mixed -- json_structures, NER, events, relations
+    license: see constituent corpora
+    hf_id: null
+    source_url: null
+    language: [en, zh]
+    description: "Derived mixture, not a source corpus: built by tools/train/build_warmstart_mix.py to add STRUCTURE and NER to a trained joint-boundary checkpoint without losing what it already does. 70% new (casualty_multi_loc structure + pile_ner_def/nuner_full NER, split evenly rather than by pool size so definition-bearing NER is not buried 20:1) and 30% replay sampled from the 137K pool at its own 73/27 event/relation ratio. Documents are capped at 2,000 chars: step cost is superlinear in sequence length and text2json alone is 30.6% over 4,000 chars (max 102,068), which cost 1.87x throughput for records the pools can replace with shorter ones. Pre-shuffled at the example level so every batch is a mixture rather than a task block. Licensing is that of the constituent corpora."
+
+  mix_natural:
+    name: Warm-start mixture, record mode = natural
+    tasks: mixed -- json_structures (mode=natural), NER, events, relations
+    license: see constituent corpora
+    hf_id: null
+    source_url: null
+    language: [en, zh]
+    description: "warmstart_mix whose casualty records declare mode=natural (anchor defaults to the first declared field, a casualty figure). One arm of the record-mode A/B; byte-identical to mix_anchorless with record_metadata stripped, verified by content hash, so the mode is the only variable. Declaring a mode is not cosmetic: without record_metadata the BOUNDARY record path is never supervised, which is why an earlier run produced correct multi-instance records with location empty every time. This arm fills location 6/9 where every prior configuration filled 0/9."
+
+  mix_anchorless:
+    name: Warm-start mixture, record mode = anchorless
+    tasks: mixed -- json_structures (mode=anchorless), NER, events, relations
+    license: see constituent corpora
+    hf_id: null
+    source_url: null
+    language: [en, zh]
+    description: "warmstart_mix whose casualty records declare mode=anchorless -- instances formed with no anchor mention. The losing arm of the record-mode A/B: 1/9 instances and 0/9 location fills, versus 7/9 and 6/9 for mix_natural, on identical data. Retained for provenance because the result is informative rather than a failed build: a casualty record appears to genuinely HAVE a natural anchor (the figure itself), so removing it leaves nothing to key instances on."
+
   casualty_multi:
     name: Multi-event casualty-report corpus
     tasks: structured extraction (json_structures, multi-instance)
