@@ -46,29 +46,70 @@ STATES = ("North Carolina", "South Carolina", "Tennessee", "Georgia", "Florida",
 TOLL = re.compile(r"kill|dead|death|toll|died|fatalit", re.I)
 
 
-def _get(url: str, cache: Path) -> str:
+def _get(url: str, cache: Path, tries: int = 4) -> str:
+    """Fetch with an on-disk cache. A FAILURE IS NEVER CACHED.
+
+    Caching failures is worse than not caching: the archive rate-limits under sustained
+    use, and writing a placeholder turns a transient 429 into a permanent one that no
+    re-run can clear. Retries back off; a capture that stays dead returns "" so one bad
+    article cannot abort the harvest.
+    """
     cache.parent.mkdir(parents=True, exist_ok=True)
     if cache.exists():
         return cache.read_text(encoding="utf-8", errors="replace")
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=120) as r:
-            body = r.read().decode("utf-8", errors="replace")
-    except Exception as exc:                      # a dead capture must not kill the run
-        body = f"<!-- fetch failed: {type(exc).__name__} -->"
-    cache.write_text(body, encoding="utf-8")
-    time.sleep(1.5)
-    return body
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA),
+                                        timeout=120) as r:
+                body = r.read().decode("utf-8", errors="replace")
+            cache.write_text(body, encoding="utf-8")
+            time.sleep(1.5)
+            return body
+        except Exception:
+            time.sleep(3.0 * (attempt + 1))       # back off; the archive throttles
+    return ""
 
 
 def plain(raw: str) -> str:
-    raw = re.sub(r"<script.*?</script>|<style.*?</style>", " ", raw, flags=re.S)
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", raw))).strip()
+    """The AP story body only.
+
+    Two things must go, and neither is optional. The Wayback Machine injects its own
+    toolbar (`id="wm-ipp-base"`) into every capture, and AP pages carry navigation,
+    related-story rails and a footer. Taking the whole page put BOTH into the feed: the
+    median document was 26,598 characters and articles about a CIA misconduct case or a
+    four-day workweek registered as naming Florida, Tennessee and Georgia -- chrome, not
+    content. A feed like that measures page furniture, not extraction.
+
+    So the body is selected structurally (`RichTextStoryBody`), not by regex over the
+    whole document.
+    """
+    try:
+        from lxml import html as lhtml
+    except ImportError:
+        raw = re.sub(r"<script.*?</script>|<style.*?</style>", " ", raw, flags=re.S)
+        return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", raw))).strip()
+
+    try:
+        tree = lhtml.fromstring(raw)
+    except Exception:
+        return ""
+    for bad in tree.xpath('//*[starts-with(@id,"wm-ipp")] | //script | //style | //nav | //footer'):
+        bad.getparent().remove(bad) if bad.getparent() is not None else None
+    nodes = tree.xpath('//div[contains(@class,"RichTextStoryBody")]')
+    if not nodes:
+        nodes = tree.xpath('//div[contains(@class,"Page-storyBody")]') or tree.xpath("//main")
+    if not nodes:
+        return ""
+    head = tree.xpath("//h1//text()")
+    body = " ".join(n.text_content() for n in nodes)
+    return re.sub(r"\s+", " ", html.unescape(" ".join(head) + " " + body)).strip()
 
 
 def article_urls(cache: Path) -> set[str]:
     """Every AP article linked from any archived snapshot of the Helene hub."""
-    rows = json.loads(_get(CDX.format(url=HUB, extra="&from=20240928&to=20241110"),
-                           cache / "cdx_hub.json"))[1:]
+    body = _get(CDX.format(url=HUB, extra="&from=20240928&to=20241110"),
+                cache / "cdx_hub.json")
+    rows = json.loads(body)[1:] if body.strip().startswith("[") else []
     urls: set[str] = set()
     for r in rows:
         raw = _get(WAYBACK.format(ts=r[1], url="https://" + HUB), cache / f"hub_{r[1]}.html")
@@ -78,9 +119,10 @@ def article_urls(cache: Path) -> set[str]:
 
 def first_capture(url: str, cache: Path) -> str | None:
     key = re.sub(r"[^a-z0-9]+", "_", url.split("/article/")[-1])[:60]
-    rows = json.loads(_get(CDX.format(url=url.replace("https://", ""), extra="&limit=1"),
-                           cache / f"cdx_{key}.json") or "[]")
-    return rows[1][1] if len(rows) > 1 else None
+    body = _get(CDX.format(url=url.replace("https://", ""), extra="&limit=1"),
+                cache / f"cdx_{key}.json")
+    rows = json.loads(body)[1:] if body.strip().startswith("[") else []
+    return rows[0][1] if rows else None
 
 
 def main() -> None:
@@ -102,7 +144,11 @@ def main() -> None:
             continue
         key = re.sub(r"[^a-z0-9]+", "_", url.split("/article/")[-1])[:60]
         text = plain(_get(WAYBACK.format(ts=ts, url=url), cache / f"art_{key}.html"))
-        if len(text) < 400:
+        # Relevance: the hub links AP's general navigation too, so a capture is only a
+        # Helene document if the STORY BODY says so. Without this, unrelated articles
+        # (a CIA case, a four-day-workweek feature) entered the feed and registered
+        # multiple states from page chrome.
+        if len(text) < 400 or "helene" not in text.lower():
             skipped += 1
             continue
         stamp = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[8:10]),
