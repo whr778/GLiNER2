@@ -179,7 +179,17 @@ DOCEE_ENTITIES = {
     "Casualties and Losses": "people killed, injured, missing or otherwise harmed, with counts",
     "Location": "where the event happened",
     "Cause": "what caused the event",
+    # Asked for so a figure can be checked against the event's own time window. Articles
+    # quote HISTORICAL tolls: the Turkiye standfirst sits above a round-up of past quakes,
+    # and the 1999 Izmit figure of 17,500 was tracked as a 2023 casualty count in every
+    # configuration until this existed. Zero-shot extraction already finds the date --
+    # 13/15 Izmit envelopes resolve to "August 1999" and NO genuine observation resolves
+    # to an old date, so the check is high precision. It was simply never asked for.
+    "Date": "a date, year or time reference such as 1999, August 1999, Monday, February 6",
 }
+
+# Four-digit years only; a bare "Monday" carries no year and cannot falsify anything.
+_YEAR_RE = re.compile(r"\b(1[89]\d{2}|20\d{2})\b")
 
 
 def build_docee_schema(model):
@@ -212,6 +222,7 @@ def extract_stage1(model, texts: List[str], threshold: float) -> List[Dict[str, 
                 "event_confidence": float(ev.get("confidence", 1.0)) if isinstance(ev, dict) else None,
                 "casualties": ents.get("Casualties and Losses") or [],
                 "location": ents.get("Location") or [],
+                "date": ents.get("Date") or [],
                 "cause": ents.get("Cause") or [],
             })
         except Exception as exc:
@@ -330,11 +341,22 @@ def _cell(v):
 
 
 def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
-          event_key: str = "all") -> None:
-    """Turn one casualty_report reading into observations, one per role per mode."""
+          event_key: str = "all", events_block: Optional[Dict] = None,
+          event_year: int = 0, rejected: Optional[List] = None) -> None:
+    """Turn one casualty_report reading into observations, one per role per mode.
+
+    ``event_year`` enables the temporal check: a figure whose nearest date predates the
+    event is a historical comparison, not a report of it.
+    """
+    rejected = rejected if rejected is not None else []
     for role in ROLES:
         span, conf = _cell(rec.get(role))
         if not span:
+            continue
+        stale = (out_of_window(read_text, span, events_block, event_year)
+                 if event_year else None)
+        if stale is not None:
+            rejected.append({"value": span, "year": stale})
             continue
         for mode in modes:
             value, qual, src = normalize(read_text, span, mode, cls_model, cls_schema)
@@ -415,6 +437,37 @@ _GENERIC_PLACE = {
     "the region", "the area", "temporary camps", "temporary shelters",
     "hardest-hit areas", "the country", "the city", "the district",
 }
+
+
+def out_of_window(text: str, span: str, events: Dict[str, Any], event_year: int,
+                  slack: int = 1) -> Optional[int]:
+    """The year of the nearest date to `span`, when that year predates the event.
+
+    Returns None when the figure is temporally plausible, so the caller keeps it. A
+    number is rejected only on POSITIVE evidence that it belongs to another time -- an
+    absent or unparsable date is not evidence, and treating it as such would discard most
+    of the feed.
+
+    Nearest-date-by-character-distance is a weak proxy for attachment, and the same proxy
+    failed for LOCATION (both countries within 26 chars of both numbers on the Turkiye
+    standfirst). It is defensible here for a reason that does not apply there: dates are
+    sparse and clustered, so the competing hypotheses are far apart rather than adjacent.
+    Measured: 13/15 Izmit envelopes resolve to "August 1999" and 0 genuine observations
+    resolve to an old year.
+    """
+    dates = [d for d in (events or {}).get("date") or [] if isinstance(d, dict) and "start" in d]
+    if not dates:
+        return None
+    i = text.find(span)
+    if i < 0:
+        return None
+    mid = i + len(span) / 2
+    near = min(dates, key=lambda d: abs((d["start"] + d["end"]) / 2 - mid))
+    m = _YEAR_RE.search(_span_text(near))
+    if not m:
+        return None
+    year = int(m.group(0))
+    return year if year < event_year - slack else None
 
 
 def record_key(events: Dict[str, Any], rec: Dict[str, Any]) -> str:
@@ -579,6 +632,10 @@ def main() -> None:
                          "pairs. The default 60 sits in the starved regime")
     ap.add_argument("--lead-chars", type=int, default=1100,
                     help="with --window lead: how much of the article head to read")
+    ap.add_argument("--event-year", type=int, default=0,
+                    help="reject casualty figures whose nearest date predates this year "
+                         "(0 = off). The 1999 Izmit toll was tracked as a 2023 figure in "
+                         "every Turkiye configuration until this existed")
     ap.add_argument("--chunk-size", type=int, default=200,
                     help="with --window long: words per chunk. 200 is the measured band; "
                          "the library default 384 loses one binding on Turkiye")
@@ -627,6 +684,7 @@ def main() -> None:
                   if any(m in modes for m in ("classify", "hybrid")) else None)
 
     per_mode: Dict[str, List[Dict]] = {m: [] for m in modes}
+    stale_hits: List[Dict] = []
     articles: List[Dict[str, Any]] = []
     for i, row in enumerate(feed):
         entry = {"t_hours": row["t_hours"], "text": row["text"], **gates[i],
@@ -648,7 +706,9 @@ def main() -> None:
                     key = (record_key(events[i], rec) if args.associate == "record"
                            else association_key(events[i], args.associate, {}))
                     _emit(rec, row["text"], row, entry, modes, per_mode,
-                          gate_model, cls_schema, event_key=key)
+                          gate_model, cls_schema, event_key=key,
+                          events_block=events[i], event_year=args.event_year,
+                          rejected=stale_hits)
                 articles.append(entry)
                 if (i + 1) % 20 == 0:
                     print(f"           {i + 1}/{len(feed)} articles")
@@ -709,6 +769,9 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n[done] {out}")
+    if args.event_year:
+        print(f"   [temporal] rejected {len(stale_hits)} figure(s) dated before "
+              f"{args.event_year}: {[(h['value'][:14], h['year']) for h in stale_hits[:6]]}")
     for m in modes:
         print(f"   {m:9} observations={len(per_mode[m]):3}  "
               + "  ".join(f"{r}:{result['tracked'][m][r]['n_obs']}" for r in ROLES))
