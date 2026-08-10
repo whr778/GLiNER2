@@ -350,6 +350,32 @@ that requires FA2 fails before spending GPU hours.
 
 ---
 
+## Phase 9 — the record head finally learns (10 Aug, late)
+
+The warm start was rerun as a two-arm A/B after the first attempt produced correct
+multi-instance records with `location: None` every time.
+
+**Diagnosis, confirmed.** The corpus emitted no `record_metadata`, so
+`compile_record_specs` returned nothing and the record head was never supervised. Declaring
+`mode=` in `build_multievent_corpus.py` fixed it: **`location` fills 6/9 (4/9 correct)**
+against 0/9 in every prior configuration.
+
+**`anchorless` learns nothing** (1/9 instances). The earlier evidence had been explicitly
+discounted -- a model never trained on anchorless failing to decode it says nothing about
+the mode -- so it was run rather than assumed. Training on it did not rescue it.
+
+**The two arms explain each other.** `natural` costs relation -0.037; `anchorless` costs
+-0.002 and is flat everywhere. One arm learned a task and displaced capacity; the other
+learned nothing to displace anything with. That reframes the regression as a **price**, not
+a defect.
+
+**Two self-inflicted costs worth recording.** A loader change made earlier the same day was
+verified by LOADING a checkpoint but never by running a forward -- the hub FA2 repo form is
+CUDA-only and raised at first forward on CPU, which is worse than the fallback it replaced.
+And the 2xH100 box ran ~40 minutes past the point every artifact was local, roughly $5-6,
+because analysis was treated as the task and the machine as background. Second cost lapse
+of the day; the first was launching a run whose throughput had never been sanity-checked.
+
 ## Recurring lessons
 
 1. **Report the baseline every time.** Run B of Turkiye reads as a success at 0.208 without
@@ -363,6 +389,11 @@ that requires FA2 fails before spending GPU hours.
 5. **A misleadingly-named corpus cost two separate diagnoses.** `text2json` supervises
    entities and holds the longest documents in the mix.
 6. **Profile where the phenomenon lives.** CPU profiling cannot find a GPU-kernel problem.
+7. **Verify the operation you care about, not the one that is easy.** A checkpoint that
+   LOADS is not a checkpoint that runs a forward; a metric that moves is not a metric on
+   the same test set; a schema that is valid is not a schema that can decode.
+8. **Terminate the box before analysing.** Twice in one day the machine outlived its
+   usefulness because the interesting part was what came next.
 
 ## Open
 
