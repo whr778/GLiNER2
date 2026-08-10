@@ -130,7 +130,8 @@ def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
     return out
 
 
-def build(snippets, max_interference: int, seed: int, contexts: dict | None = None):
+def build(snippets, max_interference: int, seed: int, contexts: dict | None = None,
+          record_mode: str = "natural"):
     rng = random.Random(seed)
     by_stream = defaultdict(list)
     for s in snippets:
@@ -187,7 +188,7 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
                 # are inserted roles-first with `location` last, so whichever casualty
                 # figure is present anchors the instance. That is the right semantics here
                 # -- a record exists because a toll was reported, not because a place was.
-                structures.append(Structure("casualty_report", mode="natural", **fields))
+                structures.append(Structure("casualty_report", mode=record_mode, **fields))
 
         if structures:
             examples.append(InputExample(text=doc.strip(), structures=structures))
@@ -206,6 +207,14 @@ def main(argv=None) -> None:
     ap.add_argument("--stream-start", type=int, default=0,
                     help="index into the sorted stream ids (leak-free split)")
     ap.add_argument("--stream-end", type=int, default=0, help="0 = all streams")
+    ap.add_argument("--record-mode", default="natural",
+                    choices=("natural", "anchorless", "latent"),
+                    help="Instance Formation mode written into record_metadata. natural "
+                         "anchors each instance on its first declared field (a casualty "
+                         "figure here); anchorless forms instances with no anchor mention. "
+                         "Which is right is an open question -- the only evidence so far is "
+                         "from a model never TRAINED on anchorless, so it is evidence about "
+                         "that model, not about the mode.")
     ap.add_argument("--contexts", default="",
                     help="contexts json; adds a gold location FIELD (heterogeneous "
                          "field types stop the numeric-field collapse)")
@@ -215,7 +224,8 @@ def main(argv=None) -> None:
     snippets = load_snippets(Path(args.data) / args.split,
                              args.stream_start, args.stream_end)
     contexts = json.loads(Path(args.contexts).read_text(encoding="utf-8")) if args.contexts else {}
-    examples, stats = build(snippets, args.max_interference, args.seed, contexts)
+    examples, stats = build(snippets, args.max_interference, args.seed, contexts,
+                            record_mode=args.record_mode)
 
     ds = TrainingDataset(examples)
     report = ds.validate(raise_on_error=False)
@@ -223,7 +233,7 @@ def main(argv=None) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     ds.save(str(out))
 
-    print(f"[build] split={args.split}  snippets={len(snippets)}")
+    print(f"[build] split={args.split}  snippets={len(snippets)}  record_mode={args.record_mode}")
     print(f"[build] documents={stats['docs']}  instances={stats['instances']} "
           f"(mean {stats['instances'] / max(stats['docs'], 1):.2f}/doc)")
     print(f"[build] location field: located={stats['located_place']}  absent={stats['no_place']}")

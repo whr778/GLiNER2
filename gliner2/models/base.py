@@ -25,6 +25,10 @@ from gliner2.configuration import ExtractorConfig
 
 logger = logging.getLogger(__name__)
 
+# transformers reads "flash_attention_2" as the PIP PACKAGE; the same kernel is
+# served from the Hub registry under this repo id, which is what actually loads here.
+_HUB_FLASH_ATTN_2 = "kernels-community/flash-attn2"
+
 
 def resolve_device(map_location: Optional[str] = None) -> str:
     """Resolve where to place a model, defaulting to the best available device.
@@ -174,9 +178,20 @@ class BaseExtractorModel(PreTrainedModel):
         # dropping straight to eager, which is the slowest of the three and used to
         # be the silent cost of a missing optional backend. eager stays the last
         # rung because deberta-v2 supports neither FlashAttention 2 nor sdpa.
+        # "flash_attention_2" means the PIP PACKAGE to transformers, and prebuilt wheels
+        # stop at cp313/torch2.9 -- so on this stack it is always rejected and the loader
+        # silently drops to sdpa, which on a bf16 ModernBERT is a correctness failure, not
+        # a slowdown. The Hub kernel registry provides the same kernel under a repo id and
+        # is accepted on both transformers 5.6 (kernels 0.12) and 5.13 (kernels 0.15.2),
+        # verified on each.
+        #
+        # Trying the repo form BEFORE degrading repairs every checkpoint already published
+        # with the plain string -- twelve of ours -- without re-uploading any of them.
         candidates = [attn_implementation]
+        if attn_implementation == "flash_attention_2":
+            candidates.append(_HUB_FLASH_ATTN_2)
         if attn_implementation:
-            candidates += [c for c in ("sdpa", "eager") if c != attn_implementation]
+            candidates += [c for c in ("sdpa", "eager") if c not in candidates]
 
         last_error: Exception
         for index, implementation in enumerate(candidates):
@@ -196,6 +211,18 @@ class BaseExtractorModel(PreTrainedModel):
                     # turns the downgrade into a failure at load time, before any GPU
                     # hours are spent. Default stays permissive because deberta-v2
                     # supports neither FA2 nor sdpa and must reach eager.
+                    # Retrying the SAME kernel under its Hub repo id is a repair, not a
+                    # downgrade: FA2 is still what ends up loaded. Say so quietly and do
+                    # not let strict mode reject it, or every checkpoint published with
+                    # the plain string would fail under GLINER2_STRICT_ATTN.
+                    if candidates[index + 1] == _HUB_FLASH_ATTN_2:
+                        logger.info(
+                            "attn_implementation=%r resolves to the Hub kernel %r "
+                            "(transformers reads the plain name as the pip package). "
+                            "FlashAttention 2 is still in use.",
+                            implementation, _HUB_FLASH_ATTN_2,
+                        )
+                        continue
                     if os.environ.get("GLINER2_STRICT_ATTN") and index == 0:
                         raise RuntimeError(
                             f"attn_implementation={implementation!r} unavailable and "

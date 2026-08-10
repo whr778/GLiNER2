@@ -34,7 +34,7 @@ DATA = Path("data")
 SEED = 42
 
 # New capability: structure (the point) and NER (weakest existing head).
-STRUCTURE = ["casualty_multi_loc", "paraloq_json"]
+STRUCTURE_DEFAULT = ["casualty_multi_loc", "paraloq_json"]
 NER = ["pile_ner_def", "nuner_full"]
 # Replay, at the 137k pool's own ratio.
 EVENT_CORPORA = ["chfinann", "docee", "docfee", "duee", "cmnee",
@@ -101,6 +101,8 @@ def take(names: list[str], total: int, rng: random.Random, label: str,
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--structure", default="casualty_multi_loc",
+                    help="comma-separated structure corpora (paraloq_json is always added)")
     ap.add_argument("--total", type=int, default=86_000)
     ap.add_argument("--new-frac", type=float, default=0.70)
     ap.add_argument("--out", default="data/warmstart_mix.train.jsonl")
@@ -116,7 +118,8 @@ def main() -> None:
     print(f"target {args.total:,}  new {n_new:,} ({args.new_frac:.0%})  replay {n_old:,}")
 
     print("NEW - structure (all of it; this is the capability being added)")
-    structure = take(STRUCTURE, 10**9, rng, "struct", max_chars=args.max_chars)
+    structure = take(args.structure.split(",") + ["paraloq_json"], 10**9, rng,
+                     "struct", max_chars=args.max_chars)
     print("NEW - NER")
     ner = take(NER, max(0, n_new - len(structure)), rng, "ner", even=True,
                max_chars=args.max_chars)
