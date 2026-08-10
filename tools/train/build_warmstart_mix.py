@@ -26,6 +26,7 @@ exists in the pipeline, so tasks cannot be silently re-segregated by batching.
 from __future__ import annotations
 
 import argparse
+import json
 import random
 from pathlib import Path
 
@@ -41,15 +42,35 @@ EVENT_CORPORA = ["chfinann", "docee", "docfee", "duee", "cmnee",
 RELATION_CORPORA = ["sentence_rex", "bio_ner_relations", "biored"]
 
 
-def read(name: str) -> list[str]:
+def read(name: str, max_chars: int = 0) -> list[str]:
+    """Corpus lines, optionally dropping documents longer than `max_chars`.
+
+    Profiled on the warm-start mixture (2026-08-10), and the cap is worth far more than
+    the 2.4% of records it removes. Step cost grows superlinearly with sequence length --
+    measured 374 tok -> 1.1s, 743 -> 2.4s, 1,913 -> 7.9s on the same model -- and the NER
+    corpora carry a long tail the structure corpus does not have at all (4.5% of NER
+    records over 4,000 chars, max 52,881; structure max 2,007).
+
+    Two things follow. Those 4.5% carry ~half of all NER cost and ~34% of the WHOLE run's
+    cost. And 15% of them are then discarded anyway: they blow `max_gold_per_query=32`
+    (one query had 770 gold spans) and `on_capacity_exceeded=skip_sample` drops the
+    sample. Measured: 6/40 long records skipped, 0/40 short. So the tail is compute spent
+    to produce no gradient.
+    """
     for cand in (DATA / f"{name}.train.jsonl", DATA / f"{name}.jsonl"):
         if cand.is_file():
-            return [l for l in cand.read_text(encoding="utf-8").splitlines() if l.strip()]
+            lines = [l for l in cand.read_text(encoding="utf-8").splitlines() if l.strip()]
+            if not max_chars:
+                return lines
+            kept = [l for l in lines if len(json.loads(l).get("input") or "") <= max_chars]
+            print(f"    [cap] {name}: dropped {len(lines) - len(kept):,} of {len(lines):,} "
+                  f"over {max_chars:,} chars")
+            return kept
     return []
 
 
 def take(names: list[str], total: int, rng: random.Random, label: str,
-         even: bool = False) -> list[str]:
+         even: bool = False, max_chars: int = 0) -> list[str]:
     """Sample `total` lines across `names`.
 
     Replay is proportional to pool size, so the mixture keeps the ratio the model was
@@ -58,7 +79,7 @@ def take(names: list[str], total: int, rng: random.Random, label: str,
     `pile_ner_def` (typed labels WITH definitions -- the shape GLiNER2 actually queries
     with) under `nuner_full`, which is 20x larger and has no definitions.
     """
-    pools = {n: read(n) for n in names}
+    pools = {n: read(n, max_chars) for n in names}
     pools = {n: v for n, v in pools.items() if v}
     have = sum(len(v) for v in pools.values())
     if not have:
@@ -84,6 +105,9 @@ def main() -> None:
     ap.add_argument("--new-frac", type=float, default=0.70)
     ap.add_argument("--out", default="data/warmstart_mix.train.jsonl")
     ap.add_argument("--val-frac", type=float, default=0.02)
+    ap.add_argument("--max-chars", type=int, default=2000,
+                    help="drop docs longer than this. 2000 is the knee: 1.87x faster with the "
+                         "structure corpus intact at 34.1%%; 1000 is 5.4x but halves it")
     args = ap.parse_args()
     rng = random.Random(SEED)
 
@@ -92,13 +116,16 @@ def main() -> None:
     print(f"target {args.total:,}  new {n_new:,} ({args.new_frac:.0%})  replay {n_old:,}")
 
     print("NEW - structure (all of it; this is the capability being added)")
-    structure = take(STRUCTURE, 10**9, rng, "struct")
+    structure = take(STRUCTURE, 10**9, rng, "struct", max_chars=args.max_chars)
     print("NEW - NER")
-    ner = take(NER, max(0, n_new - len(structure)), rng, "ner", even=True)
+    ner = take(NER, max(0, n_new - len(structure)), rng, "ner", even=True,
+               max_chars=args.max_chars)
 
     print("REPLAY - events (73%) and relations (27%), the pool's own ratio")
-    events = take(EVENT_CORPORA, round(n_old * 0.73), rng, "event")
-    relations = take(RELATION_CORPORA, round(n_old * 0.27), rng, "rel")
+    # The cap applies to REPLAY too: text2json is 30.6% over 4,000 chars (max 102,068)
+    # and lives in the event list, so a NER-only cap misses the actual cost driver.
+    events = take(EVENT_CORPORA, round(n_old * 0.73), rng, "event", max_chars=args.max_chars)
+    relations = take(RELATION_CORPORA, round(n_old * 0.27), rng, "rel", max_chars=args.max_chars)
 
     mix = structure + ner + events + relations
     rng.shuffle(mix)                      # every batch must be a mixture, not a block
