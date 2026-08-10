@@ -11,12 +11,17 @@
 #
 # So this adds the two missing capabilities and guards the two that work.
 #
-#   structure  29,702  34.5%   <- the capability being added (casualty_multi_loc + paraloq)
-#   ner        30,496  35.5%   <- weakest existing head
+#   structure  29,523  34.3%   <- the capability being added (casualty_multi_loc + paraloq)
+#   ner        30,676  35.7%   <- weakest existing head
 #   events     18,834  21.9%   \  replay, at the 137K pool's own 73/27 ratio
 #   relations   6,966   8.1%   /
 #                     ------
-#   NEW 70.0%   REPLAY 30.0%   84,279 train + 1,719 val
+#   NEW 70.0%   REPLAY 30.0%   84,280 train + 1,719 val
+#
+# Documents are capped at 2,000 chars (build_warmstart_mix.py --max-chars). Profiled:
+# step cost is superlinear in sequence length, text2json is 30.6% over 4,000 chars (max
+# 102,068) and sits in the event REPLAY list. The cap is 1.87x faster and costs nothing
+# in volume -- the pools substitute shorter records, so the count is unchanged.
 #
 # REPLAY, not plain fine-tuning. Training only on the added tasks forgets the old ones,
 # and that is not hypothetical in this project: the casualty fine-tune used a narrow
@@ -58,8 +63,10 @@ training:
   # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
   # learning from cold, and every extra epoch is extra forgetting pressure.
   num_epochs: 3
-  batch_size: 4
-  gradient_accumulation_steps: 4
+  # batch 8 x accum 2 keeps the EFFECTIVE batch at 16 (same as the curve) while
+  # using more of the 80GB card; the first attempt sat at 12.8GB.
+  batch_size: 8
+  gradient_accumulation_steps: 2
   # encoder_lr is held at the curve's 2.0e-5 ON PURPOSE, so the replay ratio is the only
   # thing that changed versus the baseline. If the blind test shows forgetting, LOWERING
   # THIS is the next knob to try -- it acts more directly on the shared encoder than the
@@ -80,7 +87,9 @@ training:
   greater_is_better: false
   save_best: true
   save_total_limit: 2
-  num_workers: 0
+  # Collation is NOT the bottleneck (workers sat idle while one core saturated),
+  # but >0 overlaps it with the step and costs nothing.
+  num_workers: 8
   validate_data: false
   early_stopping: false
   error_policy: skip
