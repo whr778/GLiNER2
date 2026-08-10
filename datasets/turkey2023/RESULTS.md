@@ -28,7 +28,7 @@ the score of predicting a constant.
 |---|---|---|---|---|
 | **A.** Pre-registered config | 1 (`unknown`) | ekf 0.288 / last 0.343 | 3.377 | 12 / 20 obs |
 | **B.** + stage 1 enabled | 1 (`Earthquakes\|turkey`) | ekf 0.208 / **last 0.136** | 3.349 | 16 / 91 obs |
-| **C.** + per-envelope association | 5 | turkey 0.228, syria 0.196 | 3.26, 3.40 | 16 / 91 obs |
+| **C.** `--associate envelope` | 5 | turkey 0.228, syria 0.196 | 3.26, 3.40 | 16 / 91 obs |
 
 ### A. The pre-registered config was mis-specified -- my error
 
@@ -67,9 +67,10 @@ envelope per *incident*. Every document names Turkey before Syria, so all 16 key
 123 location spans across the feed -- it simply never reached the key.
 
 Keying per envelope, by the location span nearest the number, was applied **after** seeing
-this and is reported separately for that reason. It corrects a genuine defect against the
-design intent already written in the file, and it does split the feed into 5 streams. It
-does **not** solve attribution:
+this and is reported separately for that reason. It ships as an opt-in `--associate
+envelope` rather than as a change to `type+location`, because it does not actually fix
+attribution and the default path has a validated synthetic result behind it. Turning it on
+does split the feed into 5 streams. It does **not** solve attribution:
 
     Earthquakes|syria: 3,317  5,800  |  17,674  20,213  21,848  35,418  38,000  41,000
                        ^ Syrian         ^ Turkish figures, keyed to Syria

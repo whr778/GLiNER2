@@ -389,7 +389,37 @@ _GENERIC_PLACE = {
 }
 
 
-def association_key(events: Dict[str, Any], strategy: str) -> str:
+def _nearest_place(events: Dict[str, Any], envelope: Dict[str, Any]) -> str:
+    """The location span closest to this envelope, by character distance.
+
+    Taking the document's FIRST location instead is wrong whenever one document covers
+    more than one place, and it fails loudly on the Turkiye-Syria feed: every article
+    names Turkey before Syria, so all 16 documents keyed to `Earthquakes|turkey` and the
+    Syrian tolls (5,800 among them) were tracked as if they were Turkish. Syria was
+    detected -- 123 location spans across the feed -- it just never reached the key.
+
+    Distance to the envelope is the available signal: the number and the place it belongs
+    to are written near each other. It is a heuristic, not syntax, and it inherits the
+    caveat in ``association_key`` -- genuinely ambiguous attachment is MHT's problem.
+    """
+    if not envelope or "start" not in envelope:
+        return ""
+    mid = (envelope["start"] + envelope["end"]) / 2
+    best, best_d = "", None
+    for item in events.get("location") or []:
+        if not isinstance(item, dict) or "start" not in item:
+            continue
+        place = _span_text(item).strip().lower()
+        if not place or place in _GENERIC_PLACE or place[0].isdigit():
+            continue
+        d = abs((item["start"] + item["end"]) / 2 - mid)
+        if best_d is None or d < best_d:
+            best, best_d = place, d
+    return best
+
+
+def association_key(events: Dict[str, Any], strategy: str,
+                    envelope: Optional[Dict[str, Any]] = None) -> str:
     """Which event stream an observation belongs to.
 
     The tracker is single-stream: it assumes every observation describes the SAME
@@ -413,6 +443,10 @@ def association_key(events: Dict[str, Any], strategy: str) -> str:
     # type+location: a place name only helps if it names a place. DocEE's generic
     # spans ("the region", "temporary camps") identify nothing and would split one
     # event into several streams, which is worse than pooling it.
+    if strategy == "envelope":
+        near = _nearest_place(events or {}, envelope or {})
+        if near:
+            return f"{etype}|{near}"
     places = [_span_text(p).strip().lower() for p in (events or {}).get("location") or []]
     places = [p for p in places if p and p not in _GENERIC_PLACE and not p[0].isdigit()]
     return f"{etype}|{places[0]}" if places else etype
@@ -461,7 +495,7 @@ def main() -> None:
     # Event models are 3-4x SLOWER on MPS than CPU (per-op sync overhead), so cpu is the
     # default rather than "best available".
     ap.add_argument("--device", default="cpu")
-    ap.add_argument("--associate", choices=("none", "type", "type+location"),
+    ap.add_argument("--associate", choices=("none", "type", "type+location", "envelope"),
                     default="none", help="group observations into per-event streams "
                          "before tracking (needs --event-model for a real key)")
     ap.add_argument("--window", choices=("article", "event"), default="article",
@@ -520,15 +554,18 @@ def main() -> None:
             # EVERY envelope is read, not just the first. A multi-event article carries
             # one casualty span per incident, and reading only the first would discard
             # the rest -- which is precisely the case the envelope exists to handle.
-            reads = [e["text"] for e in envelopes] or [row["text"]]
-            for read_text in reads:
+            reads = envelopes or [{"text": row["text"]}]
+            for env in reads:
+                read_text = env["text"]
                 # EVERY casualty_report instance, not just [0]. A multi-event-trained
                 # model emits one record per incident, and reading only the first would
                 # make it look identical to the single-instance model it replaces --
                 # the same defect class as envelopes[0] above.
                 records = (cas_model.extract(read_text, cas_schema, include_confidence=True)
                            .get("casualty_report") or [])
-                key = association_key(events[i], args.associate)
+                # Per ENVELOPE, not per document: the envelope is the incident, and
+                # keying at document level pooled every event an article mentioned.
+                key = association_key(events[i], args.associate, env)
                 for rec in (records or [{}]):
                     _emit(rec, read_text, row, entry, modes, per_mode,
                           gate_model, cls_schema, event_key=key)
