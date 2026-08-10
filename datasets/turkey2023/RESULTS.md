@@ -92,6 +92,21 @@ than to a historical comparison in the same article. Retrieval-style relevance (
 answers "is this article about a mass-casualty event" -- correctly, 16/16 -- and that is a
 different question from "does this number belong to *that* event".
 
+## Predictions, scored
+
+Pre-registration is worth nothing unless the misses are scored as loudly as the hits.
+
+1. **Hit.** Association pooled Turkiye and Syria into one stream, for exactly the stated
+   reason -- the key is computed per document, outside the envelope loop.
+2. **MISS.** I predicted pooling would push nRMSE toward or past 1.0. It came out 0.288
+   and 0.208. The reason is a finding in its own right: range-normalized RMSE is
+   insensitive to contamination that lands mid-range, and 17,500 sits mid-range of a
+   1,014 -> 41,000 trajectory. The metric did not notice that 12 of 20 readings came
+   from a different earthquake. **The prediction was wrong because the metric is weaker
+   than I assumed, not because the pipeline did better than expected.**
+3. **Hit.** The gate passed 16/16 documents as mass-casualty.
+4. **Hit, and worse than feared.** The 1999 toll was bound in every configuration.
+
 ## What this changes
 
 Ranked by what the evidence supports:
@@ -112,5 +127,11 @@ Ranked by what the evidence supports:
 - The article body is ~95% identical day to day; the varying signal is the standfirst.
   This is a hard test of attribution and a weak test of extraction diversity.
 - 16 documents. Small.
+- "Extraction is good" is about the trajectory figures, not every span: the same run also
+  read `magnitude 7.8` as 7 dead. Stray reads are visible in the value dump and are minor
+  next to the 1999 contamination, but they are there.
+- Observation counts jitter across identical configs (89-92 `dead`). The encoder resize
+  is unseeded ("new embeddings initialized from a multivariate normal" on every load);
+  nRMSE is stable at 0.208 regardless.
 - Article text is not committed (it is Al Jazeera's); `harvest_turkey_gt.py` and
   `build_turkey_feed.py` regenerate the feed from the archive.
