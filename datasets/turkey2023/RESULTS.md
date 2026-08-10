@@ -222,3 +222,60 @@ A filter earns its keep only where observations are noisy, conflicting, lagged, 
 revised -- i.e. where truth differs from any single report. Testing that needs **multiple
 disagreeing sources**, which a single tracker page cannot provide by definition. That is
 the next validation to build, and it is a different dataset, not a different parameter.
+
+## Addendum 3: correcting the sequence-length explanation, and the mmBERT test
+
+Addendum 1 attributed the upper arm of the inverted-U to the encoder's 512-token limit,
+saying it "physically cannot see the whole document". **That is wrong**, and the
+correction matters because it changes which fix is right.
+
+Measured, not assumed:
+
+- `fastino/gliner2-base-v1` is DeBERTa-v2/v3 with `position_biased_input=False`,
+  `relative_attention=True`, `position_buckets=256`. It adds NO absolute position
+  embeddings, so `max_position_embeddings: 512` is effectively vestigial and longer
+  sequences are processed rather than rejected.
+- GLiNER2 does not chunk. `processor.py` truncates only at an explicit `max_len` in WORD
+  tokens, and `max_len=None` means no truncation at all.
+- Demonstrated: on the full 6,211-character article the base model returns 25 location
+  spans **including `Marmara` (offset 5985) and `Istanbul` (offset 6038)**, roughly 1,250
+  subword tokens in. Nothing is being cut off.
+
+So sequence length is still implicated -- the record-binding cliff does sit where inputs
+cross ~512 tokens -- but the mechanism is **degradation past the trained length**, not
+truncation. `position_buckets=256` is the more likely culprit: relative positions saturate
+beyond the bucket range, so *local* work (entity detection) survives at long range while
+*binding* (which is a relative-position relation between a number and a place) decays.
+That also explains why entity recall stayed fine while record binding collapsed.
+
+### The 137K joint-boundary models cannot replace stage 2
+
+Tested directly, since 8192-token mmBERT looked like the obvious fix:
+
+| | result |
+|---|---|
+| context | **8192** confirmed (ModernBERT, local_attention 128, global every 3) |
+| classification | works (`earthquake`) |
+| entities | works, but **2** location spans on the full article versus DeBERTa's 25 |
+| `[C]` records | **None at every threshold down to 0.01**, anchor/field thresholds swept to 0.01 |
+
+Not a threshold problem and not a wiring problem -- `enable_records: true` and
+`record_decoder` is a real module. It is a **training-data** problem. The config states
+the mix plainly: *100,080 event + 36,707 relation records*, with the comment
+`enable_records: true  # load-bearing: events decode as trigger + role edges`. The record
+head was switched on so EVENTS could decode as trigger/role edges; no JSON-structure data
+was in the mixture, so the head was never trained on `casualty_report`-shaped tasks.
+
+Consequences for the plan:
+
+1. These checkpoints **cannot** serve as the casualty structure extractor. They also
+   under-perform the DeBERTa base at zero-shot entity extraction.
+2. They remain usable for stage 0/1 (gate and event classification), where `rams-137k`
+   scores event_type 0.963.
+3. Long-context record extraction needs a boundary model **trained with structure data**.
+   That is the corpus rebuild, with a stronger rationale than "add a location field": it
+   would buy 8192-token context AND record extraction in one model.
+
+One practical gotcha: these checkpoints pin `attn_implementation:
+kernels-community/flash-attn2`, which raises `KeyError` at forward time on a CPU box.
+Load with `attn_implementation='sdpa'` off-GPU.
