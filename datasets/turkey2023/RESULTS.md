@@ -311,3 +311,48 @@ never looking at the offending paragraph. The three failures need three mechanis
 
 `--window lead` should be treated as superseded: it is a special case that happens to work
 on one publication's layout.
+
+## Addendum 5: the solved config does NOT generalise — Helene needs the opposite fix
+
+Running the Turkiye-solved configuration (`--window lead --associate record`, base model)
+on 70 archived AP articles about Hurricane Helene, with ground truth from Wikipedia's
+per-state casualty table. It fails, in a way that is more informative than a pass.
+
+**Association fragments into 18 keys for ONE event.** `Storm|asheville`,
+`Storm|buncombe county`, `Storm|western north carolina`, `Storm|north carolina`,
+`Floods|north carolina`, `Floods|the carolinas`, `Floods|six southeastern states` -- every
+geographic granularity from city to region becomes its own stream. The event TYPE also
+varies per article (`Floods` / `Storm` / `Mudslides`), and one document classified as
+`Sports Competition|japan`. Turkiye worked because it had exactly two clean,
+country-level places; Helene has a HIERARCHY, and nothing collapses it. This is the
+admin-level rollup that was flagged as a nice-to-have -- it is not optional on a real
+multi-place event.
+
+**And the required fix is the OPPOSITE of Turkiye's.** There the pipeline had to SPLIT one
+document into two streams. Here AP wire copy reports the NATIONAL TOTAL and rarely breaks
+it down, so the correct behaviour is to POOL. The extracted values in time order --
+150, 160, 166, 178, 200, 215, 225, 230, 250 -- are the national total trajectory, which
+Wikipedia's `Total` row tracks as 49 -> 113 -> 191 -> 232 -> 250 -> 228. Neither "always
+split" nor "always pool" is right: **the correct association granularity is a property of
+what the SOURCE reports**, and nothing in the pipeline infers it.
+
+**Scored as one national stream** the result is still weak, and the reason is recall:
+
+| | nRMSE vs Total | endpoint |
+|---|--:|--:|
+| `est_ekf` | **2.042** | 249 |
+| `est_last_value` | 2.125 | 250 |
+| truth | -- | 228 |
+
+The EKF edges the baseline -- the first time it has done so on a benchmark whose baseline
+is not an oracle -- but both are worse than predicting a constant, so the win is not worth
+claiming. Only **25 `dead` observations came from 70 articles**, clustered at 150-250,
+missing the entire early rise (49 -> 113 -> 191). A 1,100-character lead window catches an
+AP toll only when it sits in the opening lines.
+
+Two concrete fixes before Helene is a usable instrument, neither of which is the tracker:
+
+1. **Administrative rollup** -- map city/county/region to the state that the ground truth
+   is keyed on, and pool to a national stream when the source reports an aggregate.
+2. **`extract_long` instead of the lead window** (Addendum 4), which reads the whole
+   article and would recover the tolls that appear below the fold.
