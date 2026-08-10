@@ -179,3 +179,46 @@ not by principle — the window silently gets credit for removing the temporal
 contamination as well. A source that places its historical comparison earlier would break
 that. The date filter stays the principled fix for temporal validity; the window is the
 fix for binding. They address different failures and neither substitutes for the other.
+
+## Addendum 2: attribution SOLVED — and the benchmark cannot score the filter
+
+Wiring the two findings above into the pipeline (`--window lead --associate record`,
+base model, location as a record field) resolves the attribution failure completely:
+
+| stream | n | vs Turkiye | vs Syria |
+|---|--:|--:|--:|
+| `Earthquakes\|turkey` | 16 | **0.107** | 4.059 |
+| `Earthquakes\|syria` | 14 | 0.607 | **0.095** |
+
+Exactly two observations per document, values spanning 783 .. 41,000 (both countries'
+true ranges), **zero Izmit contamination**, and Syria recovered as its own stream for the
+first time. Compare the original run: Turkiye 0.208, Syria never recovered at all (3.3+).
+No new model and no new training -- a window anchored on the article lead, plus asking the
+record head for the location it already knew.
+
+**But the headline finding of this document needs correcting.** On the now-clean streams:
+
+| stream | EKF | `last_value` |
+|---|--:|--:|
+| turkey | 0.107 | **0.000** |
+| syria | 0.095 | **0.017** |
+
+`last_value` is not merely better, it is *exact*. It has to be: **the ground truth was
+sourced from the same standfirst sentence the extractor reads.** One source, one figure
+per day, and the truth IS that figure. "Repeat the last reading" is therefore a perfect
+oracle by construction, and no filter can beat it -- smoothing an already-exact signal can
+only add error.
+
+So this benchmark **cannot evaluate the tracker**. It evaluates extraction and
+attribution, and on those it is decisive. The earlier conclusion "the EKF loses to a
+trivial baseline" was measuring two different things at once and must be split:
+
+- In run B the EKF lost **because the observation stream was contaminated** (16 copies of
+  a 1999 toll). That is a real finding and it stands.
+- Here the EKF loses **because the baseline is an oracle**. That is an artefact of the
+  benchmark design, not evidence about the filter.
+
+A filter earns its keep only where observations are noisy, conflicting, lagged, or
+revised -- i.e. where truth differs from any single report. Testing that needs **multiple
+disagreeing sources**, which a single tracker page cannot provide by definition. That is
+the next validation to build, and it is a different dataset, not a different parameter.

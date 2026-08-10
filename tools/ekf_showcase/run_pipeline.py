@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -285,12 +286,23 @@ def event_envelopes(text: str, block: Dict[str, Any], margin: int = 40) -> List[
 # --------------------------------------------------------------------------- #
 # Stage 2 - casualty structure extraction
 # --------------------------------------------------------------------------- #
-def build_casualty_schema():
+def build_casualty_schema(with_location: bool = False):
     """Identical to datasets/disaster_streams/model_arm.py, so numbers from this demo
-    are comparable with the measured EKF results."""
+    are comparable with the measured EKF results.
+
+    ``with_location`` adds a location FIELD to the record. That makes attribution the
+    model's job rather than a proximity heuristic's: the number and the place it belongs
+    to are bound inside one record instance. Proximity cannot do this -- measured on the
+    Turkiye-Syria standfirst, both countries sit within 26 characters of both numbers, so
+    the nearest-location rule is a coin flip.
+    """
     from gliner2 import Schema
-    return (Schema()
-            .structure("casualty_report")
+    s = (Schema()
+         .structure("casualty_report"))
+    if with_location:
+        s = s.field("location", dtype="str",
+                    description="the country or place these deaths occurred in")
+    return (s
             .field("dead", dtype="str",
                    description="number of people killed or confirmed dead, not injured/missing/displaced")
             .field("injured", dtype="str",
@@ -387,6 +399,22 @@ _GENERIC_PLACE = {
     "the region", "the area", "temporary camps", "temporary shelters",
     "hardest-hit areas", "the country", "the city", "the district",
 }
+
+
+def record_key(events: Dict[str, Any], rec: Dict[str, Any]) -> str:
+    """Association key taken from the record's OWN location field.
+
+    The strongest available signal, because it is the only one produced by the same
+    decoding step that produced the number: the model emitted this place and this count
+    as one instance. Every other strategy here infers the pairing after the fact from
+    character offsets, which the Turkiye-Syria standfirst shows is close to a coin flip.
+    """
+    etype = (events or {}).get("event_type") or "unknown"
+    span, _ = _cell(rec.get("location"))
+    place = re.sub(r"[^\w\s-]", "", str(span or "")).strip().lower()
+    if not place or place in _GENERIC_PLACE or place[0].isdigit():
+        return etype
+    return f"{etype}|{place}"
 
 
 def _nearest_place(events: Dict[str, Any], envelope: Dict[str, Any]) -> str:
@@ -495,10 +523,18 @@ def main() -> None:
     # Event models are 3-4x SLOWER on MPS than CPU (per-op sync overhead), so cpu is the
     # default rather than "best available".
     ap.add_argument("--device", default="cpu")
-    ap.add_argument("--associate", choices=("none", "type", "type+location", "envelope"),
+    ap.add_argument("--associate",
+                    choices=("none", "type", "type+location", "envelope", "record"),
                     default="none", help="group observations into per-event streams "
                          "before tracking (needs --event-model for a real key)")
-    ap.add_argument("--window", choices=("article", "event"), default="article",
+    ap.add_argument("--envelope-margin", type=int, default=60,
+                    help="chars of context each side of a casualty span. Record extraction has "
+                         "an inverted-U response to this (see framing_experiment.py): starve it "
+                         "and the record head never fires, flood it and it binds the wrong "
+                         "pairs. The default 60 sits in the starved regime")
+    ap.add_argument("--lead-chars", type=int, default=1100,
+                    help="with --window lead: how much of the article head to read")
+    ap.add_argument("--window", choices=("article", "event", "lead"), default="article",
                     help="event: pass each DocEE 'Casualties and Losses' window to stages "
                          "2-3 instead of the whole article (needs --event-model)")
     ap.add_argument("--limit", type=int, default=0, help="first N articles only (smoke test)")
@@ -534,7 +570,7 @@ def main() -> None:
 
     print(f"[stage 2] casualty        {args.casualty_model}")
     cas_model = AutoExtractor.from_pretrained(args.casualty_model, map_location=args.device)
-    cas_schema = build_casualty_schema()
+    cas_schema = build_casualty_schema(with_location=args.associate == "record")
 
     modes = ["heuristic", "classify", "hybrid"] if args.normalizer == "both" else [args.normalizer]
     cls_schema = (build_normalizer_schema(gate_model)
@@ -548,8 +584,16 @@ def main() -> None:
         if gates[i]["relevant"]:
             # --window event: hand stage 2/3 the event's own envelope instead of the whole
             # article, so per-reading attributes are judged on per-event text.
-            envelopes = (casualty_windows(row["text"], events[i])
-                         if args.window == "event" and events[i] else [])
+            if args.window == "lead":
+                # The article LEAD, not envelopes scattered through the whole piece.
+                # Measured on Turkiye-Syria: reading standfirst + ~1000 chars with a
+                # location-bearing record schema binds BOTH countries 16/16, while the
+                # same model on the full 6.2k article gets Syria 0/16. News puts the
+                # current toll up top and the historical comparison at the bottom.
+                envelopes = [{"text": row["text"][: args.lead_chars]}]
+            else:
+                envelopes = (casualty_windows(row["text"], events[i], args.envelope_margin)
+                             if args.window == "event" and events[i] else [])
             entry["envelopes"] = envelopes
             # EVERY envelope is read, not just the first. A multi-event article carries
             # one casualty span per incident, and reading only the first would discard
@@ -565,8 +609,9 @@ def main() -> None:
                            .get("casualty_report") or [])
                 # Per ENVELOPE, not per document: the envelope is the incident, and
                 # keying at document level pooled every event an article mentioned.
-                key = association_key(events[i], args.associate, env)
                 for rec in (records or [{}]):
+                    key = (record_key(events[i], rec) if args.associate == "record"
+                           else association_key(events[i], args.associate, env))
                     _emit(rec, read_text, row, entry, modes, per_mode,
                           gate_model, cls_schema, event_key=key)
         articles.append(entry)
