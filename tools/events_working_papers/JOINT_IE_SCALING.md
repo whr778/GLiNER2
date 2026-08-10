@@ -559,6 +559,63 @@ silently pinned checkpoint selection to epoch 1; (ii) the failure was invisible 
 suite because it needs a trained boundary checkpoint plus a real event schema, which no
 unit test constructs.
 
+### The curve completes (2026-08-10) — 12/12 arms, and the warm start saturates
+
+All twelve arms finished on one H100 (~23h wall clock). Strict micro-F1, each family at
+its own calibrated threshold — **which is the first thing to check, not the last**:
+
+| family | 10K | 40K | 100K | 137K | thresholds |
+|---|--:|--:|--:|--:|---|
+| mmbert (cold base) | 0.010 | 0.039 | 0.079 | **0.098** | 0.3 / 0.3 / 0.3 / 0.3 — matched |
+| rams (warm start) | 0.177 | 0.191 | **0.202** | 0.192 | 0.3 / 0.3 / 0.3 / 0.3 — matched |
+
+(`event_argument`. Base `relation` over the same points: 0.007 → 0.012 → 0.073 →
+**0.170**; base `entity`: 0.311 → 0.402 → 0.459 → **0.586**; base `event_type` reaches
+**0.956**.)
+
+**The headline is a divergence.** The cold base is still climbing at 137K with no plateau
+— argument F1 nearly 10× from 10K, relations 24×. The RAMS warm start is **flat from
+100K** (0.202 → 0.192). Treat that as saturation rather than decline: single seed, ~5%
+relative, comfortably inside seed noise. The defensible claim is that **extra base data
+stops buying argument F1 once the head is warm-started, while the cold base has not yet
+exhausted it.**
+
+That has a direct consequence for §1's thesis. Warm-starting and base-scaling are not
+interchangeable routes to the same place: the warm start buys a large constant (0.177 at
+10K, which the cold base does not reach by 137K) and then stops paying, while base volume
+keeps paying but from far below. The two are complements with different exhaustion points,
+not substitutes.
+
+### Re-DocRED's "noise" was the threshold alternating — matched-threshold rule, again
+
+The Re-DocRED family looked erratic: relation 0.176 → 0.136 → 0.207 → 0.176, entity
+0.564 → 0.656 → 0.622 → 0.694. Neither is monotone, and the obvious reading is noise.
+
+It is not noise. The calibrated thresholds **alternate**: 0.1, 0.3, 0.1, 0.3. Split the
+series by threshold and both halves rise monotonically:
+
+| | 10K (0.1) | 100K (0.1) | | 40K (0.3) | 137K (0.3) |
+|---|--:|--:|---|--:|--:|
+| relation | 0.176 | **0.207** | | 0.136 | **0.176** |
+| entity | 0.564 | **0.622** | | 0.656 | **0.694** |
+
+So Re-DocRED scales with base data like everything else, and the non-monotonicity was an
+artefact of reading four points at two operating points. **This is the second time the
+matched-threshold rule has changed a conclusion in this experiment** — the first was the
+apparent warm-start regression above.
+
+Two process fixes follow, both cheap:
+
+1. `metric_sweep: true` (select each checkpoint at its own best threshold) is right for
+   shipping a single model and **wrong for a curve**. A curve config should pin one
+   threshold across its points, or emit both.
+2. `test_metrics.json` records no threshold, so comparability cannot be checked from the
+   metrics alone — it took a separate pull of `threshold_sweep.json` to establish that
+   mmbert and rams were in fact matched. The threshold belongs *in* the metrics file.
+
+The cross-model warning already added to `model_card.py` is what prompted the check here,
+and it earned its place.
+
 ## 5. Data (surveyed 2026-08-07)
 
 - Event pool = **100,080** records (10 corpora). 10/40/100K = nested subsamples
