@@ -286,7 +286,8 @@ def event_envelopes(text: str, block: Dict[str, Any], margin: int = 40) -> List[
 # --------------------------------------------------------------------------- #
 # Stage 2 - casualty structure extraction
 # --------------------------------------------------------------------------- #
-def build_casualty_schema(with_location: bool = False):
+def build_casualty_schema(with_location: bool = False, record_mode: str = "natural",
+                          anchor: str = "dead"):
     """Identical to datasets/disaster_streams/model_arm.py, so numbers from this demo
     are comparable with the measured EKF results.
 
@@ -295,10 +296,20 @@ def build_casualty_schema(with_location: bool = False):
     to are bound inside one record instance. Proximity cannot do this -- measured on the
     Turkiye-Syria standfirst, both countries sit within 26 characters of both numbers, so
     the nearest-location rule is a coin flip.
+
+    ``record_mode`` declares Instance Formation, and omitting it is a silent trap on the
+    BOUNDARY architecture: that path needs ``record_metadata``, a plain
+    ``Schema().structure(name)`` emits none, and the extraction then returns nothing with
+    no error. Every span model here is unaffected -- verified, plain and declared schemas
+    give byte-identical output on `fastino/gliner2-base-v1`, including on an injured-only
+    report where the ``dead`` anchor might have been expected to bite. So declaring it
+    costs nothing today and is what lets a boundary model be pointed at this pipeline at
+    all. Pass ``record_mode=None`` for the legacy form.
     """
     from gliner2 import Schema
-    s = (Schema()
-         .structure("casualty_report"))
+    s = Schema()
+    s = (s.structure("casualty_report", mode=record_mode, anchor=anchor)
+         if record_mode else s.structure("casualty_report"))
     if with_location:
         s = s.field("location", dtype="str",
                     description="the country or place these deaths occurred in")
@@ -550,6 +561,12 @@ def main() -> None:
                     choices=("none", "type", "type+location", "envelope", "record"),
                     default="none", help="group observations into per-event streams "
                          "before tracking (needs --event-model for a real key)")
+    ap.add_argument("--record-mode", default="natural",
+                    choices=("natural", "anchorless", "latent", ""),
+                    help="Instance Formation mode on the casualty schema. Required for "
+                         "BOUNDARY models -- without it the record path has no metadata "
+                         "and returns nothing silently. No effect on span models. Pass "
+                         "'' for the legacy plain form")
     ap.add_argument("--envelope-margin", type=int, default=60,
                     help="chars of context each side of a casualty span. Record extraction has "
                          "an inverted-U response to this (see framing_experiment.py): starve it "
@@ -593,7 +610,8 @@ def main() -> None:
 
     print(f"[stage 2] casualty        {args.casualty_model}")
     cas_model = AutoExtractor.from_pretrained(args.casualty_model, map_location=args.device)
-    cas_schema = build_casualty_schema(with_location=args.associate == "record")
+    cas_schema = build_casualty_schema(with_location=args.associate == "record",
+                                       record_mode=args.record_mode or None)
 
     modes = ["heuristic", "classify", "hybrid"] if args.normalizer == "both" else [args.normalizer]
     cls_schema = (build_normalizer_schema(gate_model)

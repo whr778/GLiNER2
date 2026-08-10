@@ -177,6 +177,11 @@ export default function EkfPanel() {
   const [eventModel, setEventModel] = useState("");
   const [windowMode, setWindowMode] = useState("article");
   const [normalizer, setNormalizer] = useState("hybrid");
+  // Association decides WHICH stream an observation joins. Defaulting to "record" and not
+  // "none" because "none" pools every event in the feed into one series -- the failure
+  // that association was added to fix (multi-event nRMSE 102 -> 27.975), and what this
+  // panel silently did until now.
+  const [associate, setAssociate] = useState("record");
   const [limit, setLimit] = useState(0);
 
   const [runs, setRuns] = useState<Run[]>([]);
@@ -193,7 +198,7 @@ export default function EkfPanel() {
   }, []);
 
   function label() {
-    const parts = [feed.split("/").pop()!.replace(".jsonl", ""), windowMode, normalizer];
+    const parts = [feed.split("/").pop()!.replace(".jsonl", ""), windowMode, normalizer, associate];
     if (eventModel) parts.push("stage1");
     parts.push(casualtyModel.split("/").pop()!);
     return parts.join(" · ");
@@ -210,7 +215,7 @@ export default function EkfPanel() {
     try {
       const started = await startEkfTrack({
         feed, casualty_model: casualtyModel, window: windowMode,
-        normalizer, limit: Number(limit) || 0,
+        normalizer, associate, limit: Number(limit) || 0,
         ...(eventModel ? { event_model: eventModel } : {}),
       });
       setJob(started);
@@ -268,6 +273,17 @@ export default function EkfPanel() {
               <select value={windowMode} onChange={(e) => setWindowMode(e.target.value)}>
                 <option value="article">whole article</option>
                 <option value="event">event envelope</option>
+                <option value="lead">article lead</option>
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>Associate</label>
+              <select value={associate} onChange={(e) => setAssociate(e.target.value)}>
+                <option value="record">record location</option>
+                <option value="type+location">type + location</option>
+                <option value="envelope">nearest location</option>
+                <option value="type">event type</option>
+                <option value="none">none (pool all)</option>
               </select>
             </div>
             <div style={{ flex: 1 }}>

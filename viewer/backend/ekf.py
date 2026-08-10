@@ -136,7 +136,12 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
         job.stage = "casualty"
         job.log.append(f"casualty: {params['casualty_model']}")
         cas_model = AutoExtractor.from_pretrained(resolve_model(params["casualty_model"]), map_location=device)
-        cas_schema = rp.build_casualty_schema()
+        # associate: the viewer shipped 6h BEFORE association landed in the pipeline and
+        # then never caught up, so every observation was pooled into one stream -- the
+        # exact failure association fixed (multi-event nRMSE 102 -> 27.975). Reuse the
+        # pipeline's own keying rather than re-deriving it here, which is how it drifted.
+        associate = params.get("associate") or "none"
+        cas_schema = rp.build_casualty_schema(with_location=associate == "record")
         modes = [params.get("normalizer") or "hybrid"]
         cls_schema = (rp.build_normalizer_schema(gate_model)
                       if modes[0] in ("classify", "hybrid") else None)
@@ -148,16 +153,23 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
             entry = {"t_hours": row["t_hours"], "text": row["text"], **gates[i],
                      "events": events[i], "observations": []}
             if gates[i]["relevant"]:
-                envelopes = (rp.casualty_windows(row["text"], events[i])
-                             if window == "event" and events[i] else [])
+                if window == "lead":
+                    envelopes = [{"text": row["text"][: int(params.get("lead_chars", 1100))]}]
+                else:
+                    envelopes = (rp.casualty_windows(row["text"], events[i],
+                                                     int(params.get("envelope_margin", 60)))
+                                 if window == "event" and events[i] else [])
                 entry["envelopes"] = envelopes
-                for read_text in ([e["text"] for e in envelopes] or [row["text"]]):
+                for env in (envelopes or [{"text": row["text"]}]):
+                    read_text = env["text"]
                     records = (cas_model.extract(read_text, cas_schema,
                                                  include_confidence=True)
                                .get("casualty_report") or [])
                     for rec in (records or [{}]):
+                        key = (rp.record_key(events[i], rec) if associate == "record"
+                               else rp.association_key(events[i], associate, env))
                         rp._emit(rec, read_text, row, entry, modes, per_mode,
-                                 gate_model, cls_schema)
+                                 gate_model, cls_schema, event_key=key)
             articles.append(entry)
             job.done = i + 1
 
@@ -166,11 +178,15 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
         step = float(params.get("grid_step", 6.0))
         grid = [t0 + k * step for k in range(int((t1 - t0) / step) + 1)]
         tracked = {m: rp.track(per_mode[m], grid) for m in modes}
+        # Per-stream tracking is the point of associating at all; track_by_event also
+        # folds clipped location keys (syr -> syria) via merge_prefix_keys.
+        tracked_by_event = {m: rp.track_by_event(per_mode[m], grid) for m in modes}
 
         result: Dict[str, Any] = {
             "feed": str(feed_path.relative_to(REPO)), "grid": grid,
             "articles": articles, "n_articles": len(feed), "n_relevant": len(kept),
-            "tracked": tracked, "mode": modes[0],
+            "tracked": tracked, "tracked_by_event": tracked_by_event,
+            "associate": associate, "mode": modes[0],
             "n_observations": {m: len(per_mode[m]) for m in modes},
         }
         truth_path = params.get("truth") or str(
