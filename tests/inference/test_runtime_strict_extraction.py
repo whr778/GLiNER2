@@ -47,6 +47,16 @@ class _FakeRuntime(ExtractorRuntimeMixin):
             )
         )
 
+    def _encoder_autocast(self):
+        """Real runtimes get this from BaseExtractorModel; the fake must supply it too.
+
+        Added when the FA2 inference fix (2026-08-08) started calling it on every extract
+        path. The mock was not updated, so these tests failed for two days against code
+        that was working -- a broken test reads exactly like a broken feature.
+        """
+        import contextlib
+        return contextlib.nullcontext()
+
     def compute_span_rep_batched(self, embs):
         return [None for _ in embs]
 

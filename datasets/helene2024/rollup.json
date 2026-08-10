@@ -15,7 +15,8 @@
     "            than as a seventh region.",
     "",
     "Ground truth is keyed on states, so a stream below state level cannot be scored; the",
-    "rollup is what makes per-state measurement possible at all."
+    "rollup is what makes per-state measurement possible at all.",
+    "Tail added 2026-08-10 from the keys the rollup run left unmapped -- enumerated by running it, not guessed in advance. Places outside the affected states (poland, iran, japan, cameroon) are deliberately NOT mapped: they are other events leaking through the gate, and mapping them would hide a real contamination problem."
   ],
   "collapse_type": true,
   "aliases": {
@@ -35,7 +36,6 @@
     "erwin": "tennessee",
     "unicoi county": "tennessee",
     "virginia": "virginia",
-
     "southeastern us": "__aggregate__",
     "southeast": "__aggregate__",
     "us": "__aggregate__",
@@ -47,6 +47,16 @@
     "carolinas": "__aggregate__",
     "six states": "__aggregate__",
     "six southeastern states": "__aggregate__",
-    "several states": "__aggregate__"
+    "several states": "__aggregate__",
+    "east tennessee": "tennessee",
+    "morganton nc": "north carolina",
+    "black mountain nc": "north carolina",
+    "banner elk": "north carolina",
+    "blue ridge mountains": "north carolina",
+    "saluda county": "south carolina",
+    "thomson": "georgia",
+    "atlanta": "georgia",
+    "tampa bay area": "florida",
+    "five states": "__aggregate__"
   }
 }

@@ -49,29 +49,29 @@ same text. That fragility is the argument for training rather than prompt-tuning
 
 ---
 
-## P1 — known-wrong, cheap
+## P1 — known-wrong, cheap  (3, 4, 6, 7 DONE 2026-08-10; 5 remains)
 
-### 3. `test_runtime_strict_extraction` — 2 failures, pre-existing
+### 3. ~~`test_runtime_strict_extraction` — 2 failures~~ FIXED
 `_FakeRuntime` lacks `_encoder_autocast`, added by the 8 Aug FA2-inference fix without
 updating the mock. Confirmed pre-existing by stashing today's changes.
 
-### 4. The 12 published models still carry `attn_implementation: flash_attention_2`
+### 4. ~~The 12 published models carry `attn_implementation: flash_attention_2`~~ FIXED
 The loader now repairs this at load time (CUDA-guarded), so nothing is broken for users.
 But the configs on the Hub remain wrong, and anyone reading them is misled. Decide: re-push
 configs, or document in the model cards.
 
-### 5. Cross-event contamination in the Helene feed
+### 5. Cross-event contamination in the Helene feed  **— NOT a quick fix; the only P1 left**
 Whole-article reading surfaced streams for `poland`, `bosnia`, `afghanistan`, `iran`,
 `japan`, `ukraine`, `cameroon` — casualty figures from unrelated stories in the same
 article. The gate answers "is this article about a mass-casualty event", never "does this
 number belong to THAT event". The date filter is the temporal version of this check; the
 spatial version does not exist.
 
-### 6. `ws_setup.sh` pins transformers 5.13.1 while `pyproject.toml` pins >=5.6,<5.7
+### 6. ~~`ws_setup.sh` overrides the repo pin~~ FIXED
 Harmless for completed runs (both arms shared a box) but it is the same drift class that
 cost a GPU run today. The setup script should inherit the repo pin.
 
-### 7. Rollup tail — 15 unmapped keys
+### 7. ~~Rollup tail — 15 unmapped keys~~ FIXED (38 aliases; foreign places left unmapped on purpose)
 `five states`, `tampa bay area`, `thomson`, `east tennessee`, `saluda county`,
 `blue ridge mountains`, `morganton nc`, `black mountain nc`. Deliberately left unmapped
 (never guess), and cheap to add now that they are enumerated.
