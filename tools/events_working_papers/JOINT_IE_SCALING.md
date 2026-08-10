@@ -573,18 +573,44 @@ its own calibrated threshold — **which is the first thing to check, not the la
 **0.170**; base `entity`: 0.311 → 0.402 → 0.459 → **0.586**; base `event_type` reaches
 **0.956**.)
 
-**The headline is a divergence.** The cold base is still climbing at 137K with no plateau
-— argument F1 nearly 10× from 10K, relations 24×. The RAMS warm start is **flat from
-100K** (0.202 → 0.192). Treat that as saturation rather than decline: single seed, ~5%
-relative, comfortably inside seed noise. The defensible claim is that **extra base data
-stops buying argument F1 once the head is warm-started, while the cold base has not yet
-exhausted it.**
+> **RETRACTED 2026-08-10, same day.** The "divergence" claimed here was an artifact of
+> comparing rows evaluated on DIFFERENT blind tests, and the cold-base 137K point is not
+> comparable to its own row. See "The support check that should have come first" below.
+> What survives is the RAMS row alone: it saturates from 100K.
 
-That has a direct consequence for §1's thesis. Warm-starting and base-scaling are not
-interchangeable routes to the same place: the warm start buys a large constant (0.177 at
-10K, which the cold base does not reach by 137K) and then stops paying, while base volume
-keeps paying but from far below. The two are complements with different exhaustion points,
-not substitutes.
+~~**The headline is a divergence.** The cold base is still climbing at 137K with no
+plateau; the RAMS warm start is flat from 100K.~~ The warm start **is** flat from 100K
+(0.202 → 0.192, consistent support 2,016) — treat that as saturation rather than decline:
+single seed, ~5% relative, inside seed noise. Everything said here about the COLD BASE
+climbing, and about the two arms having different exhaustion points, is withdrawn.
+
+### The support check that should have come first
+
+`test_metrics.json` records a `support` per family -- the number of gold instances the
+metric was computed over -- and comparing it across arms is a two-line check that was not
+run until after the curve was written up. It should have been the first thing done, because
+it invalidates half of it:
+
+| family (strict support) | mmbert 10k/40k/100k | mmbert 137k | rams (all) | redocred (all) |
+|---|--:|--:|--:|--:|
+| entity | 7,896 | **66,624** | -- | 10,705 |
+| relation | 902 | **5,281** | -- | 17,348 |
+| event_type | 433 | **4,004** | 848 | -- |
+| event_argument | 3,527 | **20,845** | 2,016 | -- |
+
+The mmbert arms were run across multiple attempts (`status.attempt1..4.tsv`) spanning the
+9 Aug fix that added the missing event `test:` keys, so the first three used the small
+blind test and 137K used the corrected one. **The cold-base row is therefore not a curve** --
+three points on one test set and a fourth on another -- and the mmbert-versus-rams
+comparison never shared a test set at all.
+
+Valid: the RAMS row (support 2,016 throughout) and the Re-DocRED row (10,705 / 17,348
+throughout). Invalid: the cold-base 100K→137K step, and every cross-row comparison.
+
+The lesson is exactly the matched-threshold lesson one level up. Thresholds were checked
+because a previous result had been overturned by them; **support** was not, and it is the
+same class of error -- two numbers that look comparable and are not. A curve config should
+assert constant support across its points and fail if it moves.
 
 ### Re-DocRED's "noise" was the threshold alternating — matched-threshold rule, again
 

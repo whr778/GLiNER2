@@ -33,21 +33,27 @@ head is the shared substrate — it removed the span 19-instance cap that made e
 
 ### A sharpening, now CONFIRMED (2026-08-10)
 
-It held. The full 12-arm curve completed 2026-08-10 ([[JOINT_IE_SCALING]] "The curve
-completes"), all points threshold-matched at 0.3. The *boundary* warm start reaches RAMS
-argument F1 **0.177 at 10K** — above the *span* curve's ~100K point (0.158) — and then
-barely moves: 0.191 / 0.202 / 0.192 through 137K. The span curve over the same range climbs
-+216% and is still rising.
+Partly. The full 12-arm curve completed 2026-08-10, all points threshold-matched at 0.3.
+The *boundary* warm start reaches RAMS argument F1 **0.177 at 10K** and then barely moves:
+0.191 / 0.202 / 0.192 through 137K — a valid within-row result (support 2,016 throughout).
+
+The comparison **against the span curve's 0.158 is not yet verified**: that number comes
+from a different experiment and its blind-test support has not been checked against this
+one. Given that a support mismatch has already invalidated the cold-base row of this very
+curve, the boundary-beats-span claim must be re-derived on a shared test set before it is
+used in Paper 0.
 
 So the head-init deficit that motivated the scaling curve is largely an artifact of the
 **span head's fixed-width enumeration**, not a data-volume law about mmBERT. "Which head"
 is a first-order claim for Paper 0, and Paper 2's curve is *architecture × decode* rather
 than *data × decode*.
 
-A second finding came with it: the cold base is **still climbing at 137K** (0.010 → 0.098)
-while the warm start is flat from 100K. Warm-starting and base-scaling are complements with
-different exhaustion points, not two routes to the same place. Greedy arm only — the beam
-arm remains unmeasured.
+**A second finding was retracted the same day.** "The cold base is still climbing at 137K
+while the warm start is flat" compared rows evaluated on DIFFERENT blind tests: the mmbert
+arms straddle the 9 Aug fix that added the missing event `test:` keys, so 10k/40k/100k were
+scored on 3,527 argument instances and 137K on 20,845. The cold-base row is not a curve and
+the cross-row comparison never shared a test set. Only the RAMS row survives (support 2,016
+throughout): it saturates from 100K. Greedy arm only — the beam arm remains unmeasured.
 
 ## The three papers
 

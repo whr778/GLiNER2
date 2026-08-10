@@ -187,10 +187,16 @@ points threshold-matched at 0.3:
 | mmbert (cold base) | 0.010 | 0.039 | 0.079 | **0.098** |
 | rams (warm start) | 0.177 | 0.191 | **0.202** | 0.192 |
 
-**Finding: warm-starting and base-scaling saturate at different points.** The cold base is
-still climbing at 137K; the warm start is flat from 100K. They are complements with
-different exhaustion points, not substitutes. The 137K dip is recorded as saturation, not
-decline — one seed, ~5% relative.
+**Finding, then same-day retraction.** It was written up as "warm-starting and base-scaling
+saturate at different points". A support check run afterwards showed the mmbert arms
+straddle the 9 Aug blind-test fix: 10k/40k/100k scored on 3,527 argument instances, 137K on
+20,845. So the cold-base row is not a curve, and the cross-row comparison never shared a
+test set. **Only the RAMS row survives** (support 2,016 throughout): it saturates from 100K,
+and the dip is saturation not decline — one seed, ~5% relative.
+
+The failure is the matched-threshold lesson one level up. Thresholds were checked because
+they had already overturned a result; **support** was not, and it is the same class of
+error. `compare_capabilities.py` now prints support beside every metric and flags a change.
 
 **The matched-threshold rule, second use.** Re-DocRED looked erratic (relation 0.176 /
 0.136 / 0.207 / 0.176). Its thresholds *alternate* 0.1/0.3/0.1/0.3; split by threshold,
