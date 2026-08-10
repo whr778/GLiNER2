@@ -788,3 +788,51 @@ overlap and a profile -- not a guess -- should settle it.
 
 Everything needed for the relaunch is built and committed: `data/warmstart_mix.train.jsonl`
 (84,279 records, 70/30, shuffled) and `joint-boundary-warmstart-struct.yaml`.
+
+### Warm start: records ARRIVE, the location field does not (2026-08-10)
+
+Adding structure + NER to `mmbert-137k` with 30% replay, 3 epochs, 82 minutes, 51.4
+samples/s, zero non-finite losses, ~$6. Both runs calibrated to threshold **0.3** and — the
+check that retracted the curve above — **identical support on every family**, so this
+comparison is valid.
+
+| capability | mmbert-137k | warm start | delta |
+|---|--:|--:|--:|
+| event | 0.328 | **0.349** | +0.021 |
+| event_argument | 0.098 | **0.118** | +0.020 |
+| event_trigger | 0.751 | **0.759** | +0.008 |
+| classification | 0.631 | 0.631 | 0.000 |
+| entity | 0.586 | 0.580 | −0.006 |
+| relation | 0.170 | 0.154 | −0.016 |
+| event_type | 0.956 | 0.935 | −0.021 |
+
+**30% replay held.** The worst regression is 2.1% relative, against a run that added two
+task families. Events improved, which was not the goal and is a free result.
+
+**The added capability arrived.** The base cannot emit records at all; the warm start can:
+
+    "At least 41,000 deaths ... in Turkey, while 5,800 ... in Syria."
+      mmbert-137k  -> None
+      warm start   -> [{dead: '5,800'}, {dead: '41,000'}]     TWO instances
+
+**But `location` is never filled** — the heterogeneous-field goal, and the reason the corpus
+was rebuilt at all. Multi-instance emission works; the non-numeric field does not.
+
+**A separate discovery, which invalidates every earlier "records return None" measurement.**
+The boundary record path requires `record_metadata`, and `Schema().structure(name)` does not
+emit it. Only a DECLARED record schema does:
+
+    s.structure("casualty_report", mode="natural", anchor="dead")
+     .field("dead", dtype="str", cardinality="required_one")
+
+With the plain form both models return `None`; with the declared form the warm start
+returns records. So the earlier conclusion that "`mmbert-137k` cannot do `[C]` record
+extraction" was measured with a schema that could never have worked — the model may have had
+more record competence than credited, though it still returns `None` under the declared
+schema, so the *comparison* stands even though the *method* was wrong.
+
+**Unresolved: why `location` did not learn.** Inspecting collated targets suggested no record
+targets were built for the `json_structures` training format, which would explain it — but
+the same probe reports `start_targets = None`, which cannot be true of a run that trained.
+The probe is not reading the right structures, so the mechanism is NOT established and is
+recorded as open rather than guessed at.
