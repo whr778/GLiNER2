@@ -536,12 +536,24 @@ extraction side of this program will not have the tracking background the sectio
 assume. Titles and authors verified by fetching each article, not inferred from the URL —
 the second one's slug says "oise-injection" and its actual title says *Noise Injection*.
 
-- **Weaver, J. "Exposing the Power of the Kalman Filter." Towards Data Science, 7 Nov 2023.**
+- **Weaver, J. "Exposing the Power of the Kalman Filter." Towards Data Science,
+  7 Nov 2023.** — **the origin of this research programme.** Read September 2024; the idea
+  was turned over for roughly two years before the first commit of this line of work
+  (2026-08-07).
   https://medium.com/data-science/exposing-the-power-of-the-kalman-filter-1b78621c3f56
+
   Walks the predict/update cycle from first principles in Python, moves to 4D object
-  tracking, then motivates the **Extended** Kalman filter for nonlinear systems. The
-  clearest short route to why §3 uses an EKF rather than a plain KF: a casualty toll is a
-  nonlinear, saturating, censored process, not a linear one.
+  tracking, then motivates the **Extended** Kalman filter for nonlinear systems — which is
+  the shape this programme took: §3's tracker is an EKF precisely because a casualty toll
+  is nonlinear, saturating and censored rather than linear.
+
+  Worth stating plainly for anyone reading the design cold, because the papers do not
+  otherwise show it: the direction of travel was **filter first, extraction second**. The
+  question was whether a Kalman filter could track a real-world quantity reported across a
+  stream of documents; document-level event extraction, the boundary head and the whole
+  joint_ie line are what that question turned out to require. That ordering explains why
+  §1 scopes the claim so narrowly to *streaming, quantitatively-evolving events* rather
+  than to event extraction in general.
 
 - **Maxwell's Demon. "Kalman Filters Demystified — The Algorithm Behind Moon Landings."
   Towards AI, 5 Nov 2025.**
@@ -557,7 +569,6 @@ the second one's slug says "oise-injection" and its actual title says *Noise Inj
   https://medium.com/data-science/unravelling-complexity-a-novel-approach-to-manifold-learning-using-oise-injection-41251565fded
   Not about Kalman filtering — it compares PCA, LLE, spectral embedding and Isomap, and
   evaluates them by **injecting synthetic noise and measuring structural stability via
-  Procrustes analysis**. The relevance here is methodological rather than topical: it is
-  the same evaluation stance as §14's harder-regime ablation, where a method is judged by
-  what survives as conditions degrade rather than by its score on the clean case. That
-  stance is what separated the real result from the artifact repeatedly in this project.
+  Procrustes analysis**. The relevance is methodological rather than topical: it is the
+  same evaluation stance as §14's harder-regime ablation, where a method is judged by what
+  survives as conditions degrade rather than by its score on the clean case.

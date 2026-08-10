@@ -13,6 +13,30 @@ Companion documents: [[RESEARCH_PROGRAM]] (thesis + paper map), [[EKF_MHT_DESIGN
 
 ---
 
+## Origin — September 2024
+
+The idea does not start in the commit log, and a journal built only from `git log` would
+miss it by two years.
+
+**September 2024** — Weaver's *"Exposing the Power of the Kalman Filter"* (Towards Data
+Science, 7 Nov 2023) is read. It walks the predict/update cycle from first principles and
+ends by motivating the **Extended** Kalman filter for nonlinear systems. The question it
+raises — could a Kalman filter track a real-world quantity reported across a stream of
+documents? — is the one this whole programme exists to answer.
+
+**September 2024 – August 2026** — turned over, not built. The first commit of this line
+lands 2026-08-07, roughly two years later.
+
+That ordering is worth recording because it is not recoverable from the code, and it
+explains the shape of everything below: **the filter came first and the extraction second.**
+Document-level event extraction, the boundary head, the counting layer and the entire
+joint_ie line are not the goal — they are what the original question turned out to require
+before it could be asked properly. It is also why [[EKF_MHT_DESIGN]] §1 scopes its claim so
+narrowly (*streaming, quantitatively-evolving events*, explicitly NOT "EKF helps event
+extraction") — that scope is the original question, kept honest.
+
+---
+
 ## Phase 0 — inherited baseline (to mid-July 2026)
 
 The repository begins 2025-07-07 as GLiNER2 proper: a span-architecture extractor with
