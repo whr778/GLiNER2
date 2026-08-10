@@ -177,7 +177,17 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
                 else:
                     stats["no_place"] += 1
             if fields:
-                structures.append(Structure("casualty_report", **fields))
+                # mode= is what makes this trainable on the BOUNDARY architecture. Without
+                # it the record carries no `record_metadata`, `compile_record_specs`
+                # returns nothing, and the record head is never supervised -- the schema is
+                # valid and silently undecodable. The 2026-08-10 warm start trained 29,523
+                # of these and the `location` field never learned.
+                #
+                # No explicit anchor: it defaults to the FIRST declared field, and fields
+                # are inserted roles-first with `location` last, so whichever casualty
+                # figure is present anchors the instance. That is the right semantics here
+                # -- a record exists because a toll was reported, not because a place was.
+                structures.append(Structure("casualty_report", mode="natural", **fields))
 
         if structures:
             examples.append(InputExample(text=doc.strip(), structures=structures))

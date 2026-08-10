@@ -9,6 +9,7 @@ import copy
 import logging
 import random
 import re
+import warnings
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Dict, Tuple, Iterator, List, Optional
@@ -476,6 +477,29 @@ class SchemaTransformer:
 
         record_metadata_list = [_record_meta(s) for s in batch.original_schemas]
         has_records = any(record_metadata_list)
+
+        # A structure schema with no record_metadata is VALID and silently undecodable
+        # here: `Schema().structure(name)` keeps the legacy (span-era) behaviour, the
+        # boundary record path needs metadata, and the result is an empty extraction with
+        # no error. That cost real time in this project -- "mmbert-137k cannot do record
+        # extraction" was concluded from exactly this shape, having never been asked with
+        # a schema that could have worked.
+        if not has_records:
+            legacy = [s for s in batch.original_schemas
+                      if isinstance(s, dict) and s.get("json_structures")]
+            if legacy:
+                names = sorted({k for s in legacy for item in s["json_structures"]
+                                if isinstance(item, dict) for k in item})[:3]
+                warnings.warn(
+                    f"Structure schema {names} carries no record_metadata, so the boundary "
+                    f"record head cannot decode it and this extraction will return nothing. "
+                    f"Declare the record explicitly -- "
+                    f"Schema().structure(name, mode='natural', anchor=<field>) with "
+                    f"cardinality= on each field -- or use a span-architecture model, whose "
+                    f"legacy structure path does not need the metadata.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
         layouts, targets, record_specs = build_boundary_batch_metadata(
             schema_tokens_list=batch.schema_tokens_list,
