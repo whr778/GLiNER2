@@ -135,3 +135,47 @@ Ranked by what the evidence supports:
   nRMSE is stable at 0.208 regardless.
 - Article text is not committed (it is Al Jazeera's); `harvest_turkey_gt.py` and
   `build_turkey_feed.py` regenerate the feed from the archive.
+
+## Addendum (2026-08-10): the record head was never the problem — the window was
+
+Follow-up to the attribution finding above, prompted by asking whether entity *logits*
+could rank associations. Two results, one negative and one that changes the plan.
+
+**Unary scores cannot rank pairings.** The confidence on `Turkey` is P(this span is a
+Location); `Syria` scores highly too. Measured on the standfirst, the unary scores are
+actively misleading — `Syria 0.49` outranks `Turkey 0.31` in the sentence where Turkey
+owns the 41,000. Association needs an energy over *pairs*, which is what the `[C]`
+record head and `[R]` relation head provide and what NER tags, of any granularity,
+cannot. GPE-vs-LOC does not help here for the same reason: Turkey and Syria are both GPE.
+
+**Record extraction has an inverted-U response to context volume** (`framing_experiment.py`,
+gold sentence held identical in every condition, only the surrounding text varies):
+
+| context | records/doc | Turkiye | Syria |
+|---|--:|--:|--:|
+| +0 .. +250 | 0.25 | 2/16 | 2/16 |
+| +500 | 1.06 | 2/16 | 2/16 |
+| **+1000 .. +1500** | **2.00** | **16/16** | **16/16** |
+| +2500 .. +5000 | ~1.9 | 16/16 | 1-4/16 |
+| full article (6.2k) | 1.38 | 16/16 | 0/16 |
+
+Ragged versus word-boundary cuts made **no difference at any level**, so this is not a
+truncation artefact. There are two distinct failure regimes: below ~750 characters the
+record head does not fire at all; above ~2500 it fires normally (~1.9 records) but binds
+the wrong pairs. Only the 1000-1500 band gets both right.
+
+**At 1000-1500 characters the attribution failure disappears: 16/16 on both countries.**
+No new machinery. The `[C]` head could bind number to country the whole time; it was
+being handed 6,200 characters and asked to pick.
+
+Which retires the earlier conclusion that this needs relation-based attachment as "the
+real fix". It may still be the more robust mechanism, but it is no longer the cheapest
+thing that works, and it should be justified against a windowed baseline rather than
+against the full-document one.
+
+**One honest caveat on why the window looks so good here.** The 1999 Izmit toll sits at
+offset 4153-6171 in every document, so a 1500-character window excludes it *by layout*,
+not by principle — the window silently gets credit for removing the temporal
+contamination as well. A source that places its historical comparison earlier would break
+that. The date filter stays the principled fix for temporal validity; the window is the
+fix for binding. They address different failures and neither substitutes for the other.
