@@ -279,3 +279,35 @@ Consequences for the plan:
 One practical gotcha: these checkpoints pin `attn_implementation:
 kernels-community/flash-attn2`, which raises `KeyError` at forward time on a CPU box.
 Load with `attn_implementation='sdpa'` off-GPU.
+
+## Addendum 4: `extract_long` already does this, and does it better
+
+`--window lead` (Addendum 2) worked but rested on a layout accident: Al Jazeera puts the
+1999 comparison at the bottom, so reading the head both captured the current tolls and
+skipped the contamination. A publication that leads with historical context breaks it.
+
+GLiNER2 already ships the right mechanism -- `extract_long` / `batch_extract_long`
+(`inference/runtime.py`), which splits a document into overlapping WORD chunks and merges
+the results. Setting its chunk size to the band the framing experiment identified, over
+the FULL 6,211-character article:
+
+| chunk_size | overlap | Turkiye | Syria | Izmit bound |
+|---|--:|--:|--:|--:|
+| 384 (default) | 64 | 16/16 | 15/16 | 15 |
+| **200** | **50** | **16/16** | **16/16** | 15 |
+| 160 | 40 | 16/16 | 16/16 | 25 |
+
+Perfect attribution on both countries with no lead assumption and no clipping of the
+document. The default 384 is slightly too coarse -- consistent with the framing curve,
+where binding starts to decay once a window crosses the model's comfortable range.
+
+Contamination returns (15 Izmit bindings) precisely because the whole document is now
+read, which is the honest state of affairs: the lead window was suppressing that error by
+never looking at the offending paragraph. The three failures need three mechanisms:
+
+  coverage + binding   `extract_long`, chunk_size ~200 words
+  attribution          location as a record FIELD (`--associate record`)
+  temporal validity    the date filter (13/15 caught, 0 false positives)
+
+`--window lead` should be treated as superseded: it is a special case that happens to work
+on one publication's layout.
