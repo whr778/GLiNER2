@@ -604,3 +604,66 @@ the second one's slug says "oise-injection" and its actual title says *Noise Inj
   Procrustes analysis**. The relevance is methodological rather than topical: it is the
   same evaluation stance as §14's harder-regime ablation, where a method is judged by what
   survives as conditions degrade rather than by its score on the clean case.
+
+## 23. Aggregate-vs-parts: the measurement-model reframe is right and does NOT pay off here
+
+Helene reporting carries a national total and its state components together -- "227 across
+six states, including 120 in North Carolina and 17 in Tennessee". Filing 227 under whichever
+state is nearest (what ships) is plainly wrong: it is not a rival claim about North Carolina.
+
+**The reframe.** This is a measurement-model question, not a clustering one. Make the state a
+vector and every report is a linear observation differing only in its `H` row:
+
+    "120 in North Carolina"     H = e_NC          z = 120
+    "227 across six states"     H = [1,1,1,1,1,1] z = 227
+
+A Kalman filter fuses both natively. A Gaussian mixture or mean shift cannot express the sum
+at all and would cluster in VALUE space, where 12 (Florida) and 17 (Tennessee) look like one
+cluster and 120 and 227 like two -- backwards.
+
+**Tested** (`vector_state_test.py`): real Wikipedia per-state trajectories including the
+genuine North Carolina revision 123 -> 102 -> 96; only the reporting PROCESS simulated
+(frequent totals, sparse per-state, 10% noise), because the real feed's 25 observations are
+too thin to test a filter. Both arms use the same filter and the same per-state
+observations; only the aggregates differ. Mean per-state nRMSE, 40 trials:
+
+| per-state report rate | parts-only | vector | delta | vector wins |
+|---|--:|--:|--:|--:|
+| 10% | 0.4348 | 0.6085 | +0.174 | 4/40 |
+| 20% | 0.3135 | 0.3940 | +0.081 | 10/40 |
+| 35% | 0.2292 | 0.2860 | +0.057 | 10/40 |
+| 50% | 0.2030 | 0.2234 | +0.020 | 22/40 |
+| **80%** | 0.1556 | **0.1520** | **-0.004** | 30/40 |
+
+**Two predictions, both wrong, and the second is the finding.**
+
+1. *Isotropic process noise was a modelling error I made, not a property of the approach.*
+   With `H = [1,1,...]` and isotropic `P`, an aggregate's correction spreads EQUALLY across
+   components, shoving Virginia (range 1->2) as hard as North Carolina (6->123). Scaling `Q`
+   with the estimate cut the harm 7.7x at the sparse end (+1.338 -> +0.174). Components at
+   different orders of magnitude need proportional process noise; that is a precondition,
+   not a tuning knob.
+
+2. *I predicted the aggregate would help MOST where per-state reports are sparse -- adding
+   information where there is little. The opposite is true.* An aggregate constrains the SUM
+   but says nothing about the SPLIT, and the split has to come from the parts. When parts
+   are sparse the filter must guess the division, so a total injects error into individual
+   states; when parts are dense the division is already pinned and the total refines the sum
+   cleanly. **Aggregates are a refinement, not a substitute -- they cannot bootstrap a
+   split.**
+
+**Consequence for this programme, and it is a negative.** AP wire copy reports mostly
+national totals and rarely breaks them down -- measured on the Helene feed. That is exactly
+the sparse-parts regime where the vector formulation HURTS. So the reframe is structurally
+correct and buys nothing on the data we actually have; the best case measured is a 0.004
+improvement at a report density the source does not supply.
+
+The blocker is therefore not the measurement model. It is that per-state reporting is too
+sparse to pin the split, which is a RECALL and source-coverage problem -- the same
+conclusion the Helene run reached from the other direction. Fixing extraction recall and
+adding sources should come before any further work on the aggregate machinery, and
+certainly before MHT, whose hypothesis space would inherit the same starvation.
+
+Caveat: the reporting process is simulated and `Q`, `R` and the noise model are chosen. The
+qualitative reversal is mechanistically explicable and holds across the whole sweep, but the
+exact crossover density is not a measured property of the world.
