@@ -71,6 +71,7 @@ statement.
 |---|---|---|
 | [[COUNTING_LAYER]] | 0, 1, 2 | why the span 19-cap is a dead end; boundary removes it |
 | [[BOUNDARY_ARCHITECTURE]] | 0, 1, 2 | **the substrate reference** — how the boundary head works end to end, and how NER / structures / relations / events each flow through training, evaluation and extraction |
+| [[PROJECT_JOURNAL]] | all | chronological record of decisions, and of the ones later overturned |
 | [[BOUNDARY_DECODE_AND_EKF]] | 1, 2 | verified boundary decode map + where global inference plugs in |
 | [[EKF_MHT_DESIGN]] §1-13 | 1 | tracker design + decisions |
 | [[EKF_MHT_DESIGN]] §14-20 | 1 | **results** (regime ablation, learned gate, normalization, model arm, missing probe, fine-tuned extractor) |
