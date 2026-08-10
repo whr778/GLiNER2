@@ -17,6 +17,38 @@ Scoped claim (must stay scoped): *for streaming, quantitatively-evolving events,
 EKF/MHT tracking beats recursive fusion / the heuristic merge* — NOT "EKF helps event
 extraction" in general.
 
+### 1a. The question, stated the way it was actually asked
+
+**Can a Kalman filter track real-world events reported in text, and DIARIZE them into
+separate streams?**
+
+Two halves, co-equal, and the second is not downstream of the first:
+
+| half | mechanism | status |
+|---|---|---|
+| **track** — recover an evolving quantity from noisy, censored, lagged reports | EKF (§3) | built, and validated on synthetic streams (§14, §20) |
+| **diarize** — decide WHICH event stream each observation belongs to | MHT (§3 association) | **NOT BUILT** — see below |
+
+"Diarize" is the right word and it is borrowed deliberately from speaker diarization: not
+"who spoke when" but *which event is this figure about, over time*. Naming it that way is
+clarifying, because it makes obvious that the two halves fail independently and that the
+second can silently destroy the first — which is exactly what the real-event validations
+found (§21, and the Helene run).
+
+**The MHT half is unbuilt, and this should be stated plainly.** §3 specifies association as
+*gate → Hungarian assignment → top-K hypotheses (the beam) → track birth/death*. What
+actually ships is **hard assignment on an observable string key** (`association_key` /
+`record_key` / `merge_prefix_keys` in the showcase) feeding **one single-stream EKF per
+key** (`est_ekf`). There is no hypothesis enumeration, no deferred decision, no track
+birth/death. The only Hungarian solver in the repository is inside the boundary model's
+record LOSS, matching predictions to gold during training — unrelated to tracking.
+
+That reframes every diarization result so far. Turkiye-Syria losing Syria entirely, and
+Helene fragmenting one event into 18 keys while needing the opposite (pooling to a national
+aggregate), are failures of a **placeholder**, not of MHT. The mechanism the design names
+for this exact problem has never been tested, so the programme's central question is not
+yet answered — it is, so far, unasked.
+
 ## 2. Where it lives (from the verified map)
 
 - Base decode = the boundary model's own **joint IE** decode (records + relations),

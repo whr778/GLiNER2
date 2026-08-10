@@ -27,6 +27,11 @@ documents? — is the one this whole programme exists to answer.
 **September 2024 – August 2026** — turned over, not built. The first commit of this line
 lands 2026-08-07, roughly two years later.
 
+**The question, in the form it was actually asked:** *can a Kalman filter track real-world
+events reported in text, and **diarize** them into separate streams?* Two halves — track,
+and decide which stream each observation belongs to. The second is not a downstream detail;
+it is half the question, and it is the half that has failed in every real-event test so far.
+
 That ordering is worth recording because it is not recoverable from the code, and it
 explains the shape of everything below: **the filter came first and the extraction second.**
 Document-level event extraction, the boundary head, the counting layer and the entire

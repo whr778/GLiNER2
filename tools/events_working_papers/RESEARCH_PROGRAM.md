@@ -21,6 +21,13 @@ shared `candidate_scores → JointProblem` contract:
 | **within a document** (combinatorial) | joint_ie global decode + typed constraints | top-K constraint-consistent assignments | **events (RAMS) _and_ relations (Re-DocRED)** |
 | **across documents / streaming** (temporal) | EKF/MHT tracker (Kalman bank + pruning) | top-K hypotheses over time (MHT) | evolving events (disaster streams, Venezuela) |
 
+The temporal row is two questions, not one: **track** an evolving quantity, and **diarize**
+observations into the right stream. The tracker is built and validated on synthetic data;
+the diarizer is **not built** — association currently ships as hard assignment on a string
+key, with no hypothesis enumeration ([[EKF_MHT_DESIGN]] §1a). Every real-event failure so
+far has been in the second half, which means the programme's central question remains
+unasked rather than answered.
+
 The within-document scope is **both faces, not relations alone**: in the beam an event is a
 *trigger node plus role edges* and a relation is a *plain edge*, so one typed-constraint
 decode covers both ([[JOINT_IE_SCALING]] §3b). A win on only one face is a weaker but still
