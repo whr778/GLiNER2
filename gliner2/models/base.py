@@ -187,10 +187,19 @@ class BaseExtractorModel(PreTrainedModel):
         #
         # Trying the repo form BEFORE degrading repairs every checkpoint already published
         # with the plain string -- twelve of ours -- without re-uploading any of them.
-        candidates = [attn_implementation]
-        if attn_implementation == "flash_attention_2":
+        requested = attn_implementation
+        if requested == _HUB_FLASH_ATTN_2 and not torch.cuda.is_available():
+            # A checkpoint trained on GPU saves the hub repo id into its config. Loading it
+            # on CPU must fall through to sdpa rather than accept-then-explode.
+            requested = "sdpa"
+        candidates = [requested]
+        # CUDA-ONLY, and the guard is load-bearing: the Hub kernel is ACCEPTED at load time
+        # on a CPU box and then raises KeyError at the first forward, which is worse than
+        # the silent sdpa fallback it was added to fix. Verified by running a forward, not
+        # just a load -- checking construction alone is what missed this.
+        if requested in ("flash_attention_2", _HUB_FLASH_ATTN_2) and torch.cuda.is_available():
             candidates.append(_HUB_FLASH_ATTN_2)
-        if attn_implementation:
+        if requested:
             candidates += [c for c in ("sdpa", "eager") if c not in candidates]
 
         last_error: Exception

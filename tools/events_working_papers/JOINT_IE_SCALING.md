@@ -836,3 +836,56 @@ targets were built for the `json_structures` training format, which would explai
 the same probe reports `start_targets = None`, which cannot be true of a run that trained.
 The probe is not reading the right structures, so the mechanism is NOT established and is
 recorded as open rather than guessed at.
+
+### Record mode A/B: `natural` works, `anchorless` learns nothing (2026-08-10)
+
+Single-variable by construction: both mixtures byte-identical with `record_metadata`
+stripped (same content hash, 84,280 records), both arms on ONE 2xH100 box with a GPU each,
+identical hyperparameters, both calibrated to threshold 0.3, identical blind-test support.
+The only difference is `{"mode": "natural", "anchor": "dead"}` versus
+`{"mode": "anchorless"}`.
+
+**Record extraction** (`probe_records.py`; `loc filled` is the discriminator, since the
+blind test carries no structure data and scores both arms alike):
+
+| model | instances | value | **loc filled** | loc correct |
+|---|--:|--:|--:|--:|
+| mmbert-137k (base) | 0/9 | 0/9 | 0/9 | 0/9 |
+| warm start, no `record_metadata` | 6/9 | 5/9 | **0/9** | 0/9 |
+| **natural** | **7/9** | **6/9** | **6/9** | **4/9** |
+| anchorless | 1/9 | 1/9 | 0/9 | 0/9 |
+
+**`location` fills for the first time.** It was 0/9 in every prior configuration, which
+confirms the diagnosis: the field never learned because the corpus emitted no
+`record_metadata`, so `compile_record_specs` returned nothing and the record head was never
+supervised. Declaring the mode fixed it. Not solved, though -- 6/9 filled but only 4/9
+correct, so it binds the wrong place about a third of the time.
+
+**`anchorless` collapsed**, and by more than expected. The prior evidence was a model never
+TRAINED on anchorless failing to decode it, which was explicitly discounted as evidence
+about the model rather than the mode. Training on it did not rescue it. The likely reason
+is that a casualty record genuinely HAS a natural anchor -- the figure itself -- so removing
+it leaves nothing to key instances on.
+
+**Capability cost, and the two arms explain each other** (same baseline, same support,
+threshold 0.3):
+
+| capability | base | natural | anchorless |
+|---|--:|--:|--:|
+| event_argument | 0.098 | **+0.021** | +0.002 |
+| event_trigger | 0.751 | +0.014 | +0.017 |
+| entity | 0.586 | -0.015 | -0.026 |
+| event_type | 0.956 | -0.017 | +0.004 |
+| **relation** | 0.170 | **-0.037** | -0.002 |
+
+`natural` pays 0.037 on relations (-22% relative) while `anchorless` pays 0.002 and is flat
+everywhere. That is not two different regressions -- it is one arm learning a new task and
+displacing capacity, and one arm learning nothing to displace anything with. **The relation
+cost is the price of the capability**, which makes it a trade to price rather than a bug to
+fix.
+
+**Where to look first if that price is too high.** `task_lr` is 5.0e-4 and was tuned in the
+curve for COLD heads. Here the relation head is warm and receives only 8% of the mixture --
+few gradients at a high rate, which is a recipe for drift. That targets the regression more
+directly than `encoder_lr`, which acts on the shared trunk where relations are not the only
+thing at stake. Untested.
