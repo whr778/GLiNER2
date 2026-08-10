@@ -563,6 +563,34 @@ def track(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
     return series
 
 
+def apply_rollup(observations: List[Dict], rollup: Dict[str, Any]) -> None:
+    """Fold city/county/region keys up to the level the ground truth is keyed on.
+
+    Two axes fragment independently on a real event, and both are handled:
+
+    **Type.** The same event is classified differently across articles -- Helene appears as
+    Floods, Storm and Mudslides -- so `Floods|florida` and `Storm|florida` are one stream
+    described twice. `collapse_type` drops the type from the key.
+
+    **Place.** `asheville north carolina`, `buncombe county` and `western north carolina`
+    are all North Carolina; `southeastern us`, `appalachia` and `six states` are none of the
+    six states -- they are the national aggregate, which is a SUM over states rather than a
+    seventh region, and is keyed `__aggregate__` so downstream work can treat it that way
+    instead of filing it under whichever state is nearest.
+
+    A place with no alias is left ALONE rather than guessed at. An unmapped key is visible
+    fragmentation; a wrongly-mapped one is a silent error in the wrong stream.
+    """
+    aliases = {k.lower(): v for k, v in (rollup.get("aliases") or {}).items()}
+    collapse = bool(rollup.get("collapse_type"))
+    for o in observations:
+        key = o.get("event_key", "all")
+        etype, _, place = key.partition("|")
+        place = aliases.get(place.strip().lower(), place)
+        o["event_key"] = place if (collapse and place) else (
+            f"{etype}|{place}" if place else etype)
+
+
 def merge_prefix_keys(observations: List[Dict]) -> None:
     """Fold `Earthquakes|syr` into `Earthquakes|syria`, in place.
 
@@ -585,8 +613,11 @@ def merge_prefix_keys(observations: List[Dict]) -> None:
             o["event_key"] = canon[k]
 
 
-def track_by_event(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
+def track_by_event(observations: List[Dict], grid: List[float],
+                   rollup: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """One tracked stream per association key, largest first."""
+    if rollup:
+        apply_rollup(observations, rollup)
     merge_prefix_keys(observations)
     streams: Dict[str, List[Dict]] = {}
     for o in observations:
@@ -632,6 +663,10 @@ def main() -> None:
                          "pairs. The default 60 sits in the starved regime")
     ap.add_argument("--lead-chars", type=int, default=1100,
                     help="with --window lead: how much of the article head to read")
+    ap.add_argument("--rollup", default="",
+                    help="json map folding city/county/region keys up to the level the "
+                         "ground truth is keyed on, plus __aggregate__ for multi-state "
+                         "phrases. Unmapped places are left alone, never guessed")
     ap.add_argument("--event-year", type=int, default=0,
                     help="reject casualty figures whose nearest date predates this year "
                          "(0 = off). The 1999 Izmit toll was tracked as a 2023 figure in "
@@ -648,6 +683,8 @@ def main() -> None:
 
     from gliner2 import AutoExtractor
 
+    rollup = (json.loads(Path(args.rollup).read_text(encoding="utf-8"))
+              if args.rollup else None)
     feed = [json.loads(l) for l in Path(args.feed).open(encoding="utf-8") if l.strip()]
     feed.sort(key=lambda r: r["t_hours"])
     if args.limit:
@@ -754,7 +791,7 @@ def main() -> None:
         "feed": args.feed, "grid": grid, "articles": articles,
         "n_articles": len(feed), "n_relevant": len(kept),
         "tracked": {m: track(per_mode[m], grid) for m in modes},
-        "tracked_by_event": {m: track_by_event(per_mode[m], grid) for m in modes},
+        "tracked_by_event": {m: track_by_event(per_mode[m], grid, rollup) for m in modes},
         "associate": args.associate,
         "n_observations": {m: len(per_mode[m]) for m in modes},
     }
