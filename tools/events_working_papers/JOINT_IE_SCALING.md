@@ -721,3 +721,44 @@ and relations without a second mechanism.
   property of global decoding rather than of the constraint. Anyone implementing this in
   Phase B should decide *fill vs reject* first, and know that only **fill** preserves
   comparability with the greedy arm.
+
+### The record head is ~5x slower to train than the rest (2026-08-10, unresolved)
+
+The warm-start run (structure + NER added to `mmbert-137k` with 30% replay) trains
+CORRECTLY -- loss 9.10 -> 4.35 by step 39 -- but at **4.6 samples/s against the curve's
+22** on the same H100 and the same model. ETA 14h for 3 epochs rather than ~3h. Killed
+after ~$6 rather than paying 4.6x the estimate for a result we can get later.
+
+What was measured, so the optimisation does not start from scratch:
+
+| signal | value | reading |
+|---|---|---|
+| GPU utilization | **0%** over 10 samples (one 6%) | the GPU is idle, not saturated |
+| GPU memory | 12.8 GB resident, one compute app | the model IS on the device |
+| CPU | one core at ~105%, load average 1.0 | a single serial bottleneck |
+| dataloader workers | 12 spawned, **all idle** | NOT a data-loading bottleneck |
+| `num_workers` 0 -> 12 | 5.0 -> 3.2 s/it | small gain, so collation is not the cause |
+
+That combination -- idle GPU, one pegged core, idle workers -- is the signature of many
+small GPU kernels behind heavy Python-side work, not of compute or I/O.
+
+**The prime suspect is the record path**, by elimination: this run differs from every
+curve arm in exactly one way, it carries `json_structures` supervision. The 137K mix had
+none (its `text2json` corpus supervises entities despite the name), so `record_decoder`
+was never exercised during the curve, and the curve is where the 22 samples/s came from.
+`record_instance_queries: 32` per document, times multi-instance documents, is where to
+look first.
+
+Not yet distinguished, and worth separating before changing anything:
+
+1. target-graph construction for records (collator side, should be parallel but the
+   workers are idle, which itself needs explaining), versus
+2. the record decode/loss path in the training step (main process, would match the
+   symptom exactly).
+
+The frequent `gold capacity exceeded (max_gold_per_query=32, overflowing queries={0: 72})`
+warnings show NER documents are also expensive to build targets for, so the two candidates
+overlap and a profile -- not a guess -- should settle it.
+
+Everything needed for the relaunch is built and committed: `data/warmstart_mix.train.jsonl`
+(84,279 records, 70/30, shuffled) and `joint-boundary-warmstart-struct.yaml`.
