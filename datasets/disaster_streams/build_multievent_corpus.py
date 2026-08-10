@@ -58,6 +58,34 @@ def _locate_in_slice(value: int, doc: str, lo: int, hi: int):
     return None
 
 
+def _locate_place(place: str, doc: str, lo: int, hi: int):
+    """The place as it appears INSIDE this snippet's slice, or None.
+
+    Why a location field at all. The casualty fine-tune saw only numeric fields
+    (dead/injured/missing/source) and collapsed field semantics toward "emit a digit" --
+    asked for a `location` it returns the number. Measured on real text, that is what
+    breaks attribution: the base model binds 41,000->Turkey and 5,800->Syria correctly,
+    and the fine-tune cannot. Heterogeneous field types are the fix, so the corpus has to
+    carry a non-numeric field.
+
+    Two guards, mirroring ``_locate_in_slice``:
+
+    1. Every occurrence in the document must fall inside THIS snippet, so a place shared
+       with an interfering snippet is dropped rather than attributed to the wrong event.
+    2. The full place is preferred; failing that the longest comma-separated component
+       that appears. Measured on the 250-stream corpus: 84.7% verbatim, +8.3% by
+       component, 7.0% absent -- and the absent ones get no location rather than a guess.
+    """
+    parts = [place] + sorted(
+        (p.strip() for p in place.replace(" in ", " , ").split(",") if len(p.strip()) > 3),
+        key=len, reverse=True)
+    for cand in parts:
+        hits = [m.start() for m in re.finditer(re.escape(cand), doc)]
+        if hits and all(lo <= h < hi for h in hits):
+            return cand
+    return None
+
+
 def _standalone(doc: str, a: int, b: int) -> bool:
     """True when doc[a:b] is a whole number, not a fragment of a bigger one.
 
@@ -102,7 +130,7 @@ def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
     return out
 
 
-def build(snippets, max_interference: int, seed: int):
+def build(snippets, max_interference: int, seed: int, contexts: dict | None = None):
     rng = random.Random(seed)
     by_stream = defaultdict(list)
     for s in snippets:
@@ -110,8 +138,9 @@ def build(snippets, max_interference: int, seed: int):
     streams = sorted(by_stream)
 
     examples = []
+    contexts = contexts or {}
     stats = {"docs": 0, "instances": 0, "located": 0, "dropped_collision": 0,
-             "by_k": defaultdict(int)}
+             "located_place": 0, "no_place": 0, "by_k": defaultdict(int)}
 
     for focal in snippets:
         k = rng.randint(0, max_interference)
@@ -139,6 +168,14 @@ def build(snippets, max_interference: int, seed: int):
                     continue
                 fields[role] = located
                 stats["located"] += 1
+            place = (contexts.get(part["stream"]) or {}).get("place", "")
+            if place:
+                located = _locate_place(place, doc, lo, hi)
+                if located:
+                    fields["location"] = located
+                    stats["located_place"] += 1
+                else:
+                    stats["no_place"] += 1
             if fields:
                 structures.append(Structure("casualty_report", **fields))
 
@@ -159,12 +196,16 @@ def main(argv=None) -> None:
     ap.add_argument("--stream-start", type=int, default=0,
                     help="index into the sorted stream ids (leak-free split)")
     ap.add_argument("--stream-end", type=int, default=0, help="0 = all streams")
+    ap.add_argument("--contexts", default="",
+                    help="contexts json; adds a gold location FIELD (heterogeneous "
+                         "field types stop the numeric-field collapse)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
 
     snippets = load_snippets(Path(args.data) / args.split,
                              args.stream_start, args.stream_end)
-    examples, stats = build(snippets, args.max_interference, args.seed)
+    contexts = json.loads(Path(args.contexts).read_text(encoding="utf-8")) if args.contexts else {}
+    examples, stats = build(snippets, args.max_interference, args.seed, contexts)
 
     ds = TrainingDataset(examples)
     report = ds.validate(raise_on_error=False)
@@ -175,6 +216,7 @@ def main(argv=None) -> None:
     print(f"[build] split={args.split}  snippets={len(snippets)}")
     print(f"[build] documents={stats['docs']}  instances={stats['instances']} "
           f"(mean {stats['instances'] / max(stats['docs'], 1):.2f}/doc)")
+    print(f"[build] location field: located={stats['located_place']}  absent={stats['no_place']}")
     print(f"[build] fields located={stats['located']}  dropped as ambiguous="
           f"{stats['dropped_collision']}")
     print(f"[build] instances-per-document: {dict(sorted(stats['by_k'].items()))}")
