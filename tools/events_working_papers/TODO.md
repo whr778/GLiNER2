@@ -114,7 +114,11 @@ MHT's hypothesis space would inherit every upstream defect above.
 
 ## Housekeeping
 
-- **Push `ab_natural` to HF** — the winning A/B model (location 6/9, instances 7/9) is only
-  local. Its model card exists; the anchorless arm should probably not be published.
+- ~~Push `ab_natural` to HF~~ DONE — `whr778/gliner2-joint-boundary-warmstart-natural`,
+  PRIVATE, with a card correcting the inherited `datasets:` frontmatter (it listed none of
+  the corpora actually trained on) and stating the relation cost (−0.037) alongside the
+  gain. Config ships the Hub kernel repo id, not the pip package name. The anchorless arm
+  is deliberately NOT published: it learned nothing (1/9 instances), so it is evidence for
+  the papers rather than an artifact.
 - `datasets/helene2024/_cache/` and `datasets/turkey2023/_cache/` hold article text and are
   gitignored by design; both harvesters regenerate from the archive.
