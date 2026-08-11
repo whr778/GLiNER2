@@ -30,7 +30,12 @@ the finding, because it localizes where greedy per-query decoding actually costs
 > points (10K 0.177 vs 0.050, 40K 0.191 vs 0.115, 100K 0.202 vs 0.158) and the curves have
 > opposite shapes: span **+216%** across the range and still climbing, boundary **+14%**
 > and nearly flat. The head-init deficit is largely a property of the **span head**, not a
-> data-volume law about mmBERT. Greedy arm only; the beam arm is still unmeasured.
+> data-volume law about mmBERT. Greedy arm only.
+>
+> On the beam arm: it was described here as "unmeasured", but until 2026-08-10 it was
+> **unrunnable** — mention keys dropped the relation type, so any schema with two relation
+> types raised `node candidate ids must be unique`. First run on Re-DocRED that same day;
+> see §4c.
 
 This is also what makes the line the *document-level* half of the program
 ([[RESEARCH_PROGRAM]]): [[EKF_MHT_DESIGN]] carries events **beyond** the document via a
@@ -104,9 +109,21 @@ as relations-only would break that symmetry and understate the shared claim.
   1. **adaptive thresholding** (`boundary_settings.adaptive_threshold`) — greedy-only;
   2. **null-abstention** (`abstention_threshold` on `null_logits`) — greedy-only;
   3. **per-relation-type thresholds** from `metadata["relation_metadata"]` — greedy looks
-     them up per relation; `candidate_score_set_to_problem` centers edges at a fixed
-     `decision_threshold=0.5`. Moot for a single-threshold Re-DocRED eval, but it is the
-     same family of decisions.
+     them up per relation; `candidate_score_set_to_problem` centered edges at a fixed
+     `decision_threshold=0.5`. ~~Moot for a single-threshold Re-DocRED eval~~ —
+     **that call was wrong, and it was the dominant confound.** Fixed 2026-08-10.
+
+     The fixed 0.5 did not merely differ from greedy's per-relation lookup; it meant the
+     joint arm ignored the eval threshold *entirely* for edge selection, because utility
+     is centered there and the optimizers only take positive-utility edges. Measured
+     relation recall across thresholds 0.5 → 0.1: greedy **0.0461 → 0.4134**, joint
+     **0.1498 → 0.1591**. The joint arm was pinned to one operating point and looked
+     "calibration-insensitive" rather than broken.
+
+     `decision_threshold` now threads from the eval threshold. Record **role edges bypass
+     it** (`pre_scored_edges`), preserving decision C below: a scalar role's utility is
+     ABSENT-relative and has no probability cutoff to be centered on. Enforced by test,
+     not comment. The per-relation-type lookup itself is still unported.
   4. **`decode_group`'s record thresholds** — *mostly resolved*. Audited 2026-08-08 with
      both defaults at 0.5:
 
@@ -641,6 +658,82 @@ Two process fixes follow, both cheap:
 
 The cross-model warning already added to `model_card.py` is what prompted the check here,
 and it earned its place.
+
+## 4c. Phase A actually ran (2026-08-10) — and the beam is not the story
+
+First run of the beam arm, on `joint-boundary-redocred-137k`: 96 relation types, one trained
+model, eval-time `decode_mode` switch, full 500-doc Re-DocRED test at threshold 0.5.
+
+| | greedy | joint (W=16) |
+|---|--:|--:|
+| relation strict F1 | 0.0740 | **0.1803** |
+| entity strict F1 | 0.6960 | 0.6786 |
+
+**That +0.106 is not a beam win, and it must not be quoted as one.** 0.5 is near greedy's
+worst operating point; §4b's own table has greedy at **0.176** at threshold 0.3, which is
+a tie with the joint arm. **This is the third time the matched-threshold rule has changed
+a conclusion in this experiment.** It should now be treated as a standing rule rather than
+a lesson relearned: *no arm comparison is readable until both arms are at their own
+swept threshold.*
+
+Three findings survive that caveat.
+
+**(a) Beam width should be 1.** Slice sweep over W ∈ {1,2,4,8,16,32,64}, relation strict F1:
+
+| W | 1 | 2 | 4 | 8 | 16 | 32 | 64 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| F1 | **0.2406** | 0.2290 | 0.2260 | 0.2211 | 0.2170 | 0.2152 | 0.2058 |
+
+Monotonically decreasing. Widening drops predictions 157 → 117, of which **18 were
+correct** — 45% precision on the dropped set against 61% overall, so precision rises while
+F1 falls. Entity metrics are byte-identical at every width: `_finish_nodes` admits every
+positive-score node regardless of beam state, so width touches only edges.
+
+This is score-vs-F1 divergence. The beam maximizes the objective *better* as it widens —
+`beam.py:94` even keeps greedy as a floor, so the score is monotone — and the objective is
+not F1. **A better search on a mis-specified objective is worse output.**
+
+Independent support: OneIE ([Lin et al. 2020](https://aclanthology.org/2020.acl-main.713/))
+used θ=10 with β_v = β_e = 2 capping branching at 2 per step; the released package defaults
+to 5. Two independent global-IE decoders landed at 5–10 where our optimum is 1. The
+mechanism differs — their β caps the *label* dimension, and their beam has no greedy floor
+so a narrow width there risks falling *below* the local baseline — but the direction agrees.
+
+**(b) The gain is the formulation, not the search.** W=1 barely searches and wins outright.
+The working contrast is **independent thresholding vs constrained joint selection**, not
+greedy vs beam. Decision 5 frames Phase A as "paired greedy vs beam"; that framing is
+mis-specified and the finding should be reported under the corrected one.
+
+**(c) A β-style label cap is NOT the next move.** It was considered and rejected: β is a
+pruner, and the joint arm sits at P=0.61 / R=0.15 — precision is 4× recall, so removing
+candidates targets the axis already being won. The span-dimension caps also already exist
+(`relation_heads_per_type=32`, `relation_tails_per_type=32`, `relation_pair_cap=128`), and
+compute is not binding (W=64 ran in the same wall clock as W=1). The genuinely uncapped
+label dimension — how many of the 96 relation types one span may join — is real but cutting
+it costs recall. On the event side the analogue would bite only on **list** roles (scalar
+roles already get one-per-slot from `exclusion_keys`), and the known event failure is
+under-generation (anchorless: 1/9 instances), not over-generation.
+
+Running the arm is also what exposed the fixed `decision_threshold=0.5` — see the
+arm-comparability caveat, item 3, where this document had predicted the issue and called
+it "moot". Wall clock 1.5× greedy on a clean slice.
+
+**Best-vs-best (slice, each arm at its own best threshold) — settled 2026-08-10 after the
+threshold fix.** Both arms peak at 0.2; greedy is unaffected by the fix (it only touches
+`joint_decode`), so its pre-fix curve stands.
+
+| threshold | greedy | joint W=1 |
+|---|--:|--:|
+| 0.1 | 0.2785 | 0.3270 |
+| **0.2** | **0.2835** | **0.3357** |
+| 0.3 | 0.2270 | 0.3264 |
+| 0.4 | 0.1648 | 0.2828 |
+| 0.5 | 0.0980 | 0.2406 |
+
+**Joint wins by +0.052 (+18% relative) at best-vs-best**, and beats greedy at every
+threshold on the grid. Real, but a third of the +0.106 the fixed-0.5 comparison implied.
+Remaining: confirm on the full 500-doc test.
+
 
 ## 5. Data (surveyed 2026-08-07)
 

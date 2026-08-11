@@ -93,16 +93,64 @@ assignment on a string key feeding one single-stream EKF per key. Deferred delib
 hypothesis space would inherit every upstream defect above and make them harder to see, not
 easier.
 
-### 9. Beam vs greedy is now runnable, and unrun
-The qualified-key fix (2026-08-10) removed the collision that made the beam arm unrunnable on
-any schema with two relation types. Phase A exists to compare greedy against beam, and every
-number in the completed 12-arm curve is the **greedy** arm. Two things follow:
+### 9. Beam vs greedy — RAN, and the result is "the beam is not the story"
+Ran 2026-08-10 on Re-DocRED (`joint-boundary-redocred-137k`, 96 relation types, the schema
+that raised before the qualified-key fix). Same checkpoint both arms, eval-time
+`decode_mode` switch, threshold 0.5, full 500-doc test:
 
-- The papers say the comparison is "unmeasured". Until today the truth was *unrunnable* —
-  correct the wording, then make it measured.
-- `TypedEndpoints` now discriminates between relation types instead of being vacuous, which is
-  the mechanism item 1 wants. Measured after the fix on the two-relation probe: 512 mentions
-  with 0 collisions, 256/256 edges resolving to nodes, 18 surviving threshold 0.05.
+| | greedy | joint (W=16) |
+|---|---|---|
+| relation strict F1 | 0.0740 | 0.1803 |
+| entity strict F1 | 0.6960 | 0.6786 |
+
+**Do not quote that +0.106 as a beam win.** It is largely a threshold artifact — 0.5 is
+near the worst operating point for greedy, which reaches 0.2082 at 0.1 in its own shipped
+sweep. Three real findings did come out of it:
+
+**(a) Beam width should be 1.** Sweep over W ∈ {1,2,4,8,16,32,64} on a 20-doc slice, relation
+strict F1: 0.2406 / 0.2290 / 0.2260 / 0.2211 / 0.2170 / 0.2152 / 0.2058. **Monotonically
+decreasing.** Widening drops predictions 157 → 117, of which 18 were correct (45% precision
+on the dropped set, below the 61% overall), so precision rises and F1 falls. Entity metrics
+are byte-identical at every width — `_finish_nodes` sweeps in every positive-score node
+regardless of beam state, so width touches only edges. Classic score-vs-F1 divergence: the
+wider beam maximizes the objective better, and the objective is not F1.
+
+**(b) The gain is the formulation, not the search.** W=1 barely searches and wins. The
+working contrast is *independent thresholding vs constrained joint selection*, not
+*greedy vs beam*. Phase A's framing is mis-specified and the papers should say so.
+
+**(c) It exposed the hard-wired threshold** — see item 10, which was the actual bug.
+
+**Best-vs-best, settled on the slice after item 10 was fixed:** both arms peak at threshold
+0.2 — greedy **0.2835**, joint W=1 **0.3357**. **Joint wins by +0.052 (+18% relative)** and
+beats greedy at every threshold on the grid. Real, but a third of what the fixed-0.5
+comparison implied. Remaining: confirm on the full 500-doc test. Wall clock 1.5x greedy on
+a clean slice (the 2.0x full-run figure was CPU-contended).
+
+### 10. Joint decode ignored `--threshold` for edge selection — FIXED 2026-08-10
+`joint_decode` filtered mentions by `mention_threshold` but never passed
+`decision_threshold`, so it stayed at its 0.5 default and every node/edge utility was
+centered on 0.5. `gain > 0` therefore demanded p > 0.5 for edges no matter what threshold
+was requested. Nothing raised; the decode simply stopped responding to `--threshold`, which
+reads as a model insensitive to calibration rather than as a plumbing bug.
+
+Measured before the fix, relation recall across thresholds 0.5 → 0.1:
+
+| arm | R @ 0.5 | R @ 0.1 |
+|---|---|---|
+| greedy | 0.0461 | **0.4134** |
+| joint W=1 | 0.1498 | 0.1591 |
+
+Fixed by threading `decision_threshold` from the eval threshold through `joint_decode`.
+Record **role edges bypass** it via a new `pre_scored_edges` path: a scalar role's utility
+is the ABSENT-relative log-odds `logit_c - logit_ABSENT`, a comparison against the record
+head's own ABSENT class rather than a probability cutoff, so shifting it would move scalar
+roles against a baseline they do not have. That was documented at `candidate_scores.py:223`
+and is now enforced by a test rather than by a comment.
+
+**Consequence for anything already measured:** every joint-arm number produced before this
+fix — including the 12-arm curve's joint rows, if any were run — was measured at 0.5
+regardless of the threshold requested.
 
 ### 8. Aggregate-vs-parts machinery — deferred, not abandoned
 `vector_state_test.py` treats `__aggregate__` as a sum row over the state components rather

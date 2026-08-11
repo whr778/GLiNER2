@@ -563,6 +563,11 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             relation_temperature=self.boundary_settings.relation_temperature,
             extra_edges=role_edges,
             extra_nodes=instance_nodes,
+            # Without this the joint arm ignores --threshold for edge selection: node
+            # admission followed `threshold` but every utility stayed centered on 0.5,
+            # so recall was pinned (measured: 0.1498 at 0.5 -> 0.1591 at 0.1, while the
+            # greedy arm moved 0.0461 -> 0.4134 over the same range).
+            decision_threshold=threshold,
         )
 
         sample: Dict[str, Any] = {}

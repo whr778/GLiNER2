@@ -261,3 +261,59 @@ def test_typed_endpoints_discriminate_between_relation_types():
     problem = candidate_score_set_to_problem(css, [crossed], constraints=constraints)
     solution = BeamOptimizer(beam_width=8).optimize(problem)
     assert not solution.edges, "cross-type edge should be forbidden by TypedEndpoints"
+
+
+def test_decision_threshold_moves_edge_selection():
+    """Regression: the caller's threshold must reach EDGE selection, not just node admission.
+
+    `joint_decode` used to filter mentions by `mention_threshold` while leaving every
+    utility centered on 0.5, so `gain > 0` still demanded p > 0.5 for edges no matter what
+    threshold was asked for. Nothing raised -- the decode just stopped responding to
+    `--threshold`, which reads as a model that is insensitive to calibration rather than a
+    plumbing bug. Measured on Re-DocRED before the fix: joint recall moved 0.1498 -> 0.1591
+    across thresholds 0.5 -> 0.1 while the greedy arm moved 0.0461 -> 0.4134.
+    """
+    # One sub-0.5 edge between two sub-0.5 mentions: selected only at a low threshold.
+    css = CandidateScoreSet(text="t", mentions=(
+        MentionScore(0, "person", 0, 2, -1.0, 0.269),
+        MentionScore(1, "org", 3, 5, -1.0, 0.269),
+    ))
+    edges = [ScoredRelationEdge("works_for", ("person", 0, 2), ("org", 3, 5), -1.0, 0.269)]
+
+    strict = candidate_score_set_to_problem(css, edges, mention_threshold=0.1)
+    assert [e.score for e in strict.edges] == [-1.0]      # centered on 0.5 -> negative
+    assert BeamOptimizer(beam_width=8).optimize(strict).edges == ()
+
+    loose = candidate_score_set_to_problem(
+        css, edges, mention_threshold=0.1, decision_threshold=0.1)
+    assert loose.edges[0].score > 0.0                     # now above the asked-for cutoff
+    assert {e.relation_type for e in BeamOptimizer(beam_width=8).optimize(loose).edges} \
+        == {"works_for"}
+
+
+def test_record_role_edges_are_not_recentered_by_the_threshold():
+    """Role-edge utilities are ABSENT-relative and must bypass threshold centering.
+
+    A scalar role's utility is ``logit_c - logit_ABSENT`` -- a comparison against the
+    record head's own ABSENT class, not against a probability cutoff. Shifting it by a
+    threshold offset would move scalar roles against a baseline they do not have.
+    """
+    css = CandidateScoreSet(text="t", mentions=(
+        MentionScore(0, "trigger", 0, 2, 4.0, 0.98),
+        MentionScore(1, "place", 3, 5, 4.0, 0.98),
+    ))
+    role = ScoredRelationEdge("Attack::place", ("trigger", 0, 2), ("place", 3, 5),
+                              0.75, 0.68, slot="place", hypothesis=("trigger", 0, 2))
+
+    for threshold in (0.5, 0.1, 0.9):
+        problem = candidate_score_set_to_problem(
+            css, (), mention_threshold=0.05, decision_threshold=threshold,
+            pre_scored_edges=[role])
+        assert [e.score for e in problem.edges] == [0.75], threshold
+
+    # ...while an ordinary relation edge at the same logit DOES move with the threshold.
+    plain = ScoredRelationEdge("works_for", ("trigger", 0, 2), ("place", 3, 5), 0.75, 0.68)
+    moved = {candidate_score_set_to_problem(
+        css, [plain], mention_threshold=0.05, decision_threshold=t).edges[0].score
+        for t in (0.5, 0.1, 0.9)}
+    assert len(moved) == 3

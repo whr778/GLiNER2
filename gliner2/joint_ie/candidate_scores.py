@@ -342,11 +342,25 @@ def candidate_score_set_to_problem(
     constraints: Sequence[Any] = (),
     decision_threshold: float = 0.5,
     extra_nodes: Sequence[NodeCandidate] = (),
+    pre_scored_edges: Sequence["ScoredRelationEdge"] = (),
 ) -> JointProblem:
     """Build a :class:`JointProblem` from sparse mention + edge scores.
 
     Node/edge utilities are centered log-odds (positive => above threshold), so
     the existing greedy/beam optimizers and constraints work unchanged.
+
+    ``decision_threshold`` is what makes the optimizers threshold-aware: it sets where
+    utility crosses zero, and the optimizers only ever take a node or edge whose utility
+    is positive. Leaving it at 0.5 while the caller asked for 0.1 is not a mild
+    miscalibration -- it silently pins edge selection to 0.5 and the decode stops
+    responding to the threshold at all.
+
+    ``pre_scored_edges`` carry utilities that are **already** on the right scale and must
+    not be re-centered: a record role edge's scalar utility is the ABSENT-relative
+    log-odds ``logit_c - logit_ABSENT``, which is a comparison against the head's own
+    ABSENT class rather than against a probability cutoff. Shifting it by a threshold
+    offset would move scalar roles against a baseline that does not exist for them.
+    ``extra_nodes`` bypass for the same reason.
     """
     nodes: List[NodeCandidate] = []
     keep_ids = set()
@@ -369,7 +383,8 @@ def candidate_score_set_to_problem(
         keep_ids.add(node.candidate_id)
 
     edge_cands: List[EdgeCandidate] = []
-    for e in edges:
+    for e, recenter in ([(e, True) for e in edges]
+                        + [(e, False) for e in pre_scored_edges]):
         if e.head not in keep_ids or e.tail not in keep_ids:
             continue
         edge_cands.append(
@@ -377,7 +392,7 @@ def candidate_score_set_to_problem(
                 relation_type=e.relation_type,
                 head=e.head,
                 tail=e.tail,
-                score=center_logit(e.logit, decision_threshold),
+                score=center_logit(e.logit, decision_threshold) if recenter else e.logit,
                 head_probability=e.probability,
                 tail_probability=e.probability,
                 slot=e.slot,
@@ -407,6 +422,7 @@ def joint_decode(
     relation_temperature: float = 1.0,
     extra_edges: Sequence["ScoredRelationEdge"] = (),
     extra_nodes: Sequence[NodeCandidate] = (),
+    decision_threshold: float = 0.5,
 ):
     """End-to-end boundary joint decode: candidates + relation pairs → mentions + edges →
     typed-constraint beam → the selected node/edge solution. Composes the two boundary
@@ -419,10 +435,12 @@ def joint_decode(
         candidates, query_types, text, sample_index, pair_temperature=pair_temperature)
     edges = boundary_relation_pairs_to_edges(
         pairs, relation_logits, relation_temperature=relation_temperature)
-    edges.extend(extra_edges)  # record role edges (sec 3b), already scored
+    # Record role edges (sec 3b) go in pre-scored: their utilities are ABSENT-relative
+    # and must not be re-centered on the caller's threshold.
     problem = candidate_score_set_to_problem(
         css, edges, mention_threshold=mention_threshold, constraints=constraints,
-        extra_nodes=extra_nodes)
+        decision_threshold=decision_threshold, extra_nodes=extra_nodes,
+        pre_scored_edges=extra_edges)
     return BeamOptimizer(beam_width=beam_width).optimize(problem)
 
 

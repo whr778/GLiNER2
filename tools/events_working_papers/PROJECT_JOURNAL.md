@@ -414,6 +414,45 @@ then checked by reverting the fix and confirming both fail.
 types. Every number in the 12-arm curve is the greedy arm. The papers call the comparison
 "unmeasured"; until today it was *unrunnable*.
 
+## Phase 11 — Phase A finally runs, and answers a different question (10 Aug, close)
+
+With the collision fixed, the beam arm ran for the first time: Re-DocRED, 96 relation types,
+one trained model, eval-time `decode_mode` switch.
+
+**The headline number is not the finding.** Joint beat greedy 0.1803 to 0.0740 on relation
+F1 at threshold 0.5 — and §4b's own table already had greedy at 0.176 at threshold 0.3.
+Threshold 0.5 is near greedy's worst operating point, so the "win" was mostly an operating
+point. **Third time the matched-threshold rule has overturned a conclusion here**, which
+is enough times that it stops being a lesson and becomes a standing rule.
+
+**Beam width should be 1, and that is the real result.** Seven widths, monotone decline
+(0.2406 at W=1 to 0.2058 at W=64), entity metrics byte-identical throughout. Widening drops
+40 predictions of which 18 were correct — better precision, worse F1. The beam maximizes the
+objective better as it widens (it even keeps greedy as a floor, so score is monotone), and
+the objective is not F1. **A better search on a mis-specified objective is worse output.**
+So the gain over greedy is the *formulation* — constrained joint selection — not the search,
+and Phase A's "greedy vs beam" framing is mis-specified.
+
+**Checking a remembered fact paid.** The recollection was that OneIE used beam width 3; the
+paper says θ=10, the released package defaults to 5. But the instinct that OneIE used a
+*small* beam was right, and the reason is structural — their β=2 caps branching at 2 per
+step, so θ=10 is a wide search relative to their space. Worth recording that the correction
+and the intuition were both useful: the number was wrong and the direction was right.
+
+**Then the arm exposed the actual bug.** Joint recall barely moved across thresholds
+(0.1498 → 0.1591) while greedy's moved 9× (0.0461 → 0.4134). Cause: `joint_decode` never
+passed `decision_threshold`, so it sat at 0.5 while utilities were centered there — edge
+selection ignored `--threshold` entirely. I had described that flatness as "threshold
+insensitivity, a useful property" one message earlier. It was a plumbing bug.
+`JOINT_IE_SCALING` had *predicted* this exact issue in its arm-comparability caveat and
+called it "moot for a single-threshold eval". It was the dominant confound.
+
+**A rejected design, recorded because the reasoning generalizes.** A OneIE-style β label cap
+was considered and dropped: β is a pruner, and the joint arm sits at P=0.61 / R=0.15, so it
+targets the axis already being won. Span-dimension caps already exist, and compute was never
+binding. On events it would bite only on list roles, where the known failure is
+under-generation. *Match the knob to the failure mode, not to the paper it came from.*
+
 ## Recurring lessons
 
 1. **Report the baseline every time.** Run B of Turkiye reads as a success at 0.208 without
@@ -421,7 +460,9 @@ types. Every number in the 12-arm curve is the greedy arm. The papers call the c
 2. **A silent filter is worse than a loud failure.** Three separate incidents: `is_file()`
    dropping event test slices, a cached fetch failure making a transient 429 permanent, and
    an FA2 fallback that only warned.
-3. **Check the threshold before reading a curve.** It changed a conclusion twice.
+3. **Check the threshold before reading a curve.** It has now changed a conclusion
+   THREE times. Promoted from lesson to standing rule: no arm or curve comparison is
+   readable until every arm sits at its own swept threshold.
 4. **Stale state reads as current state.** A frozen tracker page, a cached failure, a
    leftover `FAILED_1` marker firing a waiter early.
 5. **A misleadingly-named corpus cost two separate diagnoses.** `text2json` supervises
@@ -432,6 +473,10 @@ types. Every number in the 12-arm curve is the greedy arm. The papers call the c
    the same test set; a schema that is valid is not a schema that can decode.
 8. **Terminate the box before analysing.** Twice in one day the machine outlived its
    usefulness because the interesting part was what came next.
+9. **A better search on a mis-specified objective is worse output.** Beam width hurt F1
+   monotonically while improving the score it was built to maximize.
+10. **Match the knob to the failure mode, not to the paper it came from.** A OneIE β cap is
+   a pruner; the arm that needed help was short on recall, not precision.
 
 ## Open
 
@@ -439,5 +484,7 @@ types. Every number in the 12-arm curve is the greedy arm. The papers call the c
 - Helene needs administrative rollup + `extract_long` before it is a usable instrument.
 - The 12 HF models carry `attn_implementation: flash_attention_2`, which silently falls
   back to sdpa: harmless for fp32 inference, a trap for bf16 fine-tuning from them.
-- Phase B joint training, still gated on Phase A being positive.
+- Phase B joint training, still gated on Phase A being positive. Phase A ran (Phase 11)
+  but its headline is confounded by threshold; best-vs-best is the deciding run.
+- `joint_beam_width` default is still 16; the measurement says 1.
 - `RequiredRoles` fill-vs-reject trap, recorded in the registry and deferred.

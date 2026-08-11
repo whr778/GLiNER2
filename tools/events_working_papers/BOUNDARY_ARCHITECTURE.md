@@ -320,6 +320,18 @@ normalisation — that is exactly how the sdpa+bf16 defect in §13 was localised
 Baking `decode_mode` into a *training* config would make the two arms different models and
 void the comparison — it belongs at eval only.
 
+**`joint_beam_width` should be 1.** Measured on Re-DocRED (JOINT_IE_SCALING §4c): relation
+F1 decreases monotonically from W=1 to W=64, and entity metrics do not move at all, because
+`_finish_nodes` admits every positive-score node regardless of beam state — width touches
+only edges. The default is still 16; a change of default should wait for best-vs-best.
+
+**The threshold reaches edge selection** (fixed 2026-08-10). `decision_threshold` sets where
+utility crosses zero and the optimizers take only positive-utility candidates, so a
+hard-wired 0.5 does not merely miscalibrate — it makes the whole decode ignore
+`--threshold`. Record **role edges deliberately bypass** it (`pre_scored_edges`): a scalar
+role's utility is the ABSENT-relative `logit_c - logit_ABSENT`, which has no probability
+cutoff to be centered on.
+
 ## 12. What in GLiNER2 uses this today
 
 **Core (`gliner2/models/boundary/`)** — 18 modules: `model.py` (the head bundle +
