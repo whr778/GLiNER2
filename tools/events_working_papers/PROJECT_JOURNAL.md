@@ -486,6 +486,41 @@ looked like a new catastrophic result until the delta (+1.3379) exactly matched 
 the design doc had already recorded for the *isotropic* case. The default is isotropic; the
 doc's table uses `--q-prop 0.15`. The doc was right and the run was mis-flagged.
 
+## Phase 13 — the attachment blocker, mostly solved (10 Aug, close)
+
+Number-to-place attachment had been the top open item for a day, and the fix turned out to
+be neither a better extractor nor a bigger model.
+
+**Counting first changed the target twice.** I proposed routing *unlocated* totals to
+`__aggregate__` and argued it should go first because it had no bootstrap dependency. It
+touches **4 of 106** observations. Then dumping the state streams showed what was actually
+in them: contamination that is **always upward**, never once downward — Florida (truth 26)
+receiving 300, North Carolina (truth 96) receiving 250. A one-directional error with a
+2–10x separation is gateable; that is the whole reason this worked.
+
+**Judge against a larger scope, and classify three ways.** Gating a stream against its own
+running scale fails on its early history, where a toll legitimately jumps 6 → 25 faster than
+any ratio tolerates. And a two-way keep/reroute split destroyed the national stream
+(0.402 → 2.110), because North Carolina's **1400** is not a national total — it is not a
+casualty count at all. Three outcomes were needed: keep, reroute, drop.
+
+**On Helene: per-state 5.247 → 0.591, and the aggregate improved too.** Flat across ratios
+1.5–2.5, so not a knife-edge. The control that made me believe it: removing the same 25
+observations *at random* gives 4.427, so the gate is selecting rather than thinning a filter
+into looking better.
+
+**Then held-out testing took some of it back.** On Turkiye-Syria the gate as specified
+**cannot run** — there is no `__aggregate__` stream to judge against. Generalizing the
+reference to a global maximum makes it run: Syria, 65% contaminated with Turkey's tolls,
+improves 3.7x; Turkey, already clean, **degrades 2.3x**, because the global max is dominated
+by Turkey's own values and Turkey ends up judged against a reference it defines itself. It
+rerouted 1,014 at t=12.5h — Turkey's true value at that moment.
+
+The finding is sharper than the win: **the gate needs a declared scope hierarchy, not just a
+magnitude.** Turkey's 41,000 filed under Syria and Turkey's 41,000 filed under Turkey are
+identical to any ratio test. Helene has the hierarchy declared in `rollup.json`; Turkey does
+not. Both numbers belong in the writeup — the Helene one alone is the misleading half.
+
 ## Recurring lessons
 
 1. **Report the baseline every time.** Run B of Turkiye reads as a success at 0.208 without
@@ -514,6 +549,11 @@ doc's table uses `--q-prop 0.15`. The doc was right and the run was mis-flagged.
    at an example sentence that does not occur in the corpus.
 12. **Check which arm you ran.** A "new" catastrophic result was the untuned default of an
    experiment whose tuned table was already written down.
+13. **Count before designing.** Two fixes proposed as "do this first" were no-ops at 4/106
+   and at 3.8% of the data. One dump of the actual values redirected a day of work.
+14. **A control that removes the same amount at random.** Gating improved nRMSE 9x; random
+   removal of the same count improved it 1.2x. Without that comparison the result was
+   indistinguishable from thinning the filter until it stopped moving.
 
 ## Open
 

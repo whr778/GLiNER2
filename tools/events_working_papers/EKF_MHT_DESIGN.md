@@ -707,3 +707,136 @@ is that the EKF is *slightly* better than repeating the last reading on real rev
 and that the case for it has to rest on something other than the harder-regime argument --
 most plausibly on multi-source disagreement, which no benchmark here has yet tested because
 every feed so far has one source.
+
+## 25. Scope gate: the attachment blocker, mostly solved -- and what held-out testing cost it
+
+§23 asked whether an aggregate can *constrain* the parts and answered no. This section asks
+the opposite question -- whether the parts can *classify* the aggregate -- and the answer is
+largely yes. Same two quantities, opposite direction of information flow.
+
+### 25.1 The failure is one-directional, which is what makes it tractable
+
+Every per-place stream in the Helene run carries larger-scope numbers, and the leak is
+**always upward**. Not once does a smaller scope contaminate a larger one:
+
+| stream | truth (final) | contaminants received |
+|---|--:|---|
+| Florida | 26 | 64, 150, 150, 160, 180, 230, 230, 300 |
+| North Carolina | 96 | 200, 215, 215, 227, 230x3, 250, **1400** |
+| South Carolina | 51 | 72, 200, 227 |
+| Georgia | 34 | 178 |
+
+A one-directional error with a 2-10x separation is gateable. A symmetric one with a few
+percent separation would not be.
+
+Note also what the same audit killed: routing **unlocated** figures to `__aggregate__`,
+proposed first because it had no bootstrap dependency, touches **4 of 106** observations.
+It is a no-op, and only counting said so.
+
+### 25.2 Judge against a larger scope, and classify three ways
+
+Gating a stream against its **own** running scale fails on its early history, where a toll
+legitimately jumps 6 -> 25 faster than any ratio tolerates. It has to be judged against
+something larger. Three outcomes, and the third is load-bearing:
+
+    keep     below ratio of the larger-scope value -- plausibly the place's own
+    reroute  within [1/ratio, ratio] of it -- it IS the larger-scope figure
+    drop     above it -- no scope in this event can exceed the whole
+
+An earlier **two-way** version rerouted every reject and destroyed the national stream
+(0.402 -> 2.110), because North Carolina's **1400** is not a national total -- it is not a
+casualty count at all -- and moving it into `__aggregate__` poisoned the one measurement in
+this project whose scope is known correct.
+
+### 25.3 On Helene it is a 9x win, with a control
+
+| ratio | Total | per-state mean |
+|---|--:|--:|
+| off | 0.402 | 5.247 |
+| 2.5 | **0.316** | 0.592 |
+| 2.0 | **0.316** | **0.591** |
+| 1.5 | 0.317 | 0.591 |
+
+Per-state **5.247 -> 0.591**, and the national stream *improves* rather than paying for it.
+Flat across ratio 1.5-2.5, so not a knife-edge setting. **Control:** removing the same 25
+observations at random over 40 trials gives 4.427, so the gate is *selecting* and not merely
+thinning a filter into looking better.
+
+This is also the first concrete job for the MHT/gating layer of §3, which had been deferred
+as inheriting upstream defects. It is gating in its simplest useful form and needed no new
+model.
+
+### 25.4 Held out on Turkiye-Syria: the mechanism transfers, the reference does not
+
+Ratio fixed at 2.0 from Helene, not retuned.
+
+**As specified it cannot run.** The gate judges against `__aggregate__` and Turkiye-Syria has
+none: turkey and syria are siblings with no declared parent, and the combined toll never got
+its own stream. The gate is a no-op at every ratio.
+
+Generalizing the reference to the running max across all streams makes it run, and splits:
+
+| | turkey | syria | mean |
+|---|--:|--:|--:|
+| off | **0.228** | 3.401 | 1.815 |
+| gate @2.0 | 0.522 | **0.923** | 0.723 |
+
+Syria was 65% contaminated -- 11 of 17 values are Turkey's tolls, *not* an aggregate -- and
+improves 3.7x. But **Turkey, already clean, degrades 2.3x**: the global maximum is dominated
+by Turkey's own values, so Turkey is judged against a reference it defines itself. It
+rerouted 1,014 at t=12.5h, which is Turkey's *true* value at that time. Circular by
+construction. The mean still improves 2.5x and the control still shows selection (1.440 vs
+0.723), so the mechanism is real.
+
+**The finding: the gate needs a declared scope HIERARCHY, not just a magnitude.** Helene has
+one -- `rollup.json`'s `__aggregate__` declares states subset national. Without it, a
+magnitude test cannot distinguish "a larger scope" from "the largest part", and those are
+genuinely identical from the numbers alone: Turkey's 41,000 filed under Syria and Turkey's
+41,000 filed under Turkey look the same to any ratio. Declaring the hierarchy per event is
+the next step and is the same information `rollup.json` already carries.
+
+### 25.5 Honest scorecard
+
+On the event it was designed against, a 9x improvement with a clean control and a stable
+plateau. On held-out data, a 3.7x win on the contaminated stream and a **2.3x loss on the
+clean one**. Both belong in any writeup; the Helene number alone is the misleading half.
+
+Remaining caveat: the ratio was chosen after seeing Helene's contaminated values. The
+plateau mitigates that and does not remove it. And 0.591 is 9x better than catastrophic,
+not good in absolute terms.
+
+What the gate does **not** address, visible in the same audit: North Carolina's 1400 is a
+non-casualty number (the same family as the 140-mile distance and the 6,000 population found
+in the summarizer test, §26), and Turkiye's fifteen 17,500s are the 1999 Izmit toll -- a
+*temporal* scope error that the date filter handles and a magnitude gate never will.
+
+## 26. Summarizer-as-segmenter: tested before building, and it is not the answer
+
+Proposal: a purpose-built model emitting self-contained bullets so number-to-place binding
+becomes local, guarded by a verbatim-number check. Tested with **hand-written** bullets, so a
+negative costs nothing and a positive specifies exactly what the model must produce.
+
+**Finding the real cases killed the framing first.** The motivating example -- "120 in NC, 17
+in TN, 227 total" -- **does not occur in this corpus**. The Helene feed has 5 multi-number
+casualty sentences and none has that shape. What is actually there: a 140-mile distance, a
+30-year career, a town's 6,000 population, 30.5cm of rain, the year 2004, and four deaths
+belonging to **Hurricane Ivan**. The failure modes are non-casualty numbers and cross-event
+leakage, not aggregate splitting.
+
+| arm | correct | false positives | fabrications |
+|---|--:|--:|--:|
+| raw text | **3/5** | 1 | 0 |
+| free bullets | 2/5 | 3 | **2** |
+| extractive bullets | **3/5** | 1 | 0 |
+
+Restructuring is neutral at best; the free variant actively harms.
+
+**The durable finding is that the guard and the summarizer are in direct tension.** The
+summarizer's highest-value act is normalizing implicit prose into digits -- "they died
+together" -> "2 people died" -- and that is precisely what a verbatim-number guard must
+reject. Constraining it to extractive-only resolves the conflict and costs real recall: a
+death that is never quantified becomes unreachable. A second hard constraint: it must emit
+**digits, not words**, since "One firefighter died" extracts nothing.
+
+The result is what redirected the work to §25 -- raw extraction's one error on that sample is
+a *scope* error, not an attachment error.
