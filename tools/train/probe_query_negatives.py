@@ -33,12 +33,29 @@ from pathlib import Path
 
 from gliner2 import AutoExtractor, Schema
 
-TYPES = {
-    "death toll": "a number of people killed or confirmed dead",
-    "measurement": "a speed, distance, depth, rainfall or other physical measurement",
-    "duration": "a length of time such as a number of days or hours",
-    "money": "an amount of money",
-    "quantity": "a count of things that are not people, such as homes or customers",
+DEATH = {"death toll": "a number of people killed or confirmed dead"}
+
+# Two competitor sets, differing ONLY in how the rivals are described. The guide test on the
+# 99 gold records (EKF_MHT_DESIGN sec 27.7) separated SPECIFIC count types at 82.5% against a
+# 25% chance baseline, on a harder boundary than this one -- rivals there were counts OF
+# people. That makes the vague catch-all the prime suspect rather than the model.
+ARMS = {
+    "generic (as originally run)": {
+        "measurement": "a speed, distance, depth, rainfall or other physical measurement",
+        "duration": "a length of time such as a number of days or hours",
+        "money": "an amount of money",
+        "quantity": "a count of things that are not people, such as homes or customers",
+    },
+    "specific rivals": {
+        "wind speed": "how fast the wind was blowing",
+        "rainfall": "how much rain or snow fell",
+        "distance": "how far apart two places are",
+        "elapsed time": "how many days or hours something lasted",
+        "cost": "an amount of money in dollars or euros",
+        "homes damaged": "a number of houses, homes or buildings damaged or destroyed",
+        "people evacuated": "a number of people evacuated, displaced or moved to shelters",
+        "power outages": "a number of customers or households without electricity",
+    },
 }
 ROLES = ("dead", "killed", "deaths")
 
@@ -75,8 +92,14 @@ def main() -> None:
     rows = gold_rows(Path(args.corpus), args.limit)
     model = AutoExtractor.from_pretrained(args.model, map_location=args.device)
     model.eval()
-    schema = Schema().entities(TYPES)
 
+    print(f"\ncorpus: {args.corpus}")
+    for arm_name, rivals in ARMS.items():
+        run_arm(model, rows, arm_name, rivals)
+
+
+def run_arm(model, rows, arm_name, rivals):
+    schema = Schema().entities({**DEATH, **rivals})
     wins = Counter()
     phys_reject = [0]
     margins = []
@@ -106,17 +129,17 @@ def main() -> None:
         # rows where quantity wins overall and a physical type also beats `death toll`.
         # Measured on 250 training positives rather than 83 Helene observations, which is
         # the sample that decides whether the reported "0 false positives" holds.
-        if max(best.get(k, 0.0) for k in ("measurement", "duration", "money")) > dt:
+        phys = [k for k in rivals if k not in ("quantity",)]
+        if max((best.get(k, 0.0) for k in phys), default=0.0) > dt:
             phys_reject[0] += 1
 
     beaten = sum(wins.values())
-    print(f"\ncorpus: {args.corpus}")
-    print(f"{n} gold death figures scored\n")
-    print(f"a competing type OUTSCORES `death toll` on {beaten}/{n} = {beaten/max(n,1):.1%}")
-    print("which competitor wins, when one does:")
-    for k, v in wins.most_common():
-        print(f"    {k:<14}{v:>5}  {v/max(beaten,1):>6.1%}")
-    print(f"\nSHIPPED RULE (physical competitors only) would falsely reject "
+    print(f"\n=== {arm_name} ===")
+    print(f"{n} gold death figures scored")
+    print(f"  a competing type OUTSCORES `death toll` on {beaten}/{n} = {beaten/max(n,1):.1%}")
+    for k, v in wins.most_common(5):
+        print(f"      {k:<20}{v:>5}  {v/max(beaten,1):>6.1%}")
+    print(f"  non-`quantity` rivals falsely reject "
           f"{phys_reject[0]}/{n} = {phys_reject[0]/max(n,1):.1%} of GENUINE death tolls")
     if margins:
         margins.sort()

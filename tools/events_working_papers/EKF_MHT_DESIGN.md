@@ -1058,3 +1058,53 @@ real descriptions), so a description-level guide is available. Caveat to settle 
 measurement: a description-level guide is TYPE-level, while GIST's veto is INSTANCE-level --
 "quantity is close to death toll in general" is a weaker claim than "quantity is correct for
 *this* span". The 99 records are how to find out whether the weaker signal suffices.
+
+
+### 27.7 Guides, tested on the 99 -- the self-guide clears the bar
+
+Of the 99 records naming both a casualty type and a competing count type, **40** carry a
+digit-bearing span of each kind, and they test a HARDER boundary than the inference probe
+did: the corpus's real rivals are largely counts OF people -- `Number of Evacuated People`,
+`Number of Rescued People` -- so the distinction is the verb, not the noun.
+
+Asking the model itself, with the record's own type names:
+
+    casualty span scored higher under its own type   37/40 = 92.5%
+    rival span scored higher under its own type      36/40 = 90.0%
+    BOTH directions right on the same document       33/40 = 82.5%   (chance = 25%)
+
+**The self-guide works**, against my prediction that a model cannot referee a boundary it
+does not know. Consequence: GIST needs no external guide model or separate embedder, which
+removes a dependency and a calibration problem.
+
+The failures are mostly not model failures. `'destroyed over 50 residential houses'` is gold-
+labelled `Casualties and Losses` and the model says `Number of Damaged Houses` 0.96 -- the
+model looks right and the gold looks odd. `'13 of the injured'` is annotated under *both*
+types. `'more than 200 have been injured'` competes with `Number of Aftershocks` over the
+same numeral 200, which is a span-identity problem rather than a type problem.
+
+### 27.8 The free win was mostly one bad description, and it was already excluded
+
+If the model separates specific count types at 82.5%, the vague catch-all becomes the
+suspect rather than the model. Re-running the 250-positive probe with concrete rivals in
+place of `quantity` = "a count of things that are not people":
+
+| competitor set | rival outscores `death toll` | median margin | p10 |
+|---|--:|--:|--:|
+| generic (with `quantity`) | 71/250 = **28.4%** | +0.283 | -0.310 |
+| specific rivals | 35/250 = **14.0%** | **+0.709** | -0.125 |
+
+Confusion halves and the median margin multiplies by 2.5. **But that is entirely the
+`quantity` effect.** Holding the rival set to physically-incompatible types and changing only
+the wording -- `measurement`/`duration`/`money` to `wind speed`/`rainfall`/`distance`/
+`elapsed time`/`cost` -- moves false rejects **9/250 -> 8/250, 3.6% -> 3.2%**. Negligible.
+
+Since the shipped rule already excluded `quantity`, the free win mostly **confirms the
+shipped rule rather than improving it**: still 4/4 unit errors and 0/83 false positives on
+Helene, now at 3.2% false-reject on training positives. The descriptions are kept anyway
+because "avoid a negatively-defined catch-all" is now measured rather than asserted.
+
+**What remains is the real target for GIST.** With specific rivals the residual confusion is
+`people evacuated` 28 of 35 wins -- **11.2% of genuine death tolls**. That is "N people
+killed" against "N people evacuated": both counts of people, separated only by the verb. No
+description fixes it, and it is exactly the hard negative a guide-filtered loss exists for.

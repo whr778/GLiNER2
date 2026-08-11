@@ -81,12 +81,21 @@ LABELLED = {
     ("two", 2): ("non-casualty", "two-day period"),
 }
 
+# SPECIFIC rivals, not one vague catch-all. Measured on 250 gold training positives
+# (EKF_MHT_DESIGN sec 27.8): replacing `quantity` = "a count of things that are not people"
+# with concrete rivals halves the confusion rate (28.4% -> 14.0%) and multiplies the median
+# margin by 2.5 (+0.283 -> +0.709). A negatively-defined catch-all is the worst possible
+# query for a scorer that matches a description against a span.
 TYPES = {
     "death toll": "a number of people killed or confirmed dead",
-    "measurement": "a speed, distance, depth, rainfall or other physical measurement",
-    "duration": "a length of time such as a number of days or hours",
-    "money": "an amount of money",
-    "quantity": "a count of things that are not people, such as homes or customers",
+    "wind speed": "how fast the wind was blowing",
+    "rainfall": "how much rain or snow fell",
+    "distance": "how far apart two places are",
+    "elapsed time": "how many days or hours something lasted",
+    "cost": "an amount of money in dollars or euros",
+    "homes damaged": "a number of houses, homes or buildings damaged or destroyed",
+    "people evacuated": "a number of people evacuated, displaced or moved to shelters",
+    "power outages": "a number of customers or households without electricity",
 }
 
 
