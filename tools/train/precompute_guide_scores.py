@@ -32,6 +32,24 @@ are what the guide has to adjudicate, so those are what is cached. Own-record ty
 cached too, but flagged, so the training side can trust gold there and the guide only where
 gold is silent.
 
+**Sample WIDE, then keep the top scorers.** A hard negative is by definition a type that
+scores the span highly, so no embedder or similarity model is needed -- the guide's own
+scores rank them. What is needed is a pool wide enough to contain one. Measured on a real
+casualty span, `killed a man and his 14-year-old daughter`:
+
+    pool  12   person.name 0.02, health condition 0.00, Commodity 0.00      -- noise
+    pool 200   Person/Entity 0.56, Human being 0.30, Family Relationship 0.09
+
+Twelve random draws from 17,128 types essentially never contain a confusable one; two
+hundred do, and the survivors are coherent. That example is also GIST behaving correctly:
+the span genuinely IS a person reference, so `Person/Entity` outscoring the gold casualty
+type is a true false negative, and penalizing it would be wrong.
+
+Note the descriptions cannot help here. The types that matter carry none -- `Casualties and
+Losses` appears 623 times with zero real descriptions -- and where descriptions do exist they
+are instance-specific (`Location` -> "A city in England"), so similarity over them would
+compare document blurbs rather than type definitions.
+
     uv run python tools/train/precompute_guide_scores.py \
         --corpus data/mix_natural.train.jsonl --out data/guide_scores.mix_natural.jsonl
 """
@@ -119,9 +137,13 @@ def main() -> None:
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--rival-pool", type=int, default=12,
-                    help="type queries sampled from OTHER records, per record. These are the "
-                         "in-batch negatives a guide actually has to adjudicate; own-record "
-                         "types are settled by gold and need no guide.")
+                    help="cross-record rivals RETAINED per record, after ranking by guide "
+                         "score. These are the in-batch negatives a guide has to adjudicate; "
+                         "own-record types are settled by gold and need no guide.")
+    ap.add_argument("--pool-sample", type=int, default=200,
+                    help="types scored per record before keeping the top --rival-pool. "
+                         "Wide enough to contain a confusable rival: 12 random draws from "
+                         "17k types return noise, 200 return coherent neighbours.")
     ap.add_argument("--pool-seed", type=int, default=0)
     ap.add_argument("--report-every", type=int, default=50)
     args = ap.parse_args()
@@ -154,18 +176,23 @@ def main() -> None:
             if not queries or not spans:
                 continue
             own = set(queries)
-            rivals = {}
-            if args.rival_pool and len(names) > len(own):
-                for name in rng.sample(names, min(args.rival_pool * 3, len(names))):
-                    if name not in own:
-                        rivals[name] = pool[name]
-                    if len(rivals) >= args.rival_pool:
-                        break
+            sample = {n: pool[n] for n in rng.sample(names, min(args.pool_sample, len(names)))
+                      if n not in own}
             scored = score_record(model, rec.get("input", ""),
-                                  {**queries, **rivals}, spans)
+                                  {**queries, **sample}, spans)
             if not scored:
                 continue
-            scored = {"own": sorted(own), "rival": sorted(rivals), "s": scored}
+            # Keep only the top-scoring cross-record rivals: the rest are noise, and caching
+            # them would bloat the file with cells the veto can never act on.
+            best: dict[str, float] = {}
+            for row in scored.values():
+                for q, v in row.items():
+                    if q not in own:
+                        best[q] = max(best.get(q, 0.0), v)
+            keep = {q for q, _ in sorted(best.items(), key=lambda kv: -kv[1])[:args.rival_pool]}
+            scored = {sp: {q: v for q, v in row.items() if q in own or q in keep}
+                      for sp, row in scored.items()}
+            scored = {"own": sorted(own), "rival": sorted(keep), "s": scored}
             kept += 1
             cells += sum(len(v) for v in scored["s"].values())
             out.write(json.dumps({"i": i, "scores": scored}, ensure_ascii=False) + "\n")
