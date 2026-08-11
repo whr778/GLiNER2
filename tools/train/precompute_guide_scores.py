@@ -184,12 +184,16 @@ def main() -> None:
                          "knee is at 100, which buys 200's quality for half the compute.")
     ap.add_argument("--pool-seed", type=int, default=0)
     ap.add_argument("--score-threshold", type=float, default=0.01,
-                    help="minimum guide score to decode, and therefore the minimum score "
-                         "the cache can hold. NOT free accuracy for free speed -- it is the "
-                         "dominant cost. Asking ~100 type queries at 0.0 makes the guide "
-                         "decode EVERY candidate for EVERY query, and the cache then throws "
-                         "almost all of it away: rivals scoring 0.0 are dropped outright. "
-                         "0.01 keeps every cell that survives rival ranking.")
+                    help="minimum guide score to decode, and therefore the minimum score the "
+                         "cache can hold -- this is cache SEMANTICS, not just speed. It is "
+                         "also the dominant cost: asking ~100 type queries at 0.0 makes the "
+                         "guide decode EVERY candidate for EVERY query and the cache then "
+                         "throws nearly all of it away. Measured 0.0 -> 0.01 on 96 records: "
+                         "186.3s -> 105.5s (1.77x), and NOT free -- 48/52 shared records keep "
+                         "an identical top-3 rival list and 41/52 an identical own-query "
+                         "reference. The records that change are ones where the guide scored "
+                         "everything under 0.01, i.e. where it has no opinion and the veto "
+                         "would not have fired; losing them costs coverage, not correctness.")
     ap.add_argument("--shards", type=int, default=1,
                     help="split the corpus across N processes by record index. The job is "
                          "Python-bound, not forward-bound -- a GPU measured NO faster than a "

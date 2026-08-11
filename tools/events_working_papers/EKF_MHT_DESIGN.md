@@ -1177,6 +1177,13 @@ dominant knob and is part of cache *semantics*, not just speed -- it sets the mi
 the cache can hold; and the way to shorten the job is `--shards` across CPU cores, not an
 accelerator.
 
+The threshold is worth **1.77x** (186.3s -> 105.5s on the same 96 records) and is **not
+free**: of 52 shared records, 48 keep an identical top-3 rival list and 41 an identical
+own-query reference. The ones that move are records where the guide scored everything below
+0.01 -- it has no opinion there and the veto would not have fired -- so the cost is coverage,
+not correctness. Raise it to 0.0 if a run ever needs the last few percent of coverage, at
+1.77x the compute.
+
 **Batching does not rescue it either.** Padding every sample to the longest document in its
 batch costs more than batching returns: 0.68s/record unbatched, 0.76 at batch 4, **1.20 at
 batch 16** on CPU; on a 40GB A100 batch 32 asked for a 32.9 GiB attention matrix and OOMed,
