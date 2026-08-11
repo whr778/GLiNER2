@@ -72,3 +72,26 @@ def test_candidates_without_a_positive_are_untouched():
     )
     kept = apply_guide_veto(mined, guide, labels, valid, query_axis=1, candidate_axis=2)
     assert torch.equal(kept, mined), "no positive means no reference, so no veto"
+
+
+def test_no_veto_when_the_guide_has_no_opinion():
+    """A tie at zero is abstention, not endorsement, and must not delete a negative.
+
+    Measured on real cache entries: a gold span scored 0.00 under its own type and 0.00
+    under a randomly drawn cross-domain rival. Ranking the rival "above" the positive there
+    is float noise.
+    """
+    live = torch.tensor([[[5.0], [4.0]]])          # [B=1, Q=2, C=1]
+    guide = torch.tensor([[[0.0], [0.0001]]])      # both effectively zero
+    labels = torch.tensor([[[1.0], [0.0]]])
+    valid = torch.ones_like(labels, dtype=torch.bool)
+    mined = select_hard_negative_candidates(
+        live, labels, valid, negatives_per_positive=1, minimum_negatives=1,
+        query_axis=2, candidate_axis=1,
+    )
+    assert bool(mined[0, 1, 0])
+    no_floor = apply_guide_veto(mined, guide, labels, valid, query_axis=1, candidate_axis=2)
+    with_floor = apply_guide_veto(mined, guide, labels, valid, floor=0.05,
+                                  query_axis=1, candidate_axis=2)
+    assert not bool(no_floor[0, 1, 0]), "without a floor the noise wins and vetoes"
+    assert bool(with_floor[0, 1, 0]), "with a floor the negative survives"

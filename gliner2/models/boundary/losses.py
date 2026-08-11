@@ -184,6 +184,7 @@ def apply_guide_veto(
     valid_mask: torch.BoolTensor,     # [B, Q, C]
     *,
     margin: float = 0.0,
+    floor: float = 0.0,
     query_axis: int = 1,
     candidate_axis: int = 2,
 ) -> torch.BoolTensor:
@@ -207,6 +208,13 @@ def apply_guide_veto(
     ``margin`` raises the bar for a veto: a negative survives unless the guide prefers it by
     more than ``margin``. 0.0 reproduces GIST's rule.
 
+    ``floor`` is the guide's abstention threshold, and it matters more than it looks. A
+    rival can "outrank" a positive while both sit at zero -- measured on real cache entries,
+    `President Bush` scored 0.00 under its gold type and 0.00 under a randomly drawn Chinese
+    industry type. That is not the guide endorsing the rival, it is the guide having no
+    opinion, and vetoing on it deletes negatives for no reason. Require the guide to actually
+    score the rival above ``floor`` before its vote counts.
+
     **Axis warning.** Query-axis MINING is done by handing
     :func:`select_hard_negative_candidates` its axes *swapped*, which turns its "top-k
     candidates per query" into "top-k queries per candidate". This function takes the axes
@@ -224,12 +232,16 @@ def apply_guide_veto(
     valid = _to_query_candidate(valid_mask, query_axis, candidate_axis)
 
     positive = (lab > 0.5) & valid
-    floor = torch.finfo(guide.dtype).min
+    # `neg_inf` masks non-positives out of the max; do NOT call it `floor`, which is the
+    # caller's abstention threshold -- shadowing it made `guide > floor` always true and
+    # silently disabled the abstention check.
+    neg_inf = torch.finfo(guide.dtype).min
     # Best guide score among this candidate's OWN positive queries, per (batch, candidate).
-    pos_guide = guide.masked_fill(~positive, floor).amax(dim=1, keepdim=True)
+    pos_guide = guide.masked_fill(~positive, neg_inf).amax(dim=1, keepdim=True)
     has_positive = positive.any(dim=1, keepdim=True)
 
-    vetoed = sel & has_positive & (guide > pos_guide + margin) & ~positive
+    vetoed = (sel & has_positive & (guide > pos_guide + margin) & (guide > floor)
+              & ~positive)
     return _from_query_candidate(sel & ~vetoed, query_axis, candidate_axis)
 
 
