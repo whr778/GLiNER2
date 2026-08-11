@@ -624,7 +624,10 @@ cluster and 120 and 227 like two -- backwards.
 **Tested** (`vector_state_test.py`): real Wikipedia per-state trajectories including the
 genuine North Carolina revision 123 -> 102 -> 96; only the reporting PROCESS simulated
 (frequent totals, sparse per-state, 10% noise), because the real feed's 25 observations are
-too thin to test a filter. Both arms use the same filter and the same per-state
+too thin to test a filter. *(Stale as of 2026-08-11: that count is from the superseded
+`tracked_lead` run. `extract_long` brings the same feed to 106 dead observations across 44 of
+70 articles, which is 4.2x and is no longer starvation — the simulation is still needed for
+per-state DENSITY sweeps, but "too thin" is no longer the reason.)* Both arms use the same filter and the same per-state
 observations; only the aggregates differ. Mean per-state nRMSE, 40 trials:
 
 | per-state report rate | parts-only | vector | delta | vector wins |
@@ -845,10 +848,16 @@ Remaining caveat: the ratio was chosen after seeing Helene's contaminated values
 plateau mitigates that and does not remove it. And 0.591 is 9x better than catastrophic,
 not good in absolute terms.
 
-What the gate does **not** address, visible in the same audit: North Carolina's 1400 is a
-non-casualty number (the same family as the 140-mile distance and the 6,000 population found
-in the summarizer test, §26), and Turkiye's fifteen 17,500s are the 1999 Izmit toll -- a
-*temporal* scope error that the date filter handles and a magnitude gate never will.
+What the gate does **not** address, visible in the same audit: North Carolina's 1400 is
+**Hurricane Katrina's** toll quoted inside a Helene article, its 250 is a Typhoon and its 230
+is Hurricane Milton -- *cross-event* contamination, not scope. Turkiye's fifteen 17,500s are
+the 1999 Izmit toll, a *temporal* error the date filter handles. A magnitude gate removes all
+of these for the wrong reason: it drops them because they are large, not because they belong
+to another event, so it would keep any cross-event figure that happened to be small.
+
+*(Corrected 2026-08-11: this section originally called the 1400 a non-casualty number "in the
+same family as the 140-mile distance". Context audit shows it is Katrina's death toll. Same
+symptom, different cause, and a different fix -- see §27.)*
 
 ## 26. Summarizer-as-segmenter: tested before building, and it is not the answer
 

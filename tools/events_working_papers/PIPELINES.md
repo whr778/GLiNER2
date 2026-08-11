@@ -237,25 +237,36 @@ The per-place breakdown says something sharper:
 
 The gate already **beats** a perfect two-way assignment on Florida and South Carolina,
 because it has a third option the oracle lacks: *drop*. Florida's 300 and North Carolina's
-1400 are not misassigned, they are **not casualty figures at all**, and no association
-scheme can fix a number that does not belong to any scope.
+1400 are not misassigned: 300 is not a casualty figure and 1400 is **Hurricane Katrina's**
+toll quoted inside a Helene article. Neither belongs to any Helene scope, so no association
+scheme can place them correctly.
 
 Tennessee is the one genuine association gap (0.817 vs 0.320), and it is instructive: its
 contaminants are 32, 32, 32, 36, 50 against a truth of 18 — **too large for the state, too
 small to look national**, so a magnitude test cannot catch them. That is the case for richer
 association, and it is worth 0.055 across the event.
 
-**And 0.537 of the 0.591 is not association error at all.** That residual is extraction
-recall (25 observations from 70 articles), non-casualty numbers, and the filter itself.
+**And 0.537 of the 0.591 is not association error at all.** Context audit of all 106
+observations puts that residual at cross-event contamination (4.7%), non-casualty numbers
+(3.8%), a 9.4% unclear tail, and the filter itself — *not* at starvation. See the conclusion
+below; the recall claim that used to sit here was stale.
 
 ### Conclusion
 
 Not yet, and MHT is probably not what is missing. In order:
 
-1. **Extraction recall** — the oracle floor of 0.537 is mostly starvation, and every
-   downstream subsystem inherits it. `vector_state_test` reached the same conclusion from
-   the opposite direction (§23).
-2. **Non-casualty number rejection** — 1400, 300, a 140-mile distance, a 6,000 population.
+1. ~~**Extraction recall**~~ — **already solved, and the claim behind this was stale.**
+   `extract_long` took the Helene feed from 25 dead observations to 106 (4.2x) and article
+   coverage to 44 of the 45 articles that contain a casualty-bearing sentence. The feed has
+   ~86 sentences carrying both casualty language and a digit, so at 106 the pipeline
+   over-extracts rather than starves. The "25 observations from 70 articles" figure quoted
+   here and in EKF_MHT_DESIGN §23 came from the superseded `tracked_lead` run.
+2. **Cross-event contamination — the real top item.** Context audit of all 106 observations:
+   82.1% are genuine Helene casualties, **4.7% belong to another event** (Katrina 1400,
+   Typhoon 250, Milton 230, Bosnia 16, Mexico's Hurricane John 2), 3.8% are non-casualty
+   numbers (mph, inches), 9.4% unclear. Cross-event carries the *large* values, so it does
+   the most damage per instance.
+3. **Non-casualty number rejection** — smaller and easier: speeds, durations, rainfall.
    Pure extraction typing; no tracker can help.
 3. **Multi-source feeds** — the one thing that would make a filter benchmark meaningful, and
    the one regime where MHT's deferred assignment genuinely earns its keep, because
