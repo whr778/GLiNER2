@@ -422,7 +422,41 @@ the full mix. More shards than that exhausts a 32GB machine and swaps it to a st
 it highly, so a live self-guide vetoes exactly the negatives it should select. The guide must
 be a frozen checkpoint.
 
-### 12. Base-word (lemmatized) duplicate samples — specified, not built
+### 12. Base-word (lemmatized) duplicate samples — BUILT, alignment proven; not yet trained on
+
+`tools/data/augment_baseword.py` + `tests/test_augment_baseword.py` (5 tests).
+Measured on 300 RAMS records with the deterministic `mock` backend:
+
+| | |
+|---|---|
+| augmentation rate | **91.7%** (275/300) |
+| texts actually rewritten | 275/275 — not a silent no-op |
+| labels no longer verbatim | **0** |
+| extra mentions lost vs original, through the real collator | **0** |
+
+The 8.3% that are refused are labels covering only *part* of a token — `Armenian` inside
+`Armenians` — which cannot survive lemmatization of their host token. Those records are
+dropped whole rather than emitted with a broken span; partial augmentation is precisely the
+silent-supervision-loss failure this is guarding against.
+
+Example (mock backend, so `urging`→`urg` is crude on purpose — it tests alignment, not lemma
+quality):
+
+```
+ORIG : Transportation officials are urging carpool ... death of Freddie Gray
+LEMMA: transportation official are urg carpool ... death of freddie gray
+args : ('victim', 'Freddie Gray')  ->  ('victim', 'freddie gray')
+```
+
+**Still to do:** swap `--backend mock` for `--backend simplemma` and train an arm. A real
+lemmatizer was deliberately *not* added as a dependency while a long precompute was running
+out of the same virtualenv — `uv add` touches `.venv` and those workers import from it
+lazily. Alignment is the part that had to be proven, and it does not depend on lemma quality.
+
+The remainder of this item is the original specification, kept because it states the
+constraints the implementation had to satisfy.
+
+
 
 **Proposal.** For each training sample, emit a **second** sample in which every surface word
 in *both* the text and the labelled spans is reduced to its base form. Surface and normalized
