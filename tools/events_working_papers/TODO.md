@@ -77,6 +77,79 @@ Note the scope gate removes Katrina's 1400 **for the wrong reason** — because 
 not because it belongs to another event — so it keeps any *small* cross-event figure, as it
 does with Bosnia's 16 and Mexico's 2.
 
+#### Proposed next experiment: negative documents (data, not decode)
+
+**Do not reach for sharper type boundaries.** The standard mitigations for event
+cross-contamination — span-based boundaries, contrastive/hard-negative objectives — target
+the failure this project already solved. Type energies separated unit errors 4/4 with 0/83
+false positives and scored **0/11** on cross-event, because in every cross-event case the
+type is *right*: Katrina's 1,400 scores `death toll` 0.95. The boundary architecture and the
+GIST veto (item 11) both sharpen `death toll` vs `people evacuated`; neither can separate
+Helene's dead from Katrina's dead.
+
+**The gap is negative supervision on event identity.** Measured on 20,000 records of each
+corpus: **0.0% of training documents have zero records.**
+
+| corpus | records/doc | zero-record docs |
+|---|---|---|
+| `casualty_ft` | all 1 | **0.0%** |
+| `casualty_multi` | mean 2.35, `{1,2,3,4}` | **0.0%** |
+
+`build_multievent_corpus.py` already concatenates *k* interference snippets from other
+streams — but gives **every** one its own record. The model is therefore never once shown a
+figure it is supposed to leave alone. Practitioner experience puts the healthy share of
+negative documents at **30–40% of the mix** (not measured here — a prior to test, not a
+result).
+
+Note `remove_json_structure_prob: 0.2` does **not** provide this. It drops the structure from
+the *schema*, so no query is emitted at all; the model never sees the `casualty_report` query
+answered with nothing.
+
+**The change is small and local:** in `build_multievent_corpus.py`, keep a fraction of
+interference snippets in the document text while *withholding their records*, so the gold for
+that document covers the focal event only. Per-snippet span location (already implemented, to
+avoid labelling one event with another's number) is exactly the machinery needed to know
+which spans to leave unlabelled.
+
+**Why this and not another association signal.** It is the only candidate that would reach
+**Bosnia's 16**, which is structurally invisible to every signal tried so far — Bosnia is a
+place, not a named storm, so nothing keyed on storm names can see it. And the evidence says
+this is a training-data gap rather than a decode gap: binding collapses 1.000 → 0.369 the
+moment documents become multi-event, which no decoder change has moved.
+
+**Pass/fail, fixed before spending:** cross-event share below 4.7% on the same 106-observation
+audit; single-event binding stays ~1.000; the §20 harness unchanged.
+
+#### Second lever, same data side: base-word positive/negative samples
+
+A *different* granularity from the above, aimed at a different failure — **noun-phrase
+routing**, where the head latches onto whatever salient noun phrase is nearby rather than a
+filler of the requested type. Two reproducible instances:
+
+```
+"Rebels attacked the convoy near Aleppo on Tuesday, killing three soldiers."
+  schema: victim = "a person harmed"
+  gliner2-joint-boundary-rams-137k  ->  victim: ["convoy"]      # not a person
+```
+
+and, from the guide-score cache, `Person/Entity` at **0.56** outscoring the gold casualty
+type on *"killed a man and his 14-year-old daughter"* — the span genuinely *is* a person
+reference, so a generic person type wins on a casualty query.
+
+Both are the same mechanism: the model routes to the syntactically salient NP, and the type
+query only re-ranks among NPs rather than deciding whether the head word can fill the role at
+all. Supervision at the **base-word** level — positives for head words that can fill a role,
+negatives for words that cannot (`convoy`, `homes`, `customers` for a person role) — attacks
+that directly, where a span-level objective does not: every candidate the span objective sees
+is already a plausible NP.
+
+Note this is orthogonal to the negative-document work above. Negative *documents* teach
+**which event** a figure belongs to; base-word negatives teach **whether a word can head a
+filler** at all. Item 11's GIST veto sits between them, on the query axis, and does neither.
+
+**Untested here.** No measurement in this repo yet supports or refutes it; the two examples
+above establish the failure exists, not that word-level supervision fixes it.
+
 ---
 
 ## P2 — research direction
