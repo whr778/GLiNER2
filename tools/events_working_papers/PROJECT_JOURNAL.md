@@ -453,6 +453,39 @@ targets the axis already being won. Span-dimension caps already exist, and compu
 binding. On events it would bite only on list roles, where the known failure is
 under-generation. *Match the knob to the failure mode, not to the paper it came from.*
 
+## Phase 12 — a summarizer, tested before it was built (10 Aug, close)
+
+Proposal: run a purpose-built summarizer to split text into self-contained bullets so
+number-to-place binding becomes local, with a verbatim-number guard against fabrication.
+
+**Finding the real cases killed my own framing first.** I had been asserting Helene's hard
+case was an intra-sentential aggregate ("120 in NC, 17 in TN, 227 total"). Searching the
+feed found **5** multi-number casualty sentences and none of that shape — the example came
+from a probe, not the corpus. What is actually there: a 140-mile distance, a 30-year career,
+a town's 6,000 population, 30.5 centimetres of rain, the year 2004, and four deaths
+belonging to **Hurricane Ivan**. The failure modes are non-casualty numbers and cross-event
+leakage, not aggregate splitting.
+
+**The premise test said no.** Raw text 3/5; free bullets 2/5 with 2 fabrications; extractive
+bullets 3/5 with 0. Restructuring is neutral at best. The test also caught a flaw in itself
+mid-run — the first version joined the bullets back into one string, rebuilding the very
+ambiguity the split existed to remove.
+
+**The guard and the summarizer are in direct tension**, which is the durable finding. The
+summarizer's highest-value act is normalizing implicit prose into digits — "they died
+together" → "2 people died" — and that is precisely what a verbatim guard rejects.
+Constraining it to extractive-only resolves the conflict and costs real recall: a firefighter
+whose death is never quantified becomes unreachable.
+
+**And the result redirected the work.** Raw extraction's one error on that sample was a
+*scope* error, not an attachment error — the national 225 filed under South Carolina. Second
+independent signal pointing at aggregate scope.
+
+**Also caught: I reported the wrong arm of my own experiment.** A `vector_state_test` run
+looked like a new catastrophic result until the delta (+1.3379) exactly matched the number
+the design doc had already recorded for the *isotropic* case. The default is isotropic; the
+doc's table uses `--q-prop 0.15`. The doc was right and the run was mis-flagged.
+
 ## Recurring lessons
 
 1. **Report the baseline every time.** Run B of Turkiye reads as a success at 0.208 without
@@ -477,6 +510,10 @@ under-generation. *Match the knob to the failure mode, not to the paper it came 
    monotonically while improving the score it was built to maximize.
 10. **Match the knob to the failure mode, not to the paper it came from.** A OneIE β cap is
    a pruner; the arm that needed help was short on recall, not precision.
+11. **Find the real failure cases before designing for them.** Two designs today were aimed
+   at an example sentence that does not occur in the corpus.
+12. **Check which arm you ran.** A "new" catastrophic result was the untuned default of an
+   experiment whose tuned table was already written down.
 
 ## Open
 

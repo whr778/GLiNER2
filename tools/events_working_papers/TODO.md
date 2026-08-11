@@ -152,16 +152,58 @@ and is now enforced by a test rather than by a comment.
 fix — including the 12-arm curve's joint rows, if any were run — was measured at 0.5
 regardless of the threshold requested.
 
-### 8. Aggregate-vs-parts machinery — deferred, not abandoned
-`vector_state_test.py` treats `__aggregate__` as a sum row over the state components rather
-than as a seventh region, which is the right shape for `227 = Σ(parts)`. It stays parked until
-per-state recall is good enough for the constraint to have anything to constrain. Revisit
-immediately after item 1 lands — that is the point where it starts paying.
+### 8. Aggregate SCOPE (not the aggregate constraint) — the sharpened target
+Two different things wear the word "aggregate" and only one of them is open.
+
+**The constraint direction is measured and it LOSES.** `vector_state_test.py` feeds the
+national total in as a sum row over the six state components. Against `parts-only`, on real
+Wikipedia trajectories with `--q-prop 0.15`:
+
+| per-state report rate | parts-only | vector | delta | vector wins |
+|---|--:|--:|--:|--:|
+| 10% | 0.4348 | 0.6085 | +0.174 | 4/40 |
+| 50% | 0.2030 | 0.2234 | +0.020 | 22/40 |
+| 80% | 0.1556 | **0.1520** | **−0.004** | 30/40 |
+
+It loses everywhere except 80% density, and loses **worst exactly where it was predicted to
+win**. An aggregate constrains the SUM and says nothing about the SPLIT, so when parts are
+sparse the filter must guess the division and the total injects error. Do not revisit this
+without a new reason; it is not "deferred pending recall", it was tried and it lost.
+(Isotropic `Q` makes it 7.7x worse still — proportional process noise is a precondition,
+not a tuning knob, since Virginia ranges 1→2 while North Carolina ranges 6→123.)
+
+**The scope direction is open and is where the remaining error lives.** The failure is
+filing a national total under a state — measured on real text: "The number of deaths stood
+at 225 on Friday; two more were recorded in South Carolina" binds **225 → south carolina**.
+That is not a rival claim about South Carolina, and a wrong state silently poisons a state
+stream where an unbound total is recoverable.
+
+Three sub-parts, cheapest first:
+
+1. **Unlocated totals default to `__aggregate__`** rather than being dropped or inheriting
+   the article's dominant state. Directly evidenced: the bullet test's extractive arm
+   produced `(225, None)` where raw produced `(225, south carolina)`.
+2. **Multi-state scope phrases → `__aggregate__`.** Largely done — `rollup.json` carries 38
+   aliases and already maps `north and south carolina`.
+3. **Mis-bound totals** — the hard one, and see item 7: deciding whether a number is a part
+   or the whole is a *data-association* question, and gating against the current per-state
+   estimates is the machinery for it. 225 is a wild outlier for South Carolina (~50) and an
+   excellent fit for the sum. Note the direction: this uses the parts to CLASSIFY the
+   observation, the opposite of the sum-row direction that failed above.
 
 ---
 
 ## Notes for whoever picks this up
 
+- **Summarizer-as-segmenter was tested and is not the answer** (`bullet_premise_test.py`).
+  Hand-written bullets on 5 real Helene sentences, rollup-aware scoring: raw text 3/5 with
+  1 false positive; *free* bullets 2/5 with 3 FP and **2 fabricated figures**; *extractive*
+  bullets (every digit copied from source) 3/5 with 1 FP and 0 fabrications. Restructuring
+  does not improve attachment on this corpus. The free variant actively harms — its most
+  useful act, turning "they died together" into "2 people died", is exactly what a
+  verbatim-number guard must reject, so guard and summarizer are in direct tension. Also
+  note the corpus does NOT contain the tidy "120 NC / 17 TN / 227 total" sentence everyone
+  reaches for; the real numbers are distances, populations, years and rainfall.
 - **Everything new is off by default.** `--rollup`, `--event-year`, `--record-mode` and
   `--associate envelope` all have to be passed explicitly on `run_pipeline.py`. The defaults
   reproduce the older numbers, on purpose.
