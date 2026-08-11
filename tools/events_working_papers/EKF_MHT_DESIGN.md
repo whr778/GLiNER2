@@ -795,7 +795,47 @@ genuinely identical from the numbers alone: Turkey's 41,000 filed under Syria an
 41,000 filed under Turkey look the same to any ratio. Declaring the hierarchy per event is
 the next step and is the same information `rollup.json` already carries.
 
-### 25.5 Honest scorecard
+### 25.5 Declaring the hierarchy: done, and the reference it enables does NOT pay off
+
+Both events now declare containment explicitly rather than leaving a magnitude test to infer
+it. `rollup.json` gains:
+
+    "hierarchy": {"aggregate": "__aggregate__", "parts": ["florida", ...]}
+
+and `datasets/turkey2023/rollup.json` is created for the first time, declaring
+`turkey`/`syria` as parts and mapping the joint-scope phrasing this feed actually uses --
+verified present as *"Syria and Turkey"*, with the reverse order absent.
+
+The declaration enables an **implied-maximum** reference: judge a part against
+`aggregate - sum(other parts)` rather than against the aggregate directly. It is the right
+shape for the dominant-part problem -- Turkey against an implied max of 46,800 - 5,800 =
+41,000 is exactly at its ceiling and correctly kept, while the same 41,000 filed under Syria
+faces an implied max of 5,800 and is correctly rerouted.
+
+**Measured on Helene, it is much worse than the plain aggregate reference: 2.590 vs 0.591.**
+
+A one-pass version does nothing at all (5.228, and the control says it is no better than
+thinning), because the other parts are *themselves* contaminated -- North Carolina's stream
+holds 250 and Florida's holds 300, so the raw sum of parts exceeds the whole and every
+implied maximum clamps to zero. A two-pass version (gate against the raw aggregate first,
+then compute implied maxima from what survives) recovers most of that but still trails
+badly: Florida stays at 9.437 because early in the event the parts' running sum already
+meets the aggregate, the implied maximum clamps to zero anyway, and Florida's 300 walks
+straight through.
+
+**So the refinement that Turkiye motivated makes Helene worse, and Turkiye still cannot test
+it** -- the implied maximum needs *independent* observations of the whole, and Turkiye-Syria
+has none. Declaring the hierarchy does not manufacture the data. Getting those observations
+needs a re-extraction that labels joint-scope figures `__aggregate__`; the aliases for that
+now exist, but the original `--associate envelope` run's `--event-model` is not recorded in
+the pre-registration, so reproducing its 91 observations is a separate task.
+
+Net: the declaration is correct and worth keeping -- it is what tells the gate which streams
+are parts at all, previously hardcoded. The reference it was built to enable is a measured
+negative. **Plain aggregate remains the recommended reference wherever an aggregate stream
+exists, and no gate is possible where one does not.**
+
+### 25.6 Honest scorecard
 
 On the event it was designed against, a 9x improvement with a clean control and a stable
 plateau. On held-out data, a 3.7x win on the contaminated stream and a **2.3x loss on the

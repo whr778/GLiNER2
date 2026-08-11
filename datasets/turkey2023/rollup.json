@@ -1,0 +1,49 @@
+{
+  "_comment": [
+    "Administrative rollup + scope hierarchy for the 2023 Turkiye-Syria earthquake.",
+    "",
+    "Written 2026-08-10 in response to a HELD-OUT failure, not in advance. The scope gate",
+    "(EKF_MHT_DESIGN sec 25) works on Helene and could not run here at all, because it judges a",
+    "part against a declared whole and this event had neither: turkey and syria are siblings",
+    "with no parent, and the combined toll never got its own stream. Generalizing the gate to",
+    "use a global maximum instead made it circular -- Turkey is 87.6% of its own total, so",
+    "Turkey was judged against a reference Turkey itself defines, and its TRUE value of 1,014",
+    "at t=12.5h was rerouted as if it were an aggregate.",
+    "",
+    "`hierarchy` fixes the declaration. `aliases` is what has to fix the DATA: the joint-scope",
+    "phrasing this feed actually uses is 'Syria and Turkey' (verified present; the reverse order",
+    "is not), and until such figures are keyed __aggregate__ there are no aggregate observations",
+    "for a part to be judged against. Note the province entries are deliberately sparse -- hatay",
+    "and adana are the only sub-national places the pipeline has ever emitted here, so the rest",
+    "would be guesses.",
+    "",
+    "Unlike Helene this event does NOT set collapse_type: every observation here is already the",
+    "one event type (Earthquakes), so collapsing buys nothing and would only make the two",
+    "datasets' keys differ for no reason."
+  ],
+  "collapse_type": true,
+  "hierarchy": {
+    "aggregate": "__aggregate__",
+    "parts": ["turkey", "syria"]
+  },
+  "aliases": {
+    "turkey": "turkey",
+    "turkiye": "turkey",
+    "southern turkey": "turkey",
+    "southeastern turkey": "turkey",
+    "hatay": "turkey",
+    "adana": "turkey",
+    "gaziantep": "turkey",
+    "kahramanmaras": "turkey",
+    "syria": "syria",
+    "northern syria": "syria",
+    "northwest syria": "syria",
+    "northwestern syria": "syria",
+    "syria and turkey": "__aggregate__",
+    "turkey and syria": "__aggregate__",
+    "turkiye and syria": "__aggregate__",
+    "both countries": "__aggregate__",
+    "the two countries": "__aggregate__",
+    "the region": "__aggregate__"
+  }
+}

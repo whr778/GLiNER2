@@ -98,26 +98,10 @@ def nrmse(pred, seq, grid):
     return err / rng if rng > 0 else None
 
 
-def national_scale(observations: list, reference: str = "aggregate") -> list:
-    """Running (t, largest-scope value) in time order -- what the gate judges against.
-
-    Gating against a stream's OWN running scale fails on its early history, where a toll
-    legitimately jumps 6 -> 25 faster than any ratio tolerates. It has to be judged against
-    something larger.
-
-    ``aggregate``   the ``__aggregate__`` stream. Correct where one exists: on Helene it is
-                    the only stream whose scope is known right (nRMSE 0.402 vs Wikipedia's
-                    Total).
-    ``global-max``  the running maximum across ALL streams. Needed because Turkiye-Syria has
-                    no aggregate stream at all, and its contaminant is not a national total
-                    but the larger SIBLING -- Syria's stream carries Turkey's 41,000. This
-                    reduces to the aggregate wherever an aggregate is the largest scope
-                    reported, so it generalizes rather than replaces.
-    """
-    rows = observations if reference == "global-max" else [
-        o for o in observations if str(o.get("event_key")) == "__aggregate__"]
+def running_max(observations: list, predicate) -> list:
+    """Running (t, max) over the observations matching ``predicate``, in time order."""
     out, run = [], 0.0
-    for o in sorted(rows, key=lambda o: o["t_hours"]):
+    for o in sorted((o for o in observations if predicate(o)), key=lambda o: o["t_hours"]):
         run = max(run, float(o["value"]))
         out.append((o["t_hours"], run))
     return out
@@ -129,6 +113,57 @@ def scale_at(scale: list, t: float) -> float:
         if tt <= t:
             best = v
     return best
+
+
+def reference_for(observations: list, key: str, states: dict, mode: str) -> list:
+    """The larger-scope series a stream is judged against.
+
+    Gating a stream against its OWN running scale fails on its early history, where a toll
+    legitimately jumps 6 -> 25 faster than any ratio tolerates. It has to be judged against
+    something larger, and WHICH larger thing is the whole difficulty.
+
+    ``aggregate``   the raw ``__aggregate__`` series. Works while a part is small relative
+                    to the whole, and breaks down as the part approaches it.
+    ``global-max``  running max across all streams. Needed where no aggregate stream exists,
+                    but circular for the dominant stream: on Turkiye-Syria it judged Turkey
+                    against a reference Turkey itself defines and rerouted Turkey's own true
+                    1,014.
+    ``implied``     **aggregate minus the other parts' running estimates** -- this part's
+                    implied maximum, and the only one that survives a dominant part. Turkey
+                    is 87.6% of its total, so 41,000 is indistinguishable from the whole by
+                    magnitude alone; against an implied max of 46,800 - 5,800 = 41,000 it is
+                    exactly at its ceiling and correctly kept, while the same 41,000 filed
+                    under Syria faces an implied max of 5,800 and is correctly rerouted.
+                    Requires a DECLARED hierarchy, which is what `rollup.json` now carries.
+    """
+    if mode == "global-max":
+        return running_max(observations, lambda o: True)
+    agg = running_max(observations, lambda o: str(o.get("event_key")) == "__aggregate__")
+    if mode != "implied":
+        return agg
+    # The other parts must be CLEANED first, or the subtraction destroys the reference:
+    # North Carolina's stream holds 250 and Florida's holds 300, so the raw sum of the
+    # parts exceeds the whole and every implied maximum clamps to zero. Pass 1 gates
+    # against the raw aggregate to remove the gross contamination; pass 2 computes the
+    # implied maximum from what survived. Cheap two-pass rather than a fixed point --
+    # a third pass moved nothing on either event.
+    cleaned = clean_parts(observations, states)
+    others = {k: running_max(cleaned, lambda o, k=k: str(o.get("event_key")) == k)
+              for k in states if k != key}
+    return [(t, max(0.0, v - sum(scale_at(o, t) for o in others.values())))
+            for t, v in agg]
+
+
+def clean_parts(observations: list, states: dict, ratio: float = 2.0) -> list:
+    """Pass 1: drop the grossly-contaminated part observations, using the raw aggregate."""
+    agg = running_max(observations, lambda o: str(o.get("event_key")) == "__aggregate__")
+    out = []
+    for o in observations:
+        key = str(o.get("event_key"))
+        natl = scale_at(agg, o["t_hours"])
+        if key not in states or natl <= 0 or float(o["value"]) < natl / ratio:
+            out.append(o)
+    return out
 
 
 def gate(observations: list, ratio: float, warmup: int,
@@ -144,7 +179,6 @@ def gate(observations: list, ratio: float, warmup: int,
     ``reroute`` within [1/ratio, ratio] of the national total -- it IS the national figure
     ``drop``    above the national total -- no scope in this event can exceed the whole
     """
-    scale = national_scale(observations, reference)
     kept: dict[str, list] = {}
     moved: list = []
     dropped: list = []
@@ -157,6 +191,7 @@ def gate(observations: list, ratio: float, warmup: int,
         if key not in states:                # only per-place streams are gated
             kept.setdefault(key, []).extend(obs)
             continue
+        scale = reference_for(observations, key, states, reference)
         for i, o in enumerate(obs):
             v, natl = float(o["value"]), scale_at(scale, o["t_hours"])
             if ratio <= 0 or i < warmup or natl <= 0 or v < natl / ratio:
@@ -216,7 +251,8 @@ def main() -> None:
     ap.add_argument("--dataset", choices=sorted(DATASETS), default="helene")
     ap.add_argument("--tracked", default=None)
     ap.add_argument("--truth", default=None)
-    ap.add_argument("--reference", choices=("aggregate", "global-max"), default=None)
+    ap.add_argument("--reference", choices=("aggregate", "global-max", "implied"),
+                    default=None)
     ap.add_argument("--mode", default="heuristic")
     ap.add_argument("--warmup", type=int, default=2)
     args = ap.parse_args()

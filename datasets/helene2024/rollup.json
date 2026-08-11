@@ -16,7 +16,8 @@
     "",
     "Ground truth is keyed on states, so a stream below state level cannot be scored; the",
     "rollup is what makes per-state measurement possible at all.",
-    "Tail added 2026-08-10 from the keys the rollup run left unmapped -- enumerated by running it, not guessed in advance. Places outside the affected states (poland, iran, japan, cameroon) are deliberately NOT mapped: they are other events leaking through the gate, and mapping them would hide a real contamination problem."
+    "Tail added 2026-08-10 from the keys the rollup run left unmapped -- enumerated by running it, not guessed in advance. Places outside the affected states (poland, iran, japan, cameroon) are deliberately NOT mapped: they are other events leaking through the gate, and mapping them would hide a real contamination problem.",
+    "hierarchy (added 2026-08-10) DECLARES scope containment rather than leaving a magnitude test to infer it. Held-out testing on Turkiye-Syria showed a bare magnitude gate cannot tell 'a larger scope' from 'the largest part': Turkey is 87.6% of its own total, so its true values look exactly like the whole. With the containment declared, a part is judged against its IMPLIED MAXIMUM -- the aggregate minus the other parts' current estimates -- which is correct even for a dominant part. North Carolina is 42% of Helene's total and is where the bare ratio test misfired here."
   ],
   "collapse_type": true,
   "aliases": {
@@ -58,5 +59,16 @@
     "atlanta": "georgia",
     "tampa bay area": "florida",
     "five states": "__aggregate__"
+  },
+  "hierarchy": {
+    "aggregate": "__aggregate__",
+    "parts": [
+      "florida",
+      "georgia",
+      "south carolina",
+      "north carolina",
+      "tennessee",
+      "virginia"
+    ]
   }
 }
