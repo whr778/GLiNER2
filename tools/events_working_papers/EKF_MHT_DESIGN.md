@@ -889,3 +889,114 @@ death that is never quantified becomes unreachable. A second hard constraint: it
 
 The result is what redirected the work to §25 -- raw extraction's one error on that sample is
 a *scope* error, not an attachment error.
+
+## 27. Type vs event energies, and the negative-sampling axis they expose
+
+§25 removed the scope errors. The context audit of what remained (§26 and the 2026-08-11
+recount) left two error classes, and the question was whether a single mechanism -- ranking
+by the model's own type/association energies -- handles both. It does not, and the way it
+fails is more useful than the way it succeeds.
+
+### 27.1 Unit errors: solved, and the competitor set is the whole design
+
+Score each casualty span under `death toll` against competing type queries and reject on a
+negative margin. Against **physically incompatible** types only -- measurement, duration,
+money:
+
+    real unit errors   -0.996  -0.993  -0.993  -0.972     (9 mph, 25 mph x2, "two-day")
+    everything else     0.000   0.001   0.003   0.007 ...
+
+**4/4 caught, 0/83 false positives**, stable for any threshold in `[0.05, 0.9]`. There is no
+tuning: the gap is the width of the scale.
+
+**`quantity` must not be a competitor.** Described as "a count of things that are not
+people", it is semantically *adjacent* to a death toll rather than incompatible with it.
+Including it takes false positives from 0% to **21.7%**, rejecting genuine tolls -- "Dozens"
+(0.96 quantity), "300" (0.61 quantity, 0.0 death toll), "three". So: **compete against what
+a death toll physically cannot be, not against what it resembles.**
+
+That rule is an inference-time patch. §27.3 argues it is really a training-time gap.
+
+### 27.2 Cross-event: not solved, and not by any of three signals
+
+The type energy catches **0/11** here, exactly as predicted -- the type is *right*: Hurricane
+Katrina's 1,400 scores `death toll` 0.95. What is wrong is which event owns it. Three ways to
+ask, with generic words ("hurricane", "storm") excluded so only NAMED competitors count:
+
+| signal | catches | false positives |
+|---|--:|--:|
+| A. nearest named event is a competitor | 3/11 | 32.5% |
+| B. only competitors named in the window | 3/11 | 31.3% |
+| C. record head binds a competitor as the event | 2/11 | 26.5% |
+
+Not shippable at any threshold: Helene articles routinely name Milton, Katrina and historical
+storms for comparison, so ~30% of *genuine* observations are flagged.
+
+Per distinct case, the detail matters more than the totals: Mexico's Hurricane John is caught
+(`bound='John'`), Katrina is caught in one of two instances, the Typhoon binds to the generic
+"hurricane" and is missed, and **Bosnia's 16 is structurally invisible** -- Bosnia is a place,
+not a named storm, so an event probe cannot see it at all.
+
+One incidental result worth keeping: the probe **corrected its own labels**. Six "230"s were
+labelled cross-event by an audit that keyed on `(span, value)`; all six bound to Helene, and
+Helene's toll genuinely reached 230. The measurement was right and the label was wrong.
+
+**Why this half fails where the other succeeded.** A type is a property *of the span*. Event
+membership is a *relation* between the span and something else in the document -- and there
+is no supervision for it: `RECORD_TASK_TYPES` is `("json_structures",)`, so events never
+reach the anchor machinery and no trained trigger->argument binding exists to exploit. The
+probe was asking an untrained capability to discriminate.
+
+### 27.3 The real finding: hard negatives are mined on ONE axis
+
+The codebase already mines hard negatives -- `select_hard_negative_candidates`
+(`losses.py:180`), wired at `model.py:660`, `hard_negatives_per_positive: int = 5`. It ranks
+the highest-scoring **negative spans per query**.
+
+Both failures above need a different axis:
+
+| axis | question | status |
+|---|---|---|
+| **span** | for query *q*, which SPANS are hard negatives? | ✅ built |
+| **query** | for span *s*, which TYPE QUERIES are hard negatives? | ⛔ missing |
+| **instance** | for a casualty, which EVENT INSTANCE owns it? | ⛔ missing |
+
+`quantity` vs `death toll` is a **query-axis** gap: the model has never been taught that
+boundary, because negatives are drawn over spans, never over sibling type queries. Dropping
+`quantity` at inference is therefore a workaround for a training-time omission -- and an
+expensive one, since with it the rule caught 6 further cases.
+
+Cross-event is an **instance-axis** gap, and harder: it needs negatives of the form "this
+casualty belongs to Helene, not to the Katrina mentioned two sentences away".
+
+### 27.4 Candidate losses, and why GISTEmbed first
+
+Practitioner experience recorded because it is not derivable from this repo:
+
+- **MultipleNegativesRankingLoss** — in-batch negatives; **normalizes scores cross-lingually**,
+  which is directly relevant here, since the calibration complaint in §27.1 is exactly that
+  GLiNER2 scores each `(query, span)` through an independent sigmoid with no softmax across
+  types, so margins are not commensurable. MNRL would fix that by construction. **But it is
+  hard to train** — recorded from prior use, and a reason not to lead with it.
+- **BatchHardTripletLoss / OnlineContrastiveLoss** — mine the hardest negative per anchor.
+  Cheap, but they assume the hardest negative is a true negative.
+- **GISTEmbedLoss** — uses a guide model to detect in-batch negatives that are *actually
+  positives*, and drops them from the loss instead of penalizing them.
+
+**GISTEmbed is the right starting point for this specific failure.** `quantity` is not a
+false competitor in general — it is genuinely correct for "1.2 million homes" and genuinely
+wrong for "300 died". A loss that penalizes it unconditionally would teach the model that
+`quantity` never applies; GIST's guide-filtering is precisely the mechanism for "this
+negative is valid *here* but not *there*".
+
+Implementation note: this is not an import. sentence-transformers losses operate on
+bi-encoder `(anchor, positive[, negative])` tuples; GLiNER2 is a query-span scorer with BCE
+over `(query, candidate)` pairs. What transfers is the *mechanism* — guide-filtered negative
+selection — and its natural insertion point is `select_hard_negative_candidates`, which
+already ranks and selects negatives. A query-axis variant with a guide-model veto is a
+surgical change to an existing function rather than a new training path.
+
+**Measure first.** Before wiring any loss: confirm that a query-axis negative actually exists
+to mine, by checking whether sibling type queries score genuine death-toll spans highly in
+the *training* corpora, not just in the 83 Helene observations. A loss cannot fix a boundary
+the data never presents.
