@@ -230,6 +230,32 @@ def random_control(observations: list, n_removed: int, trials: int, series: dict
     return sum(means) / len(means) if means else float("nan")
 
 
+def oracle_gate(observations: list, states: dict, series: dict) -> dict:
+    """The best any hard association could do: assign each figure to the scope it FITS.
+
+    Uses ground truth, so it is not a method -- it is the CEILING. Every observation is
+    assigned to whichever scope (its own place, or Total) its value is closest to at that
+    time, in relative terms. No association scheme, MHT included, can beat a perfect
+    assignment by much, so the gap between this and the shipped gate is the entire prize
+    available to better association. If that gap is small, MHT is not the bottleneck.
+    """
+    kept: dict[str, list] = {}
+    for o in observations:
+        key = str(o.get("event_key"))
+        place = states.get(key)
+        if place is None or place not in series:
+            kept.setdefault(key, []).append(o)
+            continue
+        v = float(o["value"])
+        here = at(series[place], o["t_hours"])
+        whole = at(series.get("Total", []), o["t_hours"])
+        def err(g):
+            return abs(v - g) / max(g, 1.0) if g is not None else float("inf")
+        kept.setdefault(key if err(here) <= err(whole) else "__aggregate__",
+                        []).append(o)
+    return kept
+
+
 def score(kept: dict, series: dict, grid: list, states: dict,
           role: str = "dead") -> dict:
     """Per-state nRMSE plus the national stream, using the shipped estimators."""
@@ -294,6 +320,18 @@ def main() -> None:
           f"mean {ctrl:.3f}")
     print(f"[control] the gate removing the same number: {gated:.3f}  "
           f"({'gate is selecting' if gated < ctrl else 'NO BETTER THAN THINNING'})")
+
+    orc = score(oracle_gate(obs, states, series), series, grid, states)
+    ovals = [orc[p][0] for p in cfg["places"] if orc.get(p, (None,))[0] is not None]
+    omean = sum(ovals) / len(ovals) if ovals else float("nan")
+    print(f"\n[ORACLE] perfect hard association (uses ground truth -- a CEILING, not a "
+          f"method): per-place mean {omean:.3f}")
+    print(f"[ORACLE] shipped gate {gated:.3f} vs ceiling {omean:.3f} -> "
+          f"headroom for better association = {gated - omean:+.3f}")
+    for c in ("Total",) + tuple(cfg["places"]):
+        v = orc.get(c, (None, 0))[0]
+        if v is not None:
+            print(f"           {c:<16}{v:>8.3f}")
 
     print(f"\n[detail at ratio=2.0] {len(moved)} rerouted, {len(dropped)} dropped:")
     for o in sorted(moved, key=lambda o: (o["_from"], o["t_hours"]))[:14]:
