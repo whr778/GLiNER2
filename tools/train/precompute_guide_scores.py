@@ -122,7 +122,7 @@ def _entities(out) -> dict:
     return e[0] if isinstance(e, list) else e
 
 
-def score_batch(model, pending: list, batch_size: int) -> list:
+def score_batch(model, pending: list, batch_size: int, threshold: float) -> list:
     """Score a buffer of records in one call: [(index, record, queries, spans, scored)].
 
     One record per forward leaves a GPU almost idle -- the work is a single encoder pass
@@ -131,7 +131,7 @@ def score_batch(model, pending: list, batch_size: int) -> list:
     outputs = model.batch_extract(
         [item[1].get("input", "") for item in pending],
         [Schema().entities(item[2]) for item in pending],
-        batch_size=batch_size, threshold=0.0, include_confidence=True,
+        batch_size=batch_size, threshold=threshold, include_confidence=True,
     )
     return [item + (rows_for_spans(out, item[3]),)
             for item, out in zip(pending, outputs)]
@@ -183,6 +183,20 @@ def main() -> None:
                          "0.077; 50: 2.38s, 0.062; 100: 4.55s, 0.296; 200: 9.11s, 0.309. The "
                          "knee is at 100, which buys 200's quality for half the compute.")
     ap.add_argument("--pool-seed", type=int, default=0)
+    ap.add_argument("--score-threshold", type=float, default=0.01,
+                    help="minimum guide score to decode, and therefore the minimum score "
+                         "the cache can hold. NOT free accuracy for free speed -- it is the "
+                         "dominant cost. Asking ~100 type queries at 0.0 makes the guide "
+                         "decode EVERY candidate for EVERY query, and the cache then throws "
+                         "almost all of it away: rivals scoring 0.0 are dropped outright. "
+                         "0.01 keeps every cell that survives rival ranking.")
+    ap.add_argument("--shards", type=int, default=1,
+                    help="split the corpus across N processes by record index. The job is "
+                         "Python-bound, not forward-bound -- a GPU measured NO faster than a "
+                         "laptop CPU (3.9 vs 4.55 s/record, 4%% GPU utilisation) -- so cores, "
+                         "not accelerators, are what shorten it. Concatenate the shard "
+                         "outputs; each line is independent and keyed by text.")
+    ap.add_argument("--shard", type=int, default=0, help="this process's shard, 0-based")
     ap.add_argument("--report-every", type=int, default=50)
     ap.add_argument("--batch-size", type=int, default=1,
                     help="records per guide forward. Defaults to 1 because batching MEASURED "
@@ -255,6 +269,8 @@ def main() -> None:
         for i, line in enumerate(fh):
             if args.limit and n >= args.limit:
                 break
+            if args.shards > 1 and i % args.shards != args.shard:
+                continue
             rec = json.loads(line)
             n += 1
             queries, spans = record_queries_and_spans(rec)
@@ -268,13 +284,13 @@ def main() -> None:
                       if name not in own}
             pending.append((i, rec, {**queries, **sample}, spans, own))
             if len(pending) >= args.batch_size:
-                write(score_batch(model, pending, args.batch_size), out)
+                write(score_batch(model, pending, args.batch_size, args.score_threshold), out)
                 pending = []
                 if args.report_every and n % args.report_every < args.batch_size:
                     rate = n / max(time.time() - t0, 1e-9)
                     print(f"  {n} records  {rate:.1f}/s  {cells} cached cells", flush=True)
         if pending:
-            write(score_batch(model, pending, args.batch_size), out)
+            write(score_batch(model, pending, args.batch_size, args.score_threshold), out)
 
     dt = time.time() - t0
     print(f"\n{n} records read, {kept} with gold spans, {cells} cached (span, query) cells")

@@ -1162,13 +1162,28 @@ and the veto takes TRUE axes on the same tensors -- passing the mining axes to t
 vetoes nothing instead of erroring. And a local ``floor = torch.finfo(...).min`` shadowed the
 new abstention parameter, so ``guide > floor`` was always true and the check never fired.
 
-**Batching the precompute is not free.** Padding every sample to the longest document in its
-batch costs more than CPU batching returns: 0.68s/record unbatched, 0.76 at batch 4, **1.20
-at batch 16**, on the same 16 mix records. The default is therefore 1; a GPU has parallelism
-to trade against the padding, so sweep 1/8/32 on a slice there rather than assuming.
+**The precompute is Python-bound, and a GPU does NOT help it (measured 2026-08-11).** The
+"~2 hours on a GPU" figure below was an estimate, and renting an A100 falsified it. Same 96
+records, byte-identical output:
 
-**Open decision, not open code.** The precompute is ~55 CPU-hours at pool=100, or ~2 hours on
-a GPU. Filtering does not close it -- numeric-gold keeps 66.6%, count-type-names 37.1% --
+    1x A100 SXM4      376.0s   3.9 s/record    GPU utilisation 4-13%
+    laptop CPU        186.3s   1.94 s/record
+
+The accelerator was **half the speed** of a laptop, because the per-record cost is not the
+forward pass. Asking ~100 type queries at `threshold=0.0` makes the guide decode EVERY
+candidate for EVERY query, and the cache then discards nearly all of it -- rivals scoring 0.0
+are dropped outright. Two consequences: `--score-threshold` (default 0.01) is now the
+dominant knob and is part of cache *semantics*, not just speed -- it sets the minimum score
+the cache can hold; and the way to shorten the job is `--shards` across CPU cores, not an
+accelerator.
+
+**Batching does not rescue it either.** Padding every sample to the longest document in its
+batch costs more than batching returns: 0.68s/record unbatched, 0.76 at batch 4, **1.20 at
+batch 16** on CPU; on a 40GB A100 batch 32 asked for a 32.9 GiB attention matrix and OOMed,
+because one long document sets the padded length for all 32. Default is 1.
+
+**Open decision, not open code.** Filtering does not close the cost either -- numeric-gold
+keeps 66.6%, count-type-names 37.1% --
 because only 3 of 8 records yield a coherent rival at all and there is no cheap way to know
 which in advance. **Do not** substitute the live model as guide: a cell is mined *because*
 the live model scores it highly, so a live self-guide vetoes exactly what it should select.

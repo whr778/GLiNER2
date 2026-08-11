@@ -322,10 +322,17 @@ same-record rival outscores the gold owner 23.5% of the time — all of it corre
 negatives. Enforced structurally, by only ever filling injected-rival cells: everything else
 sits at exactly 0.0 and cannot clear `floor`.
 
-**Still to run:** the precompute — ~55 CPU-hours at pool=100 after both available levers,
-now batched for GPU. Filtering does not close the cost gap — a numeric-gold filter keeps
-66.6%, a count-type-name filter 37.1% — because only 3 of 8 records yield a coherent rival
-at all and there is no cheap way to know which in advance.
+**Still to run: the precompute — and it is a LOCAL, SHARDED job, not a GPU one.** Renting an
+A100 to find out was worth the $3: same 96 records, byte-identical output, **376.0s on the
+A100 (3.9 s/record, 4-13% GPU utilisation) against 186.3s on a laptop (1.94 s/record)**. The
+accelerator was half the speed, because the cost is Python post-processing rather than the
+forward pass — ~100 type queries at `threshold=0.0` decode every candidate for every query
+and the cache then throws nearly all of it away. So `--score-threshold` (now default 0.01)
+is the real knob, and `--shards` across cores is how the job gets shorter.
+
+Filtering does not close the cost either — a numeric-gold filter keeps 66.6%, a
+count-type-name filter 37.1% — because only 3 of 8 records yield a coherent rival at all and
+there is no cheap way to know which in advance.
 
 **Do not** use the live model as the guide. A cell is mined *because* the live model scores
 it highly, so a live self-guide vetoes exactly the negatives it should select. The guide must
