@@ -1021,3 +1021,40 @@ only — falsely rejects **9/250 = 3.6%** of genuine death tolls on this corpus,
 measured on Helene. `measurement` beats `death toll` on 7 real casualty figures. The Helene
 zero was small-sample luck; **3.6% is the number to quote**, and it is the standing cost of
 the inference-time workaround until the training-time fix lands.
+
+
+### 27.6 What can serve as the GIST guide — gold cannot, and the corpus says why
+
+GIST needs a guide that answers, per instance, "is this sampled negative actually a positive
+here?". The cheapest candidate was the gold labels themselves. Measured on
+`mix_natural.train.jsonl` (84,280 records, 42,609 carrying entity annotations):
+
+    distinct entity types                                    17,128
+    entity mentions                                         357,849
+    number-ish types                       1,649 distinct / 25,101 mentions
+      Casualties and Losses 1180 | Quantity 129 | Measurement 104 | Currency 98 | dates ...
+    records declaring BOTH a casualty-ish AND a quantity-ish type    99 / 42,609 = 0.23%
+
+**Gold cannot be the guide.** The corpus is zero-shot with a per-record type vocabulary --
+each record declares its own handful out of 17,128 -- so it essentially never annotates the
+correct type and the competing type on the same span. At 0.23% coverage there is no signal
+about *when* `quantity` is genuinely right.
+
+Three consequences, and the second is the useful one:
+
+1. **A real guide model is required** — the actual GIST design, not a shortcut.
+2. **Those 99 records are a gold validation set for the guide itself**, and they are exactly
+   on point: the pairs are things like `Number of Vehicles Involved in the Crash` +
+   `Casualties and Losses`. Both are counts; one is of people. Any candidate guide can be
+   scored on whether it says *Quantity is right for the vehicle count and wrong for the death
+   count*. That is a cheap, direct test of the guide before it is trusted to filter anything.
+3. **The negatives themselves are free and abundant.** Because every record declares its own
+   type set, a type query from another record in the batch is already a query-axis negative.
+   That is precisely MNRL's in-batch mechanism -- which is why MNRL is the natural second step
+   once GIST establishes which of those in-batch negatives are false.
+
+`entity_descriptions` is present on 30,064 records (often with anonymized `e_0..e_n` names and
+real descriptions), so a description-level guide is available. Caveat to settle by
+measurement: a description-level guide is TYPE-level, while GIST's veto is INSTANCE-level --
+"quantity is close to death toll in general" is a weaker claim than "quantity is correct for
+*this* span". The 99 records are how to find out whether the weaker signal suffices.
