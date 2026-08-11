@@ -637,7 +637,210 @@ HF-hosted checkpoints.
 
 ---
 
-## 5. Use the trained model
+## 5. Train a boundary document event model
+
+The boundary architecture scores span **endpoints** rather than enumerating `(start, width)`
+candidates, which is what makes document-length event extraction tractable. Event configs
+live in `tools/train/config/joint-boundary-*.yaml`.
+
+It is a **two-stage** recipe: train a base on a large mixed corpus, then warm-start the
+event downstream from it. The curve `{10k, 40k, 100k, 137k}` exists because the base's
+training volume is the variable under test (head-init, `JOINT_IE_SCALING.md` §4).
+
+### Step 1 — build the base
+
+```bash
+uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
+  --config tools/train/config/joint-boundary-mmbert-137k.yaml
+```
+
+`batch_size` in these configs is **per GPU**, and accumulation is halved so the effective
+batch stays 32 whether you run one GPU or two. Don't "fix" that when moving to a single GPU
+without also restoring accumulation.
+
+### Step 2 — warm-start the event downstream
+
+```bash
+uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
+  --config tools/train/config/joint-boundary-rams-137k.yaml
+```
+
+The config points `model.pretrained` at `./out/joint-boundary-mmbert-137k/best` and sets
+`architecture: boundary`. That key is checked against the checkpoint: warm-starting a *span*
+checkpoint raises `ArchitectureMismatchError` instead of silently training the wrong
+architecture.
+
+### Step 3 — evaluate both decode arms on the one model
+
+Greedy and joint-beam decoding are an **eval-time switch** (`decode_mode`), not separate
+training runs. One trained model, two arms.
+
+### What these configs encode, and why (all measured)
+
+| Setting | Reason |
+|---|---|
+| `struct_loss: bce_posweight`, `struct_pos_weight: 4.0` | Bootstraps the argument head. Plain `bce` left argument recall near **0** on fresh heads; focal **collapsed** it. |
+| `bf16: true` + FlashAttention 2 | On mmBERT, **sdpa + bf16 produces NaN** (reproduced on 1×H100 at step 15). FA2 also runs 11× faster. FA2 arrives via the Hub kernel registry — keep `kernels>=0.12,<0.13` pinned *alongside* `transformers`, since the compatible range moves with every transformers release. |
+| `metric_for_best: eval_event_argument_strict_micro_f1` | Arguments are the thing head-init is supposed to move; selecting on loss hides it. |
+| `attn_implementation` unset on the pretrained path | It would be applied to `model.config` after the encoder is built — a silent no-op. FA2 is inherited from the base checkpoint. |
+
+### Three traps that cost real runs
+
+- **Load with `AutoExtractor`, never `GLiNER2`.** `GLiNER2` *is* the span class; a boundary
+  checkpoint dies on `config.max_width` long after the download succeeded, so the error reads
+  like a bad repo id when it isn't.
+- **Compare checkpoints at matched thresholds.** `metric_sweep: true` selects each checkpoint
+  at *its own* best threshold — right for shipping one model, **wrong for a curve**. Re-DocRED
+  alternated 0.1/0.3 and looked non-monotonic until split by threshold. `test_metrics.json`
+  does not record the threshold; pull `best/threshold_sweep.json` separately.
+- **At inference, boundary record decoding needs `--record-mode natural`.**
+
+---
+
+## 6. EKF disaster tracking: base → inference
+
+**The EKF has no learned parameters.** `est_ekf` is a censoring-aware random-walk smoother
+whose smoothing strength is a hand-set constant (`q_rel = 0.20` in
+`datasets/disaster_streams/evaluate.py`), with fixed source/qualifier fusion weights. There
+is no fitting step and no checkpoint. What you *train* is the **casualty structure model**
+that feeds it; everything else is generation, configuration and measurement. Treat "training
+the EKF" as "training the extractor whose observations the filter consumes".
+
+Full stage map, including what is off by default:
+[`PIPELINES.md`](../events_working_papers/PIPELINES.md) §2.
+
+### Step 1 — generate synthetic streams (free, seeded, exact ground truth)
+
+```bash
+uv run python datasets/disaster_streams/generate.py \
+  --out datasets/disaster_streams --n-train 400 --n-val 60 --n-test 60 --seed 42
+```
+
+Each stream is one disaster whose true state evolves (dead/injured approach an asymptote,
+missing decays) and is observed by noisy, *hedged* reports. Parametric and deterministic, so
+ground truth is exact and it costs nothing.
+
+### Step 2 — realize the streams as news text (this one costs money)
+
+```bash
+# price it first
+uv run python datasets/disaster_streams/realize.py --split train --provider anthropic \
+  --model claude-sonnet-5 --estimate
+# then run it; --provider mock spends nothing and is the smoke-test path
+uv run python datasets/disaster_streams/realize.py --split train \
+  --provider anthropic --model claude-sonnet-5 --out datasets/disaster_streams_sonnet5
+```
+
+Observations are grouped by report time into **one multi-fact snippet per report**, so
+extraction has to bind each figure to the right role amid competing numbers. The conditioning
+tuple `(role, value, qualifier, source)` stays known ground truth — the snippet states the
+exact digits with the hedge.
+
+### Step 3 — build the structure-training corpus
+
+```bash
+# single-event (one casualty_report per document)
+uv run python datasets/disaster_streams/build_finetune_corpus.py \
+  --data datasets/disaster_streams_sonnet5 --split train --out data/casualty_ft.train.jsonl
+
+# multi-event (several incidents per document, one record each)
+uv run python datasets/disaster_streams/build_multievent_corpus.py \
+  --data datasets/disaster_streams_sonnet5 --split train \
+  --out data/casualty_multi.train.jsonl --max-interference 3 --record-mode natural
+```
+
+Repeat per split. **Build the corpus from `train` streams only** — the showcase feeds come
+from `test`, and that separation is what keeps the evaluation uncontaminated.
+
+Use the multi-event build unless you have a reason not to: the single-event corpus has
+exactly one record in all 31,539 documents, so the count head only ever saw "1", and on a
+multi-incident document value binding collapses from **1.000 to 0.369** with **22.6%** of
+readings bound to the *wrong* event's number.
+
+### Step 4 — fine-tune the casualty structure model
+
+```bash
+uv run python tools/train/train.py --config tools/train/config/casualty-multievent.yaml
+```
+
+Fine-tunes `fastino/gliner2-base-v1`. `casualty-finetune.yaml` is the single-event recipe
+that closed ~75% of the gap to the structured ceiling; `casualty-multievent.yaml` holds that
+recipe fixed and changes **only the corpus**, so the corpus is the only variable. Note
+`fp16: true` here — the sdpa+bf16 defect is a ModernBERT problem and does not apply to
+DeBERTa-v3.
+
+### Step 5 — build a real event feed and its ground truth
+
+```bash
+uv run python tools/ekf_showcase/harvest_helene_gt.py --out datasets/helene2024/ground_truth.json
+uv run python tools/ekf_showcase/build_helene_feed.py --max-articles 120
+```
+
+The two sources are **deliberately different** — ground truth from Wikipedia's per-state
+casualty table, feed from AP prose. That is what makes `est_last_value` a real baseline
+rather than an oracle: in the Türkiye–Syria run truth was read from the same sentence the
+extractor reads, so the baseline scored 0.000 by construction and the filter was
+unmeasurable.
+
+### Step 6 — declare the scope hierarchy
+
+Edit `datasets/<event>/rollup.json`: `collapse_type` (Helene appears as Floods, Storm *and*
+Mudslides), `aliases` (`asheville` → `north carolina`, `six states` → `__aggregate__`), and
+`hierarchy` (which key is the aggregate, which are its parts). An unmapped place is left
+**alone**, never guessed — unmapped is visible fragmentation, mis-mapped is a silent error in
+the wrong stream.
+
+### Step 7 — run the pipeline
+
+```bash
+uv run python tools/ekf_showcase/run_pipeline.py \
+  --feed datasets/helene2024/_cache/feed.jsonl \
+  --truth datasets/helene2024/ground_truth.json \
+  --out datasets/helene2024/_cache/tracked.json \
+  --casualty-model ./out/casualty-multievent/best \
+  --record-mode natural --associate record \
+  --rollup datasets/helene2024/rollup.json --event-year 2024 \
+  --window article --device cpu
+```
+
+**Everything from the temporal filter down is OFF unless you pass it** — `--event-year`,
+`--rollup`, `--record-mode`, `--associate`. The defaults deliberately reproduce the older
+numbers, so a run that omits them is not the current pipeline.
+
+Flags worth understanding before trusting a result:
+
+- `--associate record` takes the location from the record's **own** field (the strongest
+  signal); `envelope` falls back to nearest-location-by-character-distance.
+- `--event-year 2024` drops figures dated before the event — Izmit 1999's 17,500 was being
+  bound as a 2023 observation 15 times.
+- `--window long` routes through `extract_long`; `article` is the default and wins on
+  single-event feeds, `event` reduces cross-event misbinding on genuinely multi-event ones.
+- `--device cpu` is usually the right choice: **MPS is 3–4× slower** for many-label event
+  extraction because of per-op sync overhead.
+
+### Step 8 — score
+
+```bash
+uv run python tools/ekf_showcase/score_helene.py \
+  --tracked datasets/helene2024/_cache/tracked.json \
+  --truth datasets/helene2024/ground_truth.json --role dead
+```
+
+Reports nRMSE for `ekf` against the `last_value` baseline, and counts aggregate-bound-to-a-part
+errors separately — a real, correctly-extracted number attached to a scope that isn't a
+stream is a different mistake from ordinary mis-binding.
+
+### The known weak point
+
+Association (stage 3c) is the research blocker, **not** the filter. Proximity, GPE tags,
+record-location and admin rollup have all been tried; the scope gate was the first thing that
+moved it (per-state nRMSE 5.247 → 0.591, against a random-removal control at 4.427). No MHT
+is built — see `PIPELINES.md` §4 for the measurement showing why the oracle headroom doesn't
+currently justify it.
+
+---
+
+## 7. Use the trained model
 
 ```python
 from gliner2 import GLiNER2
@@ -653,7 +856,7 @@ print(model.extract_entities(
 
 ---
 
-## 6. Push to Hugging Face Hub
+## 8. Push to Hugging Face Hub
 
 Once you're happy with a checkpoint, upload it so it can be loaded by anyone with `GLiNER2.from_pretrained("<username>/<repo>")`.
 
@@ -693,7 +896,7 @@ print(model.extract_entities("Marie Curie discovered radium in Paris.",
 
 ---
 
-## 7. Practical tips
+## 9. Practical tips
 
 - **Run a 50-record smoke test first** before launching a multi-day run:
   ```bash
@@ -707,7 +910,7 @@ print(model.extract_entities("Marie Curie discovered radium in Paris.",
 
 ---
 
-## 8. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|

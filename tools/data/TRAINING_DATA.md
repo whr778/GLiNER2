@@ -73,6 +73,9 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | DuEE 1.0 | Event extraction (Chinese) | 11,603 | 1,453 | — | see source | [LUGE](https://www.luge.ai/) |
 | Mendeley-ED | Event detection (English, trigger-only) | 1,431 | 159 | 156 | cc-by-4.0 | [Mendeley](https://doi.org/10.17632/7d54rvzxkr.1) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
+| **EKF disaster tracking** (synthetic) | | | | | | |
+| casualty_ft | Structured extraction (single-event) | 29,198 | 1,303 | 1,038 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
+| casualty_multi | Structured extraction (multi-event) | 29,030 | 1,297 | 1,023 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
 | **Total (generated)** | | **1,933,577** | **249,880** | **276,572** | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
@@ -342,6 +345,73 @@ et al., 2020); word-level triggers only (no argument roles). Auto-downloads the 
 LDC-licensed; not redistributable and not generated here. Convert from your own
 licensed copy via `tools/data/convert_ace2005.py` (emits a stratified 80/10/10
 split covering entity, relation, and event types).
+
+## EKF disaster tracking
+
+Training data for the casualty structure model that feeds the EKF tracker. Unlike every
+other corpus here it is **generated, not downloaded** — and unlike them it is built to be
+*consumed by a filter*, so its ground truth is a time series rather than a label set.
+
+The generation chain, and why each stage exists:
+
+```
+generate.py          parametric streams, seeded      free, exact ground truth
+      |              dead/injured -> asymptote, missing decays, hedged noisy reports
+      v
+realize.py           Sonnet-5 news snippets          COSTS MONEY (--provider mock is free)
+      |              one MULTI-FACT snippet per report time
+      v
+build_finetune_corpus.py  /  build_multievent_corpus.py    -> data/casualty_{ft,multi}.*
+```
+
+**Why synthetic at all.** The tracker needs `(t, role, value, qualifier, source)` tuples
+with known truth over time. No public corpus carries a *trajectory* — real reporting gives
+you one snapshot per article and no answer key for the state between them. Generating it
+parametrically makes ground truth exact and free; the only paid step is turning structured
+observations into realistic prose.
+
+**Why the text is realized by a model rather than templated.** Templated text is trivially
+parseable and hides the actual failure. Each report time becomes **one snippet carrying
+several roles plus distractor numbers**, so extraction has to *bind* each figure to the right
+role amid dates, magnitudes and competing figures. The conditioning tuple stays known truth —
+the snippet states the exact digits with the hedge — so a correct extractor recovers it.
+
+### casualty_ft — single-event
+`data/casualty_ft.{train,val,test}.jsonl` · 29,198 / 1,303 / 1,038
+
+One `casualty_report` per document. **Verified: 1.00 records/doc.** That is the corpus's
+defining limitation — the count head only ever saw "1", so on a document describing several
+incidents the model must blend competing figures into one forced instance. Measured
+consequence on multi-event text: value binding collapses from **1.000 → 0.369**, with
+**22.6%** of readings bound to the *wrong* event's number.
+
+### casualty_multi — multi-event
+`data/casualty_multi.{train,val,test}.jsonl` · 29,030 / 1,297 / 1,023
+
+Several incidents per document, one record each. **Verified: mean 2.35 records/doc**,
+distribution `{1: 1366, 2: 1425, 3: 1292, 4: 917}` over a 5,000-record sample. Single-event
+documents are deliberately kept in the mix so 1.000 single-event binding cannot silently
+regress while multi-event improves. Document lengths run median 132 / max 258 words, so **0%
+exceed the 384-word training window** — no multi-event document is ever split across windows,
+which would sever a record.
+
+Build it from **`train` streams only**. The showcase feeds are drawn from `test`, and that
+separation is the only thing keeping the evaluation uncontaminated.
+
+### Real events — evaluation only, never training
+`datasets/helene2024/`, `datasets/turkey2023/`, `datasets/venezuela_2026/`
+
+Held-out validation, each with a `rollup.json` declaring the scope hierarchy. Helene pairs a
+**Wikipedia per-state casualty table** (ground truth) with **AP prose** (feed) — deliberately
+different sources, which is what makes `est_last_value` a genuine baseline. In the earlier
+Türkiye–Syria run truth was read from the same sentence the extractor reads, so that baseline
+scored 0.000 by construction and the filter was unmeasurable.
+
+Sibling `datasets/disaster_streams_*` directories are alternative generations of the same
+pipeline (`_docee` / `_docee250` real DocEE contexts, `_hard`, `_scaled`, `_sonnet5` realized
+text, `_model` / `_model_ft` model-extracted arms), kept so ablations remain reproducible.
+
+Conversion and training commands: [TRAINING.md](../train/TRAINING.md) §6.
 
 ---
 
