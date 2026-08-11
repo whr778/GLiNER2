@@ -177,6 +177,62 @@ def build_candidate_labels(
     return labels, soft_targets
 
 
+def apply_guide_veto(
+    selected: torch.BoolTensor,       # [B, Q, C] the mined hard-negative mask
+    guide_logits: torch.Tensor,       # [B, Q, C] scores from a FROZEN guide model
+    labels: torch.Tensor,             # [B, Q, C]
+    valid_mask: torch.BoolTensor,     # [B, Q, C]
+    *,
+    margin: float = 0.0,
+    query_axis: int = 1,
+    candidate_axis: int = 2,
+) -> torch.BoolTensor:
+    """Drop mined negatives that a guide model judges to be positives here (GIST).
+
+    Query-axis mining asks "which sibling type queries score this span highly?". Many of the
+    answers are genuine confusions to train on, but some are simply CORRECT: `quantity` beats
+    `death toll` on 64 of 250 gold casualty figures and is simultaneously the right answer for
+    "1.2 million homes". Penalizing it unconditionally teaches the model that the type never
+    applies, which is worse than the confusion. So a negative is removed from the loss --
+    neither pushed down nor treated as positive -- when the guide ranks it above this
+    candidate's own positive query.
+
+    **The guide must be FROZEN and independent of the model being trained.** Self-guiding with
+    the live model vetoes precisely the hard negatives it is meant to select, since a cell is
+    mined *because* the live model scores it highly. A frozen pretrained checkpoint is the
+    right source: measured on 40 gold records that name both a casualty type and a competing
+    count type, `fastino/gliner2-base-v1` gets both directions right 82.5% of the time against
+    a 25% chance baseline (EKF_MHT_DESIGN sec 27.7).
+
+    ``margin`` raises the bar for a veto: a negative survives unless the guide prefers it by
+    more than ``margin``. 0.0 reproduces GIST's rule.
+
+    **Axis warning.** Query-axis MINING is done by handing
+    :func:`select_hard_negative_candidates` its axes *swapped*, which turns its "top-k
+    candidates per query" into "top-k queries per candidate". This function takes the axes
+    **as they really are** -- it has to reduce over queries to find each candidate's own
+    positive, so a swapped call here silently compares along the wrong dimension and vetoes
+    nothing. The two calls therefore take different axis arguments on the same tensors, and
+    that is deliberate.
+
+    Candidates with no positive query are left alone -- there is no reference to compare a
+    guide score against, so vetoing there would be arbitrary.
+    """
+    sel = _to_query_candidate(selected, query_axis, candidate_axis)
+    guide = _to_query_candidate(guide_logits, query_axis, candidate_axis)
+    lab = _to_query_candidate(labels, query_axis, candidate_axis)
+    valid = _to_query_candidate(valid_mask, query_axis, candidate_axis)
+
+    positive = (lab > 0.5) & valid
+    floor = torch.finfo(guide.dtype).min
+    # Best guide score among this candidate's OWN positive queries, per (batch, candidate).
+    pos_guide = guide.masked_fill(~positive, floor).amax(dim=1, keepdim=True)
+    has_positive = positive.any(dim=1, keepdim=True)
+
+    vetoed = sel & has_positive & (guide > pos_guide + margin) & ~positive
+    return _from_query_candidate(sel & ~vetoed, query_axis, candidate_axis)
+
+
 def select_hard_negative_candidates(
     pair_logits: torch.Tensor,        # [B, Q, C]
     labels: torch.Tensor,             # [B, Q, C]
