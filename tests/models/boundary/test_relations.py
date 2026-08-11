@@ -54,8 +54,10 @@ def test_typed_pair_generation_respects_endpoint_types():
     pairs = TypedRelationPairGenerator().generate(cands, [layout], [spec])
 
     assert len(pairs) == 4  # 2 heads x 2 tails
-    assert all(k[0] == "person" for k in pairs.head_keys)
-    assert all(k[0] == "org" for k in pairs.tail_keys)
+    # Endpoint keys are qualified per query, so they stay distinct when two relation
+    # types share field names.
+    assert all(k[0] == "0::person" for k in pairs.head_keys)
+    assert all(k[0] == "1::org" for k in pairs.tail_keys)
     assert all(rt == "works_for" for rt in pairs.relation_types)
 
 

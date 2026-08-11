@@ -376,6 +376,44 @@ And the 2xH100 box ran ~40 minutes past the point every artifact was local, roug
 because analysis was treated as the task and the machine as background. Second cost lapse
 of the day; the first was launching a run whose throughput had never been sanity-checked.
 
+## Phase 10 — the beam arm was never runnable (10 Aug, close)
+
+A question about the mention-key format ("if there truly are duplicate spans, can we dedup
+them?") turned out to be aimed at a real defect and at an imprecise description of it.
+
+**The description was wrong first.** The note said the collision came from `role_name` being
+`'head'`/`'tail'`. Relation field names are arbitrary and binding is positional, so that was
+incidental. The defect is that the **relation type is dropped**: `spec["task_name"]` exists
+at `model.py:1260` and `query_types` is built from `field_name` alone at `engine.py:516`.
+
+**Dedup was the wrong fix, and the probe is why.** On `deaths_in {head,tail}` +
+`injured_in {head,tail}`: 512 mentions, 271 unique keys, 241 colliding — and **0 of 241
+collisions had matching logits**. Each relation type is its own schema group with its own
+query embeddings, so each scores the span independently. These were duplicate *keys*, not
+duplicate *mentions*; merging them would have scored one relation's role edges against
+another relation's mention evidence. Running-but-wrong, which is worse than crashing.
+
+**Two things the reproduction found that reasoning had not.** The raise is
+*threshold-dependent* — no raise at 0.5, raises at 0.05 and 0.01 — so a schema looks fine
+until the model gets confident. And `TypedEndpoints` had the same root cause: with bare role
+names every relation declares `("head",)/("tail",)`, so endpoint typing was **vacuous across
+relation types**. The plan for number-to-place attachment depends on exactly that constraint
+discriminating, so dedup would have quietly forfeited the thing it was meant to enable.
+
+**Fixed by qualifying the node type per query** (`qualified_query_type`, `models/base.py`) at
+all three sites at once — `query_types`, `_query_type` for the pair endpoint keys, and the
+`TypedEndpoints` construction — because a one-sided fix does not raise, it drops every edge
+through the `keep_ids` filter and returns empty, which reads as "the model found nothing".
+That is the §3 empty-layout failure a second time.
+
+So "no raise" was refused as the acceptance test. Measured after the fix: 0 collisions,
+**256/256 edges resolving to nodes**, 18 surviving threshold 0.05. The regression tests were
+then checked by reverting the fix and confirming both fail.
+
+**Consequence for the papers.** The beam arm has never run on a schema with two relation
+types. Every number in the 12-arm curve is the greedy arm. The papers call the comparison
+"unmeasured"; until today it was *unrunnable*.
+
 ## Recurring lessons
 
 1. **Report the baseline every time.** Run B of Turkiye reads as a success at 0.208 without

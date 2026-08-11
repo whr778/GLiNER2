@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from gliner2.models.base import QueryLayout
+from gliner2.models.base import QueryLayout, qualified_query_type
 from gliner2.models.outputs import CandidateTensorBatch
 
 
@@ -64,8 +64,14 @@ class RelationPairBatch:
 
 
 def _query_type(layout: QueryLayout, query_id: int) -> str:
+    """The endpoint key's type component — qualified per query.
+
+    Must stay identical to the boundary engine's ``query_types``: a mismatch does not
+    raise, it silently drops every edge through ``candidate_score_set_to_problem``'s
+    ``keep_ids`` filter, and the joint decode returns empty as if the model found nothing.
+    """
     try:
-        return layout.query(query_id).role_name
+        return qualified_query_type(query_id, layout.query(query_id).role_name)
     except KeyError:
         return str(query_id)
 

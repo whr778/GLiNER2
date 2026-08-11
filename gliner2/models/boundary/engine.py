@@ -15,7 +15,12 @@ from gliner2.models.boundary.model import (
     _group_scored_candidates,
 )
 from gliner2.joint_ie.candidate_scores import _query_type_name
-from gliner2.models.base import QueryLayout, QuerySpec
+from gliner2.models.base import (
+    QueryLayout,
+    QuerySpec,
+    display_query_type,
+    qualified_query_type,
+)
 from gliner2.models.boundary.records import decode_group
 
 
@@ -513,7 +518,13 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         )
         if logits is None:
             logits = []
-        query_types = [spec["field_name"] for spec in specs]
+        # Qualified per query, not by bare field name: two relation types sharing the
+        # Standard Format's head/tail would otherwise key the same span identically and
+        # JointProblem would reject the problem. `relations.py::_query_type` qualifies the
+        # pair endpoint keys the same way, so edges keep resolving to these nodes.
+        query_types = [
+            qualified_query_type(q, spec["field_name"]) for q, spec in enumerate(specs)
+        ]
         groups = self._record_groups(batch, sample_index, core, candidates)
         # Mirror decode_group's instance gate exactly: it passes
         # object_threshold=record_anchor_threshold for BOTH modes, so one threshold
@@ -526,10 +537,15 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         role_edges = boundary_record_groups_to_role_edges(groups, query_types, **gate)
         instance_nodes = boundary_record_instance_nodes(groups, query_types, **gate)
         constraints = [
+            # Qualified for the same reason, and this is where it bites hardest: with bare
+            # role names every relation's constraint is ("head",)/("tail",), so the
+            # endpoint typing is vacuous across relation types and constrains nothing.
             TypedEndpoints(
                 entry["spec"].relation_type,
-                tuple(layout.query(q).role_name for q in entry["spec"].head_query_ids),
-                tuple(layout.query(q).role_name for q in entry["spec"].tail_query_ids),
+                tuple(qualified_query_type(q, layout.query(q).role_name)
+                      for q in entry["spec"].head_query_ids),
+                tuple(qualified_query_type(q, layout.query(q).role_name)
+                      for q in entry["spec"].tail_query_ids),
             )
             for entry in core["rel_specs"][sample_index]
         ]
@@ -552,13 +568,12 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         sample: Dict[str, Any] = {}
         # Relation head/tail-role queries are mentions too; only entity queries
         # belong in the entities section.
-        entity_types = {
-            spec["field_name"] for spec in specs if spec["task_type"] == "entities"
-        }
+        # Keyed by the qualified type the nodes actually carry; unqualified for display.
         entity_results: "OrderedDict[str, List]" = OrderedDict(
-            (spec["field_name"], [])
-            for spec in specs if spec["task_type"] == "entities"
+            (query_types[q], [])
+            for q, spec in enumerate(specs) if spec["task_type"] == "entities"
         )
+        entity_types = set(entity_results)
         chars: Dict[Any, Tuple[str, int, int]] = {}
         for node in solution.nodes:
             span = self._token_span_to_char(
@@ -573,7 +588,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 )
 
         formatted = OrderedDict(
-            (name, self._format_spans(
+            (display_query_type(name), self._format_spans(
                 spans, include_confidence, include_spans, already_finalized=True
             ))
             for name, spans in entity_results.items()

@@ -168,3 +168,96 @@ def test_joint_decode_end_to_end_from_boundary_outputs():
     )
     assert {n.entity_type for n in solution.nodes} == {"person", "org"}
     assert {e.relation_type for e in solution.edges} == {"works_for"}
+
+
+def _two_relation_layout():
+    """Two relation types sharing the Standard Format's ``head``/``tail`` field names."""
+    from gliner2.models.base import QueryLayout, QuerySpec
+
+    names = [("deaths_in", "head"), ("deaths_in", "tail"),
+             ("injured_in", "head"), ("injured_in", "tail")]
+    return QueryLayout(queries=tuple(
+        QuerySpec(query_id=i, task_index=i // 2, task_type="relations",
+                  task_name=task, role_index=i % 2, role_name=role,
+                  field_path=(task, role), extractive=True)
+        for i, (task, role) in enumerate(names)
+    ))
+
+
+def test_two_relation_types_sharing_field_names_keep_distinct_nodes_and_edges():
+    """Regression: relation types sharing field names must not collide, and edges must live.
+
+    Two failures hide here and only one of them raises. Bare ``(field_name, start, end)``
+    keys make two relation types produce identical node ids and ``JointProblem`` rejects the
+    problem. Qualifying only *one* side instead silently drops every edge through
+    ``candidate_score_set_to_problem``'s ``keep_ids`` filter and the decode returns empty --
+    which reads as "the model found nothing". So this asserts edges SURVIVE, not merely that
+    nothing raised.
+    """
+    from gliner2.models.base import qualified_query_type
+    from gliner2.models.boundary.relations import (
+        RelationTypeSpec,
+        TypedRelationPairGenerator,
+    )
+    from gliner2.models.outputs import CandidateTensorBatch
+
+    layout = _two_relation_layout()
+    # All four queries propose the SAME two spans -- the colliding case.
+    spans = [[(0, 2), (3, 5)]] * 4
+    indices = torch.zeros(1, 4, 2, 2, dtype=torch.long)
+    valid = torch.zeros(1, 4, 2, dtype=torch.bool)
+    pair_logits = torch.zeros(1, 4, 2)
+    for q, per_query in enumerate(spans):
+        for c, (s, e) in enumerate(per_query):
+            indices[0, q, c, 0], indices[0, q, c, 1] = s, e
+            valid[0, q, c] = True
+            pair_logits[0, q, c] = 5.0 + 0.1 * q  # distinct per query, as in a real model
+    cands = CandidateTensorBatch(
+        indices=indices, proposal_logits=None, pair_logits=pair_logits,
+        valid_mask=valid, query_mask=torch.ones(1, 4, dtype=torch.bool),
+    )
+
+    specs = [RelationTypeSpec("deaths_in", (0,), (1,)),
+             RelationTypeSpec("injured_in", (2,), (3,))]
+    pairs = TypedRelationPairGenerator().generate(cands, [layout], specs)
+    assert len(pairs) > 0
+
+    query_types = [qualified_query_type(q.query_id, q.role_name) for q in layout.queries]
+    css = boundary_candidates_to_candidate_score_set(cands, query_types, "text")
+    keys = [m.key for m in css.mentions]
+    assert len(keys) == len(set(keys)), "mention keys collide across relation types"
+
+    edges = boundary_relation_pairs_to_edges(pairs, [3.0] * len(pairs))
+    problem = candidate_score_set_to_problem(css, edges)   # would raise on collision
+    assert len(problem.nodes) == len(css.mentions)
+    # The assertion that catches a one-sided fix: keys must MATCH, not merely be unique.
+    assert len(problem.edges) == len(edges) > 0, "edges dropped by the keep_ids filter"
+
+    both = {e.relation_type for e in problem.edges}
+    assert both == {"deaths_in", "injured_in"}
+
+
+def test_typed_endpoints_discriminate_between_relation_types():
+    """Qualified endpoint types make a relation's constraint actually constrain.
+
+    With bare role names both relations above declare ``("head",)/("tail",)``, so
+    ``TypedEndpoints`` is satisfied by any endpoint of either relation and forbids nothing.
+    """
+    from gliner2.models.base import qualified_query_type
+
+    layout = _two_relation_layout()
+    heads = [qualified_query_type(q.query_id, q.role_name)
+             for q in layout.queries if q.role_name == "head"]
+    assert len(set(heads)) == 2, "both relations' head queries share one type name"
+
+    # An edge that borrows the other relation's endpoints is now rejected.
+    css = CandidateScoreSet(text="t", mentions=(
+        MentionScore(0, heads[0], 0, 2, 4.0, 0.98),
+        MentionScore(1, "1::tail", 3, 5, 4.0, 0.98),
+        MentionScore(2, heads[1], 6, 8, 4.0, 0.98),
+    ))
+    crossed = ScoredRelationEdge("deaths_in", (heads[1], 6, 8), ("1::tail", 3, 5), 3.0, 0.95)
+    constraints = [TypedEndpoints("deaths_in", (heads[0],), ("1::tail",))]
+    problem = candidate_score_set_to_problem(css, [crossed], constraints=constraints)
+    solution = BeamOptimizer(beam_width=8).optimize(problem)
+    assert not solution.edges, "cross-type edge should be forbidden by TypedEndpoints"

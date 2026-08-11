@@ -64,6 +64,31 @@ class QuerySpec:
     extractive: bool = True
 
 
+QUERY_TYPE_SEP = "::"
+
+
+def qualified_query_type(query_id: int, role_name: str) -> str:
+    """The joint-IE node type for one query: unique per query, not per field name.
+
+    Field names are arbitrary and scoped to their own relation type (tutorial 8), so two
+    relation types routinely declare the same names -- the Standard Format's ``head``/
+    ``tail`` being the common case. Keying joint-IE mentions on the bare field name then
+    gives two relation types identical node ids for the same span, and ``JointProblem``
+    rejects the problem. The query id is used as the qualifier rather than the task name
+    because it is unique *structurally*, with no assumption that task names are distinct.
+
+    Internal only: `display_query_type` strips it before anything is emitted. Splitting
+    from the left is safe whatever the field name contains, since the prefix is an integer.
+    """
+    return f"{int(query_id)}{QUERY_TYPE_SEP}{role_name}"
+
+
+def display_query_type(qualified: str) -> str:
+    """The user-facing field name behind a `qualified_query_type`."""
+    head, sep, name = qualified.partition(QUERY_TYPE_SEP)
+    return name if sep and head.isdigit() else qualified
+
+
 @dataclass(frozen=True)
 class QueryLayout:
     """Ordered queries for a single sample, with fast id lookup."""

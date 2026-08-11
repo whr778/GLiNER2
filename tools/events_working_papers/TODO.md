@@ -1,124 +1,126 @@
 # Open items — resume list
 
-State at 2026-08-10 close. Everything below is either a defect with evidence attached or a
-decision with a stated next test. No GPUs running; working tree clean.
+State at 2026-08-10 close. Rewritten: completed work has been removed rather than struck
+through. History lives in `PROJECT_JOURNAL.md` and the commit log; this file is only what is
+still open. Everything below is either a defect with evidence attached, or a decision with a
+stated next test.
 
-Where the line actually stands: extraction and attribution have absorbed every real-data
-finding today, and the tracker itself has now been measured twice and works — marginally
-(+1–2% over `est_last_value` on real revisions) and clearly on the one correctly-scoped
-stream (`__aggregate__` 0.402 vs 0.524). **The bottleneck has moved upstream three times in
-one day and is currently number-to-place attachment.**
+No GPUs running. Nothing is mid-flight.
+
+**Where the line stands.** The tracker has now been measured twice on real data and it works,
+marginally: +1–2% over `est_last_value` on genuine downward revisions, and 0.402 vs 0.524 on
+`__aggregate__`, the one stream whose scope is correct. Every larger failure today was
+upstream of the filter, and the bottleneck moved three times in one day — from extraction, to
+the date window, to admin fragmentation, and it now sits on **number-to-place attachment**.
+That is the thing to fix next. Nothing downstream of it is worth tuning until it is.
 
 ---
 
 ## P0 — blocks the next experiment
 
-### 1. joint_ie mention keys collide across relation types
-`boundary_candidates_to_candidate_score_set` keys mentions `(role_name, start, end)` where
-`role_name` is `'head'`/`'tail'`. The **relation type is not in the key**, so two relation
-types produce identical ids and `JointProblem` raises `node candidate ids must be unique`.
+### 1. Number-to-place attachment — the actual research blocker
+Proximity, GPE tags, record-internal location and admin rollup have all been tried and all
+failed. Rollup did what it was supposed to (58 keys → 21, 84% of observations in six clean
+streams) and per-state tracking is *still* catastrophic: North Carolina 5.637, Georgia with
+0 of 5 values in plausible range. The reason is not fragmentation. It is that national totals
+get filed under whichever state the article happens to be about.
 
-Measured: 427 mentions, 219 unique, **208 duplicates, each ×2** (one per relation type).
-One relation type works; two or more raise.
+Two routes, not mutually exclusive:
 
-**Consequence:** the beam arm has never been runnable on a realistic schema. Phase A exists
-to compare greedy vs beam, and every number in the completed 12-arm curve is the greedy arm.
-The papers say "unmeasured"; the truth is "unrunnable".
+- **Train the relation.** `casualty_multi_loc` already carries gold `(value, place)` pairs, so
+  a `deaths_in` relation can be supervised directly instead of relied on zero-shot.
+- **Run the beam arm** with `TypedEndpoints`, which makes `('storm', Florida)` structurally
+  unrepresentable rather than merely unlikely. Unblocked 2026-08-10 by the qualified-key fix
+  (see item 9) — this is now runnable and unrun, where before it was unrunnable.
 
-Fix must change **both** sides in one commit — mention keys and
-`boundary_relation_pairs_to_edges`'s `head_keys`/`tail_keys` — because a mismatch silently
-drops every edge via the `keep_ids` filter. That exact failure is already documented in
-§3 (the empty-layout bug pruned every edge). Assert the invariant directly: every edge
-endpoint resolves to a node. The existing tests miss it because they use ONE relation type.
-
-### 2. Number-to-place attachment (the actual research blocker)
-Proximity, GPE tags, record-location and admin rollup have all failed. Rollup collapsed
-58 keys → 21 with 84% in six clean streams, and per-state tracking is *still* catastrophic
-(North Carolina 5.637, Georgia 0/5 values in plausible range) because national totals get
-filed under whichever state the article is about.
-
-Two routes, not exclusive:
-- **Train the relation.** `casualty_multi_loc` already carries gold `(value, place)` pairs;
-  a `deaths_in` relation can be supervised directly rather than relied on zero-shot.
-- **Fix and run the beam arm** (item 1) with `TypedEndpoints`, which makes
-  `('storm', Florida)` unrepresentable rather than merely unlikely.
-
-Zero-shot is close but fragile: `explicit-scope` phrasing got the aggregate case right
-(120→NC, 17→TN, correctly excluding 227) where two other phrasings got it wrong. Same model,
-same text. That fragility is the argument for training rather than prompt-tuning.
+Zero-shot is close but fragile, and the fragility is the argument for training over
+prompt-tuning: `explicit-scope` phrasing got the hard aggregate case exactly right
+(120 → North Carolina, 17 → Tennessee, correctly *excluding* the national 227) while two other
+phrasings of the same request, same model, same text, got it wrong.
 
 ---
 
-## P1 — known-wrong, cheap  (3, 4, 6, 7 DONE 2026-08-10; 5 remains)
+## P1 — known-wrong
 
-### 3. ~~`test_runtime_strict_extraction` — 2 failures~~ FIXED
-`_FakeRuntime` lacks `_encoder_autocast`, added by the 8 Aug FA2-inference fix without
-updating the mock. Confirmed pre-existing by stashing today's changes.
+### 2. Cross-event contamination in the Helene feed
+Whole-article reading via `extract_long` surfaced streams for `poland`, `bosnia`,
+`afghanistan`, `iran`, `japan`, `ukraine`, `cameroon` — casualty figures lifted from unrelated
+stories sharing an article body.
 
-### 4. ~~The 12 published models carry `attn_implementation: flash_attention_2`~~ FIXED
-The loader now repairs this at load time (CUDA-guarded), so nothing is broken for users.
-But the configs on the Hub remain wrong, and anyone reading them is misled. Decide: re-push
-configs, or document in the model cards.
+The gate answers "is this article about a mass-casualty event". It never answers "does this
+number belong to *that* event". The date filter is the temporal version of that check and it
+worked (Izmit 15 → 3 false bindings, zero genuine losses). **The spatial version does not
+exist.** This is not cleanup — it is the same research question as item 1 seen from the other
+end, and it should probably be solved once, for both.
 
-### 5. Cross-event contamination in the Helene feed  **— NOT a quick fix; the only P1 left**
-Whole-article reading surfaced streams for `poland`, `bosnia`, `afghanistan`, `iran`,
-`japan`, `ukraine`, `cameroon` — casualty figures from unrelated stories in the same
-article. The gate answers "is this article about a mass-casualty event", never "does this
-number belong to THAT event". The date filter is the temporal version of this check; the
-spatial version does not exist.
-
-### 6. ~~`ws_setup.sh` overrides the repo pin~~ FIXED
-Harmless for completed runs (both arms shared a box) but it is the same drift class that
-cost a GPU run today. The setup script should inherit the repo pin.
-
-### 7. ~~Rollup tail — 15 unmapped keys~~ FIXED (38 aliases; foreign places left unmapped on purpose)
-`five states`, `tampa bay area`, `thomson`, `east tennessee`, `saluda county`,
-`blue ridge mountains`, `morganton nc`, `black mountain nc`. Deliberately left unmapped
-(never guess), and cheap to add now that they are enumerated.
+Left deliberately unmapped in `datasets/helene2024/rollup.json`: mapping the foreign places
+would hide this problem rather than fix it.
 
 ---
 
 ## P2 — research direction
 
-### 8. §10's crux is reopened; §14 does not reproduce
+### 3. §10's crux is reopened; §14 does not reproduce
 The harder-regime ablation concluded the EKF's edge *widens* under unreliability. On real
 Helene trajectories the gain is flat and *shrinks* at the hardest setting (+1.8% → +0.8%).
-Most likely because §14 measured synthetic streams generated by the same rise/decay dynamics
-`est_ekf` models. **A dynamics model validated on data generated from it is not validated.**
-Either re-derive on real trajectories or drop the claim from the paper.
+The likely reason: §14 measured synthetic streams generated by the same rise/decay dynamics
+that `est_ekf` models. **A dynamics model validated on data generated from it is not
+validated.** Either re-derive on real trajectories or drop the claim from the paper. Do not
+leave it standing as written.
 
-### 9. "Boundary beats span at 10K" is unverified
-Compares against 0.158 from a different experiment whose blind-test support was never
-checked. A support mismatch already invalidated the cold-base row of this same curve. Must
-be re-derived on a shared test set before it goes near Paper 0.
+### 4. "Boundary beats span at 10K" is unverified
+It compares against 0.158 from a different experiment whose blind-test support was never
+checked. A support mismatch (3,527 vs 20,845) already invalidated the cold-base row of this
+same curve once today. Re-derive on a shared test set before this goes anywhere near Paper 0.
 
-### 10. The relation regression in the warm start (−0.037, −22% relative)
-`task_lr` is 5.0e-4, tuned in the curve for COLD heads. Here the relation head is warm and
-sees only 8% of the mixture — few gradients at a high rate. Test a lower `task_lr` or a
-per-head rate; this targets the regression more directly than `encoder_lr`, which acts on
-the shared trunk. One run, one variable.
+### 5. The relation regression in the warm start (−0.037, −22% relative)
+`task_lr` is 5.0e-4, tuned in the curve for **cold** heads. In the warm start the relation head
+is already warm and sees only 8% of the mixture — few gradients at a high rate. Test a lower
+`task_lr`, or a per-head rate. This targets the regression more directly than `encoder_lr`,
+which acts on the shared trunk. One run, one variable.
 
-### 11. Still no benchmark that can score the filter
-Turkiye's baseline was an oracle by construction (truth read from the sentence the extractor
-reads). Helene's per-state streams are mis-bound. The one honest measurement is the
-`__aggregate__` stream. A real filter benchmark needs **multiple sources that disagree and
-revise** about the same event — deferred until attachment works, since more sources would
-currently just fragment harder.
+### 6. Still no benchmark that can score the filter
+Turkiye's baseline was an oracle by construction — truth was read from the same sentence the
+extractor reads, so `est_last_value` scored 0.000. Helene's per-state streams are mis-bound.
+The single honest measurement in the project is the `__aggregate__` stream.
 
-### 12. MHT — the diarization half, still unbuilt
+A real filter benchmark needs **multiple sources that disagree and revise** about one event.
+Deferred until attachment works: adding sources now would only fragment harder.
+
+### 7. MHT — the diarization half, still unbuilt
 §3 specifies gate → Hungarian → top-K hypotheses → track birth/death. What ships is hard
-assignment on a string key feeding one single-stream EKF per key. Deferred deliberately:
-MHT's hypothesis space would inherit every upstream defect above.
+assignment on a string key feeding one single-stream EKF per key. Deferred deliberately: MHT's
+hypothesis space would inherit every upstream defect above and make them harder to see, not
+easier.
+
+### 9. Beam vs greedy is now runnable, and unrun
+The qualified-key fix (2026-08-10) removed the collision that made the beam arm unrunnable on
+any schema with two relation types. Phase A exists to compare greedy against beam, and every
+number in the completed 12-arm curve is the **greedy** arm. Two things follow:
+
+- The papers say the comparison is "unmeasured". Until today the truth was *unrunnable* —
+  correct the wording, then make it measured.
+- `TypedEndpoints` now discriminates between relation types instead of being vacuous, which is
+  the mechanism item 1 wants. Measured after the fix on the two-relation probe: 512 mentions
+  with 0 collisions, 256/256 edges resolving to nodes, 18 surviving threshold 0.05.
+
+### 8. Aggregate-vs-parts machinery — deferred, not abandoned
+`vector_state_test.py` treats `__aggregate__` as a sum row over the state components rather
+than as a seventh region, which is the right shape for `227 = Σ(parts)`. It stays parked until
+per-state recall is good enough for the constraint to have anything to constrain. Revisit
+immediately after item 1 lands — that is the point where it starts paying.
 
 ---
 
-## Housekeeping
+## Notes for whoever picks this up
 
-- ~~Push `ab_natural` to HF~~ DONE — `whr778/gliner2-joint-boundary-warmstart-natural`,
-  PRIVATE, with a card correcting the inherited `datasets:` frontmatter (it listed none of
-  the corpora actually trained on) and stating the relation cost (−0.037) alongside the
-  gain. Config ships the Hub kernel repo id, not the pip package name. The anchorless arm
-  is deliberately NOT published: it learned nothing (1/9 instances), so it is evidence for
-  the papers rather than an artifact.
-- `datasets/helene2024/_cache/` and `datasets/turkey2023/_cache/` hold article text and are
-  gitignored by design; both harvesters regenerate from the archive.
+- **Everything new is off by default.** `--rollup`, `--event-year`, `--record-mode` and
+  `--associate envelope` all have to be passed explicitly on `run_pipeline.py`. The defaults
+  reproduce the older numbers, on purpose.
+- **`probe_records.py` is the record-extraction check, not the blind test.** The blind test
+  scores tasks; it does not tell you whether record mode is emitting the fields you think.
+- `datasets/helene2024/_cache/` and `datasets/turkey2023/_cache/` hold harvested article text,
+  are gitignored by design, and both harvesters regenerate from the Wayback archive.
+- The anchorless arm is deliberately **not** published: it learned nothing (1 of 9 instances),
+  so it is evidence for the papers rather than an artifact worth shipping. The natural arm is
+  on the Hub as `whr778/gliner2-joint-boundary-warmstart-natural`, private.
