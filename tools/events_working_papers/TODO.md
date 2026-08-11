@@ -427,8 +427,13 @@ be a frozen checkpoint.
 **Proposal.** For each training sample, emit a **second** sample in which every surface word
 in *both* the text and the labelled spans is reduced to its base form. Surface and normalized
 variants both stay in the mix (1:1 duplication, not replacement). Reported from prior
-practice as helping training substantially; PURE (Princeton) is cited as doing a partial
-version of this. *Not measured in this repo.*
+practice as helping training substantially. *Not measured in this repo.*
+
+Prior art, if replicating: PURE (Princeton) is recalled as doing a **partial** version of
+this **in its code rather than its paper** — reportedly inherited from the DyGIE/DyGIE++
+preprocessing it reuses. Recollection is several years old and unverified here; do not go
+looking in the PURE paper's method section for it, which is where this note originally went
+wrong.
 
 **Why it is plausible here specifically.** The event corpora are small — RAMS 7,329 train,
 CASIE 795, WikiEvents 206 — while role fillers and triggers inflect freely (`killed` /
