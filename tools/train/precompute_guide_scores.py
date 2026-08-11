@@ -201,6 +201,12 @@ def main() -> None:
                          "not accelerators, are what shorten it. Concatenate the shard "
                          "outputs; each line is independent and keyed by text.")
     ap.add_argument("--shard", type=int, default=0, help="this process's shard, 0-based")
+    ap.add_argument("--pool-cache", default="",
+                    help="JSON file holding the corpus type pool. Built on first use and "
+                         "reused after. Essentially REQUIRED with --shards: without it each "
+                         "shard re-parses the whole corpus, and four concurrent builds "
+                         "peaked at 3.7-5.2GB each on a 32GB machine and swapped it to a "
+                         "halt.")
     ap.add_argument("--report-every", type=int, default=50)
     ap.add_argument("--batch-size", type=int, default=1,
                     help="records per guide forward. Defaults to 1 because batching MEASURED "
@@ -214,16 +220,28 @@ def main() -> None:
 
     src, dst = Path(args.corpus), Path(args.out)
 
-    # Build the cross-record rival pool first: every distinct type name in the corpus with
-    # its description. This is the vocabulary in-batch negatives are drawn from.
-    pool: dict[str, str] = {}
-    with src.open(encoding="utf-8") as fh:
-        for line in fh:
-            q, _ = record_queries_and_spans(json.loads(line))
-            for name, desc in q.items():
-                pool.setdefault(name, desc)
+    # The cross-record rival pool: every distinct type name in the corpus with its
+    # description. This is the vocabulary in-batch negatives are drawn from.
+    #
+    # CACHED ON DISK because building it costs a full parse of the corpus, and under
+    # --shards every shard would otherwise redo the identical parse. That is not just
+    # duplicated work: measured on a 32GB machine, four concurrent pool builds peaked at
+    # 3.7-5.2GB each and drove the box into swap, which stalled every shard on page faults.
+    # The pool itself is small -- a few MB of names and descriptions.
+    cache = Path(args.pool_cache) if args.pool_cache else None
+    if cache is not None and cache.exists():
+        pool = json.loads(cache.read_text(encoding="utf-8"))
+    else:
+        pool = {}
+        with src.open(encoding="utf-8") as fh:
+            for line in fh:
+                q, _ = record_queries_and_spans(json.loads(line))
+                for name, desc in q.items():
+                    pool.setdefault(name, desc)
+        if cache is not None:
+            cache.write_text(json.dumps(pool, ensure_ascii=False), encoding="utf-8")
     names = sorted(pool)
-    print(f"[pool] {len(names)} distinct type queries across the corpus")
+    print(f"[pool] {len(names)} distinct type queries across the corpus", flush=True)
 
     rng = random.Random(args.pool_seed)
     model = AutoExtractor.from_pretrained(args.guide, map_location=args.device)
