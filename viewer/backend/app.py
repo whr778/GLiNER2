@@ -50,12 +50,17 @@ def _map_location(requested: Optional[str]) -> Optional[str]:
 
 
 def get_model(model_id: str, device: Optional[str] = None):
-    from gliner2 import GLiNER2
+    # AutoExtractor, not GLiNER2: `GLiNER2` IS the span class, so loading a
+    # boundary checkpoint through it dies on `config.max_width` -- a span-only
+    # field -- long after the download succeeded. The error names the config and
+    # reads like a bad repo id, which it is not. `ekf.py` already used
+    # AutoExtractor; this loader was the last span-only path in the viewer.
+    from gliner2 import AutoExtractor
 
     map_location = _map_location(device)
     key = (model_id, map_location or "auto")  # cache one copy per (model, device)
     if key not in _models:
-        model = GLiNER2.from_pretrained(model_id, map_location=map_location)
+        model = AutoExtractor.from_pretrained(model_id, map_location=map_location)
         dev = next(model.parameters()).device
         logger.info("Loaded model %s on device %s (requested %s)", model_id, dev, device or "auto")
         _models[key] = model

@@ -183,12 +183,15 @@ def main() -> None:
                          "0.077; 50: 2.38s, 0.062; 100: 4.55s, 0.296; 200: 9.11s, 0.309. The "
                          "knee is at 100, which buys 200's quality for half the compute.")
     ap.add_argument("--pool-seed", type=int, default=0)
+    ap.add_argument("--report-every", type=int, default=50)
     ap.add_argument("--batch-size", type=int, default=1,
                     help="records per guide forward. Defaults to 1 because batching MEASURED "
                          "SLOWER on CPU -- 0.68s/record unbatched, 0.76 at 4, 1.20 at 16 -- "
                          "since every sample pads to the longest document in its batch and "
-                         "CPU has no parallelism left to win that back. A GPU does, so sweep "
-                         "1/8/32 on a slice there before committing to the full run.")
+                         "CPU has no parallelism left to win that back. A GPU trades that off "
+                         "differently, but not without limit: batch 32 on a 40GB A100 asked "
+                         "for a 32.9 GiB attention matrix and died, because one long document "
+                         "sets the padded length for all 32. Sweep before trusting it.")
     args = ap.parse_args()
 
     src, dst = Path(args.corpus), Path(args.out)
