@@ -50,8 +50,16 @@ Losses` appears 623 times with zero real descriptions -- and where descriptions 
 are instance-specific (`Location` -> "A city in England"), so similarity over them would
 compare document blurbs rather than type definitions.
 
+**Cost is the open problem, and filtering does not solve it.** At pool=100, 4.55s/record on
+CPU. Restricting to records with a numeric gold span keeps 66.6% (47,475 of 71,327); a
+tighter filter on count-ish TYPE NAMES keeps 37.1%, still ~37 CPU-hours. Only 3 of 8 sampled
+records yield a coherent rival at all, so most of the compute produces nothing cacheable and
+there is no cheap way to know which in advance. **This wants a GPU** -- roughly 2 hours there
+against ~55 on CPU, for a one-time cost against a guide forward on every training step.
+
     uv run python tools/train/precompute_guide_scores.py \
-        --corpus data/mix_natural.train.jsonl --out data/guide_scores.mix_natural.jsonl
+        --corpus data/mix_natural.train.jsonl --out data/guide_scores.mix_natural.jsonl \
+        --numeric-only
 """
 from __future__ import annotations
 
@@ -136,14 +144,21 @@ def main() -> None:
                          "self-guide would veto exactly the negatives it should select.")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--numeric-only", action="store_true",
+                    help="skip records with no digit-bearing gold span. The count-type "
+                         "boundary lives there, and C++ docs and baseball contribute nothing "
+                         "to it -- but it is a WEAK filter, keeping 66.6%% of records, "
+                         "because dates, IDs and share counts are numeric too.")
     ap.add_argument("--rival-pool", type=int, default=12,
                     help="cross-record rivals RETAINED per record, after ranking by guide "
                          "score. These are the in-batch negatives a guide has to adjudicate; "
                          "own-record types are settled by gold and need no guide.")
-    ap.add_argument("--pool-sample", type=int, default=200,
+    ap.add_argument("--pool-sample", type=int, default=100,
                     help="types scored per record before keeping the top --rival-pool. "
-                         "Wide enough to contain a confusable rival: 12 random draws from "
-                         "17k types return noise, 200 return coherent neighbours.")
+                         "Wide enough to contain a confusable rival, and cost is linear in "
+                         "it. Swept on 8 numeric gold spans -- 25: 1.44s/rec, mean top rival "
+                         "0.077; 50: 2.38s, 0.062; 100: 4.55s, 0.296; 200: 9.11s, 0.309. The "
+                         "knee is at 100, which buys 200's quality for half the compute.")
     ap.add_argument("--pool-seed", type=int, default=0)
     ap.add_argument("--report-every", type=int, default=50)
     args = ap.parse_args()
@@ -174,6 +189,8 @@ def main() -> None:
             n += 1
             queries, spans = record_queries_and_spans(rec)
             if not queries or not spans:
+                continue
+            if args.numeric_only and not any(any(c.isdigit() for c in s) for s in spans):
                 continue
             own = set(queries)
             sample = {n: pool[n] for n in rng.sample(names, min(args.pool_sample, len(names)))
