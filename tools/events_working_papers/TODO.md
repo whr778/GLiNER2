@@ -213,11 +213,38 @@ Three-way classification is load-bearing. A two-way version that rerouted every 
 the national stream (0.402 → 2.110), because North Carolina's **1400** is not a national
 total — it is not a casualty count at all, and it poisoned `__aggregate__`.
 
-Caveats before this goes in a paper: the ratio was chosen after seeing the contaminated
-values on this same data, so the plateau mitigates but does not remove the post-hoc problem —
-**a held-out event is the real test**. The gate also requires a working `__aggregate__`
-stream as reference and has nothing to judge against on an event with no national reporting.
-And 0.591 is 9x better than catastrophic, not good in absolute terms.
+**Held out on Turkiye-Syria (2026-08-10), ratio fixed at 2.0, not retuned. Partly transfers,
+and the failure is the informative half.**
+
+As validated it **cannot run**: the gate judges against the `__aggregate__` stream and
+Turkiye-Syria has none — turkey and syria are siblings with no declared parent, and the
+combined toll never got its own stream. With `--reference aggregate` the gate is a no-op at
+every ratio.
+
+Generalizing the reference to the running max across all streams (`global-max`) makes it run:
+
+| | turkey | syria | mean |
+|---|--:|--:|--:|
+| off | **0.228** | 3.401 | 1.815 |
+| gate @2.0 | 0.522 | **0.923** | 0.723 |
+
+Syria — the contaminated small stream, 11 of 17 values were Turkey's tolls — improves 3.7x.
+But **Turkey, which was clean, degrades 2.3x**, because `global-max` is dominated by Turkey's
+own values, so Turkey is judged against a reference it defines itself. It rerouted 1,014 at
+t=12.5h, which is Turkey's *true* value at that time. Circular by construction.
+
+Mean still improves 2.5x with the control at 1.440 vs 0.723, so the mechanism does transfer.
+The **reference definition does not generalize for free**.
+
+**The finding: the gate needs a declared scope hierarchy, not just a magnitude.** Helene has
+one (`__aggregate__` in `rollup.json` declares states ⊂ national). Without it, a magnitude
+test cannot separate "this is a larger scope" from "this is the largest part". Next step is
+to declare the hierarchy per event rather than infer it — cheap, and it is the same
+information `rollup.json` already carries.
+
+Other caveats: the ratio was chosen after seeing Helene's contaminated values, so the 1.5–2.5
+plateau mitigates but does not remove the post-hoc problem. And 0.591 is 9x better than
+catastrophic, not good in absolute terms.
 
 ---
 
