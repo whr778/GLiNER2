@@ -178,18 +178,46 @@ at 225 on Friday; two more were recorded in South Carolina" binds **225 → sout
 That is not a rival claim about South Carolina, and a wrong state silently poisons a state
 stream where an unbound total is recoverable.
 
-Three sub-parts, cheapest first:
+**Measured contamination.** Every state stream receives larger-scope numbers, and the leak
+is always UPWARD — never once downward:
 
-1. **Unlocated totals default to `__aggregate__`** rather than being dropped or inheriting
-   the article's dominant state. Directly evidenced: the bullet test's extractive arm
-   produced `(225, None)` where raw produced `(225, south carolina)`.
-2. **Multi-state scope phrases → `__aggregate__`.** Largely done — `rollup.json` carries 38
-   aliases and already maps `north and south carolina`.
-3. **Mis-bound totals** — the hard one, and see item 7: deciding whether a number is a part
-   or the whole is a *data-association* question, and gating against the current per-state
-   estimates is the machinery for it. 225 is a wild outlier for South Carolina (~50) and an
-   excellent fit for the sum. Note the direction: this uses the parts to CLASSIFY the
-   observation, the opposite of the sum-row direction that failed above.
+| stream | truth (final) | contaminants received |
+|---|--:|---|
+| Florida | 26 | 64, 150, 150, 160, 180, 230, 230, 300 |
+| North Carolina | 96 | 200, 215, 215, 227, 230×3, 250, **1400** |
+| South Carolina | 51 | 72, 200, 227 |
+| Georgia | 34 | 178 |
+
+**Sub-part 1 (unlocated → `__aggregate__`) is a NO-OP: 4 of 106 observations.** It was
+proposed first on the reasoning that it had no bootstrap dependency; measurement says it is
+not worth doing on its own. Multi-state scope phrases (sub-part 2) are already handled by
+`rollup.json`'s 38 aliases.
+
+**Sub-part 3 — the scope gate — WORKS** (`scope_gate_test.py`, 2026-08-10). Judge each state
+observation against the running **national** total rather than against the state's own scale
+(a state's early history legitimately jumps 6 → 25, faster than any ratio tolerates), and
+classify three ways: keep / reroute to `__aggregate__` / drop as exceeding the whole.
+
+| ratio | Total | per-state mean |
+|---|--:|--:|
+| off | 0.402 | 5.247 |
+| 2.5 | **0.316** | 0.592 |
+| 2.0 | **0.316** | **0.591** |
+| 1.5 | 0.317 | 0.591 |
+
+Per-state **5.247 → 0.591 (8.9x)** and the national stream *improves* too. Flat from 1.5 to
+2.5, so it is not a knife-edge setting. **Control:** removing the same 25 observations at
+random over 40 trials gives 4.427, so the gate is selecting rather than thinning.
+
+Three-way classification is load-bearing. A two-way version that rerouted every reject wrecked
+the national stream (0.402 → 2.110), because North Carolina's **1400** is not a national
+total — it is not a casualty count at all, and it poisoned `__aggregate__`.
+
+Caveats before this goes in a paper: the ratio was chosen after seeing the contaminated
+values on this same data, so the plateau mitigates but does not remove the post-hoc problem —
+**a held-out event is the real test**. The gate also requires a working `__aggregate__`
+stream as reference and has nothing to judge against on an event with no national reporting.
+And 0.591 is 9x better than catastrophic, not good in absolute terms.
 
 ---
 
