@@ -1,18 +1,25 @@
 # Open items — resume list
 
-State at 2026-08-10 close. Rewritten: completed work has been removed rather than struck
-through. History lives in `PROJECT_JOURNAL.md` and the commit log; this file is only what is
-still open. Everything below is either a defect with evidence attached, or a decision with a
-stated next test.
+State at 2026-08-11 close. Completed work is removed rather than struck through; history
+lives in `PROJECT_JOURNAL.md` and the commit log. Everything below is a defect with evidence
+attached, or a decision with a stated next test.
 
-No GPUs running. Nothing is mid-flight.
+No GPUs running. Nothing is mid-flight. Everything committed on 11 Aug is **inert** — the
+GIST pieces are inputs only, nothing is wired into `model.py`, so training behaviour is
+unchanged.
 
-**Where the line stands.** The tracker has now been measured twice on real data and it works,
-marginally: +1–2% over `est_last_value` on genuine downward revisions, and 0.402 vs 0.524 on
-`__aggregate__`, the one stream whose scope is correct. Every larger failure today was
-upstream of the filter, and the bottleneck moved three times in one day — from extraction, to
-the date window, to admin fragmentation, and it now sits on **number-to-place attachment**.
-That is the thing to fix next. Nothing downstream of it is worth tuning until it is.
+**Where the line stands.** The scope gate took per-state error 5.247 → 0.591 (item 10) and
+largely closed the attachment blocker. Two candidate next steps were then *closed by
+measurement rather than argument*:
+
+- **MHT is not the bottleneck.** Perfect association is worth **+0.055** — and the gate
+  already beats a perfect two-way assignment on two states, because it can *drop*. Item 6.
+- **Extraction recall is not the bottleneck either**, and the claim that it was rested on a
+  stale count from a superseded run. `extract_long` had already fixed it **4.2x**.
+
+The live bottleneck is **cross-event contamination** (item 2, quantified at 4.7% and
+resistant to all three signals tried) and underneath it the query-axis training gap that
+GIST is being built for (item 11, the active work).
 
 ---
 
@@ -31,7 +38,7 @@ Two routes, not mutually exclusive:
   a `deaths_in` relation can be supervised directly instead of relied on zero-shot.
 - **Run the beam arm** with `TypedEndpoints`, which makes `('storm', Florida)` structurally
   unrepresentable rather than merely unlikely. Unblocked 2026-08-10 by the qualified-key fix
-  (see item 9) — this is now runnable and unrun, where before it was unrunnable.
+  (see item 8) — this is now runnable and unrun, where before it was unrunnable.
 
 Zero-shot is close but fragile, and the fragility is the argument for training over
 prompt-tuning: `explicit-scope` phrasing got the hard aggregate case exactly right
@@ -42,7 +49,7 @@ phrasings of the same request, same model, same text, got it wrong.
 
 ## P1 — known-wrong
 
-### 2. Cross-event contamination in the Helene feed
+### 2. Cross-event contamination — now the top real defect
 Whole-article reading via `extract_long` surfaced streams for `poland`, `bosnia`,
 `afghanistan`, `iran`, `japan`, `ukraine`, `cameroon` — casualty figures lifted from unrelated
 stories sharing an article body.
@@ -55,6 +62,20 @@ end, and it should probably be solved once, for both.
 
 Left deliberately unmapped in `datasets/helene2024/rollup.json`: mapping the foreign places
 would hide this problem rather than fix it.
+
+**Quantified 2026-08-11**, context audit of all 106 'dead' observations: 82.1% genuine Helene
+casualties, **4.7% cross-event**, 3.8% non-casualty numbers, 9.4% unclear. The five are
+Katrina 1400, a Typhoon's 250, Milton's 230, Bosnia's 16, and Hurricane John's 2 in Mexico —
+they carry the *large* values, so the most damage per instance.
+
+**Three signals tried, all failed** (EKF_MHT_DESIGN §27.2): nearest named event 3/11 at 32.5%
+false positives, only-competitor-named 3/11 at 31.3%, record-head binding 2/11 at 26.5%.
+Helene articles routinely name Milton and Katrina for comparison. Bosnia's 16 is structurally
+invisible — Bosnia is a *place*, not a named storm.
+
+Note the scope gate removes Katrina's 1400 **for the wrong reason** — because it is large,
+not because it belongs to another event — so it keeps any *small* cross-event figure, as it
+does with Bosnia's 16 and Mexico's 2.
 
 ---
 
@@ -79,21 +100,35 @@ is already warm and sees only 8% of the mixture — few gradients at a high rate
 `task_lr`, or a per-head rate. This targets the regression more directly than `encoder_lr`,
 which acts on the shared trunk. One run, one variable.
 
-### 6. Still no benchmark that can score the filter
-Turkiye's baseline was an oracle by construction — truth was read from the same sentence the
-extractor reads, so `est_last_value` scored 0.000. Helene's per-state streams are mis-bound.
-The single honest measurement in the project is the `__aggregate__` stream.
+### 6. MHT — ANSWERED: not the bottleneck, do not build it yet
+§3 specifies gate → Hungarian → top-K hypotheses → track birth/death; none is built.
+Measured 2026-08-11 by assigning every observation to the scope it actually fits using
+ground truth — a ceiling, not a method:
 
-A real filter benchmark needs **multiple sources that disagree and revise** about one event.
-Deferred until attachment works: adding sources now would only fragment harder.
+    shipped scope gate      0.591
+    oracle association      0.537
+    headroom               +0.055     (9.3% relative)
 
-### 7. MHT — the diarization half, still unbuilt
-§3 specifies gate → Hungarian → top-K hypotheses → track birth/death. What ships is hard
-assignment on a string key feeding one single-stream EKF per key. Deferred deliberately: MHT's
-hypothesis space would inherit every upstream defect above and make them harder to see, not
-easier.
+MHT is a hypothesis tree, cost matrix, Hungarian assignment and track management, competing
+for a 9% residual. Sharper still, **the gate already beats a perfect two-way assignment** on
+Florida (0.704 vs 0.734) and South Carolina (0.365 vs 0.558) — it has a third option the
+oracle lacks: *drop*. Florida's 300 and North Carolina's 1400 are not misassigned; they
+belong to no Helene scope at all.
 
-### 9. Beam vs greedy — RAN, and the result is "the beam is not the story"
+Tennessee is the one genuine association gap (0.817 vs 0.320), and it is diagnostic: its
+contaminants are 32, 32, 32, 36, 50 against a truth of 18 — **too large for the state, too
+small to look national**, exactly what a magnitude rule cannot catch.
+
+Revisit when multi-source feeds land (item 7): sources disagreeing about one event is real
+association ambiguity in a way one wire service's copy is not.
+
+### 7. Still no benchmark that can score the filter
+Turkiye's baseline was an oracle by construction — truth read from the sentence the extractor
+reads, so `est_last_value` scored 0.000. Helene's per-state streams were mis-bound until the
+scope gate. A real filter benchmark needs **multiple sources that disagree and revise** about
+one event, which is also the regime where MHT would finally earn its keep.
+
+### 8. Beam vs greedy — RAN, and the result is "the beam is not the story"
 Ran 2026-08-10 on Re-DocRED (`joint-boundary-redocred-137k`, 96 relation types, the schema
 that raised before the qualified-key fix). Same checkpoint both arms, eval-time
 `decode_mode` switch, threshold 0.5, full 500-doc test:
@@ -119,15 +154,15 @@ wider beam maximizes the objective better, and the objective is not F1.
 working contrast is *independent thresholding vs constrained joint selection*, not
 *greedy vs beam*. Phase A's framing is mis-specified and the papers should say so.
 
-**(c) It exposed the hard-wired threshold** — see item 10, which was the actual bug.
+**(c) It exposed the hard-wired threshold** — see item 9, which was the actual bug.
 
-**Best-vs-best, settled on the slice after item 10 was fixed:** both arms peak at threshold
+**Best-vs-best, settled on the slice after item 9 was fixed:** both arms peak at threshold
 0.2 — greedy **0.2835**, joint W=1 **0.3357**. **Joint wins by +0.052 (+18% relative)** and
 beats greedy at every threshold on the grid. Real, but a third of what the fixed-0.5
 comparison implied. Remaining: confirm on the full 500-doc test. Wall clock 1.5x greedy on
 a clean slice (the 2.0x full-run figure was CPU-contended).
 
-### 10. Joint decode ignored `--threshold` for edge selection — FIXED 2026-08-10
+### 9. Joint decode ignored `--threshold` for edge selection — FIXED 2026-08-10
 `joint_decode` filtered mentions by `mention_threshold` but never passed
 `decision_threshold`, so it stayed at its 0.5 default and every node/edge utility was
 centered on 0.5. `gain > 0` therefore demanded p > 0.5 for edges no matter what threshold
@@ -152,7 +187,7 @@ and is now enforced by a test rather than by a comment.
 fix — including the 12-arm curve's joint rows, if any were run — was measured at 0.5
 regardless of the threshold requested.
 
-### 8. Aggregate SCOPE (not the aggregate constraint) — the sharpened target
+### 10. Aggregate SCOPE (not the aggregate constraint) — the sharpened target
 Two different things wear the word "aggregate" and only one of them is open.
 
 **The constraint direction is measured and it LOSES.** `vector_state_test.py` feeds the
@@ -245,6 +280,41 @@ information `rollup.json` already carries.
 Other caveats: the ratio was chosen after seeing Helene's contaminated values, so the 1.5–2.5
 plateau mitigates but does not remove the post-hoc problem. And 0.591 is 9x better than
 catastrophic, not good in absolute terms.
+
+
+### 11. GIST query-axis hard negatives — inputs built, NOT wired  ← the live work
+The measured gap: with specific rival types, `people evacuated` outscores `death toll` on
+**11.2% of genuine death tolls**. "N people killed" vs "N people evacuated" — both counts of
+people, separated only by the verb. No type description fixes it (EKF_MHT_DESIGN §27.8); it
+is a training-time boundary the model has never been taught.
+
+Hard negatives are mined on the **span** axis only — `select_hard_negative_candidates` picks
+negative *spans* per query. The missing axis is **query**: for a span, which sibling type
+queries score it highly.
+
+Built and committed 2026-08-11, **all of it inert** — nothing is wired into `model.py`, so
+training behaviour is unchanged:
+
+| piece | state |
+|---|---|
+| query-axis mining | free — the existing selector with its axes **swapped** |
+| `apply_guide_veto` + abstention `floor` | `losses.py`, 5 tests |
+| guide choice | self-guide validated **82.5% vs 25%** chance on 40 gold records |
+| rival selection | wide-pool top-k; **no embedder needed** |
+| `precompute_guide_scores.py` | works; cost measured; **not run** |
+| **wiring into `model.py`** | **not started** |
+
+**Next increment:** load the cache, map cached `(span, query)` scores onto the live `[B,Q,C]`
+tensor, call the veto. That is where training behaviour first changes.
+
+**Blocked on a decision, not on code:** the precompute is ~55 CPU-hours at pool=100 after
+both available levers, or ~2 hours on a GPU. Filtering does not close it — a numeric-gold
+filter keeps 66.6%, a count-type-name filter 37.1% — because only 3 of 8 records yield a
+coherent rival at all and there is no cheap way to know which in advance.
+
+**Do not** use the live model as the guide. A cell is mined *because* the live model scores
+it highly, so a live self-guide vetoes exactly the negatives it should select. The guide must
+be a frozen checkpoint.
 
 ---
 

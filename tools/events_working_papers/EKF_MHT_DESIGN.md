@@ -1108,3 +1108,42 @@ because "avoid a negatively-defined catch-all" is now measured rather than asser
 `people evacuated` 28 of 35 wins -- **11.2% of genuine death tolls**. That is "N people
 killed" against "N people evacuated": both counts of people, separated only by the verb. No
 description fixes it, and it is exactly the hard negative a guide-filtered loss exists for.
+
+
+### 27.9 Implementation state — inputs only, nothing wired
+
+Committed 2026-08-11 and **inert**: no call site in `model.py`, so training behaviour is
+unchanged.
+
+| piece | where | state |
+|---|---|---|
+| query-axis mining | `select_hard_negative_candidates` with axes **swapped** | free, no new code |
+| `apply_guide_veto` + abstention `floor` | `models/boundary/losses.py` | 5 tests |
+| guide validation | `tools/train/score_gist_guides.py` | self-guide 82.5% vs 25% |
+| query-negative existence | `tools/train/probe_query_negatives.py` | 28.4% generic / 14.0% specific |
+| score precompute | `tools/train/precompute_guide_scores.py` | works; **not run** |
+| **wiring into the loss path** | — | **not started** |
+
+**Why precompute at all.** A guide forward per step would roughly double step cost for scores
+that never change. The cache is *exact*, not an approximation: the veto is gated by
+``has_positive``, so it can only fire on a candidate that is gold for some query. Live
+proposals drift; cells on non-gold candidates are never vetoed and need no score.
+
+**Rival selection needs no embedder.** A hard negative *is* a type that scores the span
+highly, so the guide's own scores rank them; the pool only has to be wide enough to contain
+one. Swept on 8 numeric gold spans -- 25: 1.44s/rec, mean top rival 0.077; 50: 2.38s, 0.062;
+100: 4.55s, 0.296; 200: 9.11s, 0.309. **The knee is 100.** Descriptions cannot substitute:
+the types that matter carry none (`Casualties and Losses`, 623 occurrences, zero real
+descriptions) and where they exist they are instance-specific (`Location` -> "A city in
+England").
+
+**Two traps, both pinned by tests rather than comments.** The mining call takes SWAPPED axes
+and the veto takes TRUE axes on the same tensors -- passing the mining axes to the veto
+vetoes nothing instead of erroring. And a local ``floor = torch.finfo(...).min`` shadowed the
+new abstention parameter, so ``guide > floor`` was always true and the check never fired.
+
+**Open decision, not open code.** The precompute is ~55 CPU-hours at pool=100, or ~2 hours on
+a GPU. Filtering does not close it -- numeric-gold keeps 66.6%, count-type-names 37.1% --
+because only 3 of 8 records yield a coherent rival at all and there is no cheap way to know
+which in advance. **Do not** substitute the live model as guide: a cell is mined *because*
+the live model scores it highly, so a live self-guide vetoes exactly what it should select.

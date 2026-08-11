@@ -521,6 +521,52 @@ magnitude.** Turkey's 41,000 filed under Syria and Turkey's 41,000 filed under T
 identical to any ratio test. Helene has the hierarchy declared in `rollup.json`; Turkey does
 not. Both numbers belong in the writeup — the Helene one alone is the misleading half.
 
+## Phase 14 — the day measurement corrected four of my own claims (11 Aug)
+
+No new capability shipped. What happened instead is that five things I had asserted were
+checked, and four were wrong.
+
+**"Recall is the limit: 25 observations from 70 articles."** That count came from the
+superseded `tracked_lead` run. `extract_long` had already taken the same feed to 106
+observations across 44 of 70 articles — **4.2x** — and the feed contains only ~86 sentences
+carrying both casualty language and a digit, so the pipeline *over*-extracts. I had repeated
+the stale figure in PIPELINES.md that morning and built a priority list on it.
+
+**"North Carolina's 1400 is a non-casualty number."** It is **Hurricane Katrina's** toll
+quoted inside a Helene article; the 250 is a Typhoon and the 230 is Milton. That relabel has
+teeth: the scope gate removes them *because they are large*, not because they belong to
+another event, so it silently keeps Bosnia's 16 and Mexico's 2.
+
+**"0 false positives."** Measured on 83 Helene observations. On 250 gold training positives
+the same rule false-rejects **3.6%**. Small-sample luck.
+
+**"A model cannot referee a boundary it does not know."** The self-guide scores **82.5%**
+against a 25% chance baseline, on a *harder* boundary than the one that defeated it.
+
+**MHT was closed by an oracle rather than an argument.** Perfect association is worth
+**+0.055**, and the gate already beats a perfect two-way assignment on two states because it
+has a third option the oracle lacks: *drop*. A subsystem competing for a 9% residual is not
+the next thing to build.
+
+**What survived.** Type energies solve the unit-error half cleanly — 4/4 at 0/83 — and the
+competing-type SET is the whole design: `quantity`, described as "a count of things that are
+not people", is semantically adjacent rather than incompatible and takes false positives from
+0% to 21.7%. *Compete against what a value cannot be, not what it resembles.* Cross-event
+resisted all three signals tried, because the type is right there and only the event is wrong.
+
+**Then the same discipline caught three scoping errors in the GIST work before any compute
+was spent**: gold cannot be the guide (0.23% coverage); same-record rivals must never be
+vetoed because gold is authoritative there (22.2% of material); and uniform rival sampling
+returns noise, since a hard negative is a *near* neighbour and 12 draws from 17,131 types
+never contain one.
+
+**And the tests caught two silent failures in code I had written an hour earlier** — swapped
+axes that vetoed nothing rather than erroring, and a shadowed `floor` local that disabled the
+abstention check. Both are pinned by guard tests now. Neither would have raised.
+
+Nothing is wired into `model.py`; the day's output is inputs, measurements and four
+corrections.
+
 ## Recurring lessons
 
 1. **Report the baseline every time.** Run B of Turkiye reads as a success at 0.208 without
@@ -554,6 +600,13 @@ not. Both numbers belong in the writeup — the Helene one alone is the misleadi
 14. **A control that removes the same amount at random.** Gating improved nRMSE 9x; random
    removal of the same count improved it 1.2x. Without that comparison the result was
    indistinguishable from thinning the filter until it stopped moving.
+15. **Re-check the provenance of any number you are about to build on.** "25 observations"
+   came from a superseded run and survived into three documents before anyone asked.
+16. **Compete against what a value cannot be, not what it resembles.** A semantically
+   adjacent competitor took false positives from 0% to 21.7%; physically incompatible ones
+   left them at 0%.
+17. **A measurement that contradicts your labels is usually right.** Twice the probe sorted
+   cases my hand labels had mis-assigned, on both the "230"s and the "two"s.
 
 ## Open
 
