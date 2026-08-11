@@ -996,7 +996,28 @@ selection — and its natural insertion point is `select_hard_negative_candidate
 already ranks and selects negatives. A query-axis variant with a guide-model veto is a
 surgical change to an existing function rather than a new training path.
 
-**Measure first.** Before wiring any loss: confirm that a query-axis negative actually exists
-to mine, by checking whether sibling type queries score genuine death-toll spans highly in
-the *training* corpora, not just in the 83 Helene observations. A loss cannot fix a boundary
-the data never presents.
+### 27.5 The check ran: the query-axis negative exists, and it is abundant
+
+Before wiring a loss, confirm the boundary is actually present in the *training* data rather
+than only in 83 Helene observations. `tools/train/probe_query_negatives.py` scores 250 GOLD
+death figures from `casualty_multi_loc.train.jsonl` under the same competitor set:
+
+    a competing type OUTSCORES `death toll` on   71/250 = 28.4%
+        quantity      64   90.1%
+        measurement    7    9.9%
+    margin (death toll - best rival)   p10 -0.310   median +0.283   p90 +0.809
+
+**28.4% of genuine training positives are outscored by a sibling type**, and **90% of it is
+`quantity`**. So there is a real, abundant, minable boundary — and the inference-time finding
+reproduces independently on 3x the sample and a different corpus. GIST has plenty to bite on.
+
+It also confirms *why* GIST rather than a plain contrastive loss: `quantity` wins on 64 of
+250 genuine death tolls, and it is simultaneously the CORRECT answer for "1.2 million homes".
+A loss that penalizes it unconditionally would teach the model that `quantity` never applies.
+Guide-filtering is the mechanism for a negative that is valid in one context and not another.
+
+**And it corrects the §27.1 claim.** The shipped rule — physically incompatible competitors
+only — falsely rejects **9/250 = 3.6%** of genuine death tolls on this corpus, not the 0/83
+measured on Helene. `measurement` beats `death toll` on 7 real casualty figures. The Helene
+zero was small-sample luck; **3.6% is the number to quote**, and it is the standing cost of
+the inference-time workaround until the training-time fix lands.
