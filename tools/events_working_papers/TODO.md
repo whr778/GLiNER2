@@ -282,7 +282,7 @@ plateau mitigates but does not remove the post-hoc problem. And 0.591 is 9x bett
 catastrophic, not good in absolute terms.
 
 
-### 11. GIST query-axis hard negatives — inputs built, NOT wired  ← the live work
+### 11. GIST query-axis hard negatives — WIRED; awaiting the precompute  ← the live work
 The measured gap: with specific rival types, `people evacuated` outscores `death toll` on
 **11.2% of genuine death tolls**. "N people killed" vs "N people evacuated" — both counts of
 people, separated only by the verb. No type description fixes it (EKF_MHT_DESIGN §27.8); it
@@ -292,25 +292,40 @@ Hard negatives are mined on the **span** axis only — `select_hard_negative_can
 negative *spans* per query. The missing axis is **query**: for a span, which sibling type
 queries score it highly.
 
-Built and committed 2026-08-11, **all of it inert** — nothing is wired into `model.py`, so
-training behaviour is unchanged:
+Wired 2026-08-11. Set `guide_scores: <cache.jsonl>` in a training config and the veto is
+live; leave it unset and nothing in training changes.
 
 | piece | state |
 |---|---|
-| query-axis mining | free — the existing selector with its axes **swapped** |
-| `apply_guide_veto` + abstention `floor` | `losses.py`, 5 tests |
+| `apply_guide_veto` + abstention `floor` | `losses.py`; takes an explicit `reference` |
 | guide choice | self-guide validated **82.5% vs 25%** chance on 40 gold records |
 | rival selection | wide-pool top-k; **no embedder needed** |
-| `precompute_guide_scores.py` | works; cost measured; **not run** |
-| **wiring into `model.py`** | **not started** |
+| rival **injection** | `GuideScores.inject` — dataset-side, hardest-first |
+| cache -> `[B,Q,C]` | `models/boundary/guide.py`, with hit-rate counters |
+| `precompute_guide_scores.py` | batched; format frozen (`sha1` key + rival descriptions) |
+| **the cache itself** | **not yet produced** — the veto is live but has nothing to read |
 
-**Next increment:** load the cache, map cached `(span, query)` scores onto the live `[B,Q,C]`
-tensor, call the veto. That is where training behaviour first changes.
+**Two things the wiring turned up, both of which would have made it silently inert:**
 
-**Blocked on a decision, not on code:** the precompute is ~55 CPU-hours at pool=100 after
-both available levers, or ~2 hours on a GPU. Filtering does not close it — a numeric-gold
-filter keeps 66.6%, a count-type-name filter 37.1% — because only 3 of 8 records yield a
-coherent rival at all and there is no cheap way to know which in advance.
+1. **Injection is not optional.** A sample's query axis carries only the types its own
+   record declares, and only 0.23% of records name a competing count type natively. The
+   cross-record rivals GIST exists for are *never* on the tensor unless something puts
+   them there. Without injection the veto is a no-op by construction.
+2. **`apply_guide_veto` could not fire under the default candidate pool.** It derived each
+   candidate's own positive by taking a max down the query axis at a fixed column — which
+   assumes column *c* is the same span for every query. True for `candidate_pool="shared"`,
+   **false for the default `"per_query"`**, where each query proposes its own list. The
+   reference is now resolved by span identity and passed in explicitly.
+
+Own-record types are deliberately never vetoed: within a record gold is authoritative, and a
+same-record rival outscores the gold owner 23.5% of the time — all of it correct hard
+negatives. Enforced structurally, by only ever filling injected-rival cells: everything else
+sits at exactly 0.0 and cannot clear `floor`.
+
+**Still to run:** the precompute — ~55 CPU-hours at pool=100 after both available levers,
+now batched for GPU. Filtering does not close the cost gap — a numeric-gold filter keeps
+66.6%, a count-type-name filter 37.1% — because only 3 of 8 records yield a coherent rival
+at all and there is no cheap way to know which in advance.
 
 **Do not** use the live model as the guide. A cell is mined *because* the live model scores
 it highly, so a live self-guide vetoes exactly the negatives it should select. The guide must

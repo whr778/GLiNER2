@@ -1110,19 +1110,39 @@ killed" against "N people evacuated": both counts of people, separated only by t
 description fixes it, and it is exactly the hard negative a guide-filtered loss exists for.
 
 
-### 27.9 Implementation state — inputs only, nothing wired
+### 27.9 Implementation state — wired; the cache is the only thing missing
 
-Committed 2026-08-11 and **inert**: no call site in `model.py`, so training behaviour is
-unchanged.
+Wired 2026-08-11. `guide_scores: <cache.jsonl>` in a training config turns it on; unset, the
+head never sees a guide tensor and nothing changes.
 
 | piece | where | state |
 |---|---|---|
-| query-axis mining | `select_hard_negative_candidates` with axes **swapped** | free, no new code |
-| `apply_guide_veto` + abstention `floor` | `models/boundary/losses.py` | 5 tests |
+| `apply_guide_veto` + abstention `floor` | `models/boundary/losses.py` | takes an explicit `reference` |
 | guide validation | `tools/train/score_gist_guides.py` | self-guide 82.5% vs 25% |
 | query-negative existence | `tools/train/probe_query_negatives.py` | 28.4% generic / 14.0% specific |
-| score precompute | `tools/train/precompute_guide_scores.py` | works; **not run** |
-| **wiring into the loss path** | — | **not started** |
+| rival **injection** | `training/guide_scores.py` | dataset-side, hardest-first |
+| cache -> `[B,Q,C]` | `models/boundary/guide.py` | hit-rate counters |
+| score precompute | `tools/train/precompute_guide_scores.py` | format frozen; **not run** |
+
+**Wiring it exposed two ways it would have been silently inert.**
+
+*Injection is load-bearing.* A sample's query axis holds only the types its own record
+declares, and just 0.23% of records name a competing count type natively. The cross-record
+rivals GIST exists for are never on the tensor unless something puts them there, so the veto
+without injection is a no-op by construction — it would have run, cost nothing, and changed
+nothing.
+
+*The veto could not fire under the default candidate pool.* It derived each candidate's own
+positive by taking a max down the query axis at a fixed column, which assumes column *c*
+denotes the same span for every query. That holds for `candidate_pool="shared"` and is
+**false for the default `"per_query"`**, where each query proposes its own candidate list —
+so the reference lookup found no positive at the rival's column and vetoed nothing. The
+reference is now resolved by span identity in `guide.py` and passed to the veto explicitly.
+
+**Own-record types are never vetoed, structurally.** Within a record gold is authoritative,
+and a same-record rival outscores the gold owner 23.5% of the time — all correct hard
+negatives. Rather than test for it at veto time, only injected-rival cells are ever filled:
+everything else sits at exactly 0.0 and cannot clear `floor >= 0`.
 
 **Why precompute at all.** A guide forward per step would roughly double step cost for scores
 that never change. The cache is *exact*, not an approximation: the veto is gated by
@@ -1141,6 +1161,11 @@ England").
 and the veto takes TRUE axes on the same tensors -- passing the mining axes to the veto
 vetoes nothing instead of erroring. And a local ``floor = torch.finfo(...).min`` shadowed the
 new abstention parameter, so ``guide > floor`` was always true and the check never fired.
+
+**Batching the precompute is not free.** Padding every sample to the longest document in its
+batch costs more than CPU batching returns: 0.68s/record unbatched, 0.76 at batch 4, **1.20
+at batch 16**, on the same 16 mix records. The default is therefore 1; a GPU has parallelism
+to trade against the padding, so sweep 1/8/32 on a slice there rather than assuming.
 
 **Open decision, not open code.** The precompute is ~55 CPU-hours at pool=100, or ~2 hours on
 a GPU. Filtering does not close it -- numeric-gold keeps 66.6%, count-type-names 37.1% --

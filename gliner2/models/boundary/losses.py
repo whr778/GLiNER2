@@ -183,6 +183,7 @@ def apply_guide_veto(
     labels: torch.Tensor,             # [B, Q, C]
     valid_mask: torch.BoolTensor,     # [B, Q, C]
     *,
+    reference: Optional[torch.Tensor] = None,   # [B, Q, C]
     margin: float = 0.0,
     floor: float = 0.0,
     query_axis: int = 1,
@@ -225,6 +226,16 @@ def apply_guide_veto(
 
     Candidates with no positive query are left alone -- there is no reference to compare a
     guide score against, so vetoing there would be arbitrary.
+
+    ``reference`` supplies that comparison point per cell instead of deriving it from
+    ``labels``, and is REQUIRED whenever candidate columns are not shared across queries.
+    Deriving it takes the max over the query axis at a fixed column, which silently assumes
+    column *c* denotes the same span for every query -- true for ``candidate_pool="shared"``
+    and false for the default ``"per_query"``, where each query proposes its own list. Under
+    a per-query pool the derived path finds no positive at the rival's column and vetoes
+    nothing at all, so the wiring in :mod:`gliner2.models.boundary.guide` resolves the
+    reference by span identity and passes it here. A non-positive ``reference`` means the
+    guide never scored that span under its own gold type, and nothing is vetoed there.
     """
     sel = _to_query_candidate(selected, query_axis, candidate_axis)
     guide = _to_query_candidate(guide_logits, query_axis, candidate_axis)
@@ -232,15 +243,19 @@ def apply_guide_veto(
     valid = _to_query_candidate(valid_mask, query_axis, candidate_axis)
 
     positive = (lab > 0.5) & valid
-    # `neg_inf` masks non-positives out of the max; do NOT call it `floor`, which is the
-    # caller's abstention threshold -- shadowing it made `guide > floor` always true and
-    # silently disabled the abstention check.
-    neg_inf = torch.finfo(guide.dtype).min
-    # Best guide score among this candidate's OWN positive queries, per (batch, candidate).
-    pos_guide = guide.masked_fill(~positive, neg_inf).amax(dim=1, keepdim=True)
-    has_positive = positive.any(dim=1, keepdim=True)
+    if reference is None:
+        # `neg_inf` masks non-positives out of the max; do NOT call it `floor`, which is
+        # the caller's abstention threshold -- shadowing it made `guide > floor` always
+        # true and silently disabled the abstention check.
+        neg_inf = torch.finfo(guide.dtype).min
+        # Best guide score among this candidate's OWN positive queries, per (batch, candidate).
+        pos_guide = guide.masked_fill(~positive, neg_inf).amax(dim=1, keepdim=True)
+        has_reference = positive.any(dim=1, keepdim=True)
+    else:
+        pos_guide = _to_query_candidate(reference, query_axis, candidate_axis)
+        has_reference = pos_guide > 0
 
-    vetoed = (sel & has_positive & (guide > pos_guide + margin) & (guide > floor)
+    vetoed = (sel & has_reference & (guide > pos_guide + margin) & (guide > floor)
               & ~positive)
     return _from_query_candidate(sel & ~vetoed, query_axis, candidate_axis)
 

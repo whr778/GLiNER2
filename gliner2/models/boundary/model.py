@@ -33,6 +33,7 @@ from gliner2.models.boundary.heads import BoundaryMarginals, BoundaryQueryHead
 from gliner2.models.boundary.losses import (
     asymmetric_focal_loss,
     balanced_multilabel_bce,
+    apply_guide_veto,
     build_candidate_labels,
     candidate_pair_loss,
     inside_consistency_loss,
@@ -42,6 +43,11 @@ from gliner2.models.boundary.losses import (
     abstention_loss,
     count_log_rate_loss,
     select_hard_negative_candidates,
+)
+from gliner2.models.boundary.guide import (
+    build_sparse_guide,
+    densify_guide,
+    note_vetoes,
 )
 from gliner2.models.boundary.proposal import (
     BoundaryProposals,
@@ -665,6 +671,23 @@ class BoundaryHead(nn.Module):
             query_axis=query_axis,
             candidate_axis=candidate_axis,
         )
+        if getattr(targets, "guide_scores", None) is not None:
+            guide_logits, guide_reference = densify_guide(
+                targets.guide_scores, label_indices, query_axis, candidate_axis
+            )
+            kept = apply_guide_veto(
+                hard,
+                guide_logits,
+                labels,
+                loss_valid,
+                reference=guide_reference,
+                margin=self.settings.guide_veto_margin,
+                floor=self.settings.guide_veto_floor,
+                query_axis=query_axis,
+                candidate_axis=candidate_axis,
+            )
+            note_vetoes(hard, kept)
+            hard = kept
         pair_query_mask = query_mask
         if self.training and self.settings.negative_query_ratio > 0:
             positive_queries = labels.any(candidate_axis) & query_mask
@@ -1037,6 +1060,17 @@ class BoundaryExtractorModel(BaseExtractorModel):
 
         self._lora_layers = {}
         self._adapter_config = None
+        # Frozen-guide score cache for the GIST veto. None means no veto: the head
+        # sees no guide tensor and hard-negative selection is untouched.
+        self.guide_scores = None
+
+    def set_guide_scores(self, guide_scores) -> None:
+        """Attach a :class:`~gliner2.training.guide_scores.GuideScores` cache.
+
+        The same cache must have been used to inject rival queries into the training
+        schemas -- a veto with no injected rivals has no cell to act on.
+        """
+        self.guide_scores = guide_scores
 
     def compile(self, dynamic: bool = True) -> "BoundaryExtractorModel":
         """Compile the backbone and tensor-heavy boundary regions in place."""
@@ -1513,6 +1547,10 @@ class BoundaryExtractorModel(BaseExtractorModel):
             # pad_target_graphs) also allocates on CPU. Either must meet the
             # accelerator logits, so normalize here.
             targets = targets.to(core["text_states"].device)
+            if self.guide_scores is not None and self.training:
+                targets.guide_scores = build_sparse_guide(
+                    batch, targets, self.guide_scores, core["text_states"].device
+                )
 
         if core["query_states"].shape[1] > 0:
             output = self.boundary_head(

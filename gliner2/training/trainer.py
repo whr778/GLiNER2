@@ -226,6 +226,12 @@ class TrainingConfig:
     max_eval_samples: int = -1
     validate_data: bool = True
     max_len: Optional[int] = None
+    # GIST. `guide_scores` is a JSONL cache from tools/train/precompute_guide_scores.py;
+    # setting it does two things at once, and both are needed for either to matter:
+    # each training record's cached rivals are injected into its schema, and the frozen
+    # guide's scores are handed to the veto. Train only -- eval must not be perturbed.
+    guide_scores: Optional[str] = None
+    rivals_per_record: int = 3
 
     # Restored feature knobs (pre-boundary; consumed by tools/train/train.py).
     # checkpoint_restart: resume selection ('last' | 'highest' | None).
@@ -394,6 +400,8 @@ class ExtractorDataset(Dataset):
             shuffle: bool = True,
             seed: int = 42,
             validate: bool = False,
+            guide_scores=None,
+            rivals_per_record: int = 3,
     ):
         """
         Initialize dataset from various input formats.
@@ -412,7 +420,17 @@ class ExtractorDataset(Dataset):
             Whether to validate the data. Validation is always strict:
             checks that entity spans, relation values, and structure
             field values exist in the text.
+        guide_scores : GuideScores, optional
+            Cached frozen-guide scores. When given, each record's cached
+            cross-record rivals are injected into its schema as absent entity
+            queries -- the cells the GIST veto acts on, which a record's own
+            schema never contains.
+        rivals_per_record : int, default=3
+            How many cached rivals to inject. The cache retains more; every one
+            added widens the query axis for the whole batch.
         """
+        self.guide_scores = guide_scores
+        self.rivals_per_record = rivals_per_record
         self.data = DataLoader_Factory.load(
             data=data,
             max_samples=max_samples,
@@ -487,9 +505,12 @@ class ExtractorDataset(Dataset):
         record = self.data[idx]
         # Handle both formats
         if "input" in record:
-            return record["input"], record["output"]
+            text, schema = record["input"], record["output"]
         else:
-            return record["text"], record["schema"]
+            text, schema = record["text"], record["schema"]
+        if self.guide_scores is not None:
+            schema = self.guide_scores.inject(text, schema, self.rivals_per_record)
+        return text, schema
 
     # Factory methods for explicit creation
     @classmethod
@@ -1333,6 +1354,8 @@ class ExtractorTrainer:
 
         max_samples = self.config.max_train_samples if is_train else self.config.max_eval_samples
 
+        guide_scores = self._guide_scores() if is_train else None
+
         if not self.config.sliding_window:
             return ExtractorDataset(
                 data=data,
@@ -1340,6 +1363,8 @@ class ExtractorTrainer:
                 shuffle=is_train,
                 seed=self.config.seed,
                 validate=self.config.validate_data if is_train else False,
+                guide_scores=guide_scores,
+                rivals_per_record=self.config.rivals_per_record,
             )
 
         # Sliding window: load records, expand each into overlapping subword windows
@@ -1374,13 +1399,37 @@ class ExtractorTrainer:
             )
         random.Random(self.config.seed).shuffle(records)
 
+        # Chunking rewrites the text, so cached scores (keyed by the full record's text)
+        # simply will not be found -- the veto goes quiet rather than acting on the wrong
+        # spans. Precompute against the chunked corpus if the two are to be combined.
         return ExtractorDataset(
             data=records,
             max_samples=-1,   # already applied
             shuffle=False,    # already shuffled
             seed=self.config.seed,
             validate=False,   # already validated
+            guide_scores=guide_scores,
+            rivals_per_record=self.config.rivals_per_record,
         )
+
+    def _guide_scores(self):
+        """Load the guide cache once and hand it to the model as well as the dataset."""
+        if not self.config.guide_scores:
+            return None
+        if getattr(self, "_guide_cache", None) is None:
+            from gliner2.training.guide_scores import GuideScores
+            model = self.model.module if hasattr(self.model, "module") else self.model
+            if not hasattr(model, "set_guide_scores"):
+                raise ValueError(
+                    "guide_scores needs the boundary architecture -- the GIST veto acts on "
+                    "boundary candidate scores, which the span path does not produce"
+                )
+            self._guide_cache = GuideScores.load(self.config.guide_scores)
+            if self.is_main_process:
+                logger.info("[gist] loaded %d cached guide records from %s",
+                            len(self._guide_cache), self.config.guide_scores)
+            model.set_guide_scores(self._guide_cache)
+        return self._guide_cache
 
     def _write_eval_metrics(self, metrics: Dict) -> None:
         """Persist eval metrics as JSON: ``eval_metrics.json`` in ``output_dir``

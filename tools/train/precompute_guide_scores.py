@@ -57,13 +57,25 @@ records yield a coherent rival at all, so most of the compute produces nothing c
 there is no cheap way to know which in advance. **This wants a GPU** -- roughly 2 hours there
 against ~55 on CPU, for a one-time cost against a guide forward on every training step.
 
+**Cache format**, one JSON object per record that has any scored gold span::
+
+    {"i": 12,                       # corpus position, for debugging only
+     "sha1": "...",                 # sha1 of the record's `input` -- the LOOKUP KEY
+     "own": ["missing", "location"],          # types the record itself declares
+     "rival": {"Person/Entity": "<description>"},   # cross-record types, with descriptions
+     "s": {"66": {"missing": 0.91, "Person/Entity": 0.42}}}   # span -> type -> guide score
+
+Rivals carry descriptions because training injects them as real schema queries
+(:mod:`gliner2.training.guide_scores`); a bare type name is not a query.
+
     uv run python tools/train/precompute_guide_scores.py \
         --corpus data/mix_natural.train.jsonl --out data/guide_scores.mix_natural.jsonl \
-        --numeric-only
+        --numeric-only --device cuda
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import time
@@ -110,12 +122,23 @@ def _entities(out) -> dict:
     return e[0] if isinstance(e, list) else e
 
 
-def score_record(model, text: str, queries: dict, spans: set) -> dict:
-    """{span: {query: score}} -- one guide forward for the whole record."""
-    if not queries or not spans:
-        return {}
-    out = model.extract(text, Schema().entities(queries), threshold=0.0,
-                        include_confidence=True)
+def score_batch(model, pending: list, batch_size: int) -> list:
+    """Score a buffer of records in one call: [(index, record, queries, spans, scored)].
+
+    One record per forward leaves a GPU almost idle -- the work is a single encoder pass
+    over a few hundred tokens. Batching is what makes the GPU run worth doing at all.
+    """
+    outputs = model.batch_extract(
+        [item[1].get("input", "") for item in pending],
+        [Schema().entities(item[2]) for item in pending],
+        batch_size=batch_size, threshold=0.0, include_confidence=True,
+    )
+    return [item + (rows_for_spans(out, item[3]),)
+            for item, out in zip(pending, outputs)]
+
+
+def rows_for_spans(out, spans: set) -> dict:
+    """{span: {query: score}} from one record's extraction output."""
     per_query = _entities(out)
     scored: dict = {}
     for span in spans:
@@ -160,7 +183,12 @@ def main() -> None:
                          "0.077; 50: 2.38s, 0.062; 100: 4.55s, 0.296; 200: 9.11s, 0.309. The "
                          "knee is at 100, which buys 200's quality for half the compute.")
     ap.add_argument("--pool-seed", type=int, default=0)
-    ap.add_argument("--report-every", type=int, default=50)
+    ap.add_argument("--batch-size", type=int, default=1,
+                    help="records per guide forward. Defaults to 1 because batching MEASURED "
+                         "SLOWER on CPU -- 0.68s/record unbatched, 0.76 at 4, 1.20 at 16 -- "
+                         "since every sample pads to the longest document in its batch and "
+                         "CPU has no parallelism left to win that back. A GPU does, so sweep "
+                         "1/8/32 on a slice there before committing to the full run.")
     args = ap.parse_args()
 
     src, dst = Path(args.corpus), Path(args.out)
@@ -181,6 +209,45 @@ def main() -> None:
     model.eval()
     n = kept = cells = 0
     t0 = time.time()
+
+    def write(scored_batch, out) -> None:
+        nonlocal kept, cells
+        for i, rec, _, _, own, scored in scored_batch:
+            if not scored:
+                continue
+            # Keep only the top-scoring cross-record rivals, and only ones the guide
+            # actually scored: a rival at 0.0 cannot clear the veto's floor, so caching or
+            # injecting it just widens the query axis for nothing. Written BEST FIRST --
+            # training injects a prefix of this list, and the hardest rival is the one
+            # worth spending a query slot on.
+            best: dict[str, float] = {}
+            for row in scored.values():
+                for q, v in row.items():
+                    if q not in own and v > 0.0:
+                        best[q] = max(best.get(q, 0.0), v)
+            ranked = [q for q, _ in sorted(best.items(), key=lambda kv: -kv[1])][:args.rival_pool]
+            if not ranked:
+                continue
+            keep = set(ranked)
+            scored = {sp: {q: v for q, v in row.items() if q in own or q in keep}
+                      for sp, row in scored.items()}
+            kept += 1
+            cells += sum(len(v) for v in scored.values())
+            text = rec.get("input", "")
+            out.write(json.dumps({
+                "i": i,
+                # Keyed by TEXT, not corpus position: training filters, shuffles and
+                # re-splits its inputs, and a positional key would then silently point at
+                # another record's spans -- a failure that looks exactly like no cache.
+                "sha1": hashlib.sha1(text.encode("utf-8")).hexdigest(),
+                "own": sorted(own),
+                # Rivals carry their DESCRIPTIONS because training has to inject them as
+                # real schema queries; a bare name is not a query the model can score.
+                "rival": {q: pool[q] for q in ranked},
+                "s": scored,
+            }, ensure_ascii=False) + "\n")
+
+    pending: list = []
     with src.open(encoding="utf-8") as fh, dst.open("w", encoding="utf-8") as out:
         for i, line in enumerate(fh):
             if args.limit and n >= args.limit:
@@ -193,29 +260,18 @@ def main() -> None:
             if args.numeric_only and not any(any(c.isdigit() for c in s) for s in spans):
                 continue
             own = set(queries)
-            sample = {n: pool[n] for n in rng.sample(names, min(args.pool_sample, len(names)))
-                      if n not in own}
-            scored = score_record(model, rec.get("input", ""),
-                                  {**queries, **sample}, spans)
-            if not scored:
-                continue
-            # Keep only the top-scoring cross-record rivals: the rest are noise, and caching
-            # them would bloat the file with cells the veto can never act on.
-            best: dict[str, float] = {}
-            for row in scored.values():
-                for q, v in row.items():
-                    if q not in own:
-                        best[q] = max(best.get(q, 0.0), v)
-            keep = {q for q, _ in sorted(best.items(), key=lambda kv: -kv[1])[:args.rival_pool]}
-            scored = {sp: {q: v for q, v in row.items() if q in own or q in keep}
-                      for sp, row in scored.items()}
-            scored = {"own": sorted(own), "rival": sorted(keep), "s": scored}
-            kept += 1
-            cells += sum(len(v) for v in scored["s"].values())
-            out.write(json.dumps({"i": i, "scores": scored}, ensure_ascii=False) + "\n")
-            if args.report_every and n % args.report_every == 0:
-                rate = n / max(time.time() - t0, 1e-9)
-                print(f"  {n} records  {rate:.1f}/s  {cells} cached cells", flush=True)
+            sample = {name: pool[name]
+                      for name in rng.sample(names, min(args.pool_sample, len(names)))
+                      if name not in own}
+            pending.append((i, rec, {**queries, **sample}, spans, own))
+            if len(pending) >= args.batch_size:
+                write(score_batch(model, pending, args.batch_size), out)
+                pending = []
+                if args.report_every and n % args.report_every < args.batch_size:
+                    rate = n / max(time.time() - t0, 1e-9)
+                    print(f"  {n} records  {rate:.1f}/s  {cells} cached cells", flush=True)
+        if pending:
+            write(score_batch(model, pending, args.batch_size), out)
 
     dt = time.time() - t0
     print(f"\n{n} records read, {kept} with gold spans, {cells} cached (span, query) cells")

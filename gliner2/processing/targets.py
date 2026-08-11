@@ -291,6 +291,10 @@ class PaddedTargetBatch:
     # Kept as opaque Python objects (span-based, device-independent) so the
     # record loss can map gold spans to per-sample candidate indices.
     records: Any = None
+    # Frozen-guide scores for the GIST veto, in SPARSE form because candidate
+    # columns do not exist until the head runs:
+    # (spans [B,S,2] half-open token pairs, values [B,S,Q], mask [B,S]).
+    guide_scores: Any = None
 
     def to(self, device) -> "PaddedTargetBatch":
         def mv(t):
@@ -301,6 +305,9 @@ class PaddedTargetBatch:
         record_targets = self.record_targets
         if isinstance(record_targets, tuple):
             record_targets = tuple(mv(t) for t in record_targets)
+        guide_scores = self.guide_scores
+        if isinstance(guide_scores, tuple):
+            guide_scores = tuple(mv(t) for t in guide_scores)
         return PaddedTargetBatch(
             mention_pairs=self.mention_pairs.to(device),
             mention_mask=self.mention_mask.to(device),
@@ -312,6 +319,7 @@ class PaddedTargetBatch:
             edge_targets=edge_targets,
             record_targets=record_targets,
             records=self.records,
+            guide_scores=guide_scores,
         )
 
     def pin_memory(self) -> "PaddedTargetBatch":
@@ -323,6 +331,9 @@ class PaddedTargetBatch:
         record_targets = self.record_targets
         if isinstance(record_targets, tuple):
             record_targets = tuple(pin(t) for t in record_targets)
+        guide_scores = self.guide_scores
+        if isinstance(guide_scores, tuple):
+            guide_scores = tuple(pin(t) for t in guide_scores)
         return PaddedTargetBatch(
             mention_pairs=self.mention_pairs.pin_memory(),
             mention_mask=self.mention_mask.pin_memory(),
@@ -330,6 +341,7 @@ class PaddedTargetBatch:
             end_targets=pin(self.end_targets),
             inside_targets=pin(self.inside_targets),
             classification_targets=pin(self.classification_targets),
+            guide_scores=guide_scores,
             instance_targets=self.instance_targets,
             edge_targets=edge_targets,
             record_targets=record_targets,

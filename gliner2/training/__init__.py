@@ -10,6 +10,7 @@ from gliner2.training.trainer import (
     train_gliner2,
 )
 from gliner2.training.eta import estimate_eta
+from gliner2.training.guide_scores import GuideScores
 from gliner2.training.stopwords import build_stopwords
 from gliner2.training.metrics import (
     compute_metrics,
@@ -29,6 +30,7 @@ __all__ = [
     "ExtractorCollator",
     "train_gliner2",
     "estimate_eta",
+    "GuideScores",
     "build_stopwords",
     "compute_metrics",
     "evaluate_checkpoint",

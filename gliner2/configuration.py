@@ -67,6 +67,12 @@ class BoundaryHeadSettings:
     hard_negatives_per_positive: int = 5
     minimum_hard_negatives: int = 8
     hard_negative_keep_all_when_absent: bool = False
+    # GIST veto (inert unless the model is given a guide-score cache). `margin` raises
+    # the bar for a veto; 0.0 is GIST's own rule. `floor` is the guide's abstention
+    # threshold -- it must stay >= 0 because unfilled cells sit at exactly 0.0, and
+    # that is what keeps own-record absent queries out of the veto's reach.
+    guide_veto_margin: float = 0.0
+    guide_veto_floor: float = 0.0
     # Optional representation upgrades. Defaults preserve existing checkpoint
     # parameter sets and behavior.
     enable_span_content: bool = False
@@ -237,6 +243,12 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
                 "hard_negative_keep_all_when_absent",
                 d.hard_negative_keep_all_when_absent,
             )
+        ),
+        "guide_veto_margin": float(
+            values.get("guide_veto_margin", d.guide_veto_margin)
+        ),
+        "guide_veto_floor": float(
+            values.get("guide_veto_floor", d.guide_veto_floor)
         ),
         "enable_span_content": bool(
             values.get("enable_span_content", d.enable_span_content)
@@ -444,6 +456,11 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError("boundary_head.boundary_focal_clip must be in [0, 1)")
     if result["hard_negatives_per_positive"] < 0 or result["minimum_hard_negatives"] < 0:
         raise ValueError("boundary_head hard-negative counts must be >= 0")
+    if result["guide_veto_floor"] < 0:
+        # A negative floor would let unfilled cells (exactly 0.0) vote, which is how
+        # own-record absent queries -- gold's business, not the guide's -- would start
+        # being vetoed.
+        raise ValueError("boundary_head.guide_veto_floor must be >= 0")
     if result["content_dim"] <= 0:
         raise ValueError("boundary_head.content_dim must be > 0")
     if result["rotary_base"] <= 0:
