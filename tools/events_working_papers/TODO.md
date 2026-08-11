@@ -334,6 +334,17 @@ Filtering does not close the cost either — a numeric-gold filter keeps 66.6%, 
 count-type-name filter 37.1% — because only 3 of 8 records yield a coherent rival at all and
 there is no cheap way to know which in advance.
 
+**Nor does renting a bigger box — run it locally.** A 240-vCPU / 1771GB instance ($22.32/h,
+120 shards × 2 threads) cached **zero** records in 15 minutes: >33 s/record per shard against
+**3.3 s/record on a laptop**, ~3.6 rec/s aggregate versus 1.2. Workers were at 142% CPU with
+1.4TB RAM free while load stalled at 172 of 240 — the ceiling is **memory bandwidth**, not
+cores (~30 concurrent processes is about where a mid-size server's bus saturates). Choosing
+the box on `$/vCPU-hour` assumed throughput scales with cores; it does not. **Measure one
+shard's s/record on the target box before renting.**
+
+Local shape that works: **4 shards × 2 threads with `--pool-cache`**, ~1.2 rec/s, ~19h for
+the full mix. More shards than that exhausts a 32GB machine and swaps it to a standstill.
+
 **Do not** use the live model as the guide. A cell is mined *because* the live model scores
 it highly, so a live self-guide vetoes exactly the negatives it should select. The guide must
 be a frozen checkpoint.

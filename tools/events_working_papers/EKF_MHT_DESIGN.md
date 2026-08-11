@@ -1177,6 +1177,19 @@ dominant knob and is part of cache *semantics*, not just speed -- it sets the mi
 the cache can hold; and the way to shorten the job is `--shards` across CPU cores, not an
 accelerator.
 
+**Renting a big box does not pay either, and this one is worth knowing.** A 240-vCPU /
+1771GB instance ($22.32/h) running 120 shards x 2 threads produced **zero** cached records
+in 15 minutes: >33 s/record per shard, against **3.3 s/record per shard on a 32GB laptop**.
+Aggregate was ~3.6 rec/s versus the laptop's 1.2 -- roughly 3x, for $22/h. Every worker sat
+at 142% CPU with no OOM and 1.4TB RAM free, yet load stalled at 172 of 240 vCPUs: the limit
+is **memory bandwidth**, not cores, and per-core inefficiency very nearly cancelled the core
+count. Consistent with the practitioner rule of thumb that ~30 concurrent processes saturate
+a mid-size server's bus.
+
+The selection error is instructive: the box was chosen on `$/vCPU-hour`, which silently
+assumes throughput scales with cores. **Measure one shard's s/record on the target box
+before renting anything.** Cost of learning it: ~$10.
+
 The threshold is worth **1.77x** (186.3s -> 105.5s on the same 96 records) and is **not
 free**: of 52 shared records, 48 keep an identical top-3 rival list and 41 an identical
 own-query reference. The ones that move are records where the guide scored everything below
