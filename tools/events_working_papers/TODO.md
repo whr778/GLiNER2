@@ -422,6 +422,48 @@ the full mix. More shards than that exhausts a 32GB machine and swaps it to a st
 it highly, so a live self-guide vetoes exactly the negatives it should select. The guide must
 be a frozen checkpoint.
 
+### 12. Base-word (lemmatized) duplicate samples — specified, not built
+
+**Proposal.** For each training sample, emit a **second** sample in which every surface word
+in *both* the text and the labelled spans is reduced to its base form. Surface and normalized
+variants both stay in the mix (1:1 duplication, not replacement). Reported from prior
+practice as helping training substantially; PURE (Princeton) is cited as doing a partial
+version of this. *Not measured in this repo.*
+
+**Why it is plausible here specifically.** The event corpora are small — RAMS 7,329 train,
+CASIE 795, WikiEvents 206 — while role fillers and triggers inflect freely (`killed` /
+`killing` / `kills`). Normalizing collapses those into one form, so a trigger–role
+association is learned once instead of three times under-powered. It is also a second angle
+on the noun-phrase routing in item 2: normalization strips the morphological cue the model
+may be latching onto instead of the role semantics.
+
+**The constraint that decides whether this works: spans must stay verbatim.** Boundary
+collation locates each gold surface inside the text; a mention that cannot be aligned is
+**silently dropped** under `on_missing_surface="skip"` (counted in
+`missing_surface_counts()`, `boundary_preprocessing.py`). So the failure mode is not an
+exception — it is quietly reduced supervision, which looks like "augmentation didn't help".
+
+The rule that avoids it: **lemmatize the token sequence ONCE, then re-derive every label from
+its token offsets.** Never lemmatize the text and the label string independently — lemmas are
+context-sensitive (`left` → `leave` or `left`), so the two passes diverge and the label stops
+matching. Verified today that `text_tokens[start:end]` reconstructs gold surfaces exactly
+(69/69, and cleanly under truncation), which is the property an offset-based rewrite must
+preserve.
+
+**Acceptance gate, cheap and decisive:** run the augmented corpus through the collator and
+assert `missing_surface_counts()` gains **zero** entries relative to the un-augmented run. If
+it gains any, the alignment is broken and the measurement that follows is meaningless.
+
+**Language gating.** The mix is multilingual (mmBERT; CMNEE/DuEE/ChFinAnn Chinese, KLUE
+Korean, MasakhaNER across 20 African languages). Lemmatization is a no-op for Chinese and a
+different operation for agglutinative languages, so this must be opt-in per corpus rather
+than applied across `data/`. No lemmatizer is currently a dependency — a dictionary-based,
+token-wise one (no per-language model download, deterministic) is the right shape, because
+token-wise is exactly what the alignment rule above requires.
+
+**Write path.** Any new emitter must route through `_split.dumps_record`, per the repo rule —
+NFKC plus line-separator stripping, `ensure_ascii=False`.
+
 ---
 
 ## Notes for whoever picks this up
