@@ -111,6 +111,77 @@ that document covers the focal event only. Per-snippet span location (already im
 avoid labelling one event with another's number) is exactly the machinery needed to know
 which spans to leave unlabelled.
 
+#### BUILT 2026-08-12 — `--mute-interference-prob`, control proven; not yet trained on
+
+`build_multievent_corpus.py` + `tests/test_multievent_muting.py` (6 tests). Four things
+the implementation settled, two of which change what the experiment can claim:
+
+**1. No loss or model change is needed — the architecture already carries this.** A muted
+snippet emits no record, so its figures are spans with no gold. `build_candidate_labels`
+scores a candidate 1.0 only on an *exact* match with a gold pair; everything else takes
+0.0 at full candidate weight, and the mask encodes validity rather than goldness — there
+is **no ignore path**. Measured on the two-candidate case (focal gold, interference
+muted): scoring the muted span high costs **1.1269 against 0.1269**, an 8.9x penalty.
+
+The corpus has always depended on this — documents are full of unlabelled displaced
+counts, magnitudes and dates — and guard 2's collision-drop only makes sense if
+unlabelled-vs-labelled matters in both directions. Muting extends it to the figures that
+actually confuse the model, and additionally drops the gold instance count from k+1 to the
+unmuted count, supervising instance formation toward focal-only.
+
+*Not* the mechanism, though it exists: an all-empty record yields `count = 0`
+(`processor.py:968`) with its queries still counted (`model.py:1394`). That is the
+fully-negative document, which finding 3 rules out here. It does confirm at code level why
+`remove_json_structure_prob` is no substitute for either — it hits `continue` at
+`processor.py:911` *before* `schemas.append`, so no query is emitted at all.
+
+**2. The focal snippet is always `parts[0]`, so muting is learnable from POSITION.**
+"Extract from the first paragraph" scores perfectly on this corpus without representing
+event identity at all. Real articles do lead with their focal event, so the prior is not
+pure artifact — but the corpus cannot distinguish the shortcut from the intended
+behaviour. **Required control before any gain is read as event identity:** a held-out
+probe with the focal placed last. Without it this arm cannot answer the Bosnia question,
+which is the reason it was proposed.
+
+**3. A true zero-record document is not constructible from this corpus.** Every snippet
+reports a toll, so a document with the `casualty_report` query answered empty would teach
+suppression of a *genuine* lead-event toll. What muting produces is the **partial**
+negative — focal record kept, interference figures unlabelled. The measured "0.0% of
+training documents have zero records" is real, but closing it needs negative *snippets*
+(disaster text carrying no casualty figure) drawn from another source; it is a separate
+lever, not this one.
+
+**4. The control arm nearly moved silently.** Drawing the muting decision from the shared
+`rng` advanced it once per interference snippet, shifting every later `randint`/`choice`
+and rebuilding the corpus — 4,064 documents against the pre-change 4,065 **at
+`mute_interference_prob=0.0`**. Fixed with a dedicated `mute_rng`, so the arms now differ
+in labels only. Note the obvious test does *not* catch this: the buggy draw fired
+regardless of probability, so all arms shifted together and stayed mutually identical.
+Only comparison against a builder with no muting concept exposes it, so the control is
+pinned by hash.
+
+Measured on 40 streams (4,106 snippets), `--mute-interference-prob 0.35`:
+
+| | control | muted |
+|---|--:|--:|
+| documents | 4,065 | 4,033 |
+| instances | 9,869 | 7,763 |
+| documents with a muted snippet | 0 | **1,688 (41.9%)** |
+| unlabelled figures delivered | 0 | **3,075** |
+
+Read the 41.9% as documents with a muted *snippet*, not as documents whose gold actually
+changed: 69 of them lost nothing, because every value in the muted snippet had already
+collided and so carried no record in the control either. Gold differs on **1,619**.
+
+`0.0` reproduces the pre-change corpus **byte-identically** (`cmp`). The 32 missing
+documents are focal-collision cases where every interference record was also muted; they
+are dropped rather than emitted empty, for the reason in (3). The reported counter is
+`dropped_empty` = 41 control / **73** muted — 41 of those are collision drops the control
+makes too, so the muting-attributable loss is the 32-document difference, not the 73.
+
+**Build the val split at `--mute-interference-prob 0.0`.** Nothing in the flag enforces
+it, and a muted val is not comparable with the control arm or with any historical number.
+
 **Why this and not another association signal.** It is the only candidate that would reach
 **Bosnia's 16**, which is structurally invisible to every signal tried so far — Bosnia is a
 place, not a named storm, so nothing keyed on storm names can see it. And the evidence says

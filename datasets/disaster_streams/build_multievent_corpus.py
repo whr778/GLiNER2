@@ -22,6 +22,28 @@ Three guards, each of which decides whether the experiment means anything:
 3. **K is mixed 0..max.** Single-event documents stay in the mix so the 1.000
    single-event binding does not regress while multi-event improves.
 
+Negative supervision (``--mute-interference-prob``). Every interference snippet gets its
+own record, so the model is never once shown a figure it is supposed to LEAVE ALONE --
+measured, 0.0% of training documents have zero records. Muting withholds an interference
+snippet's record while keeping its text, so the document's gold covers the focal event
+only and the muted figures become negatives for the same queries.
+
+The architecture already carries this; no loss change is needed. A muted snippet emits no
+record at all, so its figures are simply spans with no gold: ``build_candidate_labels``
+scores a candidate 1.0 only on an EXACT match with a gold pair, and everything else takes
+0.0 at full candidate weight (the mask encodes validity, not goldness). There is no ignore
+path. Measured on the two-candidate case -- focal gold, interference muted -- scoring the
+muted span high costs 1.1269 against 0.1269 for scoring it low.
+
+The corpus has always leaned on this (documents are full of unlabelled displaced counts,
+magnitudes and dates); muting extends it to the figures that actually confuse the model,
+other events' casualty counts. It additionally drops the gold instance count from k+1 to
+the unmuted count, which supervises instance formation toward focal-only.
+
+An all-empty record is a DIFFERENT mechanism (``count = 0`` at ``processor.py:968``, with
+queries still counted at ``model.py:1394``) and is not what muting does -- see the note on
+zero-record documents in TODO item 2 for why it is not usable on this corpus.
+
     uv run python datasets/disaster_streams/build_multievent_corpus.py \
         --data datasets/disaster_streams_sonnet5 --split train \
         --out data/casualty_multi.train.jsonl
@@ -131,8 +153,26 @@ def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
 
 
 def build(snippets, max_interference: int, seed: int, contexts: dict | None = None,
-          record_mode: str = "natural"):
+          record_mode: str = "natural", mute_interference_prob: float = 0.0):
+    """Concatenated multi-event documents, one record per UNMUTED snippet.
+
+    ``mute_interference_prob`` withholds an interference snippet's record while keeping
+    its text. The focal snippet is never muted: it is ``parts[0]``, and the task the
+    corpus states is "report the figures of the event this document leads with".
+
+    **The caveat that decides whether the arm means anything.** Focal is always first, so
+    muting is learnable from POSITION alone -- "extract from the first paragraph" scores
+    perfectly on this corpus without representing event identity at all. Real articles do
+    lead with their focal event, so the prior is not pure artifact, but it is a shortcut
+    the corpus cannot distinguish from the intended behaviour. Run the held-out probe that
+    separates them (focal placed last) before reading any gain as event identity.
+    """
     rng = random.Random(seed)
+    # Muting draws from its OWN stream so the treated and control arms see byte-identical
+    # DOCUMENTS and differ only in which records are withheld. Sharing `rng` advanced it
+    # once per interference snippet, which shifted every later randint/choice and rebuilt
+    # the whole corpus -- measured, 4064 documents against the control's 4065.
+    mute_rng = random.Random(f"mute-{seed}")
     by_stream = defaultdict(list)
     for s in snippets:
         by_stream[s["stream"]].append(s)
@@ -141,7 +181,9 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
     examples = []
     contexts = contexts or {}
     stats = {"docs": 0, "instances": 0, "located": 0, "dropped_collision": 0,
-             "located_place": 0, "no_place": 0, "by_k": defaultdict(int)}
+             "located_place": 0, "no_place": 0, "by_k": defaultdict(int),
+             "muted_snippets": 0, "docs_with_muted": 0, "unlabelled_figures": 0,
+             "dropped_empty": 0}
 
     for focal in snippets:
         k = rng.randint(0, max_interference)
@@ -152,15 +194,24 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
                 others.append(rng.choice(pool))
 
         parts, doc = [focal] + others, ""
-        spans = []                       # (snippet, lo, hi) in the concatenated document
-        for part in parts:
+        spans = []               # (snippet, lo, hi, muted) in the concatenated document
+        for i, part in enumerate(parts):
             lo = len(doc)
             doc += part["text"]
-            spans.append((part, lo, len(doc)))
+            muted = i > 0 and mute_rng.random() < mute_interference_prob
+            spans.append((part, lo, len(doc), muted))
             doc += "\n\n"
 
         structures = []
-        for part, lo, hi in spans:
+        for part, lo, hi, muted in spans:
+            if muted:
+                # Text stays, record is withheld. Count only figures that are actually
+                # present and unambiguous -- a muted value that collided with the focal's
+                # was never locatable, so it delivers no negative supervision either way.
+                stats["muted_snippets"] += 1
+                stats["unlabelled_figures"] += sum(
+                    _locate_in_slice(v, doc, lo, hi) is not None for v in part["gt"].values())
+                continue
             fields = {}
             for role, value in part["gt"].items():
                 located = _locate_in_slice(value, doc, lo, hi)
@@ -195,6 +246,15 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
             stats["docs"] += 1
             stats["instances"] += len(structures)
             stats["by_k"][len(structures)] += 1
+            if any(m for *_, m in spans):
+                stats["docs_with_muted"] += 1
+        else:
+            # Focal fields all collided AND every interference record was muted. Dropping
+            # is right -- the focal toll is real but ambiguous, so emitting the document
+            # with empty gold would teach suppression of a genuine figure rather than
+            # cross-event discrimination. Counted because it makes the treated arm hold
+            # FEWER documents than the control, which otherwise reads as a build bug.
+            stats["dropped_empty"] += 1
     return examples, stats
 
 
@@ -204,6 +264,10 @@ def main(argv=None) -> None:
     ap.add_argument("--split", default="train")
     ap.add_argument("--out", default="data/casualty_multi.train.jsonl")
     ap.add_argument("--max-interference", type=int, default=3)
+    ap.add_argument("--mute-interference-prob", type=float, default=0.0,
+                    help="probability an interference snippet keeps its TEXT but loses "
+                         "its record, making its figures negatives for the same queries. "
+                         "0.0 reproduces the previous corpus exactly.")
     ap.add_argument("--stream-start", type=int, default=0,
                     help="index into the sorted stream ids (leak-free split)")
     ap.add_argument("--stream-end", type=int, default=0, help="0 = all streams")
@@ -225,7 +289,8 @@ def main(argv=None) -> None:
                              args.stream_start, args.stream_end)
     contexts = json.loads(Path(args.contexts).read_text(encoding="utf-8")) if args.contexts else {}
     examples, stats = build(snippets, args.max_interference, args.seed, contexts,
-                            record_mode=args.record_mode)
+                            record_mode=args.record_mode,
+                            mute_interference_prob=args.mute_interference_prob)
 
     ds = TrainingDataset(examples)
     report = ds.validate(raise_on_error=False)
@@ -240,6 +305,10 @@ def main(argv=None) -> None:
     print(f"[build] fields located={stats['located']}  dropped as ambiguous="
           f"{stats['dropped_collision']}")
     print(f"[build] instances-per-document: {dict(sorted(stats['by_k'].items()))}")
+    print(f"[build] muted: snippets={stats['muted_snippets']}  documents="
+          f"{stats['docs_with_muted']} ({stats['docs_with_muted'] / max(stats['docs'], 1):.1%} "
+          f"of the mix)  unlabelled figures={stats['unlabelled_figures']}")
+    print(f"[build] documents dropped with no locatable record: {stats['dropped_empty']}")
     print(f"[build] validate: {report}")
     print(f"[build] wrote {out}")
 
