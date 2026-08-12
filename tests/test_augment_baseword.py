@@ -85,6 +85,48 @@ def test_a_label_covering_part_of_a_token_is_refused_not_mangled():
     assert mod.augment(record, mod.mock_lemma, "en") is None
 
 
+def test_a_label_that_lemmatization_merges_with_other_text_is_refused():
+    """The mirror of the missing-surface failure, and invisible to the same checks.
+
+    Lemmatization COLLAPSES surface forms, so a label can start matching positions that
+    were never annotated -- gold `guns` occurs once, but as `gun` it also matches the
+    unrelated `gun` later in the text, and collation then builds two gold mentions where
+    one was annotated. Measured on RAMS with simplemma before this guard existed: gold
+    inflated by 1,085 mentions on 31,773 (3.4%), across 718 of 6,680 augmented records.
+    Nothing raises and `missing_surface_counts()` stays at zero, because these are
+    invented positives rather than lost ones.
+    """
+    record = {
+        "input": "Soldiers seized guns . The gun was later destroyed .",
+        "output": {"entities": {"weapon": ["guns"]}},
+    }
+
+    assert mod.augment(record, mod.mock_lemma, "en") is None
+
+
+def test_occurrence_counting_uses_the_collators_tokenization():
+    """`str.split()` is the wrong ruler and silently under-counts.
+
+    `WhitespaceTokenSplitter` splits trailing punctuation into its own token and
+    lower-cases, so `they,` contains the token `they` while whitespace splitting sees only
+    `they,`. Counting the wrong way passed records that then gained phantom gold.
+    """
+    text = "they ran and they, too, fled."
+
+    assert text.split().count("they") == 1          # the wrong ruler: sees only `they,`
+    assert mod.token_count(text, "they") == 2       # what collation actually matches
+
+
+def test_occurrence_counting_handles_cjk():
+    """The splitter emits one token per CJK character, so counting must follow it.
+
+    The mix is multilingual (CMNEE/DuEE/ChFinAnn Chinese, KLUE Korean), and a whitespace
+    ruler would see `三人死亡,五人死亡` as a single token and count every label zero times.
+    """
+    assert mod.token_count("三人死亡,五人死亡", "死亡") == 2
+    assert mod.token_count("三人在北京死亡", "北京") == 1
+
+
 def test_the_original_record_is_never_mutated():
     record = {"input": "Rebels attacked the convoys .",
               "output": {"entities": {"target": ["the convoys"]}}}

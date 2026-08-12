@@ -19,6 +19,14 @@ Two rules keep that from happening, and both are load-bearing:
    holds by construction rather than by luck.
 2. **No lemma means keep the surface word.** Real lemmatizers return nothing for plenty of
    tokens; substituting a guess there is how alignment breaks.
+3. **A label must occur exactly as often after lemmatization as before.** Verbatim-ness is
+   not enough: lemmatization COLLAPSES surface forms, so a label can start matching
+   positions that were never annotated. Measured on RAMS with simplemma -- gold `guns`
+   occurs once in the source, and as `gun` it occurs three times in the lemmatized text,
+   so collation builds three gold mentions where one was annotated. Across the corpus that
+   inflated gold by 1,085 mentions on 31,773 (3.4%), in 718 of 6,680 augmented records.
+   These are silently INVENTED positives, the mirror of the silent loss in rule 1, and no
+   `missing_surface_counts()` check can see them.
 
 A record is augmented only when EVERY label remaps cleanly onto token boundaries; otherwise
 only the original is emitted, and the skip is counted. Partial augmentation would be the
@@ -36,6 +44,9 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 from _split import dumps_record
+from gliner2.processor import WhitespaceTokenSplitter
+
+_SPLIT = WhitespaceTokenSplitter()
 
 WORD = re.compile(r"\S+")
 CORE = re.compile(r"^(\W*)(.*?)(\W*)$", re.DOTALL)
@@ -96,6 +107,24 @@ def remap(value: str, text: str, spans: List[Tuple[str, int, int]],
     return " ".join(lemmas[first:last + 1])
 
 
+def token_count(text: str, needle: str) -> int:
+    """Occurrences of `needle` in `text` under the tokenization COLLATION uses.
+
+    It must be that tokenization and not a simpler one. `WhitespaceTokenSplitter` is a
+    regex tokenizer: it splits trailing punctuation into its own token and lower-cases.
+    Counting with `str.split()` instead misses matches the collator makes -- measured, gold
+    `they` counted once by whitespace and twice by the collator, because the second
+    occurrence was `they,`. Guarding on the wrong tokenization passes records that then
+    gain phantom gold.
+    """
+    tokens = [t for t, _, _ in _SPLIT(text)]
+    want = [t for t, _, _ in _SPLIT(needle)]
+    if not want:
+        return 0
+    n = len(want)
+    return sum(1 for i in range(len(tokens) - n + 1) if tokens[i:i + n] == want)
+
+
 def walk_labels(output: dict):
     """Yield (container, key, value) for every surface string the schema declares."""
     ents = output.get("entities")
@@ -132,13 +161,16 @@ def augment(record: dict, lemma: Callable[[str, str], str], lang: str) -> Option
     lemmas = [lemmatize_token(tok, lemma, lang) for tok, _, _ in spans]
     starts = [s for _, s, _ in spans]
 
+    lemma_text = " ".join(lemmas)
     out = json.loads(json.dumps(record["output"]))
     for container, key, value in walk_labels(out):
         mapped = remap(value, text, spans, lemmas, starts)
         if mapped is None:
             return None
+        if token_count(lemma_text, mapped) != token_count(text, value):
+            return None      # lemmatization merged forms: gold would gain phantom positions
         container[key] = mapped
-    return {"input": " ".join(lemmas), "output": out}
+    return {"input": lemma_text, "output": out}
 
 
 def main() -> None:
@@ -174,8 +206,9 @@ def main() -> None:
 
     print(f"{n} records read -> {n + kept} written ({kept} augmented, {skipped} not)")
     print(f"augmentation rate {kept / max(n, 1):.1%}"
-          + ("  <- low rate means labels are not landing on token boundaries"
-             if kept / max(n, 1) < 0.9 else ""))
+          + ("  <- labels are not landing on token boundaries, or lemmatization merged a "
+             "label with other text (both are refusals, not losses)"
+             if kept / max(n, 1) < 0.75 else ""))
 
 
 if __name__ == "__main__":

@@ -519,10 +519,46 @@ LEMMA: transportation official are urg carpool ... death of freddie gray
 args : ('victim', 'Freddie Gray')  ->  ('victim', 'freddie gray')
 ```
 
-**Still to do:** swap `--backend mock` for `--backend simplemma` and train an arm. A real
-lemmatizer was deliberately *not* added as a dependency while a long precompute was running
-out of the same virtualenv — `uv add` touches `.venv` and those workers import from it
-lazily. Alignment is the part that had to be proven, and it does not depend on lemma quality.
+#### RUN 2026-08-12 on `--backend simplemma` — and the stated gate was VACUOUS
+
+Full RAMS train, simplemma 1.2.0, `--lang en`: **7,329 → 13,291 (5,962 augmented, 81.3%)**,
+3 seconds. The gate passes — gold mentions 27,599 against 27,599, zero records changed —
+but only after two corrections, both of which the arm would otherwise have been trained
+under.
+
+**1. `missing_surface_counts()` cannot serve as this gate.** It increments only for
+`task_type == "entities"` (`boundary_preprocessing.py:443`). RAMS supervises **events**,
+and for non-entity types an unlocatable surface is treated as legitimately absent and
+skipped with **no counter at all** (`:465`). A lemmatized copy could lose every argument
+and the counter would still read 0. What is observable is the target graph:
+`targets.mention_mask.sum()` is the gold the collator actually built, and each lemma copy
+must produce exactly as many as its source record.
+
+Collate with sampling OFF when measuring this. `collate_fn_train` sets `is_training=True`
+and the default `remove_events_prob=0.2` drops the whole event group a fifth of the time —
+one record collated ten times gives `[5,0,0,5,5,5,5,5,5,0]`. The first version of this
+measurement was reading that noise.
+
+**2. The real failure is INVENTED gold, not lost gold.** Lemmatization *collapses* surface
+forms, so a label starts matching positions that were never annotated. Gold `guns` occurs
+once in its source; as `gun` it occurs **three times** in the lemmatized text, so collation
+builds three mentions where one was annotated. Before the guard: **+1,085 mentions on
+31,773 (3.4%), in 718 of 6,680 augmented records** — every one a silent false positive, and
+invisible to any missing-surface check by construction.
+
+Guarded by refusing any record where a label's occurrence count changes, in the same
+tokenization collation uses. That ruler is load-bearing: `WhitespaceTokenSplitter` is a
+regex tokenizer that splits trailing punctuation and lower-cases, so `they,` contains the
+token `they` while `str.split()` sees only `they,`. A `str.split()` guard still let four
+records through, netting to a delta of 0 by coincidence — two gaining, two losing.
+
+Cost of the guard: augmentation rate **91.1% → 81.3%**. Those are refusals, not losses;
+the un-augmented original is always emitted.
+
+**Still to do:** train the arm. `simplemma` is installed to a scratch dir and used via
+`PYTHONPATH`, deliberately not `uv add`, which re-locks and syncs the whole environment and
+could rewrite packages the four precompute workers have mmap'd. Make it a real dependency
+once they exit.
 
 The remainder of this item is the original specification, kept because it states the
 constraints the implementation had to satisfy.
