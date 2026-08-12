@@ -348,6 +348,7 @@ def build_boundary_batch_metadata(
     build_targets: Optional[bool] = None,
     on_capacity_exceeded: str = "raise",
     on_missing_surface: str = "raise",
+    event_records: bool = False,
 ) -> tuple:
     """Build layouts, optional padded targets, and compiled record specs.
 
@@ -488,6 +489,7 @@ def build_boundary_batch_metadata(
             query_layout=layout,
             record_metadata=sample_meta,
             field_dtypes=sample_dtypes,
+            event_records=event_records,
         )
         record_specs_out.append(specs)
         relation_gold_out.append(sample_relation_gold)

@@ -135,6 +135,41 @@ as relations-only would break that symmetry and understate the shared claim.
   same change. Design in §3b. *(An earlier note judged this non-blocking on the assumption
   of a Re-DocRED-only downstream — that assumption is void; RAMS is on the evaluated path
   via decision 2.)*
+
+  **TIER 1 SHIPPED 2026-08-12** (`bf2c9b4`). Events are now emitted from the beam:
+  `_decode_joint` collects event-typed nodes out of `solution.nodes` and
+  `_format_joint_events` assembles them in `_decode_events`'s exact shape. Measured on
+  `gliner2-joint-boundary-rams-137k`, first RAMS train record, threshold 0.3 — pre-fix
+  greedy emitted the event and joint emitted **nothing**; post-fix joint is byte-identical
+  to greedy. Selection is now the beam's, which is the actual Phase A claim.
+
+  **TIER 2 — multi-instance events. Sized before building, and it is the largest headroom
+  in these papers.** Both decode paths emit **one instance per event type**, because the
+  mention axis carries no instance dimension. What that costs, counting gold instances
+  that are unreachable under that cap:
+
+  | corpus | docs with >1 event of the same type | gold instances | unreachable |
+  |---|--:|--:|--:|
+  | RAMS | **0.0%** | 7,329 | **0 (0.0%)** |
+  | MAVEN | 96.1% | 77,993 | 29,885 (**38.3%**) |
+  | WikiEvents | 93.8% | 3,241 | 2,027 (**62.5%**) |
+  | CASIE | 94.5% | 6,708 | 5,285 (**78.8%**) |
+
+  Two consequences. **RAMS cannot see this at all** — it is 100% single-event documents,
+  so the base-word arms A/B/C are unaffected either way and Tier 2 must be evaluated on
+  CASIE or WikiEvents, not RAMS. And every event metric already published on
+  CASIE/WikiEvents/MAVEN was measured under a hard recall cap, so a post-Tier-2 model is
+  **not comparable** to them.
+
+  **The corpora need no change — an earlier scoping note of mine said otherwise and was
+  wrong.** `_process_events` appends one label row per event mention
+  (`processor.py`, training path), so `structure[1]` is already a list of instance rows
+  and `structure[0]` is the instance count; the count loss already consumes it via
+  `if task_type != "entities"`. The instance dimension is in the supervision today. What
+  is missing is only that `compile_record_specs` refuses event groups, so the record head
+  — which *does* carry instance queries — is never given them. Remaining work is therefore
+  spec compilation (events have a structural anchor: field 0 is always the trigger),
+  greedy-side ownership, and a retrain to benefit.
 - ⚠ **Arm-comparability caveat (must settle before Phase A):** the joint path threads the
   engine `threshold` through as `mention_threshold`, but four greedy-side threshold
   behaviours are **not** mirrored:

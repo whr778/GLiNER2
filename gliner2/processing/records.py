@@ -55,6 +55,21 @@ class FieldCardinality(str, Enum):
         return self in (FieldCardinality.OPTIONAL_ONE, FieldCardinality.ZERO_OR_MORE)
 
 
+def _event_record_cfg(queries) -> Dict[str, Any]:
+    """The record config an events group implies, without any stored metadata.
+
+    Events never emit ``record_metadata`` -- ``InputExample.to_dict`` builds it only from
+    ``Structure`` objects -- but an events group does not need it: the shape is fixed by
+    construction. ``_process_events`` builds ``field_names = ["trigger"] + roles``, so
+    role_index 0 is always the trigger and is always the anchor, and the remaining roles
+    take the default multi-filler cardinality (a role legitimately has several fillers).
+
+    Synthesizing it here rather than storing it per record is what keeps this from being a
+    corpus rebuild across RAMS, CASIE, WikiEvents, MAVEN, DuEE and CMNEE alike.
+    """
+    return {"mode": "natural", "anchor": queries[0].role_name, "fields": {}}
+
+
 def _default_cardinality(dtype: Optional[str], is_anchor: bool) -> FieldCardinality:
     if is_anchor:
         return FieldCardinality.REQUIRED_ONE
@@ -221,8 +236,16 @@ def compile_record_specs(
     query_layout,
     record_metadata: Optional[Mapping[str, Any]],
     field_dtypes: Optional[Mapping[str, Mapping[str, str]]] = None,
+    event_records: bool = False,
 ) -> Dict[int, RecordSpec]:
     """Compile ``record_metadata`` into ``RecordSpec`` objects keyed by task_index.
+
+    ``event_records`` opts event groups in, synthesizing their config (see
+    :func:`_event_record_cfg`). **Off by default and deliberately so** -- it changes what
+    the record head is supervised on, so the defaults reproduce the older numbers. It is
+    what lifts the one-instance-per-event-type cap, which costs 78.8% of gold instances on
+    CASIE, 62.5% on WikiEvents and 38.3% on MAVEN, and exactly 0.0% on RAMS (100%
+    single-event documents). Sized in JOINT_IE_SCALING, Tier 2.
 
     Only groups with an explicit mode are compiled; everything else is left to
     the legacy path. Field order/query ids come from the concrete
@@ -230,7 +253,7 @@ def compile_record_specs(
     and field order.
     """
     normalized = normalize_record_metadata(record_metadata, field_dtypes=field_dtypes)
-    if not normalized:
+    if not normalized and not event_records:
         return {}
 
     # Group extractive queries by (task_index, task_name).
@@ -247,12 +270,16 @@ def compile_record_specs(
     specs: Dict[int, RecordSpec] = {}
     for task_index, queries in by_task.items():
         name = task_names[task_index]
-        if task_types[task_index] not in RECORD_TASK_TYPES:
-            continue
-        cfg = normalized.get(name)
-        if cfg is None:
+        task_type = task_types[task_index]
+        is_event = task_type == "events"
+        if task_type not in RECORD_TASK_TYPES and not (event_records and is_event):
             continue
         queries = sorted(queries, key=lambda q: q.role_index)
+        cfg = normalized.get(name)
+        if cfg is None and event_records and is_event:
+            cfg = _event_record_cfg(queries)
+        if cfg is None:
+            continue
         mode = cfg["mode"]
         anchor_name = cfg.get("anchor")
         fields_cfg = cfg.get("fields", {})
