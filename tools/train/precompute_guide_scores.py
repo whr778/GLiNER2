@@ -87,8 +87,15 @@ from gliner2 import AutoExtractor, Schema
 def record_queries_and_spans(rec: dict):
     """(query name -> description, gold surface spans) as the record declares them.
 
-    Covers both shapes the mixes use: `entities` as ``{type: [spans]}`` with optional
-    `entity_descriptions`, and `json_structures` as ``[{task: {field: value}}]``.
+    Covers the three shapes the corpora use: `entities` as ``{type: [spans]}`` with optional
+    `entity_descriptions`, `json_structures` as ``[{task: {field: value}}]``, and `events`
+    as ``[{event_type, triggers, arguments:[{role, entity}]}]``.
+
+    Events were missing, and silently: the pool builder reported ``0 distinct type queries``
+    on RAMS and every record came back with ``0 with gold spans``, so the job completed in
+    0.0s and wrote an empty cache. Event ROLES are the query axis GIST needs here -- the
+    documented failure is `convoy` returned for `victim`, which is a role confusion, not a
+    type-description one.
     """
     out = rec.get("output") or {}
     queries: dict[str, str] = {}
@@ -114,6 +121,23 @@ def record_queries_and_spans(rec: dict):
                 for x in (v if isinstance(v, list) else [v]):
                     if isinstance(x, str) and x.strip():
                         spans.add(x.strip())
+
+    for ev in (out.get("events") or []):
+        if not isinstance(ev, dict):
+            continue
+        # Triggers are gold surfaces but not a role query: caching how each role scores a
+        # trigger is exactly the "routes to the salient noun phrase" signal.
+        for t in (ev.get("triggers") or []):
+            if isinstance(t, str) and t.strip():
+                spans.add(t.strip())
+        for arg in (ev.get("arguments") or []):
+            if not isinstance(arg, dict):
+                continue
+            role, entity = arg.get("role"), arg.get("entity")
+            if isinstance(role, str) and role.strip():
+                queries.setdefault(role.strip(), role.strip())
+            if isinstance(entity, str) and entity.strip():
+                spans.add(entity.strip())
     return queries, spans
 
 
