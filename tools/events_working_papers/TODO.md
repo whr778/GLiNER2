@@ -583,6 +583,63 @@ the un-augmented original is always emitted.
 could rewrite packages the four precompute workers have mmap'd. Make it a real dependency
 once they exit.
 
+#### Arms A/B/C running 2026-08-12 on a Lambda A10; arm A is down
+
+Three arms, configs differing from `gliner2-base-v1-rams.yaml` in three lines each (train
+file, `output_dir`, `experiment_name`), val and test un-augmented:
+
+| arm | train file | records |
+|---|---|--:|
+| A baseline | `data/rams.train.jsonl` | 7,329 |
+| B lemma | `datasets/rams_baseword/train.jsonl` | 13,291 |
+| C duplicate control | `datasets/rams_baseword/train.duplicate_control.jsonl` | 13,291 |
+
+**Arm A blind test on RAMS — the number B and C must beat:**
+
+| | strict | fair | relaxed |
+|---|--:|--:|--:|
+| event type | 0.9970 | — | 0.9970 |
+| trigger | 0.9127 | 0.9143 | 0.9161 |
+| **argument** | **0.4474** | 0.6192 | 0.6873 |
+| event overall | 0.6797 | — | 0.8104 |
+
+Argument support 2,016. Strict argument F1 is the metric that matters: role-filler
+extraction is exactly what base-word supervision targets.
+
+#### On a combined arm D — HOLD, and make it conditional on B vs C
+
+Do not plan D now. It is worth running in exactly one of three outcomes:
+
+| B vs C | reading | D worth it? |
+|---|---|---|
+| B > C | lemmatization adds something beyond duplication | yes — the dosage question is real |
+| B ≈ C | the gain is duplication, not lemma | no — D adds more of what did not help |
+| B < C | lemmatization actively hurts | no — D would hurt more |
+
+**And D would need its own control or it reproduces the confound C exists to remove.** A
+combined arm is originals + lemma + verbatim = **19,253** records against B and C's 13,291,
+so D-vs-B differs in record COUNT as well as composition and a gain is again
+unattributable. The matched control is arm E: originals + *two* verbatim copies, also
+19,253. That is two runs (~2.5h, ~$3.30) to answer a dosage question, and only after
+B > C is established.
+
+Note also that B and C are not two treatments to combine. **C is a control — the null
+version of B.** Combining a treatment with its own control is "double the augmentation",
+not a factorial design; a genuine 2x2 needs a second *factor*, not a second dose.
+
+**Higher-value uses of the same GPU hour**, both of which are the confluence rather than
+more dosage:
+
+- **base-word applied to the casualty/event line** — tests whether the lever generalizes
+  off RAMS, which is what would justify it in the papers.
+- **GIST on RAMS** — the literal river-join with item 11. The RAMS guide cache is being
+  built (see item 11). It carries a concrete prediction to test rather than assume: the
+  veto drops mined negatives the guide judges positive, and base-word negatives ARE mined
+  negatives, so a frozen guide carrying the same NP-routing bug will score `convoy` highly
+  for a `victim` query and **veto exactly the negative item 12 exists to add**. That says
+  the merge order must be: measure base-word alone, then add GIST, then check whether the
+  base-word gain survives. Merging first gives a null nobody can attribute.
+
 The remainder of this item is the original specification, kept because it states the
 constraints the implementation had to satisfy.
 
