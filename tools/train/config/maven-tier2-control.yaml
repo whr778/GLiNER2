@@ -1,0 +1,112 @@
+# MAVEN Tier 2 arms: does the RECORD head recover event instances the mention path
+# cannot express? See JOINT_IE_SCALING, Tier 2.
+#
+# MAVEN and not CASIE, deliberately. The Tier 2 claim is about INSTANCE SEPARATION, which
+# is fully measurable on triggers alone, and MAVEN carries 12x the instance supervision
+# (26.8 events/doc against CASIE's 8.4) and 9,644 gold instances in the held-out test
+# against CASIE's 6,708 in the whole corpus. 40.8% of that test gold is UNREACHABLE while
+# a decode emits one instance per event type, and 97% of its documents are affected.
+# The first CASIE attempt failed on head-init: 375 steps on 798 documents could not train
+# an instance-formation head from cold.
+#
+# MAVEN is TRIGGER-ONLY (0 arguments), so `metric_for_best` is the trigger metric --
+# selecting on an argument metric here would select on a constant.
+#
+# Eval data: MAVEN's official test split is UNLABELED (leaderboard holdout, `candidates`
+# only), so the official *valid* split is converted and halved document-wise into
+# val/test. Both arms share the split.
+#
+# The two arms differ in ONE key, `boundary_head.event_records`.
+#
+# mmBERT + bf16 REQUIRES real FlashAttention 2: install `kernels` or the base checkpoint's
+# flash_attention_2 silently falls back to sdpa and the loss goes non-finite.
+model:
+  pretrained: whr778/gliner2-joint-boundary-rams-137k
+  # attn_implementation is NOT set here on purpose: on the pretrained path it would
+  # be applied to model.config AFTER the encoder is already built, so it would be a
+  # silent no-op. FlashAttention 2 is inherited from the base checkpoint's config.
+  architecture: boundary     # checked against the checkpoint: warm-starting a span
+                             # checkpoint here raises ArchitectureMismatchError rather
+                             # than silently training the wrong architecture.
+  # bce_posweight bootstraps the argument head; plain bce left argument recall near 0
+  # on fresh heads and focal collapsed it (see mmbert-base-rams for the ablation).
+  boundary_head:
+    enable_records: true
+    # Measured on MAVEN train: a single query carries up to 43 gold spans and a group up
+    # to 13 instances, against defaults of 32 and 32. Raised with headroom, IDENTICALLY on
+    # both arms.
+    max_gold_per_query: 128
+    training_candidate_budget: 256
+    candidate_budget: 192
+    event_records: false   # THE ONLY DIFFERENCE BETWEEN THE TWO ARMS
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/maven-tier2-control
+  experiment_name: maven_tier2_control
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 8
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  # CASIE carries entity surfaces that boundary word-alignment cannot locate, so the
+  # default `raise` aborts on sample 3 of the first batch. Verified PRE-EXISTING: it
+  # fails identically with event_records off, so it is a CASIE/boundary property, not a
+  # Tier 2 effect. `skip` drops just the unlocatable mention and counts it in
+  # missing_surface_counts().
+  error_policy: skip
+  eval_strategy: epoch
+  metric_for_best: eval_event_trigger_strict_micro_f1  # arguments are the head-init
+  greater_is_better: true                               # sensitive number, not the
+                                                        # trigger/type plateau
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  # 30-core box, and collation is the bottleneck: measured at num_workers=0 the GPU sat at
+  # 11% with python at 121% CPU and load 1.08, i.e. 29 idle cores and 6.43 s/it. MAVEN is
+  # dense (168 event types, 26.8 events/doc) so schema transform dominates. Raised
+  # IDENTICALLY on both arms.
+  num_workers: 8
+  validate_data: false
+  sliding_window: false      # RAMS docs fit in max_len -> no windowing
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true         # select the checkpoint at its own best threshold
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    maven:
+      train: data/maven.train.jsonl
+      val: data/maven.val.jsonl
+      test: data/maven.test.jsonl
