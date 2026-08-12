@@ -103,10 +103,14 @@ class ExtractorRuntimeMixin:
 
         if max_len is None:
             if getattr(self, "_inference_collator", None) is None:
-                self._inference_collator = ExtractorCollator(self.processor, is_training=False, architecture=self.architecture)
+                self._inference_collator = ExtractorCollator(
+                    self.processor, is_training=False, architecture=self.architecture,
+                    event_records=self._event_records())
             collator = self._inference_collator
         else:
-            collator = ExtractorCollator(self.processor, is_training=False, max_len=max_len, architecture=self.architecture)
+            collator = ExtractorCollator(
+                self.processor, is_training=False, max_len=max_len,
+                architecture=self.architecture, event_records=self._event_records())
 
         if len(dataset) <= batch_size and num_workers == 0:
             batches = [collator(dataset)]
@@ -1511,6 +1515,16 @@ class ExtractorRuntimeMixin:
         """Batch extract relations."""
         schema = self.create_schema().relations(relation_types)
         return self.batch_extract(texts, schema, batch_size, threshold, 0, format_results, include_confidence, include_spans, max_len=max_len)
+
+    def _event_records(self) -> bool:
+        """Whether event groups compile as records (Tier 2). Boundary-only, off by default.
+
+        Read from the head settings rather than passed in, so inference and training make
+        the same choice from one place -- a mismatch would decode with a spec the model
+        was never supervised under.
+        """
+        settings = getattr(self, "boundary_settings", None)
+        return bool(getattr(settings, "event_records", False))
 
     def extract_events(self, text: str, event_types, threshold: float = 0.5,
                        format_results: bool = True, include_confidence: bool = False,

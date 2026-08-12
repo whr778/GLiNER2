@@ -76,6 +76,52 @@ def _relation_value(
     return (head[0], tail[0])
 
 
+def _record_instances_to_events(
+    instances: List[Dict[str, Any]], anchor_name: str
+) -> List[Dict[str, Any]]:
+    """Record instances -> the event shape the eval harness reads.
+
+    The record decoder emits FIELD-KEYED instances (``{"trigger": ..., "victim": ...}``),
+    while events are read as ``{"triggers": [...], "arguments": [{"role", "entity"}]}`` --
+    the shape the span engine's ``_extract_events`` established and every event metric
+    parses. Letting records own events without this adapter would not merely double-emit,
+    it would change the output shape and every event metric would read 0.0.
+
+    The anchor field becomes ``triggers``; every other field becomes one argument per
+    filler, so a multi-filler role stays multi-valued.
+    """
+    events: List[Dict[str, Any]] = []
+    for instance in instances:
+        anchor = instance.get(anchor_name)
+        triggers = anchor if isinstance(anchor, list) else ([anchor] if anchor else [])
+        arguments: List[Dict[str, Any]] = []
+        for name, value in instance.items():
+            if name == anchor_name:
+                continue
+            for filler in (value if isinstance(value, list) else [value]):
+                if filler:
+                    arguments.append({"role": name, "entity": filler})
+        if triggers:
+            events.append({"triggers": triggers, "arguments": arguments})
+    return events
+
+
+def _event_record_owners(batch, sample_index: int) -> Dict[int, Any]:
+    """Compiled record specs for this sample's EVENT groups, keyed by task_index.
+
+    Non-empty only when ``event_records`` is on; that is what decides whether the record
+    head or the mention path owns events, so the two can never both emit.
+    """
+    record_specs = getattr(batch, "record_specs", ())
+    if sample_index >= len(record_specs) or not record_specs[sample_index]:
+        return {}
+    return {
+        task_index: spec
+        for task_index, spec in record_specs[sample_index].items()
+        if getattr(spec, "task_type", None) == "events"
+    }
+
+
 def _resolve_flat_spans(
     scored: List[Tuple[float, int, int]]
 ) -> List[Tuple[float, int, int]]:
@@ -200,6 +246,11 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 self.boundary_settings.decode_mode == "joint"
                 and candidates is not None
             )
+            # Non-empty only when `event_records` is on. Whichever path owns an events
+            # group, the other must not also emit it -- `sample[event_type] = ...`
+            # overwrites, so a clash silently replaces multi-instance record output with
+            # the single-instance mention output.
+            event_owners = _event_record_owners(batch, i)
             if not joint:
                 # In joint mode records come out of the beam instead, via role
                 # edges -- running this too would double-emit them.
@@ -207,9 +258,24 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     batch, i, core, candidates, offset, start_map, end_map,
                     text, text_len, include_confidence, include_spans,
                 )
+                # An events group owned by the record head comes back FIELD-KEYED;
+                # rewrite it into the event shape before it reaches `sample`, or every
+                # event metric parses the wrong structure and reads 0.0.
+                event_owned_names = {
+                    spec.task_name: spec for spec in event_owners.values()
+                }
                 for name, instances in record_results.items():
-                    if instances:
-                        sample[name] = instances
+                    if not instances:
+                        continue
+                    owner = event_owned_names.get(name)
+                    if owner is not None:
+                        anchor = next(
+                            (f.name for f in owner.fields if f.is_anchor), "trigger"
+                        )
+                        instances = _record_instances_to_events(instances, anchor)
+                        if not instances:
+                            continue
+                    sample[name] = instances
 
             if joint:
                 sample.update(self._decode_joint(
@@ -248,6 +314,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 specs, i, grouped_candidates, null_probs, overlap_policy,
                 offset, start_map, end_map, text, text_len,
                 include_confidence, include_spans,
+                skip_group_indices=set(event_owners),
             )
             for event_type, instances in event_results.items():
                 sample[event_type] = instances
@@ -308,8 +375,15 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         text_len: int,
         include_confidence: bool,
         include_spans: bool,
+        skip_group_indices: Optional[set] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Assemble events from their ``[V]`` mention queries.
+
+        ``skip_group_indices`` names event groups the RECORD head owns (``event_records``
+        on). Those must not be assembled here as well: ``sample[event_type] = ...``
+        overwrites, so emitting both would silently replace multi-instance record output
+        with the single-instance mention output -- the Tier 2 change would read as a
+        no-op.
 
         Events are supervised as MENTIONS -- one extractive query per trigger and
         per role -- NOT as record instances: an events schema never produces
@@ -330,9 +404,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         One instance per event type: the mention path carries no instance
         dimension, so multi-instance separation needs the record head.
         """
+        skip = skip_group_indices or set()
         groups: "OrderedDict[str, List[Tuple[int, Dict[str, Any]]]]" = OrderedDict()
         for qid, spec in enumerate(specs):
-            if spec["task_type"] == "events":
+            if spec["task_type"] == "events" and spec["group_index"] not in skip:
                 groups.setdefault(spec["task_name"], []).append((qid, spec))
 
         out: Dict[str, List[Dict[str, Any]]] = {}
@@ -632,8 +707,31 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             groups, solution, query_types, offset, start_map, end_map,
             text, text_len, include_confidence, include_spans,
         ))
+        # Same ownership rule as greedy: whichever path owns an events group, the other
+        # must not emit it. `groups` here are the compiled record specs, so an events
+        # group present there is record-owned and was just emitted above -- field-keyed,
+        # so it also needs the shape rewrite.
+        owned = {
+            entry.spec.task_index
+            for entry in groups
+            if getattr(entry.spec, "task_type", None) == "events"
+        }
+        for entry in groups:
+            spec = entry.spec
+            if getattr(spec, "task_type", None) != "events":
+                continue
+            instances = sample.get(spec.task_name)
+            if not instances:
+                continue
+            anchor = next((f.name for f in spec.fields if f.is_anchor), "trigger")
+            rewritten = _record_instances_to_events(instances, anchor)
+            if rewritten:
+                sample[spec.task_name] = rewritten
+            else:
+                sample.pop(spec.task_name, None)
         sample.update(self._format_joint_events(
             specs, query_types, event_spans, include_confidence, include_spans,
+            skip_group_indices=owned,
         ))
         return sample
 
@@ -641,6 +739,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         self, specs: List[Dict[str, Any]], query_types: List[str],
         event_spans: Dict[str, List[Any]],
         include_confidence: bool, include_spans: bool,
+        skip_group_indices: Optional[set] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Assemble events from the mentions the BEAM selected, not per-query thresholds.
 
@@ -659,9 +758,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         ``("json_structures",)``), which is a training-time property -- an events schema
         never emits ``record_metadata`` -- so that is a separate change, not a decode fix.
         """
+        skip = skip_group_indices or set()
         groups: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
         for q, spec in enumerate(specs):
-            if spec["task_type"] == "events":
+            if spec["task_type"] == "events" and spec["group_index"] not in skip:
                 groups.setdefault(spec["task_name"], []).append((query_types[q], spec))
 
         out: Dict[str, List[Dict[str, Any]]] = {}

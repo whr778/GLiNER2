@@ -548,8 +548,12 @@ class ExtractorCollator:
             build_targets: Optional[bool] = None,
             on_capacity_exceeded: str = "raise",
             error_policy: str = "raise",
+            event_records: bool = False,
     ):
         self.processor = processor
+        # Tier 2: compile event groups as records so the record head can separate
+        # multiple instances of one event type. Off unless the head config asks.
+        self.event_records = event_records
         self.is_training = is_training
         self.max_len = max_len
         self.architecture = architecture
@@ -582,6 +586,7 @@ class ExtractorCollator:
                 max_gold_per_query=self.max_gold_per_query,
                 on_capacity_exceeded=self.on_capacity_exceeded,
                 error_policy=self.error_policy,
+                event_records=self.event_records,
             )
         else:
             # error_policy is deliberately NOT forwarded here: collate_fn_inference
@@ -594,6 +599,7 @@ class ExtractorCollator:
                 build_targets=self.build_targets,
                 max_gold_per_query=self.max_gold_per_query,
                 on_capacity_exceeded=self.on_capacity_exceeded,
+                event_records=self.event_records,
             )
 
 
@@ -1624,6 +1630,9 @@ class ExtractorTrainer:
             error_policy=getattr(self.config, "error_policy", "raise"),
             build_targets=None if is_training else True,
             on_capacity_exceeded=self.config.on_capacity_exceeded,
+            event_records=bool(
+                getattr(model_config, "boundary_head", {}).get("event_records", False)
+            ),
         )
 
         # Fix Bug #1 & #9: Handle small datasets

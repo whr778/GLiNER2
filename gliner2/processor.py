@@ -373,6 +373,7 @@ class SchemaTransformer:
             architecture: str = "span",
             max_gold_per_query: int = 32,
             on_capacity_exceeded: str = "raise",
+            event_records: bool = False,
     ) -> PreprocessedBatch:
         """
         Collate function for training DataLoader.
@@ -405,6 +406,7 @@ class SchemaTransformer:
             result, architecture, is_training=True,
             max_gold_per_query=max_gold_per_query,
             on_capacity_exceeded=on_capacity_exceeded,
+            event_records=event_records,
             # A tolerant record policy implies tolerance for the alignment failures
             # that would otherwise abort the whole run on one unlocatable surface.
             on_missing_surface="skip" if error_policy != "raise" else "raise",
@@ -420,6 +422,7 @@ class SchemaTransformer:
             build_targets: Optional[bool] = None,
             max_gold_per_query: int = 32,
             on_capacity_exceeded: str = "raise",
+            event_records: bool = False,
     ) -> PreprocessedBatch:
         """
         Collate function for inference DataLoader.
@@ -453,6 +456,7 @@ class SchemaTransformer:
             # error_policy governs malformed RECORDS in _collate_batch and is a
             # different knob from surface alignment; a tolerant one implies the other.
             on_missing_surface="skip" if error_policy != "raise" else "raise",
+            event_records=event_records,
         )
 
     @staticmethod
@@ -465,6 +469,7 @@ class SchemaTransformer:
             build_targets: Optional[bool] = None,
             on_capacity_exceeded: str = "raise",
             on_missing_surface: str = "raise",
+            event_records: bool = False,
     ) -> PreprocessedBatch:
         if architecture != "boundary" or len(batch) == 0:
             return batch
@@ -512,6 +517,7 @@ class SchemaTransformer:
             build_targets=build_targets,
             on_capacity_exceeded=on_capacity_exceeded,
             on_missing_surface=on_missing_surface,
+            event_records=event_records,
         )
         batch.query_layouts = layouts
         batch.targets = targets

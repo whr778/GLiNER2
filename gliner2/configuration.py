@@ -129,6 +129,19 @@ class BoundaryHeadSettings:
     # Disambiguation). New boundary configurations include the structured
     # modules; migration keeps checkpoints which omitted these flags disabled.
     enable_records: bool = True
+    # Compile EVENT groups as records too, so the record head separates multiple
+    # instances of one event type. Off by default: it changes what the record head is
+    # supervised on, so the defaults reproduce the older numbers. Without it both decode
+    # paths emit one instance per event type, which is unreachable gold for 78.8% of
+    # CASIE, 62.5% of WikiEvents and 38.3% of MAVEN (and 0.0% of RAMS, which is entirely
+    # single-event documents). See JOINT_IE_SCALING, Tier 2.
+    #
+    # SET IT AT TRAINING TIME. Turning it on for inference against a checkpoint trained
+    # without it emits ZERO events, not fewer: the record head owns the group and has
+    # never been supervised on it, while the mention path correctly stands down so the
+    # two cannot double-emit. Measured on gliner2-joint-boundary-rams-137k -- off: 1
+    # instance; on: 1 record spec compiled, 0 instances.
+    event_records: bool = False
     record_dim: int = 128
     record_instance_queries: int = 32       # anchorless / latent capacity
     record_anchor_proposal_threshold: float = 0.2   # lower rescue threshold
@@ -381,6 +394,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             values.get("classification_loss_weight", d.classification_loss_weight)
         ),
         "enable_records": bool(values.get("enable_records", d.enable_records)),
+        "event_records": bool(values.get("event_records", d.event_records)),
         "record_dim": int(values.get("record_dim", d.record_dim)),
         "record_instance_queries": int(
             values.get("record_instance_queries", d.record_instance_queries)

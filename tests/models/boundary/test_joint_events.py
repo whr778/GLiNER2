@@ -28,13 +28,15 @@ END_MAP = [6, 10, 17, 22, 33]
 # Qualified per query, as `_decode_joint` builds them.
 QUERY_TYPES = ["attack::trigger", "attack::target", "attack::instrument"]
 
+# `group_index` is the task index; real `ext_specs` always carry it (see
+# `_layout_from_ext_specs`), and event ownership is decided on it.
 SPECS = [
     {"task_type": "events", "task_name": "attack", "field_name": "trigger",
-     "field_index": 0},
+     "field_index": 0, "group_index": 0},
     {"task_type": "events", "task_name": "attack", "field_name": "target",
-     "field_index": 1},
+     "field_index": 1, "group_index": 0},
     {"task_type": "events", "task_name": "attack", "field_name": "instrument",
-     "field_index": 2},
+     "field_index": 2, "group_index": 0},
 ]
 
 
