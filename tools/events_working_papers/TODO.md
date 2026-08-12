@@ -4,9 +4,12 @@ State at 2026-08-11 close. Completed work is removed rather than struck through;
 lives in `PROJECT_JOURNAL.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.
 
-State at 2026-08-12: **the GIST cache is built** (item 11) and the base-word and
-negative-document corpora exist with matched controls (items 12 and 2). A Lambda A10 is
-running the RAMS base-word arms A/B/C. Nothing else is mid-flight.
+State at 2026-08-12 close. **No GPUs running; both Lambda A10s terminated.** The GIST cache
+is built for `mix_natural` and for RAMS (item 11). The base-word arms A/B/C ran — the result
+is **provisional**, since every arm sits at a fixed unswept threshold and the checkpoints
+went with the box (item 12). Tier 2 multi-instance events are wired and shipped behind
+`event_records`, and its first measurement on CASIE is strongly negative for head-init
+reasons rather than mechanism ones (JOINT_IE_SCALING). Nothing is mid-flight.
 
 **Where the line stands.** The scope gate took per-state error 5.247 → 0.591 (item 10) and
 largely closed the attachment blocker. Two candidate next steps were then *closed by
@@ -583,10 +586,13 @@ the un-augmented original is always emitted.
 could rewrite packages the four precompute workers have mmap'd. Make it a real dependency
 once they exit.
 
-#### Arms A/B/C running 2026-08-12 on a Lambda A10; arm A is down
+#### Arms A/B/C RAN 2026-08-12 — PROVISIONAL, and unreadable until thresholds are swept
 
 Three arms, configs differing from `gliner2-base-v1-rams.yaml` in three lines each (train
-file, `output_dir`, `experiment_name`), val and test un-augmented:
+file, `output_dir`, `experiment_name`), val and test un-augmented. Trained on a Lambda A10,
+which is terminated; `test_metrics.json` for all three plus trimmed logs are local under
+`out/gliner2-base-v1-rams{,-baseword,-dupcontrol}/`. **The checkpoints went with the box**,
+so the sweep below cannot be run without retraining.
 
 | arm | train file | records |
 |---|---|--:|
@@ -594,17 +600,44 @@ file, `output_dir`, `experiment_name`), val and test un-augmented:
 | B lemma | `datasets/rams_baseword/train.jsonl` | 13,291 |
 | C duplicate control | `datasets/rams_baseword/train.duplicate_control.jsonl` | 13,291 |
 
-**Arm A blind test on RAMS — the number B and C must beat:**
+Blind test on the un-augmented RAMS test set, support 2,016 arguments / 848 triggers on
+every arm:
 
-| | strict | fair | relaxed |
-|---|--:|--:|--:|
-| event type | 0.9970 | — | 0.9970 |
-| trigger | 0.9127 | 0.9143 | 0.9161 |
-| **argument** | **0.4474** | 0.6192 | 0.6873 |
-| event overall | 0.6797 | — | 0.8104 |
+| metric | A base | B lemma | C dup | B − C |
+|---|--:|--:|--:|--:|
+| **argument strict** | 0.4474 | **0.4582** | 0.4463 | **+0.0119** |
+| argument fair | **0.6192** | 0.6124 | 0.6072 | +0.0052 |
+| argument relaxed | **0.6873** | 0.6805 | 0.6781 | +0.0024 |
+| event strict | 0.6797 | **0.6892** | 0.6885 | +0.0007 |
+| trigger strict | 0.9127 | 0.9313 | **0.9369** | −0.0056 |
+| event type strict | **0.9970** | 0.9887 | 0.9941 | −0.0054 |
 
-Argument support 2,016. Strict argument F1 is the metric that matters: role-filler
-extraction is exactly what base-word supervision targets.
+**The one number that carries the item: C sits at baseline.** 0.4463 against A's 0.4474 —
+duplicating those 5,962 records verbatim bought **nothing** on strict argument F1, while B
+beats both by +0.0119. On the metric base-word supervision actually targets, the gain is
+therefore attributable to **lemmatization, not duplication**. That is the B > C row of the
+decision table below, so arm D's dosage question becomes legitimate.
+
+**Do not act on it yet. Three reasons, in order of severity:**
+
+1. **Every arm sits at the config's fixed threshold 0.5, unswept.** The standing rule in
+   this project — promoted from lesson to rule *because it changed a conclusion three
+   times* — is that no arm or curve comparison is readable until every arm sits at its own
+   swept threshold. A +0.0119 gap is comfortably inside the range that rule exists to
+   protect against. **This result is provisional until swept, and the checkpoints needed
+   to sweep it no longer exist.**
+2. **One seed, no variance estimate.** +0.0119 is ~2.7% relative on a single run.
+3. **The picture is mixed, not clean.** B wins strict argument but *loses* to C on triggers
+   (C best at 0.9369) and to plain A on argument fair/relaxed and event type. Winning
+   strict while losing relaxed means the spans land more exactly without more of them being
+   found — sharper boundaries, not better role routing. That is the opposite of the
+   noun-phrase-routing failure item 12 was proposed to fix, and it should temper any claim
+   that base-word supervision addresses `convoy` as a `victim`.
+
+The validation curves said the opposite, which is itself worth recording: C tracked B
+closely at every shared epoch (C ahead at 1–2, within ~0.006 thereafter), implying the gain
+was duplication. The blind test reversed it. Validation and blind test also diverged on
+arm A alone (val 0.6797, blind-test strict argument 0.4474) — read the blind test.
 
 #### On a combined arm D — HOLD, and make it conditional on B vs C
 

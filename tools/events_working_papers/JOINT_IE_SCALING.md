@@ -161,6 +161,37 @@ as relations-only would break that symmetry and understate the shared claim.
   CASIE/WikiEvents/MAVEN was measured under a hard recall cap, so a post-Tier-2 model is
   **not comparable** to them.
 
+  **TIER 2 SHIPPED behind `event_records`, and its first measurement is NEGATIVE — for
+  head-init reasons, not mechanism ones.** Ran on CASIE 2026-08-12, two arms differing in
+  that one key, base `gliner2-joint-boundary-rams-137k`, 375 steps on 798 documents:
+
+  | metric | control | event_records |
+  |---|--:|--:|
+  | event argument fair | **0.2998** | 0.0036 |
+  | event argument relaxed | **0.3355** | 0.0366 |
+  | event argument strict | 0.0158 | 0.0000 |
+  | event strict | 0.0906 | **0.0999** |
+  | event type strict | 0.6972 | **0.7372** |
+
+  **The mechanism works and that is separable from the score.** Probing 39 multi-instance
+  CASIE test documents with the trained treatment, 17 emitted 2–9 instances of a single
+  event type — structurally impossible before this change. The instances are simply mostly
+  wrong. The control's mention path arrived pre-trained on RAMS events and transfers; the
+  treatment's record head had never been supervised on events and got 375 steps to learn
+  instance formation cold. Head-init, evidenced by contrast rather than assumed: the
+  control is functional on softer matching (0.2998) while the treatment sits at the floor
+  (0.0036).
+
+  **What would actually test it:** warm-start the record head on events with MAVEN (2,913
+  documents, 38.3% unreachable gold), THEN fine-tune on CASIE, with a real step budget.
+  Two pre-existing CASIE/boundary blockers are already fixed in the configs and will bite
+  anyone else: `error_policy: raise` aborts on unlocatable entity surfaces, and a single
+  CASIE query carries up to **188** gold spans against the default `max_gold_per_query` of
+  32. Both verified pre-existing with the flag off.
+
+  Metrics and trimmed logs are local under `out/casie-tier2-{control,eventrecords}/`; the
+  checkpoints went with the terminated box.
+
   **The corpora need no change — an earlier scoping note of mine said otherwise and was
   wrong.** `_process_events` appends one label row per event mention
   (`processor.py`, training path), so `structure[1]` is already a list of instance rows
