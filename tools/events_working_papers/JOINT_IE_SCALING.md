@@ -95,14 +95,46 @@ as relations-only would break that symmetry and understate the shared claim.
   the relation to its mention nodes (the crux regression guard); joint == greedy on an
   unambiguous case; `decode_mode` defaults to `"greedy"`; the flag runs through the
   public `extract_relations` path.
-- ⛔ **BLOCKER for Phase A — events are not in the beam.** `JointProblem` models only
-  `NodeCandidate` (mentions) + `EdgeCandidate` (relations); there is no record/instance
-  concept. In joint mode today, `_decode_records` still runs *before* the joint branch, so
-  event/structure output is produced — but **greedily**, bypassing the beam entirely, and
-  record-field mentions get pulled into the beam as nodes only to have their selections
-  discarded. With **RAMS** now in the warm-start (decision 2), events are on the evaluated
-  path, so this blocks. Design in §3b. *(An earlier note here judged this non-blocking on
-  the assumption of a Re-DocRED-only downstream — that assumption is void.)*
+- ⛔ **BLOCKER for Phase A — events are not in the beam. Still true; the mechanism below
+  is not.** Re-verified against the code 2026-08-12, and §3b has since been *implemented*
+  for records. What is actually wrong is narrower and worse.
+
+  **What is now right.** `_decode_records` no longer runs before the joint branch — it is
+  gated behind `if not joint` (`engine.py:203`) precisely to avoid double emission, and
+  `_decode_joint` builds `boundary_record_groups_to_role_edges` **and**
+  `boundary_record_instance_nodes`, passing them to `joint_decode` as `extra_edges` /
+  `extra_nodes` with an existence gate mirroring `decode_group`'s
+  `record_anchor_threshold`. Records *are* in the beam, as instance nodes plus role edges.
+
+  **What is actually broken.** `compile_record_specs` compiles a group only when its task
+  type is in `RECORD_TASK_TYPES`, and that tuple is `("json_structures",)`
+  (`processing/records.py:31`). Event groups therefore never become record specs.
+  Measured directly — same layout, same `record_metadata`, only `task_type` changed:
+
+  | task_type | record specs compiled |
+  |---|--:|
+  | `json_structures` | 1 |
+  | `events` | **0** |
+
+  So in joint mode an event group yields no record spec → no role edges and no instance
+  nodes → nothing in the beam; and `_decode_events` is unreachable there, sitting after
+  the `if joint: … continue`. **Events are not decoded greedily in joint mode — they are
+  not decoded at all.** The old wording ("produced, but greedily") describes a safer
+  failure than the one present.
+
+  **Why the tests do not catch it.** `test_joint_records.py` and `test_record_role_edges.py`
+  both construct `RecordSpec(task_type="events", …)` **by hand** and never call
+  `compile_record_specs`. `test_role_edges_rebuild_an_event_instance` passes. So the
+  role-edge machinery is *already proven to work for events*; only the gate excludes them.
+
+  **The fix is not a one-line tuple edit.** `compile_record_specs` feeds the greedy path
+  too, so adding `"events"` to `RECORD_TASK_TYPES` would route event groups through the
+  record decoder *and* leave `_decode_events` running in greedy mode — double emission
+  (`engine.py:234` currently splits them: "events are assembled below; records by the
+  record head"). Whoever takes this must settle greedy-side ownership of events in the
+  same change. Design in §3b. *(An earlier note judged this non-blocking on the assumption
+  of a Re-DocRED-only downstream — that assumption is void; RAMS is on the evaluated path
+  via decision 2.)*
 - ⚠ **Arm-comparability caveat (must settle before Phase A):** the joint path threads the
   engine `threshold` through as `mention_threshold`, but four greedy-side threshold
   behaviours are **not** mirrored:
