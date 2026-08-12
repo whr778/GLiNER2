@@ -579,6 +579,16 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             for q, spec in enumerate(specs) if spec["task_type"] == "entities"
         )
         entity_types = set(entity_results)
+        # Event queries are mentions too. Their candidates were already handed to
+        # `joint_decode` (query_types covers every spec), so the beam has been selecting
+        # them all along -- they were simply never collected, and `_decode_events` sits
+        # after the `if joint: ... continue` in `decode`, so joint mode emitted no events
+        # at all. That is the same failure `_decode_events` was written to fix on the
+        # greedy side, where it read 0.0 at every threshold.
+        event_spans: Dict[str, List[Any]] = {
+            query_types[q]: []
+            for q, spec in enumerate(specs) if spec["task_type"] == "events"
+        }
         chars: Dict[Any, Tuple[str, int, int]] = {}
         for node in solution.nodes:
             span = self._token_span_to_char(
@@ -589,6 +599,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             chars[node.candidate_id] = span
             if node.entity_type in entity_types:
                 entity_results[node.entity_type].append(
+                    (span[0], node.probability, span[1], span[2])
+                )
+            elif node.entity_type in event_spans:
+                event_spans[node.entity_type].append(
                     (span[0], node.probability, span[1], span[2])
                 )
 
@@ -618,7 +632,59 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             groups, solution, query_types, offset, start_map, end_map,
             text, text_len, include_confidence, include_spans,
         ))
+        sample.update(self._format_joint_events(
+            specs, query_types, event_spans, include_confidence, include_spans,
+        ))
         return sample
+
+    def _format_joint_events(
+        self, specs: List[Dict[str, Any]], query_types: List[str],
+        event_spans: Dict[str, List[Any]],
+        include_confidence: bool, include_spans: bool,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Assemble events from the mentions the BEAM selected, not per-query thresholds.
+
+        Shape mirrors :meth:`_decode_events` exactly -- ``{event_type: [{"triggers": [...],
+        "arguments": [{"role", "entity"}]}]}`` -- so the two decode modes stay comparable
+        and the event metrics read the same structure either way. Field 0 of a group is the
+        trigger, and a group with no trigger is dropped, both as in the greedy path.
+
+        The difference from greedy is the selection, which is the point of the joint arm:
+        these spans survived the beam's constrained selection rather than an independent
+        per-query threshold.
+
+        One instance per event type, same limitation as the greedy path: the mention axis
+        carries no instance dimension, so multi-instance separation still needs the record
+        head. Events compile no record specs (``RECORD_TASK_TYPES`` is
+        ``("json_structures",)``), which is a training-time property -- an events schema
+        never emits ``record_metadata`` -- so that is a separate change, not a decode fix.
+        """
+        groups: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
+        for q, spec in enumerate(specs):
+            if spec["task_type"] == "events":
+                groups.setdefault(spec["task_name"], []).append((query_types[q], spec))
+
+        out: Dict[str, List[Dict[str, Any]]] = {}
+        for event_type, entries in groups.items():
+            triggers: List[Any] = []
+            arguments: List[Dict[str, Any]] = []
+            for qtype, spec in sorted(entries, key=lambda e: e[1]["field_index"]):
+                spans = event_spans.get(qtype) or []
+                if not spans:
+                    continue
+                formatted = self._format_spans(
+                    spans, include_confidence, include_spans, already_finalized=True
+                )
+                if spec["field_index"] == 0:
+                    triggers.extend(formatted)
+                else:
+                    arguments.extend(
+                        {"role": spec["field_name"], "entity": value}
+                        for value in formatted
+                    )
+            if triggers:
+                out[event_type] = [{"triggers": triggers, "arguments": arguments}]
+        return out
 
     def _format_joint_records(
         self, groups, solution, query_types: List[str], offset: int,
