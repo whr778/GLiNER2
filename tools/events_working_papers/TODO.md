@@ -507,6 +507,15 @@ NFKC plus line-separator stripping, `ensure_ascii=False`.
 
 ## Notes for whoever picks this up
 
+- **`pytest tests/models/boundary tests/processing` as ONE process stalls at ~49%, and it
+  predates this work.** Every file passes individually and in chunks (239 boundary + 55
+  processing + 29 trainer). Attribution was confirmed by running the suite from a worktree at
+  `f0925d1`: it stalls at the same point there. Import precedence is **cwd → PYTHONPATH →
+  editable finder**, so `cd <worktree>` is sufficient to load the pre-change library —
+  verified by printing `gliner2.__file__` and confirming `guide.py` is absent. *Which* test
+  hangs is still undiagnosed; that needs the full suite in one process, which wants a machine
+  not already holding a 15GB job. Run tests in chunks meanwhile.
+
 - **Summarizer-as-segmenter was tested and is not the answer** (`bullet_premise_test.py`).
   Hand-written bullets on 5 real Helene sentences, rollup-aware scoring: raw text 3/5 with
   1 false positive; *free* bullets 2/5 with 3 FP and **2 fabricated figures**; *extractive*
