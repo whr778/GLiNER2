@@ -20,6 +20,8 @@
 - PROVE THE PROBLEM FIRST - don't guess.
 - Try one test at a time.  Be methodical.
 - Don't jump to conclusions.  Don't apply workarounds.
+- Don't trust comments.  Check the code and if the comments don't reflect the code, don't use them.
+- Fully review the documents and code before recommending and making changes.
 
 ## Data converters (tools/data/)
 - Emit normalized, UTF-8 JSONL via `_split.dumps_record` (the `SplitWriter` write path): NFKC plus stray line-separator stripping (NEL U+0085, U+2028, U+2029 -> space, so records never fragment across lines).
