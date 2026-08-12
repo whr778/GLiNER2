@@ -1,0 +1,101 @@
+# CASIE Tier 2 arm: does letting the RECORD head own event groups recover the
+# instances the mention path cannot express? See JOINT_IE_SCALING, Tier 2.
+#
+# CASIE is the right corpus for this and RAMS is not: 94.5% of CASIE documents carry
+# more than one instance of a single event type, and 78.8% of its gold instances are
+# UNREACHABLE while a decode emits one instance per type. RAMS is 100% single-event
+# documents, so it cannot see this effect at all.
+#
+# The two arms differ in ONE key, `boundary_head.event_records`. Everything else --
+# base checkpoint, recipe, data, seed -- is held fixed, so the flag is the only variable.
+#
+# mmBERT + bf16 REQUIRES real FlashAttention 2: `attn_implementation: flash_attention_2`
+# in the base checkpoint silently falls back to sdpa unless `kernels` is installed, and
+# sdpa+bf16 on mmBERT produces non-finite losses (measured). Install `kernels` first.
+model:
+  pretrained: whr778/gliner2-joint-boundary-rams-137k
+  # attn_implementation is NOT set here on purpose: on the pretrained path it would
+  # be applied to model.config AFTER the encoder is already built, so it would be a
+  # silent no-op. FlashAttention 2 is inherited from the base checkpoint's config.
+  architecture: boundary     # checked against the checkpoint: warm-starting a span
+                             # checkpoint here raises ArchitectureMismatchError rather
+                             # than silently training the wrong architecture.
+  # bce_posweight bootstraps the argument head; plain bce left argument recall near 0
+  # on fresh heads and focal collapsed it (see mmbert-base-rams for the ablation).
+  boundary_head:
+    enable_records: true
+    # CASIE is far denser than RAMS: measured, a single query carries up to 188 gold
+    # spans against the default cap of 32, which raises TargetCapacityError rather than
+    # silently truncating (the no-silent-loss contract). Raised with headroom, and raised
+    # IDENTICALLY on both arms so the comparison is unaffected.
+    max_gold_per_query: 256
+    training_candidate_budget: 384
+    candidate_budget: 256
+    event_records: false   # THE ONLY DIFFERENCE BETWEEN THE TWO ARMS
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/casie-tier2-control
+  experiment_name: casie_tier2_control
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 8
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  # CASIE carries entity surfaces that boundary word-alignment cannot locate, so the
+  # default `raise` aborts on sample 3 of the first batch. Verified PRE-EXISTING: it
+  # fails identically with event_records off, so it is a CASIE/boundary property, not a
+  # Tier 2 effect. `skip` drops just the unlocatable mention and counts it in
+  # missing_surface_counts().
+  error_policy: skip
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1  # arguments are the head-init
+  greater_is_better: true                               # sensitive number, not the
+                                                        # trigger/type plateau
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: false      # RAMS docs fit in max_len -> no windowing
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true         # select the checkpoint at its own best threshold
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    casie:
+      train: data/casie.train.jsonl
+      val: data/casie.val.jsonl
+      test: data/casie.test.jsonl
