@@ -4,9 +4,9 @@ State at 2026-08-11 close. Completed work is removed rather than struck through;
 lives in `PROJECT_JOURNAL.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.
 
-No GPUs running. Nothing is mid-flight. Everything committed on 11 Aug is **inert** — the
-GIST pieces are inputs only, nothing is wired into `model.py`, so training behaviour is
-unchanged.
+State at 2026-08-12: **the GIST cache is built** (item 11) and the base-word and
+negative-document corpora exist with matched controls (items 12 and 2). A Lambda A10 is
+running the RAMS base-word arms A/B/C. Nothing else is mid-flight.
 
 **Where the line stands.** The scope gate took per-state error 5.247 → 0.591 (item 10) and
 largely closed the attachment blocker. Two candidate next steps were then *closed by
@@ -426,7 +426,7 @@ plateau mitigates but does not remove the post-hoc problem. And 0.591 is 9x bett
 catastrophic, not good in absolute terms.
 
 
-### 11. GIST query-axis hard negatives — WIRED; awaiting the precompute  ← the live work
+### 11. GIST query-axis hard negatives — CACHE BUILT; ready to train
 The measured gap: with specific rival types, `people evacuated` outscores `death toll` on
 **11.2% of genuine death tolls**. "N people killed" vs "N people evacuated" — both counts of
 people, separated only by the verb. No type description fixes it (EKF_MHT_DESIGN §27.8); it
@@ -447,7 +447,30 @@ live; leave it unset and nothing in training changes.
 | rival **injection** | `GuideScores.inject` — dataset-side, hardest-first |
 | cache -> `[B,Q,C]` | `models/boundary/guide.py`, with hit-rate counters |
 | `precompute_guide_scores.py` | batched; format frozen (`sha1` key + rival descriptions) |
-| **the cache itself** | **not yet produced** — the veto is live but has nothing to read |
+| **the cache itself** | **BUILT 2026-08-12** — `data/guide_scores.mix_natural.dedup.jsonl` |
+
+#### The cache — built 2026-08-12, and the merge needed a fix
+
+Four local shards, **21.2 hours**, each verified at exactly `21070 records read`
+(4 x 21,070 = 84,280, the whole corpus). 46,581 cached records, 0 malformed. Hit rate on
+the corpus is **54.5%**, which is right: only records with gold spans are cached
+(46,581 / 84,280 = 55.3%). Loads in 1.1s. Train with
+`tools/train/config/warmstart-natural-gist.yaml`, which differs from the
+`warmstart-natural` control in exactly four keys — `guide_scores`, `rivals_per_record`,
+`output_dir`, `experiment_name` — with the data section identical.
+
+**Use the DEDUP file, not the raw concatenation.** 194 of 46,343 sha1 keys collide, and
+all 194 **conflict**: the same text appears twice in `mix_natural` declaring *different
+entity type sets* (indices 104 and 46250 share text but declare `{name, severity}` versus
+`{address, symptom}`). That is a property of the corpus, not a sharding bug — the shards
+partition by index, so a repeated text lands in different shards.
+
+It matters because `GuideScores.load` does a plain `entries[row["sha1"]] = ...`
+(`guide_scores.py:80`): **last wins, no warning**. Those records would be vetoed against
+another record's own-types — and own-record types must never be vetoed, since gold is
+authoritative within a record. Dropping the colliding keys costs 0.42% of the cache and
+leaves the veto explicitly *inactive* for them rather than quietly wrong. The four shard
+files are retained, so any variant rebuilds in seconds.
 
 **Two things the wiring turned up, both of which would have made it silently inert:**
 
