@@ -107,12 +107,17 @@ test_api_client.py
 # can't be re-included once its parent is excluded. Committed tracking-experiment
 # data lives OUTSIDE /data/, under /datasets/ (not ignored).
 /data/*
+!/data/README.md
 !/data/synthetic_sonnet5_1k.train.jsonl
 !/data/synthetic_sonnet5_1k.val.jsonl
 !/data/synthetic_sonnet5_1k.test.jsonl
 !/data/casualty_ft.train.jsonl
 !/data/casualty_ft.val.jsonl
 !/data/casualty_ft.test.jsonl
+# _coerced: entity types are unreliable by construction. See data/README.md.
+!/data/synthetic_haiku45_5k_coerced.train.jsonl
+!/data/synthetic_haiku45_5k_coerced.val.jsonl
+!/data/synthetic_haiku45_5k_coerced.test.jsonl
 /raw_data/
 /out/
 
