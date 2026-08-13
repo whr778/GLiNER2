@@ -1,0 +1,49 @@
+# EVAL-ONLY config: score a checkpoint on real, general-domain NER that
+# fastino/gliner2-base-v1 is already good at.
+#
+# Exists because gliner2-base-v1-synthetic*.yaml cannot answer the question they
+# pose. Evaluating a synthetic fine-tune on its own synthetic val measures
+# in-distribution GAIN -- the model necessarily improves at the distribution it
+# trained on. Whether the fine-tune DEGRADED the base model is only visible on
+# data the base model was good at beforehand.
+#
+# Run it twice, same command, different --checkpoint: once against the pristine
+# base-v1 snapshot, once against the fine-tuned best/. The difference is the
+# answer. Nothing here trains; the training block only exists because the loader
+# requires one.
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  output_dir: ./out/eval-preservation-ner
+  experiment_name: eval_preservation_ner
+  num_epochs: 1
+  batch_size: 8
+  bf16: false
+  fp16: true
+  eval_strategy: epoch
+  metric_for_best: eval_entity_fair_micro_f1
+  greater_is_better: true
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  num_workers: 0
+  validate_data: false
+
+eval:
+  batch_size: 16
+  threshold: 0.5
+  global_decode: false
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/pile_ner_def          # 4,715 general-domain NER records with type definitions
+    - data/knowledgator_gliner   # 1,288 multi-task synthetic NER records
+  event_files: {}
