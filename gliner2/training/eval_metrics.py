@@ -1079,7 +1079,8 @@ def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -
 # right-label/wrong-boundary span becomes one FP AND one FN. This classifies
 # each span into one typed error counted once, tracks which labels get swapped
 # (confusions), and reports a "fair" P/R/F1 that charges a near-miss once rather
-# than twice. Fair is a selectable regime (eval_<cat>_fair_micro_f1) and is what
+# than twice, on the reference tool's default weights (the paper's Eq. 6/7).
+# Fair is a selectable regime (eval_<cat>_fair_micro_f1) and is what
 # the event A/B configs select on; strict/relaxed are untouched and still
 # reported, so a run is comparable against strict-scored literature.
 #
@@ -1161,30 +1162,37 @@ def _classify_span_errors(
 def _finalize_span_errors(prefix: str, counts: Counter, confusions: Counter) -> Dict[str, Any]:
     """Turn typed span-error counts into diagnostic keys plus a report.
 
-    Fair P/R/F1 is the paper's Eq. 5: every near-miss (LE/BES/BEL/BEO/LBE)
-    counts as half a false positive and half a false negative, so a close
-    annotation is charged once, not the twice strict/relaxed charge it. TPs stay
-    exact matches only.
+    Fair P/R/F1 uses the reference FairEval tool's default weights, which are the
+    paper's Eq. 6/7 rather than its plainer Eq. 5. A near-miss is charged once
+    instead of the two errors strict/relaxed charge, and a boundary error also
+    earns partial TP credit because the system did find the span:
 
-    The reference FairEval tool defaults instead to the paper's optional Eq. 6/7
-    weights, which give boundary errors partial TP credit (BEs = 0.5TP + 0.5FN,
-    BEl = 0.5TP + 0.5FP, BEo = 0.5TP + 0.25FP + 0.25FN) and, as the paper notes,
-    therefore move F1 rather than only P and R. Eq. 5 is the conservative choice
-    and the one used here. Switching means reweighting the five near-miss types
-    below; the counts they need are already tracked separately.
+        LE  = 0.5 FP + 0.5 FN          (right span, wrong label -- no credit)
+        LBE = 0.5 FP + 0.5 FN          (both wrong -- no credit)
+        BES = 0.5 TP + 0.5 FN          (system span smaller: a recall miss)
+        BEL = 0.5 TP + 0.5 FP          (system span larger: a precision miss)
+        BEO = 0.5 TP + 0.25 FP + 0.25 FN
+
+    Unlike Eq. 5 these weights move F1, not just P and R, because they add TP
+    mass. Note the consequence for the surface approximation documented above:
+    the BES/BEL/BEO split is inferred from substring containment, not offsets,
+    and under these weights that split now changes the score (BES costs recall
+    only, BEL precision only), where under Eq. 5 all three weighed the same.
 
     Emitted under the ``fair`` regime (``eval_<prefix>_fair_micro_*``), which the
     event A/B configs select on.
     """
-    tp = counts.get("COR", 0)
-    fp = counts.get("FP", 0)
-    fn = counts.get("FN", 0)
-    near = sum(counts.get(t, 0) for t in ("LE", "BES", "BEL", "BEO", "LBE"))
-    half = near / 2.0
-    fair_p = tp / (tp + fp + half) if (tp + fp + half) > 0 else 0.0
-    fair_r = tp / (tp + fn + half) if (tp + fn + half) > 0 else 0.0
+    cor = counts.get("COR", 0)
+    le = counts.get("LE", 0) + counts.get("LBE", 0)
+    bes, bel, beo = (counts.get(t, 0) for t in ("BES", "BEL", "BEO"))
+    tp = cor + 0.5 * (bes + bel + beo)
+    fp = counts.get("FP", 0) + 0.5 * le + 0.5 * bel + 0.25 * beo
+    fn = counts.get("FN", 0) + 0.5 * le + 0.5 * bes + 0.25 * beo
+    fair_p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    fair_r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     fair_f = 2 * fair_p * fair_r / (fair_p + fair_r) if (fair_p + fair_r) > 0 else 0.0
-    support = tp + near + fn  # total gold spans
+    # Total gold spans: every near-miss consumed one gold annotation.
+    support = cor + le + bes + bel + beo + counts.get("FN", 0)
 
     lines = [f"{prefix} error analysis (Ortmann 2022, fair evaluation)"]
     lines.append(f"{'type':<8} {'count':>8}")

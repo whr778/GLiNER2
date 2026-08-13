@@ -122,6 +122,29 @@ class TestFairScoring:
         assert out["eval_entity_fair_micro_f1"] == pytest.approx(2 / 3)
         assert out["eval_entity_fair_micro_f1"] > strict_f1
 
+    def test_boundary_errors_earn_partial_tp_and_split_asymmetrically(self):
+        """FairEval's default weights (paper Eq. 6/7), which Eq. 5 does not give.
+
+        A boundary error means the span WAS found, so it earns 0.5 TP. Which of
+        precision or recall pays for it depends on the direction: a system span
+        smaller than gold is a recall miss, larger is a precision miss, and a
+        plain overlap splits the cost. All three land on the same F1; the whole
+        point of the asymmetry is that P and R differ.
+        """
+        cases = {
+            # (gold, pred): (BE subtype, precision, recall)
+            (("LOC", "New York"), ("LOC", "York")): ("BES", 1.0, 0.5),
+            (("LOC", "York"), ("LOC", "New York")): ("BEL", 0.5, 1.0),
+            (("ORG", "Bank of America"), ("ORG", "America Bank")): ("BEO", 2 / 3, 2 / 3),
+        }
+        for (gold, pred), (subtype, want_p, want_r) in cases.items():
+            counts, conf = _classify([gold], [pred])
+            out = _finalize_span_errors("entity", counts, conf)
+            assert out[f"eval_entity_error_{subtype}"] == 1, (gold, pred)
+            assert out["eval_entity_fair_micro_precision"] == pytest.approx(want_p), subtype
+            assert out["eval_entity_fair_micro_recall"] == pytest.approx(want_r), subtype
+            assert out["eval_entity_fair_micro_f1"] == pytest.approx(2 / 3), subtype
+
     def test_support_is_total_gold(self):
         counts, conf = _classify(
             [("PER", "A"), ("PER", "B"), ("LOC", "C")], [("PER", "A"), ("ORG", "B")]
