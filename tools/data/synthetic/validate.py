@@ -46,28 +46,21 @@ def _in(text: str, surface: Any) -> Optional[str]:
     return s if s and s in text else None
 
 
-def _entities(text: str, items: Any, stats: Counter,
-              declared: Optional[List[str]] = None) -> Dict[str, List[str]]:
-    """Entity annotations, keyed by type.
+def _entities(text: str, items: Any, stats: Counter) -> Dict[str, List[str]]:
+    """Entity annotations, keyed by type. Positives only -- negatives are minted
+    afterwards by ``mint_entity_negatives``.
 
-    ``declared`` is this document's SAMPLED type subset. Two things depend on it and
-    neither works without the other: annotations for a type that was not asked about are
-    rejected (otherwise a type sampled as a NEGATIVE for this document can arrive as a
-    positive anyway, contaminating it), and every asked-about type is seeded with an
-    empty list so a type that is genuinely absent survives as ``{type: []}``. That empty
-    list is the negative: the query is still emitted and every candidate span under it
-    becomes a negative -- measured, three queries and one gold mention on a
-    one-present/two-absent record.
+    The model is shown the whole ontology, so any valid type is accepted here.
+    Restricting it to a per-document subset is what made the model file a span
+    under the nearest listed type when the right one was missing.
     """
-    allowed = set(declared) if declared else _ENTITY_SET
-    # Seed FIRST: an asked-about type with no valid span must survive as a negative.
-    out: Dict[str, List[str]] = {t: [] for t in (declared or [])}
+    out: Dict[str, List[str]] = {}
     for it in items or []:
         if not isinstance(it, dict):
             continue
         etype = it.get("type")
         surface = _in(text, it.get("text"))
-        if etype not in allowed or surface is None:
+        if etype not in _ENTITY_SET or surface is None:
             stats["entities_dropped"] += 1
             continue
         bucket = out.setdefault(etype, [])
@@ -75,6 +68,21 @@ def _entities(text: str, items: Any, stats: Counter,
             bucket.append(surface)
             stats["entities_kept"] += 1
     return out
+
+
+def mint_entity_negatives(ents: Dict[str, List[str]], rng, k: int) -> Dict[str, List[str]]:
+    """Seed ``k`` absent types with ``[]`` so the record carries real negatives.
+
+    A negative is a type the model saw in the full ontology and chose not to use on
+    this document, which is stronger evidence of absence than a type it was never
+    shown. Sampling AFTER annotation is also what keeps the record dense: choosing
+    the subset up front discarded 91% of the annotations we paid for and left 35%
+    of documents with no positives at all.
+    """
+    absent = [t for t in ENTITY_TYPES if t not in ents]
+    for t in rng.sample(absent, min(k, len(absent))):
+        ents[t] = []
+    return ents
 
 
 def _relations(text: str, items: Any, stats: Counter) -> List[Dict[str, Dict[str, str]]]:
@@ -210,12 +218,14 @@ def build_record(reply: Dict[str, Any], tasks: List[str], stats: Counter,
                  text_override: Optional[str] = None,
                  base_output: Optional[Dict[str, Any]] = None,
                  declared: Optional[Dict[str, List[str]]] = None,
+                 negatives: Optional[Tuple[Any, int]] = None,
                  ) -> Optional[Dict[str, Any]]:
     """Turn a parsed reply into a GLiNER2 record, or None if nothing survives.
 
     ``text_override`` annotates existing text (verbatim-checked against it)
     instead of the model's generated ``reply["text"]``. ``base_output`` merges
-    the new annotations onto existing gold (re-annotation mode).
+    the new annotations onto existing gold (re-annotation mode). ``negatives`` is
+    ``(rng, k)`` for minting absent entity types; omit it to keep positives only.
     """
     if text_override is not None:
         text = text_override
@@ -232,7 +242,9 @@ def build_record(reply: Dict[str, Any], tasks: List[str], stats: Counter,
     declared = declared or {}
     output: Dict[str, Any] = {}
     if "entities" in tasks:
-        ents = _entities(text, reply.get("entities"), stats, declared.get("entities"))
+        ents = _entities(text, reply.get("entities"), stats)
+        if ents and negatives:
+            mint_entity_negatives(ents, *negatives)
         if ents:
             output["entities"] = ents
             neg = sum(1 for v in ents.values() if not v)

@@ -135,6 +135,7 @@ def main() -> int:
     domains = gen_cfg.get("domains") or DOMAINS
     # Per-document label sampling. Empty/absent => whole pool (old behaviour).
     sample_per_doc = gen_cfg.get("sample_per_doc") or {}
+    entity_negatives = gen_cfg.get("entity_negatives", 0)
     sample_seed = gen_cfg.get("sample_seed", 0)
 
     if args.estimate:
@@ -169,28 +170,20 @@ def main() -> int:
         return sample_labels(random.Random(f"{sample_seed}:{i}"), tasks, sample_per_doc)
 
     def _asked(labels):
-        """What the MODEL is shown: the sampled subset, except entities, where it
-        sees the WHOLE pool.
+        """What the MODEL is shown: the sampled subset, plus the WHOLE entity pool.
 
         Restricting the entity choices made the model put a span under the nearest
         listed type whenever the right one was not sampled. Measured over a 5k
         corpus: "San Francisco" landed under 9 types (location, geopolitical
         entity, address, region, area, landmark, airport, facility, cardinal), and
-        1,203 surfaces carried more than one type. Offering the full pool removes
-        the pressure. What is KEPT is still decided by ``declared`` (the sampled
-        subset), so the negatives are unchanged -- and they get stronger, because
-        an empty type is now one the model weighed against the whole vocabulary.
-
-        The cost is input tokens only, and it shows up as a much larger
-        entities_dropped: annotations for the ~110 unsampled types are discarded
-        by design, not lost to an error.
+        56.4% of entity annotations sat on a multi-typed surface. Offering the full
+        pool removes the pressure, and entity negatives are then minted from what
+        the model declined to use (see ``mint_entity_negatives``).
         """
-        if labels is None:
-            return None
-        return {**labels, "entities": ENTITY_TYPES}
+        return {**(labels or {}), "entities": ENTITY_TYPES}
 
     def _jobs():
-        """Yield (system, user_prompt, text_override, base_output, labels) per document."""
+        """Yield (system, user_prompt, text_override, base_output, labels, index)."""
         if annotate:
             for i, (text, gold) in enumerate(_iter_corpus(args.annotate_from)):
                 if i >= count:
@@ -198,19 +191,19 @@ def main() -> int:
                 base = None if args.annotate_replace else gold
                 lab = _labels_for(i)
                 yield (ANNOTATE_SYSTEM, build_annotate_prompt(text, tasks, _asked(lab)),
-                       text, base, lab)
+                       text, base, lab, i)
         else:
             for i in range(count):
                 domain = domains[i % len(domains)]
                 lab = _labels_for(i)
                 yield (SYSTEM, build_user_prompt(domain, tasks, min_words, max_words, _asked(lab)),
-                       None, None, lab)
+                       None, None, lab, i)
 
     stats: Counter = Counter()
     written = 0
     failed = 0
 
-    def _record_from(raw, text_override, base_output, labels=None):
+    def _record_from(raw, text_override, base_output, labels, index):
         """Parse a raw reply into a GLiNER2 record (or None); updates stats.
 
         A safety refusal is counted separately from a JSON failure: both produce an
@@ -227,37 +220,38 @@ def main() -> int:
         if reply is None:
             stats["parse_error"] += 1
             return None
+        neg_rng = random.Random(f"neg:{sample_seed}:{index}")
         return build_record(reply, tasks, stats,
                             text_override=text_override, base_output=base_output,
-                            declared=labels)
+                            declared=labels, negatives=(neg_rng, entity_negatives))
 
     # SplitWriter writes normalized UTF-8 JSONL (dumps_record: NFKC,
     # ensure_ascii=False, encoding=utf-8) for both the sync and batch paths.
     with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         if args.batch:
             jobs = list(_jobs())
-            meta = {f"doc-{i}": (t, b, l) for i, (_, _, t, b, l) in enumerate(jobs)}
+            meta = {f"doc-{i}": (t, b, l, n) for i, (_, _, t, b, l, n) in enumerate(jobs)}
             items = [(f"doc-{i}", system, user)
-                     for i, (system, user, _, _, _) in enumerate(jobs)]
+                     for i, (system, user, _, _, _, _) in enumerate(jobs)]
             replies = provider.complete_batch(items)
             failed = len(items) - len(replies)  # requests that errored/expired
             for cid, raw in replies.items():
-                text_override, base_output, labels = meta[cid]
-                record = _record_from(raw, text_override, base_output, labels)
+                text_override, base_output, labels, index = meta[cid]
+                record = _record_from(raw, text_override, base_output, labels, index)
                 if record is None:
                     failed += 1
                     continue
                 writer.write(record)
                 written += 1
         else:
-            for i, (system, user, text_override, base_output, labels) in enumerate(_jobs()):
+            for system, user, text_override, base_output, labels, i in _jobs():
                 try:
                     raw = provider.complete(system, user)
                 except Exception as e:  # network / API errors: log and continue
                     failed += 1
                     print(f"[{i}] API error: {e}", file=sys.stderr)
                     continue
-                record = _record_from(raw, text_override, base_output, labels)
+                record = _record_from(raw, text_override, base_output, labels, i)
                 if record is None:
                     failed += 1
                     continue
