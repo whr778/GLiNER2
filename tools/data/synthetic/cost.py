@@ -21,7 +21,7 @@ PRICES = {
     # Anthropic
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
-    "claude-haiku-4.5": (1.00, 5.00),
+    "claude-haiku-4-5-20251001": (1.00, 5.00),  # no bare alias exists for 4.5
 }
 
 # Default per-record token assumptions (prompt carries the full ontology).
