@@ -56,9 +56,11 @@ training:
   # missing_surface_counts().
   error_policy: skip
   eval_strategy: epoch
-  metric_for_best: eval_event_argument_strict_micro_f1  # arguments are the head-init
-  greater_is_better: true                               # sensitive number, not the
-                                                        # trigger/type plateau
+  # Fair evaluation (Ortmann 2022, LREC): a near-miss is one error, not the two
+  # that strict charges as both a FP and a FN. Arguments are the head-init
+  # sensitive number, not the trigger/type plateau.
+  metric_for_best: eval_event_argument_fair_micro_f1
+  greater_is_better: true
   save_best: true
   save_total_limit: 3
   logging_steps: 10

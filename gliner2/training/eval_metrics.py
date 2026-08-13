@@ -909,7 +909,9 @@ def make_sweeping_compute_metrics(
     """A ``compute_metrics`` hook that sweeps the decision threshold each eval.
 
     Returns the metrics at the threshold that optimizes ``metric_key`` (max when
-    ``greater_is_better`` else min). This is the fix for checkpoint selection
+    ``greater_is_better`` else min), and raises if ``metric_key`` was never
+    computed -- defaulting it to 0.0 scored every threshold identically and made
+    the sweep silently pick the first grid point. This is the fix for checkpoint selection
     when the loss shifts the score distribution -- e.g. ``bce_posweight`` up-
     weights positives so a fixed 0.5 threshold over-fires and ``metric_for_best``
     at 0.5 collapses to near-zero noise for every epoch, making the saved "best"
@@ -931,7 +933,13 @@ def make_sweeping_compute_metrics(
             ) or {}
             for t in grid
         }
-        score = lambda t: by_t[t].get(metric_key, 0.0)
+        for t, m in by_t.items():
+            if metric_key not in m:
+                raise ValueError(
+                    f"metric_key={metric_key!r} is absent from the metrics at "
+                    f"threshold {t}; available keys: {sorted(m)}"
+                )
+        score = lambda t: by_t[t][metric_key]
         best_t = (max if greater_is_better else min)(grid, key=score)
         best = dict(by_t[best_t])
         best["eval_chosen_threshold"] = best_t
@@ -1070,9 +1078,10 @@ def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -
 # Strict/relaxed double-penalize a near-miss -- a right-span/wrong-label or
 # right-label/wrong-boundary span becomes one FP AND one FN. This classifies
 # each span into one typed error counted once, tracks which labels get swapped
-# (confusions), and reports a "fair" P/R/F1 that credits near-misses as half an
-# error. Fair is a selectable regime (eval_<cat>_fair_micro_f1) but is never
-# chosen by default; strict/relaxed are untouched.
+# (confusions), and reports a "fair" P/R/F1 that charges a near-miss once rather
+# than twice. Fair is a selectable regime (eval_<cat>_fair_micro_f1) and is what
+# the event A/B configs select on; strict/relaxed are untouched and still
+# reported, so a run is comparable against strict-scored literature.
 #
 # Surface approximation: gold spans carry no offsets, so positional boundary
 # sub-types are impossible; substring containment is the only signal (BES/BEL/
@@ -1152,11 +1161,20 @@ def _classify_span_errors(
 def _finalize_span_errors(prefix: str, counts: Counter, confusions: Counter) -> Dict[str, Any]:
     """Turn typed span-error counts into diagnostic keys plus a report.
 
-    Fair P/R/F1 (Ortmann 2022): each near-miss (LE/BES/BEL/BEO/LBE) counts as
-    half a false positive and half a false negative, so a close annotation is
-    one error, not the two that strict/relaxed charge. Emitted under the
-    ``fair`` regime (``eval_<prefix>_fair_micro_*``) so it can drive checkpoint
-    selection like any other regime, but it is never selected by default.
+    Fair P/R/F1 is the paper's Eq. 5: every near-miss (LE/BES/BEL/BEO/LBE)
+    counts as half a false positive and half a false negative, so a close
+    annotation is charged once, not the twice strict/relaxed charge it. TPs stay
+    exact matches only.
+
+    The reference FairEval tool defaults instead to the paper's optional Eq. 6/7
+    weights, which give boundary errors partial TP credit (BEs = 0.5TP + 0.5FN,
+    BEl = 0.5TP + 0.5FP, BEo = 0.5TP + 0.25FP + 0.25FN) and, as the paper notes,
+    therefore move F1 rather than only P and R. Eq. 5 is the conservative choice
+    and the one used here. Switching means reweighting the five near-miss types
+    below; the counts they need are already tracked separately.
+
+    Emitted under the ``fair`` regime (``eval_<prefix>_fair_micro_*``), which the
+    event A/B configs select on.
     """
     tp = counts.get("COR", 0)
     fp = counts.get("FP", 0)

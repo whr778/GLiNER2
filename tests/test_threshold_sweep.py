@@ -1,5 +1,7 @@
 """Tests for gliner2.training.metrics.sweep_thresholds / _selection_score."""
 
+import pytest
+
 from gliner2.training.metrics import (
     _selection_score, make_sweeping_compute_metrics, sweep_thresholds,
 )
@@ -104,3 +106,23 @@ class TestMakeSweepingComputeMetrics:
         out = hook(self._model(), _ds())
         assert out["eval_chosen_threshold"] == 0.9
         assert out["eval_entity_strict_micro_f1"] == 0.0
+
+    def test_absent_metric_key_raises(self):
+        """A metric the eval never computed must not score every threshold 0.0.
+
+        That silent default is what made all 15 [eval sweep] lines of the MAVEN
+        A/B read 0.0000 while the sweep quietly kept the first grid point.
+        """
+        hook = make_sweeping_compute_metrics(
+            "eval_event_argument_fair_micro_f1", thresholds=(0.1, 0.5, 0.9),
+        )
+        with pytest.raises(ValueError, match="eval_event_argument_fair_micro_f1"):
+            hook(self._model(), _ds())
+
+    def test_fair_metric_key_is_selectable(self):
+        hook = make_sweeping_compute_metrics(
+            "eval_entity_fair_micro_f1", thresholds=(0.1, 0.5, 0.9),
+        )
+        out = hook(self._model(), _ds())
+        assert out["eval_chosen_threshold"] == 0.5
+        assert out["eval_entity_fair_micro_f1"] == 1.0
