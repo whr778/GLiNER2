@@ -197,7 +197,7 @@ class AnthropicProvider(LLMProvider):
 
     def complete(self, system: str, user: str) -> str:
         resp = self._client.messages.create(**self._params(system, user))
-        return "".join(block.text for block in resp.content if block.type == "text")
+        return _text_or_refusal(resp)
 
     def complete_batch(self, items):
         """Submit all requests to the Message Batches API (-50% pricing), poll
@@ -244,13 +244,25 @@ class AnthropicProvider(LLMProvider):
         errored = 0
         for result in self._client.messages.batches.results(batch_id):
             if result.result.type == "succeeded":
-                msg = result.result.message
-                out[result.custom_id] = "".join(
-                    bl.text for bl in msg.content if bl.type == "text")
+                out[result.custom_id] = _text_or_refusal(result.result.message)
             else:
                 errored += 1
         print(f"[batch] {batch_id} ended: {len(out)} succeeded, {errored} errored/expired")
         return out
+
+
+# A refusal is an HTTP 200 with stop_reason == "refusal" and (pre-output) empty content,
+# so it arrives as an empty string and would otherwise be indistinguishable from a JSON
+# parse failure. Marking it lets the caller count refusals separately -- which matters for
+# the conflict/cyber document registers, where a per-domain refusal rate is the signal.
+REFUSAL_MARK = "__REFUSAL__"
+
+
+def _text_or_refusal(msg) -> str:
+    if getattr(msg, "stop_reason", None) == "refusal":
+        cat = getattr(getattr(msg, "stop_details", None), "category", None)
+        return f"{REFUSAL_MARK}{cat or ''}"
+    return "".join(bl.text for bl in msg.content if bl.type == "text")
 
 
 class MockProvider(LLMProvider):

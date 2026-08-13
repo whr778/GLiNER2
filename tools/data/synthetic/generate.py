@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # tools/data (for _split)
 
 from _split import SplitWriter, add_split_args  # noqa: E402
+import random
 from collections import Counter  # noqa: E402
 
 import json  # noqa: E402
@@ -40,8 +41,8 @@ import cost as cost_mod  # noqa: E402
 from prompts import (  # noqa: E402
     ANNOTATE_SYSTEM, SYSTEM, build_annotate_prompt, build_user_prompt,
 )
-from providers import ProviderConfig, build_provider  # noqa: E402
-from schema_spec import ALL_TASKS, DOMAINS  # noqa: E402
+from providers import REFUSAL_MARK, ProviderConfig, build_provider  # noqa: E402
+from schema_spec import ALL_TASKS, DOMAINS, sample_labels  # noqa: E402
 from validate import build_record, parse_reply  # noqa: E402
 
 
@@ -132,6 +133,9 @@ def main() -> int:
     min_words = gen_cfg.get("min_words", 180)
     max_words = gen_cfg.get("max_words", 320)
     domains = gen_cfg.get("domains") or DOMAINS
+    # Per-document label sampling. Empty/absent => whole pool (old behaviour).
+    sample_per_doc = gen_cfg.get("sample_per_doc") or {}
+    sample_seed = gen_cfg.get("sample_seed", 0)
 
     if args.estimate:
         _print_estimate(model, count, cost_cfg)
@@ -154,59 +158,84 @@ def main() -> int:
     print(f"Provider={provider_name} model={model} tasks={tasks} count={count} mode={mode}")
     _print_estimate(model, count, cost_cfg)
 
+    def _labels_for(i):
+        """This document's sampled label subset, reproducible from its index.
+
+        Seeded per index so a rerun asks the same questions of the same documents --
+        which is also what makes the achieved negative rate measurable after the fact.
+        """
+        if not sample_per_doc:
+            return None
+        return sample_labels(random.Random(f"{sample_seed}:{i}"), tasks, sample_per_doc)
+
     def _jobs():
-        """Yield (system, user_prompt, text_override, base_output) per document."""
+        """Yield (system, user_prompt, text_override, base_output, labels) per document."""
         if annotate:
             for i, (text, gold) in enumerate(_iter_corpus(args.annotate_from)):
                 if i >= count:
                     break
                 base = None if args.annotate_replace else gold
-                yield ANNOTATE_SYSTEM, build_annotate_prompt(text, tasks), text, base
+                lab = _labels_for(i)
+                yield ANNOTATE_SYSTEM, build_annotate_prompt(text, tasks, lab), text, base, lab
         else:
             for i in range(count):
                 domain = domains[i % len(domains)]
-                yield SYSTEM, build_user_prompt(domain, tasks, min_words, max_words), None, None
+                lab = _labels_for(i)
+                yield (SYSTEM, build_user_prompt(domain, tasks, min_words, max_words, lab),
+                       None, None, lab)
 
     stats: Counter = Counter()
     written = 0
     failed = 0
 
-    def _record_from(raw, text_override, base_output):
-        """Parse a raw reply into a GLiNER2 record (or None); updates stats."""
+    def _record_from(raw, text_override, base_output, labels=None):
+        """Parse a raw reply into a GLiNER2 record (or None); updates stats.
+
+        A safety refusal is counted separately from a JSON failure: both produce an
+        unusable reply, but conflating them would make a per-domain refusal rate read as
+        a parser bug (relevant for the conflict/cyber domains).
+        """
+        if isinstance(raw, str) and raw.startswith(REFUSAL_MARK):
+            stats["refusal"] += 1
+            cat = raw[len(REFUSAL_MARK):].strip()
+            if cat:
+                stats[f"refusal_{cat}"] += 1
+            return None
         reply = parse_reply(raw)
         if reply is None:
             stats["parse_error"] += 1
             return None
         return build_record(reply, tasks, stats,
-                            text_override=text_override, base_output=base_output)
+                            text_override=text_override, base_output=base_output,
+                            declared=labels)
 
     # SplitWriter writes normalized UTF-8 JSONL (dumps_record: NFKC,
     # ensure_ascii=False, encoding=utf-8) for both the sync and batch paths.
     with SplitWriter(args.out, ratios=args.split_ratios, seed=args.split_seed) as writer:
         if args.batch:
             jobs = list(_jobs())
-            meta = {f"doc-{i}": (t, b) for i, (_, _, t, b) in enumerate(jobs)}
+            meta = {f"doc-{i}": (t, b, l) for i, (_, _, t, b, l) in enumerate(jobs)}
             items = [(f"doc-{i}", system, user)
-                     for i, (system, user, _, _) in enumerate(jobs)]
+                     for i, (system, user, _, _, _) in enumerate(jobs)]
             replies = provider.complete_batch(items)
             failed = len(items) - len(replies)  # requests that errored/expired
             for cid, raw in replies.items():
-                text_override, base_output = meta[cid]
-                record = _record_from(raw, text_override, base_output)
+                text_override, base_output, labels = meta[cid]
+                record = _record_from(raw, text_override, base_output, labels)
                 if record is None:
                     failed += 1
                     continue
                 writer.write(record)
                 written += 1
         else:
-            for i, (system, user, text_override, base_output) in enumerate(_jobs()):
+            for i, (system, user, text_override, base_output, labels) in enumerate(_jobs()):
                 try:
                     raw = provider.complete(system, user)
                 except Exception as e:  # network / API errors: log and continue
                     failed += 1
                     print(f"[{i}] API error: {e}", file=sys.stderr)
                     continue
-                record = _record_from(raw, text_override, base_output)
+                record = _record_from(raw, text_override, base_output, labels)
                 if record is None:
                     failed += 1
                     continue

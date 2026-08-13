@@ -18,6 +18,18 @@ generation:
   min_words: 180          # target document length (words)
   max_words: 320
   domains: []             # [] = rotate all built-in domains; or list a subset
+  # Per-document label sampling. The pools in schema_spec.py are far larger than any
+  # one document uses; sampling a subset keeps the prompt (and so the input cost) near
+  # its old size while the vocabulary seen across the corpus grows ~5x. Varying the set
+  # per document is also what teaches span-to-type-description matching instead of a
+  # fixed vocabulary. Remove this block to send the whole ontology every time.
+  sample_per_doc:
+    entities: 14          # of 125
+    relations: 10         # of 72
+    events: 6             # of 56
+    classifications: 3    # of 12
+    structures: 2         # of 14
+  sample_seed: 0          # per-document subsets are reproducible from this
 
 split:
   ratios: [0.8, 0.1, 0.1] # train / val / test (CLI --split-ratios overrides)

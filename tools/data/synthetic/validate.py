@@ -46,14 +46,28 @@ def _in(text: str, surface: Any) -> Optional[str]:
     return s if s and s in text else None
 
 
-def _entities(text: str, items: Any, stats: Counter) -> Dict[str, List[str]]:
-    out: Dict[str, List[str]] = {}
+def _entities(text: str, items: Any, stats: Counter,
+              declared: Optional[List[str]] = None) -> Dict[str, List[str]]:
+    """Entity annotations, keyed by type.
+
+    ``declared`` is this document's SAMPLED type subset. Two things depend on it and
+    neither works without the other: annotations for a type that was not asked about are
+    rejected (otherwise a type sampled as a NEGATIVE for this document can arrive as a
+    positive anyway, contaminating it), and every asked-about type is seeded with an
+    empty list so a type that is genuinely absent survives as ``{type: []}``. That empty
+    list is the negative: the query is still emitted and every candidate span under it
+    becomes a negative -- measured, three queries and one gold mention on a
+    one-present/two-absent record.
+    """
+    allowed = set(declared) if declared else _ENTITY_SET
+    # Seed FIRST: an asked-about type with no valid span must survive as a negative.
+    out: Dict[str, List[str]] = {t: [] for t in (declared or [])}
     for it in items or []:
         if not isinstance(it, dict):
             continue
         etype = it.get("type")
         surface = _in(text, it.get("text"))
-        if etype not in _ENTITY_SET or surface is None:
+        if etype not in allowed or surface is None:
             stats["entities_dropped"] += 1
             continue
         bucket = out.setdefault(etype, [])
@@ -195,6 +209,7 @@ def _merge_output(base: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
 def build_record(reply: Dict[str, Any], tasks: List[str], stats: Counter,
                  text_override: Optional[str] = None,
                  base_output: Optional[Dict[str, Any]] = None,
+                 declared: Optional[Dict[str, List[str]]] = None,
                  ) -> Optional[Dict[str, Any]]:
     """Turn a parsed reply into a GLiNER2 record, or None if nothing survives.
 
@@ -214,11 +229,15 @@ def build_record(reply: Dict[str, Any], tasks: List[str], stats: Counter,
         stats["no_text"] += 1
         return None
 
+    declared = declared or {}
     output: Dict[str, Any] = {}
     if "entities" in tasks:
-        ents = _entities(text, reply.get("entities"), stats)
+        ents = _entities(text, reply.get("entities"), stats, declared.get("entities"))
         if ents:
             output["entities"] = ents
+            neg = sum(1 for v in ents.values() if not v)
+            stats["entity_negatives"] += neg
+            stats["entity_positives"] += len(ents) - neg
     if "relations" in tasks:
         rels = _relations(text, reply.get("relations"), stats)
         if rels:
