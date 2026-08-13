@@ -340,8 +340,11 @@ def _schema_from_gold(output: Dict) -> Dict:
                 role = arg.get("role")
                 if isinstance(role, str) and role.strip() and role not in roles:
                     roles.append(role)
-        # Drop event types that ended up role-less; the schema needs ≥1 role.
-        events_schema = {k: v for k, v in events_schema.items() if v}
+        # Role-less event types are KEPT. Trigger-only corpora (MAVEN: 168 event
+        # types, zero arguments) have no roles anywhere, so dropping them emptied
+        # the schema for every record, compute_metrics skipped all of them and
+        # returned {} -- which the trainer silently read as "metric absent" and
+        # fell back to eval_loss for checkpoint selection.
         if events_schema:
             schema["events"] = events_schema
 

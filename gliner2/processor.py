@@ -1104,11 +1104,13 @@ class SchemaTransformer:
             for etype, roles in events_data.items():
                 if not isinstance(etype, str) or not etype.strip():
                     continue
-                if not isinstance(roles, list) or not roles:
+                # A role-less event type is well-formed, not a reason to skip: the
+                # trigger query below does not depend on roles. Skipping it emitted no
+                # query at all, so trigger-only corpora (MAVEN: 168 types, zero
+                # arguments) decoded to nothing and every event metric read 0.0.
+                if not isinstance(roles, list):
                     continue
                 role_list = [r for r in roles if isinstance(r, str) and r.strip()]
-                if not role_list:
-                    continue
                 if sampling and random.random() < getattr(sampling, "remove_events_prob", 0.0):
                     continue
                 if sampling and getattr(sampling, "shuffle_event_roles", False) and len(role_list) > 1:
