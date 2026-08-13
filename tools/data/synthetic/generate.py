@@ -42,7 +42,7 @@ from prompts import (  # noqa: E402
     ANNOTATE_SYSTEM, SYSTEM, build_annotate_prompt, build_user_prompt,
 )
 from providers import REFUSAL_MARK, ProviderConfig, build_provider  # noqa: E402
-from schema_spec import ALL_TASKS, DOMAINS, sample_labels  # noqa: E402
+from schema_spec import ALL_TASKS, DOMAINS, ENTITY_TYPES, sample_labels  # noqa: E402
 from validate import build_record, parse_reply  # noqa: E402
 
 
@@ -168,6 +168,27 @@ def main() -> int:
             return None
         return sample_labels(random.Random(f"{sample_seed}:{i}"), tasks, sample_per_doc)
 
+    def _asked(labels):
+        """What the MODEL is shown: the sampled subset, except entities, where it
+        sees the WHOLE pool.
+
+        Restricting the entity choices made the model put a span under the nearest
+        listed type whenever the right one was not sampled. Measured over a 5k
+        corpus: "San Francisco" landed under 9 types (location, geopolitical
+        entity, address, region, area, landmark, airport, facility, cardinal), and
+        1,203 surfaces carried more than one type. Offering the full pool removes
+        the pressure. What is KEPT is still decided by ``declared`` (the sampled
+        subset), so the negatives are unchanged -- and they get stronger, because
+        an empty type is now one the model weighed against the whole vocabulary.
+
+        The cost is input tokens only, and it shows up as a much larger
+        entities_dropped: annotations for the ~110 unsampled types are discarded
+        by design, not lost to an error.
+        """
+        if labels is None:
+            return None
+        return {**labels, "entities": ENTITY_TYPES}
+
     def _jobs():
         """Yield (system, user_prompt, text_override, base_output, labels) per document."""
         if annotate:
@@ -176,12 +197,13 @@ def main() -> int:
                     break
                 base = None if args.annotate_replace else gold
                 lab = _labels_for(i)
-                yield ANNOTATE_SYSTEM, build_annotate_prompt(text, tasks, lab), text, base, lab
+                yield (ANNOTATE_SYSTEM, build_annotate_prompt(text, tasks, _asked(lab)),
+                       text, base, lab)
         else:
             for i in range(count):
                 domain = domains[i % len(domains)]
                 lab = _labels_for(i)
-                yield (SYSTEM, build_user_prompt(domain, tasks, min_words, max_words, lab),
+                yield (SYSTEM, build_user_prompt(domain, tasks, min_words, max_words, _asked(lab)),
                        None, None, lab)
 
     stats: Counter = Counter()

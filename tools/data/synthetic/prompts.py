@@ -75,6 +75,17 @@ def _classification_lines(subset: Optional[List[str]] = None) -> str:
     return "\n".join(out)
 
 
+# Relations and events are still shown a SAMPLED subset of their pool (unlike
+# entities, which now get the whole one), so they keep the pressure that made the
+# model file a span under the nearest listed type -- works_for vs employer_of. The
+# entity fix was structural; here it has to be said.
+_NEAREST_TYPE_RULE = (
+    "If the correct type for something is not in this list, leave it out entirely. "
+    "Do not file it under the nearest listed type -- a wrong type is worse than no "
+    "annotation."
+)
+
+
 def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None) -> List[str]:
     """The per-task label sets + output-key instructions (shared by both modes).
 
@@ -100,6 +111,7 @@ def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None
             'relations: list of {"type","head","tail"} where head and tail are '
             "entity surfaces from the text. Relation types:",
             "  " + ", ".join(rel_types),
+            _NEAREST_TYPE_RULE,
         ]
     if "events" in tasks:
         sections += [
@@ -108,6 +120,7 @@ def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None
             "in the text that most directly evokes the event. Event types and their "
             "allowed roles:",
             _event_ontology_lines(labels.get("events")),
+            _NEAREST_TYPE_RULE,
         ]
     if "classifications" in tasks:
         sections += [

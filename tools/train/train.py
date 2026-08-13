@@ -679,7 +679,10 @@ def _run_blind_test(best, split_data, batch_size, threshold, by_language, gd_kwa
     combined) and return the metrics dict. Shared by train and eval."""
     if by_language:
         return _blind_test_by_language(best, split_data, batch_size, threshold, **gd_kwargs)
-    print(f"\n[blind test] Loading {best} and scoring against {len(split_data)} samples...")
+    # split_data is a list of RECORDS only when label transforms ran; otherwise it
+    # is the list of split FILES, and calling those "samples" reads as a corpus of 1.
+    unit = "records" if split_data and isinstance(split_data[0], dict) else "files"
+    print(f"\n[blind test] Loading {best} and scoring against {len(split_data)} {unit}...")
     metrics = evaluate_checkpoint(best, split_data, batch_size=batch_size, threshold=threshold, **gd_kwargs) or {}
     _print_blind_test(metrics)
     return metrics
