@@ -1,6 +1,28 @@
-# Committed corpora
+# Corpora
 
-`/data/*` is gitignored; individual small corpora are re-included in `.gitignore`.
+`/data/*` is gitignored; a few small corpora are re-included in `.gitignore`.
+
+The two `synthetic_haiku45_5k` corpora are NOT committed -- they live in private
+HuggingFace dataset repos and the trainer pulls a split on demand when it is
+missing locally (`hf_jsonl` in `tools/train/dataset_registry.yaml`, fetched by
+`_fetch_if_missing` in `tools/train/train.py`). Needs `HF_TOKEN` in the
+environment.
+
+| corpus | repo | records |
+|---|---|--:|
+| synthetic_haiku45_5k | `whr778/synthetic_haiku45_5k` | 4,997 |
+| synthetic_haiku45_5k_coerced | `whr778/synthetic_haiku45_5k-coerced` | 5,000 |
+
+## synthetic_haiku45_5k
+
+Generated 2026-08-13 with `claude-haiku-4-5-20251001`, batch
+`msgbatch_01QLWC7wkhoAyvuk6v6LppgT`, at commit `f46bbd8`. 4018 train / 496 val /
+483 test; 3 of 5,000 replies failed to parse.
+
+Entity type purity (share of annotations under their surface's majority type) is
+92.6% overall and 91.1% on surfaces seen five or more times. 12 absent entity
+types per document are seeded as `{type: []}` negatives, giving 59,581 positive
+type slots against 59,964 negatives, with no negative-only documents.
 
 ## synthetic_haiku45_5k_coerced
 

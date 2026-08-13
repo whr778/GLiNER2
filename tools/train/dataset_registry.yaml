@@ -496,6 +496,24 @@ datasets:
     source_url: null
     language: [en]
     description: "Locally generated synthetic multi-task IE corpus (~1.9K records) covering entities, relations, text classification, and document-level events; produced with Claude Sonnet 5."
+  synthetic_haiku45_5k:
+    name: Synthetic Haiku-4.5 multi-task 5K
+    tasks: multi-task IE (NER, relations, classification, events, structures)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/synthetic_haiku45_5k
+    source_url: null
+    language: [en]
+    description: "Locally generated synthetic multi-task IE corpus (4,997 records) over 28 document registers, covering entities, relations, events, classification, and structures; produced with claude-haiku-4-5. Entity types carry ~91% purity on repeated surfaces, and 12 absent types per document are seeded as explicit negatives."
+  synthetic_haiku45_5k_coerced:
+    name: Synthetic Haiku-4.5 multi-task 5K (coerced entity types)
+    tasks: multi-task IE (NER, relations, classification, events, structures)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/synthetic_haiku45_5k-coerced
+    source_url: null
+    language: [en]
+    description: "Superseded first run of synthetic_haiku45_5k (5,000 records). Entity TYPES are unreliable -- each document was offered only 14 of 125 types, so spans were filed under the nearest available one (52% purity on repeated surfaces). Kept for comparison, not for training."
   casualty_docee:
     name: Multi-event casualty corpus, DocEE-conditioned
     tasks: structured extraction (json_structures, multi-instance)

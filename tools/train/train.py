@@ -114,7 +114,35 @@ def _dataset_counts(corpora: List[str], event_files: Dict[str, Dict[str, str]]) 
 
 
 def _split_files(corpora: List[str], suffix: str) -> List[str]:
-    return [f"{c}.{suffix}.jsonl" for c in corpora]
+    paths = [f"{c}.{suffix}.jsonl" for c in corpora]
+    for p in paths:
+        _fetch_if_missing(p)
+    return paths
+
+
+def _fetch_if_missing(path: str) -> None:
+    """Pull ``path`` from the Hub when it is absent locally and the registry says where.
+
+    A corpus entry may carry ``hf_jsonl: <repo>``, a dataset repo holding the
+    GLiNER2 JSONL splits under their exact local basenames. This is deliberately
+    NOT the registry's ``hf_id``, which is upstream attribution for the model card
+    and for most corpora points at raw parquet or BIO tags, not converted records.
+
+    Private repos work as-is: huggingface_hub reads HF_TOKEN from the environment.
+    """
+    p = Path(path)
+    if p.is_file():
+        return
+    from model_card import canonical_dataset_key, load_registry
+    key = canonical_dataset_key(p.name.rsplit(".", 2)[0])
+    entry = load_registry().get("datasets", {}).get(key) or {}
+    repo = entry.get("hf_jsonl")
+    if not repo:
+        return
+    from huggingface_hub import hf_hub_download
+    print(f"[data] {path} missing; fetching {p.name} from {repo}")
+    hf_hub_download(repo_id=repo, filename=p.name, repo_type="dataset",
+                    local_dir=str(p.parent))
 
 
 def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[str]:

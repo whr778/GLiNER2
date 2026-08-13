@@ -114,10 +114,9 @@ test_api_client.py
 !/data/casualty_ft.train.jsonl
 !/data/casualty_ft.val.jsonl
 !/data/casualty_ft.test.jsonl
-# _coerced: entity types are unreliable by construction. See data/README.md.
-!/data/synthetic_haiku45_5k_coerced.train.jsonl
-!/data/synthetic_haiku45_5k_coerced.val.jsonl
-!/data/synthetic_haiku45_5k_coerced.test.jsonl
+# The synthetic_haiku45_5k corpora are NOT committed: they live in private HF
+# dataset repos and the trainer pulls them on demand (dataset_registry.yaml
+# `hf_jsonl`, tools/train/train.py `_fetch_if_missing`).
 /raw_data/
 /out/
 
