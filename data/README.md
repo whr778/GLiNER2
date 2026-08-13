@@ -8,10 +8,11 @@ missing locally (`hf_jsonl` in `tools/train/dataset_registry.yaml`, fetched by
 `_fetch_if_missing` in `tools/train/train.py`). Needs `HF_TOKEN` in the
 environment.
 
-| corpus | repo | records |
-|---|---|--:|
-| synthetic_haiku45_5k | `whr778/synthetic_haiku45_5k` | 4,997 |
-| synthetic_haiku45_5k_coerced | `whr778/synthetic_haiku45_5k-coerced` | 5,000 |
+| corpus | repo | records | committed |
+|---|---|--:|---|
+| synthetic_haiku45_5k | `whr778/synthetic_haiku45_5k` | 4,997 | no |
+| synthetic_haiku45_5k_coerced | `whr778/synthetic_haiku45_5k-coerced` | 5,000 | no |
+| synthetic_sonnet5_1k | `whr778/synthetic_sonnet5_1k` | 1,882 | yes (predates this layout) |
 
 ## synthetic_haiku45_5k
 

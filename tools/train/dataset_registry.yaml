@@ -493,9 +493,10 @@ datasets:
     tasks: multi-task IE (NER, relations, classification, events)
     license: see source
     hf_id: null
+    hf_jsonl: whr778/synthetic_sonnet5_1k
     source_url: null
     language: [en]
-    description: "Locally generated synthetic multi-task IE corpus (~1.9K records) covering entities, relations, text classification, and document-level events; produced with Claude Sonnet 5."
+    description: "Locally generated synthetic multi-task IE corpus (1,882 records) covering entities, relations, text classification, document-level events, and json_structures; produced with Claude Sonnet 5. Narrow original ontology, so entity types are clean (96% purity on repeated surfaces) but the corpus carries no negatives."
   synthetic_haiku45_5k:
     name: Synthetic Haiku-4.5 multi-task 5K
     tasks: multi-task IE (NER, relations, classification, events, structures)

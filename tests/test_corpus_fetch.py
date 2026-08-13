@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "train"))
+from model_card import load_registry  # noqa: E402
 from train import _split_files  # noqa: E402
 
 
@@ -51,11 +52,18 @@ def test_missing_file_with_hf_jsonl_is_fetched(spy, tmp_path):
 
 def test_missing_file_without_hf_jsonl_is_left_alone(spy, tmp_path):
     """Corpora with no hf_jsonl keep the old behaviour: the path is returned as-is
-    and the downstream reader is what complains."""
-    out = _split_files([str(tmp_path / "synthetic_sonnet5_1k")], "val")
+    and the downstream reader is what complains.
+
+    biomed_ner is registered but has no hf_jsonl, which is the case for every
+    corpus except the synthetic ones -- guard picked for that, so adding hf_jsonl
+    to a corpus elsewhere cannot silently make this test vacuous.
+    """
+    assert "hf_jsonl" not in (load_registry()["datasets"]["biomed_ner"] or {})
+
+    out = _split_files([str(tmp_path / "biomed_ner")], "val")
 
     assert spy == []
-    assert out == [str(tmp_path / "synthetic_sonnet5_1k.val.jsonl")]
+    assert out == [str(tmp_path / "biomed_ner.val.jsonl")]
 
 
 def test_unknown_corpus_is_left_alone(spy, tmp_path):
