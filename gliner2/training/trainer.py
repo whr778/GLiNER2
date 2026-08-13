@@ -2121,7 +2121,7 @@ class ExtractorTrainer:
         self._log_metrics(metrics, prefix="eval")
         self.eval_metrics_history.append(metrics)
 
-        metric_value = metrics.get(self.config.metric_for_best, metrics["eval_loss"])
+        metric_value = self._selection_metric(metrics)
         is_best = (
             (self.config.greater_is_better and metric_value > self.best_metric) or
             (not self.config.greater_is_better and metric_value < self.best_metric)
@@ -2135,8 +2135,23 @@ class ExtractorTrainer:
 
         return metrics
 
+    def _selection_metric(self, metrics: Dict[str, float]) -> float:
+        """Value of ``metric_for_best``, or raise if the eval never produced it.
+
+        Falling back to ``eval_loss`` here would silently swap both the quantity
+        and its direction: a run configured to maximize an F1 would maximize
+        loss instead, selecting the worst checkpoint.
+        """
+        key = self.config.metric_for_best
+        if key not in metrics:
+            raise ValueError(
+                f"metric_for_best={key!r} is absent from the eval metrics; "
+                f"available keys: {sorted(metrics)}"
+            )
+        return metrics[key]
+
     def _check_early_stopping(self, metrics: Dict[str, float], prev_best: Optional[float] = None) -> bool:
-        metric_value = metrics.get(self.config.metric_for_best, metrics["eval_loss"])
+        metric_value = self._selection_metric(metrics)
         compare_against = prev_best if prev_best is not None else self.best_metric
         if self.config.greater_is_better:
             improved = metric_value > compare_against + self.config.early_stopping_threshold
