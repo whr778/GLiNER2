@@ -1544,18 +1544,24 @@ class BoundaryExtractorModel(BaseExtractorModel):
         layouts = getattr(batch, "query_layouts", None)
         if layouts is None:
             return None
-        # Assemble in Python and transfer ONCE. Writing `out[i, q] = ...` straight
-        # onto the model device costs a host->device copy per query per forward,
-        # which is the scalar host sync the boundary hot path is guarded against
-        # (tests/models/boundary/test_no_host_sync.py). Free on CPU, not on
-        # CUDA/MPS -- and GPU is where this trains.
+        # Assemble in Python, then move it in ONE non-blocking copy from pinned
+        # memory. Two things this avoids, both measured under
+        # torch.cuda.set_sync_debug_mode("error") on an H100:
+        #   out[i, q] = ...  onto the device -> a host sync PER QUERY per forward
+        #   torch.tensor(..., device=cuda)   -> one host sync per forward
+        # (pageable H2D is synchronous). The weighted _reduce itself is clean.
+        # This is the hot path the proposer guard exists for; free on CPU, not
+        # on CUDA, and GPU is where this trains.
         rows, width = query_mask.shape
         table = [[1.0] * width for _ in range(rows)]
         for i, layout in enumerate(layouts[:rows]):
             for spec in layout.queries:
                 if spec.query_id < width:
                     table[i][spec.query_id] = float(weights.get(spec.task_type, 1.0))
-        return torch.tensor(table, dtype=torch.float32, device=query_mask.device)
+        host = torch.tensor(table, dtype=torch.float32)
+        if query_mask.device.type == "cuda":
+            return host.pin_memory().to(query_mask.device, non_blocking=True)
+        return host.to(query_mask.device)
 
     # =========================================================================
     # Forward
