@@ -443,7 +443,40 @@ plateau mitigates but does not remove the post-hoc problem. And 0.591 is 9x bett
 catastrophic, not good in absolute terms.
 
 
-### 11. GIST query-axis hard negatives — CACHE BUILT; ready to train
+### 11. GIST query-axis hard negatives — RAN 2026-08-14, and it is NEGATIVE
+
+**The A/B is done and the veto lost.** Two arms on one 2xH100, one per GPU, differing in
+exactly four keys, `mix_natural` 84,280 records x 3 epochs (15,804 steps, 1h44m / 1h43m).
+Both arms swept to threshold 0.3 on val, so this is best-vs-best:
+
+| metric | control | gist | delta |
+|---|--:|--:|--:|
+| entity strict | 0.5858 | 0.5610 | **−0.0248** |
+| entity fair | 0.6248 | 0.6041 | −0.0207 |
+| relation strict | 0.1439 | 0.1108 | **−0.0331** |
+| classification | 0.6301 | 0.6292 | −0.0009 |
+| event_type | 0.9531 | 0.9515 | −0.0016 |
+| event_trigger fair | 0.7527 | 0.7399 | −0.0128 |
+| event_argument fair | 0.5786 | 0.5702 | −0.0084 |
+| event strict | 0.3433 | 0.3443 | +0.0010 |
+
+It loses on every metric but one, and that one is +0.0010. The sharpest reading is that it
+is **down on `event_argument`** — the axis the query veto was built to sharpen — so this is
+not "right idea, wrong dosage" on the evidence available.
+
+**The control validates the harness rather than the conclusion resting on it:** retrained
+from scratch it reproduces the historical `warmstart-natural` reference (relation 0.1439
+vs 0.154, entity 0.5858 vs 0.580), so the gap is the treatment.
+
+**The veto was live, not inert** — `[gist] loaded 46149 cached guide records` in the
+training log, which is the failure mode the wiring notes below warn about.
+
+Caveats before this is called settled: one seed, and no variance estimate on this corpus,
+so anything under ~0.005 is unreadable. −0.025 and −0.033 are well outside that. Artifacts
+(both `best/` checkpoints, sha256-verified off the box, plus metrics and sweeps) are local
+under `out/gist-ab/`, so a re-probe needs no retrain.
+
+#### The original specification, kept because the cache and wiring are still sound
 The measured gap: with specific rival types, `people evacuated` outscores `death toll` on
 **11.2% of genuine death tolls**. "N people killed" vs "N people evacuated" — both counts of
 people, separated only by the verb. No type description fixes it (EKF_MHT_DESIGN §27.8); it
