@@ -223,32 +223,50 @@ behind every `LE`/`LBE` — and prints them as a small table under the error
 counts, so you can see *which* labels get swapped (e.g. `LOC → PER`, or a
 `Target → Attacker` role swap) rather than just how often.
 
-**Fair P/R/F1.** Each near-miss (`LE`/`BES`/`BEL`/`BEO`/`LBE`) counts as *half*
-a false positive and *half* a false negative, so a close annotation is one
-error, not two:
+**Fair P/R/F1.** We use the **reference FairEval tool's default weights**, which
+are the paper's Eq. 6/7 rather than its plainer Eq. 5. A near-miss is charged
+once instead of twice, *and* a boundary error earns partial true-positive credit,
+because the system did find the span:
 
 ```
-E = LE + BES + BEL + BEO + LBE
-fair_precision = COR / (COR + FP + 0.5*E)
-fair_recall    = COR / (COR + FN + 0.5*E)
-fair_f1        = 2 * P * R / (P + R)
+LE  = 0.5 FP + 0.5 FN            right span, wrong label -- no credit
+LBE = 0.5 FP + 0.5 FN            both wrong -- no credit
+BES = 0.5 TP + 0.5 FN            system span smaller: a recall miss
+BEL = 0.5 TP + 0.5 FP            system span larger: a precision miss
+BEO = 0.5 TP + 0.25 FP + 0.25 FN
+
+tp = COR + 0.5*(BES + BEL + BEO)
+fp = FP + 0.5*(LE + LBE) + 0.5*BEL + 0.25*BEO
+fn = FN + 0.5*(LE + LBE) + 0.5*BES + 0.25*BEO
+fair_f1 = 2 * P * R / (P + R)
 ```
 
-With no typed near-misses (`E = 0`) fair matches strict up to the normalization
-`COR` applies — strict is case-sensitive, but `COR` (like `LE`) lowercases and
+Unlike Eq. 5 these weights move **F1**, not just P and R, because they add TP
+mass. Two consequences worth knowing:
+
+- The `BES`/`BEL`/`BEO` split now *changes the score* (`BES` costs recall only,
+  `BEL` precision only), where under Eq. 5 all three weighed the same. That makes
+  the surface approximation below load-bearing rather than cosmetic.
+- Fair is no longer strictly harsher than relaxed on boundary errors. Relaxed
+  still credits any overlap as a full true positive; fair now credits half. A
+  category whose only hits are boundary-off scores ~0.5 under fair rather than 0.
+
+With no typed near-misses fair matches strict up to the normalization `COR`
+applies — strict is case-sensitive, but `COR` (like `LE`) lowercases and
 collapses whitespace first, so the two can still differ on case- or
-whitespace-only surface variants (`Apple` vs `apple`). Fair is also **stricter
-than relaxed** on boundary errors: relaxed credits any overlap as a full true
-positive, whereas fair treats a boundary error as half an error with *no* true
-positive — so a category whose only hits are boundary-off scores 0 under fair
-but 1.0 under relaxed.
+whitespace-only surface variants (`Apple` vs `apple`).
 
 Fair is emitted as a **selectable regime**: `eval_<cat>_fair_micro_{precision,
 recall,f1}` and `eval_<cat>_fair_support`, for `<cat>` in `entity`,
 `event_trigger`, `event_argument`. Any returned float can drive
-`metric_for_best` (e.g. `eval_entity_fair_micro_f1`), but fair is **never
-selected by default**, and the [threshold sweep](#driving-best-checkpoint-selection)
-still optimizes strict.
+`metric_for_best` (e.g. `eval_entity_fair_micro_f1`). The trainer's built-in
+default remains `eval_loss` and the
+[threshold sweep](#driving-best-checkpoint-selection) still optimizes strict, but
+the event A/B and synthetic-fine-tune configs now **select on fair F1**.
+
+Note `metric_for_best` no longer falls back when its key is absent — it raises.
+The old fallback was `eval_loss`, which swapped both the quantity and its
+direction, so a run configured to maximize an F1 maximized loss instead.
 
 **Surface-approximation caveats.** Gold spans carry no character offsets, so the
 positional boundary sub-types are approximated from substring containment:

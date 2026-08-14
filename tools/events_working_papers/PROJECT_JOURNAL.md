@@ -567,6 +567,67 @@ abstention check. Both are pinned by guard tests now. Neither would have raised.
 Nothing is wired into `model.py`; the day's output is inputs, measurements and four
 corrections.
 
+## Phase 15 — the metrics were lying, twice (12–14 Aug)
+
+A phase about the instrument rather than the model. Two defects in checkpoint selection and
+one in scoring, all of which had been silently shaping results.
+
+**`metric_for_best` fell back to `eval_loss` when its key was absent** (`c0ab89c`). The
+fallback swapped both the quantity *and its direction*: a run configured to maximize an F1
+maximized loss instead, selecting the worst checkpoint. This is what pinned MAVEN to epoch 1
+of 10. It now raises. The sibling defect in `make_sweeping_compute_metrics` — a missing key
+defaulting to 0.0, which scored every threshold identically and kept the first grid point —
+was the real cause of 15 `[eval sweep]` lines reading 0.0000 (`3d21eba`).
+
+**Fair evaluation moved to the reference tool's weights** (`d6debaf`), the paper's Eq. 6/7
+rather than Eq. 5. Boundary errors now earn 0.5 TP, so the weights move F1 rather than only
+P and R. See [[PAPER_0_FOUNDATION]] §8.
+
+**Evaluation dropped `entity_descriptions` — and the first fix was a no-op.** Corpora that
+name their types `e_0`/`e_1` and put the meaning in a parallel map were scored by asking the
+model to find "e_0" with an empty description. The tell was a baseline that could not be
+true: pristine `fastino/gliner2-base-v1` reading 0.1351 strict entity F1 on `pile_ner_def` at
+recall 0.085.
+
+The first fix (`bbacce6`) put the map under `schema["entities"]` as the values. That
+type-checks and reads as correct, and changes nothing the model sees — those values are label
+targets, while the prompt is built from `schema["entity_descriptions"]`. It was caught only
+because a with/without control returned **identical numbers to four decimal places**. Real
+fix is `7586411`; on 100 `pile_ner_def` val records, strict F1 0.0174 → **0.5381**.
+
+Worse, the test shipped with `bbacce6` asserted the dict shape I had assumed, so it locked
+the defect in. Replaced with one that pushes the schema through `processor._infer_from_json`
+and asserts the description text reaches the prompt — *assert against the consumer, not
+against your model of the consumer*.
+
+**The blast radius was measured rather than assumed, and it is small.** Selection was never
+affected: every config but the preservation one selects on `eval_loss`, which the trainer
+computes from the forward pass. Blind-test reach is 49.3% for `mmbert-base` and ≤0.5%
+everywhere else; the record-mode A/B stands at 0.2%, because `mix_natural.test.jsonl` is
+empty and its 35.5% description share is a val-split property. No paper number needed redoing
+— which is the point of measuring instead of assuming.
+
+**The synthetic-corpus arm, and a trade measured in both directions.** Fine-tuning base-v1 on
+a 5K Haiku-generated multi-task corpus produced large in-distribution gains — event strict
+**0.0083 → 0.5467**, a schema the base model essentially cannot do — against a **−0.121
+strict F1 (−23% relative)** loss on general-domain NER, swept best-vs-best so the gap is not
+a threshold artifact.
+
+The FairEval decomposition says *what* was lost, and it is not the span machinery: boundary
+errors went **down** (BES 3398→2706, BEL 1725→1272) while label errors rose (LE +1302,
+LBE +579) and FN rose 8,977. The encoder and span head held; the labeling head reorganized
+onto the synthetic type vocabulary. That is catastrophic forgetting of a label distribution,
+not of a representation — which predicts a cheap fix (5–10% replay) rather than an expensive
+one. Expected in direction, and now quantified.
+
+**Also caught, before it cost a GPU run:** `uv pip install -e .` resolves transformers 5.13,
+because the `transformers>=5.6,<5.7` pin lives in the `[local]` extra while
+`kernels>=0.12,<0.13` is a core dependency. The two ranges are disjoint; kernels never hooks,
+mmBERT falls back to sdpa, and bf16 goes non-finite around step 50 after running 11x slow,
+with one `RuntimeWarning` as the only signal. This is documented in `pyproject.toml` *because
+it already cost the 2026-08-10 run*, and it recurred anyway on a fresh box. Install
+`.[local]`, and set `GLINER2_STRICT_ATTN=1` so a fallback raises.
+
 ## Recurring lessons
 
 1. **Report the baseline every time.** Run B of Turkiye reads as a success at 0.208 without
@@ -607,9 +668,29 @@ corrections.
    left them at 0%.
 17. **A measurement that contradicts your labels is usually right.** Twice the probe sorted
    cases my hand labels had mis-assigned, on both the "230"s and the "two"s.
+18. **Assert against the consumer, not against your model of the consumer.** The test that
+   shipped with `bbacce6` asserted the dict shape the fix produced, so it passed while the
+   fix did nothing. The replacement pushes the schema through the processor and checks the
+   text reaches the prompt.
+19. **Identical output from a with/without control is a result, not a coincidence.** Two eval
+   runs agreeing to four decimal places is what exposed a fix as a no-op. Run the control
+   even when you are confident, and *especially* when the change is one you just wrote.
+20. **A hazard documented in the source is not a hazard prevented.** The transformers/kernels
+   pin drift is commented at length in `pyproject.toml` because it cost a GPU run — and it
+   recurred on the next fresh box, because `-e .` does not install the extra that carries
+   the pin. Prevention needs a check that runs, not a comment that explains.
 
 ## Open
 
+- **GIST A/B (TODO item 11) is running** as of 14 Aug — treatment and control on one 2xH100,
+  one arm per GPU. The control had to be retrained: five commits touched the training path
+  after it trained on 10 Aug, and `mix_natural` is 7.6% events, so the Tier 2 event-record
+  work is not inert for it.
+- Replay mix for the synthetic fine-tune — 5–10% of the original labeled data, to hold the
+  general-NER label distribution while keeping the event gain. Predicted cheap by the
+  Phase 15 error decomposition; unrun.
+- `mmbert-base`'s blind-test entity row is understated (49.3% of its test set was scored
+  without descriptions). No live claim depends on it; recompute if one ever does.
 - Venezuela 2026 — the only genuinely blind test, still unrun.
 - Helene needs administrative rollup + `extract_long` before it is a usable instrument.
 - The 12 HF models carry `attn_implementation: flash_attention_2`, which silently falls

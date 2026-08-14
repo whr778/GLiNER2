@@ -175,9 +175,27 @@ boundary span counts as both a false positive and a false negative). We add an
 additive diagnostic that matches predictions to gold *across labels* and tags
 each with one typed error — `COR`, `LE` (labeling), `BES`/`BEL`/`BEO` (boundary
 sub-types), `LBE`, `FP`, `FN` — records label confusions, and reports a *fair*
-P/R/F1 that charges each near-miss as half an error. It is a selectable regime
-(`eval_<cat>_fair_micro_f1`) for entities and event spans, never selected by
-default.
+P/R/F1. We follow the **reference FairEval tool's default weights**, which are the
+paper's Eq. 6/7 rather than its plainer Eq. 5: a near-miss is charged once instead
+of twice, *and* a boundary error earns partial true-positive credit, because the
+system did find the span.
+
+    LE  = 0.5 FP + 0.5 FN            right span, wrong label — no credit
+    LBE = 0.5 FP + 0.5 FN            both wrong — no credit
+    BES = 0.5 TP + 0.5 FN            system span smaller: a recall miss
+    BEL = 0.5 TP + 0.5 FP            system span larger: a precision miss
+    BEO = 0.5 TP + 0.25 FP + 0.25 FN
+
+Unlike Eq. 5 these move F1 rather than only P and R, because they add TP mass.
+One consequence for our implementation: the BES/BEL/BEO split is inferred from
+substring containment rather than character offsets, and under these weights that
+split now *changes the score* (BES costs recall only, BEL precision only), where
+under Eq. 5 all three weighed the same.
+
+`eval_<cat>_fair_micro_f1` is emitted for entities and event spans. The trainer's
+built-in default for `metric_for_best` remains `eval_loss`, but the event A/B and
+synthetic-fine-tune configs now **select on fair F1**, on the argument that it is
+more informative than strict micro-F1 for checkpoint choice.
 
 **Threshold calibration.** After training, `sweep_thresholds` re-scores the
 validation set over a small grid and picks the decision threshold maximizing a
