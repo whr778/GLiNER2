@@ -50,7 +50,7 @@ as relations-only would break that symmetry and understate the shared claim.
 | 2 | Downstream target = **Re-DocRED + RAMS** (dense relations *and* document-level event arguments) | DECIDED (2026-08-08) |
 | 3 | Bases **retrained `from_encoder`** (mmBERT), NOT span | DECIDED |
 | 4 | joint_ie **wired to boundary** — mentions + relation edges | **DONE** |
-| 4b | joint_ie must support **structures, relations, AND events** in the beam | **DECIDED (2026-08-08) — BLOCKS Phase A** |
+| 4b | joint_ie must support **structures, relations, AND events** in the beam | DECIDED (2026-08-08) — **MET 2026-08-12** (`bf2c9b4`), no longer blocking; see §3b |
 | 5 | **Phase A = decode-only** (paired greedy vs beam); **Phase B = joint training** only if A is positive | DECIDED |
 | 6 | Base mix = event corpora **+ relation-rich corpora** (warms the relation head; also pushes past 100K free) | DECIDED |
 | 7 | Sizes {10K,40K,100K,137K} as **total mix records**, every point carrying events + relations at the pool's 73/27 ratio; **NO LLM generation** (100K synthetic ≈ $400-860 batch) | DECIDED (revised 2026-08-08) |
@@ -95,9 +95,13 @@ as relations-only would break that symmetry and understate the shared claim.
   the relation to its mention nodes (the crux regression guard); joint == greedy on an
   unambiguous case; `decode_mode` defaults to `"greedy"`; the flag runs through the
   public `extract_relations` path.
-- ⛔ **BLOCKER for Phase A — events are not in the beam. Still true; the mechanism below
-  is not.** Re-verified against the code 2026-08-12, and §3b has since been *implemented*
-  for records. What is actually wrong is narrower and worse.
+- ✅ **RESOLVED 2026-08-12 (`bf2c9b4`) — events ARE in the beam.** See "TIER 1 SHIPPED"
+  below for the fix and its verification. The diagnosis that follows is kept because it
+  is the record of *what* was wrong and how it was found; read it as history, not as a
+  live blocker. (This bullet read "Still true" for two days after the fix landed under
+  it — the header was never updated when Tier 1 shipped the same day.)
+
+  **What was wrong.** Diagnosed 2026-08-12, narrower and worse than the older note said.
 
   **What is now right.** `_decode_records` no longer runs before the joint branch — it is
   gated behind `if not joint` (`engine.py:203`) precisely to avoid double emission, and
@@ -184,6 +188,8 @@ as relations-only would break that symmetry and understate the shared claim.
 
   **What would actually test it:** warm-start the record head on events with MAVEN (2,913
   documents, 38.3% unreachable gold), THEN fine-tune on CASIE, with a real step budget.
+  MAVEN ran on its own (below) and was flat; **the CASIE stage-2 leg — warm-start THEN
+  fine-tune — is still unrun**, and it is the one that tests the head-init explanation.
   Two pre-existing CASIE/boundary blockers are already fixed in the configs and will bite
   anyone else: `error_policy: raise` aborts on unlocatable entity surfaces, and a single
   CASIE query carries up to **188** gold spans against the default `max_gold_per_query` of
@@ -191,6 +197,45 @@ as relations-only would break that symmetry and understate the shared claim.
 
   Metrics and trimmed logs are local under `out/casie-tier2-{control,eventrecords}/`; the
   checkpoints went with the terminated box.
+
+  **MAVEN RAN 2026-08-12, and Tier 2 bought nothing there either.** Half of MAVEN's
+  official *valid* split held out document-wise (355 docs / 13,637 gold instances), two
+  arms differing only in `event_records`, base `gliner2-joint-boundary-rams-137k`,
+  threshold swept on val over (0.1, 0.3, 0.5, 0.7, 0.9):
+
+  | metric | control | event_records | delta |
+  |---|--:|--:|--:|
+  | event_trigger strict | **0.7407** | 0.7327 | **−0.0080** |
+  | event_type strict | 0.8893 | **0.8943** | +0.0050 |
+  | event strict | **0.8011** | 0.7980 | −0.0031 |
+
+  At **5.4x the training cost** (2h47m at 7.35 s/it against 35m at 1.37 s/it). Two things
+  make this weaker evidence than it looks, and both should be stated before anyone cites
+  it: the treatment arm is **flat at 0.7295 across every threshold**, because the
+  record-head decode does not consume the mention threshold, so threshold tuning is inert
+  on that arm; and trigger strict F1 **aggregates trigger spans per event type**, so the
+  control's single instance already carries multiple triggers. That metric therefore does
+  *not* isolate multi-instance separation, which is the actual Tier 2 claim on a corpus
+  where 40.8% of test gold is unreachable one-per-type. **A metric that counts instances
+  is still needed to test this properly.**
+
+  ⚠ **The run's apparent headline was an artifact, and it is the reason two metric
+  defects got fixed.** `train_results.json` reported `best_metric` 0.8886 treatment vs
+  0.8392 control — a "+0.049 win" that is **not F1 at all**, but epoch-1 eval *loss*.
+  Chain, each link verified: `_schema_from_gold` dropped every role-less event type, and
+  MAVEN is trigger-only (168 types, zero arguments), so all 355 schemas went empty and
+  `compute_metrics` returned `{}`; with the key absent, `metric_for_best` silently fell
+  back to `eval_loss`, and `greater_is_better: true` then selected the *highest* loss —
+  epoch 1, step 91 of 1365, for both arms. The treatment scoring higher is expected under
+  a loss reading, since it carries an extra supervised head. All three defects are now
+  fixed (role-less types kept; `c0ab89c` raises on an absent `metric_for_best`; `3d21eba`
+  raises in the threshold sweep, which had been scoring every grid point 0.0). The table
+  above is scored on `final/`, not `best/`.
+
+  Metrics and `final/` checkpoints are local under `out/maven-tier2-{control,eventrecords}/`;
+  both arms are on the Hub as `whr778/gliner2-maven-tier2-{control,eventrecords}`. Any
+  *fair* number from this run predates `d6debaf` and must be recomputed before citing;
+  strict is unaffected.
 
   **The corpora need no change — an earlier scoping note of mine said otherwise and was
   wrong.** `_process_events` appends one label row per event mention
