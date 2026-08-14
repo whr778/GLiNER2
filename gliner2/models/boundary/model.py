@@ -261,6 +261,7 @@ class BoundaryHead(nn.Module):
         return_candidates: bool = True,
         gold_injection_prob: Optional[float] = None,
         collect_diagnostics: Optional[bool] = None,
+        query_weights: Optional[torch.Tensor] = None,
     ) -> ExtractorOutput:
         b, l, _ = token_states.shape
         text_lengths = text_mask.sum(dim=1).long()
@@ -462,6 +463,7 @@ class BoundaryHead(nn.Module):
                 pooled_pair_logits=(
                     pooled_logits if pooled is not None else None
                 ),
+                query_weights=query_weights,
             )
             total_loss = losses["total_loss"]
 
@@ -584,6 +586,7 @@ class BoundaryHead(nn.Module):
         *,
         pooled: Optional[PooledCandidates] = None,
         pooled_pair_logits: Optional[torch.Tensor] = None,
+        query_weights: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         boundary_keep = boundary_mask.unsqueeze(1) & query_mask.unsqueeze(-1)  # [B,Q,L+1]
         start_targets = targets.start_targets
@@ -613,6 +616,7 @@ class BoundaryHead(nn.Module):
                     negative_weight=neg_weight,
                     query_mask=query_mask,
                     reduction=reduction,
+                    query_weights=query_weights,
                 )
             return balanced_multilabel_bce(
                 logits,
@@ -621,6 +625,7 @@ class BoundaryHead(nn.Module):
                 negative_weight=neg_weight,
                 query_mask=query_mask,
                 reduction=reduction,
+                query_weights=query_weights,
             )
 
         start_loss = _marginal_loss(
@@ -715,6 +720,7 @@ class BoundaryHead(nn.Module):
             reduction=reduction,
             query_axis=query_axis,
             candidate_axis=candidate_axis,
+            query_weights=query_weights,
         )
         soft_iou_loss = loss_logits.new_zeros(())
         if soft_iou_targets is not None and self._soft_iou_scale > 0:
@@ -1524,6 +1530,33 @@ class BoundaryExtractorModel(BaseExtractorModel):
         loss = (loss * pair_mask.to(loss.dtype)).sum() / pair_mask.sum().clamp_min(1)
         return self.boundary_settings.relation_loss_weight * loss
 
+    def _query_task_weights(self, batch, query_mask) -> Optional[torch.Tensor]:
+        """Build the ``[B, Q]`` per-query task weight, or ``None`` if unweighted.
+
+        Returns ``None`` whenever every configured weight is 1.0, so the default
+        configuration takes the exact pre-existing code path rather than a
+        numerically-equivalent one. ``batch.query_layouts`` carries a ``QuerySpec``
+        per query, and each spec already knows its ``task_type``.
+        """
+        weights = getattr(self.boundary_settings, "task_loss_weights", None)
+        if not weights or all(float(w) == 1.0 for w in weights.values()):
+            return None
+        layouts = getattr(batch, "query_layouts", None)
+        if layouts is None:
+            return None
+        # Assemble in Python and transfer ONCE. Writing `out[i, q] = ...` straight
+        # onto the model device costs a host->device copy per query per forward,
+        # which is the scalar host sync the boundary hot path is guarded against
+        # (tests/models/boundary/test_no_host_sync.py). Free on CPU, not on
+        # CUDA/MPS -- and GPU is where this trains.
+        rows, width = query_mask.shape
+        table = [[1.0] * width for _ in range(rows)]
+        for i, layout in enumerate(layouts[:rows]):
+            for spec in layout.queries:
+                if spec.query_id < width:
+                    table[i][spec.query_id] = float(weights.get(spec.task_type, 1.0))
+        return torch.tensor(table, dtype=torch.float32, device=query_mask.device)
+
     # =========================================================================
     # Forward
     # =========================================================================
@@ -1559,6 +1592,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 targets, return_candidates=return_candidates,
                 gold_injection_prob=gold_injection_prob,
                 collect_diagnostics=collect_diagnostics,
+                query_weights=self._query_task_weights(batch, core["query_mask"]),
             )
         else:
             # Classification-only batch: no extractive queries to score.

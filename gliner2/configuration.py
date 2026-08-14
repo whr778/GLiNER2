@@ -148,6 +148,13 @@ class BoundaryHeadSettings:
     record_anchor_threshold: float = 0.5    # final anchor selection threshold
     record_field_threshold: float = 0.5     # list-field / null decision cutoff
     record_loss_weight: float = 1.0
+    # Per-task rebalancing of the span losses (start/end/pair), keyed by task
+    # type: "entities" | "relations" | "events" | "json_structures". Absent keys
+    # and an all-1.0 map are treated as unweighted and take the original code
+    # path exactly. This is the boundary analogue of the phase-2 span model's
+    # event_struct_loss; see EVENT_LOSS_PHASE3_PLAN.md. Note "classifications"
+    # emits no extractive queries, so a weight for it is a no-op here.
+    task_loss_weights: Optional[Dict[str, float]] = None
     # Sparse typed relation scorer.
     enable_relations: bool = True
     relation_heads_per_type: int = 32
@@ -412,6 +419,11 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "record_loss_weight": float(
             values.get("record_loss_weight", d.record_loss_weight)
+        ),
+        "task_loss_weights": (
+            {str(k): float(v) for k, v in values["task_loss_weights"].items()}
+            if values.get("task_loss_weights")
+            else d.task_loss_weights
         ),
         "enable_relations": bool(values.get("enable_relations", d.enable_relations)),
         "relation_heads_per_type": int(

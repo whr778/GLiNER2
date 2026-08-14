@@ -41,11 +41,28 @@ def _reduce(
     keep: torch.BoolTensor,
     query_mask: Optional[torch.BoolTensor],
     mode: str,
+    query_weights: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """Reduce a masked ``[B, Q, N]`` loss globally or per active query."""
+    """Reduce a masked ``[B, Q, N]`` loss globally or per active query.
+
+    ``query_weights`` is an optional ``[B, Q]`` per-query scale, used to rebalance
+    the loss across task types (entities vs relations vs events) — the boundary
+    analogue of the phase-2 span model's per-task event loss.
+
+    The denominator stays **unweighted** on purpose. A weighted mean would make
+    the loss invariant to scaling every weight, so raising the event weight would
+    do nothing; dividing by the plain active count means a weight of 2.0 really
+    does double that task's share of the gradient. At all-ones this reduces
+    exactly to the unweighted form.
+    """
     keep_f = keep.to(elementwise.dtype)
+    if query_weights is not None:
+        query_weights = query_weights.to(elementwise.dtype)
     if mode == "global":
-        return (elementwise * keep_f).sum() / keep_f.sum().clamp_min(1)
+        weighted = elementwise * keep_f
+        if query_weights is not None:
+            weighted = weighted * query_weights.unsqueeze(-1)
+        return weighted.sum() / keep_f.sum().clamp_min(1)
     if mode != "per_query":
         raise ValueError(f"unknown reduction mode {mode!r}")
     numerator = (elementwise * keep_f).sum(-1)
@@ -55,7 +72,10 @@ def _reduce(
     if query_mask is not None:
         active = active & query_mask
     active_f = active.to(per_query.dtype)
-    return (per_query * active_f).sum() / active_f.sum().clamp_min(1)
+    scaled = per_query * active_f
+    if query_weights is not None:
+        scaled = scaled * query_weights
+    return scaled.sum() / active_f.sum().clamp_min(1)
 
 
 def balanced_multilabel_bce(
@@ -66,6 +86,7 @@ def balanced_multilabel_bce(
     negative_weight: float = 1.0,
     query_mask: Optional[torch.BoolTensor] = None,
     reduction: str = "global",
+    query_weights: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Mean multi-label BCE over valid positions.
 
@@ -76,7 +97,7 @@ def balanced_multilabel_bce(
     """
     bce = _safe_bce(logits, targets, valid_mask)
     weight = torch.where(targets > 0.5, torch.ones_like(targets), torch.full_like(targets, negative_weight))
-    return _reduce(bce * weight, valid_mask, query_mask, reduction)
+    return _reduce(bce * weight, valid_mask, query_mask, reduction, query_weights)
 
 
 def asymmetric_focal_loss(
@@ -90,6 +111,7 @@ def asymmetric_focal_loss(
     negative_weight: float = 1.0,
     query_mask: Optional[torch.BoolTensor] = None,
     reduction: str = "global",
+    query_weights: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Asymmetric focal loss for imbalanced multi-label boundary targets."""
     keep = valid_mask
@@ -106,7 +128,7 @@ def asymmetric_focal_loss(
         * (p ** gamma_negative)
         * negative_weight
     )
-    return _reduce(-(los_pos + los_neg), valid_mask, query_mask, reduction)
+    return _reduce(-(los_pos + los_neg), valid_mask, query_mask, reduction, query_weights)
 
 
 def build_candidate_labels(
@@ -306,6 +328,7 @@ def candidate_pair_loss(
     reduction: str = "global",
     query_axis: int = 1,
     candidate_axis: int = 2,
+    query_weights: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """BCE over candidates; optionally restrict negatives to a hard subset."""
     logits = _to_query_candidate(logits, query_axis, candidate_axis)
@@ -320,7 +343,7 @@ def candidate_pair_loss(
     else:
         effective = valid_mask
     bce = _safe_bce(logits, labels, effective)
-    return _reduce(bce, effective, query_mask, reduction)
+    return _reduce(bce, effective, query_mask, reduction, query_weights)
 
 
 def inside_consistency_loss(
