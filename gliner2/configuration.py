@@ -155,6 +155,11 @@ class BoundaryHeadSettings:
     # event_struct_loss; see EVENT_LOSS_PHASE3_PLAN.md. Note "classifications"
     # emits no extractive queries, so a weight for it is a no-op here.
     task_loss_weights: Optional[Dict[str, float]] = None
+    # Emit per-task loss CONTRIBUTIONS (entities/relations/events/json_structures
+    # x start/end/pair) alongside the mechanism buckets. Diagnostic only -- no
+    # gradient effect -- and it is how the event signal becomes visible at all,
+    # since the boundary loss otherwise comingles every task into one scalar.
+    report_task_losses: bool = False
     # Sparse typed relation scorer.
     enable_relations: bool = True
     relation_heads_per_type: int = 32
@@ -419,6 +424,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "record_loss_weight": float(
             values.get("record_loss_weight", d.record_loss_weight)
+        ),
+        "report_task_losses": bool(
+            values.get("report_task_losses", d.report_task_losses)
         ),
         "task_loss_weights": (
             {str(k): float(v) for k, v in values["task_loss_weights"].items()}

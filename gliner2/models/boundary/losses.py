@@ -78,6 +78,53 @@ def _reduce(
     return scaled.sum() / active_f.sum().clamp_min(1)
 
 
+def reduce_by_task(
+    elementwise: torch.Tensor,
+    keep: torch.BoolTensor,
+    query_mask: Optional[torch.BoolTensor],
+    mode: str,
+    task_ids: torch.Tensor,
+    num_tasks: int,
+) -> torch.Tensor:
+    """Split a reduced loss into per-task CONTRIBUTIONS, one pass, no recompute.
+
+    Returns ``[num_tasks]``. The contributions **sum to the unweighted**
+    :func:`_reduce` of the same inputs, which is the phase-2 invariant
+    (``structure_loss + event_structure_loss == old structure_loss``) carried
+    over to a loss that decomposes by mechanism rather than by task.
+
+    Contribution, not per-task mean: it answers "how much of this gradient is
+    events" -- the balance question you tune against -- and it is additive, so
+    the buckets reconcile against the scalar the optimizer actually sees. Divide
+    by the per-task query count (reported alongside) for a per-task mean.
+
+    ``task_ids`` is ``[B, Q]`` with an integer per query; padded or unknown
+    queries should carry an id outside ``range(num_tasks)`` and are dropped.
+    """
+    dtype = elementwise.dtype
+    keep_f = keep.to(dtype)
+    if mode == "global":
+        per_query = (elementwise * keep_f).sum(-1)
+        denominator = keep_f.sum().clamp_min(1)
+        active = keep.any(-1)
+    elif mode == "per_query":
+        per_query = (elementwise * keep_f).sum(-1) / keep_f.sum(-1).clamp_min(1)
+        active = keep.any(-1)
+        if query_mask is not None:
+            active = active & query_mask
+        denominator = active.to(dtype).sum().clamp_min(1)
+    else:
+        raise ValueError(f"unknown reduction mode {mode!r}")
+
+    contributions = per_query.new_zeros(num_tasks)
+    valid = active & (task_ids >= 0) & (task_ids < num_tasks)
+    if valid.any():
+        contributions.scatter_add_(
+            0, task_ids[valid].reshape(-1).long(), (per_query * active.to(dtype))[valid].reshape(-1)
+        )
+    return contributions / denominator
+
+
 def balanced_multilabel_bce(
     logits: torch.Tensor,
     targets: torch.Tensor,
@@ -87,6 +134,7 @@ def balanced_multilabel_bce(
     query_mask: Optional[torch.BoolTensor] = None,
     reduction: str = "global",
     query_weights: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Mean multi-label BCE over valid positions.
 
@@ -97,6 +145,8 @@ def balanced_multilabel_bce(
     """
     bce = _safe_bce(logits, targets, valid_mask)
     weight = torch.where(targets > 0.5, torch.ones_like(targets), torch.full_like(targets, negative_weight))
+    if capture is not None:
+        capture["elementwise"], capture["keep"] = bce * weight, valid_mask
     return _reduce(bce * weight, valid_mask, query_mask, reduction, query_weights)
 
 
@@ -112,6 +162,7 @@ def asymmetric_focal_loss(
     query_mask: Optional[torch.BoolTensor] = None,
     reduction: str = "global",
     query_weights: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Asymmetric focal loss for imbalanced multi-label boundary targets."""
     keep = valid_mask
@@ -128,6 +179,8 @@ def asymmetric_focal_loss(
         * (p ** gamma_negative)
         * negative_weight
     )
+    if capture is not None:
+        capture["elementwise"], capture["keep"] = -(los_pos + los_neg), valid_mask
     return _reduce(-(los_pos + los_neg), valid_mask, query_mask, reduction, query_weights)
 
 
@@ -329,6 +382,7 @@ def candidate_pair_loss(
     query_axis: int = 1,
     candidate_axis: int = 2,
     query_weights: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """BCE over candidates; optionally restrict negatives to a hard subset."""
     logits = _to_query_candidate(logits, query_axis, candidate_axis)
@@ -343,6 +397,8 @@ def candidate_pair_loss(
     else:
         effective = valid_mask
     bce = _safe_bce(logits, labels, effective)
+    if capture is not None:
+        capture["elementwise"], capture["keep"] = bce, effective
     return _reduce(bce, effective, query_mask, reduction, query_weights)
 
 

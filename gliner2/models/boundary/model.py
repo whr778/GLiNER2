@@ -77,6 +77,10 @@ from gliner2.processing.targets import (
 )
 
 
+
+#: Canonical order for the per-task loss buckets. Fixed so a metric key means the
+#: same thing across runs; unknown/padded queries get -1 and are dropped.
+TASK_TYPES = ("entities", "relations", "events", "json_structures")
 DEFAULT_LOSS_WEIGHTS = {"start": 1.0, "end": 1.0, "pair": 1.0, "inside": 0.5}
 
 
@@ -262,6 +266,7 @@ class BoundaryHead(nn.Module):
         gold_injection_prob: Optional[float] = None,
         collect_diagnostics: Optional[bool] = None,
         query_weights: Optional[torch.Tensor] = None,
+        query_task_ids: Optional[torch.Tensor] = None,
     ) -> ExtractorOutput:
         b, l, _ = token_states.shape
         text_lengths = text_mask.sum(dim=1).long()
@@ -464,6 +469,7 @@ class BoundaryHead(nn.Module):
                     pooled_logits if pooled is not None else None
                 ),
                 query_weights=query_weights,
+                query_task_ids=query_task_ids,
             )
             total_loss = losses["total_loss"]
 
@@ -587,6 +593,7 @@ class BoundaryHead(nn.Module):
         pooled: Optional[PooledCandidates] = None,
         pooled_pair_logits: Optional[torch.Tensor] = None,
         query_weights: Optional[torch.Tensor] = None,
+        query_task_ids: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         boundary_keep = boundary_mask.unsqueeze(1) & query_mask.unsqueeze(-1)  # [B,Q,L+1]
         start_targets = targets.start_targets
@@ -604,7 +611,12 @@ class BoundaryHead(nn.Module):
         use_focal = getattr(self.settings, "boundary_marginal_loss", "bce") == "asymmetric_focal"
         reduction = getattr(self.settings, "loss_reduction", "global")
 
-        def _marginal_loss(logits, tgt, keep):
+        want_task_losses = query_task_ids is not None
+        captures: Dict[str, Dict] = {}
+        task_losses: Dict[str, torch.Tensor] = {}
+
+        def _marginal_loss(logits, tgt, keep, capture_as=None):
+            capture = captures.setdefault(capture_as, {}) if capture_as else None
             if use_focal:
                 return asymmetric_focal_loss(
                     logits,
@@ -617,6 +629,7 @@ class BoundaryHead(nn.Module):
                     query_mask=query_mask,
                     reduction=reduction,
                     query_weights=query_weights,
+                    capture=capture,
                 )
             return balanced_multilabel_bce(
                 logits,
@@ -626,13 +639,16 @@ class BoundaryHead(nn.Module):
                 query_mask=query_mask,
                 reduction=reduction,
                 query_weights=query_weights,
+                capture=capture,
             )
 
         start_loss = _marginal_loss(
-            marginals.start_logits, start_targets, boundary_keep
+            marginals.start_logits, start_targets, boundary_keep,
+            capture_as="start" if want_task_losses else None,
         )
         end_loss = _marginal_loss(
-            marginals.end_logits, end_targets, boundary_keep
+            marginals.end_logits, end_targets, boundary_keep,
+            capture_as="end" if want_task_losses else None,
         )
 
         use_soft_iou = self.settings.soft_iou_aux_weight > 0
@@ -721,6 +737,7 @@ class BoundaryHead(nn.Module):
             query_axis=query_axis,
             candidate_axis=candidate_axis,
             query_weights=query_weights,
+            capture=captures.setdefault("pair", {}) if want_task_losses else None,
         )
         soft_iou_loss = loss_logits.new_zeros(())
         if soft_iou_targets is not None and self._soft_iou_scale > 0:
@@ -819,7 +836,25 @@ class BoundaryHead(nn.Module):
             + self.settings.abstention_loss_weight * null_loss
             + self.settings.count_loss_weight * count_loss
         )
+        if want_task_losses:
+            from gliner2.models.boundary.losses import reduce_by_task
+            n = len(TASK_TYPES)
+            for term, cap in captures.items():
+                if not cap:
+                    continue
+                shares = reduce_by_task(
+                    cap["elementwise"], cap["keep"], query_mask, reduction,
+                    query_task_ids, n,
+                )
+                for i, name in enumerate(TASK_TYPES):
+                    task_losses[f"{name}_{term}_loss"] = shares[i]
+            for i, name in enumerate(TASK_TYPES):
+                task_losses[f"{name}_query_count"] = (
+                    (query_task_ids == i) & query_mask
+                ).sum().to(pair_logits.dtype)
+
         return {
+            **task_losses,
             "total_loss": total,
             "start_loss": start_loss,
             "end_loss": end_loss,
@@ -1530,6 +1565,23 @@ class BoundaryExtractorModel(BaseExtractorModel):
         loss = (loss * pair_mask.to(loss.dtype)).sum() / pair_mask.sum().clamp_min(1)
         return self.boundary_settings.relation_loss_weight * loss
 
+    def _query_task_ids(self, batch, query_mask) -> Optional[torch.Tensor]:
+        """``[B, Q]`` task-type index per query, or ``None`` if unavailable."""
+        layouts = getattr(batch, "query_layouts", None)
+        if layouts is None:
+            return None
+        order = {name: i for i, name in enumerate(TASK_TYPES)}
+        rows, width = query_mask.shape
+        table = [[-1] * width for _ in range(rows)]
+        for i, layout in enumerate(layouts[:rows]):
+            for spec in layout.queries:
+                if spec.query_id < width:
+                    table[i][spec.query_id] = order.get(spec.task_type, -1)
+        host = torch.tensor(table, dtype=torch.long)
+        if query_mask.device.type == "cuda":
+            return host.pin_memory().to(query_mask.device, non_blocking=True)
+        return host.to(query_mask.device)
+
     def _query_task_weights(self, batch, query_mask) -> Optional[torch.Tensor]:
         """Build the ``[B, Q]`` per-query task weight, or ``None`` if unweighted.
 
@@ -1599,6 +1651,11 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 gold_injection_prob=gold_injection_prob,
                 collect_diagnostics=collect_diagnostics,
                 query_weights=self._query_task_weights(batch, core["query_mask"]),
+                query_task_ids=(
+                    self._query_task_ids(batch, core["query_mask"])
+                    if getattr(self.boundary_settings, "report_task_losses", False)
+                    else None
+                ),
             )
         else:
             # Classification-only batch: no extractive queries to score.

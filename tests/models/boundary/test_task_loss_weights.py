@@ -19,7 +19,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from gliner2.models.boundary.losses import _reduce, balanced_multilabel_bce
+from gliner2.models.boundary.losses import (
+    _reduce,
+    balanced_multilabel_bce,
+    reduce_by_task,
+)
 
 
 @pytest.fixture
@@ -105,3 +109,51 @@ def test_weights_reach_the_public_loss_entry_point():
 
     assert plain == pytest.approx(ones, rel=1e-6)
     assert heavy != pytest.approx(plain, rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Per-task loss buckets (EVENT_LOSS_PHASE3_PLAN step 4)
+# ---------------------------------------------------------------------------
+
+def _task_ids(rows, width, assignment):
+    ids = torch.full((rows, width), -1, dtype=torch.long)
+    for (b, q), t in assignment.items():
+        ids[b, q] = t
+    return ids
+
+
+@pytest.mark.parametrize("mode", ["global", "per_query"])
+def test_task_buckets_sum_to_the_unweighted_total(masked_batch, mode):
+    """The phase-2 invariant, carried to a mechanism-decomposed loss:
+    ``structure + event_structure == old structure``. If the buckets do not
+    reconcile against the scalar the optimizer sees, they are decoration."""
+    elementwise, keep, query_mask = masked_batch
+    ids = _task_ids(2, 4, {(b, q): q % 3 for b in range(2) for q in range(4)})
+
+    total = _reduce(elementwise, keep, query_mask, mode)
+    buckets = reduce_by_task(elementwise, keep, query_mask, mode, ids, 3)
+
+    assert float(buckets.sum()) == pytest.approx(float(total), rel=1e-6)
+
+
+def test_a_task_with_no_queries_contributes_zero(masked_batch):
+    elementwise, keep, query_mask = masked_batch
+    ids = _task_ids(2, 4, {(b, q): 0 for b in range(2) for q in range(4)})
+
+    buckets = reduce_by_task(elementwise, keep, query_mask, "per_query", ids, 3)
+
+    assert float(buckets[1]) == 0.0 and float(buckets[2]) == 0.0
+    assert float(buckets[0]) > 0.0
+
+
+def test_unassigned_queries_are_dropped_not_misattributed(masked_batch):
+    """A padded query carries id -1. Silently folding it into task 0 would
+    inflate whichever task happens to be first."""
+    elementwise, keep, query_mask = masked_batch
+    all_zero = _task_ids(2, 4, {(b, q): 0 for b in range(2) for q in range(4)})
+    some_pad = _task_ids(2, 4, {(b, q): 0 for b in range(2) for q in range(3)})  # q=3 -> -1
+
+    full = reduce_by_task(elementwise, keep, query_mask, "per_query", all_zero, 2)
+    padded = reduce_by_task(elementwise, keep, query_mask, "per_query", some_pad, 2)
+
+    assert float(padded[0]) < float(full[0])
