@@ -431,6 +431,49 @@ def _annotate_languages(records: List[Dict]) -> List[Dict]:
     return records
 
 
+"""Boundary-head keys that are baked into the saved weights. Overriding one on
+the ``pretrained`` path cannot work -- the modules are already built -- so we
+refuse rather than apply half of it."""
+_STRUCTURAL_BOUNDARY_KEYS = frozenset({
+    "enable_records", "enable_relations", "boundary_dim", "pair_dim",
+    "boundary_refinement_layers", "boundary_ffn_multiplier", "candidate_pool",
+    "multihead_pair_compat_heads", "relation_heads_per_type",
+    "relation_tails_per_type", "directional_relation_states",
+    "relation_biaffine_content",
+})
+
+
+def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
+    """Apply a config's ``model.boundary_head`` block to an already-loaded model.
+
+    ``from_pretrained`` builds ``boundary_settings`` from the CHECKPOINT's config
+    inside ``__init__``, so the plain ``setattr(model.config, ...)`` the other
+    overrides use lands too late and is silently dropped -- the model keeps the
+    checkpoint's values. Measured: a config setting
+    ``boundary_head.task_loss_weights`` produced ``task_loss_weights=None`` on the
+    built model, i.e. a treatment arm that is a silent duplicate of its control.
+
+    Loss-related keys are merged and ``boundary_settings`` is rebuilt. Structural
+    keys raise, because the modules they size were already constructed.
+    """
+    from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
+
+    current = dict(getattr(model.config, "boundary_head", None) or {})
+    conflicting = sorted(
+        k for k, v in overrides.items()
+        if k in _STRUCTURAL_BOUNDARY_KEYS and current.get(k) != v
+    )
+    if conflicting:
+        raise SystemExit(
+            f"[config] boundary_head keys {conflicting} are structural and cannot be "
+            f"overridden on the `pretrained` path -- the checkpoint's modules are "
+            f"already built. Retrain from `encoder:`, or drop these keys."
+        )
+    current.update(overrides)
+    model.config.boundary_head = current
+    model.boundary_settings = BoundaryHeadSettings(**validate_boundary_head(current))
+
+
 def _build_model(model_cfg: Dict):
     """Build the model from the ``model`` config section.
 
@@ -458,7 +501,11 @@ def _build_model(model_cfg: Dict):
             load_kwargs["architecture"] = architecture
         model = AutoExtractor.from_pretrained(pretrained, **load_kwargs)
         for key, value in model_cfg.items():
+            if key == "boundary_head":
+                continue                      # needs more than setattr; see below
             setattr(model.config, key, value)
+        if "boundary_head" in model_cfg:
+            _apply_boundary_head_overrides(model, model_cfg["boundary_head"])
         return model
     encoder = model_cfg.pop("encoder")
     return AutoExtractor.from_encoder(
