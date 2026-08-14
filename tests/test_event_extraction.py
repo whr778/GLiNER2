@@ -366,23 +366,35 @@ def test_event_pipeline_multiple_triggers_end_to_end():
         assert isinstance(attacks[0]["triggers"], list)
 
 
-def test_schema_from_gold_carries_entity_descriptions():
+GOLD_WITH_DESCRIPTIONS = {
+    "entities": {"e_0": ["product installation"], "e_1": []},
+    "entity_descriptions": {"e_0": "the process of installing software", "e_1": "a registry key"},
+}
+
+
+def test_schema_from_gold_reaches_the_processor_with_descriptions(tiny_span_model):
     """Corpora like pile_ner_def / nuner_full name types e_0/e_1 and put the
     meaning in a parallel map. Dropping it asked the model to find "e_0" with an
-    empty description -- base-v1 scored 0.1351 at recall 0.085 on pile_ner_def,
-    which measured the empty label rather than the model."""
-    gold = {
-        "entities": {"e_0": ["product installation"], "e_1": []},
-        "entity_descriptions": {"e_0": "the process of installing software", "e_1": "a registry key"},
-    }
+    empty description -- base-v1 scores 0.5381 strict entity F1 on 100
+    pile_ner_def records with the descriptions and 0.0174 without.
 
-    schema = _schema_from_gold(gold)
+    Asserted through the processor, not on the dict shape: an earlier fix put
+    the descriptions under schema["entities"] as their values, which type-checks
+    and reads as correct but changes nothing the model sees -- those values are
+    label targets, and the prompt is built from schema["entity_descriptions"]."""
+    processor = tiny_span_model.processor
+    processor.change_mode(is_training=False)
 
-    assert schema["entities"] == {
-        "e_0": "the process of installing software",
-        "e_1": "a registry key",
-    }
+    prompt = " ".join(
+        tok for part in processor._infer_from_json(_schema_from_gold(GOLD_WITH_DESCRIPTIONS))["schemas"]
+        for tok in part
+    )
+
+    assert "the process of installing software" in prompt
+    assert "a registry key" in prompt
 
 
-def test_schema_from_gold_without_descriptions_is_unchanged():
-    assert _schema_from_gold({"entities": {"person": ["Ada"]}})["entities"] == {"person": ""}
+def test_schema_from_gold_without_descriptions_omits_the_key():
+    schema = _schema_from_gold({"entities": {"person": ["Ada"]}})
+    assert schema["entities"] == {"person": ""}
+    assert "entity_descriptions" not in schema

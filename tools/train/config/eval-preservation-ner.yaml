@@ -31,7 +31,7 @@ training:
   validate_data: false
 
 eval:
-  batch_size: 16
+  batch_size: 4          # 16 OOMs on pile_ner_def -- its records carry large label sets
   threshold: 0.5
   global_decode: false
   eval_by_language: false

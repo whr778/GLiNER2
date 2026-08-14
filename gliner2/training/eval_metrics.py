@@ -297,14 +297,16 @@ def _schema_from_gold(output: Dict) -> Dict:
 
     entities = output.get("entities")
     if isinstance(entities, dict) and entities:
-        # Carry entity_descriptions through. Corpora like pile_ner_def and
-        # nuner_full name their types e_0/e_1/... and put the meaning in a
-        # parallel descriptions map, which the processor and the training path
-        # both consume. Dropping it here asked the model to find "e_0" with an
-        # empty description: base-v1 scored 0.1351 on pile_ner_def at recall
-        # 0.085, which measures the empty label, not the model.
-        descs = output.get("entity_descriptions") or {}
-        schema["entities"] = {label: descs.get(label, "") for label in entities.keys()}
+        # Carry entity_descriptions through as its OWN key. Corpora like
+        # pile_ner_def and nuner_full name their types e_0/e_1/... and put the
+        # meaning in a parallel descriptions map. The processor reads that map
+        # from schema["entity_descriptions"] (processor.py) -- the values under
+        # schema["entities"] are label targets, not prompt text, so burying the
+        # descriptions there changes nothing the model sees.
+        schema["entities"] = {label: "" for label in entities.keys()}
+        descs = output.get("entity_descriptions")
+        if descs:
+            schema["entity_descriptions"] = dict(descs)
 
     relations = output.get("relations")
     if isinstance(relations, list) and relations:
