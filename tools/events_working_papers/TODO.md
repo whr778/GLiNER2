@@ -24,11 +24,25 @@ The live bottleneck is **cross-event contamination** (item 2, quantified at 4.7%
 resistant to all three signals tried) and underneath it the query-axis training gap that
 GIST is being built for (item 11, the active work).
 
+State at 2026-08-14. **No GPUs running.** Two eval-side defects fixed since (`c0ab89c`,
+`7586411`); see "What the metrics fixes did and did not touch" below before re-reading any
+number in this file. Item 11's RAMS guide cache turns out to exist as well as the
+`mix_natural` one. Nothing is mid-flight.
+
 ---
 
 ## P0 — blocks the next experiment
 
-### 1. Number-to-place attachment — the actual research blocker
+### 1. Number-to-place attachment — LABEL IS STALE, content is not
+This still sits at P0 but **nothing is currently blocked on it**, by this file's own account:
+the 08-12 header says the scope gate "largely closed the attachment blocker" and names items
+2 and 11 as the live bottleneck. Reprioritize it or leave it, but do not read "P0" as "the
+next experiment is waiting on this".
+
+The content below is still live and unrun. Note item 8 **strengthens** the beam route rather
+than undercutting it: it found beam *width* useless (W=1 wins) while constrained joint
+selection beat greedy by +0.052 best-vs-best -- "the gain is the formulation, not the search".
+`TypedEndpoints` is a constraint, not a width.
 Proximity, GPE tags, record-internal location and admin rollup have all been tried and all
 failed. Rollup did what it was supposed to (58 keys → 21, 84% of observations in six clean
 streams) and per-state tracking is *still* catastrophic: North Carolina 5.637, Georgia with
@@ -451,6 +465,25 @@ live; leave it unset and nothing in training changes.
 | cache -> `[B,Q,C]` | `models/boundary/guide.py`, with hit-rate counters |
 | `precompute_guide_scores.py` | batched; format frozen (`sha1` key + rival descriptions) |
 | **the cache itself** | **BUILT 2026-08-12** — `data/guide_scores.mix_natural.dedup.jsonl` |
+| **a RAMS cache too** | **BUILT 2026-08-12** — `data/guide_scores.rams_baseword.dedup.jsonl` |
+
+#### Running the arm — four things checked 2026-08-14, before any spend
+
+1. **The A/B is TWO training runs, not one.** Five commits touched the training path after
+   the control trained on 08-10 (`ca3e362`, `e189362`, `bf2c9b4`, `3a83c8d`, and `210af17`,
+   the GIST wiring itself). `mix_natural` is 7.6% events (379 of the first 5,000 train
+   records), so the Tier 2 event-record changes are **not** inert here and the existing
+   control checkpoint is not a valid arm against a fresh GIST run.
+2. **Neither checkpoint is local.** `out/joint-boundary-mmbert-137k/best` — the GIST
+   config's `pretrained` — and `out/warmstart-natural/best` are both absent. Both are on the
+   Hub privately (`whr778/gliner2-joint-boundary-mmbert-137k`,
+   `whr778/gliner2-joint-boundary-warmstart-natural`).
+3. **Both warmstart configs select on `metric_for_best: eval_loss`.** Kept deliberately for
+   this arm: with 3 epochs there are 3 candidates, so selection is a small lever, and the
+   decision that matters is the swept-threshold comparison between arms. Revisit if the arm
+   is ever run longer.
+4. Pull the checkpoints off the box **before** terminating it, and sweep thresholds on both
+   arms before reading the comparison. Item 12 is what skipping either costs.
 
 #### The cache — built 2026-08-12, and the merge needed a fix
 
@@ -594,6 +627,11 @@ which is terminated; `test_metrics.json` for all three plus trimmed logs are loc
 `out/gliner2-base-v1-rams{,-baseword,-dupcontrol}/`. **The checkpoints went with the box**,
 so the sweep below cannot be run without retraining.
 
+Confirmed 2026-08-14: those three directories contain `test_metrics.json` and nothing else —
+no `best/`, no `threshold_sweep.json`, no per-epoch checkpoints. Recovering the sweep is
+three full retrains (~4h, ~$5 on an A10), and this file's own "higher-value uses of the same
+GPU hour" note argues against spending it here.
+
 | arm | train file | records |
 |---|---|--:|
 | A baseline | `data/rams.train.jsonl` | 7,329 |
@@ -722,6 +760,44 @@ token-wise is exactly what the alignment rule above requires.
 
 **Write path.** Any new emitter must route through `_split.dumps_record`, per the repo rule —
 NFKC plus line-separator stripping, `ensure_ascii=False`.
+
+---
+
+## What the metrics fixes did and did not touch (2026-08-14)
+
+Two eval-side defects were fixed. Neither reaches training, and the blast radius was
+measured rather than assumed, so **no number in this file needs redoing**.
+
+**`c0ab89c` — `metric_for_best` silently fell back to `eval_loss`.** A run configured to
+maximize an F1 maximized loss instead. Now raises.
+
+**`7586411` — `_schema_from_gold` dropped `entity_descriptions`.** Corpora that name types
+`e_0`/`e_1` and carry the meaning in a parallel map were scored by asking for the empty
+label. On 100 `pile_ner_def` val records against pristine `fastino/gliner2-base-v1`, strict
+entity F1 0.0174 without the map against 0.5381 with it; recall 0.0092 → 0.4771.
+
+(`bbacce6` claimed this fix and was a **no-op** — it put the map under `schema["entities"]`
+as the values, which are label targets, not prompt text. Cite `7586411`, not `bbacce6`.)
+
+**Selection was never affected.** Every training config except `eval-preservation-ner.yaml`
+selects on `eval_loss`, which the trainer computes from the forward pass
+(`trainer.py:2109`) and which never passes through `_schema_from_gold`.
+
+**Blind-test reach**, as share of each config's test records carrying `entities` **and**
+`entity_descriptions`:
+
+| config | affected |
+|---|--:|
+| `eval-preservation-ner` | 78.5% (4,715/6,003) — built 08-13, never had a valid number before |
+| `mmbert-base` | **49.3%** (106,657/216,154) — its blind-test entity row is understated |
+| `joint-boundary-mmbert-{10k,40k,100k}` | 0.5% |
+| `warmstart-{natural,anchorless,struct}`, `mmbert-137k`, `natural-gist` | 0.2% |
+
+The record-mode A/B (item 11's control, `0ca9447`) is **0.2%** and stands:
+`data/mix_natural.test.jsonl` is 0 bytes, so `mix_natural` contributes a val split only and
+its 35.5% description share never reached a blind test. No working paper quotes an entity
+number from `pile_ner_def`, `nuner_full` or `pubmed_abstracts_ner` — the headline numbers
+are event metrics on RAMS, which carries no descriptions.
 
 ---
 
