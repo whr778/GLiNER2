@@ -103,7 +103,13 @@ and `SchemaAPI`/`GLiNER2API`), plus the training data model:
   trigger and argument surface appears verbatim in the source text; wired
   through `validate()` / `sanitize()` / `to_dict()` / `from_dict()`.
 
-A dedicated event loss path (§6) lets event supervision be tuned independently.
+> ⚠ **Stale for the boundary architecture.** This previously read "A dedicated event loss
+> path (§6) lets event supervision be tuned independently." That path
+> (`event_struct_loss` / `event_struct_pos_weight`) exists only on the phase-2 span model
+> (`origin/mmbert_training`) and was dropped in the port to the boundary architecture,
+> where the loss decomposes by mechanism rather than by task. Event supervision is **not**
+> independently tunable on this branch today. Plan to restore the capability:
+> [`EVENT_LOSS_PHASE3_PLAN.md`](EVENT_LOSS_PHASE3_PLAN.md).
 
 ## 5. Training from arbitrary encoders and at scale
 

@@ -1,5 +1,12 @@
 # Event Loss Separation Plan
 
+> **PHASE 2 (span architecture). Implemented on `origin/mmbert_training`; ABSENT on this
+> branch** — dropped in the port onto main's boundary rewrite, and no `.yaml` on
+> `mmbert_training` ever set `event_struct_pos_weight`, so it was never trained with here.
+> The boundary loss decomposes by *mechanism*, not by task, so none of the edits below
+> apply to phase 3. See [`EVENT_LOSS_PHASE3_PLAN.md`](EVENT_LOSS_PHASE3_PLAN.md) for the
+> analogue and its evaluation plan. Kept as history.
+
 **Goal**: Separate the event-task contribution to `structure_loss` into its own
 `event_structure_loss` bucket, with no change to the gradient signal.  All other
 losses (`classification_loss`, `structure_loss`, `count_loss`) retain their
