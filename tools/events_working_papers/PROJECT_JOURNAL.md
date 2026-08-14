@@ -609,9 +609,11 @@ empty and its 35.5% description share is a val-split property. No paper number n
 
 **The synthetic-corpus arm, and a trade measured in both directions.** Fine-tuning base-v1 on
 a 5K Haiku-generated multi-task corpus produced large in-distribution gains — event strict
-**0.0083 → 0.5467**, a schema the base model essentially cannot do — against a **−0.121
-strict F1 (−23% relative)** loss on general-domain NER, swept best-vs-best so the gap is not
-a threshold artifact.
+**0.0083 → 0.5467**, a schema the base model essentially cannot do — against a **−0.118
+strict F1 (−22% relative)** loss on general-domain NER (0.5320 → 0.4136 on 6,016 records),
+each arm at its own swept threshold, so the gap is not a threshold artifact. At a fixed 0.5
+it reads −0.121; sweeping moves it by 0.003. The check was worth running because the
+fine-tune's own sweep had picked 0.7 on synthetic val, so neither arm was at its optimum.
 
 The FairEval decomposition says *what* was lost, and it is not the span machinery: boundary
 errors went **down** (BES 3398→2706, BEL 1725→1272) while label errors rose (LE +1302,
