@@ -1,0 +1,161 @@
+# PHASE 3 ARM -- per-task event loss weighting (EVENT_LOSS_PHASE3_PLAN.md).
+# Generated from warmstart-natural.yaml; differs ONLY in task_loss_weights,
+# output_dir and experiment_name. Everything else -- base checkpoint, corpus,
+# task_lr, encoder_lr, epochs, threshold sweep -- is held fixed, so head-init
+# and learning rate cannot explain a between-arm difference.
+#
+# ARM: events = 2.0  (event span loss UP-dose)
+# Warm start + structure/NER, RECORD MODE = NATURAL. One of a two-arm A/B.
+#
+# The arms differ in EXACTLY ONE variable: the record_metadata written into the casualty
+# corpus. Verified by content hash -- both mixtures are byte-identical with
+# record_metadata stripped (84,280 records, same hash), so any difference in the result
+# is attributable to the mode and to nothing else.
+#
+# The question is open. natural anchors each instance on its first declared field (a
+# casualty figure); anchorless forms instances with no anchor mention. The only prior
+# evidence is that a model NEVER TRAINED on anchorless fails to decode it -- which is
+# evidence about that model, not about the mode, and is why this is being run rather
+# than assumed.
+#
+# Decided by tools/train/probe_records.py, not by the blind test: the blind test carries
+# no structure data, so both arms would score identically on it.
+#
+# Why this run exists. `mmbert-137k` cannot do `[C]` record extraction at all -- verified
+# directly on the checkpoint: None at every threshold down to 0.01, with
+# `enable_records: true` and a real `record_decoder` module present. The cause is the
+# training mix, not wiring. The 137K mix contains a corpus NAMED `text2json`, but all
+# 7,817 of its records supervise `entities`, not structures, so the record head was never
+# taught the task. The same audit explains the weak NER (2 location spans on a full
+# article versus DeBERTa's 25): those 7,817 records were the ONLY entity supervision in
+# the mix, 5.7% of 137K.
+#
+# So this adds the two missing capabilities and guards the two that work.
+#
+#   structure  29,523  34.3%   <- the capability being added (casualty_multi_loc + paraloq)
+#   ner        30,676  35.7%   <- weakest existing head
+#   events     18,834  21.9%   \  replay, at the 137K pool's own 73/27 ratio
+#   relations   6,966   8.1%   /
+#                     ------
+#   NEW 70.0%   REPLAY 30.0%   84,280 train + 1,719 val
+#
+# Documents are capped at 2,000 chars (build_warmstart_mix.py --max-chars). Profiled:
+# step cost is superlinear in sequence length, text2json is 30.6% over 4,000 chars (max
+# 102,068) and sits in the event REPLAY list. The cap is 1.87x faster and costs nothing
+# in volume -- the pools substitute shorter records, so the count is unchanged.
+#
+# REPLAY, not plain fine-tuning. Training only on the added tasks forgets the old ones,
+# and that is not hypothetical in this project: the casualty fine-tune used a narrow
+# homogeneous schema with zero replay and destroyed capabilities it was not training on
+# (asked for a `location` it returns a digit). Replay is sampled proportionally across
+# BOTH old task families -- taking only events would preserve one head and starve the
+# other.
+#
+# HETEROGENEOUS FIELD TYPES. `casualty_multi_loc` carries a string `location` beside the
+# numeric roles for exactly the reason above: a structure corpus whose every field is a
+# number teaches "emit a digit" rather than "fill this field".
+#
+# Mixture is pre-shuffled at the example level (build_warmstart_mix.py) so every batch is
+# a mixture rather than a block; the trainer also shuffles on load. No length bucketing
+# exists in the pipeline, so tasks cannot be silently re-segregated by batching.
+#
+#   uv run python tools/train/build_warmstart_mix.py
+#   uv run python tools/train/train.py --config tools/train/config/joint-boundary-warmstart-struct.yaml
+
+model:
+  pretrained: ./out/joint-boundary-mmbert-137k/best
+  # attn_implementation is deliberately NOT set: on the pretrained path it is applied to
+  # model.config AFTER the encoder is built, so it is a silent no-op. FA2 is inherited
+  # from the base checkpoint. (Off-GPU, load with attn_implementation='sdpa' or the
+  # kernels-community/flash-attn2 entry raises KeyError at forward.)
+  architecture: boundary     # checked against the checkpoint; a span checkpoint raises
+                             # rather than silently training the wrong architecture.
+  max_len: 8192
+  boundary_head:
+    task_loss_weights:
+      entities: 1.0
+      relations: 1.0
+      events: 2.0
+      json_structures: 1.0
+    enable_relations: true
+    enable_records: true     # now load-bearing for STRUCTURES too, not just event edges
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/warmstart-natural-evw20
+  experiment_name: warmstart_natural_evw20
+  data_parallel: false
+  # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
+  # learning from cold, and every extra epoch is extra forgetting pressure.
+  num_epochs: 3
+  # batch 8 x accum 2 keeps the EFFECTIVE batch at 16 (same as the curve) while
+  # using more of the 80GB card; the first attempt sat at 12.8GB.
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  # encoder_lr is held at the curve's 2.0e-5 ON PURPOSE, so the replay ratio is the only
+  # thing that changed versus the baseline. If the blind test shows forgetting, LOWERING
+  # THIS is the next knob to try -- it acts more directly on the shared encoder than the
+  # data ratio does, and the 25x encoder/task split is already the main protection.
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  gradient_checkpointing: true
+  sliding_window: true
+  window_stride: 3072
+  max_len: 4096
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 2
+  # Collation is NOT the bottleneck (workers sat idle while one core saturated),
+  # but >0 overlaps it with the step and costs nothing.
+  num_workers: 8
+  validate_data: false
+  early_stopping: false
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+  logging_steps: 20
+
+eval:
+  batch_size: 2
+  threshold: 0.5
+  threshold_sweep: true
+  eval_by_language: false
+  # NOTE: metric_sweep is NOT set here. Selecting each checkpoint at its own best
+  # threshold is right for shipping one model and wrong for comparing against the 137K
+  # baseline -- the curve already showed Re-DocRED's points alternating 0.1/0.3/0.1/0.3
+  # and looking non-monotonic purely because of it.
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  # TRAIN is the single pre-shuffled mixture. The relation corpora are NOT listed here:
+  # `corpora` expands to <name>.train.jsonl, which would re-add their full train slices
+  # on top of the replay already sampled into the mixture.
+  corpora:
+    - data/mix_natural
+  # VAL/TEST only -- the curve's own blind test, unchanged, so per-capability numbers are
+  # directly comparable to the mmbert-137k baseline (entity 0.586 / relation 0.170 /
+  # event_type 0.956 / event_argument 0.098). All 23 files verified present.
+  event_files:
+    chfinann:         {val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}
+    docee:            {val: data/scaling_joint/docee.val.jsonl, test: data/docee.test.jsonl}
+    docfee:           {val: data/scaling_joint/docfee.val.jsonl, test: data/docfee.test.jsonl}
+    duee:             {val: data/scaling_joint/duee.val.jsonl}
+    cmnee:            {val: data/scaling_joint/cmnee.val.jsonl, test: data/cmnee.test.jsonl}
+    text2json:        {val: data/scaling_joint/text2json.val.jsonl, test: data/text2json.test.jsonl}
+    events_biotech:   {val: data/scaling_joint/events_biotech.val.jsonl, test: data/events_biotech.test.jsonl}
+    mendeley_ed:      {val: data/scaling_joint/mendeley_ed.val.jsonl, test: data/mendeley_ed.test.jsonl}
+    casie:            {val: data/scaling_joint/casie.val.jsonl, test: data/casie.test.jsonl}
+    sentence_rex:     {val: data/sentence_rex.val.jsonl, test: data/sentence_rex.test.jsonl}
+    bio_ner_relations: {val: data/bio_ner_relations.val.jsonl, test: data/bio_ner_relations.test.jsonl}
+    biored:           {val: data/biored.val.jsonl, test: data/biored.test.jsonl}
