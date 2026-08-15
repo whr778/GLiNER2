@@ -302,6 +302,33 @@ into the sample. `classification_loss` is a separate term.
 All are **masking-aware and empty-query safe**: denominators use `clamp_min(1)`, so a query
 with no positive span still contributes finite negative supervision rather than `0/0`.
 
+### The loss has no task axis
+
+Every query — entity, relation, event trigger, event role, structure field — flows through
+the **same** terms. The decomposition above is by *mechanism*, not by task, so "is the event
+signal too small?" is not answerable by reading any of these numbers. That is a real
+difference from the span architecture, whose loss decomposed by task.
+
+Three settings exist to see and change the balance (all inert at their defaults):
+
+| setting | effect |
+|---|---|
+| `report_task_losses` | split every query-typed term into per-task **contributions** that sum back to the term. Diagnostic only, no gradient effect. |
+| `task_loss_weights` | scale a task's whole term — magnitude |
+| `task_loss_weight_scope` | what that reaches: `span` (start/end/pair, **18.5%** of the loss) or `all` (adds inside, soft-IoU, rerank, proposal, abstention, count — **94.3%**) |
+| `task_pos_weights` | scale positives against negatives *inside* a task's queries — direction. start/end/pair/inside only; not soft-IoU (fractional targets), and **ignored** by the `asymmetric_focal` marginal path, which never calls `_safe_bce`. |
+
+Measured on a converged warm-start checkpoint: entities hold **77.2%** of the training
+gradient, json_structures 11.5%, events **6.6%**, relations 2.5%. Use
+`tools/train/probe_task_losses.py` before tuning any of the above — a dose sweep that
+cannot reach most of the objective produces a null that says nothing about the hypothesis.
+
+Two terms behave oddly enough to note. `count_loss` is Poisson NLL with `full=False`
+(`exp(x) - t*x`), which is **unbounded below**, so a per-task contribution can be negative
+and upweighting a task can *lower* the reported value while its gradient scales correctly.
+`abstention_loss` barely responds to an event weight because event queries almost always
+have a mention to find (events hold 0.00001 of its 0.00449 mass).
+
 Diagnostics: the trainer records *which* terms went non-finite and reports them on flush
 (`… -- offending terms: start_lossx12, end_lossx12, …`). When every boundary term goes
 non-finite together it indicates a shared upstream (encoder/scores), not one loss's
@@ -375,6 +402,26 @@ invariants, and joint-decode suites.
 4. **A `metric_for_best` pointing at a structurally-zero metric silently pins `best/` to
    epoch 1** — `0.0 > 0.0` is false forever. This happened with
    `eval_event_argument_strict_micro_f1` while §8's assembly was missing.
+5. **A `boundary_head` override can reach `model.config` and still not reach the head.**
+   `BoundaryHead` holds its **own** settings reference, built in `__init__` from the
+   checkpoint's config, and copies `hard_negatives_per_positive` /
+   `minimum_hard_negatives` out of it. Rebuilding only `model.boundary_settings` left
+   every knob the head reads through `self.settings` — the soft_iou/rerank/proposal/count
+   weights, `boundary_negative_weight`, `negative_query_ratio`, `task_loss_weight_scope` —
+   pinned at the checkpoint value. Measured: a config setting `scope: "all"` produced
+   `"all"` on the model and `"span"` on the head, i.e. a treatment arm identical to its
+   control. Verify on `model.boundary_head.settings`, not on `model.config`.
+6. **Structures are never scored by the blind test.** `_schema_from_gold` builds no schema
+   for `json_structures`, so a structure-only record produces an empty schema and
+   `compute_metrics` skips it entirely — 35.1% of `mix_natural`'s val. Structure quality
+   comes from `tools/train/probe_records.py`, and a structure corpus can look "trained"
+   while contributing nothing measurable.
+7. **CUDA `Error 802: system not yet initialized` with a perfectly healthy `nvidia-smi`
+   is a dead host, not a config problem.** Driver fine, both GPUs listed, no XID errors,
+   modules loaded — and every context creation fails. `nvidia-fabricmanager` refusing to
+   start with "Nothing to do" plus `lspci` showing zero NVSwitch and
+   `GPU Fabric GUID: N/A` is the signature. A module reload and a full restart both
+   changed nothing. Terminate and relaunch, ideally in another region.
 5. **Record thresholds are not the extraction threshold** (§6) — sweeping one does not move
    the other.
 6. **`error_policy` and `on_missing_surface` are different knobs.** The first governs
