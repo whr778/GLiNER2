@@ -83,6 +83,12 @@ argument-strict F1 **0.050 → 0.115 → 0.158**. Knee between 10K and 40K, stil
 > (0.177 → 0.202). The deficit was a property of the **span head**, not of mmBERT or of
 > data volume. The original reading was not wrong about its own numbers; it was wrong
 > about what they generalised to.
+>
+> **And 15 Aug: "nearly flat" is really "flat within noise".** A control re-run of the
+> published 137K recipe scored +0.023 above it, so single-run variance is ≥±0.02 and the
+> whole boundary spread (0.177–0.215) fits inside it. The span-head conclusion survives
+> and is strengthened — span climbs 0.108, five times the variance — but no shape should
+> be read off the boundary row.
 
 ---
 
@@ -743,6 +749,39 @@ contaminated documents itself.
     opt-in argument for one commit; 20 of 21 call sites didn't use it.
 24. **Verify the fix with the same instrument that found the bug.** Both follow-up defects
     were invisible to inspection and obvious to a re-run of the checker.
+
+### Same day, second half — the reach was the whole story, and then the control was
+
+Re-running the null sweep with the reach fixed (`task_loss_weight_scope: all`, 94.3% of
+the loss instead of 18.5%) gave **+0.013 event strict on both doses**, above the measured
+floor. Entities went *up* rather than down, so it is the plan's "free win" branch, not the
+predicted trade; the one consistent cost is **event_type −0.019** at the higher dose,
+monotone in the dose. First positive result on this line, and it only appeared because the
+null was diagnosed rather than believed.
+
+Then a RAMS experiment — does an intermediate `mix_natural` stage help the event
+downstream? — produced a wash (arguments span 0.005 across three arms) and, incidentally,
+**the most consequential number of the day**. Its control was the *published* 137K recipe
+re-run unchanged: it scored **0.2151** against the published **0.192**. +0.023 from a
+re-run alone.
+
+That single number retired a claim I had made two hours earlier from the same data. I had
+read the 137K point (0.192, below 100K's 0.202) as "the head-init curve turns at 100K".
+It does not turn. −0.010 is half of one run's variance. And since every point on that
+curve is one seed with no measured floor, **no point-to-point difference on it is
+interpretable** — including the 40K→100K rise I had been quoting as a trend.
+
+What survives is what was never marginal: boundary beats span 3.5× at 10K (0.177 vs
+0.050), and the *span* curve climbs 0.108 across its range, five times the variance. The
+thesis — head-init scaling is a property of the span head, not of mmBERT — is strengthened,
+because the boundary head turns out not to climb *at all* within measurement.
+
+25. **A baseline you did not produce is not a baseline.** Three times today a delta
+    dissolved once the control was run on the same code, the same data, the same day.
+    The cost of the control is always less than the cost of the wrong conclusion.
+26. **One seed is a measurement of one seed.** Every curve in this project has one point
+    per configuration. That was fine while the effects were 3.5×; it is not fine now that
+    they are 0.01, and the shape of a one-seed curve is not evidence of anything.
 
 ## Open
 

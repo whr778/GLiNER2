@@ -36,6 +36,20 @@ delta is not a contamination estimate because the test was also recomposed.
 
 **New open items from 15 Aug.**
 
+- **Every one-seed curve in this project is now suspect.** A control re-run of the
+  published RAMS 137K recipe scored **+0.023** above it, so single-run variance on that
+  metric is >=±0.02. The head-init boundary curve (0.177/0.191/0.202/0.192) is **flat
+  within noise** and its shape must not be cited; the "turns at 100K" reading was
+  retracted the same day it was made. The span-vs-boundary verdict survives (3.5× at 10K).
+  **Any curve claim needs >=2 seeds per point before it is quoted.**
+- **`scope: all` is a real lever and wants a proper sweep.** +0.013 event strict at both
+  w=2 and w=4, above the floor, entities unharmed; cost is event_type −0.019 at w=4.
+  A dose sweep with 2 seeds per point would locate the knee.
+- **An intermediate `mix_natural` stage is a wash on RAMS** (arguments span 0.005 across
+  three arms), which also means warm-starting through a broad multi-task corpus does NOT
+  cost event capability. `event_type` +0.021/+0.018 in both treatment arms is the one
+  delta worth a second seed.
+
 - **Four converters still split row-wise** (`docee`, `docfee`, `cmnee`, `mendeley_ed`) —
   no `SplitWriter`. 21 residual contaminated documents, gate-removed each run, unfixed
   at source.

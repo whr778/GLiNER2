@@ -581,8 +581,60 @@ directly comparable:
 | **10K** | **boundary (this work)** | **0.177** | **0.764** | 0.913 |
 | **40K** | **boundary (this work)** | **0.191** | **0.812** | 0.925 |
 | **100K** | **boundary (this work)** | **0.202** | **0.829** | 0.936 |
+| **137K** | **boundary (this work)** | **0.192** | 0.823 | **0.963** |
 
 All boundary points calibrated to threshold **0.3**, so they are mutually comparable.
+
+> ### ⚠ 2026-08-15: the boundary curve is FLAT WITHIN NOISE. Do not read its shape.
+>
+> The 137K point was added, and with it a **control**: the published 137K recipe, same
+> base, same 15 epochs, re-run on current code. It scores **0.2151** against the
+> published **0.192** — **+0.023 from a re-run alone**
+> ([[lambda-rams-warmstart-run]], arm `rams-clean-a-base137k`).
+>
+> So **single-run variance on RAMS argument F1 is at least ±0.02**, and every boundary
+> point here is one seed with no measured floor. The consequences, stated exactly:
+>
+> | claim | status |
+> |---|---|
+> | boundary beats span at 10K (0.177 vs 0.050, **3.5×**) | **SAFE** — 0.127 is 6× the variance |
+> | the head-init curve is largely a SPAN-head property | **SAFE, and strengthened** — span climbs 0.108 across the range (5× variance); boundary's whole 10K→137K spread is 0.177–0.215, i.e. *one run's variance*. It does not measurably climb at all. |
+> | boundary "moves +14% and is nearly flat" | **restate** — it is not a shallow trend, it is **flat within noise**. The +14% is an artefact of reading one seed per point. |
+> | boundary 10K (0.177) beats span ~100K (0.158) | **MARGINAL** — +0.019 sits *at* the variance. Directionally supported by the 10K-vs-10K gap; do not cite the number alone. |
+> | arguments/triggers "peak at 100K" | **RETRACTED** — never claimed in this file, but it was briefly concluded from the 137K dip. There is no turn; −0.010 is half a variance. |
+>
+> The honest summary is stronger than the one it replaces: **more Stage-A volume past
+> 10K buys the boundary head nothing measurable on RAMS arguments.** Any future claim
+> about this curve's shape needs ≥2 seeds per point first.
+>
+> ### Does an intermediate multi-task stage help? No.
+>
+> Same run tested a three-stage chain — `mmBERT → 137k joint → mix_natural → RAMS` —
+> against the two-stage published recipe. All three arms swept to threshold 0.3:
+>
+> | metric (thr 0.3) | A: 137k base | B: via mix_natural | C: via event-weighted mix_natural |
+> |---|--:|--:|--:|
+> | event_argument (S) | **0.2151** | 0.2104 | 0.2133 |
+> | event_trigger (S) | 0.8130 | 0.7991 | **0.8197** |
+> | event_type (S) | 0.9280 | **0.9493** | 0.9455 |
+> | event (S) | 0.5156 | 0.5200 | **0.5410** |
+>
+> Arguments span **0.005** across all three — a fifth of the variance. An intermediate
+> `mix_natural` stage (34% structures, 36% NER) neither helps nor hurts the event
+> downstream, which is itself worth knowing: warm-starting through a broad multi-task
+> corpus does **not** cost event capability the way the casualty fine-tune's zero-replay
+> narrowing did.
+>
+> One delta is worth a second seed: **event_type, B +0.021 and C +0.018 over A**, same
+> sign in two independent treatment arms and approaching the variance scale. If a broader
+> intermediate stage helps event *typing*, that is a cheap win — but n=1 per arm.
+>
+> C (event-weighted intermediate stage, `task_loss_weight_scope: all`, events at 12.5%
+> of the gradient) is **not** distinguishable from B. The event weighting that showed
+> +0.013 on `mix_natural`'s own blind test does not carry through a further fine-tune.
+>
+> Hygiene, checked before the run: RAMS splits mutually disjoint, and `mix_natural`
+> shares **zero** documents with any RAMS split, so B and C never saw the RAMS test set.
 
 **The boundary head wins on arguments and triggers at EVERY point**, and the margin is
 largest where data is scarcest:
@@ -600,9 +652,11 @@ head-init:
    of the Stage-A volume, on ~27% fewer event records (the boundary mix is 73/27
    events/relations; the span curve's slice is events-only).
 2. **The two curves have opposite shapes.** Span climbs **+216%** across the range
-   (0.050 → 0.158) and is still climbing; boundary moves **+14%** (0.177 → 0.202) and is
-   nearly flat. The span head spends the whole curve recovering from a low floor; the
-   boundary head starts near its ceiling.
+   (0.050 → 0.158) and is still climbing; boundary is **flat within measurement noise**
+   (0.177 → 0.202 → 0.192, spread 0.025 against ±0.02 single-run variance). The span head
+   spends the whole curve recovering from a low floor; the boundary head starts near its
+   ceiling and stays there. *Originally written as "boundary moves +14%" — that trend does
+   not survive the control; see the box above.*
 
 That is the finding: **the head-init data-scaling curve is largely a property of the SPAN
 head, not of mmBERT.** What looked like "a cold multilingual encoder needs ≥40K of

@@ -44,6 +44,15 @@ Partly. The full 12-arm curve completed 2026-08-10, all points threshold-matched
 The *boundary* warm start reaches RAMS argument F1 **0.177 at 10K** and then barely moves:
 0.191 / 0.202 / 0.192 through 137K — a valid within-row result (support 2,016 throughout).
 
+> **2026-08-15 — "barely moves" is now measured, not inferred.** A control re-ran the
+> published 137K recipe (same base, same 15 epochs) and scored **0.2151** against the
+> published **0.192** — **+0.023 from a re-run alone** ([[lambda-rams-warmstart-run]]).
+> Single-run variance is therefore ≥±0.02, and the entire boundary spread
+> (0.177–0.215) is **one run's noise**. "Barely moves" understates it: the boundary
+> curve does not measurably move at all. That *strengthens* the span-head reading
+> below, and it means the 0.177-vs-0.158 comparison flagged in the next paragraph is
+> marginal on variance grounds too, independent of the support question.
+
 The comparison **against the span curve's 0.158 is not yet verified**: that number comes
 from a different experiment and its blind-test support has not been checked against this
 one. Given that a support mismatch has already invalidated the cold-base row of this very
