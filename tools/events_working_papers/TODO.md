@@ -1,15 +1,54 @@
 # Open items — resume list
 
-State at 2026-08-11 close. Completed work is removed rather than struck through; history
-lives in `PROJECT_JOURNAL.md` and the commit log. Everything below is a defect with evidence
+Completed work is removed rather than struck through; history lives in
+`PROJECT_JOURNAL.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.
 
-State at 2026-08-12 close. **No GPUs running; both Lambda A10s terminated.** The GIST cache
-is built for `mix_natural` and for RAMS (item 11). The base-word arms A/B/C ran — the result
-is **provisional**, since every arm sits at a fixed unswept threshold and the checkpoints
-went with the box (item 12). Tier 2 multi-instance events are wired and shipped behind
-`event_records`, and its first measurement on CASIE is strongly negative for head-init
-reasons rather than mechanism ones (JOINT_IE_SCALING). Nothing is mid-flight.
+State at 2026-08-15 close. **One 2xH100 live** (`clean-rebaseline-2`): the 137k
+re-baseline on decontaminated data is done, and four warm-start arms are running (two
+control seeds for a fresh noise floor, then `evwide2`/`evwide4`). Items 11 and 12 are
+closed; the phase-3 loss work has a result and a redirect.
+
+**Read this before quoting any historical number.** The blind test leaked.
+`SplitWriter` drew one random per ROW, so a document emitted more than once scattered
+across train/val/test — **1,080 documents, 7.03% of the cold-start blind test, were in
+train**. Fixed (grouped splits are now the default, `check_leakage.py --config` gates a
+config, and `train.py` repairs before every run); contamination is down to 21 documents.
+The 137k reference `entity 0.586 / relation 0.170 / event_type 0.956 /
+event_argument 0.098` is **superseded** by `0.6306 / 0.1573 / 0.9365 / 0.1014`, and the
+delta is not a contamination estimate because the test was also recomposed.
+
+**Closed since 12 Aug.**
+
+- **Item 11 (GIST query-axis veto) — DONE, negative.** Negative on 7 of 8 metrics.
+  Entity −0.025 survives the measured noise floor; relation −0.033 does **not**.
+- **Item 12 (base-word arms) — the provisional +0.0119 remains provisional**, and now
+  also rests on a contaminated blind test.
+- **Phase-3 event loss — the flat weight is a null lever, for a mechanical reason.**
+  `task_loss_weights` reaches only start/end/pair, 18.5% of the loss, so `w=4` moved
+  events 6.6% → 10.6% of the gradient. `task_loss_weight_scope: all` raises reach to
+  94.3%; that is what the live arms test. `pos_weight` belongs in the **cold-start**
+  rebuild, not here: event positive fraction is 0.052 at init but 0.562 at convergence.
+- **A measured noise floor exists.** Two seeds of one control on `mix_natural`:
+  relation strict **±0.041**, event_type ±0.014, event_trigger ±0.013, entity fair
+  ±0.010, event strict ±0.008. Anything smaller is unreadable on one seed. Being
+  re-measured on the rebuilt mixture.
+
+**New open items from 15 Aug.**
+
+- **Four converters still split row-wise** (`docee`, `docfee`, `cmnee`, `mendeley_ed`) —
+  no `SplitWriter`. 21 residual contaminated documents, gate-removed each run, unfixed
+  at source.
+- **`data/scaling_joint/` val files are frozen from 8 Aug**, pre-fix. Rebuilding also
+  rebuilds the j10k/j40k/j100k slices the scaling curve rests on — deferred.
+- **Structures are never scored by the blind test.** `_schema_from_gold` builds no schema
+  for `json_structures`; structure-only records are skipped — 35.1% of `mix_natural`'s
+  val, 97.3% of the reframed text2json's. Use `probe_records.py`.
+- **The wider contaminated corpora are unregenerated**: gliclass_logic 38%,
+  knowledgator_gliner 27%, klue_re 17%, finer_ord 14%, MasakhaNER 12-14%, nuner_full,
+  pubmed_abstracts_ner. Not in a live config, so not blocking.
+- **`rams` has 13.7% duplicate documents inside train alone** — a different problem from
+  cross-split leakage, and RAMS is a key downstream.
 
 **Where the line stands.** The scope gate took per-state error 5.247 → 0.591 (item 10) and
 largely closed the attachment blocker. Two candidate next steps were then *closed by
