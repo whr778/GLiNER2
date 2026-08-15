@@ -125,8 +125,16 @@ def aggregate_gate(config_path: str, min_overlap: int) -> int:
                     n = len(ka & kb & shared)
                     if n >= min_overlap:
                         culprits.append((n, fa, fb))
+            # Show the parent directory, not just the basename: configs pair a
+            # regenerated data/<name>.train.jsonl with a FROZEN
+            # data/scaling_joint/<name>.val.jsonl, and printing bare basenames made
+            # that read as a corpus leaking into itself.
+            def label(p: str) -> str:
+                path = Path(p)
+                return f"{path.parent.name}/{path.name}" if path.parent.name else path.name
+
             for n, fa, fb in sorted(culprits, reverse=True)[:8]:
-                print(f"        {n:>6}  {Path(fa).name}  ->  {Path(fb).name}")
+                print(f"        {n:>6}  {label(fa)}  ->  {label(fb)}")
         else:
             print(f"  clean         {a} n {b} = 0")
     print("  VERDICT:", "CLEAN -- splits are mutually disjoint" if not bad

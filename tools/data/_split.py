@@ -34,6 +34,7 @@ import argparse
 import hashlib
 import json
 import random
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -45,6 +46,8 @@ SPLIT_NAMES = ("train", "val", "test")
 # Distinguishes "caller said nothing" (group on the input text) from an explicit
 # group=None (route per row, the pre-2026-08-15 behaviour).
 _USE_INPUT = object()
+
+_WHITESPACE = re.compile(r"\s+")
 
 
 # Stray Unicode line/paragraph separators that json.dumps writes literally
@@ -197,8 +200,17 @@ class SplitWriter:
         if group is None:
             x = self._rng.random()
         else:
+            # Normalize with the SAME rule the contamination checks use
+            # (tools/data/check_leakage.py, gliner2.training.split_hygiene).
+            # Grouping on the raw string instead left texts differing only in case
+            # or whitespace with different group keys but the same document key --
+            # they scattered across splits and were then flagged as contamination.
+            # Measured: events_biotech still leaked 123 documents train->val after
+            # grouping was added, purely from this mismatch.
+            normalized = unicodedata.normalize("NFKC", str(group)).casefold()
+            normalized = _WHITESPACE.sub(" ", normalized).strip()
             digest = hashlib.sha1(
-                f"{self._seed}:{group}".encode("utf-8")
+                f"{self._seed}:{normalized}".encode("utf-8")
             ).digest()
             x = int.from_bytes(digest[:8], "big") / float(1 << 64)
         for i, threshold in enumerate(self._cum):
