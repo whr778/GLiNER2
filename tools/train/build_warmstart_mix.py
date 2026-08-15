@@ -139,7 +139,19 @@ def main() -> None:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     n_val = max(200, int(len(mix) * args.val_frac))
-    val, train = mix[:n_val], mix[n_val:]
+    # Carve the val slice by DOCUMENT, not by row. The same document can enter the
+    # mix from two corpora, or from one corpus that repeats it, and a positional
+    # slice then puts one copy in val and another in train -- 27 documents did
+    # exactly that. `mix` is already shuffled, and dicts keep insertion order, so
+    # grouping preserves the shuffle.
+    from gliner2.training.split_hygiene import document_key
+
+    by_document: dict[str, list[str]] = {}
+    for line in mix:
+        by_document.setdefault(document_key(json.loads(line)["input"]), []).append(line)
+    val, train = [], []
+    for rows in by_document.values():
+        (val if len(val) < n_val else train).extend(rows)
     out.write_text("\n".join(train) + "\n", encoding="utf-8")
     val_path = out.with_name(out.name.replace(".train.", ".val."))
     val_path.write_text("\n".join(val) + "\n", encoding="utf-8")
