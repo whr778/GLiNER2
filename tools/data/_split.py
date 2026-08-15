@@ -42,6 +42,10 @@ from typing import IO, Dict, List, Optional, Sequence, Tuple
 
 SPLIT_NAMES = ("train", "val", "test")
 
+# Distinguishes "caller said nothing" (group on the input text) from an explicit
+# group=None (route per row, the pre-2026-08-15 behaviour).
+_USE_INPUT = object()
+
 
 # Stray Unicode line/paragraph separators that json.dumps writes literally
 # (they are >= U+0020, so not escaped) yet str.splitlines() treats as line
@@ -202,12 +206,17 @@ class SplitWriter:
                 return SPLIT_NAMES[i]
         return SPLIT_NAMES[-1]
 
-    def write(self, record: dict, group: Optional[str] = None) -> str:
+    def write(self, record: dict, group: Optional[str] = _USE_INPUT) -> str:
         """Write ``record`` to the chosen split and return the split name.
 
-        Pass ``group`` -- normally the document text -- whenever one source
-        document can produce several records, so they cannot be split apart.
+        **Grouped on ``record["input"]`` by default.** A document belongs in
+        exactly one split, always; making that opt-in meant 20 of 21 converter
+        write sites silently did not do it, and six corpora leaked into their own
+        blind tests. Pass an explicit ``group`` when the grouping key is not the
+        input text, or ``group=None`` to restore per-row routing.
         """
+        if group is _USE_INPUT:
+            group = record.get("input")
         split = self._route(group)
         fh = self._files[split]
         fh.write(dumps_record(record) + "\n")
