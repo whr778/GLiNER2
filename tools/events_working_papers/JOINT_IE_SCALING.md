@@ -6,6 +6,35 @@ finding ([[mmbert-head-init-finding]]). Sibling line to [[EKF_MHT_DESIGN]] — a
 route to dense document-level extraction: a global typed-constraint decode instead of a
 tracker.
 
+> ## ⚠ Every number below was measured on a CONTAMINATED blind test (2026-08-15)
+>
+> The splits leaked. `SplitWriter` drew one random **per row**, so a document emitted more
+> than once scattered across train/val/test. On this config's aggregated splits that put
+> **1,080 documents (7.03% of the blind test) inside train** — text2json 791,
+> sentence_rex 210, events_biotech 58, docee 12, docfee 8, mendeley_ed 1.
+>
+> **Do not quote the base reference below** (`entity 0.586 / relation 0.170 /
+> event_type 0.956 / event_argument 0.098`). Re-measured on the decontaminated blind test,
+> the same checkpoint scores:
+>
+> | metric | clean | contaminated |
+> |---|--:|--:|
+> | entity strict | **0.6306** | 0.586 |
+> | relation strict | **0.1573** | 0.170 |
+> | event_type strict | **0.9365** | 0.956 |
+> | event_argument strict | **0.1014** | 0.098 |
+>
+> Two effects are confounded and the delta is **not** a contamination estimate:
+> decontamination lowers scores, but the test was also recomposed — text2json is now
+> emitted as `json_structures` rather than entities, removing its pseudo-entity types
+> (`aces`, `originalpostlink`) from the entity test population, which raises entity F1.
+>
+> Curve *shapes* across {10k, 40k, 100k, 137k} are probably still directionally right
+> (every point shared the same contaminated test), but any absolute number, and any
+> comparison against a differently-built model, needs re-measuring. Contamination is now
+> gated automatically by `tools/train/train.py`; see
+> [`../train/TRAINING.md`](../train/TRAINING.md) §3.
+
 ## 1. Thesis
 
 Does the dormant **joint_ie global beam** (typed constraints + `Calibrator`), wired to the

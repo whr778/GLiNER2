@@ -10,6 +10,25 @@ train/dev/test splits — including WikiEvents, RAMS, CMNEE, DocEE, DuEE, Re-Doc
 the MTL-Bioinformatics-2016 corpora, and the MasakhaNER 2.0 / MasakhaNEWS
 benchmarks — keep their canonical splits (noted per corpus below).
 
+> **Splits are grouped by document (2026-08-15).** `SplitWriter` routes on a
+> normalized hash of `record["input"]`, so a source emitting one document several
+> times keeps every copy in one split. It previously drew one random *per row*, and
+> the corpora built before the fix leak into their own evals — measured val-in-train:
+> text2json **99.0%**, gliclass_logic 38.3%, knowledgator_gliner 27.1%,
+> events_biotech 21.6%, klue_re 17.3%, finer_ord 14.4%, the MasakhaNER family 12-14%,
+> sentence_rex 4.5%. **Rows below marked ✅ have been regenerated; the rest have not.**
+>
+> Verify before use, and gate a whole config rather than one corpus at a time — a mix
+> pools corpora, so A's train can hold a document in B's test while neither file
+> overlaps itself:
+>
+> ```bash
+> uv run python tools/data/check_leakage.py --config <config.yaml>
+> ```
+>
+> `tools/train/train.py` also runs this before every training run and repairs it;
+> `training.split_hygiene: warn` reproduces a pre-gate run unchanged.
+
 ## Summary
 
 | Dataset | Task(s) | Train | Val† | Test | License‡ | Source |
@@ -44,7 +63,7 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | NCBI-disease | NER (disease) | 2,923 | 489 | 539 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | linnaeus | NER (species) | 1,556 | 524 | 1,034 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | **Relation extraction** | | | | | | |
-| sentence_rex | Relation extraction | 34,314 | 4,269 | 4,282 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
+| sentence_rex ✅ | Relation extraction | 34,314 | 4,268 | 4,283 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
 | DocRED | NER + relations (doc-level) | 83,951 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) |
 | Re-DocRED | NER + relations (doc-level) | 3,053 | 500 | 500 | see card | [HF](https://huggingface.co/datasets/tonytan48/Re-DocRED) |
@@ -56,10 +75,10 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | GLiClass v3 logic | Classification (multiple-choice) | 4,566 | 550 | 548 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset) |
 | GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) |
 | Scientific-text-classification | Classification (single-label) | 40,047 | 4,997 | 4,956 | see card | [HF](https://huggingface.co/datasets/knowledgator/Scientific-text-classification) |
-| events_classification_biotech | Classification (multi-label) | 2,216 | 271 | 272 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
+| events_classification_biotech ✅ | Classification (multi-label) | 2,217 | 279 | 263 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
 | MasakhaNEWS | Classification (16 African langs, 7 topics) | 21,734 | 3,112 | 6,242 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhanews) |
 | **Structured extraction** | | | | | | |
-| text2json-training-data | Schema-driven structured extraction | 7,817 | 962 | 958 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
+| text2json-training-data ✅ | **Structured extraction (json_structures)** | 7,976 | 891 | 872 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
 | json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) |
 | **Event extraction** (manual download) | | | | | | |
 | WikiEvents | NER + event extraction | 206 | 20 | 20 | see source | [gen-arg](https://github.com/raspberryice/gen-arg) |

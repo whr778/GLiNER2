@@ -682,12 +682,81 @@ it already cost the 2026-08-10 run*, and it recurred anyway on a fresh box. Inst
    recurred on the next fresh box, because `-e .` does not install the extra that carries
    the pin. Prevention needs a check that runs, not a comment that explains.
 
+## Phase 16 — the blind test was never blind (15 Aug)
+
+Started as "separate the event loss signal", ended by invalidating the reference every
+other number is quoted against. Both halves are worth keeping.
+
+**The loss half.** The flat `task_loss_weights` dose sweep (0.5/1.0/2.0/4.0) was null on
+every metric. The temptation was to conclude loss balance is not a lever here. Bucketing
+the loss by task instead — `probe_task_losses.py`, reconciling to ~1e-7 with a residual of
+exactly 0 — showed why it *had* to be null: `query_weights` reaches only start/end/pair,
+**18.5%** of the loss, so `w=4` moved events from 6.6% to 10.6% of the gradient while
+three quarters of it sat untouched. A null result from a lever that cannot reach is not
+evidence about the hypothesis.
+
+I got the first version of that measurement wrong in a way worth recording: I bucketed
+four terms, found "events 1.6%, entities 17.2%, task-blind 76.4%", and reported it. The
+76.4% was not task-blind, it was **unmeasured** — bucketing the other five terms moved
+events to 6.6% and entities to **77.2%**. The correction changed the recommendation, not
+just the decimals: the imbalance is entities dominating, not events starving.
+
+**Regime beats dose.** Event positive fraction is 0.562 at convergence but **0.052** at
+cold-start init. `pos_weight` fixes negative-dominated imbalance; at warm start that
+imbalance is already gone, so `k>1` creates the opposite one. The mechanism belongs in the
+cold-start rebuild, which is not where I was about to spend the GPU.
+
+**The contamination half.** Chasing a structure-data gap led into
+`convert_text2json.py`, which emits the flat key->value shape — `{"tournament_code":
+"ROL-2024", "winner": "Sofia Petrova"}` — as *entities*. That is a record. 97% of the
+corpus. Two consequences, both measured: the record head got **zero** supervision from a
+corpus named text2json (`json_structures` was 0.0% of the cold-start gradient), and the
+entity head learned **6,203** pseudo types, 731 of them appearing exactly once, from what
+the mix audit calls its *only* entity supervision.
+
+Then the splits. `SplitWriter._route` drew one random **per row**, so a document emitted
+more than once scattered across train/val/test. text2json's val was **99.0%** contained in
+its train. Aggregated over a whole config, **1,080 documents — 7.03% of the blind test —
+were in train**. Every number anchored to the 137k reference was measured that way.
+
+Fixes, in the order they mattered: group splits by document (and make it the **default**,
+because opt-in meant 20 of 21 converter write sites silently didn't); gate a config's
+aggregated splits with `check_leakage.py --config`; run the same gate inside
+`train.py` before a single step, with test authoritative and never modified. Blind-test
+contamination fell **2,942 -> 21** documents on the cold-start config, 299 -> 4 on
+warmstart.
+
+Two of my own fixes were wrong on the first try and caught only by re-measuring: the group
+key wasn't normalized the way the checkers normalize (case/whitespace variants scattered
+anyway), and `build_warmstart_mix.py` carved its val slice positionally, generating 27
+contaminated documents itself.
+
+**Lessons.**
+
+21. **A null result from a lever you have not measured the reach of is not a result.**
+    Measure what fraction of the objective a knob can touch before concluding the knob
+    does nothing.
+22. **"Unmeasured" and "not attributable" look identical in a partial decomposition.**
+    Bucketing four of nine terms produced a confident, wrong story about where the
+    gradient goes.
+23. **Correctness invariants must be defaults, not options.** Grouped splits existed as an
+    opt-in argument for one commit; 20 of 21 call sites didn't use it.
+24. **Verify the fix with the same instrument that found the bug.** Both follow-up defects
+    were invisible to inspection and obvious to a re-run of the checker.
+
 ## Open
 
-- **GIST A/B (TODO item 11) is running** as of 14 Aug — treatment and control on one 2xH100,
-  one arm per GPU. The control had to be retrained: five commits touched the training path
-  after it trained on 10 Aug, and `mix_natural` is 7.6% events, so the Tier 2 event-record
-  work is not inert for it.
+- **Clean re-baseline + `scope: all` arms running** as of 15 Aug on one 2xH100: two control
+  seeds (new noise floor on the rebuilt `mix_natural`) then `evwide2`/`evwide4`, which test
+  whether magnitude matters once the weight's reach is fixed at 94.3%.
+- **Four converters still split row-wise** (`docee`, `docfee`, `cmnee`, `mendeley_ed`) — they
+  do not use `SplitWriter`. 21 documents of residual contamination, removed by the trainer
+  gate every run but not yet fixed at the source.
+- **`data/scaling_joint/` val files are frozen from 8 Aug**, built from the pre-fix corpora.
+  Rebuilding them would also rebuild the j10k/j40k/j100k slices the scaling curve rests on,
+  so it is deferred rather than done.
+- **Structures are never scored by the blind test** — `_schema_from_gold` builds no schema
+  for `json_structures`, so structure-only records are skipped (35.1% of `mix_natural`'s val).
 - Replay mix for the synthetic fine-tune — 5–10% of the original labeled data, to hold the
   general-NER label distribution while keeping the event gain. Predicted cheap by the
   Phase 15 error decomposition; unrun.

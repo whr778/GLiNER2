@@ -3,13 +3,49 @@
 The ~36 `convert_*.py` scripts here transform public datasets (mostly
 HuggingFace, plus GitHub / S3 / Google-Drive / LDC sources) into the GLiNER2
 JSONL training format, whose `output` may carry `entities`,
-`entity_descriptions`, `relations`, `events`, and `classifications`
+`entity_descriptions`, `relations`, `events`, `classifications`,
+`json_structures` and `record_metadata`
 (`{"input": ..., "output": {"entities": {...}, ...}}`).
 
 HuggingFace-backed converters stream where possible so they don't need to hold
 the dataset in RAM. Converters install their own deps on first run as needed
 (`huggingface_hub`, `pandas`, `gdown`, `pyyaml`); `datasets` is already a core
 dependency (`uv sync`).
+
+## Splits are grouped by document
+
+`SplitWriter` routes each record on a **normalized hash of `record["input"]`**, so a
+source that emits one document several times keeps every copy in the same split. This
+is the default; pass an explicit `group=` only when the grouping key is not the input
+text, and `group=None` (per-row routing) only if you know why you want it.
+
+It used to draw one random *per row*. Corpora built before that changed leak into
+their own evals — measured val-contained-in-train: text2json **99.0%**,
+gliclass_logic 38.3%, knowledgator_gliner 27.1%, events_biotech 21.6%, klue_re 17.3%,
+finer_ord 14.4%, MasakhaNER variants 12-14%, sentence_rex 4.5%. Regenerate a corpus
+before trusting any number measured on it.
+
+Two duplicate notions, deliberately different:
+
+- **within** a split, only an exact repeat (same text *and* same target) is waste;
+  text2json emits one document up to 10 times with 8 different extraction schemas,
+  which is the schema-conditioning signal it exists to teach.
+- **across** splits, any shared text is contamination whatever the targets say.
+
+Check before you train — and check a whole config, not one corpus at a time, since a
+mix pools corpora and A's train can hold a document sitting in B's test:
+
+```bash
+uv run python tools/data/check_leakage.py --pattern 'data/*.jsonl'   # survey
+uv run python tools/data/check_leakage.py --config <config.yaml>     # the gate; exits non-zero
+```
+
+`tools/train/train.py` runs the same gate before every run and repairs it.
+
+**Three converters do NOT use `SplitWriter`** and are unfixed by the above:
+`convert_docee.py` (stratified split), `convert_docfee.py` and
+`convert_mendeley_ed.py` (shuffle-and-slice, with test coming from a separate
+upstream folder, so some duplication is in the source itself).
 
 ## Text normalization & encoding
 
@@ -355,8 +391,13 @@ Pair this with `mmBERT-base` (multilingual encoder) to learn non-English extract
 ## knowledgator/text2json-training-data
 
 ```bash
+# RECOMMENDED: emit the flat key->value shape as json_structures, which is what it is
 uv run python tools/data/convert_text2json.py \
-    --out data/text2json.jsonl
+    --emit structures --out data/text2json.jsonl
+
+# Historical behaviour: that shape becomes `entities`
+uv run python tools/data/convert_text2json.py \
+    --out data/text2json_entities.jsonl
 
 # Smaller subset for a smoke run
 uv run python tools/data/convert_text2json.py \
@@ -372,7 +413,11 @@ The repo holds ~25 JSONL files with inconsistent per-shard schemas (some carry a
 The `extracted` payload comes in two shapes:
 
 - **Entity list** — `{"entities": [{"entity": "...", "type": "...", "description": "..."}, ...]}`. Mapped directly to GLiNER2 NER with descriptions preserved.
-- **Flat key→value** — e.g. `{"tournament_code": "ROL-2024", "winner": "Sofia Petrova", ...}`. Each top-level key becomes an entity label; the value (coerced to a string) becomes the surface.
+- **Flat key→value** — e.g. `{"tournament_code": "ROL-2024", "winner": "Sofia Petrova", ...}`. This is a **record**, not a set of entity types, and it is **97%** of the corpus. With `--emit structures` it becomes one `json_structures` record plus the `record_metadata` the boundary record head needs (`mode: natural`, anchored on the first field). Without it, each key becomes an entity label.
+
+  Emitting it as entities did two kinds of damage, both measured. The record head got **no** supervision from a corpus literally named text2json — `json_structures` was **0.0%** of the cold-start training gradient — and the entity head learned **6,203** pseudo types (`aces`, `originalpostlink`, `patient_name`), 731 appearing exactly once, from what was the mix's *only* entity supervision. Reframed: 9,473 record rows, 264 genuine entity rows, and the entity vocabulary collapses to **525**.
+
+  Note structures are not scored by the blind test (`_schema_from_gold` builds no schema for `json_structures`); use `tools/train/probe_records.py`.
 
 Nested dicts and list-of-dicts values are skipped — their leaves typically don't round-trip verbatim into the source text. Surfaces that don't appear verbatim are dropped silently; ~20% of rows are dropped entirely because they're all paraphrased or generated values.
 

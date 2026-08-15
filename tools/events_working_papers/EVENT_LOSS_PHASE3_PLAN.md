@@ -208,18 +208,22 @@ relation delta in the table. It also voids the GIST A/B's relation claim (−0.0
 `tools/train/probe_task_losses.py` on the control (seed43/final, 100 batches, train path,
 buckets reconciling to 3.4e-07 with a residual of exactly 0):
 
+> **Corrected.** A first pass bucketed only start/end/pair/inside and reported
+> "events 1.6%, entities 17.2%, task-blind 76.4%". Those were shares of the four
+> *bucketed* terms, and the 76.4% called task-blind is task-attributable — it was
+> simply unmeasured. The numbers below bucket all nine query-typed terms.
+
 | task | share of total training gradient |
 |---|--:|
-| entities | 17.2% |
-| json_structures | 3.7% |
-| **events** | **1.6%** |
-| relations | 1.1% |
-| task-blind terms | **76.4%** |
+| **entities** | **77.2%** |
+| json_structures | 11.5% |
+| **events** | **6.6%** |
+| relations | 2.5% |
+| not query-typed (classification, consistency) | 2.2% |
 
-The task-blind 76.4% is proposal 34.4%, rerank 22.4%, soft-IoU 11.5%, count 5.6%,
-classification 2.1%, abstention/consistency 0.3%. **`query_weights` reaches only
-start/end/pair** — three call sites, 18.4% of the loss — so the strongest arm (w=4.0)
-moved events from 1.5% to 5.9% of the gradient while three quarters of it sat untouched.
+Entities at 77.2% are the imbalance, not events at 6.6%. **`query_weights` reaches only
+start/end/pair** — three call sites, 18.5% of the loss — so the strongest arm (w=4.0)
+moved events from 6.6% to 10.6% of the gradient while three quarters of it sat untouched.
 The null was close to mechanically guaranteed; it is not evidence that loss balance is the
 wrong idea.
 
@@ -229,16 +233,29 @@ Event mass splits pos 0.01368 / neg 0.01067 (positive fraction **0.56** — hard
 mining has already trimmed the negatives, so the "negatives dominate" prior was wrong).
 `pos_weight` k multiplies the event term by `(k*pos + neg)/(pos + neg)`:
 
-| k | event term | events' share | verdict |
-|---|--:|--:|---|
-| 2 | ×1.56 | 2.5% | inside the range flat w=4 already tested null |
-| 4 | ×2.69 | 4.3% | ditto by magnitude — keep ONLY as a direction-vs-magnitude discriminator |
-| 8 | ×4.93 | 7.9% | first dose exceeding the flat sweep |
-| 16 | ×9.43 | 15.1% | near parity with entities |
+Every candidate treatment on one comparable axis — events' share of the **whole**
+gradient (control 6.6%):
 
-Arms: `warmstart-natural-evpw{04,08,16}.yaml`. Liveness verified end-to-end through
-`_build_model` — `events_pair_loss` ×5.57 and `events_start_loss` ×5.59 at k=8, with
-entity/relation/json_structure terms and every task-blind term at ×1.000 exactly.
+| treatment | events' share | verdict |
+|---|--:|---|
+| flat w=2 | 8.0% | **tested, null** |
+| pos_weight k=4 | 9.1% | *below* a dose already null — dropped |
+| flat w=4 | 10.6% | **tested, null** |
+| pos_weight k=8 | 12.2% | first dose past the tested range |
+| flat w=2, `scope: all` | 12.5% | pairs with k=8 at matched share, different mechanism |
+| pos_weight k=16 | 17.8% | real test of the direction hypothesis |
+| flat w=4, `scope: all` | 22.2% | the magnitude question, reach fixed |
+
+Arms: `warmstart-natural-evpw{08,16,32}.yaml` and `warmstart-natural-evwide{2,4}.yaml`.
+Liveness verified end-to-end through `_build_model` — `events_pair_loss` ×5.57 and
+`events_start_loss` ×5.59 at k=8, with entity/relation/json_structure and every
+unreached term at ×1.000 exactly.
+
+**Regime matters more than the dose.** The event positive fraction is 0.562 at
+convergence (balance at k≈0.8) but **0.052 at cold-start initialization** (balance at
+k≈18). `pos_weight` corrects a negative-dominated imbalance; at warm start that
+imbalance has already been resolved by training, so k>1 does not correct it so much as
+create the opposite one. The mechanism belongs in the cold-start rebuild.
 
 ### The larger finding: the weight reaches 18% of the loss, and could reach 94%
 

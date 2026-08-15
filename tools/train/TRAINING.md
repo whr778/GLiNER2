@@ -1,710 +1,258 @@
-# Running GLiNER2 Training from Scratch on mmBERT
+# Training GLiNER2
 
-End-to-end instructions for training a custom GLiNER2 model on top of `jhu-clsp/mmBERT-small` or `jhu-clsp/mmBERT-base`, using the full **NuNER** and **Pile-NER-definition** corpora as pre-training data. Works on NVIDIA GPUs and Apple M-series (MPS); the trainer auto-selects the best available device.
+This is the working guide for the **boundary architecture** — the one under active
+development — and for the **EKF/MHT disaster-tracking** pipeline built on top of it. The
+older span architecture still trains and still ships models; it is covered in §10.
 
----
-
-## 1. Install
-
-```bash
-git clone <this-repo> GLiNER2 && cd GLiNER2
-uv sync                       # core deps (gliner, datasets, ...)
-uv sync --extra local         # adds the training/runtime stack: torch + transformers
-```
-
-`torch` and `transformers` live in the `local` optional-dependency group (both
-unpinned), so a plain `uv sync` does not install them — use `--extra local`.
-`datasets` is a core dependency and is installed by `uv sync` (no separate step).
-
-The first training run downloads the mmBERT weights (~550 MB for small, ~1.2 GB for base) into the HuggingFace cache.
+Everything here is measured. Where a setting exists because an experiment failed without
+it, the experiment is named so you can check the claim rather than trust it.
 
 ---
 
-## 2. Convert the datasets to GLiNER2 JSONL
+## 1. Which architecture, and why
 
-Every converter writes **three** sibling files based on the `--out` base path: `<base>.train.jsonl`, `<base>.val.jsonl`, `<base>.test.jsonl`. The default split is 80 / 10 / 10 and is deterministic (seeded RNG). Pass `--split-ratios` and/or `--split-seed` to customise.
-
-```bash
-# Default 80/10/10 — both forms below produce the same three files:
-uv run python tools/data/convert_nuner.py --split full --out data/nuner_full.jsonl
-uv run python tools/data/convert_nuner.py --split full --out data/nuner_full      # no .jsonl suffix
-
-# Explicit 80/10/10
-uv run python tools/data/convert_nuner.py --split full --out data/nuner_full.jsonl \
-    --split-ratios 0.8,0.1,0.1
-
-# 90/5/5 (larger train slice for production runs)
-uv run python tools/data/convert_pile_ner_definition.py --out data/pile_ner_def.jsonl \
-    --split-ratios 0.9,0.05,0.05
-
-# Reproducible with a custom seed (default seed is 42)
-uv run python tools/data/convert_sentence_rex.py --out data/sentence_rex.jsonl \
-    --split-seed 1337
-
-# Train-only — useful when you already have separate held-out evaluation data
-uv run python tools/data/convert_biomed_ner.py --out data/biomed_ner.jsonl \
-    --split-ratios 1.0,0.0,0.0
-```
-
-The same flags work on every converter (the helpers in `tools/data/_split.py` add them uniformly). The split assignment is per-record, deterministic across runs with the same seed, and runs in O(1) extra memory — no buffering of the whole corpus.
-
-```bash
-mkdir -p data
-
-# NuNER `full` split — 1,000,000 rows with LLM-generated entity descriptions
-uv run python tools/data/convert_nuner.py \
-    --split full \
-    --out data/nuner_full.jsonl
-
-# Pile-NER-definition — ~47,671 conversations, each contributing many entity-type queries
-uv run python tools/data/convert_pile_ner_definition.py \
-    --out data/pile_ner_def.jsonl
-
-# knowledgator/GLINER-multi-task-synthetic-data — multi-task synthetic NER
-# (~10 entity types per record on average; prompt prefix is stripped automatically)
-uv run python tools/data/convert_knowledgator_gliner.py \
-    --out data/knowledgator_gliner.jsonl
-
-# knowledgator/text2json-training-data — schema-driven structured extraction
-# (each record defines its own field names; nested objects are skipped)
-uv run python tools/data/convert_text2json.py \
-    --out data/text2json.jsonl
-
-# paraloq/json_data_extraction — schema-driven structured extraction (text +
-# JSON Schema + extracted JSON). Nested fields are flattened to {field: [value]}
-# entities, kept only when verbatim in the text. Small (~483 rows), Apache-2.0.
-uv run python tools/data/convert_paraloq_json.py \
-    --out data/paraloq_json.jsonl
-
-# knowledgator/gliner-multilingual-synthetic — multilingual NER
-# (German, Polish, French, etc.; pair with mmBERT for non-English extraction)
-uv run python tools/data/convert_gliner_multilingual.py \
-    --out data/gliner_multilingual.jsonl
-
-# knowledgator/gliclass-v3-logic-dataset — classification (NOT NER)
-# Trains GLiNER2's classification head; the trainer interleaves NER and
-# classification records cleanly.
-uv run python tools/data/convert_gliclass_logic.py \
-    --out data/gliclass_logic.jsonl
-
-# knowledgator/gliclass-v2.0-RAC — sibling of v3-logic, same converter,
-# general-domain multi-label classification (~612k rows). Override --repo
-# and --task-name so the two GLiClass corpora stay namespaced apart.
-uv run python tools/data/convert_gliclass_logic.py \
-    --repo knowledgator/gliclass-v2.0-RAC \
-    --task-name topic_classification \
-    --out data/gliclass_rac.jsonl
-
-# knowledgator/Scientific-text-classification — single-label classification
-# of scientific abstracts (10 broad domains: math, quantum physics, ...)
-uv run python tools/data/convert_scientific_text.py \
-    --out data/scientific_text.jsonl
-
-# knowledgator/biomed_NER — domain-specific biomedical NER
-# (35 classes: CHEMICALS, DISORDER, GENE AND GENE PRODUCTS, ...)
-uv run python tools/data/convert_biomed_ner.py \
-    --out data/biomed_ner.jsonl
-
-# knowledgator/events_classification_biotech — multi-label classification
-# (29 biotech "event types"; despite the name, NO structured event extraction)
-uv run python tools/data/convert_events_biotech.py \
-    --out data/events_biotech.jsonl
-
-# knowledgator/sentence_rex — sentence-level relation extraction
-# (~850 Wikidata-property labels; <e1>/<e2> markup stripped)
-uv run python tools/data/convert_sentence_rex.py \
-    --out data/sentence_rex.jsonl
-
-# knowledgator/bio-NER-relations — doc-level biomedical NER + RE
-# (50 entity types, 48 relation types; umlsterm noise dropped by default)
-uv run python tools/data/convert_bio_ner_relations.py \
-    --out data/bio_ner_relations.jsonl
-
-# knowledgator/PubMedAbstractsNER — 35k PubMed abstracts with ~470 UMLS-style
-# biomedical entity types; descriptions parsed out of the label string and
-# put into entity_descriptions for the model to condition on.
-uv run python tools/data/convert_pubmed_abstracts_ner.py \
-    --out data/pubmed_abstracts_ner.jsonl
-
-# thunlp/docred — document-level NER + relation extraction (6 entity types,
-# ~96 relation types as human-readable names). Reads the auto-converted parquet
-# revision; the 'train' split merges the 3k gold annotated docs with the ~102k
-# distant-supervised (noisy) docs. Add --max-records to cap the distant volume.
-uv run python tools/data/convert_docred.py \
-    --out data/docred.jsonl
-
-# Token-classification NER corpora. convert_hf_token_ner.py is a generic
-# tokens+BIO-tags converter (handles string tags, ClassLabel ints, and bare ints
-# with a --label-file). Datasets whose HF repo ships a dataset script are read
-# from the auto-converted parquet revision.
-uv run python tools/data/convert_hf_token_ner.py \
-    --repo yeshpanovrustem/kaznerd --out data/kaznerd.jsonl          # Kazakh NER (CC-BY-4.0)
-uv run python tools/data/convert_hf_token_ner.py \
-    --repo chintagunta85/bc4chemd --revision refs/convert/parquet --out data/bc4chemd.jsonl
-uv run python tools/data/convert_hf_token_ner.py \
-    --repo tner/bc5cdr --revision refs/convert/parquet --tags-col tags \
-    --label-file dataset/label.json --out data/bc5cdr.jsonl
-uv run python tools/data/convert_stockmark_ner.py \
-    --out data/stockmark_jpn.jsonl                                   # Japanese NER (CC-BY-SA-3.0)
-# finer-ord is CC-BY-NC-4.0 (non-commercial).
-uv run python tools/data/convert_finer_ord.py \
-    --out data/finer_ord.jsonl                                       # financial NER (PER/LOC/ORG)
-
-# KLUE (Korean) NER + RE, read from the canonical KLUE-benchmark GitHub release
-# (its HF loader is broken). CC-BY-SA-4.0.
-uv run python tools/data/convert_klue.py --task ner --out data/klue_ner.jsonl
-uv run python tools/data/convert_klue.py --task re  --out data/klue_re.jsonl
-
-# BioRED — biomedical NER + relations, from the NCBI release (~2 MB zip).
-uv run python tools/data/convert_biored.py --out data/biored.jsonl
-
-# SciERC — scientific NER + relations, from the AI2 release. The default download
-# is ~695 MB (bundles ELMo); pass --json <processed_data/json/train.json> to skip it.
-uv run python tools/data/convert_scierc.py --out data/scierc.jsonl
-```
-
-### Event extraction corpora (manual download)
-
-ACE 2005, MAVEN, and RAMS are the standard NLP event-extraction benchmarks. None of them is on HuggingFace under those names — you download from the source and point the converters at the local files. Output is a single JSONL file per call (the benchmarks ship canonical train/dev/test splits we want to preserve), not the 3-file split used by the other converters.
-
-```bash
-# RAMS (Ebner et al., ACL 2020) — multi-sentence trigger + typed arguments.
-#   Download: https://nlp.jhu.edu/rams/  ->  RAMS_1.0c.tar.gz
-uv run python tools/data/convert_rams.py \
-    --input data/RAMS_1.0c/data/train.jsonlines \
-    --out data/rams.train.jsonl
-
-# MAVEN (Wang et al., EMNLP 2020) — large general-domain trigger detection.
-#   Download: github.com/THU-KEG/MAVEN-dataset (Tsinghua Cloud / Google Drive)
-#   Trigger-only — arguments will be empty, so only the trigger-detection
-#   path of the joint event loss benefits from this corpus.
-uv run python tools/data/convert_maven.py \
-    --input data/maven/train.jsonl \
-    --out data/maven.train.jsonl
-
-# ACE 2005 (LDC2006T06) — LDC-licensed. Point --input at the directory
-# that contains the .sgm + .apf.xml pairs (typically
-# ace_2005_td_v7/data/English). Default emits hierarchical event types
-# like "Conflict.Attack"; pass --no-subtypes for "Conflict".
-uv run python tools/data/convert_ace2005.py \
-    --input /path/to/ace_2005_td_v7/data/English \
-    --out data/ace2005.jsonl
-
-# WikiEvents (Li et al., NAACL 2021) — KAIROS ontology event extraction
-# co-trained with typed entity mentions; --split auto-downloads from the
-# public S3 bucket.
-uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
-uv run python tools/data/convert_wikievents.py --split dev   --out data/wikievents.dev.jsonl
-uv run python tools/data/convert_wikievents.py --split test  --out data/wikievents.test.jsonl
-
-# CASIE (Satyapanich et al., AAAI 2020) — cybersecurity event extraction
-# co-trained with typed entity mentions; auto-downloads the GitHub tarball
-# and emits a stratified 80/10/10 split.
-uv run python tools/data/convert_casie.py --out data/casie.jsonl
-
-# CMNEE (Zhu et al., LREC-COLING 2024) — Chinese military news event
-# extraction with triggers + typed arguments. Google Drive download:
-#   mkdir -p data/cmnee && uv run --with gdown gdown --folder \
-#       'https://drive.google.com/drive/folders/1nfKiSsu88oBeykUSYm7NGn4Q50_2GPS1' \
-#       -O data/cmnee/
-uv run python tools/data/convert_cmnee.py \
-    --input data/cmnee/CMNEE/train.json --out data/cmnee.train.jsonl
-uv run python tools/data/convert_cmnee.py \
-    --input data/cmnee/CMNEE/valid.json --out data/cmnee.val.jsonl
-uv run python tools/data/convert_cmnee.py \
-    --input data/cmnee/CMNEE/test.json  --out data/cmnee.test.jsonl
-
-# DocEE (Tong et al., NAACL 2022) — largest doc-level event-extraction
-# corpus (27k docs, 59 types, 356 roles, 180k arg instances). One event
-# per doc, no triggers — maps to role-typed entities + 59-way doc
-# classification by default. Google Drive download (gdown wraps it):
-#   mkdir -p data/docee && uv run --with gdown gdown --folder \
-#       'https://drive.google.com/drive/folders/1_cRnc2leAmOKT9Ma8koz6X8Ivl-_lapp' \
-#       -O data/docee/
-uv run python tools/data/convert_docee.py --no-stratify \
-    --input data/docee/DocEE-en/normal_setting/train.json --out data/docee.train.jsonl
-uv run python tools/data/convert_docee.py --no-stratify \
-    --input data/docee/DocEE-en/normal_setting/dev.json   --out data/docee.val.jsonl
-uv run python tools/data/convert_docee.py --no-stratify \
-    --input data/docee/DocEE-en/normal_setting/test.json  --out data/docee.test.jsonl
-
-```
-
-All converters stream from HuggingFace (no need to hold the dataset in RAM). Each prints a final summary line: records emitted, records dropped (for NER converters: because no span appeared verbatim; for the classification converters: because the labels couldn't form a valid classification task), and the count of distinct entity types or label counts, followed by per-split counts and file paths.
-
-Approximate output sizes after conversion (totals across all three splits combined):
-
-| Source | Task | Records out | Disk |
-|---|---|---:|---:|
-| NuNER `full` | NER | ~990,000 | ~0.8 GB |
-| Pile-NER-definition | NER | ~45,000 | ~0.2 GB |
-| knowledgator/GLINER-multi-task-synthetic-data | NER | ~210,000 | ~0.4 GB |
-| knowledgator/text2json-training-data | NER (extraction) | ~80,000 | ~0.2 GB |
-| paraloq/json_data_extraction | Schema-driven structured extraction | ~483 | ~5 MB |
-| knowledgator/gliner-multilingual-synthetic | NER (multilingual) | ~400,000 | ~0.3 GB |
-| knowledgator/gliclass-v3-logic-dataset | Classification (multiple-choice) | ~5,700 | ~10 MB |
-| knowledgator/gliclass-v2.0-RAC | Classification (multi-label, general-domain) | ~550,000 | ~1.2 GB |
-| knowledgator/Scientific-text-classification | Classification (single-label) | ~50,000 | ~80 MB |
-| knowledgator/biomed_NER | NER (biomedical, 35 classes) | ~4,800 | ~30 MB |
-| knowledgator/events_classification_biotech | Classification (multi-label) | ~2,750 | ~10 MB |
-| knowledgator/sentence_rex | Relation extraction | ~44,000 | ~30 MB |
-| knowledgator/bio-NER-relations | Biomedical NER + RE | ~10,400 | ~80 MB |
-| knowledgator/PubMedAbstractsNER | NER (biomedical, ~470 UMLS types, with descriptions) | ~35,000 | ~100 MB |
-| thunlp/docred | Doc-level NER + RE (6 entity, ~96 relation types) | ~105,000 (gold + distant) | ~270 MB |
-| yeshpanovrustem/kaznerd | NER (Kazakh, 25 types) | ~59,000 | ~40 MB |
-| chintagunta85/bc4chemd | NER (chemical) | ~14,500 | ~15 MB |
-| tner/bc5cdr | NER (chemical + disease) | ~3,900 | ~5 MB |
-| stockmark/ner-wikipedia-dataset | NER (Japanese, 8 types) | ~4,900 | ~5 MB |
-| gtfintechlab/finer-ord | NER (financial, PER/LOC/ORG; **NC**) | ~1,800 | ~2 MB |
-| KLUE-NER | NER (Korean, 6 types) | ~21,000 | ~15 MB |
-| KLUE-RE | NER + relations (Korean) | ~32,000 | ~25 MB |
-| BioRED | NER + relations (biomedical) | ~600 docs | ~2 MB |
-| SciERC | NER + relations (scientific) | ~500 docs | ~5 MB |
-| RAMS (manual download) | Event extraction (trigger + args) | ~9,000 | ~10 MB |
-| MAVEN (manual download) | Event detection (trigger only) | ~4,500 | ~20 MB |
-| ACE 2005 (LDC) | Event extraction (trigger + args, 33 subtypes) | ~600 | ~3 MB |
-| WikiEvents (NAACL 2021) | NER + event extraction (KAIROS, 49+ types) | ~246 docs (206/20/20) | ~2 MB |
-| CASIE (AAAI 2020) | NER + cybersecurity event extraction (5 event subtypes, ~21 entity types) | 1,000 docs (794/100/106) | ~8 MB |
-| CMNEE (LREC-COLING 2024) | Chinese military event extraction (8 types, 11 roles, 29k events) | 13,617 docs (9,284/1,606/2,727) | ~19 MB |
-| DocEE (NAACL 2022) | Role-typed NER + 59-way doc classification (356 roles, 180k args) | 27,485 docs (21,966/2,748/2,771) | ~140 MB |
-
-You can pass any subset of the JSONL files to the trainer at once — they're concatenated and shuffled. Mixing all eleven is a good recipe: NuNER contributes scale and descriptions, Pile-NER contributes long natural-language type definitions, GLINER-multi-task contributes dense multi-type schemas, text2json contributes bespoke per-document field names, gliner-multilingual contributes non-English passages (essential when training on top of `mmBERT` — without it the multilingual encoder weights drift toward English-only extraction), gliclass-logic teaches multiple-choice classification with arbitrary candidate sets, Scientific-text-classification teaches single-label classification with a fixed vocabulary, biomed_NER adds domain-specific biomedical extraction, events_biotech adds multi-label business-news classification, sentence_rex introduces general-domain relation extraction, and bio-NER-relations couples biomedical NER with co-occurring relations.
-
-**Event-extraction training.** The Phase-1-6 event additions land entirely within the existing JSONL/Schema machinery: an event record looks like
-```json
-{"input": "John fired Bob in Paris.",
- "output": {"events": [
-     {"event_type": "Attack", "triggers": ["fired"],
-      "arguments": [
-          {"role": "Attacker", "entity": "John"},
-          {"role": "Victim",   "entity": "Bob"},
-          {"role": "Place",    "entity": "Paris"}
-      ]}
- ]}}
-```
-and an inference schema is `schema.events({"Attack": ["Attacker", "Victim", "Place", "Time"], ...})`. Add the ACE 2005 / MAVEN / RAMS JSONLs to `train_data=` like any other corpus; `compute_metrics` will report `eval_event_type_*`, `eval_event_trigger_*`, `eval_event_argument_*`, and a combined `eval_event_*` micro/macro F1 alongside the entity/relation/classification metrics, with per-event-type and per-role classification reports. See [METRICS.md](../../METRICS.md) for the full scoring definitions.
-
-The training scripts under `tools/train/` already wire all three splits into `trainer.train(train_data=…)` / `eval_data=…` / the final blind-test pass. The equivalent inline pattern is:
-
-```python
-trainer.train(train_data=[
-    "data/nuner_full.train.jsonl",
-    "data/pile_ner_def.train.jsonl",
-    "data/knowledgator_gliner.train.jsonl",
-    "data/text2json.train.jsonl",
-    "data/gliner_multilingual.train.jsonl",
-    "data/gliclass_logic.train.jsonl",
-    "data/scientific_text.train.jsonl",
-    "data/biomed_ner.train.jsonl",
-    "data/events_biotech.train.jsonl",
-    "data/sentence_rex.train.jsonl",
-    "data/bio_ner_relations.train.jsonl",
-])
-```
-
-Swap `.train.jsonl` for `.val.jsonl` to build the `eval_data` list, and `.test.jsonl` for the final blind-test pass.
-
----
-
-## 3. Pick a hardware profile
-
-The base config (`mmbert-base.yaml`) trains at **`max_len=8192`** — mmBERT's full sequence window. (The `mmbert-small*` configs train at `max_len=1024` with `sliding_window: true`, and `gliner2-multi-wikievents.yaml` at 256; in those, 8192 is only the encoder's positional cap, not the training window.) mmBERT's local-global attention keeps memory near-linear in sequence length, but activations and the optimizer state still scale with it, so batch sizes at 8192 are much smaller than at 512. The cells below assume `max_len=8192`. To regain bigger batches at the cost of context window, lower `max_len` in `TrainingConfig` (e.g. `max_len=2048` or `1024`) and roughly 2–4× each batch-size cell.
-
-| Device | mmBERT-small (148 M params) | mmBERT-base (314 M params) |
+| | **boundary** | span |
 |---|---|---|
-| **Single A100/H100 80 GB** | `batch_size=16–24`, `bf16=True` | `batch_size=8–12`, `bf16=True` |
-| **Single A100/4090 40–48 GB** | `batch_size=8–12`, `bf16=True` | `batch_size=4` + `gradient_accumulation_steps=2`, `bf16=True` |
-| **Single 24 GB GPU (3090/4090)** | `batch_size=4–6`, `bf16=True` | `batch_size=2` + `gradient_accumulation_steps=4`, `bf16=True` |
-| **Apple M-series (MPS, 32–96 GB unified)** | `batch_size=1–2`, no AMP, dev / small-slice only | `batch_size=1`, no AMP, dev / small-slice only |
-| **CPU** | dev / smoke only | dev / smoke only |
+| how a mention is scored | start and end **endpoints**, then candidate pairs | every `(start, width)` pair |
+| cost in document length | near-linear | quadratic in `max_width` |
+| longest mention | unbounded | capped by `max_width` |
+| events | triggers + typed role edges, decoded as records | role-typed entities |
+| loads with | `AutoExtractor.from_pretrained` | `GLiNER2.from_pretrained` |
+| config key | `architecture: boundary` | default |
 
-Per-step wall-clock at `max_len=8192` is roughly 6–10× longer than at `max_len=512` for the same effective batch size; full-corpus runs on smaller GPUs become multi-day. Tune to your real corpus before committing to a long run.
+Use **boundary** for anything document-length or event-shaped. The span head has to
+enumerate `(start, width)` candidates, so a 40-token argument means `max_width >= 40` and
+the candidate set explodes; the boundary head scores `L` starts and `L` ends and pairs only
+the survivors. Removing the width cap is the point.
 
-> On MPS, mixed precision (`fp16`/`bf16`) is disabled automatically: `torch.amp.GradScaler` is CUDA-only and MPS autocast adds little speed-up for this model. The trainer logs the choice it made.
->
-> For an Apple M-series dev workflow at `max_len=8192`, an epoch over the full mixed corpus is prohibitive — drop `max_len` to 1024–2048 and/or pass `--max-records 50_000` to the converters to train on a slice. Use a real GPU for the full 8192 corpus.
+> **Load a boundary checkpoint with `AutoExtractor`, never `GLiNER2`.** `GLiNER2` *is* the
+> span class. A boundary checkpoint fails on `config.max_width` long after the download
+> succeeded, so the traceback reads like a bad repo id when it is nothing of the sort.
+
+```python
+from gliner2 import AutoExtractor
+model = AutoExtractor.from_pretrained("./out/joint-boundary-mmbert-137k/best")
+```
 
 ---
 
-## 4. Train
-
-> **Run the training scripts under `tools/train/` rather than piping a heredoc.** Piping the script via `python - <<PY ... PY` breaks DataLoader workers on macOS + Python 3.12+, where multiprocessing uses the **spawn** start method: workers need to re-import the main module by path, but stdin has no path. Symptom: `FileNotFoundError: '<stdin>'` followed by `BrokenPipeError`.
-
-### Config-driven training (recommended)
-
-A single entry point, `tools/train/train.py`, runs any training setup from a YAML file — no editing Python. Every run is defined by a config in `tools/train/config/`; copy one and edit it to add a corpus or retune hyperparameters.
+## 2. Install
 
 ```bash
-uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
+uv sync --extra local
 ```
 
-Each YAML has five sections (the last, `labels`, is optional):
+The `local` extra carries `torch`, `transformers` and `peft`. Two pins move **together** and
+you cannot bump one alone:
 
-| section    | maps to                                  | notes |
-|------------|------------------------------------------|-------|
-| `model`    | `from_encoder` or `from_pretrained`      | Set **`encoder`** (raw HF encoder → fresh heads; plus `max_width`, `max_len`, and the struct-loss knobs — see the structure-loss section below) **or** `pretrained` (a saved GLiNER2 checkpoint → continue its trained heads; remaining keys like `struct_loss` override the loaded config). Exactly one. |
-| `training` | `TrainingConfig(**training)`             | any `TrainingConfig` field (epochs, LRs, `bf16`, `sliding_window`, `logging_steps`, ...). Omitted fields take their defaults. |
-| `eval`     | inference/eval settings + blind test     | `threshold`, `threshold_sweep`, `metric_sweep`, `eval_by_language`, `chunk_size`/`chunk_overlap` + `global_decode` (windowed long-doc eval), `stopword_languages`/`stopword_yaml`. Parsed by `_parse_eval_settings`; see the `train.py` module docstring. |
-| `data`     | corpus / event-file lists                | `corpora` (base paths, expanded to `<name>.{train,val,test}.jsonl`) and `event_files` (a `{name: {train,val,test}}` map; each split is used only if the file is present on disk). |
-| `labels`   | label roll-up / remap (optional)         | `rollup`, `separator`, `map` — applied identically to train/val/test. See the label-transforms section below. |
-
-Provided configs:
-
-| config | model | `struct_loss` | data |
-|--------|-------|---------------|------|
-| `mmbert-base.yaml` | mmBERT-base (from_encoder) | focal | full multi-corpus + all event corpora |
-| `mmbert-small.yaml` | mmBERT-small | focal | ACE 2005 (+ stockmark_jpn, klue_re) |
-| `mmbert-small-bce.yaml` | mmBERT-small | bce | WikiEvents |
-| `mmbert-small-bce-posweight.yaml` | mmBERT-small | bce_posweight | WikiEvents |
-| `mmbert-small-focal.yaml` | mmBERT-small | focal | WikiEvents |
-| `mmbert-small-asl.yaml` | mmBERT-small | asl | WikiEvents |
-| `mmbert-small-dice.yaml` | mmBERT-small | dice | WikiEvents |
-| `mmbert-small-bce-dice.yaml` | mmBERT-small | bce_dice | WikiEvents |
-| `gliner2-multi-wikievents.yaml` | fastino/gliner2-multi-v1 (from_pretrained) | from checkpoint | WikiEvents |
-
-The six `mmbert-small-*` configs share encoder, hyperparameters, and data — they differ only in `struct_loss` and write to separate `output_dir`s, so they form a ready-made loss-variant sweep. `gliner2-multi-wikievents.yaml` instead **fine-tunes the pretrained `fastino/gliner2-multi-v1`** GLiNER2 model on WikiEvents (lower LRs, the checkpoint's own loss) — the `pretrained` form of the `model` section.
-
-The table above is representative — `tools/train/config/` holds ~46 configs, including the `gliner2-base-v1-*` / `gliner2-large-v1-*` / `gliner2-multi-v1-*` per-corpus checkpoint recipes, the `mmbert-base-*` and `scaling-mmbert-*` runs (`scaling-mmbert-*` mixes are built by `build_scaling_mix.py`), and `deberta-base-fromenc-*`. Browse that directory for the full set.
-
-> **Two architectures.** This guide covers the **span** head (`from_encoder` training with `max_width` / `struct_loss`, described throughout). The pretrained `gliner2-base-v1` / `gliner2-large-v1` checkpoints that the `gliner2-*-v1-*` configs load via `pretrained:` use the newer **boundary** architecture, whose `model:` block differs (`boundary_head`, no `struct_loss`/`max_width`). `GLiNER2.from_pretrained` loads span checkpoints; use `AutoExtractor.from_pretrained` for architecture dispatch (span or boundary).
-
-#### Label transforms (roll-up and remap)
-
-Many corpora use hierarchical `parent.child` labels — ACE 2005 entity subtypes (`ORG.Media`, `LOC.Address`), event types (`Conflict.Attack`), WikiEvents types (`Cognitive.IdentifyCategorize.Unspecified`). The optional `labels:` section collapses and/or renames them, applied **identically to the train, validation, and test splits** so the label space stays consistent. Each label category is configured **independently** — `entities`, `relations`, `events`, and `classifications` each take their own `rollup` / `separator` / `map`:
-
-```yaml
-labels:
-  entities:
-    rollup: true        # ORG.Media -> ORG (keep the first segment)
-    separator: "."      # split character for roll-up (default ".")
-    map:                # rename labels AFTER roll-up
-      ORG: ORGANIZATION
-  events:
-    rollup: false       # leave event types untouched (per-category control)
-    separator: "."
-    map: {}
-  # relations / classifications: omit a category to leave it untouched
+```
+transformers>=5.6,<5.7     # in the [local] extra
+kernels>=0.12,<0.13        # core
 ```
 
-* **Per category, roll-up runs first then `map`** — so `map` keys refer to the rolled-up parent (`ORG.Media → ORG → ORGANIZATION`).
-* **Scope**: `entities` covers entity labels and `entity_descriptions` keys; `relations` covers relation names; `events` covers both event types and argument roles; `classifications` covers classification labels.
-* **Merge-safe**: when two labels collapse to the same target, their surfaces/labels are merged (order-preserving dedup), never dropped — so rolling `ORG.Media` and `ORG.Government` to `ORG` keeps every entity.
-* A category with `rollup: false` and an empty `map` (or omitted entirely) is left untouched; omit the whole section for no transform. The old flat form (top-level `rollup`/`separator`/`map`) is rejected with an error.
+`uv pip install -e .` (without `[local]`) resolves transformers 5.13 against the core
+`kernels` pin. FlashAttention 2 then never hooks, mmBERT runs ~11× slower, and bf16 goes
+non-finite around step 50. Set `GLINER2_STRICT_ATTN=1` so the fallback raises instead of
+silently degrading, and confirm the encoder reports `kernels-community/flash-attn2`.
 
-The `mmbert-small-*` and WikiEvents configs ship with `entities`/`relations`/`events` rolled up as a worked example; `mmbert-base.yaml` carries the section as a documented no-op.
-
-Every run writes `train_results.json` (per-epoch loss + metric history) and `test_metrics.json` (blind-test metrics) into the config's `output_dir`, and prints a compact micro precision/recall/F1 summary on every eval pass. Each time a new best checkpoint is saved, its eval metrics are written to `output_dir/eval_metrics.json` and `output_dir/best/eval_metrics.json`; the blind-test metrics are likewise copied to `output_dir/best/test_metrics.json`, so every metrics file sits next to the model it describes. See [METRICS.md](../../METRICS.md) for the metric definitions.
-
-At the end of training, a human-readable **`output_dir/best/MODEL_CARD.md`** is generated: base model, training procedure and date, the datasets actually used (with per-dataset licenses pulled from `tools/train/dataset_registry.yaml`), the best metrics, and an **effective-license determination** that takes the most restrictive term across the base model and every dataset. License strings are copied verbatim and unverified ones ("see card"/"see source"/"other") are flagged, never upgraded — so the card never asserts a license the data doesn't support. Keep the registry current when adding a corpus (a test enforces every config corpus has an entry).
-
-### Sliding-window chunking (instead of truncation)
-
-By default, records longer than `max_len` word-tokens get truncated by the collator. Set `sliding_window=True` in `TrainingConfig` to switch behaviour: each record's `input` is expanded **at dataset-load time** into overlapping subword-token windows, and each chunk inherits a filtered copy of the gold annotations.
-
-```python
-TrainingConfig(
-    ...
-    sliding_window=True,
-    max_len=1024,         # window size, now measured in SUBWORD tokens
-    window_stride=512,    # subword stride between consecutive chunks
-)
-```
-
-Per-task filter rules (see `gliner2/training/chunking.py`):
-
-| task | rule |
-|---|---|
-| Entities | keep mention only in chunks where its surface verbatim appears |
-| Entity descriptions | keep only for entity types that survived the entity filter |
-| Classifications | doc-level label is inherited by **every** chunk |
-| Relations | emit only if **both** head and tail appear in the same chunk |
-| Events | emit only if **every** trigger span appears in the chunk; per-event arguments independently filtered |
-| JSON structures | passed through; the processor's verbatim filter handles missing fields |
-
-Notes:
-
-* `max_len`'s **meaning changes**: under sliding window it is the subword window size, not the word-truncation limit. The processor's word-level truncation is suppressed when sliding window is on (chunks are already sized).
-* Docs that fit in the window are emitted as a single record (no chunking).
-* With `window_stride < max_len`, annotations whose surfaces fall in the overlap region naturally repeat across multiple adjacent chunks — that's intentional, just slightly more supervision on those spans.
-* Chunks that wind up with **no usable supervision** after filtering are dropped (e.g. a generic-prose chunk that contains none of the gold spans).
-* Applies to eval too: when `sliding_window` is on, during-training eval is chunked the same way as train (`_prepare_data(..., is_train=False)`). The final blind-test path can independently window long docs via the `eval:` block's `chunk_size`/`chunk_overlap` + `global_decode` settings.
-
-### Per-split deterministic shuffle
-
-After the trainer aggregates JSONLs into a single `TRAIN_DATA` / `EVAL_DATA` / `TEST_DATA` list, every split is shuffled once with `TrainingConfig.seed` before the DataLoader sees it. This means corpus-file ordering can never bias the model. The training DataLoader still shuffles per-epoch on top, so train data is re-shuffled every epoch. Eval and test data stay in the same shuffled-once order between epochs, which keeps eval/test metrics deterministic (set/aggregate metrics like F1 are order-independent anyway).
-
-### 4a. mmBERT-small
-
-Recommended small baseline — runs on a single 24 GB GPU. `mmbert-small.yaml` trains an ACE 2005 event-extraction run (plus the `stockmark_jpn` and `klue_re` corpora); the broader full multi-corpus recipe is `mmbert-base.yaml`.
-
-```bash
-uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
-```
-
-The config sets `model.encoder: jhu-clsp/mmBERT-small`, which `train.py` passes to `GLiNER2.from_encoder` — use `from_encoder` for training from scratch; `from_pretrained` is for loading saved GLiNER2 checkpoints. Edit the YAML (batch size, learning rates, epochs, `max_len`, ...) to retune; defaults target a 24 GB GPU, see the hardware table above for other profiles.
-
-`train.py` also:
-
-* Wires the `.val.jsonl` files into `eval_data=` so the trainer scores them at the end of every epoch with `make_compute_metrics()` — micro/macro precision/recall/F1 for entities, relations, and classifications, plus a per-label `classification_report` string. `eval_loss` drives `save_best=True`, so `<output_dir>/best/` always holds the lowest-val-loss checkpoint.
-* After `trainer.train()` returns, calls `evaluate_checkpoint(<output_dir>/best, test_data)` against the `.test.jsonl` splits and writes `test_metrics.json` (to both `<output_dir>/` and `<output_dir>/best/`).
-
-Checkpoints land in the config's `output_dir` (e.g. `out/mmbert-small/`). The `final` checkpoint is the last step; intermediate `checkpoint-<step>` directories are rotated.
-
-### 4b. mmBERT-base
-
-Same shape; lower learning rates, smaller batch, longer wall-clock:
-
-```bash
-uv run python tools/train/train.py --config tools/train/config/mmbert-base.yaml
-```
-
-Edit `tools/train/config/mmbert-base.yaml` to retune for your hardware. Defaults use `bf16: true` (prefer on Ampere+/Hopper; switch to `fp16: true` elsewhere) and `max_len: 8192`. Eval-on-val and final blind test on `best` work the same way as for the small variant.
-
-### Schema co-location (`default_schema`)
-
-Every non-streaming run derives the union of its training ontology (entities / events + roles / relations / classifications) and writes it into the model's `config.json` as `default_schema`, so the schema the model was trained on ships with the checkpoint — on disk and on the HF Hub. It is a recommended default, not a constraint: GLiNER2 stays open-vocabulary at inference. Task types with too many distinct labels to pin down (e.g. broad open-vocabulary entity sets) are recorded under an `open_vocab` marker instead of a concrete label set. Checkpoints trained before this feature can be retrofitted with `tools/train/backfill_schema.py` (dry-run by default; `--apply` to write, `--filter <substr>` to target specific configs).
-
-### Evaluate a checkpoint without retraining
-
-`tools/train/eval.py` scores a saved checkpoint against a config's val/test split without running training — handy for threshold and windowing ablations:
-
-```bash
-uv run python tools/train/eval.py --config tools/train/config/mmbert-small.yaml \
-    [--split val|test] [--checkpoint <path>] [--threshold 0.5] \
-    [--chunk-size N] [--chunk-overlap N] [--global-decode | --no-global-decode]
-```
-
-`--split` defaults to `test` and `--checkpoint` to `<output_dir>/best`; the other flags override the config's `eval:` settings for that run only.
-
-### 4c. Multi-GPU training
-
-Multi-GPU training uses **DistributedDataParallel** via `torchrun` (the old single-process `nn.DataParallel` path was removed; `data_parallel` is now an ignored no-op). One process per GPU: each holds the full model and trains on a shard of the data (`DistributedSampler`); gradients are all-reduced in place.
-
-```bash
-# 2 GPUs on one node
-uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
-    --config tools/train/config/mmbert-base.yaml
-```
-
-`uv run torchrun` uses the project venv's `torchrun`, which launches each rank with the venv's Python (`uv run python -m torch.distributed.run ...` is equivalent). DDP is auto-detected from the `torchrun` environment: `train.py` copies each process's `LOCAL_RANK` into `config.local_rank`, and the trainer starts DDP whenever `local_rank >= 0` — no config flag needed. Notes:
-
-* `batch_size` in the config is **per GPU** under DDP (unlike DataParallel, where it's the total split across GPUs). Effective global batch = `batch_size × nproc_per_node × gradient_accumulation_steps`. Keep the per-GPU `batch_size` the same as your single-GPU value.
-* Only rank 0 logs, evaluates, and writes checkpoints / `train_results.json` / `test_metrics.json`; the early-stop decision is broadcast so all ranks stop together.
-* Backend is `nccl` on CUDA (`gloo` on CPU). `bf16`/`fp16` autocast works normally (DDP runs forward in-process).
-* The wrap defaults to `ddp_static_graph: true` / `ddp_find_unused_parameters: false`. If some steps don't exercise every task head (e.g. batches with only entities), set `ddp_find_unused_parameters: true` and `ddp_static_graph: false` to avoid a "parameter did not receive grad" / static-graph error.
-
-### Structure-loss variant (span scoring for entities/relations/events)
-
-The structure head scores every `(start, width)` span against each schema field on a dense grid, so positives (the few gold spans) are vastly outnumbered by negatives. The loss applied to that grid is selected by the `struct_loss` key in the `model:` section of a YAML config — `train.py` forwards the whole `model:` block to `GLiNER2.from_encoder`, so a config sets only the keys its variant uses:
-
-| `struct_loss`    | Behavior                                                        | Extra `model:` keys |
-|------------------|-----------------------------------------------------------------|-------------|
-| `bce`            | Plain BCE-with-logits (default; original behavior).             | —           |
-| `bce_posweight`  | BCE up-weighting positive spans, a principled alternative to the random negative masking. | `struct_pos_weight` (≈ #neg / #pos, e.g. `8.0`) |
-| `focal`          | Focal loss — down-weights easy negatives, focuses on hard spans. | `focal_gamma` (default `2.0`), `focal_alpha` (default `0.25`) |
-| `asl`            | Asymmetric loss (Ben-Baruch et al.) — decoupled focusing for positives vs negatives plus probability-shifting of easy negatives; built for multi-label extreme negative imbalance. | `asl_gamma_neg` (default `4.0`), `asl_gamma_pos` (default `1.0`), `asl_clip` (default `0.05`) |
-| `dice`           | Soft-Dice overlap (F1-like) objective; robust to the dense-grid imbalance by construction. | `dice_smooth` (default `1.0`) |
-| `bce_dice`       | `BCE + soft-Dice` — per-cell calibration plus the overlap objective. | `dice_smooth` |
-
-All variants keep the sigmoid + 0.5 decode at inference (`engine.py`), so they slot in without touching the decode path. One ready-to-run config per variant (mmBERT-small, WikiEvents only) ships under `tools/train/config/`:
-
-```bash
-uv run python tools/train/train.py --config tools/train/config/mmbert-small-bce.yaml
-uv run python tools/train/train.py --config tools/train/config/mmbert-small-bce-posweight.yaml
-uv run python tools/train/train.py --config tools/train/config/mmbert-small-focal.yaml
-uv run python tools/train/train.py --config tools/train/config/mmbert-small-asl.yaml
-uv run python tools/train/train.py --config tools/train/config/mmbert-small-dice.yaml
-uv run python tools/train/train.py --config tools/train/config/mmbert-small-bce-dice.yaml
-```
-
-Each writes to its own `output_dir` (`./out/mmbert-small/<variant>`), so a sweep can run side by side. The `model:` block to select a variant looks like:
-
-```yaml
-model:
-  encoder: jhu-clsp/mmBERT-small
-  max_width: 20
-  max_len: 8192
-  struct_loss: asl          # bce | bce_posweight | focal | asl | dice | bce_dice
-  asl_gamma_neg: 4.0        # only used by asl
-  asl_gamma_pos: 1.0
-  asl_clip: 0.05
-```
-
-Note: `focal`, `asl`, and the Dice variants handle class imbalance inside the loss, so the 50% random negative masking in `compute_struct_loss` becomes partly redundant — for `focal`/`asl` it still runs (it randomly drops hard negatives the loss wants to learn from), while `dice`/`bce_dice` skip it entirely. For the cleanest comparison, evaluate each variant against the `bce` baseline on your own val splits.
-
-#### Per-task loss metrics and event-specific loss variant
-
-The trainer logs and W&B track three separate structure-loss buckets:
-
-| Metric | Covers |
-|--------|--------|
-| `structure_loss` / `eval_structure_loss` | Entities + relations span loss |
-| `event_structure_loss` / `eval_event_structure_loss` | Events span loss only |
-| `count_loss` / `eval_count_loss` | Count prediction (relations + events combined) |
-
-`total_loss` is always the sum of all four components (`classification + structure + event_structure + count`).
-
-Event tasks often have a different positive/negative ratio than entity extraction — event triggers and arguments are sparser. To set a different loss variant for events while keeping `struct_loss` for entities and relations, add `event_struct_loss` (and optionally `event_struct_pos_weight`) to the `model:` section:
-
-```yaml
-model:
-  encoder: jhu-clsp/mmBERT-small
-  max_width: 20
-  max_len: 8192
-  struct_loss: bce                    # used for entities + relations
-  event_struct_loss: bce_posweight    # overrides struct_loss for events only
-  event_struct_pos_weight: 16.0       # used when event_struct_loss is bce_posweight
-```
-
-`event_struct_loss` accepts the same values as `struct_loss` (`bce`, `bce_posweight`, `focal`, `asl`, `dice`, `bce_dice`). When omitted (the default), events use `struct_loss`. Hyperparameters other than `pos_weight` (`focal_gamma`, `asl_*`, `dice_smooth`) are shared between the entity/relation and event paths — set them once at the top level and both paths use them.
-
-### Optional: hold out an evaluation slice
-
-```python
-from gliner2.training.data import TrainingDataset
-ds = TrainingDataset.load(["data/nuner_full.jsonl", "data/pile_ner_def.jsonl"])
-train_ds, val_ds, _ = ds.split(train_ratio=0.99, val_ratio=0.01, test_ratio=0.0, seed=42)
-# then pass train_ds / val_ds to trainer.train(..., eval_data=val_ds) and set
-# eval_strategy="steps", eval_steps=2000 in the config.
-```
-
-### Resuming / continuing training from a checkpoint
-
-Every run saves self-contained GLiNER2 checkpoints under `output_dir` — `best/`,
-`checkpoint-epoch-<N>/`, `final/` (and `checkpoint-<step>/` under
-`eval_strategy: steps`). Each is a complete model (`config.json` + weights +
-tokenizer). There are two ways to pick up from one.
-
-#### Automatic mid-run resume — `checkpoint_restart`
-
-For crash recovery (e.g. an OOM mid-run), set `checkpoint_restart` and keep the
-**same `output_dir`**. The trainer finds the latest numbered checkpoint and
-restores the model **plus** the optimizer, scheduler, epoch, global step,
-best-metric, and RNG — then continues from the next epoch. This is a true
-resume, not a warm-start.
-
-```yaml
-training:
-  output_dir: ./out/mmbert-base   # SAME dir as the original run — that's where it looks
-  checkpoint_restart: highest      # "highest" = largest checkpoint-epoch-<N>;
-                                   # "last" = newest by timestamp; omit/null = off
-  num_epochs: 15                   # keep this (+ batch_size, grad-accum, data) identical
-  # encoder_lr / task_lr MAY change; the step-count fields above must not.
-```
-
-- `highest` picks the largest `checkpoint-epoch-<N>`; `last` picks the newest by
-  filesystem timestamp. Only numbered `checkpoint-*` dirs count (`best`/`final`
-  are excluded). If none is found it logs a warning and starts fresh, so you can
-  leave `checkpoint_restart` set permanently.
-- Resume is at **epoch granularity** — checkpoints are taken at epoch
-  boundaries, so nothing mid-epoch is lost; only the partially-run crashing
-  epoch is redone (near-zero when the crash is at the end-of-epoch eval).
-- **Keep step-count-affecting fields identical** to the original run
-  (`num_epochs`, `batch_size`, `gradient_accumulation_steps`, data) so the
-  restored LR schedule lines up. Learning rates themselves *can* change.
-- Numbered checkpoints carry the resume state (`training_state.pt`), which
-  **roughly doubles their on-disk size** (Adam keeps two moments per parameter);
-  `best/` and `final/` stay model-only and publishable. `save_total_limit`
-  rotates the numbered ones, so resume uses the most recent survivor.
-- Compatible with `gradient_checkpointing: true` (re-applied to the reloaded
-  model). Your `model:` section is unchanged — the trainer builds it, then swaps
-  in the resumed checkpoint (a brief double-load).
-
-#### Warm-start from a checkpoint — `model.pretrained`
-
-To start a **new** run from a trained model (fresh optimizer/schedule — e.g.
-fine-tuning on different data), point the `model` section at a checkpoint
-instead of a raw encoder:
-
-```yaml
-model:
-  pretrained: ./out/mmbert-base/best     # or checkpoint-epoch-<N> / final
-  # Only loss-related overrides here (e.g. struct_loss); structural keys
-  # (encoder, max_width, ...) are baked into the saved weights — do not set them.
-
-training:
-  output_dir: ./out/mmbert-base-finetune  # a NEW dir, else it overwrites the original run
-  num_epochs: 12                          # ADDITIONAL epochs (counter restarts at 0)
-  encoder_lr: 5.0e-6                       # lower than from-scratch
-  task_lr: 1.0e-4
-```
-
-This is a **warm-start, not a resume**: it loads the weights but starts a fresh
-optimizer, scheduler, LR warmup, and epoch counter, so expect a brief loss blip
-while the new schedule warms up. The shipped `gliner2-large-v1-wikievents.yaml`
-and `gliner2-multi-wikievents.yaml` configs use this `pretrained` form against
-HF-hosted checkpoints.
+On a fresh GPU box: system Python is often 3.10 and this project needs >=3.12
+(`uv venv --python 3.12`), and current drivers reject the default cu130 wheel — pin
+`torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128`.
 
 ---
 
-## 5. Train a boundary document event model
+## 3. Data: convert, then prove the splits are clean
 
-The boundary architecture scores span **endpoints** rather than enumerating `(start, width)`
-candidates, which is what makes document-length event extraction tractable. Event configs
-live in `tools/train/config/joint-boundary-*.yaml`.
+### 3a. Convert
 
-It is a **two-stage** recipe: train a base on a large mixed corpus, then warm-start the
-event downstream from it. The curve `{10k, 40k, 100k, 137k}` exists because the base's
-training volume is the variable under test (head-init, `JOINT_IE_SCALING.md` §4).
+Converters live in `tools/data/` and all share the same split flags. See
+[`tools/data/README.md`](../data/README.md) for the full corpus list and licences.
 
-### Step 1 — build the base
+```bash
+uv run python tools/data/convert_nuner.py --split full --out data/nuner_full.jsonl
+uv run python tools/data/convert_text2json.py --emit structures --out data/text2json.jsonl
+```
+
+Each writes `<base>.train.jsonl`, `.val.jsonl`, `.test.jsonl` (default 80/10/10, seed 42).
+
+**Splits are grouped by document.** `SplitWriter` routes on a normalized hash of
+`record["input"]`, so a source that emits one document several times — text2json emits one
+document up to 10 times with 8 different extraction schemas — keeps all its rows in one
+split. This is the default and you should not turn it off; `group=None` restores the old
+per-row routing and exists only as an escape hatch.
+
+That default is recent, and the corpora predating it leaked badly: text2json's val was
+**99.0%** contained in its train, gliclass_logic 38.3%, knowledgator_gliner 27.1%,
+events_biotech 21.6%, klue_re 17.3%. **Regenerate a corpus before trusting its eval.**
+
+### 3b. Prove it
+
+```bash
+# every corpus: within-split duplicates, cross-corpus overlap
+uv run python tools/data/check_leakage.py --pattern 'data/*.jsonl'
+
+# the real gate: does THIS config's aggregated train/val/test overlap?
+uv run python tools/data/check_leakage.py --config tools/train/config/joint-boundary-mmbert-137k.yaml
+```
+
+The `--config` form is the one that matters and it exits non-zero on contamination. Checking
+corpora one at a time is not sufficient: a training mix pools many corpora, and corpus A's
+train can hold a document sitting in corpus B's test — neither file overlaps itself, yet the
+blind test is contaminated. The report attributes every overlap to the file pair responsible.
+
+### 3c. The trainer gates it anyway
+
+`tools/train/train.py` runs the same check before a single step and repairs it:
+
+```
+[split hygiene] REPAIRED
+    train    135087 records  (dropped 1093 exact duplicate(s))
+    val        5818 records  (dropped 26 exact duplicate(s))
+    test      15371 records  (dropped 115 exact duplicate(s))
+    removed 21 document(s) from train: also present in test
+    removed 746 document(s) from train: also present in val
+    removed 22 document(s) from val: also present in test
+```
+
+Two rules, and conflating them destroys real supervision:
+
+- **within** a split, only an exact repeat — same text **and** same target — is dropped;
+- **across** splits, any shared **text** is contamination whatever the targets say.
+
+**Test is authoritative and never modified.** Val yields to test, train yields to both, so
+removal always comes out of the lower-priority split and the blind set stays exactly what
+the corpus declared.
+
+`training.split_hygiene:` selects `drop` (default), `raise`, `warn` or `off`. Use `warn` to
+reproduce a pre-gate run unchanged.
+
+---
+
+## 4. The boundary recipe
+
+Two stages. Train a base on a large mixed corpus, then warm-start the downstream from it.
+
+### Stage 1 — the base
 
 ```bash
 uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
   --config tools/train/config/joint-boundary-mmbert-137k.yaml
 ```
 
-`batch_size` in these configs is **per GPU**, and accumulation is halved so the effective
-batch stays 32 whether you run one GPU or two. Don't "fix" that when moving to a single GPU
-without also restoring accumulation.
+`batch_size` is **per GPU** and accumulation is halved so the effective batch stays 32 on one
+GPU or two. Moving to a single GPU without restoring accumulation silently halves your batch.
 
-### Step 2 — warm-start the event downstream
+The curve `{10k, 40k, 100k, 137k}` exists because base training volume is the variable under
+test — see [`JOINT_IE_SCALING.md`](../events_working_papers/JOINT_IE_SCALING.md) §4.
+
+### Stage 2 — warm-start the downstream
 
 ```bash
 uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
   --config tools/train/config/joint-boundary-rams-137k.yaml
 ```
 
-The config points `model.pretrained` at `./out/joint-boundary-mmbert-137k/best` and sets
-`architecture: boundary`. That key is checked against the checkpoint: warm-starting a *span*
-checkpoint raises `ArchitectureMismatchError` instead of silently training the wrong
-architecture.
+`model.pretrained` points at `./out/joint-boundary-mmbert-137k/best` and `architecture:
+boundary` is checked against the checkpoint — warm-starting a span checkpoint raises rather
+than silently training the wrong architecture.
 
-### Step 3 — evaluate both decode arms on the one model
+**Warm-starting forgets.** Training only on the added task destroys the ones you are not
+training: the casualty fine-tune used a narrow homogeneous schema with zero replay and
+afterwards returned a digit when asked for a `location`. Mix 5–10% of the original
+distribution back in — `build_warmstart_mix.py` samples replay across **both** old task
+families, because taking only events preserves one head and starves the other.
 
-Greedy and joint-beam decoding are an **eval-time switch** (`decode_mode`), not separate
-training runs. One trained model, two arms.
-
-### What these configs encode, and why (all measured)
+### What the configs encode, and why
 
 | Setting | Reason |
 |---|---|
 | `struct_loss: bce_posweight`, `struct_pos_weight: 4.0` | Bootstraps the argument head. Plain `bce` left argument recall near **0** on fresh heads; focal **collapsed** it. |
-| `bf16: true` + FlashAttention 2 | On mmBERT, **sdpa + bf16 produces NaN** (reproduced on 1×H100 at step 15). FA2 also runs 11× faster. FA2 arrives via the Hub kernel registry — keep `kernels>=0.12,<0.13` pinned *alongside* `transformers`, since the compatible range moves with every transformers release. |
-| `metric_for_best: eval_event_argument_strict_micro_f1` | Arguments are the thing head-init is supposed to move; selecting on loss hides it. |
-| `attn_implementation` unset on the pretrained path | It would be applied to `model.config` after the encoder is built — a silent no-op. FA2 is inherited from the base checkpoint. |
+| `bf16: true` + FlashAttention 2 | On mmBERT, **sdpa + bf16 produces NaN** (reproduced on 1×H100 at step 15). FA2 is also 11× faster. |
+| `attn_implementation` unset on the `pretrained` path | It is applied to `model.config` *after* the encoder is built — a silent no-op. FA2 is inherited from the base checkpoint. |
+| `metric_for_best: eval_event_argument_strict_micro_f1` | Arguments are what head-init moves; selecting on loss hides it. |
 
-### Three traps that cost real runs
+### Overrides on the `pretrained` path
 
-- **Load with `AutoExtractor`, never `GLiNER2`.** `GLiNER2` *is* the span class; a boundary
-  checkpoint dies on `config.max_width` long after the download succeeded, so the error reads
-  like a bad repo id when it isn't.
-- **Compare checkpoints at matched thresholds.** `metric_sweep: true` selects each checkpoint
-  at *its own* best threshold — right for shipping one model, **wrong for a curve**. Re-DocRED
-  alternated 0.1/0.3 and looked non-monotonic until split by threshold. `test_metrics.json`
-  does not record the threshold; pull `best/threshold_sweep.json` separately.
-- **At inference, boundary record decoding needs `--record-mode natural`.**
+`model.boundary_head:` keys are merged into the loaded checkpoint's settings and
+`boundary_settings` is rebuilt — **including the head's own reference**, which is a separate
+object built in `BoundaryHead.__init__`. Rebuilding only `model.boundary_settings` left every
+knob the head reads through `self.settings` pinned at its checkpoint value, which produced a
+treatment arm identical to its control. Structural keys (`enable_records`, `candidate_pool`,
+`boundary_dim`, …) raise instead of being applied, because the modules they size are already
+built.
 
 ---
 
-## 6. EKF disaster tracking: base → inference
+## 5. Loss balance: measure before you tune
+
+The boundary loss decomposes by **mechanism** (start / end / pair / inside / soft-IoU /
+rerank / proposal / abstention / count), not by task. Every task's supervision is comingled
+into one scalar, so "is the event signal too small?" is not answerable by reading the loss.
+
+### 5a. Look at where the gradient actually goes
+
+```bash
+uv run python tools/train/probe_task_losses.py \
+  --config tools/train/config/warmstart-natural.yaml \
+  --checkpoint out/.../final --batches 100 --gold-injection 0.25
+```
+
+It runs the **training** path — train mode, the training collator, the scheduled gold
+injection — and splits every query-typed term into per-task contributions that sum back to
+the scalar the optimizer sees (reconciliation is reported; expect ~1e-7).
+
+Measured on a converged warm-start checkpoint:
+
+| task | share of the training gradient |
+|---|--:|
+| entities | 77.2% |
+| json_structures | 11.5% |
+| **events** | **6.6%** |
+| relations | 2.5% |
+
+Entities dominate. That is the imbalance, and it is not visible without the buckets.
+
+### 5b. Three levers, and their reach
+
+```yaml
+model:
+  boundary_head:
+    task_loss_weights:        {entities: 1.0, relations: 1.0, events: 2.0, json_structures: 1.0}
+    task_loss_weight_scope:   all      # "span" (default) | "all"
+    task_pos_weights:         {events: 8.0}
+    report_task_losses:       true     # diagnostic only, no gradient effect
+```
+
+- **`task_loss_weights`** scales a task's whole term — magnitude only.
+- **`task_loss_weight_scope`** decides what that reaches. `span` (default) is start/end/pair
+  = **18.5%** of the loss; `all` adds inside, soft-IoU, rerank, proposal, abstention and
+  count for **94.3%**. A dose sweep at `span` reach was null on every metric precisely
+  because `w=4` moved events from 6.6% to 10.6% of the gradient while three quarters of it
+  sat untouched.
+- **`task_pos_weights`** scales **positives against negatives inside** a task's queries —
+  direction, not magnitude. Applies to start/end/pair/inside. Not soft-IoU (fractional
+  targets, so "the positive term" is undefined) and **ignored** by the
+  `asymmetric_focal` marginal path, which never calls `_safe_bce`.
+
+Dose a `pos_weight` from the measurement, not a hunch: `k` multiplies a task's contribution
+by `(k*pos + neg) / (pos + neg)`, and the probe prints `pos` and `neg`. The regime matters —
+at **initialization** the event positive fraction is 0.052 (balance at `k≈18`), but at
+convergence it is 0.562, where `k>1` does not correct an imbalance so much as create the
+opposite one.
+
+**Defaults are exactly inert.** An all-ones weight map takes the original code path, not a
+numerically-equivalent one, so an arm-to-arm difference is the treatment and not the
+plumbing.
+
+---
+
+## 6. EKF/MHT disaster tracking
 
 **The EKF has no learned parameters.** `est_ekf` is a censoring-aware random-walk smoother
-whose smoothing strength is a hand-set constant (`q_rel = 0.20` in
-`datasets/disaster_streams/evaluate.py`), with fixed source/qualifier fusion weights. There
-is no fitting step and no checkpoint. What you *train* is the **casualty structure model**
-that feeds it; everything else is generation, configuration and measurement. Treat "training
-the EKF" as "training the extractor whose observations the filter consumes".
+whose smoothing strength is a hand-set constant (`q_rel = 0.20`), with fixed source/qualifier
+fusion weights. There is no fitting step and no checkpoint. What you *train* is the
+**casualty structure model** whose observations the filter consumes; everything else is
+generation, configuration and measurement.
 
 Full stage map, including what is off by default:
 [`PIPELINES.md`](../events_working_papers/PIPELINES.md) §2.
@@ -717,82 +265,55 @@ uv run python datasets/disaster_streams/generate.py \
 ```
 
 Each stream is one disaster whose true state evolves (dead/injured approach an asymptote,
-missing decays) and is observed by noisy, *hedged* reports. Parametric and deterministic, so
-ground truth is exact and it costs nothing.
+missing decays) observed by noisy, *hedged* reports. Parametric and deterministic, so ground
+truth is exact and it costs nothing.
 
-### Step 2 — realize the streams as news text (this one costs money)
+### Step 2 — realize the streams as news text (this costs money)
 
 ```bash
-# price it first
 uv run python datasets/disaster_streams/realize.py --split train --provider anthropic \
-  --model claude-sonnet-5 --estimate
-# then run it; --provider mock spends nothing and is the smoke-test path
+  --model claude-sonnet-5 --estimate          # price it first
 uv run python datasets/disaster_streams/realize.py --split train \
   --provider anthropic --model claude-sonnet-5 --out datasets/disaster_streams_sonnet5
 ```
 
-Observations are grouped by report time into **one multi-fact snippet per report**, so
-extraction has to bind each figure to the right role amid competing numbers. The conditioning
-tuple `(role, value, qualifier, source)` stays known ground truth — the snippet states the
-exact digits with the hedge.
+`--provider mock` spends nothing and is the smoke-test path. Observations are grouped into
+one multi-fact snippet per report, so extraction has to bind each figure to the right role
+amid competing numbers.
 
-### Step 3 — build the structure-training corpus
+### Step 3 — build the structure corpus
 
 ```bash
-# single-event (one casualty_report per document)
-uv run python datasets/disaster_streams/build_finetune_corpus.py \
-  --data datasets/disaster_streams_sonnet5 --split train --out data/casualty_ft.train.jsonl
-
-# multi-event (several incidents per document, one record each)
 uv run python datasets/disaster_streams/build_multievent_corpus.py \
   --data datasets/disaster_streams_sonnet5 --split train \
   --out data/casualty_multi.train.jsonl --max-interference 3 --record-mode natural
 ```
 
-Repeat per split. **Build the corpus from `train` streams only** — the showcase feeds come
-from `test`, and that separation is what keeps the evaluation uncontaminated.
+**Build from `train` streams only** — the showcase feeds come from `test`, and that
+separation is what keeps the evaluation uncontaminated.
 
-Use the multi-event build unless you have a reason not to: the single-event corpus has
-exactly one record in all 31,539 documents, so the count head only ever saw "1", and on a
-multi-incident document value binding collapses from **1.000 to 0.369** with **22.6%** of
-readings bound to the *wrong* event's number.
+Use the multi-event build unless you have a reason not to. The single-event corpus has
+exactly one record in all 31,539 documents, so the count head only ever saw "1"; on a
+multi-incident document value binding collapses from **1.000 to 0.369**, with **22.6%** of
+readings bound to the wrong event's number.
 
-### Step 4 — fine-tune the casualty structure model
+### Step 4 — fine-tune the structure model
 
 ```bash
 uv run python tools/train/train.py --config tools/train/config/casualty-multievent.yaml
 ```
 
-Fine-tunes `fastino/gliner2-base-v1`. `casualty-finetune.yaml` is the single-event recipe
-that closed ~75% of the gap to the structured ceiling; `casualty-multievent.yaml` holds that
-recipe fixed and changes **only the corpus**, so the corpus is the only variable. Note
-`fp16: true` here — the sdpa+bf16 defect is a ModernBERT problem and does not apply to
-DeBERTa-v3.
+`casualty-finetune.yaml` is the single-event recipe that closed ~75% of the gap to the
+structured ceiling; `casualty-multievent.yaml` holds it fixed and changes **only the
+corpus**. Note `fp16: true` — the sdpa+bf16 defect is a ModernBERT problem and does not
+apply to DeBERTa-v3.
 
-### Step 5 — build a real event feed and its ground truth
+### Steps 5–8 — real feed, scope hierarchy, run, score
 
 ```bash
 uv run python tools/ekf_showcase/harvest_helene_gt.py --out datasets/helene2024/ground_truth.json
 uv run python tools/ekf_showcase/build_helene_feed.py --max-articles 120
-```
 
-The two sources are **deliberately different** — ground truth from Wikipedia's per-state
-casualty table, feed from AP prose. That is what makes `est_last_value` a real baseline
-rather than an oracle: in the Türkiye–Syria run truth was read from the same sentence the
-extractor reads, so the baseline scored 0.000 by construction and the filter was
-unmeasurable.
-
-### Step 6 — declare the scope hierarchy
-
-Edit `datasets/<event>/rollup.json`: `collapse_type` (Helene appears as Floods, Storm *and*
-Mudslides), `aliases` (`asheville` → `north carolina`, `six states` → `__aggregate__`), and
-`hierarchy` (which key is the aggregate, which are its parts). An unmapped place is left
-**alone**, never guessed — unmapped is visible fragmentation, mis-mapped is a silent error in
-the wrong stream.
-
-### Step 7 — run the pipeline
-
-```bash
 uv run python tools/ekf_showcase/run_pipeline.py \
   --feed datasets/helene2024/_cache/feed.jsonl \
   --truth datasets/helene2024/ground_truth.json \
@@ -801,127 +322,148 @@ uv run python tools/ekf_showcase/run_pipeline.py \
   --record-mode natural --associate record \
   --rollup datasets/helene2024/rollup.json --event-year 2024 \
   --window article --device cpu
-```
 
-**Everything from the temporal filter down is OFF unless you pass it** — `--event-year`,
-`--rollup`, `--record-mode`, `--associate`. The defaults deliberately reproduce the older
-numbers, so a run that omits them is not the current pipeline.
-
-Flags worth understanding before trusting a result:
-
-- `--associate record` takes the location from the record's **own** field (the strongest
-  signal); `envelope` falls back to nearest-location-by-character-distance.
-- `--event-year 2024` drops figures dated before the event — Izmit 1999's 17,500 was being
-  bound as a 2023 observation 15 times.
-- `--window long` routes through `extract_long`; `article` is the default and wins on
-  single-event feeds, `event` reduces cross-event misbinding on genuinely multi-event ones.
-- `--device cpu` is usually the right choice: **MPS is 3–4× slower** for many-label event
-  extraction because of per-op sync overhead.
-
-### Step 8 — score
-
-```bash
 uv run python tools/ekf_showcase/score_helene.py \
   --tracked datasets/helene2024/_cache/tracked.json \
   --truth datasets/helene2024/ground_truth.json --role dead
 ```
 
-Reports nRMSE for `ekf` against the `last_value` baseline, and counts aggregate-bound-to-a-part
-errors separately — a real, correctly-extracted number attached to a scope that isn't a
-stream is a different mistake from ordinary mis-binding.
+Ground truth and feed are **deliberately different sources** (Wikipedia's per-state casualty
+table vs AP prose). That is what makes `est_last_value` a real baseline rather than an
+oracle: in the Türkiye–Syria run truth was read from the same sentence the extractor reads,
+so the baseline scored 0.000 by construction and the filter was unmeasurable.
+
+**Everything from the temporal filter down is OFF unless you pass it** — `--event-year`,
+`--rollup`, `--record-mode`, `--associate`. The defaults reproduce the older numbers, so a
+run that omits them is not the current pipeline.
+
+- `--associate record` takes the location from the record's own field; `envelope` falls back
+  to nearest-location-by-character-distance.
+- `--event-year 2024` drops figures dated before the event — Izmit 1999's 17,500 was being
+  bound as a 2023 observation 15 times.
+- `--device cpu` is usually right: **MPS is 3–4× slower** here, from per-op sync overhead.
 
 ### The known weak point
 
-Association (stage 3c) is the research blocker, **not** the filter. Proximity, GPE tags,
-record-location and admin rollup have all been tried; the scope gate was the first thing that
-moved it (per-state nRMSE 5.247 → 0.591, against a random-removal control at 4.427). No MHT
-is built — see `PIPELINES.md` §4 for the measurement showing why the oracle headroom doesn't
-currently justify it.
+Association is the research blocker, **not** the filter. Proximity, GPE tags, record-location
+and admin rollup have all been tried; the scope gate was the first thing that moved it
+(per-state nRMSE 5.247 → 0.591, against a random-removal control at 4.427). **No MHT is
+built** — `PIPELINES.md` §4 has the measurement showing the oracle headroom does not
+currently justify one.
 
 ---
 
-## 7. Use the trained model
+## 7. Evaluate
 
-```python
-from gliner2 import GLiNER2
-
-model = GLiNER2.from_pretrained("./out/mmbert-small/final")   # or .../best
-print(model.extract_entities(
-    "Marie Curie discovered radium in Paris.",
-    ["scientist", "element", "city"],
-))
+```bash
+uv run python tools/train/eval.py --config <config> --checkpoint out/<run>/best --split test
 ```
 
-`GLiNER2.from_pretrained` auto-selects CUDA → MPS → CPU. Pass `map_location="cpu"` to force CPU, or `quantize=True` for fp16 inference on GPU/MPS.
+Three rules that have each changed a conclusion in this project:
+
+1. **Sweep the threshold per checkpoint, then compare at matched thresholds.**
+   `metric_sweep: true` selects each checkpoint at *its own* best threshold — right for
+   shipping one model, **wrong for a curve**. Re-DocRED alternated 0.1/0.3 and looked
+   non-monotonic until split by threshold. `test_metrics.json` does not record the
+   threshold; pull `best/threshold_sweep.json`.
+2. **Judge deltas against a measured noise floor, not a guess.** Re-running an identical
+   control on a second seed gave relation strict **±0.041** on `mix_natural`, four times the
+   0.01 that had been assumed — large enough to void a published-looking result.
+3. **Report per capability.** A single aggregate hides which capability moved which way.
+
+Structures are **not scored by the blind test**: `_schema_from_gold` builds no schema for
+`json_structures`, so structure-only records are skipped — 35.1% of `mix_natural`'s val. Use
+`tools/train/probe_records.py` for structure quality.
 
 ---
 
-## 8. Push to Hugging Face Hub
-
-Once you're happy with a checkpoint, upload it so it can be loaded by anyone with `GLiNER2.from_pretrained("<username>/<repo>")`.
-
-First, authenticate (once per machine):
+## 8. Push to the Hub
 
 ```bash
-uv run huggingface-cli login        # paste a write token from https://huggingface.co/settings/tokens
-# or: export HF_TOKEN=hf_xxx        # non-interactive (CI, headless boxes)
-```
+uv run huggingface-cli login          # write-scope token, once per machine
+# or: export HF_TOKEN=hf_xxx          # headless; never pass a token in argv
 
-Then push:
-
-```bash
 uv run python tools/train/push_to_hub.py \
-    --checkpoint ./out/mmbert-small/final \
-    --repo-id <username>/gliner2-mmbert-small \
-    --private
+  --checkpoint ./out/joint-boundary-mmbert-137k/best \
+  --repo-id <username>/gliner2-joint-boundary-mmbert-137k \
+  --private
 ```
 
-Flags:
+`--private` is the default. The repo layout matches what `from_pretrained` expects
+(`config.json` + `encoder_config/config.json` + `model.safetensors` + tokenizer files). A
+`MODEL_CARD.md` is generated at the end of training with the datasets actually used, their
+licences, and an effective-licence determination from `dataset_registry.yaml`.
 
-- `--checkpoint` — local path to a saved GLiNER2 checkpoint directory (`final`, `best`, or any `checkpoint-<step>`).
-- `--repo-id` — target repo, created if missing.
-- `--private` (default) / `--public` — repo visibility.
-- `--commit-message` — optional commit message (defaults to `Upload GLiNER2 checkpoint`).
+Sanity-check with `AutoExtractor`, not `GLiNER2`, for boundary checkpoints.
 
-The script calls `model.save_pretrained()` into a temp directory and uploads the folder via `HfApi.upload_folder`, so the repo layout matches what `GLiNER2.from_pretrained` expects (`config.json` + `encoder_config/config.json` + `model.safetensors` + tokenizer files).
+---
 
-Sanity-check the upload:
+## 9. Hardware
+
+The base configs train at `max_len=4096` with `sliding_window: true`; mmBERT's positional cap
+is 8192. Local-global attention keeps memory near-linear in sequence length, but activations
+and optimizer state still scale with it.
+
+| Device | mmBERT-small (148 M) | mmBERT-base (314 M) |
+|---|---|---|
+| **A100/H100 80 GB** | `batch_size=16–24`, bf16 | `batch_size=8–12`, bf16 |
+| **A100/4090 40–48 GB** | `batch_size=8–12`, bf16 | `batch_size=4` + accum 2, bf16 |
+| **24 GB (3090/4090)** | `batch_size=4–6`, bf16 | `batch_size=2` + accum 4, bf16 |
+| **Apple MPS** | `batch_size=1–2`, no AMP, dev only | `batch_size=1`, no AMP, dev only |
+| **CPU** | smoke tests only | smoke tests only |
+
+On MPS, mixed precision is disabled automatically (`GradScaler` is CUDA-only) and the trainer
+logs the choice. MPS also hits a Metal assertion with relations in the batch on bf16 mmBERT —
+use CPU for local debugging.
+
+---
+
+## 10. The span architecture
+
+Still supported and still shipping models (`fastino/gliner2-base-v1` and the
+`gliner2-*-v1-*` configs). Train it the same way, minus `architecture: boundary`:
+
+```bash
+uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
+```
 
 ```python
 from gliner2 import GLiNER2
-model = GLiNER2.from_pretrained("<username>/gliner2-mmbert-small")
-print(model.extract_entities("Marie Curie discovered radium in Paris.",
-                             ["scientist", "element", "city"]))
+model = GLiNER2.from_pretrained("./out/mmbert-small/best")
+model.extract_entities("Marie Curie discovered radium in Paris.", ["scientist", "element", "city"])
 ```
 
----
-
-## 9. Practical tips
-
-- **Run a 50-record smoke test first** before launching a multi-day run:
-  ```bash
-  uv run python tools/data/convert_nuner.py --split full --out /tmp/nuner_smoke.jsonl --max-records 50
-  # then train with num_epochs=1, batch_size=2, max_steps=20 to confirm the loss falls
-  ```
-- **Mix the two datasets in one pass.** Passing them as a list to `train_data=` interleaves them; the converter scripts already produce compatible JSONL.
-- **Resume / continue from a checkpoint** by switching the config's `model` section to `pretrained: ./out/.../checkpoint-epoch-<N>` (or `best`/`final`) — see [Resuming / continuing training from a checkpoint](#resuming--continuing-training-from-a-checkpoint) in §4. The programmatic equivalent is a fresh `GLiNER2.from_pretrained(...)` into a new trainer. Either way the trainer starts a new optimizer/scheduler — that's intentional, not a bug.
-- **Watch the loss curve.** Healthy mmBERT-small on this data starts at ~500 (batch 1), drops below 100 in the first ~50 steps, then drifts down toward 40–60 over an epoch. Loss collapsing to ~0 means the data labels aren't reaching the loss head — stop and inspect.
-- **W&B**: set `report_to_wandb=True` and `wandb_project="..."` in `TrainingConfig` to stream live metrics.
+`max_width` is a span-head field and must **not** appear in a boundary config. Everything in
+§3 (data hygiene) and §7 (evaluation) applies to both architectures.
 
 ---
 
-## 10. Troubleshooting
+## 11. Tips
+
+- **Smoke-test 50 records first** before a multi-day run: `--max-records 50`, `num_epochs=1`,
+  `batch_size=2`, and confirm the loss falls.
+- **Watch the loss curve.** Healthy mmBERT-small starts ~500 (batch 1), drops below 100 in
+  ~50 steps, drifts to 40–60 over an epoch. Collapsing to ~0 means labels are not reaching
+  the loss head — stop and inspect.
+- **Resume** by pointing `model.pretrained` at `./out/<run>/checkpoint-epoch-<N>` (or
+  `best`/`final`). The trainer starts a fresh optimizer and scheduler; that is intentional.
+- **Run scripts from files, not heredocs.** `python - <<PY` breaks DataLoader workers under
+  the spawn start method: workers re-import the main module by path and stdin has none.
+- **W&B**: `report_to_wandb=True` + `wandb_project="..."` in `TrainingConfig`.
+
+---
+
+## 12. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ModuleNotFoundError: datasets` | Core deps not installed (bare checkout) | `uv sync` — `datasets` is a core dependency |
-| `ModuleNotFoundError: torch`/`transformers` | The `local` extra isn't installed | `uv sync --extra local` |
-| `FileNotFoundError: '<stdin>'` + `BrokenPipeError` | Running training inside a heredoc (`python - <<PY`) with `num_workers>0`; spawn workers can't re-import stdin | Save the script as a `.py` file and run `uv run python <file>.py`, or set `num_workers=0` |
-| `out of memory` on CUDA | Batch too large | Halve `batch_size`, double `gradient_accumulation_steps` |
-| `out of memory` on MPS | Same | Same; also try `max_len=384` and `num_workers=0` |
-| Loss stuck at exactly the initial value | LR too low or all params frozen | Confirm `use_lora=False` (or pass LoRA modules); raise `task_lr` |
-| Loss explodes (`NaN`/`Inf`) | LR too high or mixed precision on a fragile encoder | Drop `encoder_lr` 5x, set `fp16=False` |
-| `train_metrics_history` is empty | `logging_steps` larger than total steps | Lower `logging_steps`, or run more epochs |
-| Tokenizer error about unknown special tokens | mmBERT tokenizer didn't accept GLiNER2's specials | Should never happen with `transformers>=4.48` — file an issue and include the tokenizer version |
-| `401 Unauthorized` from `push_to_hub.py` | No HF auth token | `uv run huggingface-cli login` (with a **write**-scope token), or `export HF_TOKEN=hf_xxx` |
-| `403 Forbidden` writing to `<repo-id>` | Token lacks write access or repo is owned by someone else | Issue a new write token, or pick a repo-id you own |
+| `ModuleNotFoundError: torch`/`transformers` | `local` extra not installed | `uv sync --extra local` |
+| bf16 loss goes non-finite ~step 50, and training is ~11× slow | FA2 never hooked; transformers resolved outside the pinned range | `uv pip install -e ".[local]"`, verify `kernels-community/flash-attn2`, set `GLINER2_STRICT_ATTN=1` |
+| `config.max_width` error loading a checkpoint | Loaded a boundary checkpoint with `GLiNER2` | Use `AutoExtractor.from_pretrained` |
+| A treatment arm scores identically to its control | A `boundary_head` override was dropped | Confirm the value on `model.boundary_head.settings`, not just `model.config` |
+| CUDA `Error 802: system not yet initialized`, but `nvidia-smi` is healthy | Host-side fault (no NVSwitch, `GPU Fabric GUID: N/A`) | Not fixable in-guest. Terminate and relaunch, ideally another region |
+| Blind-test scores look too good | train/test share documents | `check_leakage.py --config <cfg>`; regenerate the corpora it names |
+| Eval returns `{}` and checkpoint selection falls back to loss | Every record produced an empty schema | Trigger-only corpora need role-less event types kept; structures are not scored at all (§7) |
+| `FileNotFoundError: '<stdin>'` + `BrokenPipeError` | Training launched from a heredoc with `num_workers>0` | Save to a `.py` file, or `num_workers=0` |
+| `out of memory` | Batch too large | Halve `batch_size`, double `gradient_accumulation_steps` |
+| `401`/`403` from `push_to_hub.py` | Missing or read-only HF token | Write-scope token via `huggingface-cli login` or `HF_TOKEN` |
