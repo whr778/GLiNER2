@@ -21,6 +21,7 @@ import torch
 
 from gliner2.models.boundary.losses import (
     _reduce,
+    _safe_bce,
     balanced_multilabel_bce,
     reduce_by_task,
 )
@@ -157,3 +158,106 @@ def test_unassigned_queries_are_dropped_not_misattributed(masked_batch):
     padded = reduce_by_task(elementwise, keep, query_mask, "per_query", some_pad, 2)
 
     assert float(padded[0]) < float(full[0])
+
+
+@pytest.mark.parametrize("mode", ["global", "per_query"])
+def test_positive_mass_splits_the_same_whole(masked_batch, mode):
+    """``numerator_mask`` restricts the numerator only. Positive and negative
+    mass must therefore add back to the unrestricted bucket -- that identity is
+    what makes a ``pos_weight`` dose computable: scaling positives by ``k``
+    multiplies a task's contribution by ``(k*pos + neg) / (pos + neg)``."""
+    elementwise, keep, query_mask = masked_batch
+    ids = _task_ids(2, 4, {(b, q): q % 3 for b in range(2) for q in range(4)})
+    positive = torch.zeros_like(keep)
+    positive[..., ::2] = True
+
+    total = reduce_by_task(elementwise, keep, query_mask, mode, ids, 3)
+    pos = reduce_by_task(
+        elementwise, keep, query_mask, mode, ids, 3, numerator_mask=positive
+    )
+    neg = reduce_by_task(
+        elementwise, keep, query_mask, mode, ids, 3, numerator_mask=~positive
+    )
+
+    assert pos.sum() > 0 and neg.sum() > 0
+    torch.testing.assert_close(pos + neg, total, rtol=1e-6, atol=1e-8)
+
+
+# ---------------------------------------------------------------------------
+# Per-task pos_weight (EVENT_LOSS_PHASE3_PLAN step 9)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def bce_batch():
+    """Logits/targets with a per-query positive rate that differs by query."""
+    torch.manual_seed(90210)
+    logits = torch.randn(2, 4, 6)
+    targets = (torch.rand(2, 4, 6) < 0.4).float()
+    keep = torch.ones(2, 4, 6, dtype=torch.bool)
+    keep[0, 3] = False
+    return logits, targets, keep
+
+
+def test_pos_weight_of_one_is_exactly_inert(bce_batch):
+    """A dose of 1.0 must reproduce the unweighted BCE bit-for-bit, or an arm's
+    difference is the plumbing rather than the treatment."""
+    logits, targets, keep = bce_batch
+    plain = _safe_bce(logits, targets, keep)
+    ones = _safe_bce(logits, targets, keep, torch.ones(2, 4, 1))
+
+    assert torch.equal(plain, ones)
+
+
+def test_pos_weight_scales_only_the_positive_term(bce_batch):
+    """The negative term must be untouched -- that is the whole distinction from
+    `task_loss_weights`, which scales positives and negatives alike."""
+    logits, targets, keep = bce_batch
+    plain = _safe_bce(logits, targets, keep)
+    heavy = _safe_bce(logits, targets, keep, torch.full((2, 4, 1), 4.0))
+
+    # The EFFECTIVE positives: a masked position carries a zeroed target, so it is
+    # a pure negative term no matter what the label said. pos_weight must not be
+    # able to resurrect supervision the mask removed.
+    positive = (targets > 0.5) & keep
+    torch.testing.assert_close(heavy[~positive], plain[~positive])
+    torch.testing.assert_close(heavy[positive], 4.0 * plain[positive])
+    masked_positive = (targets > 0.5) & ~keep
+    assert masked_positive.any()
+    torch.testing.assert_close(heavy[masked_positive], plain[masked_positive])
+
+
+def test_pos_weight_is_per_query_not_global(bce_batch):
+    """Events must be scalable without touching entity queries in the same batch."""
+    logits, targets, keep = bce_batch
+    dose = torch.ones(2, 4, 1)
+    dose[:, 1] = 8.0
+
+    out = _safe_bce(logits, targets, keep, dose)
+    plain = _safe_bce(logits, targets, keep)
+
+    torch.testing.assert_close(out[:, 0], plain[:, 0])
+    positive = targets[:, 1] > 0.5
+    torch.testing.assert_close(out[:, 1][positive], 8.0 * plain[:, 1][positive])
+
+
+@pytest.mark.parametrize("k", [2.0, 4.0, 8.0, 16.0])
+def test_the_dose_formula_predicts_the_bucket(bce_batch, k):
+    """`(k*pos + neg) / (pos + neg)` is how the arm doses were chosen from the
+    probe's measured positive fraction. If the formula does not predict the
+    bucket, the doses are guesses again."""
+    logits, targets, keep = bce_batch
+    query_mask = torch.ones(2, 4, dtype=torch.bool)
+    ids = _task_ids(2, 4, {(b, q): 0 for b in range(2) for q in range(4)})
+    positive = targets > 0.5
+
+    plain = _safe_bce(logits, targets, keep)
+    pos = float(reduce_by_task(plain, keep, query_mask, "global", ids, 1,
+                               numerator_mask=positive)[0])
+    neg = float(reduce_by_task(plain, keep, query_mask, "global", ids, 1,
+                               numerator_mask=~positive)[0])
+    predicted = (k * pos + neg) / (pos + neg)
+
+    dosed = _safe_bce(logits, targets, keep, torch.full((2, 4, 1), k))
+    actual = float(reduce_by_task(dosed, keep, query_mask, "global", ids, 1)[0]) / (pos + neg)
+
+    assert actual == pytest.approx(predicted, rel=1e-5)

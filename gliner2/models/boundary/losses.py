@@ -29,11 +29,28 @@ def _from_query_candidate(
     return torch.movedim(tensor, (1, 2), (query_axis, candidate_axis))
 
 
-def _safe_bce(logits: torch.Tensor, targets: torch.Tensor, keep: torch.BoolTensor) -> torch.Tensor:
-    """Elementwise BCE-with-logits with extreme masked logits neutralized."""
+def _safe_bce(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    keep: torch.BoolTensor,
+    pos_weight: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Elementwise BCE-with-logits with extreme masked logits neutralized.
+
+    ``pos_weight`` is a ``[B, Q, 1]`` per-query scale on the POSITIVE term only,
+    broadcast across positions/candidates. This is the faithful analogue of phase
+    2's ``event_struct_pos_weight``: it changes the precision/recall balance
+    *within* a task's queries, where ``query_weights`` scales the whole term and
+    so only changes that task's share of the gradient.
+
+    Masked positions carry a zero target, so their positive term is already zero
+    and ``pos_weight`` cannot reintroduce them.
+    """
     safe_logits = torch.where(keep, logits, torch.zeros_like(logits))
     safe_targets = torch.where(keep, targets, torch.zeros_like(targets))
-    return F.binary_cross_entropy_with_logits(safe_logits, safe_targets, reduction="none")
+    return F.binary_cross_entropy_with_logits(
+        safe_logits, safe_targets, reduction="none", pos_weight=pos_weight
+    )
 
 
 def _reduce(
@@ -78,6 +95,25 @@ def _reduce(
     return scaled.sum() / active_f.sum().clamp_min(1)
 
 
+def _note_capture(
+    capture: dict,
+    elementwise: torch.Tensor,
+    keep: torch.BoolTensor,
+    query_mask: Optional[torch.BoolTensor],
+    positive: torch.BoolTensor,
+) -> None:
+    """Stash what :func:`reduce_by_task` needs to reproduce this term exactly.
+
+    ``query_mask`` is recorded per term rather than taken from the caller: the
+    pair term reduces under a *sampled* query mask (``negative_query_ratio``),
+    so reusing the head's full mask would not reconcile under ``per_query``.
+    """
+    capture["elementwise"] = elementwise
+    capture["keep"] = keep
+    capture["query_mask"] = query_mask
+    capture["positive"] = positive
+
+
 def reduce_by_task(
     elementwise: torch.Tensor,
     keep: torch.BoolTensor,
@@ -85,6 +121,8 @@ def reduce_by_task(
     mode: str,
     task_ids: torch.Tensor,
     num_tasks: int,
+    *,
+    numerator_mask: Optional[torch.BoolTensor] = None,
 ) -> torch.Tensor:
     """Split a reduced loss into per-task CONTRIBUTIONS, one pass, no recompute.
 
@@ -100,9 +138,18 @@ def reduce_by_task(
 
     ``task_ids`` is ``[B, Q]`` with an integer per query; padded or unknown
     queries should carry an id outside ``range(num_tasks)`` and are dropped.
+
+    ``numerator_mask`` zeroes part of the numerator while leaving every
+    denominator untouched, so a restricted pass is a *share of the same whole*.
+    Passing the positive-target mask gives the positive mass, and total minus
+    positive is the negative mass -- which is what makes a ``pos_weight`` dose
+    computable rather than guessed: scaling positives by ``k`` multiplies a
+    task's contribution by ``(k*pos + neg) / (pos + neg)``.
     """
     dtype = elementwise.dtype
     keep_f = keep.to(dtype)
+    if numerator_mask is not None:
+        elementwise = elementwise * numerator_mask.to(dtype)
     if mode == "global":
         per_query = (elementwise * keep_f).sum(-1)
         denominator = keep_f.sum().clamp_min(1)
@@ -134,6 +181,7 @@ def balanced_multilabel_bce(
     query_mask: Optional[torch.BoolTensor] = None,
     reduction: str = "global",
     query_weights: Optional[torch.Tensor] = None,
+    pos_weight: Optional[torch.Tensor] = None,
     capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Mean multi-label BCE over valid positions.
@@ -143,10 +191,10 @@ def balanced_multilabel_bce(
     (wired from ``BoundaryHeadSettings.boundary_negative_weight``) to counter the
     negative-dominance of sparse boundary targets.
     """
-    bce = _safe_bce(logits, targets, valid_mask)
+    bce = _safe_bce(logits, targets, valid_mask, pos_weight)
     weight = torch.where(targets > 0.5, torch.ones_like(targets), torch.full_like(targets, negative_weight))
     if capture is not None:
-        capture["elementwise"], capture["keep"] = bce * weight, valid_mask
+        _note_capture(capture, bce * weight, valid_mask, query_mask, targets > 0.5)
     return _reduce(bce * weight, valid_mask, query_mask, reduction, query_weights)
 
 
@@ -180,7 +228,9 @@ def asymmetric_focal_loss(
         * negative_weight
     )
     if capture is not None:
-        capture["elementwise"], capture["keep"] = -(los_pos + los_neg), valid_mask
+        _note_capture(
+            capture, -(los_pos + los_neg), valid_mask, query_mask, targets > 0.5
+        )
     return _reduce(-(los_pos + los_neg), valid_mask, query_mask, reduction, query_weights)
 
 
@@ -382,6 +432,7 @@ def candidate_pair_loss(
     query_axis: int = 1,
     candidate_axis: int = 2,
     query_weights: Optional[torch.Tensor] = None,
+    pos_weight: Optional[torch.Tensor] = None,
     capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """BCE over candidates; optionally restrict negatives to a hard subset."""
@@ -396,9 +447,9 @@ def candidate_pair_loss(
         effective = valid_mask & ((labels > 0.5) | hard_negative_mask)
     else:
         effective = valid_mask
-    bce = _safe_bce(logits, labels, effective)
+    bce = _safe_bce(logits, labels, effective, pos_weight)
     if capture is not None:
-        capture["elementwise"], capture["keep"] = bce, effective
+        _note_capture(capture, bce, effective, query_mask, labels > 0.5)
     return _reduce(bce, effective, query_mask, reduction, query_weights)
 
 
@@ -410,6 +461,8 @@ def inside_consistency_loss(
     *,
     negative_weight: float = 1.0,
     reduction: str = "global",
+    pos_weight: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     keep = text_mask.unsqueeze(1) & query_mask.unsqueeze(-1)
     return balanced_multilabel_bce(
@@ -419,6 +472,8 @@ def inside_consistency_loss(
         negative_weight=negative_weight,
         query_mask=query_mask,
         reduction=reduction,
+        pos_weight=pos_weight,
+        capture=capture,
     )
 
 

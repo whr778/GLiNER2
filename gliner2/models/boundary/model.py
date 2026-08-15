@@ -266,6 +266,7 @@ class BoundaryHead(nn.Module):
         gold_injection_prob: Optional[float] = None,
         collect_diagnostics: Optional[bool] = None,
         query_weights: Optional[torch.Tensor] = None,
+        query_pos_weights: Optional[torch.Tensor] = None,
         query_task_ids: Optional[torch.Tensor] = None,
     ) -> ExtractorOutput:
         b, l, _ = token_states.shape
@@ -469,6 +470,7 @@ class BoundaryHead(nn.Module):
                     pooled_logits if pooled is not None else None
                 ),
                 query_weights=query_weights,
+                query_pos_weights=query_pos_weights,
                 query_task_ids=query_task_ids,
             )
             total_loss = losses["total_loss"]
@@ -593,6 +595,7 @@ class BoundaryHead(nn.Module):
         pooled: Optional[PooledCandidates] = None,
         pooled_pair_logits: Optional[torch.Tensor] = None,
         query_weights: Optional[torch.Tensor] = None,
+        query_pos_weights: Optional[torch.Tensor] = None,
         query_task_ids: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         boundary_keep = boundary_mask.unsqueeze(1) & query_mask.unsqueeze(-1)  # [B,Q,L+1]
@@ -618,6 +621,9 @@ class BoundaryHead(nn.Module):
         def _marginal_loss(logits, tgt, keep, capture_as=None):
             capture = captures.setdefault(capture_as, {}) if capture_as else None
             if use_focal:
+                # The focal path computes its own pos/neg terms and never calls
+                # _safe_bce, so query_pos_weights has no effect here. Configs using
+                # task_pos_weights must keep boundary_marginal_loss="bce".
                 return asymmetric_focal_loss(
                     logits,
                     tgt,
@@ -639,6 +645,7 @@ class BoundaryHead(nn.Module):
                 query_mask=query_mask,
                 reduction=reduction,
                 query_weights=query_weights,
+                pos_weight=query_pos_weights,
                 capture=capture,
             )
 
@@ -737,8 +744,11 @@ class BoundaryHead(nn.Module):
             query_axis=query_axis,
             candidate_axis=candidate_axis,
             query_weights=query_weights,
+            pos_weight=query_pos_weights,
             capture=captures.setdefault("pair", {}) if want_task_losses else None,
         )
+        # soft-IoU deliberately gets NO pos_weight: its targets are fractional
+        # overlaps, not 0/1, so "the positive term" is not a defined thing to scale.
         soft_iou_loss = loss_logits.new_zeros(())
         if soft_iou_targets is not None and self._soft_iou_scale > 0:
             effective = loss_valid & ((labels > 0.5) | hard)
@@ -766,6 +776,8 @@ class BoundaryHead(nn.Module):
             marginals.inside_logits, inside_targets, text_mask, query_mask,
             negative_weight=neg_weight,
             reduction=reduction,
+            pos_weight=query_pos_weights,
+            capture=captures.setdefault("inside", {}) if want_task_losses else None,
         )
 
         proposal_loss = loss_logits.new_zeros(())
@@ -842,12 +854,13 @@ class BoundaryHead(nn.Module):
             for term, cap in captures.items():
                 if not cap:
                     continue
-                shares = reduce_by_task(
-                    cap["elementwise"], cap["keep"], query_mask, reduction,
-                    query_task_ids, n,
-                )
+                args = (cap["elementwise"], cap["keep"], cap["query_mask"],
+                        reduction, query_task_ids, n)
+                shares = reduce_by_task(*args)
+                positive = reduce_by_task(*args, numerator_mask=cap["positive"])
                 for i, name in enumerate(TASK_TYPES):
                     task_losses[f"{name}_{term}_loss"] = shares[i]
+                    task_losses[f"{name}_{term}_pos_loss"] = positive[i]
             for i, name in enumerate(TASK_TYPES):
                 task_losses[f"{name}_query_count"] = (
                     (query_task_ids == i) & query_mask
@@ -1583,14 +1596,27 @@ class BoundaryExtractorModel(BaseExtractorModel):
         return host.to(query_mask.device)
 
     def _query_task_weights(self, batch, query_mask) -> Optional[torch.Tensor]:
-        """Build the ``[B, Q]`` per-query task weight, or ``None`` if unweighted.
+        """``[B, Q]`` per-query scale on the whole span loss, or ``None``."""
+        return self._query_task_table("task_loss_weights", batch, query_mask)
 
-        Returns ``None`` whenever every configured weight is 1.0, so the default
+    def _query_task_pos_weights(self, batch, query_mask) -> Optional[torch.Tensor]:
+        """``[B, Q, 1]`` per-query POSITIVE-class weight for the BCE, or ``None``.
+
+        Trailing axis so it broadcasts across positions ``[B,Q,L+1]`` and
+        candidates ``[B,Q,C]`` alike.
+        """
+        table = self._query_task_table("task_pos_weights", batch, query_mask)
+        return None if table is None else table.unsqueeze(-1)
+
+    def _query_task_table(self, setting, batch, query_mask) -> Optional[torch.Tensor]:
+        """Build the ``[B, Q]`` per-query table for a task-keyed setting.
+
+        Returns ``None`` whenever every configured value is 1.0, so the default
         configuration takes the exact pre-existing code path rather than a
         numerically-equivalent one. ``batch.query_layouts`` carries a ``QuerySpec``
         per query, and each spec already knows its ``task_type``.
         """
-        weights = getattr(self.boundary_settings, "task_loss_weights", None)
+        weights = getattr(self.boundary_settings, setting, None)
         if not weights or all(float(w) == 1.0 for w in weights.values()):
             return None
         layouts = getattr(batch, "query_layouts", None)
@@ -1651,6 +1677,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 gold_injection_prob=gold_injection_prob,
                 collect_diagnostics=collect_diagnostics,
                 query_weights=self._query_task_weights(batch, core["query_mask"]),
+                query_pos_weights=self._query_task_pos_weights(
+                    batch, core["query_mask"]
+                ),
                 query_task_ids=(
                     self._query_task_ids(batch, core["query_mask"])
                     if getattr(self.boundary_settings, "report_task_losses", False)

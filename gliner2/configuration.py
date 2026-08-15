@@ -155,6 +155,14 @@ class BoundaryHeadSettings:
     # event_struct_loss; see EVENT_LOSS_PHASE3_PLAN.md. Note "classifications"
     # emits no extractive queries, so a weight for it is a no-op here.
     task_loss_weights: Optional[Dict[str, float]] = None
+    # Per-task POSITIVE-class weight inside the span BCE, same keys. Where
+    # task_loss_weights scales a task's whole term (changing only its share of the
+    # gradient), this scales positives against negatives WITHIN that task's queries
+    # -- the faithful analogue of phase 2's event_struct_pos_weight, and a change of
+    # direction rather than magnitude. Applies to start/end/pair/inside; the
+    # asymmetric-focal marginal path does not route through _safe_bce and ignores it,
+    # and soft-IoU is excluded because its targets are fractional.
+    task_pos_weights: Optional[Dict[str, float]] = None
     # Emit per-task loss CONTRIBUTIONS (entities/relations/events/json_structures
     # x start/end/pair) alongside the mechanism buckets. Diagnostic only -- no
     # gradient effect -- and it is how the event signal becomes visible at all,
@@ -432,6 +440,11 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             {str(k): float(v) for k, v in values["task_loss_weights"].items()}
             if values.get("task_loss_weights")
             else d.task_loss_weights
+        ),
+        "task_pos_weights": (
+            {str(k): float(v) for k, v in values["task_pos_weights"].items()}
+            if values.get("task_pos_weights")
+            else d.task_pos_weights
         ),
         "enable_relations": bool(values.get("enable_relations", d.enable_relations)),
         "relation_heads_per_type": int(

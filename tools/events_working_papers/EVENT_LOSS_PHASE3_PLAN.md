@@ -182,3 +182,95 @@ inside the span BCE (`_safe_bce`, `losses.py:32`) — phase 2's lever was
 specifically, not a scalar on the whole term. Run the flat weight first because it is one
 variable and tests whether balance matters at all; escalate to per-task `pos_weight` only
 if it does.
+
+## 10. RESULT of run 1 — the flat weight is a null lever, and why
+
+Four arms, all swept to threshold 0.3 on val, best-vs-best. Dose on `task_loss_weights.events`:
+
+| metric | 0.5 | 1.0 (A) | 2.0 | 4.0 | A-vs-A' floor |
+|---|--:|--:|--:|--:|--:|
+| entity fair | 0.6156 | 0.6248 | 0.6209 | 0.6242 | 0.0097 |
+| relation strict | 0.1793 | 0.1439 | 0.1180 | 0.1561 | **0.0407** |
+| event_trigger fair | 0.7414 | 0.7527 | 0.7552 | 0.7541 | 0.0128 |
+| event_type strict | 0.9686 | 0.9531 | 0.9399 | 0.9337 | 0.0139 |
+| event strict | 0.3342 | 0.3433 | 0.3585 | 0.3553 | 0.0079 |
+
+By §4's readout this is **"no lever"**: nothing is monotone in the dose, no trade appears
+(the two event metrics disagree with each other), and the only movement clearing its floor
+is `event_type` getting *worse* as event weight rises.
+
+**The A-vs-A' noise floor is the reusable output.** Relation strict has a ±0.041
+run-to-run band on this corpus, which is 4× the 0.01 §6 guessed and larger than every
+relation delta in the table. It also voids the GIST A/B's relation claim (−0.033).
+
+### Why it was null — measured, not inferred
+
+`tools/train/probe_task_losses.py` on the control (seed43/final, 100 batches, train path,
+buckets reconciling to 3.4e-07 with a residual of exactly 0):
+
+| task | share of total training gradient |
+|---|--:|
+| entities | 17.2% |
+| json_structures | 3.7% |
+| **events** | **1.6%** |
+| relations | 1.1% |
+| task-blind terms | **76.4%** |
+
+The task-blind 76.4% is proposal 34.4%, rerank 22.4%, soft-IoU 11.5%, count 5.6%,
+classification 2.1%, abstention/consistency 0.3%. **`query_weights` reaches only
+start/end/pair** — three call sites, 18.4% of the loss — so the strongest arm (w=4.0)
+moved events from 1.5% to 5.9% of the gradient while three quarters of it sat untouched.
+The null was close to mechanically guaranteed; it is not evidence that loss balance is the
+wrong idea.
+
+### Doses for run 2, computed rather than guessed
+
+Event mass splits pos 0.01368 / neg 0.01067 (positive fraction **0.56** — hard-negative
+mining has already trimmed the negatives, so the "negatives dominate" prior was wrong).
+`pos_weight` k multiplies the event term by `(k*pos + neg)/(pos + neg)`:
+
+| k | event term | events' share | verdict |
+|---|--:|--:|---|
+| 2 | ×1.56 | 2.5% | inside the range flat w=4 already tested null |
+| 4 | ×2.69 | 4.3% | ditto by magnitude — keep ONLY as a direction-vs-magnitude discriminator |
+| 8 | ×4.93 | 7.9% | first dose exceeding the flat sweep |
+| 16 | ×9.43 | 15.1% | near parity with entities |
+
+Arms: `warmstart-natural-evpw{04,08,16}.yaml`. Liveness verified end-to-end through
+`_build_model` — `events_pair_loss` ×5.57 and `events_start_loss` ×5.59 at k=8, with
+entity/relation/json_structure terms and every task-blind term at ×1.000 exactly.
+
+### The larger finding: the weight reaches 18% of the loss, and could reach 94%
+
+Every term, with its configured weight applied, as a share of the 1.51291 mean total:
+
+| term | weighted | share | reached by `query_weights` today? | shape |
+|---|--:|--:|---|---|
+| pair | 0.22978 | 15.2% | **yes** | elementwise `[B,Q,C]` |
+| start | 0.02501 | 1.7% | **yes** | elementwise `[B,Q,L+1]` |
+| end | 0.02474 | 1.6% | **yes** | elementwise `[B,Q,L+1]` |
+| proposal | 0.52090 | 34.4% | no | listwise → `[B,Q]` |
+| rerank | 0.33884 | 22.4% | no | listwise → `[B,Q]` |
+| soft-IoU | 0.17428 | 11.5% | no | elementwise `[B,Q,C]` |
+| count | 0.08429 | 5.6% | no | per-query scalar `[B,Q]` |
+| inside | 0.02317 | 1.5% | no | elementwise `[B,Q,L]` |
+| abstention | 0.00449 | 0.3% | no | per-query scalar `[B,Q]` |
+| consistency | 0.00061 | 0.0% | no | not query-typed |
+| record / classification / relation | 0.08680 | 5.7% | no | separate heads |
+
+Reachable today **0.27953 = 18.5%**; reachable if extended to the other six query-typed
+terms **1.42550 = 94.2%**. That is the 5.1× figure.
+
+**It is not the hard change the shape column suggests.** `proposal_listwise_loss`,
+`reranker_listwise_loss`, `abstention_loss` and `count_log_rate_loss` all build a `[B,Q]`
+per-query loss and then reduce it as `(loss * keep).sum() / keep.sum()` — structurally
+identical to `_reduce`'s `per_query` branch. A per-query weight is exactly as well-defined
+there as it is for start/end/pair, and the unweighted-denominator decision already argued
+for `_reduce` carries over unchanged. `soft_iou` is a `candidate_pair_loss` call that
+already *accepts* `query_weights` and simply is not passed it.
+
+Still a **different experiment** from run 2, and one that needs a measurement first:
+events' share of those six terms is currently an *estimate* (~8%, from events holding 8.0%
+of bucketed mass and 7.6% of queries), not a number the buckets produce. Bucketing
+soft-IoU costs one argument; proposal/rerank need their `[B,Q]` loss surfaced. Measure,
+then decide — the same order that turned run 1's null into a diagnosis.
