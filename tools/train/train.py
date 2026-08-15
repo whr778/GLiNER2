@@ -819,6 +819,38 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     return metrics
 
 
+def _enforce_split_hygiene(train_data, eval_data, test_data, policy, is_main,
+                           *, streaming: bool = False):
+    """Drop cross-split contamination and exact duplicates before training.
+
+    Splits arrive as file-path lists; they are materialised here so the check sees
+    documents rather than filenames, and the cleaned lists are passed on directly
+    (the trainer accepts records as readily as paths).
+    """
+    from gliner2.training.split_hygiene import check_and_clean
+
+    if policy == "off":
+        return train_data, eval_data, test_data
+
+    def materialise(data):
+        if not data:
+            return data
+        return _read_records(data) if isinstance(data[0], str) else list(data)
+
+    # A streaming train source is a lazy iterator with no length; it cannot be
+    # materialised, so gate val against test and leave train alone.
+    train, val, test, report = check_and_clean(
+        None if streaming else materialise(train_data),
+        materialise(eval_data), materialise(test_data),
+        policy=policy,
+    )
+    if streaming:
+        train = train_data
+    if is_main:
+        print(report.format())
+    return train, val, test
+
+
 def main(config_path: str) -> None:
     # Under torchrun (DDP) only rank 0 estimates ETA and writes results/blind-test;
     # all ranks run trainer.train(). LOCAL_RANK is unset (-> -1) for single-process.
@@ -827,6 +859,9 @@ def main(config_path: str) -> None:
     cfg = yaml.safe_load(Path(config_path).read_text())
 
     model = _build_model(cfg["model"])
+
+    # Popped before TrainingConfig: it is a data-pipeline gate, not a trainer field.
+    split_hygiene = str((cfg.get("training") or {}).pop("split_hygiene", "drop"))
 
     config = TrainingConfig(**cfg["training"])
 
@@ -861,6 +896,19 @@ def main(config_path: str) -> None:
             print("[hf_streaming] note: disk corpora/event_files are ignored for the "
                   "train stream (streaming replaces the train source).")
         train_data, eval_data, test_data = _build_streaming_data(data["hf_streaming"], config)
+
+    # GATE, before a single step: train/val/test must be mutually disjoint.
+    # Measured 2026-08-15 these configs were NOT -- joint-boundary-mmbert-137k shared
+    # 1,080 documents between train and test (7.03% of the blind set), warmstart-natural
+    # 299 (1.95%), every one a corpus leaking into its own splits through row-wise
+    # SplitWriter routing. A blind test scored partly on trained documents is not a
+    # measurement, so this runs by default; `training.split_hygiene: warn` reproduces a
+    # pre-gate run unchanged, and `off` skips it. Placed after the streaming branch
+    # because that REPLACES the lists; a streaming train set has no bounded document
+    # set to compare, so only its val/test are gated.
+    train_data, eval_data, test_data = _enforce_split_hygiene(
+        train_data, eval_data, test_data, split_hygiene, is_main, streaming=streaming,
+    )
 
     # Co-locate the training schema on the model so it ships in config.json (best/
     # final checkpoints + HF Hub) and every consumer -- the extractor, the viewer --
