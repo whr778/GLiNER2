@@ -11,25 +11,33 @@ Split assignment is deterministic: a seeded RNG draws one ``random()`` per
 written record and routes it according to the cumulative ratio. Running the
 same converter twice with the same seed produces the same partition.
 
+**Pass ``group`` whenever one source document yields several records.** Per-row
+routing sends copies of the same document to different splits, so its own eval
+scores memorisation. Measured across ``data/``: text2json's val is 99.0%
+contained in its train (9,737 rows over 2,093 unique documents), and the same
+pattern appears in gliclass_logic (38%), knowledgator_gliner (27%),
+events_biotech (22%) and klue_re (17%).
+
 Usage::
 
     from _split import SplitWriter
 
     with SplitWriter(args.out, ratios=(0.8, 0.1, 0.1), seed=42) as writer:
         for record in records:
-            writer.write(record)
+            writer.write(record, group=record["input"])
     print(writer.summary())     # "train=8123 val=1014 test=1003"
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import sys
 import unicodedata
 from pathlib import Path
-from typing import IO, Dict, List, Sequence, Tuple
+from typing import IO, Dict, List, Optional, Sequence, Tuple
 
 
 SPLIT_NAMES = ("train", "val", "test")
@@ -156,6 +164,7 @@ class SplitWriter:
         for r in ratios:
             acc += r
             self._cum.append(acc)
+        self._seed = seed
         self._rng = random.Random(seed)
 
     def __enter__(self) -> "SplitWriter":
@@ -169,16 +178,37 @@ class SplitWriter:
             fh.close()
         self._files = {}
 
-    def _route(self) -> str:
-        x = self._rng.random()
+    def _route(self, group: Optional[str] = None) -> str:
+        """Pick a split, deterministically per ``group`` when one is given.
+
+        Without a group every ROW draws independently, so a document appearing
+        more than once scatters across splits and its own eval is contaminated.
+        Measured on text2json: 9,737 rows over 2,093 unique documents, giving a
+        val 99.0% contained in train. Routing on a stable hash of the group key
+        keeps every row of a document together.
+
+        ``hashlib`` rather than ``hash()``: the built-in is salted per process,
+        so it would reshuffle the split on every run.
+        """
+        if group is None:
+            x = self._rng.random()
+        else:
+            digest = hashlib.sha1(
+                f"{self._seed}:{group}".encode("utf-8")
+            ).digest()
+            x = int.from_bytes(digest[:8], "big") / float(1 << 64)
         for i, threshold in enumerate(self._cum):
             if x < threshold:
                 return SPLIT_NAMES[i]
         return SPLIT_NAMES[-1]
 
-    def write(self, record: dict) -> str:
-        """Write ``record`` to the chosen split and return the split name."""
-        split = self._route()
+    def write(self, record: dict, group: Optional[str] = None) -> str:
+        """Write ``record`` to the chosen split and return the split name.
+
+        Pass ``group`` -- normally the document text -- whenever one source
+        document can produce several records, so they cannot be split apart.
+        """
+        split = self._route(group)
         fh = self._files[split]
         fh.write(dumps_record(record) + "\n")
         self._counts[split] += 1
