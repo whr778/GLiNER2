@@ -1,9 +1,9 @@
-# PHASE 3 RUN-2 ARM -- per-task POS_WEIGHT.
+# PHASE 3 RUN-2 ARM -- EXTENDED-REACH flat weight.
 # See EVENT_LOSS_PHASE3_PLAN.md sec 10. Generated from warmstart-natural.yaml;
 # differs ONLY in the boundary_head weight keys, output_dir and experiment_name.
 #
-# ARM: events task_pos_weights = 16.0   ->  events reach 17.8% of the training gradient
-# clearly past the tested range; the real test of the DIRECTION hypothesis.
+# ARM: events task_loss_weights = 4.0   ->  events reach 22.2% of the training gradient
+# the magnitude question, now that reach is fixed: flat w=4 was null at 18.5% reach.
 #
 # DOSED FROM MEASUREMENT, not guessed. tools/train/probe_task_losses.py on the
 # control (seed43/final, 100 batches, buckets reconciling with residual 0) found:
@@ -16,9 +16,9 @@
 #   relation 0.041 | event_type 0.014 | event_trigger 0.013 | entity fair 0.010
 # Anything smaller is unreadable on one seed.
 #
-# pos_weight scales POSITIVES against negatives inside event queries (phase 2's
-# event_struct_pos_weight mechanism), reaching start/end/pair/inside. Requires
-# boundary_marginal_loss="bce" (the default): the focal path skips _safe_bce.
+# scope="all" threads the weight into the other six query-typed terms (inside,
+# soft_iou, rerank, proposal, abstention, count). Default is "span", so the arms
+# already run keep their exact semantics.
 
 # Warm start + structure/NER, RECORD MODE = NATURAL. One of a two-arm A/B.
 #
@@ -89,17 +89,18 @@ model:
   boundary_head:
     enable_relations: true
     enable_records: true     # now load-bearing for STRUCTURES too, not just event edges
-    task_pos_weights:
+    task_loss_weight_scope: all
+    task_loss_weights:
       entities: 1.0
       relations: 1.0
-      events: 16.0
+      events: 4.0
       json_structures: 1.0
   struct_loss: bce_posweight
   struct_pos_weight: 4.0
 
 training:
-  output_dir: ./out/warmstart-natural-evpw16
-  experiment_name: warmstart_natural_evpw16
+  output_dir: ./out/warmstart-natural-evwide4
+  experiment_name: warmstart_natural_evwide4
   data_parallel: false
   # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
   # learning from cold, and every extra epoch is extra forgetting pressure.

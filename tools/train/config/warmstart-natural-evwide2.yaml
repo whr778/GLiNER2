@@ -1,23 +1,24 @@
-# PHASE 3 ARM -- per-task event POS_WEIGHT (EVENT_LOSS_PHASE3_PLAN.md sec 9/10).
-# Generated from warmstart-natural.yaml; differs ONLY in task_pos_weights,
-# output_dir and experiment_name. Base checkpoint, corpus, task_lr, encoder_lr,
-# epochs and threshold sweep are held fixed.
+# PHASE 3 RUN-2 ARM -- EXTENDED-REACH flat weight.
+# See EVENT_LOSS_PHASE3_PLAN.md sec 10. Generated from warmstart-natural.yaml;
+# differs ONLY in the boundary_head weight keys, output_dir and experiment_name.
 #
-# ARM: events pos_weight = 4.0
+# ARM: events task_loss_weights = 2.0   ->  events reach 12.5% of the training gradient
+# flat w=2 but with scope=all, so the weight reaches 94.3% of the loss instead of 18.5%.
 #
-# Why this dose and not a round number. tools/train/probe_task_losses.py measured the
-# control (seed43/final, 100 batches) and found event queries hold 1.6% of the training
-# gradient, split pos 0.01368 / neg 0.01067. A pos_weight of k multiplies the event term
-# by (k*pos + neg)/(pos + neg), so k=4.0 -> 2.69x.
-# BELOW the 4.0x that flat w=4.0 already delivered -- a DIRECTION-vs-magnitude discriminator.
+# DOSED FROM MEASUREMENT, not guessed. tools/train/probe_task_losses.py on the
+# control (seed43/final, 100 batches, buckets reconciling with residual 0) found:
+#   entities 77.2% / json_structures 11.5% / EVENTS 6.6% / relations 2.5%
+# and that task_loss_weights reaches only start/end/pair = 18.5% of the loss, which
+# is why the 0.5/1.0/2.0/4.0 flat sweep was null: w=4 moved events 6.6% -> 10.6%
+# while three quarters of the gradient was untouched.
 #
-# This is NOT task_loss_weights. That scaled the whole event term (magnitude only) and
-# was null at 0.5/1.0/2.0/4.0. pos_weight changes the positives-vs-negatives balance
-# INSIDE event queries -- the phase-2 event_struct_pos_weight mechanism. Events' positive
-# fraction is 0.56 today; k=4.0 moves it toward entity-like dominance.
+# Judge every delta against the MEASURED run-to-run floor (seed 42 vs 43):
+#   relation 0.041 | event_type 0.014 | event_trigger 0.013 | entity fair 0.010
+# Anything smaller is unreadable on one seed.
 #
-# Requires boundary_marginal_loss="bce" (the default): the asymmetric-focal path does not
-# route through _safe_bce and would silently ignore this.
+# scope="all" threads the weight into the other six query-typed terms (inside,
+# soft_iou, rerank, proposal, abstention, count). Default is "span", so the arms
+# already run keep their exact semantics.
 
 # Warm start + structure/NER, RECORD MODE = NATURAL. One of a two-arm A/B.
 #
@@ -88,17 +89,18 @@ model:
   boundary_head:
     enable_relations: true
     enable_records: true     # now load-bearing for STRUCTURES too, not just event edges
-    task_pos_weights:
+    task_loss_weight_scope: all
+    task_loss_weights:
       entities: 1.0
       relations: 1.0
-      events: 4.0
+      events: 2.0
       json_structures: 1.0
   struct_loss: bce_posweight
   struct_pos_weight: 4.0
 
 training:
-  output_dir: ./out/warmstart-natural-evpw04
-  experiment_name: warmstart_natural_evpw04
+  output_dir: ./out/warmstart-natural-evwide2
+  experiment_name: warmstart_natural_evwide2
   data_parallel: false
   # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
   # learning from cold, and every extra epoch is extra forgetting pressure.

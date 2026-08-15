@@ -618,6 +618,17 @@ class BoundaryHead(nn.Module):
         captures: Dict[str, Dict] = {}
         task_losses: Dict[str, torch.Tensor] = {}
 
+        # Scope of task_loss_weights. "span" is the historical reach -- start/end/pair,
+        # measured at 18.5% of the loss, which is why the flat dose sweep was null.
+        # "all" extends it to the other six query-typed terms for 94.3% reach. The
+        # weight is threaded to those terms as `wide_weights`, None under "span", so
+        # the default path is bit-identical to before.
+        wide_weights = (
+            query_weights
+            if getattr(self.settings, "task_loss_weight_scope", "span") == "all"
+            else None
+        )
+
         def _marginal_loss(logits, tgt, keep, capture_as=None):
             capture = captures.setdefault(capture_as, {}) if capture_as else None
             if use_focal:
@@ -760,6 +771,10 @@ class BoundaryHead(nn.Module):
                 reduction=reduction,
                 query_axis=query_axis,
                 candidate_axis=candidate_axis,
+                query_weights=wide_weights,
+                capture=(
+                    captures.setdefault("soft_iou", {}) if want_task_losses else None
+                ),
             )
         rerank_loss = loss_logits.new_zeros(())
         if self.settings.rerank_listwise_weight > 0:
@@ -770,12 +785,17 @@ class BoundaryHead(nn.Module):
                 pair_query_mask,
                 query_axis=query_axis,
                 candidate_axis=candidate_axis,
+                query_weights=wide_weights,
+                capture=(
+                    captures.setdefault("rerank", {}) if want_task_losses else None
+                ),
             )
 
         inside_loss = inside_consistency_loss(
             marginals.inside_logits, inside_targets, text_mask, query_mask,
             negative_weight=neg_weight,
             reduction=reduction,
+            query_weights=wide_weights,
             pos_weight=query_pos_weights,
             capture=captures.setdefault("inside", {}) if want_task_losses else None,
         )
@@ -805,6 +825,10 @@ class BoundaryHead(nn.Module):
                 query_mask,
                 query_axis=proposal_query_axis,
                 candidate_axis=proposal_candidate_axis,
+                query_weights=wide_weights,
+                capture=(
+                    captures.setdefault("proposal", {}) if want_task_losses else None
+                ),
             )
         consistency_loss = loss_logits.new_zeros(())
         if self.settings.consistency_loss_weight > 0:
@@ -819,12 +843,20 @@ class BoundaryHead(nn.Module):
         null_loss = pair_logits.new_zeros(())
         if null_logits is not None and self.settings.abstention_loss_weight > 0:
             null_loss = abstention_loss(
-                null_logits, targets.mention_mask, query_mask
+                null_logits, targets.mention_mask, query_mask,
+                query_weights=wide_weights,
+                capture=(
+                    captures.setdefault("abstention", {}) if want_task_losses else None
+                ),
             )
         count_loss = pair_logits.new_zeros(())
         if count_log_rates is not None and self.settings.count_loss_weight > 0:
             count_loss = count_log_rate_loss(
-                count_log_rates, targets.mention_mask, query_mask
+                count_log_rates, targets.mention_mask, query_mask,
+                query_weights=wide_weights,
+                capture=(
+                    captures.setdefault("count", {}) if want_task_losses else None
+                ),
             )
 
         w = self.loss_weights
@@ -857,10 +889,16 @@ class BoundaryHead(nn.Module):
                 args = (cap["elementwise"], cap["keep"], cap["query_mask"],
                         reduction, query_task_ids, n)
                 shares = reduce_by_task(*args)
-                positive = reduce_by_task(*args, numerator_mask=cap["positive"])
+                # None for the listwise and Poisson terms: no per-element positive
+                # exists there, so no pos_weight dose applies to them either.
+                positive = (
+                    reduce_by_task(*args, numerator_mask=cap["positive"])
+                    if cap["positive"] is not None else None
+                )
                 for i, name in enumerate(TASK_TYPES):
                     task_losses[f"{name}_{term}_loss"] = shares[i]
-                    task_losses[f"{name}_{term}_pos_loss"] = positive[i]
+                    if positive is not None:
+                        task_losses[f"{name}_{term}_pos_loss"] = positive[i]
             for i, name in enumerate(TASK_TYPES):
                 task_losses[f"{name}_query_count"] = (
                     (query_task_ids == i) & query_mask

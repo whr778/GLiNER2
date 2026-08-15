@@ -155,6 +155,12 @@ class BoundaryHeadSettings:
     # event_struct_loss; see EVENT_LOSS_PHASE3_PLAN.md. Note "classifications"
     # emits no extractive queries, so a weight for it is a no-op here.
     task_loss_weights: Optional[Dict[str, float]] = None
+    # Which terms task_loss_weights reaches. "span" (default) is start/end/pair --
+    # the three call sites it has always had, and 18.5% of the loss, which is why the
+    # 2026-08-14 dose sweep was null. "all" adds the other six query-typed terms
+    # (inside, soft_iou, rerank, proposal, abstention, count) for 94.3% reach.
+    # Defaulted to "span" so the already-run arms keep their exact semantics.
+    task_loss_weight_scope: str = "span"  # "span" | "all"
     # Per-task POSITIVE-class weight inside the span BCE, same keys. Where
     # task_loss_weights scales a task's whole term (changing only its share of the
     # gradient), this scales positives against negatives WITHIN that task's queries
@@ -441,6 +447,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             if values.get("task_loss_weights")
             else d.task_loss_weights
         ),
+        "task_loss_weight_scope": str(
+            values.get("task_loss_weight_scope", d.task_loss_weight_scope)
+        ),
         "task_pos_weights": (
             {str(k): float(v) for k, v in values["task_pos_weights"].items()}
             if values.get("task_pos_weights")
@@ -488,6 +497,11 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError(
             "boundary_head.boundary_marginal_loss must be 'bce' or "
             f"'asymmetric_focal', got {result['boundary_marginal_loss']!r}"
+        )
+    if result["task_loss_weight_scope"] not in ("span", "all"):
+        raise ValueError(
+            "boundary_head.task_loss_weight_scope must be 'span' or 'all', got "
+            f"{result['task_loss_weight_scope']!r}"
         )
     if result["loss_reduction"] not in ("global", "per_query"):
         raise ValueError(

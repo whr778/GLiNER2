@@ -471,7 +471,24 @@ def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
         )
     current.update(overrides)
     model.config.boundary_head = current
-    model.boundary_settings = BoundaryHeadSettings(**validate_boundary_head(current))
+    settings = BoundaryHeadSettings(**validate_boundary_head(current))
+    model.boundary_settings = settings
+
+    # The HEAD holds its own reference to a settings object, built in its __init__
+    # from the checkpoint's config. Rebuilding only `model.boundary_settings` left
+    # every knob the head reads through `self.settings` -- boundary_negative_weight,
+    # the soft_iou/rerank/proposal/count weights, negative_query_ratio,
+    # task_loss_weight_scope -- silently at its checkpoint value. Measured: a config
+    # setting task_loss_weight_scope="all" produced scope="all" on the model and
+    # "span" on the head, i.e. a treatment arm inert in exactly the way dfaaa2a was
+    # meant to end.
+    head = getattr(model, "boundary_head", None)
+    if head is not None:
+        head.settings = settings
+        # Two values are COPIED at construction rather than read live, so assigning
+        # settings does not move them.
+        head.hard_negatives_per_positive = settings.hard_negatives_per_positive
+        head.minimum_hard_negatives = settings.minimum_hard_negatives
 
 
 def _build_model(model_cfg: Dict):

@@ -35,9 +35,19 @@ class FakeModel:
     """Stands in for a loaded checkpoint: a config carrying the CHECKPOINT's
     boundary_head, plus the settings object built from it at construction."""
 
+    class FakeHead:
+        """The head keeps its OWN settings reference, and copies two values out
+        of it at construction -- both true of the real BoundaryHead."""
+
+        def __init__(self, settings):
+            self.settings = settings
+            self.hard_negatives_per_positive = settings.hard_negatives_per_positive
+            self.minimum_hard_negatives = settings.minimum_hard_negatives
+
     def __init__(self, boundary_head):
         self.config = FakeConfig(dict(boundary_head))
         self.boundary_settings = BoundaryHeadSettings(**boundary_head)
+        self.boundary_head = FakeModel.FakeHead(self.boundary_settings)
 
 
 CHECKPOINT = {"enable_relations": True, "enable_records": True}
@@ -85,3 +95,29 @@ def test_structural_key_matching_the_checkpoint_is_not_a_conflict():
     )
 
     assert model.boundary_settings.task_loss_weights == {"events": 0.5}
+
+
+def test_overrides_reach_the_HEAD_settings_not_just_the_model():
+    """dfaaa2a rebuilt `model.boundary_settings`, but the head holds its OWN
+    reference built in __init__. Every knob the head reads through `self.settings`
+    -- the soft_iou/rerank/proposal/count weights, boundary_negative_weight,
+    negative_query_ratio, task_loss_weight_scope -- stayed at the checkpoint value,
+    so a config setting them produced a treatment arm inert in exactly the way that
+    commit was meant to end. Measured before the fix: scope="all" on the model and
+    "span" on the head."""
+    model = FakeModel(CHECKPOINT)
+    assert model.boundary_head.settings.task_loss_weight_scope == "span"
+
+    _apply_boundary_head_overrides(
+        model,
+        {"task_loss_weight_scope": "all", "rerank_listwise_weight": 0.77,
+         "minimum_hard_negatives": 9},
+    )
+
+    assert model.boundary_settings.task_loss_weight_scope == "all"
+    assert model.boundary_head.settings.task_loss_weight_scope == "all"
+    assert model.boundary_head.settings is model.boundary_settings
+    assert model.boundary_head.settings.rerank_listwise_weight == 0.77
+    # Copied at construction rather than read live, so assigning settings alone
+    # would not move it.
+    assert model.boundary_head.minimum_hard_negatives == 9

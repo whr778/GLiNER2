@@ -100,13 +100,22 @@ def _note_capture(
     elementwise: torch.Tensor,
     keep: torch.BoolTensor,
     query_mask: Optional[torch.BoolTensor],
-    positive: torch.BoolTensor,
+    positive: Optional[torch.BoolTensor] = None,
 ) -> None:
     """Stash what :func:`reduce_by_task` needs to reproduce this term exactly.
 
     ``query_mask`` is recorded per term rather than taken from the caller: the
     pair term reduces under a *sampled* query mask (``negative_query_ratio``),
     so reusing the head's full mask would not reconcile under ``per_query``.
+
+    A per-query term (listwise ranking, abstention, count) passes ``[B,Q,1]``
+    tensors: with one element per query the ``global`` and ``per_query`` branches
+    of :func:`reduce_by_task` coincide, and both reproduce that term's own
+    ``(loss * keep).sum() / keep.sum()``.
+
+    ``positive`` is ``None`` where a positive/negative split is not defined --
+    a listwise ranking loss and a Poisson count NLL have no per-element positive
+    term to scale, so no ``pos_weight`` dose applies to them.
     """
     capture["elementwise"] = elementwise
     capture["keep"] = keep
@@ -461,6 +470,7 @@ def inside_consistency_loss(
     *,
     negative_weight: float = 1.0,
     reduction: str = "global",
+    query_weights: Optional[torch.Tensor] = None,
     pos_weight: Optional[torch.Tensor] = None,
     capture: Optional[dict] = None,
 ) -> torch.Tensor:
@@ -472,6 +482,7 @@ def inside_consistency_loss(
         negative_weight=negative_weight,
         query_mask=query_mask,
         reduction=reduction,
+        query_weights=query_weights,
         pos_weight=pos_weight,
         capture=capture,
     )
@@ -485,6 +496,8 @@ def proposal_listwise_loss(
     *,
     query_axis: int = 1,
     candidate_axis: int = 2,
+    query_weights: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Rank injected gold candidates above other valid proposals."""
     proposal_logits = _to_query_candidate(
@@ -500,6 +513,12 @@ def proposal_listwise_loss(
     loss = torch.where(
         has_gold, all_lse - gold_lse, torch.zeros_like(all_lse)
     )
+    if capture is not None:
+        _note_capture(capture, loss.unsqueeze(-1), has_gold.unsqueeze(-1), query_mask)
+    if query_weights is not None:
+        loss = loss * query_weights.to(loss.dtype)
+    # Denominator stays unweighted, as in _reduce: a weighted mean would make the
+    # loss invariant to scaling every weight, so the dose would do nothing.
     return loss.sum() / has_gold.to(loss.dtype).sum().clamp_min(1)
 
 
@@ -511,6 +530,8 @@ def reranker_listwise_loss(
     *,
     query_axis: int = 1,
     candidate_axis: int = 2,
+    query_weights: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Listwise gold-mass loss over reranked candidates, empty-query safe."""
     gold_mask = (labels > 0.5) & valid_mask
@@ -521,6 +542,8 @@ def reranker_listwise_loss(
         query_mask,
         query_axis=query_axis,
         candidate_axis=candidate_axis,
+        query_weights=query_weights,
+        capture=capture,
     )
 
 
@@ -564,6 +587,9 @@ def abstention_loss(
     null_logits: torch.Tensor,
     mention_mask: torch.BoolTensor,
     query_mask: torch.BoolTensor,
+    *,
+    query_weights: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Train a per-query gate whose target is one for an absent query."""
     target = (~mention_mask.any(-1)).to(null_logits.dtype)
@@ -571,6 +597,13 @@ def abstention_loss(
         null_logits, target, reduction="none"
     )
     keep = query_mask.to(elementwise.dtype)
+    if capture is not None:
+        _note_capture(
+            capture, elementwise.unsqueeze(-1), query_mask.unsqueeze(-1),
+            query_mask, (target > 0.5).unsqueeze(-1),
+        )
+    if query_weights is not None:
+        elementwise = elementwise * query_weights.to(elementwise.dtype)
     return (elementwise * keep).sum() / keep.sum().clamp_min(1)
 
 
@@ -578,6 +611,9 @@ def count_log_rate_loss(
     count_log_rate: torch.Tensor,
     mention_mask: torch.BoolTensor,
     query_mask: torch.BoolTensor,
+    *,
+    query_weights: Optional[torch.Tensor] = None,
+    capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Poisson NLL for a count head whose output is the logarithm of its rate."""
     target = mention_mask.sum(-1).to(count_log_rate.dtype)
@@ -589,4 +625,10 @@ def count_log_rate_loss(
         reduction="none",
     )
     keep = query_mask.to(elementwise.dtype)
+    if capture is not None:
+        _note_capture(
+            capture, elementwise.unsqueeze(-1), query_mask.unsqueeze(-1), query_mask
+        )
+    if query_weights is not None:
+        elementwise = elementwise * query_weights.to(elementwise.dtype)
     return (elementwise * keep).sum() / keep.sum().clamp_min(1)

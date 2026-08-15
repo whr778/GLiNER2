@@ -261,3 +261,61 @@ def test_the_dose_formula_predicts_the_bucket(bce_batch, k):
     actual = float(reduce_by_task(dosed, keep, query_mask, "global", ids, 1)[0]) / (pos + neg)
 
     assert actual == pytest.approx(predicted, rel=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# task_loss_weight_scope (EVENT_LOSS_PHASE3_PLAN sec 10)
+# ---------------------------------------------------------------------------
+
+def test_scope_defaults_to_span_so_finished_arms_keep_their_semantics():
+    """The 2026-08-14 dose sweep ran with the weight reaching start/end/pair only.
+    If the default silently became "all", those arms would no longer be
+    reproducible from their own configs."""
+    from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
+
+    assert BoundaryHeadSettings().task_loss_weight_scope == "span"
+    assert validate_boundary_head({})["task_loss_weight_scope"] == "span"
+    assert validate_boundary_head(
+        {"task_loss_weight_scope": "all"}
+    )["task_loss_weight_scope"] == "all"
+    with pytest.raises(ValueError, match="task_loss_weight_scope"):
+        validate_boundary_head({"task_loss_weight_scope": "everything"})
+
+
+def test_per_query_reducers_accept_a_weight_and_keep_the_denominator_unweighted():
+    """The six extended terms reduce a [B,Q] loss themselves rather than going
+    through _reduce, so each needs the weight threaded separately -- and each must
+    keep the UNWEIGHTED denominator, or scaling every weight would cancel out."""
+    from gliner2.models.boundary.losses import (
+        abstention_loss,
+        count_log_rate_loss,
+        proposal_listwise_loss,
+    )
+
+    torch.manual_seed(31337)
+    logits = torch.randn(2, 3, 5)
+    gold = torch.zeros(2, 3, 5, dtype=torch.bool)
+    gold[..., 0] = True
+    valid = torch.ones(2, 3, 5, dtype=torch.bool)
+    query_mask = torch.ones(2, 3, dtype=torch.bool)
+    null_logits = torch.randn(2, 3)
+    mention_mask = torch.zeros(2, 3, 4, dtype=torch.bool)
+    mention_mask[0, 0, 0] = True
+    counts = torch.randn(2, 3)
+
+    ones = torch.ones(2, 3)
+    heavy = torch.ones(2, 3)
+    heavy[:, 1] = 4.0
+
+    cases = [
+        (lambda w: proposal_listwise_loss(logits, gold, valid, query_mask, query_weights=w)),
+        (lambda w: abstention_loss(null_logits, mention_mask, query_mask, query_weights=w)),
+        (lambda w: count_log_rate_loss(counts, mention_mask, query_mask, query_weights=w)),
+    ]
+    for fn in cases:
+        plain, at_one, at_four = float(fn(None)), float(fn(ones)), float(fn(heavy))
+        assert at_one == pytest.approx(plain, rel=1e-6)   # inert at 1.0
+        assert at_four != pytest.approx(plain, rel=1e-6)  # live above 1.0
+        # Unweighted denominator: scaling EVERY weight by 2 must double the loss,
+        # not leave it unchanged.
+        assert float(fn(ones * 2.0)) == pytest.approx(2.0 * plain, rel=1e-5)

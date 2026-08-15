@@ -1,23 +1,24 @@
-# PHASE 3 ARM -- per-task event POS_WEIGHT (EVENT_LOSS_PHASE3_PLAN.md sec 9/10).
-# Generated from warmstart-natural.yaml; differs ONLY in task_pos_weights,
-# output_dir and experiment_name. Base checkpoint, corpus, task_lr, encoder_lr,
-# epochs and threshold sweep are held fixed.
+# PHASE 3 RUN-2 ARM -- per-task POS_WEIGHT.
+# See EVENT_LOSS_PHASE3_PLAN.md sec 10. Generated from warmstart-natural.yaml;
+# differs ONLY in the boundary_head weight keys, output_dir and experiment_name.
 #
-# ARM: events pos_weight = 8.0
+# ARM: events task_pos_weights = 8.0   ->  events reach 12.2% of the training gradient
+# the first pos_weight dose that clears flat w=4 (10.6%), which was tested and null.
 #
-# Why this dose and not a round number. tools/train/probe_task_losses.py measured the
-# control (seed43/final, 100 batches) and found event queries hold 1.6% of the training
-# gradient, split pos 0.01368 / neg 0.01067. A pos_weight of k multiplies the event term
-# by (k*pos + neg)/(pos + neg), so k=8.0 -> 4.93x.
-# first dose exceeding the flat sweep's magnitude; events 1.6% -> 7.9% of gradient.
+# DOSED FROM MEASUREMENT, not guessed. tools/train/probe_task_losses.py on the
+# control (seed43/final, 100 batches, buckets reconciling with residual 0) found:
+#   entities 77.2% / json_structures 11.5% / EVENTS 6.6% / relations 2.5%
+# and that task_loss_weights reaches only start/end/pair = 18.5% of the loss, which
+# is why the 0.5/1.0/2.0/4.0 flat sweep was null: w=4 moved events 6.6% -> 10.6%
+# while three quarters of the gradient was untouched.
 #
-# This is NOT task_loss_weights. That scaled the whole event term (magnitude only) and
-# was null at 0.5/1.0/2.0/4.0. pos_weight changes the positives-vs-negatives balance
-# INSIDE event queries -- the phase-2 event_struct_pos_weight mechanism. Events' positive
-# fraction is 0.56 today; k=8.0 moves it toward entity-like dominance.
+# Judge every delta against the MEASURED run-to-run floor (seed 42 vs 43):
+#   relation 0.041 | event_type 0.014 | event_trigger 0.013 | entity fair 0.010
+# Anything smaller is unreadable on one seed.
 #
-# Requires boundary_marginal_loss="bce" (the default): the asymmetric-focal path does not
-# route through _safe_bce and would silently ignore this.
+# pos_weight scales POSITIVES against negatives inside event queries (phase 2's
+# event_struct_pos_weight mechanism), reaching start/end/pair/inside. Requires
+# boundary_marginal_loss="bce" (the default): the focal path skips _safe_bce.
 
 # Warm start + structure/NER, RECORD MODE = NATURAL. One of a two-arm A/B.
 #
