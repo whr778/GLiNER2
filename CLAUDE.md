@@ -27,3 +27,6 @@
 - Emit normalized, UTF-8 JSONL via `_split.dumps_record` (the `SplitWriter` write path): NFKC plus stray line-separator stripping (NEL U+0085, U+2028, U+2029 -> space, so records never fragment across lines).
 - New converters must route every record write through `dumps_record`, never raw `json.dumps`, and open all files with `encoding="utf-8"`.
 - When using json.dump or json.dumps ensure_ascii should always be set to False unless I have directed otherwise.
+
+## TRAINING
+- Always verify all samples of aggregated train and test and validation are unique, and report if they are not.  I do not want cross-set contamination, as that invalidates results.  I do not want samples from validation or test in the train dataset.  Test is blind-test and needs to be unique no duplicates from train or validation.
