@@ -44,20 +44,31 @@ def test_grouped_rows_land_in_one_split(tmp_path):
     assert not scattered, f"documents split across splits: {scattered}"
 
 
-def test_ungrouped_rows_still_scatter(tmp_path):
-    """The old behaviour is intact for callers that pass no group -- the fix is
-    opt-in, so converters emitting one record per document are unchanged."""
+def test_grouping_is_the_DEFAULT(tmp_path):
+    """Correctness by default. Making this opt-in meant 20 of 21 converter write
+    sites did not do it, and six corpora leaked into their own blind tests."""
     base = tmp_path / "corpus.jsonl"
     with SplitWriter(base, ratios=(0.6, 0.2, 0.2), seed=7) as writer:
         for doc in range(40):
             for schema in range(5):
                 writer.write({"input": f"document {doc}", "output": {"schema": schema}})
 
-    where = _written(base)
-    assert any(len(s) > 1 for s in where.values()), (
-        "expected row-wise routing to scatter duplicates; if this now passes, the "
-        "default changed and every converter's partition moved with it"
-    )
+    scattered = {d: s for d, s in _written(base).items() if len(s) > 1}
+    assert not scattered, f"documents split across splits by default: {scattered}"
+
+
+def test_explicit_none_restores_row_wise_routing(tmp_path):
+    """Kept as an escape hatch, and to prove the default is doing the work."""
+    base = tmp_path / "corpus.jsonl"
+    with SplitWriter(base, ratios=(0.6, 0.2, 0.2), seed=7) as writer:
+        for doc in range(40):
+            for schema in range(5):
+                writer.write(
+                    {"input": f"document {doc}", "output": {"schema": schema}},
+                    group=None,
+                )
+
+    assert any(len(s) > 1 for s in _written(base).values())
 
 
 def test_grouping_is_stable_across_runs(tmp_path):
