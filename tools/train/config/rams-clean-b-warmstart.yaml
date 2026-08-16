@@ -1,0 +1,121 @@
+# RAMS warm-start arm -- does an intermediate multi-task stage help the event downstream?
+#
+# TREATMENT. Routes RAMS through an intermediate mix_natural stage
+# (mmBERT -> 137k joint -> mix_natural -> RAMS) instead of going straight from the
+# 137k base. Tests whether a broad multi-task stage helps or hurts the event
+# downstream. NOTE mix_natural is 34% structures / 36% NER, and warm-starting
+# narrows what a model retains -- underperforming A is a real possibility.
+#
+# Differs from joint-boundary-rams-137k.yaml in EXACTLY `model.pretrained`, `output_dir`
+# and `experiment_name`. Recipe held fixed (15 epochs, task_lr 5e-4, encoder_lr 2e-5,
+# struct_pos_weight 4.0) so the BASE is the only variable, matching the curve's own rule.
+#
+# RAMS splits verified disjoint (train n val = train n test = val n test = 0), and
+# mix_natural shares ZERO documents with any RAMS split -- so a model warm-started
+# through it has not seen the RAMS test set. Checked before the run, not assumed.
+#
+# `metric_sweep: true` selects each checkpoint at ITS OWN best threshold, which is right
+# for shipping one model and WRONG for comparing arms. Compare at MATCHED thresholds from
+# each arm's best/threshold_sweep.json; the published 137K point is threshold 0.3.
+
+# joint_ie x head-init scaling -- RAMS warm-start (the EVENT downstream).
+# See tools/events_working_papers/JOINT_IE_SCALING.md sec 4.
+#
+# GENERATED per base (137k). Template: joint-boundary-rams.yaml. Do not hand-edit;
+#   regenerate from the template if the recipe changes.
+# The recipe is held fixed across the curve so the only varying factor is the
+# base's training volume (head-init). Same rule as the Re-DocRED arm.
+#
+# NEW output paths/names: does not touch mmbert-base-rams, gliner2-base-v1-rams,
+# their ./out dirs, or anything already on HF.
+#
+# Both decode arms (greedy vs joint beam) are evaluated on THIS ONE trained model
+# via the eval-time decode_mode switch -- there is no separate "joint" training run.
+model:
+  pretrained: whr778/gliner2-warmstart-natural-clean
+  # attn_implementation is NOT set here on purpose: on the pretrained path it would
+  # be applied to model.config AFTER the encoder is already built, so it would be a
+  # silent no-op. FlashAttention 2 is inherited from the base checkpoint's config.
+  architecture: boundary     # checked against the checkpoint: warm-starting a span
+                             # checkpoint here raises ArchitectureMismatchError rather
+                             # than silently training the wrong architecture.
+  # bce_posweight bootstraps the argument head; plain bce left argument recall near 0
+  # on fresh heads and focal collapsed it (see mmbert-base-rams for the ablation).
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/rams-clean-b-warmstart
+  experiment_name: rams_clean_b_warmstart
+  data_parallel: false
+  num_epochs: 15
+  batch_size: 8
+  # NOTE: tuned for 2-GPU DDP (torchrun --nproc_per_node=2), where batch_size is
+  # PER-GPU. Accumulation is halved so the EFFECTIVE batch stays 32, matching the
+  # single-GPU recipe the throughput anchor and the rest of the curve use.
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1  # arguments are the head-init
+  greater_is_better: true                               # sensitive number, not the
+                                                        # trigger/type plateau
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  # Long documents are WINDOWED, not truncated: a 4096-subword window with a 3072
+  # stride (25% overlap) so cross-boundary structure is still seen. mmBERT supports
+  # 8192; 4096 keeps attention cost sane. window_stride is set explicitly because
+  # the default 256 would give 94% overlap at this window size -- ~16x redundant
+  # work on long docs. Docs under 4096 subwords yield a single window unchanged.
+  sliding_window: true
+  window_stride: 3072
+  max_len: 4096
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  # ~7-13% of records in chfinann/docfee/casie/text2json cannot be mapped to word
+  # token boundaries by the boundary preprocessor even though every surface IS
+  # present verbatim in the text (verified). That is an alignment limitation, not
+  # bad data, and it hits languages without whitespace delimiters hardest. Skip
+  # those records (counted, not silent) and skip gold-capacity overflows, rather
+  # than aborting a multi-hour run. Recorded in JOINT_IE_SCALING.
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+  early_stopping_patience: 3
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true
+  metric_sweep: true         # select the checkpoint at its own best threshold
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora: []
+  event_files:
+    rams:
+      train: data/rams.train.jsonl
+      val: data/rams.dev.jsonl
+      test: data/rams.test.jsonl
