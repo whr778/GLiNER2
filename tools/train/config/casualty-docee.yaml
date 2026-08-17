@@ -81,3 +81,11 @@ data:
   corpora:
     - data/casualty_docee
   event_files: {}
+
+# RESULT of the CLEAN re-run, 2026-08-17 (A100, both arms, ~$3.00 with item 3).
+# bf16 fixed the crash: 8/8 epochs, no non-finite loss. The structure metric now drives
+# selection, and on THIS arm it re-selected six times (0.9563 -> 0.9794 on val).
+#   blind test  structure strict F1 0.9766  (P 0.9655 / R 0.9879, support 4,619)
+#   rescore vs the published fp16/eval_loss model on the same 400-record slice:
+#       published 0.9784  ->  clean 0.9822
+# Pushed: whr778/gliner2-base-v1-casualty-docee-clean (private).

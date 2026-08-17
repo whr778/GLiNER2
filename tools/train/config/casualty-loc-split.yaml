@@ -130,3 +130,17 @@ data:
 #     any casualty run until a structure scorer exists.
 #   - fp16 is marginal for this recipe. bf16 would likely survive, but changing it breaks
 #     comparability with casualty-docee -- change it for BOTH arms or neither.
+
+# RESULT of the CLEAN re-run, 2026-08-17 (A100). bf16 fixed the crash -- 8/8 epochs, no
+# non-finite loss, where the fp16 run died at 79%.
+#   blind test  structure strict F1 0.8485  (relaxed 0.9543, support 15,187)
+#   rescore vs the published fp16 model, same 400-record slice:  0.7693 -> 0.8351 (+0.066)
+# Pushed: whr778/gliner2-base-v1-casualty-loc-split-clean (private).
+#
+# FINDING, and it is not what the metric fix was expected to show: `best` is STILL epoch 1.
+# Structure F1 on val hits 0.8439 after one epoch and never improves through epoch 8, while
+# train loss falls 34.65 -> 3.42. This time that is REAL rather than a selector artifact --
+# the same recipe on casualty_docee re-selected six times, so the metric tracks fine when
+# there is something to track. Field extraction on this corpus saturates in one epoch.
+# Practical consequence: epochs 2-8 buy nothing measurable here, so ~85% of this arm's GPU
+# cost is waste. Cut num_epochs before running it again.

@@ -131,6 +131,53 @@ re-select both Track A and its `casualty-docee` baseline on it. Until then, no c
 checkpoint selection can be trusted, and the readouts in item 0 and item 1 below are the
 missing metric computed by hand.
 
+### -1b. CLEAN RE-RUN DONE 2026-08-17 — both arms, bf16 + structure-metric selection
+
+Item 1 and item 3 of the follow-up list, one A100, ~$3.00, instance terminated.
+Commit `1b6e0f6`; scorer from `fb456e4`.
+
+**bf16 fixed the crash.** Both arms ran 8/8 epochs with no non-finite loss, where the fp16
+arm died at 79%.
+
+**The metric now drives selection — where there is anything to select.** `casualty-docee`
+re-selected **six times** (0.9563 → 0.9794 on val). `casualty-loc-split` selected **once,
+at epoch 1**, and never improved through epoch 8 while train loss fell 34.65 → 3.42.
+
+That second result is REAL, not another selector artifact — the same recipe on the other
+corpus tracked fine, so the metric works. Field extraction on `casualty_loc_split`
+saturates after one epoch. **Practical consequence: epochs 2-8 buy nothing measurable
+there, so ~85% of that arm's GPU cost is waste.** Cut `num_epochs` before re-running it.
+
+**Item 3 — the published models rescored on the metric nobody could compute before.**
+Same 400-record blind slice per corpus:
+
+| model | corpus | strict F1 | relaxed | support |
+|---|---|--:|--:|--:|
+| published `casualty (ft)` | casualty_ft | 0.9959 | 0.9959 | 610 |
+| published `casualty-docee` (production EKF extractor) | casualty_docee | 0.9784 | 0.9784 | 920 |
+| **new** `casualty-docee` clean | casualty_docee | **0.9822** | 0.9822 | 920 |
+| published `loc-split` (fp16 run) | casualty_loc_split | 0.7693 | 0.9159 | 2,155 |
+| **new** `loc-split` clean | casualty_loc_split | **0.8351** | 0.9374 | 2,155 |
+
+**Read this within a corpus, never across one.** `casualty_docee` has three numeric fields;
+`casualty_loc_split` adds free-text `location`, which is far harder and carries 2.3x the
+support. The 0.98-vs-0.84 gap is task difficulty, not model quality.
+
+Within-corpus, the clean re-runs win on both: **+0.004** on docee and **+0.066** on
+loc-split. So the old `eval_loss` selection cost little on the numeric-only corpora — the
+production `casualty-docee` extractor was not badly damaged — but cost a lot on the corpus
+with a hard field.
+
+**What item 3 could NOT answer:** whether each published model latched early during its own
+training. Those per-epoch checkpoints are gone; only a re-run would show it.
+`casualty-multievent` was skipped entirely — no local `casualty_multi` test split, and the
+rescore script checks the filesystem directly instead of going through `_fetch_if_missing`.
+
+Blind tests: docee **0.9766** (P 0.9655 / R 0.9879, support 4,619); loc-split **0.8485**
+strict / 0.9543 relaxed (support 15,187).
+
+Models: `whr778/gliner2-base-v1-casualty-{docee,loc-split}-clean` (private).
+
 ### 0. The cross-event readout was unsound — FIXED 2026-08-17 (`63249ed`), and C is dead
 
 **Fixed and re-measured.** Read this section for what the numbers now are; the diagnosis
