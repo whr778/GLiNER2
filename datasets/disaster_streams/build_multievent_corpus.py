@@ -127,7 +127,8 @@ def _standalone(doc: str, a: int, b: int) -> bool:
     return True
 
 
-def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
+def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0,
+                  keep_streams: set | None = None):
     """(stream_id, t_hours) -> {text, gt{role: value}}
 
     ``stream_start``/``stream_end`` slice the sorted stream ids. Splitting at the STREAM
@@ -135,6 +136,11 @@ def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
     snippets all describe the same incident, so letting them straddle a split leaks the
     answer. Interference is drawn only from streams inside the same slice for the same
     reason.
+
+    ``keep_streams`` overrides the slice with an explicit set. A contiguous slice cannot
+    express a PLACE-disjoint split: two streams can draw the same DocEE place, and those
+    two must land in the same split or the place straddles it. Group streams by place
+    first, keep each group whole, and pass the result here.
     """
     groups = defaultdict(lambda: {"text": "", "gt": {}, "stream": ""})
     for line in (split_dir / "observations.jsonl").open(encoding="utf-8"):
@@ -146,7 +152,9 @@ def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0):
         g["stream"] = o["stream_id"]
         g["gt"][o["role"]] = o["value"]
     out = [g for g in groups.values() if g["text"] and g["gt"]]
-    if stream_end:
+    if keep_streams is not None:
+        out = [g for g in out if g["stream"] in keep_streams]
+    elif stream_end:
         keep = set(sorted({g["stream"] for g in out})[stream_start:stream_end])
         out = [g for g in out if g["stream"] in keep]
     return out
@@ -282,11 +290,20 @@ def main(argv=None) -> None:
     ap.add_argument("--contexts", default="",
                     help="contexts json; adds a gold location FIELD (heterogeneous "
                          "field types stop the numeric-field collapse)")
+    ap.add_argument("--streams-file", default="",
+                    help="newline-delimited stream ids; overrides --stream-start/--stream-end. "
+                         "Use for a PLACE-disjoint split, which a contiguous slice cannot "
+                         "express (see load_snippets).")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
 
+    keep = None
+    if args.streams_file:
+        keep = {l.strip() for l in Path(args.streams_file).read_text(encoding="utf-8").splitlines()
+                if l.strip()}
+        print(f"[build] explicit stream set: {len(keep)} ids from {args.streams_file}")
     snippets = load_snippets(Path(args.data) / args.split,
-                             args.stream_start, args.stream_end)
+                             args.stream_start, args.stream_end, keep_streams=keep)
     contexts = json.loads(Path(args.contexts).read_text(encoding="utf-8")) if args.contexts else {}
     examples, stats = build(snippets, args.max_interference, args.seed, contexts,
                             record_mode=args.record_mode,

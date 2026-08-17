@@ -50,7 +50,10 @@ def system_for(ctx) -> str:
         "naturally with its hedge, attributed to the source. Rules: (1) use the EXACT "
         "digits given for each figure -- you may add hedge words but never change a "
         "number; (2) name the place; (3) weave in the listed distractor details as a real "
-        "report would; (4) do NOT invent extra casualty figures for the given roles. "
+        "report would; (4) do NOT invent extra casualty figures for the given roles; "
+        "(5) do NOT open with a newswire dateline and do NOT attribute the report to any "
+        "real news agency -- no '(AP)', '(Reuters)', or similar. This text is synthetic, "
+        "and a fabricated agency credit misattributes it to a real organisation. "
         "Reply with a single JSON object: {\"text\": \"...\"}."
     )
 

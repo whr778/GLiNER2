@@ -23,28 +23,33 @@
 #   datasets/disaster_streams/build_multievent_corpus.py
 #     --data datasets/disaster_streams_docee250 --split train
 #     --contexts datasets/disaster_streams/contexts250.json
-#     --stream-start {0|200|225} --stream-end {200|225|250}
-# 23,239 train / 2,878 val / 3,201 test documents, mean 2.48 casualty_report instances per
-# document, location located 93% (absent gets no location rather than a guess). This is the
-# same generator and contexts as `casualty_multi_loc`, which exists as a TRAIN SPLIT ONLY
-# and is consumed by build_warmstart_mix.py -- hence a new name rather than adding splits
-# to it, which would silently change every warmstart_mix corpus.
+#     --streams-file <place-disjoint stream ids per split>
+# 23,744 train / 2,704 val / 2,873 test documents, mean ~2.48 casualty_report instances per
+# document, location located ~92%. This is the same generator and contexts as
+# `casualty_multi_loc`, which exists as a TRAIN SPLIT ONLY and is consumed by
+# build_warmstart_mix.py -- hence a new name rather than adding splits to it, which would
+# silently change every warmstart_mix corpus.
 #
-# SPLIT INTEGRITY -- read before trusting any number from this arm.
+# SPLIT INTEGRITY -- all three axes clean, verified 2026-08-17.
 #   Documents:  0 duplicates within a split, 0 overlap across splits (sha1 of input text).
-#   Streams:    disjoint by construction (--stream-start/--stream-end slice sorted ids), so
-#               no incident's trajectory or figures straddle a split.
-#   Places:     NOT disjoint. 17 place strings recur across splits; 57.2% of test documents
-#               name at least one place also seen in train, 12.1% name only such places.
-#               Cause: different streams draw the same DocEE place from the pool (249
-#               distinct places over 250 streams), so recurrences are generic ones --
-#               "California", "Iraq", "Machu Picchu".
-#   Judgement:  accepted deliberately. The leak unit is the INCIDENT, and incidents are
-#               disjoint -- a recurring place carries different figures in each split, so
-#               memorising a place buys no answer. Place recurrence is also the phenomenon
-#               under study (Helene hits North Carolina repeatedly); forcing place-disjoint
-#               splits would make the test unrepresentative of the deployment it models.
-#               Stated here because the project gate is that any non-uniqueness is declared.
+#   Streams:    disjoint -- one incident's snippets never straddle a split.
+#   Locations:  disjoint. 0 shared location strings between any pair of splits.
+#   Gold:       every gold value appears verbatim in its own document (0 absent of 157,290).
+#
+# Getting locations disjoint needed two things a contiguous index slice cannot do, hence
+# `--streams-file`:
+#   1. Streams that share a DocEE place must land in the SAME split. 26 places are drawn by
+#      more than one stream, so slicing sorted ids splits them.
+#   2. Linking on the full place string is not enough. `_locate_place` falls back to the
+#      longest comma-separated COMPONENT, so "Sunnyvale, California" can emit "California"
+#      and collide with the stream whose place IS "California" -- which is exactly what a
+#      first attempt produced (1 train instance against 563 in val). Streams are therefore
+#      linked on every string the builder could emit -- the place and each of its
+#      components -- and each connected group is kept whole. 199 groups, largest 7 streams.
+#
+# The text carries NO fabricated news-agency credit. An earlier realization opened some
+# snippets with "SAN JUAN, June 26, 2026 (AP) --" and similar; those attributed synthetic
+# text to real agencies and were scrubbed, and realize.py now forbids them explicitly.
 #
 # PASS/FAIL, fixed before spending. Read against out/casualty-docee/best on the SAME
 # 40 Helene windows and the same probe, tools/ekf_showcase/event_binding_probe.py:
