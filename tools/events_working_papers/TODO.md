@@ -75,51 +75,123 @@ measurement rather than argument*:
 
 The live bottleneck is **cross-event contamination** (item 2, quantified at 4.7% and
 resistant to all three signals tried) and underneath it the query-axis training gap that
-GIST is being built for (item 11, the active work).
+GIST was built for (item 11 — **RAN 2026-08-14 and it is NEGATIVE**).
 
-State at 2026-08-14. **No GPUs running.** Two eval-side defects fixed since (`c0ab89c`,
+**Why events and not relations, when a fix is proposed.** The programme's priority is event
+extraction; NER, relations and structures are carried along with it. That is why the losses
+were separated in the first place — lumping structures, relations and events into one loss
+made the event signal invisible, and phase 2 split them (re-implemented for the boundary head
+in [[EVENT_LOSS_PHASE3_PLAN]]). So when a defect admits both a relation-shaped and an
+event-shaped fix, the event-shaped one is the one that serves the programme *and* the one
+that carries the right information: only the event formulation has an `event_key`, which is
+the field an EKF observation needs. See item 1 for the worked case.
+
+State at **2026-08-17**. **No GPUs running.** Two eval-side defects fixed on 08-14 (`c0ab89c`,
 `7586411`); see "What the metrics fixes did and did not touch" below before re-reading any
-number in this file. Item 11's RAMS guide cache turns out to exist as well as the
-`mix_natural` one. Nothing is mid-flight.
+number in this file. A third is now open and unfixed — **item 0**, the cross-event probe's
+scoring — and it invalidates the readout item 2 would be measured with. Nothing is
+mid-flight.
 
 ---
 
 ## P0 — blocks the next experiment
 
-### 1. Number-to-place attachment — LABEL IS STALE, content is not
-This still sits at P0 but **nothing is currently blocked on it**, by this file's own account:
-the 08-12 header says the scope gate "largely closed the attachment blocker" and names items
-2 and 11 as the live bottleneck. Reprioritize it or leave it, but do not read "P0" as "the
-next experiment is waiting on this".
+### 0. The cross-event readout is UNSOUND — fix it before spending a GPU-hour on item 2
 
-The content below is still live and unrun. Note item 8 **strengthens** the beam route rather
-than undercutting it: it found beam *width* useless (W=1 wins) while constrained joint
-selection beat greedy by +0.052 best-vs-best -- "the gain is the formulation, not the search".
-`TypedEndpoints` is a constraint, not a width.
-Proximity, GPE tags, record-internal location and admin rollup have all been tried and all
-failed. Rollup did what it was supposed to (58 keys → 21, 84% of observations in six clean
-streams) and per-state tracking is *still* catastrophic: North Carolina 5.637, Georgia with
-0 of 5 values in plausible range. The reason is not fragmentation. It is that national totals
-get filed under whichever state the article happens to be about.
+Found 2026-08-17 while pre-checking the item-1 routes. `event_binding_probe.py` scores signal
+C as:
 
-Two routes, not mutually exclusive:
+```python
+"C bound event is a competitor": bool(r["bound"]) and not OURS.search(r["bound"])
+#  OURS = re.compile(r"\bhelene\b", re.I)
+```
 
-- **Train the relation.** `casualty_multi_loc` already carries gold `(value, place)` pairs, so
-  a `deaths_in` relation can be supervised directly instead of relied on zero-shot.
-- **Run the beam arm** with `TypedEndpoints`, which makes `('storm', Florida)` structurally
-  unrepresentable rather than merely unlikely. Unblocked 2026-08-10 by the qualified-key fix
-  (see item 8) — this is now runnable and unrun, where before it was unrunnable.
+C therefore fires on **any non-empty string that does not contain "helene"** — including a
+string that is not an event mention at all. Three arms on the same 104 observations, all on
+current code, CPU:
 
-Zero-shot is close but fragile, and the fragility is the argument for training over
-prompt-tuning: `explicit-scope` phrasing got the hard aggregate case exactly right
+| model | arch | C catches | C false pos | what `bound` actually holds |
+|---|---|--:|--:|---|
+| `fastino/gliner2-base-v1` (§27.2's model) | span | 3/11 | 44.6% | event names — Helene, Katrina, John. Sane |
+| `whr778/gliner2-warmstart-natural-clean` | boundary | 0/11 | 3.6% | **nothing** — the record head fills no field |
+| `whr778/gliner2-base-v1-casualty-docee` | span | **9/11** | 50.6% | **the casualty number** — `'230'`, `'1,400'`, `'250'` |
+
+The 9/11 is an **artifact**, not a result: `casualty-docee` was trained on
+`casualty_report{dead, injured, missing, location}`, so an `event` field is out of
+distribution and it copies the anchor number into it. `'230'` contains no "helene", so C
+scores it as a caught cross-event. The 50.6% false-positive rate is the same artifact firing
+on genuine observations.
+
+Two more defects in the same function:
+
+- **§27.2 does not reproduce.** Published C was 2/11 at 26.5% FP; the same model on current
+  code gives 3/11 at **44.6%**. Something in the eval path moved. Do not compare any new arm
+  against the published numbers — re-run the control.
+- **The fallback is unsound.** `if bound is None and recs: bound = recs[0]["event"]` attributes
+  the *first* record's event to a span that did not match any record.
+
+**Fix before measuring anything else:** require `bound` to be a span the event schema also
+found (intersect with `events`), drop the `recs[0]` fallback, and report "no binding"
+separately from "bound a competitor" — the boundary arm above is 0/11 because it bound
+nothing, which the current table cannot distinguish from 0/11 because it bound correctly.
+
+Cheap, and it gates everything downstream: a 2-GPU-hour training arm read with this
+instrument cannot tell success from a field-copying artifact.
+
+### 1. Number-to-place attachment — DEMOTED to P2 on 2026-08-17; see item 2 for the live defect
+
+**Nothing is blocked on this, and the two routes below should not be run as written.** Both
+were re-examined against the code on 2026-08-17. Kept here rather than deleted because the
+*question* survives; only the proposed answers do not.
+
+**The routes are genuinely unrun** — verified, not assumed. `deaths_in` appears only in this
+file, [[PROJECT_JOURNAL]], and unit tests: no training config exists. `casualty_multi_loc` is
+wired into training, but as `STRUCTURE_DEFAULT` in `build_warmstart_mix.py`, i.e. as
+`json_structures` — never as a relation or an event. And `run_pipeline.py` has no
+joint/beam/decode-mode flag at all, so the `TypedEndpoints` arm has never touched this task.
+
+**Why not to run them anyway:**
+
+- **The beam arm is predicted-negative for the live defect, by our own measurement.**
+  [[EKF_MHT_DESIGN]] §27.2 found the type signal catches **0/11** on cross-event *"because the
+  type is RIGHT there"* — Katrina is a storm too. `TypedEndpoints` is a type constraint, so it
+  targets the scope problem the magnitude gate already mitigates, not the one that is live.
+- **The relation arm trains the wrong head.** A supervised `deaths_in(value, place)` is
+  *satisfied by the contaminating pair*: Katrina's 1400 beside "North Carolina" is a
+  well-typed `(value, place)` edge. A relation can fix place-pairing at best; it cannot
+  express which event owns the number. Only the event formulation carries `event_key`, which
+  is the field the EKF observation needs.
+
+**The unstated prerequisite, and the real reason "runnable" was misleading.** Every mechanism
+named above — `TypedEndpoints`, joint decode, `event_records`, the record head — is
+**boundary architecture**. The casualty extractor is a **span** model: all three
+`casualty-*.yaml` sit on `fastino/gliner2-base-v1` with no `architecture:` key, and a live run
+loads `gliner2/models/span/model.py`. Any of these routes first requires moving the casualty
+extractor onto a boundary base.
+
+**What survives, and it is the finding not the fix.** Proximity, GPE tags, record-internal
+location and admin rollup have all been tried and all failed. Rollup did what it was supposed
+to (58 keys → 21, 84% of observations in six clean streams) and per-state tracking is *still*
+catastrophic: North Carolina 5.637, Georgia with 0 of 5 values in plausible range. The reason
+is not fragmentation — national totals get filed under whichever state the article happens to
+be about. Zero-shot is close but fragile, and the fragility is still the argument for training
+over prompt-tuning: `explicit-scope` phrasing got the hard aggregate case exactly right
 (120 → North Carolina, 17 → Tennessee, correctly *excluding* the national 227) while two other
 phrasings of the same request, same model, same text, got it wrong.
+
+Note also that attachment is **not** "solved" by the gate: [[EKF_MHT_DESIGN]] §25.6 records a
+9x win on Helene but a **2.3x loss on the clean held-out stream**. It is a stopgap with a
+measured cost, which is an argument for trained binding rather than for complacency.
 
 ---
 
 ## P1 — known-wrong
 
 ### 2. Cross-event contamination — now the top real defect
+> **Gated by item 0 (2026-08-17).** This is the live bottleneck, but the probe that would
+> score any fix is unsound — it counts a copied casualty number as a caught cross-event.
+> Fix the readout first; otherwise a training arm cannot be told from an artifact.
+
 Whole-article reading via `extract_long` surfaced streams for `poland`, `bosnia`,
 `afghanistan`, `iran`, `japan`, `ukraine`, `cameroon` — casualty figures lifted from unrelated
 stories sharing an article body.
