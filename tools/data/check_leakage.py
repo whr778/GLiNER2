@@ -160,24 +160,26 @@ def main() -> None:
     print(f"scanning {len(paths)} non-empty files matching {args.pattern!r}\n")
     keys, counts = load(paths)
 
-    print("=== WITHIN corpus: train vs val/test")
+    print("=== WITHIN corpus: every split pair")
     by_corpus = defaultdict(dict)
     for path in paths:
         by_corpus[corpus_of(path)][split_of(path)] = path
     dirty_within = 0
+    # val n test matters as much as train n anything: val selects the checkpoint
+    # that test then scores, so an overlap makes the blind test partly a re-read of
+    # the selection set. This loop checked only train-vs-{val,test} and so reported
+    # docee clean on the pair where it shares 26 documents. gate_config already
+    # covered all three pairs; the per-corpus scan did not.
     for corpus, splits in sorted(by_corpus.items()):
-        train = splits.get("train")
-        if not train:
-            continue
-        for other in ("val", "test"):
-            if other not in splits:
+        for a, b in (("train", "val"), ("train", "test"), ("val", "test")):
+            if a not in splits or b not in splits:
                 continue
-            shared = keys[train] & keys[splits[other]]
+            shared = keys[splits[a]] & keys[splits[b]]
             if len(shared) >= args.min_overlap:
                 dirty_within += 1
-                n_other = len(keys[splits[other]])
-                print(f"  LEAK {corpus}: train n {other} = {len(shared)} "
-                      f"({len(shared) / max(n_other, 1):.1%} of {other})")
+                n_b = len(keys[splits[b]])
+                print(f"  LEAK {corpus}: {a} n {b} = {len(shared)} "
+                      f"({len(shared) / max(n_b, 1):.1%} of {b})")
     if not dirty_within:
         print("  none")
 

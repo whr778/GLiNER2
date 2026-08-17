@@ -62,6 +62,20 @@ def clean_text(s: str) -> str:
     return unicodedata.normalize("NFKC", s).translate(_LINE_SEPARATORS)
 
 
+def normalize_group_key(s: str) -> str:
+    """Return the document key two rows must share to land in the same split.
+
+    The SAME rule the contamination checks use (``tools/data/check_leakage.py``,
+    ``gliner2.training.split_hygiene``). Grouping on the raw string instead left
+    texts differing only in case or whitespace with different group keys but the
+    same document key -- they scattered across splits and were then flagged as
+    contamination. Measured: events_biotech still leaked 123 documents
+    train->val after grouping was added, purely from this mismatch.
+    """
+    normalized = unicodedata.normalize("NFKC", str(s)).casefold()
+    return _WHITESPACE.sub(" ", normalized).strip()
+
+
 def normalize_record(obj):
     """Recursively normalize every string in a nested JSON-like structure.
 
@@ -207,10 +221,8 @@ class SplitWriter:
             # they scattered across splits and were then flagged as contamination.
             # Measured: events_biotech still leaked 123 documents train->val after
             # grouping was added, purely from this mismatch.
-            normalized = unicodedata.normalize("NFKC", str(group)).casefold()
-            normalized = _WHITESPACE.sub(" ", normalized).strip()
             digest = hashlib.sha1(
-                f"{self._seed}:{normalized}".encode("utf-8")
+                f"{self._seed}:{normalize_group_key(group)}".encode("utf-8")
             ).digest()
             x = int.from_bytes(digest[:8], "big") / float(1 << 64)
         for i, threshold in enumerate(self._cum):

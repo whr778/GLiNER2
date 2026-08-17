@@ -28,6 +28,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
+from _split import normalize_group_key
+
 
 SPLIT_NAMES: Tuple[str, str, str] = ("train", "test", "val")
 
@@ -88,20 +90,44 @@ def stratified_split(
     ratios: Tuple[float, float, float] = (0.8, 0.1, 0.1),
     seed: int = 42,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Greedy multi-label stratification.
+    """Greedy multi-label stratification, grouped by document.
 
     Returns three lists in ``(train, test, val)`` order whose total length
     equals ``len(records)``.
+
+    **The unit placed is the document, not the row.** Records sharing an
+    ``input`` text (under :func:`normalize_group_key`, the rule the leakage
+    checks use) are placed together, so a document appearing more than once
+    cannot straddle a split boundary. Routing per row instead put 150 duplicate
+    DocEE documents into more than one split, leaking 56 records train->val and
+    12 into the blind test. ``SplitWriter`` already grouped this way; this is
+    the same fix for the converters that stratify in memory instead.
+
+    Ratios are therefore satisfied in documents. With near-unique corpora that
+    is the same thing; with duplicated ones it is the correct unit anyway.
     """
     rng = random.Random(seed)
-    n_records = len(records)
-    if n_records == 0:
+    if not records:
         return [], [], []
 
-    cats_per_record: List[Set[str]] = [record_categories(r) for r in records]
+    groups: List[List[Dict[str, Any]]] = []
+    by_key: Dict[str, int] = {}
+    for r in records:
+        key = normalize_group_key(r.get("input", ""))
+        idx = by_key.get(key)
+        if idx is None:
+            by_key[key] = len(groups)
+            groups.append([r])
+        else:
+            groups[idx].append(r)
+    n_groups = len(groups)
+
+    cats_per_group: List[Set[str]] = [
+        set().union(*(record_categories(r) for r in g)) for g in groups
+    ]
 
     total_counts: Counter = Counter()
-    for cs in cats_per_record:
+    for cs in cats_per_group:
         for c in cs:
             total_counts[c] += 1
     targets: Dict[str, Tuple[int, int, int]] = {
@@ -112,13 +138,13 @@ def stratified_split(
     placed_per_split: Dict[str, List[int]] = {c: [0, 0, 0] for c in total_counts}
 
     type_queue: Dict[str, List[int]] = defaultdict(list)
-    for i, cs in enumerate(cats_per_record):
+    for i, cs in enumerate(cats_per_group):
         for c in cs:
             type_queue[c].append(i)
     for c in type_queue:
         rng.shuffle(type_queue[c])
 
-    unplaced: Set[int] = set(range(n_records))
+    unplaced: Set[int] = set(range(n_groups))
     splits: List[List[Dict[str, Any]]] = [[], [], []]
 
     while unplaced:
@@ -131,7 +157,7 @@ def stratified_split(
             # whichever split is most under-filled overall.
             for idx in sorted(unplaced):
                 target_idx = min(range(3), key=lambda k: len(splits[k]))
-                splits[target_idx].append(records[idx])
+                splits[target_idx].extend(groups[idx])
             break
 
         rare = min(candidates, key=lambda c: (remaining[c], total_counts[c], c))
@@ -140,7 +166,7 @@ def stratified_split(
             type_queue[rare].pop(0)
         if not type_queue[rare]:
             continue
-        rec_idx = type_queue[rare][0]
+        grp_idx = type_queue[rare][0]
 
         placed_total = sum(placed_per_split[rare])
         if placed_total == 0:
@@ -157,9 +183,9 @@ def stratified_split(
             if gaps[split_idx] <= 0:
                 split_idx = min(range(3), key=lambda k: (len(splits[k]), k))
 
-        splits[split_idx].append(records[rec_idx])
-        unplaced.discard(rec_idx)
-        for c in cats_per_record[rec_idx]:
+        splits[split_idx].extend(groups[grp_idx])
+        unplaced.discard(grp_idx)
+        for c in cats_per_group[grp_idx]:
             placed_per_split[c][split_idx] += 1
             remaining[c] = max(0, remaining[c] - 1)
 

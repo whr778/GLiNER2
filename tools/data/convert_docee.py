@@ -24,6 +24,13 @@ input). This gives the events head some supervision at the cost of a
 two-step inference protocol (predict event_type first, then re-feed
 with the prefix); off by default.
 
+**Run ``dedupe_splits.py data/docee`` after converting.** DocEE's published
+``normal_setting/{train,dev,test}.json`` splits overlap each other — 56 train/val,
+12 train/test, 26 val/test documents, plus 84 duplicates inside a single split — and
+this converter honours them 1:1, so it reproduces that contamination faithfully on
+every run. The repair is a separate step precisely because the defect is upstream's,
+not ours; skipping it puts trained documents into the blind test.
+
 DocEE data is distributed behind a Google Drive folder linked from
 https://github.com/tongmeihan1995/docee — there is no public direct URL,
 so you must download it manually. Pass the resulting JSON file via

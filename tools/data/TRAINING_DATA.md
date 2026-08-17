@@ -86,7 +86,7 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | MAVEN | Event detection (trigger) | 2,913 | — | — | see source | [GitHub](https://github.com/THU-KEG/MAVEN-dataset) |
 | CASIE | Event extraction (cybersecurity) | 795 | 98 | 107 | see source | [GitHub](https://github.com/Ebiquity/CASIE) |
 | CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
-| DocEE | Event extraction (doc-level) | 21,966 | 2,748 | 2,771 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
+| DocEE | Event extraction (doc-level) | 21,842 | 2,721 | 2,744 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ChFinAnn | Event extraction (Chinese financial) | 25,632 | 3,204 | 3,204 | see source | [Doc2EDAG](https://github.com/dolphin-zs/Doc2EDAG) |
 | DocFEE | Event extraction (Chinese financial) | 16,420 | 1,824 | 800 | cc-by-4.0 | [GitHub](https://github.com/tongzhou21/DocFEE) |
 | DuEE 1.0 | Event extraction (Chinese) | 11,603 | 1,453 | — | see source | [LUGE](https://www.luge.ai/) |
@@ -100,6 +100,13 @@ benchmarks — keep their canonical splits (noted per corpus below).
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard).
 ACE 2005 is LDC-licensed and not generated here.
+
+DocEE counts are **post-repair** (2026-08-17). Its published
+`normal_setting/{train,dev,test}.json` splits overlap each other (56 train/val, 12
+train/test, 26 val/test, plus 84 within-split duplicates); `dedupe_splits.py` resolves
+them test > val > train, taking 21,966/2,748/2,771 -> 21,842/2,721/2,744. **The blind
+test lost 27 duplicate rows, so DocEE numbers measured before this date sit on a
+different denominator.**
 
 ‡ "see card" = the HuggingFace dataset card declares no explicit license — verify
 before redistribution. "see source" = manual-download corpora governed by their
