@@ -96,10 +96,47 @@ mid-flight.
 
 ## P0 — blocks the next experiment
 
-### 0. The cross-event readout is UNSOUND — fix it before spending a GPU-hour on item 2
+### 0. The cross-event readout was unsound — FIXED 2026-08-17 (`63249ed`), and C is dead
 
-Found 2026-08-17 while pre-checking the item-1 routes. `event_binding_probe.py` scores signal
-C as:
+**Fixed and re-measured.** Read this section for what the numbers now are; the diagnosis
+below is kept because it explains why the published ones cannot be reused.
+
+Three arms, 104 observations, current code, CPU. `C` is now validated; `C-raw` is the old
+unsound scoring, retained as a diagnostic:
+
+| model | arch | A | B | **C** | C-raw | cross-event binding coverage |
+|---|---|--:|--:|--:|--:|---|
+| `fastino/gliner2-base-v1` | span | 3/11 @ 53.0% | 3/11 @ 50.6% | **3/11 @ 30.1%** | 3/11 @ 36.1% | ours 7, competitor 3, unbound 1 |
+| `gliner2-base-v1-casualty-docee` | span | 3/11 @ 19.3% | 3/11 @ 15.7% | **0/11 @ 2.4%** | 7/11 @ 37.3% | **rejected 7**, ours 2, unbound 2 |
+| `gliner2-warmstart-natural-clean` | boundary | 6/11 @ 77.1% | 4/11 @ 63.9% | **0/11 @ 0.0%** | 0/11 @ 1.2% | **unbound 11** |
+
+**Three readings, none of them good for signal C:**
+
+1. **The casualty-docee "9/11 win" was 100% artifact** — 0/11 once bindings must name an
+   event. Its 7 rejected cross-event cases are `raw='230'`, `raw='1,400'`, `raw='250'`.
+2. **The boundary arm binds nothing** — 11/11 unbound. Note it scores `0/11 @ 0.0% FP`,
+   which under the old table reads as *perfect precision*. This is exactly why the coverage
+   table exists.
+3. **The only model that binds sanely gets it confidently wrong.** `fastino` binds *ours*
+   (Helene) for **7 of 11** cross-event cases. The failure is not uncertainty that a
+   threshold could recover — it asserts the wrong event.
+
+**So C via the structure/record path is dead on every model available.** Best is 3/11 at
+30.1% FP, unshippable, which agrees with §27.2's conclusion even though its numbers do not
+reproduce. What this does *not* refute is the item-1 event-formulation hypothesis: none of
+these three was trained events-form, so the training arm remains untested — but it now has
+an honest floor to beat, and a working instrument to beat it with.
+
+**New prerequisite this surfaced.** The boundary base fills fields at ~0 on real wire copy
+(separately measured: `location` 1/14, `event` 0/11 over 40 Helene windows, versus 26/33 and
+20/21 for the domain-adapted span model). Its record head was trained on synthetic templated
+casualty text. Any events-form arm trained on a boundary base inherits that domain gap and
+will be unmeasurable for the same reason this arm was — so the conversion has to carry real
+contexts, `casualty-docee` style, not just a reformat of `casualty_multi_loc`.
+
+---
+
+**The diagnosis, kept for provenance.** `event_binding_probe.py` scored signal C as:
 
 ```python
 "C bound event is a competitor": bool(r["bound"]) and not OURS.search(r["bound"])
@@ -130,13 +167,12 @@ Two more defects in the same function:
 - **The fallback is unsound.** `if bound is None and recs: bound = recs[0]["event"]` attributes
   the *first* record's event to a span that did not match any record.
 
-**Fix before measuring anything else:** require `bound` to be a span the event schema also
-found (intersect with `events`), drop the `recs[0]` fallback, and report "no binding"
-separately from "bound a competitor" — the boundary arm above is 0/11 because it bound
-nothing, which the current table cannot distinguish from 0/11 because it bound correctly.
-
-Cheap, and it gates everything downstream: a 2-GPU-hour training arm read with this
-instrument cannot tell success from a field-copying artifact.
+**All three fixed in `63249ed`:** `validate_binding()` requires the bound string to name an
+event the event schema also found (and rejects purely numeric strings); the `recs[0]`
+fallback is gone; and a coverage table separates competitor / ours / rejected / unbound.
+`validate_binding` is unit-tested against all three observed artifacts. The two fixes moved
+the false-positive rate independently — on `fastino`, dropping the fallback took C-raw
+44.6% → 36.1%, and validation took it to 30.1%, while catches never left 3/11.
 
 ### 1. Number-to-place attachment — DEMOTED to P2 on 2026-08-17; see item 2 for the live defect
 
