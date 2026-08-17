@@ -96,6 +96,41 @@ mid-flight.
 
 ## P0 — blocks the next experiment
 
+### -1. `eval_metrics.py` CANNOT SCORE `json_structures` — every casualty model is affected
+
+Found 2026-08-17 during the Track A run, and it is the most consequential thing that run
+produced. `gliner2/training/eval_metrics.py` builds gold/pred sets for exactly six families:
+
+```
+_gold_entity_set  _gold_relation_set  _gold_event_trigger_set
+_gold_event_type_set  _gold_event_argument_set  _gold_classification_pairs
+```
+
+There is **no structure/record scorer**. `casualty_loc_split` is 100% `json_structures`, so
+the evaluator found nothing it could score and the entire 36-minute run emitted **one**
+metric key: `eval_loss`. Verified by scanning the log for `eval_[a-z_]+` — one match.
+
+**Consequence, and it is not confined to Track A.** With no F1 available, `metric_for_best`
+can only be `eval_loss`, and on this corpus it *latched at epoch 1*: one "New best
+eval_loss: 82.1840" and never again, while train loss fell **35.16 → 4.50** over six
+epochs. `best/` was therefore the epoch-1 model — confirmed by mtime, written 6 minutes
+into a 36-minute run. Measured cost of trusting it (40 Helene windows):
+
+| checkpoint | location filled | event filled |
+|---|--:|--:|
+| `best/` (epoch 1, what the selector chose) | 43/48 | 17/25 |
+| `checkpoint-epoch-6` (what training actually produced) | **51/54** | **30/36** |
+
+Every casualty model ever trained — `casualty_ft`, `casualty_multi`, `casualty_docee`, and
+the `casualty-docee` checkpoint the EKF pipeline runs in production — used the same selector
+on a corpus the evaluator cannot score. Whether they latched as early is unknown; their logs
+are gone. This is the same failure class as the MAVEN Tier 2 "+0.049 win".
+
+**Fix:** add a structure/record scorer emitting `eval_structure_strict_micro_f1`, then
+re-select both Track A and its `casualty-docee` baseline on it. Until then, no casualty
+checkpoint selection can be trusted, and the readouts in item 0 and item 1 below are the
+missing metric computed by hand.
+
 ### 0. The cross-event readout was unsound — FIXED 2026-08-17 (`63249ed`), and C is dead
 
 **Fixed and re-measured.** Read this section for what the numbers now are; the diagnosis
@@ -173,6 +208,45 @@ fallback is gone; and a coverage table separates competitor / ours / rejected / 
 `validate_binding` is unit-tested against all three observed artifacts. The two fixes moved
 the false-positive rate independently — on `fastino`, dropping the fallback took C-raw
 44.6% → 36.1%, and validation took it to 30.1%, while catches never left 3/11.
+
+### 0b. TRACK A RAN 2026-08-17 — location supervision WORKS, and Track B is warranted
+
+`casualty-loc-split.yaml` on a Lambda GH200, `fastino/gliner2-base-v1` + `casualty_loc_split`,
+one variable against `casualty-docee.yaml` (the corpus). **Crashed at 79%** — step 4,719 of
+5,936, epoch 6.3 — with `FloatingPointError: 1 non-finite micro-batch loss(es) were zeroed`
+(`trainer.py:1280`). That is `fp16` overflowing. `checkpoint-epoch-6` was on disk and train
+loss had plateaued (5.81 → 4.74 → 4.50), so the readout uses epoch 6. **The arm is therefore
+6 epochs against the baseline's 8 — a real if small confound, stated not hidden.**
+
+**Binding, via the fixed probe, 104 observations:**
+
+| model | C catches | C false pos | what it binds |
+|---|--:|--:|---|
+| `fastino/gliner2-base-v1` | 3/11 | 30.1% | event names |
+| `casualty-docee` (no location supervision) | 0/11 | 2.4% | **the casualty number** |
+| **Track A, epoch 6** | **3/11** | **9.6%** | **event names** |
+
+**The finding: location supervision fixes the field-semantics collapse.** `casualty-docee`
+answers an `event` query with a number — the numeric-field collapse `_locate_place`'s
+docstring predicted. The Track A model binds `Hurricane Helene`, `Hurricane Katrina`,
+`Georgia`. Same catch rate as the base model at **a third of the false positives** (30.1%
+→ 9.6%), and it correctly binds Katrina's 1,400 to `Hurricane Katrina`.
+
+Location fill also passed its pre-registered gate comfortably: **51/54** against the
+baseline's 26/33, on more records (54 vs 33).
+
+**What it does NOT show.** Catches are still 3/11, unshippable as a detector. And the 11 is
+contaminated: §27.2 established that six of the `230`s are mislabelled — they bind
+`Hurricane Helene` because Helene's toll genuinely reached 230, so they are *correct*
+predictions counted as misses. The real denominator is nearer 5. The model also binds
+non-events (`the election`), so precision is better, not good.
+
+**Verdict: positive, so Track B is warranted** — supervision changed binding behaviour in
+the right direction in the cheapest possible setting. Before spending on Track B, fix
+item -1: a 6-epoch-vs-8-epoch comparison selected on an unscoreable metric is not a
+foundation to build the expensive arm on.
+
+Model: `whr778/gliner2-base-v1-casualty-loc-split` (private, epoch 6).
 
 ### 1. Number-to-place attachment — DEMOTED to P2 on 2026-08-17; see item 2 for the live defect
 

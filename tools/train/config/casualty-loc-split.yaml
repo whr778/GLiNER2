@@ -109,3 +109,19 @@ data:
   corpora:
     - data/casualty_loc_split
   event_files: {}
+
+# RESULT 2026-08-17 (Lambda GH200, ~$2.15). Ran 79% then crashed: step 4,719/5,936, epoch
+# 6.3, FloatingPointError "1 non-finite micro-batch loss(es) were zeroed" -- fp16 overflow.
+# Readout uses checkpoint-epoch-6 (train loss had plateaued 5.81 -> 4.74 -> 4.50), so this
+# arm is 6 epochs against casualty-docee's 8. Small confound, stated not hidden.
+#   location fill  51/54  (gate was >= 26/33 -- PASSED, on more records: 54 vs 33)
+#   binding        3/11 catches @ 9.6% FP, vs the base model's 3/11 @ 30.1%
+#   and it binds EVENT NAMES, where casualty-docee answered an `event` query with the number
+# Pushed: whr778/gliner2-base-v1-casualty-loc-split (private, epoch 6).
+#
+# Two defects this run exposed, both in TODO items -1 and 0b:
+#   - eval_metrics.py scores no json_structures, so eval_loss is the ONLY selector here and
+#     it latched at epoch 1; `best/` is a 6-minute model. Do not trust `best/` for this or
+#     any casualty run until a structure scorer exists.
+#   - fp16 is marginal for this recipe. bf16 would likely survive, but changing it breaks
+#     comparability with casualty-docee -- change it for BOTH arms or neither.
