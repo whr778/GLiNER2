@@ -520,6 +520,7 @@ datasets:
     tasks: structured extraction (json_structures, multi-instance)
     license: see source
     hf_id: null
+    hf_jsonl: whr778/casualty_docee
     source_url: null
     language: [en]
     description: "Realistic counterpart of casualty_multi. Synthetic stream trajectories (exact ground truth) are paired with REAL DocEE contexts -- actual event types and place names from 6,929 annotated articles -- and realized by claude-sonnet-5, so each stream reads as a different real disaster in a named place instead of a templated earthquake in 'the region'. Magnitudes are rescaled per event type (scale_streams_to_type.py) because the generator's single large-disaster regime made 80% of type pairings implausible (a road crash peaking at 52,447). Split at the STREAM level so no incident straddles train/val/test."
@@ -556,6 +557,7 @@ datasets:
     tasks: structured extraction (json_structures, multi-instance)
     license: see source
     hf_id: null
+    hf_jsonl: whr778/casualty_multi
     source_url: null
     language: [en]
     description: "Multi-event counterpart of casualty_ft for the EKF/MHT streaming line. Built by datasets/disaster_streams/build_multievent_corpus.py from the sonnet5 TRAIN streams only: each document concatenates 1-4 snippets drawn from DIFFERENT streams and carries one casualty_report instance per snippet (29,030 docs / 67,799 instances, mean 2.34). Values are located within their own snippet's slice and dropped when ambiguous across the document, so no instance is labelled with another event's number. Exists because casualty_ft is 100% single-instance, which trained the count head to always predict 1 and collapsed value binding to 0.369 on multi-event text."
@@ -565,6 +567,43 @@ datasets:
     tasks: structured extraction (json_structures)
     license: see source
     hf_id: null
+    hf_jsonl: whr778/casualty_ft
     source_url: null
     language: [en]
     description: "Locally generated casualty_report structure corpus for the EKF/MHT streaming line. Built by datasets/disaster_streams/build_finetune_corpus.py from Claude Sonnet 5 realizations of synthetic disaster streams; each report snippet becomes one instance whose roles carry the ground-truth figure verbatim as it appears in the text (comma form preserved), training the extractor to bind numbers to roles."
+  casualty_loc_split:
+    name: Multi-event casualty corpus with location, leak-free splits
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/casualty_loc_split
+    source_url: null
+    language: [en]
+    description: "casualty_multi_loc rebuilt with train/val/test rather than train only, for the Track A gate (does location supervision fix number-to-place binding on real news?). Built 2026-08-17 by build_multievent_corpus.py from disaster_streams_docee250 + contexts250.json with --stream-start/--stream-end at 0/200/225/250, so streams are disjoint across splits and no incident straddles one. 23,239 / 2,878 / 3,201 documents, mean 2.48 instances per document, location located 93% (absent gets no location rather than a guess). SPLIT CAVEAT, declared not hidden: documents are unique and streams disjoint, but place STRINGS recur across splits -- 57.2% of test documents name a place also seen in train -- because different streams draw the same DocEE place from a pool of 249 over 250 streams. Accepted deliberately: the leak unit is the incident, incidents are disjoint, and a recurring place carries different figures in each split."
+  casualty_multi_loc:
+    name: Multi-event casualty corpus with gold location field
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/casualty_multi_loc
+    source_url: null
+    language: [en]
+    description: "casualty_docee carrying a gold `location` field per instance, added because a numeric-only schema collapses -- asked for a location the casualty fine-tune returns the number. Location is located verbatim in 84.7% of snippets, +8.3% by component, 7.0% absent (absent gets no location rather than a guess). TRAIN SPLIT ONLY, and consumed by build_warmstart_mix.py as one of two STRUCTURE_DEFAULT corpora; use casualty_loc_split where val/test are needed."
+  casualty_natural:
+    name: Casualty records, record mode = natural
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/casualty_natural
+    source_url: null
+    language: [en]
+    description: "Casualty records declaring record_metadata mode=natural, the anchored arm of the record-mode A/B (anchor defaults to the first declared field, a casualty figure). Train split only. Declaring a mode is not cosmetic on the boundary architecture: without record_metadata the record path is never supervised, which is why an earlier run produced correct multi-instance records with location empty every time."
+  casualty_anchorless:
+    name: Casualty records, record mode = anchorless
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/casualty_anchorless
+    source_url: null
+    language: [en]
+    description: "The anchorless counterpart to casualty_natural: byte-identical with record_metadata stripped, verified by content hash, so the mode is the only variable. The losing arm -- 1/9 instances and 0/9 location fills against 7/9 and 6/9 for the natural arm on identical data. Retained because the result is informative: a casualty record genuinely has a natural anchor (the figure itself), so removing it leaves nothing to key instances on. Train split only."

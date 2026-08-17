@@ -90,6 +90,36 @@ Feeds and ground truth live under the committable `datasets/` tree, not the git-
 (`whr778/gliner2-base-v1-casualty-docee` and friends) are on the Hub; the viewer's
 `backend/models.json` carries the full list if you want to swap one in.
 
+### On the Hub
+
+Everything here is mirrored to **private** Hub dataset repos (needs `HF_TOKEN`).
+Real-event evaluations are **split into two repos each** — derived artifacts separate from
+archived source pages, so the derived half can be shared without the news copy riding along
+on the same visibility toggle.
+
+| local | Hub repo | contents |
+|---|---|---|
+| `datasets/disaster_streams*` | `whr778/ekf-disaster-streams[-sonnet5\|-docee\|-docee250\|-scaled\|-scaled250\|-hard\|-model\|-model-ft]` | synthetic streams, all variants |
+| `datasets/casualty_multi_muted` | `whr778/ekf-casualty-multi-muted` | muted-interference control |
+| `datasets/ekf_showcase` | `whr778/ekf-showcase-feeds` | the feeds and tracker outputs |
+| `datasets/rams_baseword` | `whr778/rams-baseword` | RAMS lemma variants + duplicate control |
+| `datasets/venezuela_2026` | `whr778/ekf-venezuela-2026` | the blind holdout; text-free by design |
+| `datasets/helene2024` | `whr778/ekf-helene2024` | ground truth, rollup, tracker output — **article text removed** |
+| `datasets/helene2024/_cache` | `whr778/ekf-helene2024-raw` | archived source pages |
+| `datasets/turkey2023` | `whr778/ekf-turkey2023` | pre-registration, results, ground truth, 12 tracker arms — **article text removed** |
+| `datasets/turkey2023/_cache` | `whr778/ekf-turkey2023-raw` | archived source pages |
+
+The `-raw` repos hold third-party news pages retrieved from the Wayback Machine, kept so the
+measurements reproduce. Copyright stays with the publishers; they are a private research
+cache, not for redistribution. The derived repos carry `text_chars` where a `text` field was
+removed, so the omission is explicit rather than silent.
+
+Training corpora (`data/*.jsonl`) are separate and **fetch themselves**: the registry entry
+carries `hf_jsonl: whr778/<corpus>` and `tools/train/train.py::_fetch_if_missing` pulls any
+missing split by basename. Wired for `casualty_loc_split`, `casualty_docee`,
+`casualty_multi_loc`, `casualty_multi`, `casualty_ft`, `casualty_natural` and
+`casualty_anchorless` — so a fresh GPU box needs `HF_TOKEN` and nothing else.
+
 ## Related
 
 - `../events_working_papers/EKF_MHT_DESIGN.md` — the design, the decisions, and the results

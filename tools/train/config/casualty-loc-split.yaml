@@ -16,7 +16,10 @@
 # cannot say whether location supervision helps or hurts. This arm holds everything but
 # the corpus fixed against casualty-docee.yaml -- the ONLY difference is `data.corpora`.
 #
-# Corpus. `casualty_loc_split`, built 2026-08-17 by:
+# Corpus. `casualty_loc_split` -- FETCHED AUTOMATICALLY. The registry carries
+# `hf_jsonl: whr778/casualty_loc_split`, so train.py pulls any missing split from the
+# private Hub repo under its exact basename; a fresh GPU box needs no rsync, only
+# HF_TOKEN in the environment. To rebuild locally instead, it was built 2026-08-17 by:
 #   datasets/disaster_streams/build_multievent_corpus.py
 #     --data datasets/disaster_streams_docee250 --split train
 #     --contexts datasets/disaster_streams/contexts250.json
