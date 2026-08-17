@@ -74,13 +74,18 @@ training:
   task_lr: 3.0e-4
   warmup_ratio: 0.05
   scheduler_type: cosine_restarts
-  bf16: false
-  fp16: true                 # DeBERTa-v3 / eager attention: the sec 20 recipe, held fixed
-                             # against casualty-docee.yaml so the corpus is the only variable.
+  bf16: true
+  fp16: false                # bf16 since 2026-08-17: the fp16 run CRASHED at 79%
+                             # with a non-finite micro-batch loss. bf16's wider
+                             # exponent range is the fix, and it is changed on BOTH
+                             # arms together so the comparison still holds.
   max_grad_norm: 1.0
   eval_strategy: epoch
-  metric_for_best: eval_loss
-  greater_is_better: false
+  # Was eval_loss, which on a structures-only corpus is the ONLY key the
+  # evaluator emitted -- it latched at epoch 1 and picked a 6-minute model.
+  # eval_metrics.py can score json_structures since fb456e4.
+  metric_for_best: eval_structure_strict_micro_f1
+  greater_is_better: true
   save_best: true
   save_total_limit: 3
   logging_steps: 20
