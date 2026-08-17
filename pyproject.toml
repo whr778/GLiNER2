@@ -75,6 +75,10 @@ local = [
 ]
 
 [tool.pytest.ini_options]
+# tests/ is not a package, but conftest.py imports `tests.fixtures`, so the repo
+# root must be importable. Without this, plain `pytest` dies at collection with
+# ModuleNotFoundError: No module named 'tests' and only `python -m pytest` works.
+pythonpath = ["."]
 markers = [
     "slow: end-to-end tests that load or download models or are otherwise slow",
     "quality: checkpoint-dependent inference quality expectations",

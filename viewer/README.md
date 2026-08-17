@@ -178,6 +178,27 @@ Relative paths resolve against the repo root; `~` and absolute paths work — so
 you can point the viewer at data/models anywhere. `GLINER2_MODEL` still overrides
 `default_model`. `GET /health` reports the resolved `data_root`/`models_root`.
 
+### Model list
+
+The combobox merges three sources: the server default, anything auto-discovered
+under `models_root` (`**/best`), and a saved registry at
+`viewer/backend/models.json` (git-ignored, written by the Model Manager UI and
+by `POST /models`).
+
+`viewer/backend/models.example.json` holds the **49 published checkpoints** —
+every `whr778/*` model on the Hub plus the Fastino bases. Copy it to seed the
+registry:
+
+```bash
+cp viewer/backend/models.example.json viewer/backend/models.json
+```
+
+Without this you only get the default plus local checkpoints, which means the
+casualty models the EKF panel needs are not selectable. Labels are family-prefixed
+(`casualty:`, `boundary:`, `warmstart:`, `scaling:`, `tier2:`) so the list sorts
+into groups; `../tools/events_working_papers/MODEL_LINEAGE.md` says which config
+trained each one.
+
 <details>
 <summary>Or run the two services by hand</summary>
 
@@ -215,6 +236,32 @@ offers:
 }
 ```
 
+## EKF tracking panel
+
+The viewer also drives the **event-tracking** line, not just single-document
+extraction: a time-ordered news feed in, a tracked casualty timeline out. The
+backend imports `tools/ekf_showcase/run_pipeline.py` directly, so the panel and
+the CLI run the *same* code — see `tools/ekf_showcase/README.md`.
+
+Pick a feed, pick the models, press run. Four stages: **gate** (is this a
+mass-casualty report?) → **event** (type + "Casualties and Losses" spans) →
+**extract** (bind numbers to `{dead, injured, missing}`) → **track** (EKF plus a
+`last_value` baseline).
+
+Feeds are auto-discovered from `datasets/ekf_showcase/*.jsonl`, then
+`datasets/*.jsonl`. A file qualifies if its first record has `t_hours` and
+`text`; a sibling `<stem>.truth.jsonl` is picked up as ground truth
+automatically.
+
+A run takes **minutes**, well past any sensible request timeout, so `POST
+/ekf-track` returns a job id immediately and the frontend polls
+`GET /ekf-track/{job_id}` for stage, progress and log lines.
+
+Defaults mirror the CLI: gate `fastino/gliner2-base-v1`, casualty
+`whr778/gliner2-base-v1-casualty-docee`, `normalizer: hybrid`,
+`window: article`, `device: cpu`. **CPU is deliberate** — MPS is 3-4x *slower*
+for many-label event extraction, because the per-op sync overhead dominates.
+
 ## API (backend)
 
 | Endpoint | Body | Returns |
@@ -222,10 +269,21 @@ offers:
 | `POST /extract` | `{text, schema, options}` | `{text, result}` (flat task-keyed dict) |
 | `POST /import-url` | `{url}` | `{text}` (article text via trafilatura) |
 | `GET /presets` | — | `{presets: [{name, schema, source}]}` |
+| `GET /models` | — | `{models: [{path, label, source}]}` — default, saved, discovered |
+| `POST /models` | `{path, label}` | adds a saved model entry |
+| `DELETE /models` | `{path}` | removes a saved entry (saved only) |
+| `GET /model-schema` | `?model=` | the ontology a checkpoint expects |
+| `GET /ekf-feeds` | — | `{feeds: [{path, articles, truth}]}` |
+| `POST /ekf-track` | `EkfRequest` | `{job_id, ...}` — starts an async run |
+| `GET /ekf-track/{job_id}` | — | `{stage, done, total, log, result}` |
 | `GET /health` | — | `{status, default_model, loaded_models}` |
 
 `options`: `threshold`, `chunk_size`, `chunk_overlap`, `global_decode`,
 `beam_width`, `model`.
+
+`EkfRequest`: `feed` (required), `truth`, `gate_model`, `casualty_model`,
+`event_model`, `window`, `normalizer`, `gate_threshold`, `event_threshold`,
+`grid_step`, `device`, `limit`.
 
 ## Deploy as a webapp
 

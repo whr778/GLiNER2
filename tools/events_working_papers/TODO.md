@@ -889,14 +889,34 @@ are event metrics on RAMS, which carries no descriptions.
 
 ## Notes for whoever picks this up
 
-- **`pytest tests/models/boundary tests/processing` as ONE process stalls at ~49%, and it
-  predates this work.** Every file passes individually and in chunks (239 boundary + 55
-  processing + 29 trainer). Attribution was confirmed by running the suite from a worktree at
-  `f0925d1`: it stalls at the same point there. Import precedence is **cwd → PYTHONPATH →
-  editable finder**, so `cd <worktree>` is sufficient to load the pre-change library —
-  verified by printing `gliner2.__file__` and confirming `guide.py` is absent. *Which* test
-  hangs is still undiagnosed; that needs the full suite in one process, which wants a machine
-  not already holding a 15GB job. Run tests in chunks meanwhile.
+- **RESOLVED (2026-08-17): the "~49% stall" is not a hang — it is one 6.5-minute test.**
+  `test_public_api_e2e_real_deberta.py::test_boundary_public_api_lifecycle_real_deberta`
+  takes **390.5s standalone and passes** (`--durations`), and it lands at the 52% mark in the
+  combined run. There is no deadlock and no cross-test pollution: the suite was simply sitting
+  in a slow test with no timeout, on a machine also holding a 15GB job.
+
+  Four tests carry `@pytest.mark.slow`, all real-DeBERTa; three exceed 120s. They are slow
+  because `DebertaV2Model` rejects `sdpa` and falls back to **eager** attention (the loader
+  warns), so a real training loop runs unaccelerated on CPU.
+
+  **Run this and the problem disappears** — the whole suite in ONE process, no chunking:
+
+  ```
+  uv run pytest tests/models/boundary tests/processing -m "not slow" --timeout=120
+  ```
+
+  → **328 passed, 4 skipped, 4 deselected in ~30s.** With the slow tests included it is
+  454s and the three time out. Keep `--timeout` on in CI so a slow test reports as a failure
+  with a stack instead of looking like a hang.
+
+  Diagnosis cost one command; `pytest-timeout>=2.1` was already in the dev group. The earlier
+  note that this "needs a machine not already holding a 15GB job" was wrong — you never needed
+  the suite to *finish*, only to hang, which it already did reliably.
+
+  Two things fixed on the way: `pythonpath = ["."]` is now set in `pyproject.toml`, because
+  `tests/` is not a package while `tests/conftest.py` imports `tests.fixtures` — plain
+  `pytest` used to die at *collection* with `ModuleNotFoundError: No module named 'tests'`
+  and only `python -m pytest` worked. Both invocations work now.
 
 - **Summarizer-as-segmenter was tested and is not the answer** (`bullet_premise_test.py`).
   Hand-written bullets on 5 real Helene sentences, rollup-aware scoring: raw text 3/5 with

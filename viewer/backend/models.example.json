@@ -1,0 +1,198 @@
+[
+  {
+    "path": "whr778/gliner2-base-v1-casie",
+    "label": "base-v1: casie"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-docee",
+    "label": "base-v1: docee"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-rams",
+    "label": "base-v1: rams"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-redocred",
+    "label": "base-v1: redocred"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-synthetic",
+    "label": "base-v1: synthetic"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-100k",
+    "label": "boundary: mmbert-100k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-10k",
+    "label": "boundary: mmbert-10k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-137k",
+    "label": "boundary: mmbert-137k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-40k",
+    "label": "boundary: mmbert-40k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-rams-100k",
+    "label": "boundary: rams-100k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-rams-10k",
+    "label": "boundary: rams-10k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-rams-137k",
+    "label": "boundary: rams-137k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-rams-40k",
+    "label": "boundary: rams-40k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-redocred-100k",
+    "label": "boundary: redocred-100k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-redocred-10k",
+    "label": "boundary: redocred-10k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-redocred-137k",
+    "label": "boundary: redocred-137k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-redocred-40k",
+    "label": "boundary: redocred-40k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-warmstart-natural",
+    "label": "boundary: warmstart-natural"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty",
+    "label": "casualty: base"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-docee",
+    "label": "casualty: docee"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-multievent",
+    "label": "casualty: multievent"
+  },
+  {
+    "path": "whr778/deberta-base-fromenc-synthetic",
+    "label": "deberta: fromenc-synthetic"
+  },
+  {
+    "path": "fastino/gliner2-large-v1",
+    "label": "fastino: large-v1 (span)"
+  },
+  {
+    "path": "fastino/gliner2-multi-v1",
+    "label": "fastino: multi-v1 (span, multilingual)"
+  },
+  {
+    "path": "whr778/gliner2-large-v1-casie",
+    "label": "large-v1: casie"
+  },
+  {
+    "path": "whr778/gliner2-large-v1-docee",
+    "label": "large-v1: docee"
+  },
+  {
+    "path": "whr778/gliner2-large-v1-rams",
+    "label": "large-v1: rams"
+  },
+  {
+    "path": "whr778/gliner2-large-v1-redocred",
+    "label": "large-v1: redocred"
+  },
+  {
+    "path": "whr778/gliner2-large-v1-wikievents",
+    "label": "large-v1: wikievents"
+  },
+  {
+    "path": "whr778/mmbert-base-combined",
+    "label": "mmbert: combined"
+  },
+  {
+    "path": "whr778/mmbert-base-combined-wikievents",
+    "label": "mmbert: combined-wikievents"
+  },
+  {
+    "path": "whr778/mmbert-base-rams",
+    "label": "mmbert: rams"
+  },
+  {
+    "path": "whr778/gliner2-multi-v1-cmnee",
+    "label": "multi-v1: cmnee"
+  },
+  {
+    "path": "whr778/gliner2-multi-v1-wikiann",
+    "label": "multi-v1: wikiann"
+  },
+  {
+    "path": "whr778/scaling-mmbert-100k",
+    "label": "scaling: 100k"
+  },
+  {
+    "path": "whr778/scaling-mmbert-100k-rams",
+    "label": "scaling: 100k-rams"
+  },
+  {
+    "path": "whr778/scaling-mmbert-10k",
+    "label": "scaling: 10k"
+  },
+  {
+    "path": "whr778/scaling-mmbert-10k-rams",
+    "label": "scaling: 10k-rams"
+  },
+  {
+    "path": "whr778/scaling-mmbert-40k",
+    "label": "scaling: 40k"
+  },
+  {
+    "path": "whr778/scaling-mmbert-40k-rams",
+    "label": "scaling: 40k-rams"
+  },
+  {
+    "path": "whr778/gliner2-maven-tier2-control",
+    "label": "tier2: maven control"
+  },
+  {
+    "path": "whr778/gliner2-maven-tier2-eventrecords",
+    "label": "tier2: maven eventrecords"
+  },
+  {
+    "path": "whr778/gliner2-rams-clean-a-base137k",
+    "label": "warmstart: rams-clean-a-base137k"
+  },
+  {
+    "path": "whr778/gliner2-rams-clean-b-warmstart",
+    "label": "warmstart: rams-clean-b-warmstart"
+  },
+  {
+    "path": "whr778/gliner2-rams-clean-c-evwide2",
+    "label": "warmstart: rams-clean-c-evwide2"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-clean",
+    "label": "warmstart: warmstart-natural-clean"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-evwide2-clean",
+    "label": "warmstart: warmstart-natural-evwide2-clean"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-evwide4-clean",
+    "label": "warmstart: warmstart-natural-evwide4-clean"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-seed43-clean",
+    "label": "warmstart: warmstart-natural-seed43-clean"
+  }
+]
