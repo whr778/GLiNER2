@@ -178,6 +178,47 @@ strict / 0.9543 relaxed (support 15,187).
 
 Models: `whr778/gliner2-base-v1-casualty-{docee,loc-split}-clean` (private).
 
+### 0c. TRACK B RAN 2026-08-17 — NEGATIVE, and the corpus is the bottleneck, not the formulation
+
+`casualty-events-boundary.yaml`, A100, ~$2.30, terminated. The same documents, splits and
+figures as Track A, re-emitted as trigger + typed arguments so the loss reaches the event
+path — the formulation [[EKF_MHT_DESIGN]] §27.2 says is missing.
+
+**The run itself was clean.** 8/8 epochs, zero non-finite losses, FA2 confirmed active (0
+sdpa fallbacks — on mmBERT that is correctness, not speed). Selection re-selected
+0.3494 → 0.4973, where the Track A structure arm froze after one epoch. So the event
+formulation was still learning where the structure one had stopped.
+
+**In-domain it works.** Blind test on 2,852 documents / 14,614 argument instances:
+
+| metric | strict | relaxed |
+|---|--:|--:|
+| event_argument (the binding) | **0.5320** (P 0.673 / R 0.440) | 0.7521 |
+| event_trigger | 0.9610 | 0.9612 |
+| event_type | 0.9897 | 0.9897 |
+| event (combined) | 0.7566 | 0.8652 |
+
+Trigger and type are near-ceiling and largely **circular**: triggers were derived by
+matching a fixed per-type surface list, so the model mostly learns that list back.
+
+**On real news it produces NOTHING.** All 104 Helene windows unbound — with the eight
+trained types, and zero-shot with a `Hurricane` type. Verified against a working in-domain
+extraction on the same checkpoint in the same session, so this is transfer failure, not a
+broken probe. (An earlier reading of "zero" *was* a probe bug — the event type was given as
+`casualty_report` instead of the trained DocEE types — and was caught before being believed.)
+
+**This was predicted.** Item 0b, written before the run: *"the boundary base fills ~0 on
+real wire copy … any events-form arm trained on a boundary base inherits that domain gap
+and will be unmeasurable for the same reason."* It did, and it is.
+
+**So the Track A vs Track B comparison cannot be made.** Track A scores 3/11 @ 9.6% FP on
+these windows; Track B scores nothing at all. Taken together with Track A's positive, the
+reading is: **the formulation is not the bottleneck — the corpus is.** Synthetic-realized
+prose does not transfer to AP wire copy on the boundary/mmBERT path, while the span path
+fine-tuned from `fastino/gliner2-base-v1` does. Effort belongs in data, not architecture.
+
+Model: `whr778/gliner2-casualty-events-boundary` (private).
+
 ### 0. The cross-event readout was unsound — FIXED 2026-08-17 (`63249ed`), and C is dead
 
 **Fixed and re-measured.** Read this section for what the numbers now are; the diagnosis

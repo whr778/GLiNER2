@@ -121,3 +121,32 @@ data:
   corpora:
     - data/casualty_events
   event_files: {}
+
+# RESULT 2026-08-17 (Lambda A100, ~$2.30, terminated). Ran clean: 8/8 epochs, zero
+# non-finite losses, FA2 confirmed active (0 sdpa fallbacks), selection re-selected
+# 0.3494 -> 0.4973 where the Track A structure arm had frozen after one epoch.
+#
+# IN-DOMAIN blind test (2,852 documents, 14,614 argument instances):
+#   event_argument strict 0.5320  (P 0.6726 / R 0.4400), relaxed 0.7521
+#   event_trigger  strict 0.9610      event_type strict 0.9897      event strict 0.7566
+# Trigger and type are near-ceiling as predicted, and largely circular: triggers were
+# DERIVED by matching a fixed per-type surface list, so the model mostly has to learn
+# that list back.
+#
+# ON REAL NEWS IT PRODUCES NOTHING. All 104 Helene windows unbound, with the trained
+# types AND zero-shot with a `Hurricane` type. Verified against a working in-domain
+# extraction on the same checkpoint in the same session, so this is transfer failure and
+# not a broken probe -- an earlier reading of "zero" WAS a probe bug (event type given as
+# `casualty_report` rather than the 8 trained DocEE types) and was corrected before being
+# believed.
+#
+# So Track B is NEGATIVE on the question that mattered, and the prerequisite recorded in
+# TODO item 0b before the run predicted exactly this: "the boundary base fills ~0 on real
+# wire copy ... any events-form arm trained on a boundary base inherits that domain gap
+# and will be unmeasurable for the same reason". It was, and it is.
+#
+# The comparison against Track A therefore cannot be made: Track A scored 3/11 @ 9.6% FP
+# on these windows, Track B scores nothing at all. The formulation is not what is broken
+# -- the corpus is synthetic-realized prose and the model does not leave it.
+#
+# Model: whr778/gliner2-casualty-events-boundary (private).
