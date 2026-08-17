@@ -1,0 +1,103 @@
+# TRACK A GATE -- does LOCATION SUPERVISION fix number-to-place binding on real news?
+#
+# The question, and why this arm is the cheap way to ask it. Cross-event contamination
+# (TODO item 2) is the live defect, and the proposed fixes all assume the model must be
+# taught to bind a figure to the thing that owns it. Before moving the casualty extractor
+# to the boundary architecture and converting the corpus to events-form (Track B, ~2 GPU-h
+# plus trigger derivation), ask the same question in the cheapest possible setting: same
+# span architecture, same recipe, same base -- change ONLY whether the corpus supervises
+# `location`.
+#
+# The comparison this sets up, and the confound it removes. Measured 2026-08-17 on 40
+# Helene windows, `location` field fill:
+#   whr778/gliner2-base-v1-casualty-docee   (span, NO location supervision)  26/33
+#   whr778/gliner2-warmstart-natural-clean  (boundary, WITH location)         1/14
+# That comparison confounds architecture, mixture and head-init with the corpus, so it
+# cannot say whether location supervision helps or hurts. This arm holds everything but
+# the corpus fixed against casualty-docee.yaml -- the ONLY difference is `data.corpora`.
+#
+# Corpus. `casualty_loc_split`, built 2026-08-17 by:
+#   datasets/disaster_streams/build_multievent_corpus.py
+#     --data datasets/disaster_streams_docee250 --split train
+#     --contexts datasets/disaster_streams/contexts250.json
+#     --stream-start {0|200|225} --stream-end {200|225|250}
+# 23,239 train / 2,878 val / 3,201 test documents, mean 2.48 casualty_report instances per
+# document, location located 93% (absent gets no location rather than a guess). This is the
+# same generator and contexts as `casualty_multi_loc`, which exists as a TRAIN SPLIT ONLY
+# and is consumed by build_warmstart_mix.py -- hence a new name rather than adding splits
+# to it, which would silently change every warmstart_mix corpus.
+#
+# SPLIT INTEGRITY -- read before trusting any number from this arm.
+#   Documents:  0 duplicates within a split, 0 overlap across splits (sha1 of input text).
+#   Streams:    disjoint by construction (--stream-start/--stream-end slice sorted ids), so
+#               no incident's trajectory or figures straddle a split.
+#   Places:     NOT disjoint. 17 place strings recur across splits; 57.2% of test documents
+#               name at least one place also seen in train, 12.1% name only such places.
+#               Cause: different streams draw the same DocEE place from the pool (249
+#               distinct places over 250 streams), so recurrences are generic ones --
+#               "California", "Iraq", "Machu Picchu".
+#   Judgement:  accepted deliberately. The leak unit is the INCIDENT, and incidents are
+#               disjoint -- a recurring place carries different figures in each split, so
+#               memorising a place buys no answer. Place recurrence is also the phenomenon
+#               under study (Helene hits North Carolina repeatedly); forcing place-disjoint
+#               splits would make the test unrepresentative of the deployment it models.
+#               Stated here because the project gate is that any non-uniqueness is declared.
+#
+# PASS/FAIL, fixed before spending. Read against out/casualty-docee/best on the SAME
+# 40 Helene windows and the same probe, tools/ekf_showcase/event_binding_probe.py:
+#   location fill on real news   >= 26/33   (casualty-docee's zero-shot rate -- do not regress)
+#   binding correctness          the readout, via the fixed probe (63249ed)
+# A regression on the first line is itself the finding: it would say location supervision
+# on synthetic-realized prose actively hurts transfer to real wire copy, which is the
+# leading explanation for the boundary arm's 1/14 and would rule out Track B on this data.
+#
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-loc-split
+  experiment_name: casualty_loc_split
+  data_parallel: false
+  num_epochs: 8
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: false
+  fp16: true                 # DeBERTa-v3 / eager attention: the sec 20 recipe, held fixed
+                             # against casualty-docee.yaml so the corpus is the only variable.
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: true
+  early_stopping: false
+
+eval:
+  batch_size: 16
+  threshold: 0.5
+  threshold_sweep: true
+  global_decode: false
+  eval_by_language: false
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  corpora:
+    - data/casualty_loc_split
+  event_files: {}
