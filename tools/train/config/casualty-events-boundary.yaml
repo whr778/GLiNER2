@@ -1,0 +1,123 @@
+# TRACK B -- does the EVENT formulation bind casualty figures better than structures?
+#
+# The question. Track A showed that supervising `location` fixes the numeric-field
+# collapse on the SPAN architecture: binding false positives fell 30.1% -> 9.6% at equal
+# catches, and the model started binding event NAMES instead of copying the number. What
+# it could not test is the formulation EKF_MHT_DESIGN 27.2 actually names:
+#
+#   "Event membership is a RELATION between the span and something else in the document
+#    -- and there is no supervision for it: RECORD_TASK_TYPES is ("json_structures",), so
+#    events never reach the anchor machinery and no trained trigger->argument binding
+#    exists to exploit. The probe was asking an untrained capability to discriminate."
+#
+# This arm trains that capability. Same figures, same documents, same splits as
+# casualty_loc_split -- but emitted as trigger + typed arguments rather than as an
+# anchored record, so the loss reaches the event path. Only the event formulation carries
+# an event_key, which is the field an EKF observation needs.
+#
+# Corpus: `casualty_events`, built 2026-08-17 by
+#   build_multievent_corpus.py --emit events --streams-file <place-disjoint ids>
+#     --data datasets/disaster_streams_docee250 --contexts .../contexts250.json
+# 23,627 train / 2,666 val / 2,852 test documents, mean ~2.4 event instances per document,
+# 8 event types.
+#
+# TRIGGERS ARE DERIVED, NOT GOLD -- the single biggest caveat on this arm. DocEE supplies
+# an event TYPE, never a trigger span, so `_locate_trigger` matches a per-type surface list
+# inside the snippet's own slice (same containment guard the values use, so a trigger
+# shared with an interfering snippet is dropped rather than misattributed). Coverage was
+# measured before building: 97.6% of snippets contain one, worst type Road Crash at 8.7%
+# missing; 38 val / 115 train documents were dropped for having none. A derived trigger is
+# a weaker label than an annotated one, and a gain here is a gain over THIS trigger
+# definition.
+#
+# SPLIT INTEGRITY, verified: documents unique and 0 overlap across splits; locations
+# disjoint (0 shared strings between any pair); every one of 57,726 triggers and 124,561
+# arguments appears verbatim in its own document. val carries 7 of the 8 types -- one type
+# has no stream in the val group.
+#
+# TWO THINGS THIS ARM CANNOT SHOW, stated up front so a positive is not over-read:
+#   1. **Same-type discrimination.** The live defect (TODO item 2) is Helene-vs-Katrina --
+#      same type, different named event. This corpus has 8 TYPES and no named identities;
+#      its only in-text identity is the distractor value (a flight number, a magnitude),
+#      which exists precisely so the extractor does NOT bind it. So the corpus can teach
+#      trigger->argument binding, and cannot teach which of two hurricanes owns a number.
+#   2. **Position.** The builder always places the focal snippet first, so "extract from
+#      the first paragraph" scores well without representing event identity at all. The
+#      Helene readout is real wire copy and does not share that layout, which is the main
+#      reason to trust it over the in-domain number.
+#
+# PASS/FAIL, fixed before spending. Read on the SAME 40 Helene windows and the same fixed
+# probe (63249ed) as Track A:
+#   binding false positives   <  9.6%   (Track A's rate) at >= 3/11 catches
+#   OR catches                >  3/11   at a comparable false-positive rate
+# A null is informative: it would say the formulation is not the bottleneck and the corpus
+# is, which redirects effort to data rather than to architecture.
+#
+model:
+  # The 137k boundary base already trained events across 10 corpora, so the event head has
+  # real head-init here. This is NOT the CASIE Tier 2 setup that collapsed: that used
+  # `event_records` to push events through the RECORD head, which had never seen an event
+  # (0.0036 vs 0.2998). This arm uses the native event path the base was actually trained on.
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k
+  # attn_implementation deliberately unset: on the pretrained path it is applied after the
+  # encoder is built, so it would be a silent no-op. FA2 is inherited from the checkpoint,
+  # and on mmBERT that is a CORRECTNESS matter -- sdpa+bf16 produces non-finite losses.
+  # The `kernels` package must be installed or the encoder silently falls back to sdpa.
+  architecture: boundary
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-events-boundary
+  experiment_name: casualty_events_boundary
+  data_parallel: false
+  # 8 rather than the template's 15: the Track A arm on these same documents saturated
+  # after ONE epoch, so a long schedule is likely waste here too. The metric selects.
+  num_epochs: 8
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  # Arguments, not the combined event score: trigger and type are near-ceiling on a
+  # single-trigger synthetic corpus, so the combined number would be dominated by the
+  # parts that are not in question. Argument-strict is (event_type, role, entity,
+  # trigger_key) -- the binding itself.
+  metric_for_best: eval_event_argument_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  sliding_window: true
+  window_stride: 3072
+  max_len: 4096
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true
+  global_decode: false
+  eval_by_language: false
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  corpora:
+    - data/casualty_events
+  event_files: {}

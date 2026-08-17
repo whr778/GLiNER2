@@ -18,6 +18,10 @@
 # description (one-sentence qualitative summary for the model card).
 
 base_models:
+  whr778/gliner2-joint-boundary-mmbert-137k:
+    name: gliner2-joint-boundary-mmbert-137k
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/joint-boundary-mmbert-137k.yaml), pushed to the Hub
   whr778/gliner2-joint-boundary-rams-137k:
     name: gliner2-joint-boundary-rams-137k
     license: derived from jhu-clsp/mmBERT-base
@@ -592,6 +596,15 @@ datasets:
     source_url: null
     language: [en]
     description: "casualty_multi_loc rebuilt with train/val/test rather than train only, for the Track A gate (does location supervision fix number-to-place binding on real news?). Built 2026-08-17 by build_multievent_corpus.py from disaster_streams_docee250 + contexts250.json with --stream-start/--stream-end at 0/200/225/250, so streams are disjoint across splits and no incident straddles one. 23,239 / 2,878 / 3,201 documents, mean 2.48 instances per document, location located 93% (absent gets no location rather than a guess). SPLIT CAVEAT, declared not hidden: documents are unique and streams disjoint, but place STRINGS recur across splits -- 57.2% of test documents name a place also seen in train -- because different streams draw the same DocEE place from a pool of 249 over 250 streams. Accepted deliberately: the leak unit is the incident, incidents are disjoint, and a recurring place carries different figures in each split."
+  casualty_events:
+    name: Multi-event casualty corpus, EVENTS form
+    tasks: event extraction (trigger + typed arguments, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/casualty_events
+    source_url: null
+    language: [en]
+    description: "The same documents, splits and figures as casualty_loc_split, re-emitted as trigger + typed arguments instead of anchored json_structures records, for Track B: does the EVENT formulation bind figures better than the structure one? Built by build_multievent_corpus.py --emit events. 23,627 / 2,666 / 2,852 documents, mean ~2.4 instances, 8 event types, 57,726 triggers and 124,561 arguments all verbatim in their own document. TRIGGERS ARE DERIVED, NOT GOLD: DocEE gives a type and never a span, so _locate_trigger matches a per-type surface list inside the snippet's own slice -- 97.6% coverage, worst type Road Crash at 8.7% missing. A gain here is a gain over that trigger definition. The corpus carries 8 event TYPES and no named identities, so it can teach trigger->argument binding and cannot teach same-type discrimination (Helene vs Katrina), which is the live defect in TODO item 2."
   casualty_multi_loc:
     name: Multi-event casualty corpus with gold location field
     tasks: structured extraction (json_structures, multi-instance)

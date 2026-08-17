@@ -57,7 +57,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from gliner2.training.data import InputExample, Structure, TrainingDataset
+from gliner2.training.data import Event, InputExample, Structure, TrainingDataset
 
 ROLES = ("dead", "injured", "missing")
 
@@ -77,6 +77,40 @@ def _locate_in_slice(value: int, doc: str, lo: int, hi: int):
         hits = [m.start() for m in re.finditer(re.escape(cand), doc) if _standalone(doc, m.start(), m.end())]
         if len(hits) == 1 and lo <= hits[0] < hi:      # unique AND inside this snippet
             return cand
+    return None
+
+
+# Trigger surfaces per DocEE event type, for the events-form emission (--emit events).
+# The corpus carries NO gold trigger: DocEE gives a type, not a span. These are the words
+# the sonnet-5 realizer actually uses for each type, verified against the realized text --
+# 97.6% of snippets contain one, worst type Road Crash at 8.7% missing. Matched
+# longest-first so "went down" wins over "down", and only inside the snippet's own slice.
+TRIGGER_SURFACES = {
+    "Air Crash":        ["crash-landed", "went down", "crashed", "crash"],
+    "Armed Conflict":   ["offensive", "shelling", "fighting", "clashes", "conflict", "attack", "clash"],
+    "Fire":             ["wildfire", "burning", "burned", "blaze", "fire"],
+    "Gas Explosion":    ["detonation", "explosion", "exploded", "blast"],
+    "Mine Collapses":   ["landslide", "collapsed", "cave-in", "caved in", "collapse"],
+    "Road Crash":       ["collision", "collided", "pile-up", "accident", "crash"],
+    "Shipwreck":        ["shipwreck", "capsized", "capsize", "sinking", "wreck", "sank"],
+    "Train Collisions": ["derailment", "derailed", "collision", "collided", "crash"],
+}
+
+
+def _locate_trigger(event_type: str, doc: str, lo: int, hi: int):
+    """The trigger surface as it appears INSIDE this snippet's slice, or None.
+
+    Same containment guard as ``_locate_in_slice``: a trigger word shared with an
+    interfering snippet is dropped rather than attributed to the wrong event, so a
+    document never binds one event's arguments to another event's trigger.
+    """
+    slice_low = doc[lo:hi].lower()
+    for surface in sorted(TRIGGER_SURFACES.get(event_type, []), key=len, reverse=True):
+        idx = slice_low.find(surface)
+        if idx < 0:
+            continue
+        start = lo + idx
+        return doc[start:start + len(surface)]
     return None
 
 
@@ -161,7 +195,8 @@ def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0,
 
 
 def build(snippets, max_interference: int, seed: int, contexts: dict | None = None,
-          record_mode: str = "natural", mute_interference_prob: float = 0.0):
+          record_mode: str = "natural", mute_interference_prob: float = 0.0,
+          emit: str = "structures"):
     """Concatenated multi-event documents, one record per UNMUTED snippet.
 
     ``mute_interference_prob`` withholds an interference snippet's record while keeping
@@ -191,7 +226,7 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
     stats = {"docs": 0, "instances": 0, "located": 0, "dropped_collision": 0,
              "located_place": 0, "no_place": 0, "by_k": defaultdict(int),
              "muted_snippets": 0, "docs_with_muted": 0, "unlabelled_figures": 0,
-             "dropped_empty": 0}
+             "dropped_empty": 0, "located_trigger": 0, "no_trigger": 0}
 
     for focal in snippets:
         k = rng.randint(0, max_interference)
@@ -211,6 +246,8 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
             doc += "\n\n"
 
         structures = []
+
+        events = []
         for part, lo, hi, muted in spans:
             if muted:
                 # Text stays, record is withheld. Count only figures that are actually
@@ -247,13 +284,33 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
                 # are inserted roles-first with `location` last, so whichever casualty
                 # figure is present anchors the instance. That is the right semantics here
                 # -- a record exists because a toll was reported, not because a place was.
-                structures.append(Structure("casualty_report", mode=record_mode, **fields))
+                if emit == "events":
+                    # Events-form: the same figures, but bound to a TRIGGER rather than
+                    # anchored on a field. This is the formulation EKF_MHT_DESIGN 27.2 says
+                    # is missing -- RECORD_TASK_TYPES is ("json_structures",), so events
+                    # never reach the anchor machinery and no trained trigger->argument
+                    # binding exists to exploit.
+                    etype = (contexts.get(part["stream"]) or {}).get("event_type")
+                    trig = _locate_trigger(etype, doc, lo, hi) if etype else None
+                    if trig:
+                        events.append(Event(
+                            event_type=etype,
+                            triggers=[trig],
+                            arguments=[{"role": r, "entity": v} for r, v in fields.items()],
+                        ))
+                        stats["located_trigger"] += 1
+                    else:
+                        stats["no_trigger"] += 1
+                else:
+                    structures.append(Structure("casualty_report", mode=record_mode, **fields))
 
-        if structures:
-            examples.append(InputExample(text=doc.strip(), structures=structures))
+        payload = events if emit == "events" else structures
+        if payload:
+            examples.append(InputExample(text=doc.strip(), events=events) if emit == "events"
+                            else InputExample(text=doc.strip(), structures=structures))
             stats["docs"] += 1
-            stats["instances"] += len(structures)
-            stats["by_k"][len(structures)] += 1
+            stats["instances"] += len(payload)
+            stats["by_k"][len(payload)] += 1
             if any(m for *_, m in spans):
                 stats["docs_with_muted"] += 1
         else:
@@ -290,6 +347,11 @@ def main(argv=None) -> None:
     ap.add_argument("--contexts", default="",
                     help="contexts json; adds a gold location FIELD (heterogeneous "
                          "field types stop the numeric-field collapse)")
+    ap.add_argument("--emit", default="structures", choices=("structures", "events"),
+                    help="`structures` keeps the json_structures form. `events` emits the "
+                         "SAME figures as trigger + typed arguments, which is the only "
+                         "formulation that reaches the trigger->argument machinery "
+                         "(RECORD_TASK_TYPES is json_structures-only).")
     ap.add_argument("--streams-file", default="",
                     help="newline-delimited stream ids; overrides --stream-start/--stream-end. "
                          "Use for a PLACE-disjoint split, which a contiguous slice cannot "
@@ -306,7 +368,7 @@ def main(argv=None) -> None:
                              args.stream_start, args.stream_end, keep_streams=keep)
     contexts = json.loads(Path(args.contexts).read_text(encoding="utf-8")) if args.contexts else {}
     examples, stats = build(snippets, args.max_interference, args.seed, contexts,
-                            record_mode=args.record_mode,
+                            record_mode=args.record_mode, emit=args.emit,
                             mute_interference_prob=args.mute_interference_prob)
 
     ds = TrainingDataset(examples)
