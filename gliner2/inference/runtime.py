@@ -192,12 +192,47 @@ class ExtractorRuntimeMixin:
                 entities = schema_dict.get("entities")
                 if isinstance(entities, list):
                     schema_dict = {**schema_dict, "entities": {e: "" for e in entities}}
+                # A raw dict carrying `structures` used to pass through verbatim: the
+                # processor looks for `json_structures` and field metadata, found neither,
+                # and returned {} with no warning. Build just that key through Schema so it
+                # gets its queries and metadata, and keep every other key -- SchemaInput
+                # does not model `entity_descriptions`, so routing the whole dict through
+                # it would silently drop descriptions for the NER corpora that carry them.
+                field_metadata: Dict[str, Any] = {}
+                field_orders: Dict[str, Any] = {}
+                relation_metadata: Dict[str, Any] = {}
+                relation_order: List[str] = []
+                if schema_dict.get("structures"):
+                    from gliner2.inference.schema import Schema as _Schema
+                    built = _Schema.from_dict({"structures": schema_dict["structures"]})
+                    built_dict = built.build()
+                    schema_dict = {k: v for k, v in schema_dict.items() if k != "structures"}
+                    schema_dict["json_structures"] = built_dict.get("json_structures", [])
+                    if built_dict.get("json_descriptions"):
+                        schema_dict["json_descriptions"] = built_dict["json_descriptions"]
+                    field_metadata = built._field_metadata
+                    field_orders = built._field_orders
+                # `{"relations": ["works_for"]}` -- the plain-list form the from_dict
+                # docstring documents -- used to raise IndexError deep in
+                # `_extract_embeddings_fast`, because the bare names carry no head/tail
+                # fields and no relation metadata. Expand them the way Schema does. The
+                # already-expanded `[{name: {"head": ..., "tail": ...}}]` form (what
+                # eval_metrics builds from gold) is left alone: it works today, and
+                # SchemaInput does not model it.
+                rels = schema_dict.get("relations")
+                if isinstance(rels, list) and rels and all(isinstance(r, str) for r in rels):
+                    from gliner2.inference.schema import Schema as _Schema
+                    built_rel = _Schema.from_dict({"relations": list(rels)})
+                    rel_dict = built_rel.build()
+                    schema_dict = {**schema_dict, "relations": rel_dict.get("relations", [])}
+                    relation_metadata = getattr(built_rel, "_relation_metadata", {})
+                    relation_order = getattr(built_rel, "_relation_order", [])
                 classification_tasks = [c["task"] for c in schema_dict.get("classifications", [])]
                 entity_order = list(schema_dict["entities"].keys()) if isinstance(schema_dict.get("entities"), dict) else []
                 metadata = {
-                    "field_metadata": {}, "entity_metadata": {},
-                    "relation_metadata": {}, "field_orders": {},
-                    "entity_order": entity_order, "relation_order": [],
+                    "field_metadata": field_metadata, "entity_metadata": {},
+                    "relation_metadata": relation_metadata, "field_orders": field_orders,
+                    "entity_order": entity_order, "relation_order": relation_order,
                     "classification_tasks": classification_tasks,
                     "entity_attribute_groups": {},
                     "entity_attribute_prompt_labels": {},

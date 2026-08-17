@@ -16,7 +16,7 @@ and reports, for both a ``strict`` and a ``relaxed`` regime:
 * ``eval_<category>_<regime>_classification_report`` — multi-line text table
 
 where ``<category>`` is one of ``entity``, ``relation``, ``classification``,
-``event_type``, ``event_trigger``, ``event_argument``, ``event`` and
+``structure``, ``event_type``, ``event_trigger``, ``event_argument``, ``event`` and
 ``<regime>`` is ``strict`` or ``relaxed``. Categories absent from the eval set
 are silently omitted.
 
@@ -30,6 +30,10 @@ so relaxed never scores below strict):
   tail surfaces overlap.
 * **Classifications** — strict ``(task, label)``; relaxed = task exact + label
   overlap. Multi-label predictions are unrolled and scored individually.
+* **Structures** (``json_structures``) — strict ``(name, field, value)`` per filled
+  field; relaxed = ``(name, field)`` exact + value overlap. Field-level because
+  instances carry no identity, so aligning predicted to gold instances would need a
+  heuristic that itself decides the score.
 * **Event types** — ``(event_type,)`` presence. There is no surface to relax,
   so strict == relaxed.
 * **Event triggers** — strict ``(event_type, trigger)``; relaxed = event_type
@@ -63,6 +67,13 @@ from typing import Any, Callable, Dict, Iterable, List, Set, Tuple
 _DEFAULT_STOPWORDS: frozenset = frozenset({
     "the", "a", "an", "of", "in", "on", "at", "to", "for", "and",
     "or", "by", "with", "from", "as", "is", "are", "was", "were",
+})
+
+# An extraction result puts each structure under its OWN name at the top level, alongside
+# the fixed task keys. Anything not in this set is treated as a structure.
+_NON_STRUCTURE_KEYS: frozenset = frozenset({
+    "entities", "relations", "events", "classifications",
+    "entity_descriptions", "text", "json_structures", "record_metadata",
 })
 
 
@@ -165,10 +176,11 @@ def compute_metrics(
     arg_err, arg_conf = Counter(), Counter()
     rel_s, rel_r = _counters(), _counters()
     cls_s, cls_r = _counters(), _counters()
+    st_s, st_r = _counters(), _counters()
     ety_s, ety_r = _counters(), _counters()
     et_s, et_r = _counters(), _counters()
     ea_s, ea_r = _counters(), _counters()
-    has_entities = has_relations = has_classifications = False
+    has_entities = has_relations = has_classifications = has_structures = False
     has_event_types = has_event_triggers = has_event_arguments = False
 
     for gold, pred in zip(golds, preds):
@@ -192,6 +204,12 @@ def compute_metrics(
             has_classifications = True
             _tally(g, p, *cls_s, key=lambda x: x[0])
             _match_relaxed(_items_classification(g), _items_classification(p), *cls_r, stopwords=stopwords)
+
+        g, p = _gold_structure_set(gold), _pred_structure_set(pred)
+        if g or p:
+            has_structures = True
+            _tally(g, p, *st_s, key=lambda x: f"{x[0]}.{x[1]}")
+            _match_relaxed(_items_structure(g), _items_structure(p), *st_r, stopwords=stopwords)
 
         # Events — score type detection, triggers, and arguments separately.
         # Relaxed drops the trigger link (trigger = event_type presence;
@@ -237,6 +255,7 @@ def compute_metrics(
         (has_entities, "entity", ent_s, ent_r),
         (has_relations, "relation", rel_s, rel_r),
         (has_classifications, "classification", cls_s, cls_r),
+        (has_structures, "structure", st_s, st_r),
         (has_event_types, "event_type", ety_s, ety_r),
         (has_event_triggers, "event_trigger", et_s, et_r),
         (has_event_arguments, "event_argument", ea_s, ea_r),
@@ -259,7 +278,7 @@ def compute_metrics(
 
 def _print_micro_report(metrics: Dict[str, Any], label: str | None = None) -> None:
     """Print a compact micro precision/recall/F1 line per category, strict -> relaxed."""
-    categories = ("entity", "relation", "classification", "event_type",
+    categories = ("entity", "relation", "classification", "structure", "event_type",
                   "event_trigger", "event_argument", "event")
     present = [c for c in categories if f"eval_{c}_strict_micro_f1" in metrics]
     if not present:
@@ -357,6 +376,42 @@ def _schema_from_gold(output: Dict) -> Dict:
         if events_schema:
             schema["events"] = events_schema
 
+    # Structures. Without this a structures-ONLY corpus builds an empty schema, every
+    # record is skipped, compute_metrics returns {}, and the trainer silently falls back
+    # to eval_loss -- the same failure the event-type comment above records. Measured on
+    # casualty_loc_split: a 36-minute run emitted exactly one metric key, `eval_loss`,
+    # which then latched at epoch 1 and selected a 6-minute checkpoint.
+    structs = output.get("json_structures")
+    if isinstance(structs, list) and structs:
+        meta = output.get("record_metadata") or {}
+        fields_by_name: Dict[str, List[str]] = {}
+        for inst in structs:
+            if not isinstance(inst, dict):
+                continue
+            for name, body in inst.items():
+                if not isinstance(name, str) or not isinstance(body, dict):
+                    continue
+                known = fields_by_name.setdefault(name, [])
+                for field in body:
+                    if isinstance(field, str) and field not in known:
+                        known.append(field)
+        struct_schema: Dict[str, Any] = {}
+        for name, fields in fields_by_name.items():
+            if not fields:
+                continue
+            spec: Dict[str, Any] = {"fields": [{"name": f, "dtype": "str"} for f in fields]}
+            # Carry the declared Instance Formation mode through. On the boundary
+            # architecture a structure schema without record_metadata silently decodes
+            # nothing, so a schema rebuilt without it would score zero for the wrong reason.
+            declared = meta.get(name) if isinstance(meta, dict) else None
+            if isinstance(declared, dict):
+                for key in ("mode", "anchor", "occurrence_policy"):
+                    if declared.get(key):
+                        spec[key] = declared[key]
+            struct_schema[name] = spec
+        if struct_schema:
+            schema["structures"] = struct_schema
+
     return schema
 
 
@@ -394,6 +449,52 @@ def _pred_entity_set(pred: Dict) -> Set[Tuple[str, str]]:
                 text = item.get("text")
             if isinstance(text, str) and text.strip():
                 out.add((label, text.strip()))
+    return out
+
+
+def _gold_structure_set(output: Dict) -> Set[Tuple[str, str, str]]:
+    """``(structure_name, field, value)`` per filled field across all instances.
+
+    Field-level rather than whole-instance: instances carry no identity, so aligning
+    a predicted instance to a gold one would need a matching heuristic that itself
+    decides the score. Triples mirror how event arguments are scored and stay stable
+    under multi-instance documents. Two instances filling a field identically collapse
+    to one triple -- the same set semantics every other category here uses.
+    """
+    out: Set[Tuple[str, str, str]] = set()
+    for inst in output.get("json_structures") or []:
+        if not isinstance(inst, dict):
+            continue
+        for name, body in inst.items():
+            if not isinstance(name, str) or not isinstance(body, dict):
+                continue
+            for field, value in body.items():
+                if isinstance(field, str) and isinstance(value, str) and value.strip():
+                    out.add((name, field, value.strip()))
+    return out
+
+
+def _pred_structure_set(pred: Dict) -> Set[Tuple[str, str, str]]:
+    """Predictions come back keyed by structure name at the top level, each a list
+    of instance dicts (a bare dict for a single instance is also accepted)."""
+    out: Set[Tuple[str, str, str]] = set()
+    for name, instances in pred.items():
+        if not isinstance(name, str) or name in _NON_STRUCTURE_KEYS:
+            continue
+        if isinstance(instances, dict):
+            instances = [instances]
+        if not isinstance(instances, list):
+            continue
+        for body in instances:
+            if not isinstance(body, dict):
+                continue
+            for field, value in body.items():
+                if not isinstance(field, str):
+                    continue
+                if isinstance(value, dict):          # {"text": ..., "score": ...}
+                    value = value.get("text")
+                if isinstance(value, str) and value.strip():
+                    out.add((name, field, value.strip()))
     return out
 
 
@@ -760,6 +861,13 @@ def _items_classification(s):
     return sorted(((task,), (label,), task) for task, label in s)
 
 
+def _items_structure(s):
+    # Key on (name, field) and match the VALUE loosely: the field is a label, the value
+    # is the extracted surface, so relaxed should forgive "Orleans, Ontario" for
+    # "the community of Orleans, Ontario" exactly as it does for an entity surface.
+    return sorted(((name, field), (value,), f"{name}.{field}") for name, field, value in s)
+
+
 def _items_event_type(s):
     # event-type presence; no surface, so relaxed collapses to strict
     return sorted(((et,), (), et) for (et,) in s)
@@ -829,7 +937,7 @@ DEFAULT_THRESHOLD_GRID: Tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
 # The three combined-event rows ("event") double-count event_type/trigger/
 # argument, so they're excluded here -- each category should contribute once.
 _SWEEP_CATEGORIES = (
-    "entity", "relation", "classification",
+    "entity", "relation", "classification", "structure",
     "event_type", "event_trigger", "event_argument",
 )
 

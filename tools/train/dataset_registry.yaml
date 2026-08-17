@@ -18,6 +18,18 @@
 # description (one-sentence qualitative summary for the model card).
 
 base_models:
+  whr778/gliner2-joint-boundary-rams-137k:
+    name: gliner2-joint-boundary-rams-137k
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/joint-boundary-rams-137k.yaml), pushed to the Hub
+  whr778/gliner2-warmstart-natural-clean:
+    name: gliner2-warmstart-natural-clean
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/warmstart-natural.yaml, clean-data re-run), pushed to the Hub
+  whr778/gliner2-warmstart-natural-evwide2-clean:
+    name: gliner2-warmstart-natural-evwide2-clean
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/warmstart-natural-evwide2.yaml, clean-data re-run), pushed to the Hub
   ./out/joint-boundary-mmbert-10k/best:
     name: joint-boundary-mmbert-10k
     license: derived from jhu-clsp/mmBERT-base
