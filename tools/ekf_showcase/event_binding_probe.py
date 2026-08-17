@@ -20,7 +20,24 @@ if it works it needs no new component. Note the trigger is NOT a record anchor
 (RECORD_TASK_TYPES is ("json_structures",)), so this asks the model to bind an event as an
 ordinary field rather than exploiting any event-specific path.
 
+**C was unsound before 2026-08-17 and its published numbers should not be reused.** It
+scored ``bool(bound) and not OURS.search(bound)``, so it fired on any non-empty string
+lacking "helene" -- including strings that name no event. A casualty-trained record head
+(`gliner2-base-v1-casualty-docee`) has no `event` field in distribution and copies the anchor
+number in, so `'230'` scored as a caught cross-event and the signal read 9/11 on pure
+artifact. Three fixes, all in this file:
+
+1. A binding counts only if it names an event the event schema *also* found
+   (``validate_binding``). Raw bindings are still reported, marked unsound, so the artifact
+   stays visible rather than silently dropping out.
+2. The ``recs[0]`` fallback is gone -- it attributed the first record's event to a span that
+   matched no record, inventing a binding the model never made.
+3. "bound nothing" is reported separately from "bound ours" and "bound a competitor". The
+   boundary arm scored 0/11 because it bound *nothing*, which the old table could not
+   distinguish from binding correctly.
+
     uv run python tools/ekf_showcase/event_binding_probe.py
+    uv run python tools/ekf_showcase/event_binding_probe.py --model whr778/gliner2-base-v1-casualty-docee
 """
 from __future__ import annotations
 
@@ -60,6 +77,28 @@ def binding_schema() -> Schema:
                    description="number of people killed or confirmed dead")
             .field("event", dtype="str",
                    description="the hurricane, storm or disaster that caused these deaths"))
+
+
+_NUMERIC = re.compile(r"^[\d\s.,%-]+$")
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\W+", " ", s or "").strip().lower()
+
+
+def validate_binding(bound: str | None, found: list[str]) -> str | None:
+    """Keep a binding only if it actually names an event the schema also found.
+
+    Without this the C signal counts any string that is not "helene" -- including
+    the casualty number a casualty-trained record head copies into an unfamiliar
+    `event` field. Returns the binding, or None if it names no event.
+    """
+    if not bound or _NUMERIC.match(bound):
+        return None
+    b = _norm(bound)
+    if not b:
+        return None
+    return bound if any((n := _norm(t)) and (n in b or b in n) for t in found) else None
 
 
 def window(text: str, span: str, left: int = 200, right: int = 200):
@@ -109,21 +148,22 @@ def main() -> None:
         nearest = min(found, key=lambda tp: abs(tp[1] - at))[0] if found else None
         # B. a competitor is named and ours is not
         only_comp = bool(comp) and not ours
-        # C. what the record head binds as this number's event
-        bound = None
+        # C. what the record head binds as THIS number's event. No recs[0] fallback:
+        # attributing another record's event to a span that matched none invents a
+        # binding the model did not make.
+        bound_raw = None
         recs = model.extract(ctx, bsch).get("casualty_report") or []
         for r in recs:
             if str(r.get("dead") or "").strip() and span in str(r.get("dead")):
-                bound = str(r.get("event") or "").strip() or None
+                bound_raw = str(r.get("event") or "").strip() or None
                 break
-        if bound is None and recs:
-            bound = str(recs[0].get("event") or "").strip() or None
+        bound = validate_binding(bound_raw, [t for t, _ in found])
 
         rows.append({
             "span": span, "value": int(o["value"]),
             "label": LABELLED.get((span, int(o["value"])), "assumed-ok"),
-            "events": [t for t, _ in found],
-            "nearest": nearest, "only_competitor": only_comp, "bound": bound,
+            "events": [t for t, _ in found], "nearest": nearest,
+            "only_competitor": only_comp, "bound": bound, "bound_raw": bound_raw,
         })
 
     def flags(r):
@@ -131,22 +171,37 @@ def main() -> None:
             "A nearest is a competitor": bool(r["nearest"]) and not OURS.search(r["nearest"]),
             "B only a competitor named": r["only_competitor"],
             "C bound event is a competitor": bool(r["bound"]) and not OURS.search(r["bound"]),
+            "C-raw (UNSOUND, diagnostic)": bool(r["bound_raw"]) and not OURS.search(r["bound_raw"]),
         }
+
+    def outcome(r):
+        if not r["bound"]:
+            return "unbound" if not r["bound_raw"] else "rejected"
+        return "ours" if OURS.search(r["bound"]) else "competitor"
 
     print(f"\n{len(rows)} observations\n")
     ce = [r for r in rows if r["label"] == "cross-event"]
     ok = [r for r in rows if r["label"] == "assumed-ok"]
     print(f"{'signal':<32}{'catches cross-event':>21}{'false positives':>18}")
     for key in ("A nearest is a competitor", "B only a competitor named",
-                "C bound event is a competitor"):
+                "C bound event is a competitor", "C-raw (UNSOUND, diagnostic)"):
         c = sum(1 for r in ce if flags(r)[key])
         f = sum(1 for r in ok if flags(r)[key])
         print(f"{key:<32}{f'{c}/{len(ce)}':>21}{f'{f}/{len(ok)} = {f/max(len(ok),1):.1%}':>18}")
 
+    # A signal that never binds scores 0 catches AND 0 false positives, which reads as
+    # a clean sheet. Coverage tells the two apart.
+    print(f"\nC binding coverage        {'cross-event':>14}{'assumed-ok':>14}")
+    for state in ("competitor", "ours", "rejected", "unbound"):
+        print(f"  {state:<24}{sum(1 for r in ce if outcome(r) == state):>14}"
+              f"{sum(1 for r in ok if outcome(r) == state):>14}")
+    print("  rejected = the model named something that is not an event the schema found")
+
     print("\ncross-event cases in detail:")
     for r in ce:
+        raw = "" if r["bound_raw"] == r["bound"] else f" raw={str(r['bound_raw'])[:18]!r}"
         print(f"  {r['span']!r:<14} nearest={str(r['nearest'])[:22]!r:<24} "
-              f"bound={str(r['bound'])[:22]!r:<24} events={r['events'][:3]}")
+              f"bound={str(r['bound'])[:22]!r:<24} events={r['events'][:3]}{raw}")
 
     Path("/tmp/event_binding.json").write_text(
         json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
