@@ -522,6 +522,29 @@ datasets:
     source_url: null
     language: [en]
     description: "Locally generated synthetic multi-task IE corpus (4,997 records) over 28 document registers, covering entities, relations, events, classification, and structures; produced with claude-haiku-4-5. Entity types carry ~91% purity on repeated surfaces, and 12 absent types per document are seeded as explicit negatives."
+  cc_news_haiku45:
+    name: CC-News real text, Haiku-4.5 annotations
+    tasks: multi-task IE (NER, relations, classification, events, structures)
+    license: see source
+    hf_id: vblagoje/cc_news
+    hf_jsonl: null
+    source_url: https://huggingface.co/datasets/vblagoje/cc_news
+    language: [en]
+    description: "REAL news documents with model-written labels (19,957 records:
+      15,839 train / 2,075 val / 2,043 test) -- the real-text half of
+      the real/synthetic mixture, and the counterpart to synthetic_haiku45_5k where the
+      documents themselves were generated. Text is English CC-News (LID-filtered with
+      lumi_language_id; the corpus is ~98.75% en, remainder `und` junk), annotated by
+      claude-haiku-4-5 through synthetic/generate.py --annotate-from. Deduplicated on the
+      document key AT COLLECTION, before annotation was paid for: news syndication
+      republishes the same wire story and a first 10K pull dropped 512 such copies.
+      Verified 0 overlap against every other corpus in data/. Entity spans are checked
+      verbatim against the source (~5% dropped), and absent types are seeded as negatives.
+      CAVEATS: the upstream card declares license `unknown` and the articles remain
+      publisher copyright, so this is a private research cache, not redistributable;
+      domain coverage is skewed (244 domains, but taiwannews.com.tw alone is 18%); and
+      events/structures are sparse on real news (0.26 and 0.08 per document) versus
+      synthetic, where they are guaranteed by construction."
   synthetic_haiku45_5k_coerced:
     name: Synthetic Haiku-4.5 multi-task 5K (coerced entity types)
     tasks: multi-task IE (NER, relations, classification, events, structures)

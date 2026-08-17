@@ -92,6 +92,8 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | DuEE 1.0 | Event extraction (Chinese) | 11,603 | 1,453 | — | see source | [LUGE](https://www.luge.ai/) |
 | Mendeley-ED | Event detection (English, trigger-only) | 1,431 | 159 | 156 | cc-by-4.0 | [Mendeley](https://doi.org/10.17632/7d54rvzxkr.1) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
+| **Real text, model annotations** | | | | | | |
+| cc_news_haiku45 | Multi-task IE (NER, rel, evt, cls, struct) | 15,839 | 2,075 | 2,043 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) |
 | **EKF disaster tracking** (synthetic) | | | | | | |
 | casualty_ft | Structured extraction (single-event) | 29,198 | 1,303 | 1,038 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
 | casualty_multi | Structured extraction (multi-event) | 29,030 | 1,297 | 1,023 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
@@ -140,6 +142,29 @@ Dense multi-type synthetic NER (~10 types/record on average), open vocabulary.
 Multilingual NER (German, French, Polish, …) — essential when training on
 `mmBERT` so the multilingual encoder doesn't drift toward English-only.
 *Stats: ~18,767 distinct entity types, avg 2.5 types/record, 100% carry entities.*
+
+### cc_news_haiku45 — real text, model annotations — `vblagoje/cc_news`
+The counterpart to the synthetic corpora above: the **text is real**, only the labels
+are generated. English CC-News articles (LID-filtered with `lumi_language_id`; the
+corpus is ~98.75% `en`, remainder `und` junk) annotated by `claude-haiku-4-5` through
+`synthetic/generate.py --annotate-from`. Built by `tools/data/fetch_cc_news.py`.
+
+19,957 records, built as two 10k batches ($26.66 + $26.65 = **$53.32** total, ~15 and
+~31 min). Deduplicated on the document key **at collection, before annotation was paid
+for** — news syndication republishes the same wire story, and the first 10k pull dropped
+512 copies. The second pull used `--exclude` against the first, so the two are disjoint
+by construction (verified: A n B = 0). Verified 0 overlap against every other corpus.
+
+The raw pulls and per-batch splits live in `data/cc_news_parts/`, deliberately **not** in
+`data/` — they are provenance, and leaving them alongside the merged corpus invites a
+glob like `data/cc_news*` to double-count every document.
+
+*Caveats: the upstream card declares `license: unknown` and articles remain publisher
+copyright, so this is a private research cache and not redistributable. Domain coverage
+is skewed — 244 domains, but `taiwannews.com.tw` alone is 18%. Events (0.26/doc) and
+structures (0.08/doc) are sparse on real news, where the synthetic corpora guarantee
+them by construction; entity annotations are dense (~222k per 10k documents, ~5%
+dropped by the verbatim check).*
 
 ### biomed_NER — `knowledgator/biomed_NER`
 Domain-specific biomedical NER with a fixed 33-class schema (CHEMICALS, DISORDER,

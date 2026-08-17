@@ -1,0 +1,93 @@
+# Does REAL text with synthetic annotation beat SYNTHETIC text with synthetic
+# annotation? Fine-tune fastino/gliner2-base-v1 on cc_news_haiku45 only.
+#
+# This is the third member of a matched set. gliner2-base-v1-synthetic.yaml
+# (synthetic_sonnet5_1k) and gliner2-base-v1-synthetic-haiku5k.yaml
+# (synthetic_haiku45_5k) already isolate the annotator. This arm holds the annotator
+# fixed at claude-haiku-4-5 and changes only the TEXT SOURCE: generated passages ->
+# real CC-News articles. Everything else is copied from the haiku5k twin verbatim so
+# the two numbers are comparable, INCLUDING the selection metric.
+#
+# Why it is worth a run: the Track B post-mortem concluded the corpus, not the
+# formulation, was the bottleneck -- a model trained on synthetic-realized prose
+# produced nothing at all on real wire copy. This is the direct test of that claim.
+#
+# WHAT THIS ARM CANNOT SHOW, stated up front. The corpora are not size-matched
+# (~20k real vs 4,997 synthetic), so a win here is a win for "real text AND 4x the
+# data". Size-match by capping this corpus if the comparison needs to be clean.
+#
+# CORPUS CAVEATS, carried from the registry so they are visible at the point of use:
+#   * License is `unknown` upstream and articles stay publisher copyright. Private
+#     research cache. Do not publish a model card implying redistributable data.
+#   * Domain skew: 244 domains, but taiwannews.com.tw alone is 18%.
+#   * Events (0.26/doc) and structures (0.08/doc) are SPARSE on real news, where the
+#     synthetic corpus guarantees them by construction. Selection is on entities for
+#     exactly this reason -- an event score here would be measured on very little.
+#   * Deduplicated on the document key at collection (news syndication republishes
+#     the same wire story; 512 copies were dropped from the first 10k pull alone) and
+#     verified 0 overlap against every other corpus in data/.
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/gliner2-base-v1-ccnews-real
+  experiment_name: gliner2_base_v1_ccnews_real
+  data_parallel: false
+  num_epochs: 10             # run all epochs for per-epoch reporting
+  batch_size: 8              # A10 22GB: batch 16 OOM'd in deberta disentangled attn (seq^2); halved
+  gradient_accumulation_steps: 4   # effective batch 32
+  encoder_lr: 1.0e-5         # lower LR: fine-tuning a trained model
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: false
+  fp16: true
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  # Entities, matching the haiku5k twin. Real news carries the same dominant signal
+  # (~222k entity annotations) and, unlike the synthetic corpus, too few events and
+  # structures to select on.
+  metric_for_best: eval_entity_fair_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true       # deberta-v3 caps at 512 positions
+  max_len: 384               # word window (leaves room for the schema prompt)
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false      # run all 10 epochs so each epoch reports
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true      # calibrate the decision threshold on val for the blind test
+  # Real articles are far longer than the synthetic passages (median ~2,050 chars vs
+  # a 180-320 word target), so they genuinely span windows. The synthetic twins set
+  # this false because their passages are short and local; that reason does not hold
+  # here, and leaving it false would drop entities that cross a window boundary.
+  global_decode: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/cc_news_haiku45   # real CC-News text, haiku-4-5 annotations, entity negatives
+  event_files: {}
