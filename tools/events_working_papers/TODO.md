@@ -565,6 +565,162 @@ above establish the failure exists, not that word-level supervision fixes it.
 
 ## P2 — research direction
 
+### 2b. Does a fine-tune need an explicit regularizer, or is early stopping enough?
+Raised 2026-08-18 while launching the real-vs-synthetic arms. The synthetic fine-tune
+gained hugely in-distribution (entity fair 0.7946 → 0.9134) and **lost 22% relative on
+real general NER** (entity strict 0.5320 → 0.4136, swept best-vs-best). FairEval says it
+is not a boundary regression — BES and BEL both fell while FN rose 27,267 → 36,244. The
+model stopped proposing spans and mislabelled more of what it proposed: the 125-type
+synthetic label space overwrote what the base knew.
+
+**No regularizer was added to the real arms, deliberately.** The synthetic control was
+trained without one, so a regularizer in the new arms would confound the comparison —
+any preservation difference could be the penalty rather than the text source. There is
+also a real hypothesis that real news needs less of one: the damage came from training
+on out-of-distribution prose, and cc_news is far closer to `pile_ner_def` than generated
+passages are.
+
+What WAS changed is retention only: `save_total_limit` 3 → 10 on both arms, so every
+epoch checkpoint survives (`best`/`final` are exempt from rotation — `trainer.py:2332`).
+Selection is on in-domain val, so if forgetting grows with epochs the best in-domain
+checkpoint is the worst preserving one. Keeping all ten lets the preservation curve be
+scored per epoch and the knee found post hoc. **Early stopping is the cheapest
+regularizer and needs no change to the loss.** It doubles as crash insurance.
+
+Order of levers if the curve shows real text still degrades: early stopping first (free,
+already instrumented), then replay of base-distribution data in the mixture, then
+parameter-space constraints (LoRA / L2-SP / EWC). Do not start at the expensive end.
+
+### 2c. Chunking distorts the real-news arm — measured, and not where expected
+`window_size`/`stride` are **subword tokens, not words**; the configs' "word window"
+comments are wrong and `gliner2/training/chunking.py` is authoritative. At 384/256 on
+1,500 cc_news train docs (deberta-v3 tokenizer), 2.25 chunks per document.
+
+The hypothesis was that cross-window structure is lost and that this argues for mmBERT's
+8,192 context. Measured per document — supervision that survives in **no** chunk:
+
+    relations   1,794 in source,  84 lost = 4.7%
+    events        383 in source,   6 lost = 1.6%
+
+So the long-context argument is real but modest, not decisive. **The larger distortion is
+classification inheritance**: doc-level labels are copied to every chunk (+124.5%, exactly
+the 2.25x expansion), so most classification training examples are fragments asserting a
+document label the fragment may not support. That is injected label noise, and it lands
+hardest on the arm with the longest documents. Quantify its effect before adding more
+classification data to a real-news mixture.
+
+Raw annotation counts are useless for this — they rise across the board under chunking
+(entities +42.4%) because overlap duplicates them. Measure survival per document.
+
+
+### 2d. What breaks a stochastic activation is FUNCTION-CLASS churn, not randomness
+Explored 2026-08-18, prompted by the observation that GeGLU's gate reintroduces an
+unbounded gradient path. **Answered, with one usable positive.**
+
+The starting diagnosis is correct and worth recording. A pointwise activation has a
+bounded derivative -- ReLU exactly [0,1], GELU [-0.1289, +1.1289] -- so it cannot
+amplify a gradient. GeGLU's `y = v * gelu(g)` gives `dy/dv = gelu(g)` and
+`dy/dg = v * gelu'(g)`: each branch scales with the OTHER branch, and neither is
+bounded. Measured max |grad| through the activation, by input scale:
+
+    scale      gelu    geglu   stoch-gelu   1-gated-chunk-of-6
+        1      1.13     4.42         1.13                 4.36
+        2      1.13     9.80         1.13                 8.69
+        4      1.13    19.48         1.13                17.41
+        8      1.13    37.77         1.13                32.68
+
+**Partial gating does not partially protect.** In the hybrid only 2.6% of channels
+exceed 1.13, yet the MAX is within 15% of full GeGLU. Explosion risk is set by the
+worst channel, not the mean, so gating one chunk in six buys ~1/6 the exposure and
+~6/6 the tail. Note also that GELU never fixed explosion over ReLU -- both are
+bounded. What GELU fixed was dead units.
+
+**The negative: randomising WHICH CHANNELS GET THE NONLINEARITY costs ~10x.** Five
+chunk layouts, param-matched 4-block MLP, test MSE (lower better):
+
+    layout            fixed    random
+    2-of-4           0.0567    0.7267
+    6-of-12          0.0702    0.8010
+    8-of-12          0.0492    0.6239
+    10-of-12              -    0.4326
+    HYBRID4 8-chunk  0.0655    0.6555
+
+No overlap: deterministic 0.049-0.070, random 0.43-0.80. Per-sample masks (0.7783)
+and finer chunks (0.7439) do not help; the random arms improve with the activated
+fraction only because that dilutes the randomness (at p=1 it IS plain GELU). The
+random arms also have the TIGHTEST seed spread (HYBRID4 random +/-0.0089) -- they
+converge reliably to a bad solution, which is a method-level floor, not bad luck.
+
+**But randomness itself is not the problem, and HYBRID5 is the control that proves
+it.** HYBRID5 keeps 6 slots always-GELU and gives each of the 2 linear slots a
+randomly drawn GELU'd partner to multiply. Same harness, same target, also randomized:
+
+    randomized variant   what the draw changes                      test MSE
+    HYBRID4              whether a slot is GELU or identity          0.6555
+                         -> the slot's FUNCTION CLASS moves
+    HYBRID5              which chunk partners a gated slot           0.0623
+                         -> function class fixed, only the operand moves
+
+**So the rule is: a draw that changes what KIND of function a slot computes is fatal;
+a draw inside a stable function form is free.** `fc2` reads a fixed slot, and one
+weight cannot be correct for both GELU output and identity output. **Dropout escapes
+this only because it is linear in the mask** -- `E[mask*x] = p*x`, so one scalar
+corrects it. Swapping a nonlinearity has no scalar correction, hence on
+HYBRID4-random weights: expectation blend 0.8203, sampled 0.8622, **plain GELU at
+eval 7.2860** -- the intuitive "stochastic at train, clean at eval" rule is the worst
+of the three. HYBRID5 has no such problem: `c6` is independent of the draw, so
+`E[c6 * g_j] = c6 * mean(g)` is an EXACT eval rule, not an approximation.
+
+**The positive, worth trying in a real model.** HYBRID4 with a FIXED assignment --
+8 chunks, 6 GELU, the two linear slots holding `a*b` and a passthrough, every chunk
+staying in its own slot -- is parameter-identical to a plain GELU FFN (100,481 both),
+preserves width exactly (no 2x up-projection, so none of GeGLU's +50% or the 2/3-d_ff
+workaround), scores 0.0655 against plain GELU's 0.0636, and has the LOWEST gradient
+max in the study because only 1/8 of channels carries a product.
+
+**One gated slot in eight is the sweet spot; two is worse.** Whole-network gradient
+max, every row statistically tied on MSE:
+
+    HYBRID4 fixed   13.4    1 gated slot of 8      MSE 0.0655
+    plain GELU      17.2    none                       0.0636
+    GeGLU (2/3)     23.2    all channels gated         0.0483   (+50% params raw)
+    HYBRID5 fixed   26.1    2 gated slots of 8         0.0601
+    HYBRID5 random  34.0    2 gated, random partner    0.0623
+
+HYBRID5 is the better result scientifically and the worse design: it tolerates
+randomization but moves the gradient ceiling the WRONG way, above GeGLU, which is the
+thing this whole line of work set out to avoid.
+
+**Prior art -- the mechanism is Shazeer's, the fractional application is what is not
+covered.** Noam Shazeer, *GLU Variants Improve Transformer*, arXiv:2002.05202 (2020),
+defines the family this work sits in: GLU with sigmoid, **GEGLU** with GELU on the gate
+(what mmBERT/ModernBERT use), SwiGLU with Swish, and **Bilinear** -- the variant that
+omits the nonlinearity entirely and is just the component-wise product of two
+projections. **HYBRID4's product chunk IS Bilinear**, applied to 1/8 of the channels
+instead of all of them. That paper is also the origin of the two-thirds `d_ff` rule this
+entry quotes for parameter matching, and it reports GEGLU/SwiGLU as the best variants.
+
+Every variant there gates ALL hidden units. A search over the obvious phrasings found no
+published study of gating only a FRACTION of FFN channels with the rest left pointwise.
+**Treat that as weak evidence, not a novelty claim** -- web search is not a systematic
+review, the construction is simple enough to be sitting unremarked in someone's ablation
+appendix, and a negative like the randomisation result is exactly the kind of thing that
+never gets written up. Adjacent but not the same: Highway Networks (Srivastava et al.,
+2015) mix a transformed and a carried path under a learned gate; arXiv:2410.08417 studies
+bilinear MLPs for weight-based interpretability.
+
+**Do not over-read the small gaps.** Harness is a 4-block residual MLP, D=64, H=192,
+AdamW 3e-3, 3000 steps, 3-5 seeds, synthetic regression target with multiplicative
+interactions. Plain GELU alone ranged 0.043-0.072 across runs. This harness separates
+0.06 from 0.65 reliably and cannot separate 0.048 from 0.066 at all. Every claim above
+rests on the first kind of gap. Scripts were scratchpad-only; the recipe here is the
+record.
+
+One harness bug, corrected mid-study and worth not repeating: applying the expectation
+blend at eval to a DETERMINISTIC mask is a train/eval mismatch, not a calibration. It
+reported FIXED variants at 7.54 and 81.1 before the fix; the real numbers are 0.0492
+and 0.0702.
+
 ### 3. §10's crux is reopened; §14 does not reproduce
 The harder-regime ablation concluded the EKF's edge *widens* under unreliability. On real
 Helene trajectories the gain is flat and *shrinks* at the hardest setting (+1.8% → +0.8%).

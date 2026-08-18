@@ -1,0 +1,4 @@
+# Run artifacts, not source. Results belong in PARTIAL_GATING.md with their harness
+# limits attached; a bare JSON in git gets cited later without its caveats.
+lr_ladder_*.json
+__pycache__/
