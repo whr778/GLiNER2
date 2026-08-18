@@ -151,6 +151,14 @@ def main() -> None:
                     help="training config YAML: gate its AGGREGATED train/val/test "
                          "against each other and exit non-zero if contaminated")
     ap.add_argument("--min-overlap", type=int, default=1)
+    ap.add_argument("--gate-within", action="store_true",
+                    help="exit non-zero if any corpus has overlapping splits. Scan mode "
+                         "otherwise only PRINTS findings and exits 0, which makes it a "
+                         "report and not a gate -- a converter run could finish 'clean' "
+                         "with contaminated splits on disk. Combine with --focus to gate "
+                         "one corpus: a repo-wide gate cannot pass while the known-dirty "
+                         "corpora (finer_ord, gliclass_logic, craft, docfee, ...) are "
+                         "unrepaired.")
     args = ap.parse_args()
 
     if args.config:
@@ -171,6 +179,10 @@ def main() -> None:
     # docee clean on the pair where it shares 26 documents. gate_config already
     # covered all three pairs; the per-corpus scan did not.
     for corpus, splits in sorted(by_corpus.items()):
+        # --focus scopes this section as well as the ACROSS one; without that,
+        # --gate-within could only ever be repo-wide.
+        if args.focus and args.focus not in corpus:
+            continue
         for a, b in (("train", "val"), ("train", "test"), ("val", "test")):
             if a not in splits or b not in splits:
                 continue
@@ -211,6 +223,15 @@ def main() -> None:
                   f"({(total - unique) / max(total, 1):.1%})")
     if not any_dup:
         print("  none")
+
+    # Duplicates inside one file are NOT gated: they are frequently legitimate in a
+    # multi-task corpus, where the same input carries different task outputs
+    # (text2json is 78% "duplicate" by document key for exactly that reason).
+    # Overlapping SPLITS are never legitimate.
+    if args.gate_within and dirty_within:
+        scope = f" for corpora matching {args.focus!r}" if args.focus else ""
+        raise SystemExit(f"\nGATE FAILED: {dirty_within} overlapping split pair(s)"
+                         f"{scope}. Splits must be mutually disjoint before training.")
 
 
 if __name__ == "__main__":

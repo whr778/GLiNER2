@@ -157,10 +157,18 @@ run_optional docee_test  data/docee/DocEE-en/normal_setting/test.json \
     uv run python tools/data/convert_docee.py --no-stratify \
         --input data/docee/DocEE-en/normal_setting/test.json --out data/docee.test.jsonl
 
+# DocEE's published normal_setting splits OVERLAP EACH OTHER -- 56 train/val, 12
+# train/test, 26 val/test documents, plus 84 duplicates inside a single split. The
+# converter honours them 1:1, so it faithfully reproduces that contamination on every
+# run. Without this repair a fresh build silently overwrites the fixed splits with
+# broken ones. Precedence is test > val > train, so the blind test keeps its documents.
+run_optional docee_dedupe data/docee.train.jsonl \
+    uv run python tools/data/dedupe_splits.py data/docee
+
 # MAVEN, RAMS — manual local downloads required (see ../train/TRAINING.md §2).
 run_optional maven      data/maven/train.jsonl                 uv run python tools/data/convert_maven.py \
                             --input data/maven/train.jsonl --out data/maven.train.jsonl
-run_optional rams_train "data/RAMS_1.0c/data/train.jsonlines    uv run python tools/data/convert_rams.py \
+run_optional rams_train "data/RAMS_1.0c/data/train.jsonlines"   uv run python tools/data/convert_rams.py \
                             --input data/RAMS_1.0c/data/train.jsonlines --out data/rams.train.jsonl
 run_optional rams_dev   "data/RAMS_1.0c/data/dev.jsonlines"      uv run python tools/data/convert_rams.py \
                             --input data/RAMS_1.0c/data/dev.jsonlines   --out data/rams.dev.jsonl
@@ -169,5 +177,18 @@ run_optional rams_test  "data/RAMS_1.0c/data/test.jsonlines"     uv run python t
 
 # ACE 2005 is not run here — it lives behind an LDC license; convert it
 # separately with `tools/data/convert_ace2005.py --input <your-ace-root> ...`.
+
+# Gate, not a report. Aggregated train/val/test must be mutually disjoint before any
+# of this is trained on -- cross-set contamination invalidates every number downstream,
+# and the blind test has to stay blind. A converter run that ends in "ALL DONE" while
+# leaving overlapping splits looks successful and is not.
+echo "===== START: leakage_gate =====" | tee -a "$LOG"
+if uv run python tools/data/check_leakage.py 2>&1 | tee -a "$LOG"; then
+  echo "===== OK:    leakage_gate =====" | tee -a "$LOG"
+else
+  echo "===== FAIL:  leakage_gate -- SPLITS ARE CONTAMINATED =====" | tee -a "$LOG"
+  echo "Do not train on this build. See $LOG."
+  exit 1
+fi
 
 echo "===== ALL DONE =====" | tee -a "$LOG"
