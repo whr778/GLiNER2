@@ -1,7 +1,16 @@
 # Testing hybrid4:fixed in a real pretrained encoder
 
-Plan only. **Nothing here has been run.** Code is written and validated for shapes,
-parameter matching and device support; no training has been started.
+**OUTCOME: stage 0 ran and the stop rule FIRED. Stages 1 and 2 are cancelled.**
+
+`lr_ladder.py` on local MPS, 18 configs: plain GELU diverges at 1e-1, GeGLU and
+hybrid4:fixed both survive it and both diverge at 3e-1. The rule required "GeGLU
+diverges where hybrid4:fixed survives"; they tie, so the chain terminates here. The
+premise was also backwards -- GeGLU is the most stable of the three, not the least.
+Full result in `PARTIAL_GATING.md` §11.
+
+Cost: **$0**, ~90 minutes of local MPS, against the ~$379 the full chain would have
+spent. Nothing was provisioned. The staged plan below is kept as the record of what
+would have run and why it did not.
 
 Follows from [`PARTIAL_GATING.md`](PARTIAL_GATING.md), whose findings are toy-scale
 (4-block MLP, synthetic regression) and cannot say whether partial gating matters in a

@@ -13,10 +13,11 @@ An unlabelled result is worse than none, because someone will cite it later.
 | file | what it is |
 |---|---|
 | [`activation_variants.py`](activation_variants.py) | Runnable comparison of GELU, GeGLU, and chunked partial/stochastic gating variants on a parameter-matched toy MLP. `--grad-scan` for gradient bounds. |
-| [`PARTIAL_GATING.md`](PARTIAL_GATING.md) | Write-up of the above. Three negative findings with an identified mechanism, one positive that is a tie. Toy scale only. |
+| [`PARTIAL_GATING.md`](PARTIAL_GATING.md) | Write-up of the above, **plus §11: the central premise was tested in a transformer and REFUTED**. GeGLU turns out to be the most stable variant, not the least, and hybrid4's gradient-ceiling advantage does not transfer. |
+| [`divergence.py`](divergence.py) | Classifies an MLM loss trace as trained / diverged / flat. Split out and unit-tested (`python divergence.py`) after two hand-rolled in-loop criteria were wrong in opposite directions. |
 | [`ffn_variants.py`](ffn_variants.py) | Transformer-shaped `nn.Module` FFNs -- `GeluFFN`, `GeGLUFFN`, `Hybrid4FFN` -- parameter-matched by `matched_d_ff()`. The drop-in artifact for testing the toy result at depth. |
 | [`lr_ladder.py`](lr_ladder.py) | Stage 0 of the plan below: escalate the learning rate across the three variants until one destabilises. Runs on CPU, CUDA or MPS. |
-| [`CRAMMING_EXPERIMENT.md`](CRAMMING_EXPERIMENT.md) | Plan and costing for testing `hybrid4:fixed` in a real pretrained encoder, with a stop rule at every gate. **Not yet run.** |
+| [`CRAMMING_EXPERIMENT.md`](CRAMMING_EXPERIMENT.md) | Staged plan and costing for testing `hybrid4:fixed` in a real encoder. **Stage 0 ran, the stop rule fired, stages 1-2 cancelled** — $0 spent against a ~$379 plan. |
 
 Related in-repo: `tools/events_working_papers/TODO.md` item 2d.
 

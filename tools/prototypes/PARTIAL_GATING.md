@@ -1,10 +1,16 @@
 # Partial and stochastic gating in FFN activations
 
-**Status: toy-scale technical note. Not validated at model scale.** Every number here
-comes from a 4-block residual MLP on synthetic regression. Nothing in this note has been
-run inside a transformer. It is written up because the strongest results here are
-negative ones with an identified mechanism (§4, §5, §6), and those are what otherwise get
-rediscovered the hard way. The one positive (§7) is a tie, reported as a tie.
+**Status: the central premise was TESTED IN A TRANSFORMER AND REFUTED. See §11.**
+
+Everything in §1-§7 is a correct measurement on a 4-block residual MLP over synthetic
+regression. The *inference* those measurements invited -- that GeGLU's unbounded gradient
+path makes it fragile, and that bounding it would buy stability -- does not survive
+contact with a real encoder. §11 records the refutation. Read it before acting on
+anything above it.
+
+What survives: the negative results with an identified mechanism (§5, §6), which are
+about stochastic masking and are unaffected. What does not survive: the framing in §1
+and the "sweet spot" reading of §7.
 
 Code: [`activation_variants.py`](activation_variants.py). Reproduce with
 `uv run python tools/prototypes/activation_variants.py` and `--grad-scan`.
@@ -249,3 +255,50 @@ gradient-ceiling claim is the one worth testing first, since it is the only plac
    https://arxiv.org/abs/2410.08417
 
 Related in-repo: `tools/events_working_papers/TODO.md` item 2d.
+
+---
+
+## 11. REFUTED: the gradient ceiling does not predict transformer stability
+
+Tested 2026-08-18 with `lr_ladder.py` — three FFN variants inside a 6-layer MLM encoder
+(`d_model=256`, wikitext-2, 1500 steps, linear LR warmup, batch 32 × seq 128),
+learning rate escalated until each destabilised. Divergence classified by
+`divergence.py`, which is unit-tested against synthetic traces.
+
+| variant | 1e-3 | 3e-3 | 1e-2 | 3e-2 | 1e-1 | 3e-1 |
+|---|--:|--:|--:|--:|---|---|
+| plain GELU | 6.790 | **6.403** | 6.583 | 7.203 | **DIVERGED** | DIVERGED |
+| GeGLU | 6.811 | 6.650 | 6.627 | 7.286 | 7.351 | **DIVERGED** |
+| hybrid4:fixed | 6.767 | 6.449 | 6.669 | 7.287 | 7.358 | **DIVERGED** |
+
+**Three claims above are wrong, and they are the load-bearing ones.**
+
+1. **GeGLU is the MOST stable of the three, not the least.** It tolerates a 3.3x higher
+   learning rate than plain GELU. §1 motivates this whole line on the premise that its
+   unbounded gradient path is a liability; measured in a transformer, that path is
+   associated with *better* stability.
+2. **hybrid4's lower gradient ceiling does not transfer.** §7 reports it as the lowest in
+   the study (13.4 vs GeGLU 23.2). In the encoder its `grad_late` runs 43-55 against plain
+   GELU's 10-22 — it behaves like GeGLU, and it breaks at exactly GeGLU's threshold.
+3. **hybrid4 has no stability advantage over GeGLU at all.** They tie: both survive 1e-1,
+   both die at 3e-1. The "one gated slot in eight is the sweet spot" reading of §7 was an
+   artifact of the toy harness.
+
+Fit is a three-way tie, as §7 predicted — 6.40 / 6.65 / 6.45 at the best rate, inside
+single-seed noise. That part held.
+
+**A hypothesis for why, offered as hypothesis.** Gating lets a network shrink its own
+effective step size per channel by driving gates toward zero. A pointwise activation has
+no such lever: every channel takes the full update. That would make the multiplicative
+path self-regulating rather than explosive, which is the opposite of what a local
+derivative bound suggests, and would explain why ModernBERT and mmBERT adopted GeGLU.
+
+**The methodological lesson, which is the durable part.** The toy harness measured
+`max |dy/dx|` correctly. It just does not predict divergence in a real network, because
+stability is a property of the whole optimisation — normalisation, depth, the optimiser,
+and the network's ability to adapt its own gates — not of one layer's local derivative.
+A bound on the local derivative is not a bound on training dynamics.
+
+**Consequence.** `CRAMMING_EXPERIMENT.md`'s stop rule fires: hybrid4 did not survive where
+GeGLU diverged, so the staged plan terminates at stage 0. Cost of reaching this: $0 and
+~90 minutes of local MPS, against the ~$403 the full chain would have spent.

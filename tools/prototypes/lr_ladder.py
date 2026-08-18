@@ -30,6 +30,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from divergence import classify
 from ffn_variants import build_ffn
 
 
@@ -145,8 +146,7 @@ def run_arm(kind, lr, data, tokenizer, device, steps, batch_size, seed, mlm_prob
     # LR-INDEPENDENT, so including it made the reported maximum identical across
     # different learning rates and measured nothing.
     measure_from = min(50, steps // 10)
-    losses, grad_max, grad_max_late, diverged_at = [], 0.0, 0.0, None
-    running_min = float("inf")
+    losses, grad_max, grad_max_late = [], 0.0, 0.0
     for step in range(steps):
         idx = torch.randint(data.shape[0], (batch_size,), generator=gen)
         inputs, labels = mask_tokens(data[idx], tokenizer.mask_token_id, vocab,
@@ -169,35 +169,24 @@ def run_arm(kind, lr, data, tokenizer, device, steps, batch_size, seed, mlm_prob
             grad_max = max(grad_max, gnorm)
             if step >= measure_from:
                 grad_max_late = max(grad_max_late, gnorm)
-        # Divergence for MLM is a RISE OFF THE RUNNING MINIMUM, not a multiple of the
-        # first loss. The initial loss is already ~ln(vocab), the ceiling, and loss falls
-        # from there -- a "2x first loss" test can essentially never fire, so it reported
-        # every arm stable regardless of what happened.
-        if math.isfinite(value):
-            running_min = min(running_min, value)
-        if diverged_at is None and (not math.isfinite(value)
-                                    or (step > measure_from and value > running_min + 1.0)):
-            diverged_at = step
 
-    tail = [v for v in losses[-50:] if math.isfinite(v)]
-    final = sum(tail) / len(tail) if tail else float("nan")
-    random_loss = math.log(vocab)
+    # Classification lives in divergence.py and is unit-tested there. Two hand-rolled
+    # criteria were wrong here before -- one that could never fire, one that fired on
+    # step 51 of a healthy run -- and neither was visible until a run had been spent.
+    verdict = classify(losses, vocab)
     return {
         "variant": kind,
         "lr": lr,
         "params": sum(p.numel() for p in model.parameters()),
-        "final_loss": final,
+        "final_loss": verdict["final"],
         "min_loss": min((v for v in losses if math.isfinite(v)), default=float("nan")),
-        "random_baseline": random_loss,
-        # A run that never beats ln(vocab) by a clear margin has not trained, and a
-        # stability comparison over untrained models is meaningless. Surfaced as a
-        # first-class flag so it cannot be mistaken for "stable".
-        "learned": math.isfinite(final) and final < random_loss - 2.0,
+        "random_baseline": verdict["random_baseline"],
+        "learned": verdict["learned"],
         "grad_max": grad_max,
         "grad_max_after_warmup": grad_max_late,
         "warmup_steps": warmup_steps,
-        "diverged_at": diverged_at,
-        "nonfinite": not all(math.isfinite(v) for v in losses),
+        "diverged_at": verdict["diverged_at"],
+        "nonfinite": verdict["nonfinite"],
     }
 
 

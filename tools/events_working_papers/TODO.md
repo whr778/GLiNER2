@@ -615,7 +615,22 @@ Raw annotation counts are useless for this — they rise across the board under 
 
 ### 2d. What breaks a stochastic activation is FUNCTION-CLASS churn, not randomness
 Explored 2026-08-18, prompted by the observation that GeGLU's gate reintroduces an
-unbounded gradient path. **Answered, with one usable positive.**
+unbounded gradient path. **Answered -- and the motivating premise was then REFUTED in a
+real transformer. CLOSED.**
+
+**Read this first.** `tools/prototypes/lr_ladder.py`, 6-layer MLM encoder on wikitext-2,
+LR escalated to divergence: plain GELU dies at 1e-1, **GeGLU and hybrid4:fixed both
+survive it and both die at 3e-1**. So GeGLU is the MOST stable of the three, not the
+least, and hybrid4's toy-measured gradient-ceiling advantage (13.4 vs 23.2) does not
+transfer -- in the encoder its grad norms track GeGLU's and it breaks at GeGLU's
+threshold. The gradient-bound analysis below is correct as measurement and wrong as
+prediction: a bound on a layer's local derivative is not a bound on training dynamics,
+which depend on normalisation, depth, the optimiser, and the network's ability to adapt
+its own gates. Full write-up in `tools/prototypes/PARTIAL_GATING.md` section 11.
+
+The function-class-churn result (below) is unaffected -- it is about stochastic masking,
+not about gating, and it still holds. Cost of the refutation: $0, ~90 min local MPS,
+against a ~$379 staged plan that the stop rule correctly cancelled.
 
 The starting diagnosis is correct and worth recording. A pointwise activation has a
 bounded derivative -- ReLU exactly [0,1], GELU [-0.1289, +1.1289] -- so it cannot
