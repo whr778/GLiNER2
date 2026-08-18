@@ -1,5 +1,14 @@
 # Per-task event loss weighting on the boundary architecture — evaluation plan
 
+> **⚠ 2026-08-18: every joint_ie / 137k number in this document predates a data repair
+> and is superseded.** 45 corpora shipped overlapping train/val/test, and the scaling
+> configs additionally paired regenerated train files against frozen val slices
+> (252 train-in-val, 22 val-in-test). All were repaired, the slices rebuilt, and the
+> four scaling points now gate CLEAN. The curve is being re-run from scratch — see
+> `JOINT_IE_SCALING.md` and [[lambda-137k-curve-restart]]. Numbers below are kept as
+> the record of what was measured and believed at the time; do not compare new results
+> against them.
+
 Phase 3 successor to [`EVENT_LOSS_PLAN.md`](EVENT_LOSS_PLAN.md), which is the **phase 2
 (span) plan** and is kept as history. That plan is fully implemented on
 `origin/mmbert_training` and does not port; this one states what the phase-3 analogue is,

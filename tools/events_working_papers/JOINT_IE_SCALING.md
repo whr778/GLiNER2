@@ -6,7 +6,29 @@ finding ([[mmbert-head-init-finding]]). Sibling line to [[EKF_MHT_DESIGN]] — a
 route to dense document-level extraction: a global typed-constraint decode instead of a
 tracker.
 
-> ## ⚠ Every number below was measured on a CONTAMINATED blind test (2026-08-15)
+> ## ⚠⚠ SUPERSEDED TWICE. The "clean" column below is ALSO pre-repair (2026-08-18)
+>
+> A **second, larger** contamination was found on 2026-08-18: 45 corpora shipped
+> train/val/test that overlapped each other, and this config additionally paired
+> regenerated `data/*.train.jsonl` against FROZEN `data/scaling_joint/*.val.jsonl`
+> from 2026-08-08 — 252 train-in-val and 22 val-in-test documents, mostly
+> `events_biotech` and `text2json`.
+>
+> So the numbers presented below as **"clean" are not clean**. Both columns of that
+> table are superseded. All 45 corpora were repaired (21,553 records dropped, 0.94%),
+> the scaling slices were rebuilt from the repaired sources, and all four points now
+> gate CLEAN via `check_leakage.py --config`.
+>
+> **The curve is being re-run from scratch on repaired data** — see
+> [[lambda-137k-curve-restart]]. First clean point (10k): entity strict 0.2779,
+> event_type 0.8138, event_trigger 0.2259, event_argument 0.0130, relation 0.0058.
+> These are NOT comparable to anything below; the pool also shifted slightly
+> (136,772 records, was 136,787).
+>
+> The historical warning is kept below because the *reasoning* still applies and the
+> two-effects-confounded point is still worth understanding.
+>
+> ## ⚠ Historical (2026-08-15): the FIRST contamination
 >
 > The splits leaked. `SplitWriter` drew one random **per row**, so a document emitted more
 > than once scattered across train/val/test. On this config's aggregated splits that put

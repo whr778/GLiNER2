@@ -1,5 +1,14 @@
 # Project Journal — Global Inference on Boundary-Head Candidates
 
+> **⚠ 2026-08-18: every joint_ie / 137k number in this document predates a data repair
+> and is superseded.** 45 corpora shipped overlapping train/val/test, and the scaling
+> configs additionally paired regenerated train files against frozen val slices
+> (252 train-in-val, 22 val-in-test). All were repaired, the slices rebuilt, and the
+> four scaling points now gate CLEAN. The curve is being re-run from scratch — see
+> `JOINT_IE_SCALING.md` and [[lambda-137k-curve-restart]]. Numbers below are kept as
+> the record of what was measured and believed at the time; do not compare new results
+> against them.
+
 A chronological record of what was decided, why, and what later proved wrong. The other
 working papers state conclusions; this one states the *path*, including the reversals,
 because several of the most useful results in this program are corrections to earlier

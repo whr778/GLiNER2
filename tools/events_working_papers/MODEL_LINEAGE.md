@@ -1,5 +1,14 @@
 # Model Lineage — every training config, in training order, mapped to the research
 
+> **⚠ 2026-08-18: every joint_ie / 137k number in this document predates a data repair
+> and is superseded.** 45 corpora shipped overlapping train/val/test, and the scaling
+> configs additionally paired regenerated train files against frozen val slices
+> (252 train-in-val, 22 val-in-test). All were repaired, the slices rebuilt, and the
+> four scaling points now gate CLEAN. The curve is being re-run from scratch — see
+> `JOINT_IE_SCALING.md` and [[lambda-137k-curve-restart]]. Numbers below are kept as
+> the record of what was measured and believed at the time; do not compare new results
+> against them.
+
 Status: index. Date: 2026-08-17. Covers all 93 files in `tools/train/config/`.
 
 Every model we trained is a chain: some base checkpoint, then one or more training stages,
