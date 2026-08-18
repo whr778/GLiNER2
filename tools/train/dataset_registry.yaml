@@ -87,6 +87,7 @@ datasets:
     license: MIT
     hf_id: numind/NuNER
     source_url: https://huggingface.co/datasets/numind/NuNER
+    hf_jsonl: whr778/nuner_full
     language: [en]
     description: "Synthetic NER with LLM-generated entity types and natural-language descriptions."
   pile_ner_def:
@@ -95,6 +96,7 @@ datasets:
     license: see card
     hf_id: Universal-NER/Pile-NER-definition
     source_url: https://huggingface.co/datasets/Universal-NER/Pile-NER-definition
+    hf_jsonl: whr778/pile_ner_def
     language: [en]
     description: "NER where each entity type is a natural-language definition; definitions stored in entity_descriptions."
   knowledgator_gliner:
@@ -103,6 +105,7 @@ datasets:
     license: Apache-2.0
     hf_id: knowledgator/GLINER-multi-task-synthetic-data
     source_url: https://huggingface.co/datasets/knowledgator/GLINER-multi-task-synthetic-data
+    hf_jsonl: whr778/knowledgator_gliner
     language: [en]
     description: "Dense multi-type synthetic NER (~10 types per record), open vocabulary."
   gliner_multilingual:
@@ -111,6 +114,7 @@ datasets:
     license: see card
     hf_id: knowledgator/gliner-multilingual-synthetic
     source_url: https://huggingface.co/datasets/knowledgator/gliner-multilingual-synthetic
+    hf_jsonl: whr778/gliner_multilingual
     language: [en, de, fr, es, it, pl, nl, pt]
     description: "Multilingual synthetic NER (German, French, Polish, and others) for multilingual encoder training."
   biomed_ner:
@@ -119,6 +123,7 @@ datasets:
     license: Apache-2.0
     hf_id: knowledgator/biomed_NER
     source_url: https://huggingface.co/datasets/knowledgator/biomed_NER
+    hf_jsonl: whr778/biomed_ner
     language: [en]
     description: "Biomedical NER with a fixed 33-class schema covering chemicals, disorders, genes, and species."
   pubmed_abstracts_ner:
@@ -127,6 +132,7 @@ datasets:
     license: Apache-2.0
     hf_id: knowledgator/PubMedAbstractsNER
     source_url: https://huggingface.co/datasets/knowledgator/PubMedAbstractsNER
+    hf_jsonl: whr778/pubmed_abstracts_ner
     language: [en]
     description: "PubMed abstracts annotated with ~470 UMLS-style biomedical types; definitions parsed into entity_descriptions."
   kaznerd:
@@ -135,6 +141,7 @@ datasets:
     license: cc-by-4.0
     hf_id: yeshpanovrustem/kaznerd
     source_url: https://huggingface.co/datasets/yeshpanovrustem/kaznerd
+    hf_jsonl: whr778/kaznerd
     language: [kk]
     description: "Kazakh Wikipedia and news NER; BIO token tags folded into surface spans."
   bc4chemd:
@@ -143,6 +150,7 @@ datasets:
     license: see card
     hf_id: chintagunta85/bc4chemd
     source_url: https://huggingface.co/datasets/chintagunta85/bc4chemd
+    hf_jsonl: whr778/bc4chemd
     language: [en]
     description: "BioCreative IV chemical NER over PubMed abstracts; 1 type (CHEMICAL)."
   bc5cdr:
@@ -167,6 +175,7 @@ datasets:
     license: cc-by-nc-4.0
     hf_id: gtfintechlab/finer-ord
     source_url: https://huggingface.co/datasets/gtfintechlab/finer-ord
+    hf_jsonl: whr778/finer_ord
     language: [en]
     description: "Financial NER (PER/LOC/ORG) over financial news; cc-by-nc-4.0 makes derived models non-commercial."
   klue_ner:
@@ -191,6 +200,7 @@ datasets:
     license: see card
     hf_id: knowledgator/bio-NER-relations
     source_url: https://huggingface.co/datasets/knowledgator/bio-NER-relations
+    hf_jsonl: whr778/bio_ner_relations
     language: [en]
     description: "Biomedical NER + relation extraction; 48 entity types, 5 relation types."
   docred:
@@ -199,6 +209,7 @@ datasets:
     license: MIT
     hf_id: thunlp/docred
     source_url: https://huggingface.co/datasets/thunlp/docred
+    hf_jsonl: whr778/docred
     language: [en]
     description: "Document-level NER + RE; train merges gold-annotated and distant-supervised documents."
   redocred:
@@ -207,6 +218,7 @@ datasets:
     license: see card
     hf_id: tonytan48/Re-DocRED
     source_url: https://huggingface.co/datasets/tonytan48/Re-DocRED
+    hf_jsonl: whr778/redocred
     language: [en]
     description: "Revised DocRED with corrected gold annotations; canonical train/val/test splits, 96 relation types, 6 entity types."
   klue_re:
@@ -214,6 +226,7 @@ datasets:
     tasks: NER + relations (Korean)
     license: cc-by-sa-4.0
     source_url: https://github.com/KLUE-benchmark/KLUE
+    hf_jsonl: whr778/klue_re
     language: [ko]
     description: "Korean relation extraction; 6 entity types, 29 relation types."
   biored:
@@ -237,6 +250,7 @@ datasets:
     license: Apache-2.0
     hf_id: knowledgator/gliclass-v3-logic-dataset
     source_url: https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset
+    hf_jsonl: whr778/gliclass_logic
     language: [en]
     description: "Multiple-choice classification with arbitrary per-record candidate label sets."
   gliclass_rac:
@@ -245,6 +259,7 @@ datasets:
     license: Apache-2.0
     hf_id: knowledgator/gliclass-v2.0-RAC
     source_url: https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC
+    hf_jsonl: whr778/gliclass_rac
     language: [en]
     description: "General-domain multi-label classification; open per-record candidate sets."
   scientific_text:
@@ -253,6 +268,7 @@ datasets:
     license: see card
     hf_id: knowledgator/Scientific-text-classification
     source_url: https://huggingface.co/datasets/knowledgator/Scientific-text-classification
+    hf_jsonl: whr778/scientific_text
     language: [en]
     description: "Single-label classification of scientific abstracts across 10 broad domains."
   events_biotech:
@@ -286,6 +302,7 @@ datasets:
     tasks: NER + event extraction
     license: see source
     source_url: https://github.com/raspberryice/gen-arg
+    hf_jsonl: whr778/wikievents
     language: [en]
     description: "KAIROS-ontology event extraction co-trained with typed entity mentions; 49 event types, 57 argument roles."
   rams:
@@ -321,15 +338,22 @@ datasets:
     tasks: Event extraction (Chinese military)
     license: see source
     source_url: https://github.com/2086482524/CMNEE
+    hf_jsonl: whr778/cmnee
     language: [zh]
     description: "Chinese military news event extraction; 8 event types, 11 argument roles."
   docee:
     name: DocEE
     tasks: Event extraction (doc-level)
-    license: see source
+    # NO license is declared anywhere: no LICENSE file in the repo, GitHub reports none,
+    # and the data ships via a Google Drive link. That is MORE restrictive than a
+    # permissive license, not less -- no declared license is no grant of redistribution.
+    # Source text is Wikipedia historical/timeline events plus news articles, so the
+    # documents carry third-party copyright regardless. Private research cache only.
+    license: none declared (see source; not redistributable)
     source_url: https://github.com/tongmeihan1995/docee
+    hf_jsonl: whr778/docee
     language: [en]
-    description: "Document-level event extraction; one event per document mapped to role-typed entities and document classification."
+    description: "Document-level event extraction; one event per document mapped to role-typed entities and document classification. SPLITS ARE REPAIRED: upstream normal_setting overlaps itself (56 train/val, 12 train/test, 26 val/test documents, plus 84 duplicates inside one split) and the converter honours it 1:1, so dedupe_splits.py runs after conversion with precedence test > val > train. 21,842 / 2,721 / 2,744 after repair, from 21,966 / 2,748 / 2,771."
   chfinann:
     name: ChFinAnn
     tasks: Event extraction (Chinese financial, doc-level)
@@ -342,6 +366,7 @@ datasets:
     tasks: Event extraction (Chinese financial, doc-level)
     license: cc-by-4.0
     source_url: https://figshare.com/articles/dataset/28632464
+    hf_jsonl: whr778/docfee
     language: [zh]
     description: "Trigger-free document-level Chinese financial event extraction (9 event types); mapped to best-effort role-typed entities and multi-label event-type classification."
   duee:
@@ -357,6 +382,7 @@ datasets:
     tasks: Event detection (trigger)
     license: cc-by-4.0
     source_url: https://data.mendeley.com/datasets/7d54rvzxkr/1
+    hf_jsonl: whr778/mendeley_ed
     language: [en]
     description: "English ongoing-event trigger detection over NYT economic news; one generic event type, trigger-only."
   mendeley_ner:
@@ -364,6 +390,7 @@ datasets:
     tasks: NER (event types as entity labels)
     license: cc-by-4.0
     source_url: https://data.mendeley.com/datasets/7d54rvzxkr/1
+    hf_jsonl: whr778/mendeley_ner
     language: [en]
     description: "Mendeley event-trigger detection reframed as entity detection: the event type is an entity label whose spans are the triggers."
   ace2005:
@@ -379,6 +406,7 @@ datasets:
     license: afl-3.0
     hf_id: masakhane/masakhaner2
     source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner
     language: [bam, bbj, ewe, fon, hau, ibo, kin, lug, luo, mos, nya, pcm, sna, swa, tsn, twi, wol, xho, yor, zul]
     description: "Human-annotated NER over 20 African languages; PER/ORG/LOC/DATE mapped to person/organization/location/date; official per-language splits."
   masakhanews:
@@ -387,6 +415,7 @@ datasets:
     license: afl-3.0
     hf_id: masakhane/masakhanews
     source_url: https://huggingface.co/datasets/masakhane/masakhanews
+    hf_jsonl: whr778/masakhanews
     language: [amh, eng, fra, hau, ibo, lin, lug, orm, pcm, run, sna, som, swa, tir, xho, yor]
     description: "News-topic classification over 16 African languages; 7 topics (business/entertainment/health/politics/religion/sports/technology)."
   wikiann:
@@ -414,6 +443,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/bc2gm
     language: [en]
     description: "BioCreative II Gene Mention; gene/protein spans. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   bionlp09:
@@ -470,6 +500,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/craft
     language: [en]
     description: "Colorado Richly Annotated Full-Text; 6 ontology types (chemical, cell, protein/gene, species, sequence ontology, gene ontology). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   ex_ptm:
@@ -486,6 +517,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/jnlpba
     language: [en]
     description: "JNLPBA; protein, DNA, RNA, cell line, cell type. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   linnaeus:
@@ -494,6 +526,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/linnaeus
     language: [en]
     description: "LINNAEUS species mention corpus. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   ncbi_disease:
@@ -502,6 +535,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/ncbi_disease
     language: [en]
     description: "NCBI Disease corpus; disease mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   synthetic_sonnet5_1k:
@@ -570,6 +604,7 @@ datasets:
     license: see constituent corpora
     hf_id: null
     source_url: null
+    hf_jsonl: whr778/warmstart_mix
     language: [en, zh]
     description: "Derived mixture, not a source corpus: built by tools/train/build_warmstart_mix.py to add STRUCTURE and NER to a trained joint-boundary checkpoint without losing what it already does. 70% new (casualty_multi_loc structure + pile_ner_def/nuner_full NER, split evenly rather than by pool size so definition-bearing NER is not buried 20:1) and 30% replay sampled from the 137K pool at its own 73/27 event/relation ratio. Documents are capped at 2,000 chars: step cost is superlinear in sequence length and text2json alone is 30.6% over 4,000 chars (max 102,068), which cost 1.87x throughput for records the pools can replace with shorter ones. Pre-shuffled at the example level so every batch is a mixture rather than a task block. Licensing is that of the constituent corpora."
 
@@ -588,6 +623,7 @@ datasets:
     license: see constituent corpora
     hf_id: null
     source_url: null
+    hf_jsonl: whr778/mix_anchorless
     language: [en, zh]
     description: "warmstart_mix whose casualty records declare mode=anchorless -- instances formed with no anchor mention. The losing arm of the record-mode A/B: 1/9 instances and 0/9 location fills, versus 7/9 and 6/9 for mix_natural, on identical data. Retained for provenance because the result is informative rather than a failed build: a casualty record appears to genuinely HAVE a natural anchor (the figure itself), so removing it leaves nothing to key instances on."
 
@@ -655,3 +691,123 @@ datasets:
     source_url: null
     language: [en]
     description: "The anchorless counterpart to casualty_natural: byte-identical with record_metadata stripped, verified by content hash, so the mode is the only variable. The losing arm -- 1/9 instances and 0/9 location fills against 7/9 and 6/9 for the natural arm on identical data. Retained because the result is informative: a casualty record genuinely has a natural anchor (the figure itself), so removing it leaves nothing to key instances on. Train split only."
+  masakhaner_bbj:
+    name: MasakhaNER 2.0 (bbj)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_bbj
+    language: [bbj]
+    description: "Per-language split of MasakhaNER 2.0 (bbj); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_hau:
+    name: MasakhaNER 2.0 (hau)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_hau
+    language: [ha]
+    description: "Per-language split of MasakhaNER 2.0 (hau); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_ibo:
+    name: MasakhaNER 2.0 (ibo)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_ibo
+    language: [ig]
+    description: "Per-language split of MasakhaNER 2.0 (ibo); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_kin:
+    name: MasakhaNER 2.0 (kin)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_kin
+    language: [rw]
+    description: "Per-language split of MasakhaNER 2.0 (kin); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_nya:
+    name: MasakhaNER 2.0 (nya)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_nya
+    language: [ny]
+    description: "Per-language split of MasakhaNER 2.0 (nya); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_pcm:
+    name: MasakhaNER 2.0 (pcm)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_pcm
+    language: [pcm]
+    description: "Per-language split of MasakhaNER 2.0 (pcm); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_sna:
+    name: MasakhaNER 2.0 (sna)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_sna
+    language: [sn]
+    description: "Per-language split of MasakhaNER 2.0 (sna); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_swa:
+    name: MasakhaNER 2.0 (swa)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_swa
+    language: [sw]
+    description: "Per-language split of MasakhaNER 2.0 (swa); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_xho:
+    name: MasakhaNER 2.0 (xho)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_xho
+    language: [xh]
+    description: "Per-language split of MasakhaNER 2.0 (xho); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhaner_yor:
+    name: MasakhaNER 2.0 (yor)
+    tasks: NER (20 African languages, 4 types)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhaner2
+    hf_jsonl: whr778/masakhaner_yor
+    language: [yo]
+    description: "Per-language split of MasakhaNER 2.0 (yor); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhaner -- the combined corpus contains these same documents."
+  masakhanews_amh:
+    name: MasakhaNEWS (amh)
+    tasks: Classification (16 African languages, 7 topics)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhanews
+    hf_jsonl: whr778/masakhanews_amh
+    language: [am]
+    description: "Per-language split of MasakhaNEWS (amh); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhanews -- the combined corpus contains these same documents."
+  masakhanews_eng:
+    name: MasakhaNEWS (eng)
+    tasks: Classification (16 African languages, 7 topics)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhanews
+    hf_jsonl: whr778/masakhanews_eng
+    language: [en]
+    description: "Per-language split of MasakhaNEWS (eng); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhanews -- the combined corpus contains these same documents."
+  masakhanews_fra:
+    name: MasakhaNEWS (fra)
+    tasks: Classification (16 African languages, 7 topics)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhanews
+    hf_jsonl: whr778/masakhanews_fra
+    language: [fr]
+    description: "Per-language split of MasakhaNEWS (fra); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhanews -- the combined corpus contains these same documents."
+  masakhanews_ibo:
+    name: MasakhaNEWS (ibo)
+    tasks: Classification (16 African languages, 7 topics)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhanews
+    hf_jsonl: whr778/masakhanews_ibo
+    language: [ig]
+    description: "Per-language split of MasakhaNEWS (ibo); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhanews -- the combined corpus contains these same documents."
+  masakhanews_pcm:
+    name: MasakhaNEWS (pcm)
+    tasks: Classification (16 African languages, 7 topics)
+    license: afl-3.0
+    source_url: https://huggingface.co/datasets/masakhane/masakhanews
+    hf_jsonl: whr778/masakhanews_pcm
+    language: [pcm]
+    description: "Per-language split of MasakhaNEWS (pcm); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhanews -- the combined corpus contains these same documents."

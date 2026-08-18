@@ -94,9 +94,27 @@ def main() -> int:
     args = ap.parse_args()
 
     paths = derive_split_paths(args.base)
-    missing = [str(p) for p in paths.values() if not p.exists()]
-    if missing:
-        raise SystemExit(f"missing split file(s): {', '.join(missing)}")
+    # Some converters emit `.dev.jsonl` instead of `.val.jsonl` (wikievents, rams).
+    # Fall back to it rather than refusing to repair the corpus: the validation split
+    # is the middle precedence tier, and skipping it would leave train/val overlap
+    # unrepaired while reporting success on the pair it did check.
+    if not paths["val"].exists():
+        dev = Path(str(paths["val"]).replace(".val.jsonl", ".dev.jsonl"))
+        if dev.exists():
+            print(f"  using {dev.name} as the validation split")
+            paths["val"] = dev
+    # Operate on whichever splits exist. Refusing outright left train+val-only corpora
+    # (warmstart_mix has no test) permanently unrepairable, which is worse than
+    # repairing the pair that IS present -- precedence still holds among the survivors.
+    present = {s: q for s, q in paths.items() if q.exists()}
+    if len(present) < 2:
+        absent = ", ".join(str(q) for s, q in paths.items() if s not in present)
+        raise SystemExit(f"need at least two split files, found {len(present)}; "
+                         f"absent: {absent}")
+    if len(present) < len(paths):
+        print(f"  no {'/'.join(s for s in paths if s not in present)} split; "
+              f"repairing {'/'.join(present)} only")
+    paths = present
 
     print(f"{'DRY RUN: ' if args.dry_run else ''}{args.base} (precedence test > val > train)")
     total = dedupe(paths, dry_run=args.dry_run)
