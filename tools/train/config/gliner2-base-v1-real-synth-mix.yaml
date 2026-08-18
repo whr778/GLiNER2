@@ -49,7 +49,13 @@ training:
   metric_for_best: eval_entity_fair_micro_f1
   greater_is_better: true
   save_best: true
-  save_total_limit: 3
+  # Keep EVERY epoch. The synthetic twin lost 22% on general NER while gaining
+  # in-distribution, so the best in-domain checkpoint may be the worst preserving
+  # one. Retaining all 10 lets the preservation curve be scored per epoch and the
+  # knee found post hoc -- early stopping as the cheapest regularizer. Retention
+  # only: no effect on the loss, LR, batch or gradient path, so the arm stays
+  # matched to the synthetic control. 'best'/'final' are exempt from rotation.
+  save_total_limit: 10
   logging_steps: 10
   num_workers: 0
   validate_data: false
