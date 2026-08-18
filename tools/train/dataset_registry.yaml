@@ -70,6 +70,18 @@ base_models:
     name: gliner2-multi-v1
     license: see model card
     source_url: https://huggingface.co/fastino/gliner2-multi-v1
+  whr778/gliner2-base-v1-synthetic-haiku5k:
+    name: gliner2-base-v1 fine-tuned on synthetic_haiku45_5k
+    license: derived from fastino/gliner2-base-v1
+    source_url: local (tools/train/config/gliner2-base-v1-synthetic-haiku5k.yaml), pushed private to the Hub
+  whr778/gliner2-base-v1-ccnews-real:
+    name: gliner2-base-v1 fine-tuned on cc_news_haiku45 (real text, model labels)
+    license: derived from fastino/gliner2-base-v1; TRAINING TEXT IS NOT REDISTRIBUTABLE (cc_news license unknown, publisher copyright)
+    source_url: local (tools/train/config/gliner2-base-v1-ccnews-real.yaml), pushed private to the Hub
+  whr778/gliner2-base-v1-real-synth-mix:
+    name: gliner2-base-v1 fine-tuned on cc_news_haiku45 + synthetic (74.4/25.6, NOT Fastino's 53/47)
+    license: derived from fastino/gliner2-base-v1; TRAINING TEXT IS NOT REDISTRIBUTABLE (cc_news license unknown, publisher copyright)
+    source_url: local (tools/train/config/gliner2-base-v1-real-synth-mix.yaml), pushed private to the Hub
   microsoft/deberta-v3-base:
     name: DeBERTa-v3-base
     license: mit
@@ -811,3 +823,11 @@ datasets:
     hf_jsonl: whr778/masakhanews_pcm
     language: [pcm]
     description: "Per-language split of MasakhaNEWS (pcm); emitted alongside the combined corpus by the same converter. Splits repaired with dedupe_splits.py. Do NOT train on this together with masakhanews -- the combined corpus contains these same documents."
+  replay_pile30:
+    name: Pile-NER-definition 30% replay slice
+    tasks: NER (replay)
+    license: see card
+    source_url: https://huggingface.co/datasets/Universal-NER/Pile-NER-definition
+    hf_jsonl: whr778/replay_pile30
+    language: [en]
+    description: "9,361-record seed-42 slice of pile_ner_def train, sized to be exactly 30% of a DocEE mixture. Guards against the catastrophic forgetting measured on zero-replay arms (-23% to -39% general-domain entity F1, label-space collapse per FairEval). SHARED across all DocEE arms so they differ only in starting checkpoint. Verified 0 overlap with pile_ner_def val, knowledgator_gliner val, docee val/test. NOTE: since pile_ner_def val is half the preservation eval, a good score there after training on this means the replay worked, not that capability survived unaided -- score knowledgator_gliner val separately as the out-of-replay-distribution half."

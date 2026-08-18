@@ -1,0 +1,90 @@
+# DocEE downstream arm: the untouched base -- the control leg.
+#
+# One of four arms that differ ONLY in `pretrained`. The question arm 3 could not
+# answer: preservation measures what a model KEEPS, not what it GAINS, so this
+# measures downstream CAPABILITY on a task none of the arms trained on.
+#
+# **30% REPLAY, deliberately.** Arm 3 measured unmitigated catastrophic forgetting --
+# every arm there was 100% new data and lost 23-39% of general-domain entity F1, in
+# monotonic order of training volume. Repeating that here would fine-tune an
+# already-damaged model and measure the damage twice. 21,842 DocEE + 9,361 replay =
+# 31,203, replay exactly 30.0%, matching the ratio `build_warmstart_mix.py` already
+# uses ("70% new tasks, 30% replay").
+#
+# **The replay source is SHARED across all four arms** (`data/replay_pile30`, a seed-42
+# slice of pile_ner_def train). Replaying each arm's own prior data would make the arms
+# differ in more than the starting checkpoint and confound the comparison.
+#
+# **Interpreting the preservation score afterwards.** pile_ner_def VAL is half the
+# preservation eval and we now train on its TRAIN split -- disjoint, verified 0 overlap,
+# but it means a good score there says "replay worked", not "capability survived".
+# Score the two halves separately: pile_ner_def val is IN-replay-distribution,
+# knowledgator_gliner val is OUT-of-replay-distribution. If only the first recovers,
+# the replay is narrow.
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/docee-arm-base
+  experiment_name: docee_arm_base
+  data_parallel: false
+  num_epochs: 10
+  batch_size: 8              # A10 22GB: batch 16 OOMs in deberta disentangled attn
+  gradient_accumulation_steps: 4
+  encoder_lr: 1.0e-5
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: false
+  fp16: true
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_classification_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  # Keep every epoch: arm 3 found 75% of forgetting lands in epoch 1 and that the
+  # in-domain optimum (epoch 10, by +0.0001) was nearly the WORST preserving
+  # checkpoint. The knee is only findable if the checkpoints survive.
+  save_total_limit: 10
+  logging_steps: 10
+  num_workers: 0
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false
+
+eval:
+  batch_size: 4              # 16 OOMs on pile_ner_def, whose records carry large label sets
+  threshold: 0.5
+  threshold_sweep: true
+  chunk_size: 384
+  chunk_overlap: 128
+  global_decode: true        # DocEE is document-level; reconnect events across windows
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/replay_pile30      # 9,361 records, 30% of the mixture, SHARED across arms
+  event_files:
+    docee:
+      train: data/docee.train.jsonl
+      val: data/docee.val.jsonl
+      test: data/docee.test.jsonl

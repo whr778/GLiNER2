@@ -10,13 +10,28 @@ train/dev/test splits — including WikiEvents, RAMS, CMNEE, DocEE, DuEE, Re-Doc
 the MTL-Bioinformatics-2016 corpora, and the MasakhaNER 2.0 / MasakhaNEWS
 benchmarks — keep their canonical splits (noted per corpus below).
 
-> **Splits are grouped by document (2026-08-15).** `SplitWriter` routes on a
-> normalized hash of `record["input"]`, so a source emitting one document several
-> times keeps every copy in one split. It previously drew one random *per row*, and
-> the corpora built before the fix leak into their own evals — measured val-in-train:
-> text2json **99.0%**, gliclass_logic 38.3%, knowledgator_gliner 27.1%,
-> events_biotech 21.6%, klue_re 17.3%, finer_ord 14.4%, the MasakhaNER family 12-14%,
-> sentence_rex 4.5%. **Rows below marked ✅ have been regenerated; the rest have not.**
+> **Splits are grouped by document (2026-08-15), and all known contamination was
+> REPAIRED 2026-08-18.** `SplitWriter` routes on a normalized hash of
+> `record["input"]`, so a source emitting one document several times keeps every copy
+> in one split. It previously drew one random *per row*, and corpora built before that
+> fix leaked into their own evals.
+>
+> **45 corpora were repaired in place** by `tools/data/dedupe_splits.py` (precedence
+> test > val > train, so the blind test keeps its documents), dropping 21,553 records
+> of 2.3M (0.94%). Worst were gliclass_logic 25.7%, knowledgator_gliner 15.6%,
+> klue_re 11.3%; the smallest were single documents. `check_leakage.py` now passes
+> repo-wide on the within-split gate. Pre-repair originals are in
+> `data/_backup_pre_dedupe_20260818/`, and all 45 are mirrored private on the Hub with
+> per-corpus cards carrying their own pre-repair overlap counts.
+>
+> **Consequence: results measured before 2026-08-18 used the contaminated splits** —
+> including the 137k scaling curve. Do not compare new numbers against them.
+>
+> Two defects that let this persist, both fixed: `check_leakage.py` in scan mode always
+> exited 0 (it printed findings and returned None, so a build could report "ALL DONE"
+> over contaminated splits — now has `--gate-within`), and
+> `run_all_converters.sh` had not executed at all since 2026-08-06 because of an
+> unclosed quote.
 >
 > Verify before use, and gate a whole config rather than one corpus at a time — a mix
 > pools corpora, so A's train can hold a document in B's test while neither file
@@ -38,10 +53,10 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | Pile-NER-definition | NER (typed + definitions) | 38,048 | 4,740 | 4,715 | see card | [HF](https://huggingface.co/datasets/Universal-NER/Pile-NER-definition) |
 | GLiNER multi-task synthetic | NER (multi-task) | 10,319 | 1,276 | 1,288 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/GLINER-multi-task-synthetic-data) |
 | GLiNER multilingual synthetic | NER (multilingual) | 77,259 | 9,598 | 9,749 | see card | [HF](https://huggingface.co/datasets/knowledgator/gliner-multilingual-synthetic) |
-| biomed_NER | NER (biomedical) | 3,885 | 485 | 470 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/biomed_NER) |
+| biomed_NER | NER (biomedical) | 3,875 | 485 | 470 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/biomed_NER) |
 | PubMedAbstractsNER | NER (biomedical + descriptions) | 28,051 | 3,486 | 3,450 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/PubMedAbstractsNER) |
-| KazNERD | NER (Kazakh, 25 types) | 47,546 | 5,884 | 5,961 | cc-by-4.0 | [HF](https://huggingface.co/datasets/yeshpanovrustem/kaznerd) |
-| BC4CHEMD | NER (chemical) | 11,611 | 1,437 | 1,459 | see card | [HF](https://huggingface.co/datasets/chintagunta85/bc4chemd) |
+| KazNERD | NER (Kazakh, 25 types) | 47,536 | 5,884 | 5,961 | cc-by-4.0 | [HF](https://huggingface.co/datasets/yeshpanovrustem/kaznerd) |
+| BC4CHEMD | NER (chemical) | 11,604 | 1,436 | 1,459 | see card | [HF](https://huggingface.co/datasets/chintagunta85/bc4chemd) |
 | BC5CDR | NER (chemical + disease) | 3,126 | 394 | 395 | other | [HF](https://huggingface.co/datasets/tner/bc5cdr) |
 | stockmark-jpn | NER (Japanese, 8 types) | 3,900 | 486 | 473 | cc-by-sa-3.0 | [HF](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset) |
 | FiNER-ORD | NER (financial, PER/LOC/ORG) | 1,427 | 184 | 171 | **cc-by-nc-4.0** | [HF](https://huggingface.co/datasets/gtfintechlab/finer-ord) |
@@ -50,22 +65,22 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | WikiANN (PAN-X) | NER (176 langs) | _streamed_§ | _streamed_§ | _streamed_§ | see card | [HF](https://huggingface.co/datasets/unimelb-nlp/wikiann) |
 | **NER (biomedical — MTL-Bioinformatics-2016)** | | | | | | |
 | AnatEM | NER (anatomy) | 3,514 | 1,122 | 2,308 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BC2GM | NER (genes) | 6,428 | 1,292 | 2,570 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| BC2GM | NER (genes) | 6,404 | 1,283 | 2,568 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | BioNLP09 | NER (proteins) | 4,711 | 1,014 | 1,700 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | BioNLP11EPI | NER (proteins) | 3,797 | 1,241 | 2,836 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | BioNLP11ID | NER (4 types) | 1,850 | 586 | 1,389 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | BioNLP13CG | NER (16 types) | 2,936 | 964 | 1,829 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | BioNLP13GE | NER (proteins) | 1,504 | 1,663 | 1,941 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | BioNLP13PC | NER (4 types) | 2,365 | 812 | 1,575 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| CRAFT | NER (6 ontologies) | 8,344 | 2,756 | 5,694 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| CRAFT | NER (6 ontologies) | 8,291 | 2,742 | 5,652 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | Ex-PTM | NER (proteins) | 857 | 279 | 1,160 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| JNLPBA | NER (5 types) | 15,150 | 1,514 | 3,202 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| JNLPBA | NER (5 types) | 15,058 | 1,514 | 3,189 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | NCBI-disease | NER (disease) | 2,923 | 489 | 539 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| linnaeus | NER (species) | 1,556 | 524 | 1,034 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
+| linnaeus | NER (species) | 1,546 | 520 | 1,029 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
 | **Relation extraction** | | | | | | |
-| sentence_rex ✅ | Relation extraction | 34,314 | 4,268 | 4,283 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
+| sentence_rex | Relation extraction | 34,314 | 4,268 | 4,283 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
 | bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
-| DocRED | NER + relations (doc-level) | 83,951 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) |
+| DocRED | NER + relations (doc-level) | 83,940 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) |
 | Re-DocRED | NER + relations (doc-level) | 3,053 | 500 | 500 | see card | [HF](https://huggingface.co/datasets/tonytan48/Re-DocRED) |
 | KLUE-RE | NER + relations (Korean) | 26,028 | 3,237 | 3,205 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
 | BioRED | NER + relations (biomedical) | 308 | 47 | 45 | NLM / NCBI | [NCBI](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/) |
@@ -75,20 +90,20 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | GLiClass v3 logic | Classification (multiple-choice) | 4,566 | 550 | 548 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset) |
 | GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) |
 | Scientific-text-classification | Classification (single-label) | 40,047 | 4,997 | 4,956 | see card | [HF](https://huggingface.co/datasets/knowledgator/Scientific-text-classification) |
-| events_classification_biotech ✅ | Classification (multi-label) | 2,217 | 279 | 263 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
-| MasakhaNEWS | Classification (16 African langs, 7 topics) | 21,734 | 3,112 | 6,242 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhanews) |
+| events_classification_biotech | Classification (multi-label) | 2,217 | 279 | 263 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
+| MasakhaNEWS | Classification (16 African langs, 7 topics) | 21,499 | 3,094 | 6,236 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhanews) |
 | **Structured extraction** | | | | | | |
-| text2json-training-data ✅ | **Structured extraction (json_structures)** | 7,976 | 891 | 872 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
+| text2json-training-data | **Structured extraction (json_structures)** | 7,976 | 891 | 872 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
 | json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) |
 | **Event extraction** (manual download) | | | | | | |
-| WikiEvents | NER + event extraction | 206 | 20 | 20 | see source | [gen-arg](https://github.com/raspberryice/gen-arg) |
+| WikiEvents | NER + event extraction | 200 | 20 | 20 | see source | [gen-arg](https://github.com/raspberryice/gen-arg) |
 | RAMS | Event extraction (trigger + args) | 7,329 | 924 | 871 | see source | [JHU](https://nlp.jhu.edu/rams/) |
 | MAVEN | Event detection (trigger) | 2,913 | — | — | see source | [GitHub](https://github.com/THU-KEG/MAVEN-dataset) |
-| CASIE | Event extraction (cybersecurity) | 795 | 98 | 107 | see source | [GitHub](https://github.com/Ebiquity/CASIE) |
-| CMNEE | Event extraction (Chinese military) | 9,284 | 1,606 | 2,727 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
+| CASIE | Event extraction (cybersecurity) | 798 | 95 | 107 | see source | [GitHub](https://github.com/Ebiquity/CASIE) |
+| CMNEE | Event extraction (Chinese military) | 9,281 | 1,606 | 2,724 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
 | DocEE | Event extraction (doc-level) | 21,842 | 2,721 | 2,744 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
 | ChFinAnn | Event extraction (Chinese financial) | 25,632 | 3,204 | 3,204 | see source | [Doc2EDAG](https://github.com/dolphin-zs/Doc2EDAG) |
-| DocFEE | Event extraction (Chinese financial) | 16,420 | 1,824 | 800 | cc-by-4.0 | [GitHub](https://github.com/tongzhou21/DocFEE) |
+| DocFEE | Event extraction (Chinese financial) | 16,384 | 1,823 | 800 | cc-by-4.0 | [GitHub](https://github.com/tongzhou21/DocFEE) |
 | DuEE 1.0 | Event extraction (Chinese) | 11,603 | 1,453 | — | see source | [LUGE](https://www.luge.ai/) |
 | Mendeley-ED | Event detection (English, trigger-only) | 1,431 | 159 | 156 | cc-by-4.0 | [Mendeley](https://doi.org/10.17632/7d54rvzxkr.1) |
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
