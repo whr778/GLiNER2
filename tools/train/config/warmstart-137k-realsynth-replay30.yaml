@@ -1,0 +1,114 @@
+# Warm-start the CLEAN 137k boundary base on real+synthetic data, with 30% EXACT replay.
+#
+# The line this belongs to: stop fine-tuning Fastino's models and instead train mmBERT
+# to behave like them, using a base we own end to end. That is the more valid
+# experiment, and it removes the single biggest caveat hanging over the base-v1 arms.
+#
+# **Replay here is LITERAL, not a proxy.** With `fastino/gliner2-base-v1` we could never
+# replay the original training data because we do not have it -- `data/replay_pile30` is
+# only a stand-in for "the distribution base-v1 was good at". We own the 137k base AND
+# its 136,772-record pool, so `data/replay_137k30` is sampled from exactly what this
+# base trained on, proportionally across all 13 corpora (seed 42,
+# tools/train/build_137k_replay.py). "Did the original capability survive" is therefore
+# measurable against the same eval the base was scored on.
+#
+# **Why 30%.** Zero-replay fine-tuning of this repo's checkpoints has now destroyed
+# capability twice, measured: the casualty fine-tune (narrow schema, no replay, "asked
+# for a location it returns a digit") and the three base-v1 arms, which lost 23%, 32%
+# and 39% of general-domain entity F1 in monotonic order of training volume. FairEval
+# attributed it to label-space collapse, not boundary degradation -- false negatives
+# rose 27,267 -> 36,244 while boundary errors FELL.
+#
+# 5-10% and 30% are two points on a dose-response, not competing numbers: 5-10% is the
+# MINIMUM at which protection engages, 30% is where the outcome is best (user's own
+# rule from building 5,000+ models). 30% also matches build_warmstart_mix.py's existing
+# recipe. 21,354 new + 9,151 replay = 30,505.
+#
+# **Secondary payoff: structure supervision.** The 137k pool carries 7,754
+# json_structures records (5.7%); cc_news adds 1,033 and the two synthetic corpora add
+# 2,461, a **+45% increase**. The structure head read 0.0000 on the clean 10k point, so
+# this is the largest structure-supervision increase available and it is aimed straight
+# at the head that needs it. (Note for anyone reading build_warmstart_mix.py's
+# docstring: its claim that text2json supervises entities rather than structures
+# describes an OLDER state -- it now emits json_structures.)
+#
+# Verified before launch: replay has ZERO overlap with all 23 val/test files of the
+# 137k config, and zero with both preservation eval sets.
+model:
+  pretrained: ./out/joint-boundary-mmbert-137k/best   # the CLEAN base, not the contaminated one
+  architecture: boundary
+  max_len: 8192
+  # FA2 is a CORRECTNESS requirement on mmBERT, not a speed choice: sdpa+bf16 goes
+  # non-finite at step 15 (start/end/pair/soft_iou/rerank at once). Needs `kernels`.
+  attn_implementation: flash_attention_2
+  boundary_head:
+    enable_relations: true
+    enable_records: true      # load-bearing: the +45% structure supervision needs it
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/warmstart-137k-realsynth-replay30
+  experiment_name: warmstart_137k_realsynth_replay30
+  data_parallel: false
+  num_epochs: 5
+  batch_size: 4
+  gradient_accumulation_steps: 8    # effective 32, matching the base recipe on 1 GPU
+  encoder_lr: 1.0e-5                # warm start: below the 2e-5 the cold base used
+  task_lr: 3.0e-4                   # and below its 5e-4, which was tuned for COLD heads
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  # Keep every epoch. On the base-v1 arms 75% of forgetting landed in epoch 1 and the
+  # in-domain optimum was nearly the WORST-preserving checkpoint; the knee is only
+  # findable if the epochs survive.
+  save_total_limit: 5
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: true
+  window_stride: 3072
+  max_len: 4096
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  # ~7-13% of records in chfinann/docfee/casie/text2json cannot be mapped to word token
+  # boundaries by the boundary preprocessor even though every surface IS present
+  # verbatim. Skip them (counted, not silent) rather than aborting a multi-hour run.
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+
+eval:
+  batch_size: 2
+  threshold: 0.5
+  threshold_sweep: true
+  eval_by_language: false
+
+labels:
+  entities:
+    rollup: false
+    separator: "."
+    map: {}
+  relations:
+    rollup: false
+    separator: "."
+    map: {}
+  events:
+    rollup: false
+    separator: "."
+    map: {}
+
+data:
+  corpora:
+    - data/cc_news_haiku45         # 15,839 real news, haiku-4-5 labels
+    - data/synthetic_haiku45_5k    #  4,018 generated, same annotator
+    - data/synthetic_sonnet5_1k    #  1,497 generated, narrow ontology
+    - data/replay_137k30           #  9,151 EXACT replay of the 137k pool, 30% of total
+  event_files: {}
