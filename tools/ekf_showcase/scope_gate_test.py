@@ -256,6 +256,45 @@ def oracle_gate(observations: list, states: dict, series: dict) -> dict:
     return kept
 
 
+def oracle_gate_three_way(observations: list, states: dict, series: dict,
+                          tol: float) -> dict:
+    """The ceiling for an association layer that can also say NONE OF THE ABOVE.
+
+    ``oracle_gate`` is two-way -- every observation goes to its own place or to Total --
+    so it has no home for a figure belonging to no Helene scope at all, and it scores
+    Katrina's 1,400 as badly as the shipped gate does. That understates the prize for a
+    real attribution layer, because MHT's track birth/death IS a null hypothesis: an
+    unassignable observation starts its own track and leaves these streams. It also
+    explains why the shipped gate BEATS the two-way oracle on Florida and South Carolina --
+    the gate can drop and the oracle cannot.
+
+    This oracle gets the third option. An observation is dropped when its relative error
+    against BOTH candidate scopes exceeds ``tol``; otherwise it goes to the better one.
+    Uses ground truth, so it is a ceiling and not a method. ``tol`` is swept by the caller
+    rather than fixed, because there is no principled value and one lucky setting is not
+    a result.
+    """
+    kept: dict[str, list] = {}
+    for o in observations:
+        key = str(o.get("event_key"))
+        place = states.get(key)
+        if place is None or place not in series:
+            kept.setdefault(key, []).append(o)
+            continue
+        v = float(o["value"])
+        here = at(series[place], o["t_hours"])
+        whole = at(series.get("Total", []), o["t_hours"])
+
+        def err(g):
+            return abs(v - g) / max(g, 1.0) if g is not None else float("inf")
+
+        e_here, e_whole = err(here), err(whole)
+        if min(e_here, e_whole) > tol:
+            continue                      # belongs to no scope in this event -- reject
+        kept.setdefault(key if e_here <= e_whole else "__aggregate__", []).append(o)
+    return kept
+
+
 def score(kept: dict, series: dict, grid: list, states: dict,
           role: str = "dead") -> dict:
     """Per-state nRMSE plus the national stream, using the shipped estimators."""
@@ -332,6 +371,25 @@ def main() -> None:
         v = orc.get(c, (None, 0))[0]
         if v is not None:
             print(f"           {c:<16}{v:>8.3f}")
+
+    print("\n[ORACLE-3] adding a REJECT option -- the ceiling for association that can say "
+          "'none of these':")
+    print(f"{'tol':>7}{'kept':>7}" + "".join(f"{c.split()[-1][:6]:>9}"
+                                             for c in ("Total",) + tuple(cfg["places"]))
+          + f"{'mean':>9}")
+    for tol in (2.0, 1.0, 0.5, 0.25):
+        k3 = oracle_gate_three_way(obs, states, series, tol)
+        s3 = score(k3, series, grid, states)
+        n3 = sum(len(v) for v in k3.values())
+        cells = []
+        for c in ("Total",) + tuple(cfg["places"]):
+            v = s3.get(c, (None, 0))[0]
+            cells.append(f"{v:>9.3f}" if v is not None else f"{'-':>9}")
+        v3 = [s3[p][0] for p in cfg["places"] if s3.get(p, (None,))[0] is not None]
+        m3 = sum(v3) / len(v3) if v3 else float("nan")
+        print(f"{tol:>7.2f}{n3:>7}" + "".join(cells) + f"{m3:>9.3f}")
+    print(f"[ORACLE-3] two-way oracle {omean:.3f} -- the gap between these prices a null "
+          f"hypothesis (MHT track birth/death), which the two-way oracle cannot express")
 
     print(f"\n[detail at ratio=2.0] {len(moved)} rerouted, {len(dropped)} dropped:")
     for o in sorted(moved, key=lambda o: (o["_from"], o["t_hours"]))[:14]:
