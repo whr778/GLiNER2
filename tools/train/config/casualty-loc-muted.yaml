@@ -1,0 +1,138 @@
+# TODO ITEM 2 -- does NEGATIVE SUPERVISION ON EVENT IDENTITY reduce cross-event contamination?
+#
+# The defect. A context audit of all 106 'dead' observations extracted from the Hurricane
+# Helene feed: 82.1% are genuine Helene casualties, 4.7% belong to ANOTHER event (Katrina's
+# 1,400, a typhoon's 250, Milton's 230, Bosnia's 16, Hurricane John's 2 in Mexico), 3.8% are
+# non-casualty numbers, 9.4% unclear. Cross-event carries the LARGE values, so it does the
+# most damage per instance, and it is now the top defect: MHT was priced out at +0.055 and
+# extraction recall was already fixed 4.2x by extract_long (EKF_MHT_DESIGN.md sec 7).
+#
+# Why a DATA arm and not a decode arm. Three decode-side signals have been tried and all
+# failed -- nearest named event 3/11, only-competitor-named 3/11, record-head binding 3/11 at
+# 30.1% FP -- because in every cross-event case the TYPE IS RIGHT: Katrina's 1,400 scores
+# `death toll` 0.95. Type energies separated unit errors 4/4 with 0/83 false positives and
+# scored 0/11 here. Neither the boundary architecture nor the GIST veto can separate Helene's
+# dead from Katrina's dead; both sharpen `death toll` vs `people evacuated`.
+#
+# The gap is that the model has never been shown a figure it is supposed to LEAVE ALONE.
+# Measured over 20,000 records of each corpus: 0.0% of training documents have zero records.
+# build_multievent_corpus.py concatenates interference snippets from other streams and gives
+# EVERY one its own record. `remove_json_structure_prob: 0.2` is no substitute -- it drops the
+# structure from the SCHEMA (processor.py:911 hits `continue` before schemas.append), so no
+# query is emitted at all and the model never sees `casualty_report` answered with nothing.
+#
+# THE ARM. `--mute-interference-prob 0.35`: an interference snippet keeps its TEXT and loses
+# its RECORD, so its figures become negatives for the same queries. No loss or model change
+# is needed -- build_candidate_labels scores a candidate 1.0 only on an exact match with a
+# gold pair and everything else takes 0.0 at full candidate weight; the mask encodes validity,
+# not goldness, and there is no ignore path. Measured on the two-candidate case (focal gold,
+# interference muted): scoring the muted span high costs 1.1269 against 0.1269, an 8.9x
+# penalty. Muting also drops the gold instance count from k+1 to the unmuted count, which
+# supervises instance formation toward focal-only.
+#
+# THE CONTROL IS `casualty_loc_split` ITSELF, and that is verified rather than assumed.
+# The muted corpus is built from the same streams, contexts and splits, so:
+#   - every muted document's text is present in the control            0 absent of 23,713
+#   - 9,669 documents carry strictly fewer records, and NONE carry more
+#   - val and test are built at prob 0.0 and are BYTE-IDENTICAL to the control's
+#   - the 31 documents the control has and this lacks are focal-collision cases where every
+#     interference record was also muted; dropped rather than emitted with empty gold
+# The stream partition was recovered from the shipped corpus and re-verified 2026-08-19: a
+# rebuild at prob 0.0 reproduces data/casualty_loc_split.train.jsonl BYTE-IDENTICALLY, which
+# is what licenses comparing against the published casualty-loc-split-clean numbers.
+#
+# Corpus: 23,713 / 2,704 / 2,873 documents. 9,765 train documents (41.2%) carry a muted
+# snippet and 14,955 figures are delivered unlabelled. Splits verified 2026-08-19: 0 duplicate
+# documents within any split, 0 across any pair, streams disjoint, locations disjoint.
+#
+# WHY 8 EPOCHS BECAME 4. The clean casualty-loc-split run re-selected `best` at epoch 1 and
+# never improved through epoch 8 while train loss fell 34.65 -> 3.42; field extraction on this
+# corpus saturates in one epoch, so ~85% of that arm's GPU cost was waste. Four epochs is kept
+# rather than one because muting changes the task -- the model must now learn suppression, not
+# just extraction -- so the saturation point is an open question. If `best` lands at epoch 4,
+# the budget was too small and the run should be extended before its result is read as final.
+#
+# PASS/FAIL, FIXED BEFORE SPENDING. Read against whr778/gliner2-base-v1-casualty-loc-split-clean
+# on the SAME instruments, and note the FIRST is the reason the arm exists:
+#
+#   1. PRIMARY -- Helene per-place mean nRMSE, UNGATED, via scope_gate_test.py at ratio 0.0
+#      after re-running run_pipeline.py with this model.        control 5.247, want LOWER.
+#      Ungated is the right readout: it is the number cross-event contamination inflates,
+#      and it needs no gate to be tuned. The gated number must not regress past 0.591.
+#   2. GUARD -- location fill on the 40 Helene windows.     control 51/54, must not regress.
+#   3. GUARD -- single-event binding stays ~1.000 (no worse than 0.964). The whole point of
+#      mixing k=0 documents into the corpus is that suppression must not cost extraction.
+#   4. GUARD -- binding false-positive rate no worse than 9.6% (event_binding_probe.py, the
+#      probe fixed in 63249ed; do NOT compare against any pre-63249ed published number).
+#   5. CONTROL -- casualty_loc_probe_focal_last. The focal snippet is parts[0], so muting is
+#      learnable from POSITION alone: "extract from the first paragraph" scores perfectly on
+#      this corpus without representing event identity at all. Score the 2,168 documents that
+#      actually reorder (the other 705 are single-snippet and identical either way). If the
+#      muted arm's gain does not survive there, the gain is position and the arm has NOT
+#      answered the question it was built for.
+#
+# WHAT THIS ARM CANNOT DO, stated so the result is not over-read. The corpus carries 8 DocEE
+# event TYPES and no named identities, so what it can teach is "this figure belongs to a
+# different incident" by place and type -- not "Helene versus Katrina" by name. That is still
+# the right target for Bosnia's 16, which is structurally invisible to every signal tried so
+# far because Bosnia is a PLACE and not a named storm, and it is why this arm was chosen over
+# another decode-side discriminator. Same-type same-region discrimination remains open.
+#
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-loc-muted
+  experiment_name: casualty_loc_muted
+  data_parallel: false
+  num_epochs: 4
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false                # bf16, not fp16: the fp16 recipe CRASHED at 79% on this data
+                             # with a non-finite micro-batch loss. Held identical to the
+                             # control arm so the comparison stands.
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_structure_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: true
+  early_stopping: false
+
+eval:
+  batch_size: 16
+  threshold: 0.5
+  threshold_sweep: true
+  global_decode: false
+  eval_by_language: false
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  corpora:
+    - data/casualty_loc_muted
+  event_files: {}
+
+# NOTE on reading the blind-test structure F1 against the control's 0.8485: the two are NOT
+# directly comparable as a quality number even though val/test are byte-identical. The muted
+# arm is trained to withhold records, so on a test split where every interference snippet DOES
+# carry gold it is expected to under-predict. A drop there is the treatment working, not a
+# regression; the readouts that decide the arm are 1-5 above, all of which are measured on
+# real news or on the paired probe.

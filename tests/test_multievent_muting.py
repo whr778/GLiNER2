@@ -131,3 +131,40 @@ def test_muted_figures_are_present_in_text_but_absent_from_gold():
         in_text = set(re.findall(r"said (\d+) people died", e.text))
         unlabelled += len(in_text - _gold_values(e))
     assert unlabelled > 0
+
+
+# --- focal position: the control that separates event identity from "read paragraph 1" ---
+
+def _build_at(prob, position, seed=1):
+    return mod.build(_snippets(), max_interference=3, seed=seed,
+                     mute_interference_prob=prob, focal_position=position)
+
+
+def test_focal_last_reorders_the_same_snippets():
+    """Same document content, focal moved to the end -- not a different draw."""
+    first, _ = _build_at(0.0, "first")
+    last, _ = _build_at(0.0, "last")
+    assert len(first) == len(last)
+    for a, b in zip(first, last):
+        assert sorted(a.text.split("\n\n")) == sorted(b.text.split("\n\n"))
+        assert a.text != b.text or len(a.text.split("\n\n")) <= 2
+
+
+def test_focal_last_carries_identical_gold():
+    """The probe pairs document for document, so a score drop is position and nothing else."""
+    for prob in (0.0, 0.5, 1.0):
+        first, _ = _build_at(prob, "first")
+        last, _ = _build_at(prob, "last")
+        for a, b in zip(first, last):
+            assert _gold_values(a) == _gold_values(b)
+
+
+def test_focal_is_exempt_from_muting_at_either_position():
+    """Muting keys on identity, not index, so the last-placed focal keeps its record."""
+    for prob in (0.5, 1.0):
+        for position in ("first", "last"):
+            examples, _ = _build_at(prob, position)
+            for e in examples:
+                values = re.findall(r"said (\d+) people died", e.text)
+                focal = values[0] if position == "first" else values[-1]
+                assert focal in _gold_values(e)

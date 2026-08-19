@@ -196,7 +196,7 @@ def load_snippets(split_dir: Path, stream_start: int = 0, stream_end: int = 0,
 
 def build(snippets, max_interference: int, seed: int, contexts: dict | None = None,
           record_mode: str = "natural", mute_interference_prob: float = 0.0,
-          emit: str = "structures"):
+          emit: str = "structures", focal_position: str = "first"):
     """Concatenated multi-event documents, one record per UNMUTED snippet.
 
     ``mute_interference_prob`` withholds an interference snippet's record while keeping
@@ -209,6 +209,12 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
     lead with their focal event, so the prior is not pure artifact, but it is a shortcut
     the corpus cannot distinguish from the intended behaviour. Run the held-out probe that
     separates them (focal placed last) before reading any gain as event identity.
+
+    ``focal_position="last"`` builds that probe. The focal snippet moves to the end of the
+    document while everything else -- which snippets are drawn, which are muted, how gold
+    is located -- is unchanged, so a model that learned "report the first paragraph" scores
+    near zero on it and a model that learned event identity does not. It consumes rng
+    identically to ``"first"``, so the two corpora pair document for document.
     """
     rng = random.Random(seed)
     # Muting draws from its OWN stream so the treated and control arms see byte-identical
@@ -236,12 +242,15 @@ def build(snippets, max_interference: int, seed: int, contexts: dict | None = No
             if pool:
                 others.append(rng.choice(pool))
 
-        parts, doc = [focal] + others, ""
+        parts = [focal] + others if focal_position == "first" else others + [focal]
+        doc = ""
         spans = []               # (snippet, lo, hi, muted) in the concatenated document
-        for i, part in enumerate(parts):
+        for part in parts:
             lo = len(doc)
             doc += part["text"]
-            muted = i > 0 and mute_rng.random() < mute_interference_prob
+            # Keyed on identity, not index, so the focal is exempt at either position and
+            # the rng is consumed the same number of times in both.
+            muted = part is not focal and mute_rng.random() < mute_interference_prob
             spans.append((part, lo, len(doc), muted))
             doc += "\n\n"
 
@@ -356,6 +365,11 @@ def main(argv=None) -> None:
                     help="newline-delimited stream ids; overrides --stream-start/--stream-end. "
                          "Use for a PLACE-disjoint split, which a contiguous slice cannot "
                          "express (see load_snippets).")
+    ap.add_argument("--focal-position", default="first", choices=("first", "last"),
+                    help="where the focal snippet sits in the document. `last` builds the "
+                         "held-out PROBE that separates event identity from the position "
+                         "shortcut -- muting is otherwise learnable as 'report the first "
+                         "paragraph'. Build probes only; never train on it.")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
 
@@ -369,7 +383,8 @@ def main(argv=None) -> None:
     contexts = json.loads(Path(args.contexts).read_text(encoding="utf-8")) if args.contexts else {}
     examples, stats = build(snippets, args.max_interference, args.seed, contexts,
                             record_mode=args.record_mode, emit=args.emit,
-                            mute_interference_prob=args.mute_interference_prob)
+                            mute_interference_prob=args.mute_interference_prob,
+                            focal_position=args.focal_position)
 
     ds = TrainingDataset(examples)
     report = ds.validate(raise_on_error=False)
@@ -377,7 +392,8 @@ def main(argv=None) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     ds.save(str(out))
 
-    print(f"[build] split={args.split}  snippets={len(snippets)}  record_mode={args.record_mode}")
+    print(f"[build] split={args.split}  snippets={len(snippets)}  record_mode={args.record_mode}"
+          f"  focal={args.focal_position}")
     print(f"[build] documents={stats['docs']}  instances={stats['instances']} "
           f"(mean {stats['instances'] / max(stats['docs'], 1):.2f}/doc)")
     print(f"[build] location field: located={stats['located_place']}  absent={stats['no_place']}")

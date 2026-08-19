@@ -666,7 +666,25 @@ datasets:
     hf_jsonl: whr778/casualty_loc_split
     source_url: null
     language: [en]
-    description: "casualty_multi_loc rebuilt with train/val/test rather than train only, for the Track A gate (does location supervision fix number-to-place binding on real news?). Built 2026-08-17 by build_multievent_corpus.py from disaster_streams_docee250 + contexts250.json with --stream-start/--stream-end at 0/200/225/250, so streams are disjoint across splits and no incident straddles one. 23,239 / 2,878 / 3,201 documents, mean 2.48 instances per document, location located 93% (absent gets no location rather than a guess). SPLIT CAVEAT, declared not hidden: documents are unique and streams disjoint, but place STRINGS recur across splits -- 57.2% of test documents name a place also seen in train -- because different streams draw the same DocEE place from a pool of 249 over 250 streams. Accepted deliberately: the leak unit is the incident, incidents are disjoint, and a recurring place carries different figures in each split."
+    description: "casualty_multi_loc rebuilt with train/val/test rather than train only, for the Track A gate (does location supervision fix number-to-place binding on real news?). Built by build_multievent_corpus.py from disaster_streams_docee250 + contexts250.json. 23,744 / 2,704 / 2,873 documents (200/25/25 streams), mean 2.48 instances per document, location located 92%; absent gets no location rather than a guess. SPLITS ARE PLACE-DISJOINT as of 2026-08-17 (39df136): a contiguous index slice could not express that, because 26 DocEE places are drawn by more than one stream, so the split moved to --streams-file over connected groups of streams linked on every string the builder can emit (the place and each comma-separated component) -- 199 groups, largest 7 streams. Clean on all three axes: 0 duplicate documents within a split and 0 across, streams disjoint, 0 shared location strings between any pair. An earlier build sliced 0/200/225/250 and left 57.2% of test documents naming a place also in train; those numbers (23,239 / 2,878 / 3,201) are superseded. The stream partition is recorded in datasets/disaster_streams_docee250/splits/ and reproduces the shipped jsonl byte-identically (re-verified 2026-08-19)."
+  casualty_loc_muted:
+    name: Multi-event casualty corpus with WITHHELD interference records
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/casualty_loc_muted
+    source_url: null
+    language: [en]
+    description: "casualty_loc_split with negative supervision on event identity, for TODO item 2 (cross-event contamination, 4.7% of Helene observations and the largest values). Built 2026-08-19 by build_multievent_corpus.py --mute-interference-prob 0.35 on the same streams, contexts and splits, so casualty_loc_split IS the control: every muted document's text is present in it (0 absent), 9,669 documents carry strictly fewer records, and none carry more. 23,713 / 2,704 / 2,873 documents; val and test are built at prob 0.0 and are byte-identical to the control's. 9,765 train documents (41.2%) hold a muted snippet and 14,955 figures are delivered unlabelled -- the first casualty corpus in which the model is shown a casualty figure it is supposed to leave alone (measured: 0.0% of documents in every earlier corpus). The 31 documents the control has and this lacks are focal-collision cases where every interference record was also muted; they are dropped rather than emitted with empty gold. TWO LIMITS, declared. (1) The focal snippet is parts[0], so muting is learnable from POSITION alone; score casualty_loc_probe_focal_last before reading any gain as event identity. (2) The corpus carries 8 event TYPES and no named identities, so what it can teach is 'this figure belongs to a different incident' by place and type, not 'Helene versus Katrina' by name."
+  casualty_loc_probe_focal_last:
+    name: Focal-last position probe for the muting arm
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/casualty_loc_probe_focal_last
+    source_url: null
+    language: [en]
+    description: "TEST SPLIT ONLY, and a control rather than training data -- never put it in data.corpora. The casualty_loc_split test streams rebuilt with --focal-position last, so the focal snippet sits at the END of each document and everything else is unchanged. It pairs with the ordinary test split document for document: same 2,873 documents, same 7,058 instances, identical gold, only the snippet order differs. A model that learned 'report the first paragraph' scores near zero here; a model that learned event identity does not. Score the 2,168 documents that actually reordered -- the remaining 705 are single-snippet (k=0) and are byte-identical to the ordinary test split, so including them dilutes the contrast."
   casualty_events:
     name: Multi-event casualty corpus, EVENTS form
     tasks: event extraction (trigger + typed arguments, multi-instance)
