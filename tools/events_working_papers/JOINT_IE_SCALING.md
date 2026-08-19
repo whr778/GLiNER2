@@ -19,11 +19,34 @@ tracker.
 > the scaling slices were rebuilt from the repaired sources, and all four points now
 > gate CLEAN via `check_leakage.py --config`.
 >
-> **The curve is being re-run from scratch on repaired data** — see
-> [[lambda-137k-curve-restart]]. First clean point (10k): entity strict 0.2779,
-> event_type 0.8138, event_trigger 0.2259, event_argument 0.0130, relation 0.0058.
-> These are NOT comparable to anything below; the pool also shifted slightly
-> (136,772 records, was 136,787).
+> **The curve was re-run from scratch on repaired data and is COMPLETE (2026-08-19).**
+> Use these numbers, not anything below. Pool shifted to 136,772 records (was 136,787).
+>
+> | head | 10k | 40k | 100k | 137k |
+> |---|--:|--:|--:|--:|
+> | event_type | 0.8138 | 0.7503 | 0.7979 | **0.9841** |
+> | event_trigger | 0.2259 | 0.3285 | 0.4032 | **0.6953** |
+> | classification | 0.0974 | 0.4838 | 0.5518 | **0.6336** |
+> | entity | 0.2779 | 0.4323 | 0.4795 | **0.5158** |
+> | event | 0.1475 | 0.2232 | 0.2643 | **0.2688** |
+> | relation | 0.0058 | 0.0175 | 0.0486 | **0.2071** |
+> | event_argument | 0.0130 | 0.0502 | 0.0815 | 0.0692 |
+> | structure | 0.0000 | 0.0000 | 0.0000 | **0.0000** |
+>
+> **Read the 100k -> 137k jump as RECALL UNLOCKING, not capability.** Only 1.37x the
+> data but event_trigger +0.29, relation +0.16, event_type +0.19. The precision/recall
+> split gives it away: event_trigger at 100k was P=0.58/R=0.31, at 137k P=0.62/R=0.79.
+> The smaller points were not bad at the task, they were WITHHOLDING predictions.
+> Anyone reading this as smooth capability scaling will draw the wrong conclusion about
+> what more data buys.
+>
+> event_argument strict FELL 0.0815 -> 0.0692 while relaxed rose 0.2758 -> 0.5064 --
+> the same inversion. More arguments proposed, approximately right far more often,
+> exact spans lagging. Calibration, not regression.
+>
+> 137k `best` is the EPOCH-4 checkpoint (eval_loss 1.3107/1.0936/0.9996/0.9592; epoch 5
+> did not improve). Models: `whr778/gliner2-joint-boundary-mmbert-{10k,40k,100k,137k}-clean`,
+> all private. ~$42 total.
 >
 > The historical warning is kept below because the *reasoning* still applies and the
 > two-effects-confounded point is still worth understanding.
@@ -56,6 +79,54 @@ tracker.
 > comparison against a differently-built model, needs re-measuring. Contamination is now
 > gated automatically by `tools/train/train.py`; see
 > [`../train/TRAINING.md`](../train/TRAINING.md) §3.
+
+## 0b. Warm start with 30% EXACT replay: forgetting reversed into a gain (2026-08-19)
+
+Warm-started the clean 137k base on cc_news + synthetic (21,354 records) with 9,151
+records of replay drawn from **the base's own training pool**, then scored that
+checkpoint on **the base's own blind test**:
+
+| head | base 137k | warm-start | delta |
+|---|--:|--:|--:|
+| entity | 0.5158 | **0.6326** | **+0.1168** |
+| event | 0.2688 | **0.3644** | **+0.0956** |
+| event_trigger | 0.6953 | **0.7490** | **+0.0537** |
+| event_argument | 0.0692 | 0.0975 | +0.0283 |
+| classification | 0.6336 | 0.6394 | +0.0058 |
+| event_type | 0.9841 | 0.9447 | -0.0394 |
+| relation | 0.2071 | 0.1245 | -0.0826 |
+| structure | 0.0000 | 0.0000 | -- |
+
+**Context: the zero-replay arms lost 23%, 32% and 39%** of general-domain entity F1
+(three fine-tunes of `fastino/gliner2-base-v1` on the same corpora, no replay, in
+monotonic order of training volume). With 30% replay the model GAINED on the original
+task while learning a new one.
+
+Why this arm is stronger evidence than those: we own this base AND its pool, so replay
+is **exact** rather than a proxy. For base-v1 we do not have the original training data
+and had to stand in `pile_ner_def`.
+
+Qualifications that must travel with the number: different architecture from the
+base-v1 arms (mmBERT boundary vs DeBERTa span), so it is not a controlled contrast;
+part of the gain is genuinely NEW learning, since cc_news supplies real entity signal;
+and protection is **not uniform** -- relation -0.083 and event_type -0.039 both
+declined, which is the open thread.
+
+Model: `whr778/gliner2-warmstart-137k-realsynth-replay30` (private). Config:
+`tools/train/config/warmstart-137k-realsynth-replay30.yaml`. Replay built by
+`tools/train/build_137k_replay.py` (proportional across all 13 pool corpora, seed 42).
+
+## 0c. `structure` = 0.0000 at every scale -- a head defect, not a data problem
+
+Five independent measurements, all exactly zero: 10k, 40k, 100k, 137k, and the
+warm-start, which added **+45% structure supervision** (3,494 records on top of the
+pool's existing 7,754) on a model that had already trained on structures.
+
+A head learning slowly registers *something* across a 13x data range. This one emits
+nothing at any scale. **Stop attributing it to data volume and instrument the record
+head / decode path.** Note also that `build_warmstart_mix.py`'s docstring claim that
+text2json supervises entities rather than structures describes an OLDER state -- it now
+emits `json_structures`, and the pool carries 7,754 of them (5.7%).
 
 ## 1. Thesis
 

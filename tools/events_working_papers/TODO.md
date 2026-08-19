@@ -96,6 +96,27 @@ mid-flight.
 
 ## P0 — blocks the next experiment
 
+### 0. `structure`/record head emits NOTHING -- five measurements, all exactly 0.0000
+Measured 2026-08-19 across the clean scaling curve (10k, 40k, 100k, 137k) AND the
+warm-start arm, which added **+45% structure supervision** (3,494 records on top of the
+pool's existing 7,754) to a model already trained on structures. Every single one:
+`structure P=0.0000 R=0.0000 F1=0.0000`.
+
+A head learning slowly shows something across a 13x data range. This emits nothing at
+any scale, on any mixture, warm or cold. **It is not a data problem and more structure
+data will not fix it.** The record head or its decode path is broken or unwired.
+
+Note the pool DOES supervise structures -- 7,754 records, 5.7%. The claim in
+`build_warmstart_mix.py`'s docstring that text2json supervises entities rather than
+structures describes an older state; it now emits `json_structures`.
+
+Where to look, in order: does `enable_records: true` actually construct a record
+decoder; does the preprocessor emit record targets for `json_structures` inputs; does
+the loss include a record term with non-zero weight; does the eval path score records
+at all or silently report 0 for a task it never decodes. Instrument each stage with a
+single known-good structure record before changing anything.
+
+
 ### -1. `eval_metrics.py` CANNOT SCORE `json_structures` — every casualty model is affected
 
 Found 2026-08-17 during the Track A run, and it is the most consequential thing that run
