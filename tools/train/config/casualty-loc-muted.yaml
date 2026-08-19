@@ -52,18 +52,38 @@
 # just extraction -- so the saturation point is an open question. If `best` lands at epoch 4,
 # the budget was too small and the run should be extended before its result is read as final.
 #
+# THE CONTROL'S BINDING NUMBERS DO NOT YET EXIST -- measure them before this arm runs.
+# Corrected 2026-08-19: the published `binding 3/11 @ 9.6% FP` and `location fill 51/54` were
+# measured on whr778/gliner2-base-v1-casualty-loc-split, which is the CRASHED fp16 epoch-6
+# checkpoint. The clean bf16 re-run that supersedes it, ...-casualty-loc-split-clean, only
+# ever had structure F1 (0.8485) measured; nobody has run the binding probe against it. So
+# three control rows must be collected FIRST, all local and all CPU:
+#
+#   uv run python tools/ekf_showcase/event_binding_probe.py #     --model fastino/gliner2-base-v1                                   # base floor
+#   uv run python tools/ekf_showcase/event_binding_probe.py #     --model whr778/gliner2-base-v1-casualty-loc-split                 # published fp16 e6
+#   uv run python tools/ekf_showcase/event_binding_probe.py #     --model whr778/gliner2-base-v1-casualty-loc-split-clean           # THE ACTUAL CONTROL
+#
+# The third is the one this arm is read against. The first two are reproduction checks: if
+# they do not return 3/11 @ 30.1% and 3/11 @ 9.6%, something in the eval path has moved again
+# and NO comparison is valid until that is explained (item 0 records exactly that happening
+# once already). Note the local out/casualty-loc-split holds the fp16 run; the clean model is
+# Hub-only and private.
+#
 # PASS/FAIL, FIXED BEFORE SPENDING. Read against whr778/gliner2-base-v1-casualty-loc-split-clean
-# on the SAME instruments, and note the FIRST is the reason the arm exists:
+# on the SAME instruments, using the rows collected above rather than the published fp16 ones.
+# The FIRST is the reason the arm exists:
 #
 #   1. PRIMARY -- Helene per-place mean nRMSE, UNGATED, via scope_gate_test.py at ratio 0.0
 #      after re-running run_pipeline.py with this model.        control 5.247, want LOWER.
 #      Ungated is the right readout: it is the number cross-event contamination inflates,
 #      and it needs no gate to be tuned. The gated number must not regress past 0.591.
-#   2. GUARD -- location fill on the 40 Helene windows.     control 51/54, must not regress.
+#   2. GUARD -- location fill on the 40 Helene windows. The fp16 model scored 51/54; the
+#      clean control's own figure replaces that once measured, and is what must not regress.
 #   3. GUARD -- single-event binding stays ~1.000 (no worse than 0.964). The whole point of
 #      mixing k=0 documents into the corpus is that suppression must not cost extraction.
-#   4. GUARD -- binding false-positive rate no worse than 9.6% (event_binding_probe.py, the
-#      probe fixed in 63249ed; do NOT compare against any pre-63249ed published number).
+#   4. GUARD -- binding false-positive rate no worse than the clean control's own, measured
+#      as above. 9.6% is the fp16 model's and is a placeholder until then. Use the probe
+#      fixed in 63249ed, and do NOT compare against any pre-63249ed published number.
 #   5. CONTROL -- casualty_loc_probe_focal_last. The focal snippet is parts[0], so muting is
 #      learnable from POSITION alone: "extract from the first paragraph" scores perfectly on
 #      this corpus without representing event identity at all. Score the 2,168 documents that
