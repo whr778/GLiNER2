@@ -24,8 +24,13 @@ import yaml
 
 REGISTRY_PATH = Path(__file__).resolve().parent / "dataset_registry.yaml"
 
+# Must track `categories` in gliner2/training/eval_metrics.py. `structure` was missing
+# here, so a card could never report it even when the eval had computed it -- one of
+# three independent defects that each hid the record head (the others: runtime.py
+# dropping `record_metadata` before the processor so nothing decoded, and a default
+# record_anchor_threshold of 0.5 against a head whose max object probability is 0.178).
 CATEGORIES = (
-    "entity", "relation", "classification",
+    "entity", "relation", "classification", "structure",
     "event_type", "event_trigger", "event_argument", "event",
 )
 
@@ -338,6 +343,26 @@ def _metrics_table(metrics: Dict[str, Any], title: str) -> str:
             return f"{s:.3f} → {r:.3f}" if r is not None else f"{s:.3f}"
         sup = metrics.get(f"eval_{c}_strict_support", "—")
         rows.append(f"| {c} | {cell('precision')} | {cell('recall')} | {cell('f1')} | {sup} |")
+
+    # The record head has its own cutoffs, swept separately, so a structure number is
+    # read at a DIFFERENT operating point from every other row. Say so on the card --
+    # a single-valued row under a "strict → relaxed" caption otherwise looks like an
+    # omission rather than the deliberate refusal to report an unmeasured relaxed score.
+    thr = metrics.get("structure_record_threshold")
+    if thr is not None:
+        note = (f"> `structure` is measured at its own record-head thresholds "
+                f"(`record_anchor_threshold` = `record_field_threshold` = **{thr}**), "
+                f"not at the decision threshold above.")
+        # Quote THIS model's score at the 0.5 default rather than a blanket fraction --
+        # the penalty is 100% at 10k and 32% at 137k, so one sentence cannot cover both.
+        f1_def = metrics.get("structure_f1_at_default_threshold")
+        f1_best = _metric(metrics, "structure", "strict", "f1")
+        if f1_def is not None and f1_best:
+            note += (f" At the 0.5 default this checkpoint scores **{f1_def:.4f}** "
+                     f"versus {f1_best:.4f} here, so the default costs "
+                     f"{1 - f1_def / f1_best:.0%} of the attainable F1.")
+        note += (" Strict exact-match only: the relaxed variant was not re-measured.")
+        rows += ["", note]
     return "\n".join(rows)
 
 

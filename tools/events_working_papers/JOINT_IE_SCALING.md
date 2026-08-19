@@ -31,7 +31,11 @@ tracker.
 > | event | 0.1475 | 0.2232 | 0.2643 | **0.2688** |
 > | relation | 0.0058 | 0.0175 | 0.0486 | **0.2071** |
 > | event_argument | 0.0130 | 0.0502 | 0.0815 | 0.0692 |
-> | structure | 0.0000 | 0.0000 | 0.0000 | **0.0000** |
+> | structure | 0.0238 | 0.0552 | 0.1043 | **0.1119** |
+>
+> The `structure` row is CORRECTED (2026-08-19) and was 0.0000 across the
+> board here until then -- a decode bug, not a head defect, and not measured
+> on one test set across the four points. See §0c before quoting it.
 >
 > **Read the 100k -> 137k jump as RECALL UNLOCKING, not capability.** Only 1.37x the
 > data but event_trigger +0.29, relation +0.16, event_type +0.19. The precision/recall
@@ -95,7 +99,11 @@ checkpoint on **the base's own blind test**:
 | classification | 0.6336 | 0.6394 | +0.0058 |
 | event_type | 0.9841 | 0.9447 | -0.0394 |
 | relation | 0.2071 | 0.1245 | -0.0826 |
-| structure | 0.0000 | 0.0000 | -- |
+| structure | 0.1119 | 0.1060 | -0.0059 |
+
+The `structure` row was 0.0000/0.0000 until 2026-08-19 (decode bug, §0c) and the
+warm-start delta must be read knowing the arm CUT record-head supervision by 93%
+-- see §0c, "What the warm-start actually did to structure".
 
 **Context: the zero-replay arms lost 23%, 32% and 39%** of general-domain entity F1
 (three fine-tunes of `fastino/gliner2-base-v1` on the same corpora, no replay, in
@@ -116,17 +124,90 @@ Model: `whr778/gliner2-warmstart-137k-realsynth-replay30` (private). Config:
 `tools/train/config/warmstart-137k-realsynth-replay30.yaml`. Replay built by
 `tools/train/build_137k_replay.py` (proportional across all 13 pool corpora, seed 42).
 
-## 0c. `structure` = 0.0000 at every scale -- a head defect, not a data problem
+## 0c. `structure` = 0.0000 was a DECODE BUG. The head works and scales (2026-08-19)
 
-Five independent measurements, all exactly zero: 10k, 40k, 100k, 137k, and the
-warm-start, which added **+45% structure supervision** (3,494 records on top of the
-pool's existing 7,754) on a model that had already trained on structures.
+**RESOLVED. The earlier text in this section was wrong and is retracted below.** It read:
+five independent zeros (10k / 40k / 100k / 137k / warm-start) mean the record head is
+defective, so stop buying structure data and instrument the head. Instrumenting the head
+was the right call. The conclusion drawn from the zeros was not: the head was never
+broken, and it had never once been asked a question it could answer.
 
-A head learning slowly registers *something* across a 13x data range. This one emits
-nothing at any scale. **Stop attributing it to data volume and instrument the record
-head / decode path.** Note also that `build_warmstart_mix.py`'s docstring claim that
-text2json supervises entities rather than structures describes an OLDER state -- it now
-emits `json_structures`, and the pool carries 7,754 of them (5.7%).
+### The defect
+
+`runtime.py` rebuilt each schema through `Schema.from_dict(...).build()` -- which *does*
+produce `record_metadata` -- then copied only `json_structures` and `json_descriptions`
+out of the result. `record_metadata` was dropped on the floor. Downstream,
+`compile_record_specs` returns `{}` when it gets no metadata, so no `RecordSpec` was
+compiled, the record head decoded **nothing**, and **no error was raised**. The
+extraction came back empty and `structure` scored exactly 0.0000. One line, five
+poisoned measurements, no traceback. Fixed in `d754132`; regression-tested in
+`tests/test_record_metadata_roundtrip.py`, which exercises the real
+`_build_schema_dicts_and_metadata` (an earlier version re-implemented the logic inline
+and passed with the fix stashed -- it asserted that a copy works, not that the shipped
+code does one).
+
+A second, smaller problem sat on top: `record_anchor_threshold` defaults to **0.5**,
+above where this head is confident. It is *not* the reason the metric read zero --
+post-fix, 0.5 still scores 0.0654 and 0.0760 at 100k and 137k -- but it costs 32-100% of
+attainable F1 depending on scale, and nothing had ever calibrated it (`threshold_sweep`
+moves the general decision threshold and never touches the record cutoffs).
+
+### The head scales, and it always did
+
+Re-scored from the SAME checkpoints -- nothing retrained -- by
+`tools/train/sweep_record_thresholds.py`, strict exact-match on `(name, field, value)`:
+
+| | 10k | 40k | 100k | 137k |
+|---|--:|--:|--:|--:|
+| structure strict F1 | 0.0238 | 0.0552 | 0.1043 | **0.1119** |
+| at record threshold | 0.05 | 0.05 | 0.07 | 0.10 |
+
+A clean monotone curve across a 13x data range, and the 100k -> 137k flattening matches
+what every other head does at that step. This is the ordinary shape of a head learning
+from 7,754 supervised records; there was never an anomaly to explain.
+
+> **These four points are NOT on one test set.** The 10k/40k/100k configs carry their own
+> subsampled slice test sets (148 structure-bearing records, support 758); the 137k config
+> uses the full ones (856 records, support 4,245). The three small points are mutually
+> comparable and the 137k point is not comparable to them. A unified full-test curve is
+> being measured; the model cards keep their own config's test set so that every row on a
+> card is read on one population.
+
+### What the warm-start actually did to structure
+
+The retracted text called the warm-start "+45% structure supervision (3,494 records)".
+**The count is right and the conclusion is backwards.** Those 3,494 records carry
+`json_structures` but **no `record_metadata`**, and on the training path
+`Structure.get_record_metadata()` returns `None` unless `mode` is set, so
+`compile_record_specs` builds no spec and `_build_sample_records` emits no targets. They
+supervise the record head with exactly **zero** records.
+
+| source | structure records | reaching the record head |
+|---|--:|--:|
+| cc_news_haiku45 | 1,033 | 0 |
+| synthetic_haiku45_5k | 996 | 0 |
+| synthetic_sonnet5_1k | 1,465 | 0 |
+| replay_137k30 | 519 | 519 |
+| **warm-start total** | **4,013** | **519 (12.9%)** |
+| *137k base pool (text2json)* | *7,754* | *7,754 (100%)* |
+
+So the arm did not add 45% more structure supervision. It **cut it by 93%**, from 7,754
+records to 519. Measured on the base's own blind test the warm-start scores 0.1060
+against the base's 0.1119 -- a 0.0059 dip under a 15x reduction in record-head
+supervision, which is a strikingly good showing for 30% replay, not a failure to add
+capability. (Scored on the base's test set deliberately: the warm-start's own test set
+carries no `record_metadata` either, so it is structurally silent even post-fix.)
+
+### Consequences
+
+- **The cc_news and synthetic converters emit `json_structures` without
+  `record_metadata`.** Any future arm claiming to add structure capability from those
+  corpora will add none. Fixing it means assigning `mode` and `anchor` per structure type
+  -- a data-design decision, not a silent patch. Open in TODO.md.
+- `build_warmstart_mix.py`'s docstring claim that text2json supervises entities rather
+  than structures describes an OLDER state: it now emits `json_structures`, and all 7,754
+  carry metadata.
+- Anything reporting `structure` at the 0.5 default is reporting a miscalibration.
 
 ## 1. Thesis
 

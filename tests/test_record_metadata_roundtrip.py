@@ -11,11 +11,11 @@ out of the result. The metadata was dropped on the floor.
 
 The consequence was not subtle and was very nearly misdiagnosed: `structure` read
 exactly 0.0000 on ALL FOUR points of the joint_ie scaling curve (10k/40k/100k/137k) and
-again on a warm start that added +45% structure supervision. Across a 13x data range a
-head that was learning would show something; the conclusion drawn was "the record head
-is broken or untrainable". It was neither -- it was never asked a question it could
-answer. With the metadata restored the same checkpoint emits records and recovers gold
-field values.
+again on a warm start. Across a 13x data range a head that was learning would show
+something; the conclusion drawn was "the record head is broken or untrainable". It was
+neither -- it was never asked a question it could answer. With the metadata restored the
+same checkpoint recovers a clean scaling curve on the very same checkpoints:
+0.024 / 0.055 / 0.104 / 0.112 strict F1.
 
 These tests assert the plumbing, not the model: that the key survives the round trip and
 that a spec gets compiled. They need no checkpoint and no GPU.

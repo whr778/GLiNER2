@@ -96,25 +96,51 @@ mid-flight.
 
 ## P0 — blocks the next experiment
 
-### 0. `structure`/record head emits NOTHING -- five measurements, all exactly 0.0000
-Measured 2026-08-19 across the clean scaling curve (10k, 40k, 100k, 137k) AND the
-warm-start arm, which added **+45% structure supervision** (3,494 records on top of the
-pool's existing 7,754) to a model already trained on structures. Every single one:
-`structure P=0.0000 R=0.0000 F1=0.0000`.
+### 0. CLOSED 2026-08-19 -- the record head was fine; `runtime.py` dropped `record_metadata`
+The five zeros were one line of plumbing. `runtime.py` rebuilt each schema through
+`Schema.from_dict(...).build()` (which produces `record_metadata`) and then copied only
+`json_structures` and `json_descriptions` out. With no metadata `compile_record_specs`
+returns `{}`, no `RecordSpec` compiles, the head decodes nothing, and **nothing raises**.
+Fixed in `d754132`, regression-tested in `tests/test_record_metadata_roundtrip.py`.
 
-A head learning slowly shows something across a 13x data range. This emits nothing at
-any scale, on any mixture, warm or cold. **It is not a data problem and more structure
-data will not fix it.** The record head or its decode path is broken or unwired.
+Re-scored from the same checkpoints, the head shows an ordinary monotone curve:
+0.0238 / 0.0552 / 0.1043 / **0.1119** strict F1 at 10k / 40k / 100k / 137k. Full write-up,
+including why the four points are not yet on one test set, in `JOINT_IE_SCALING.md` §0c.
 
-Note the pool DOES supervise structures -- 7,754 records, 5.7%. The claim in
-`build_warmstart_mix.py`'s docstring that text2json supervises entities rather than
-structures describes an older state; it now emits `json_structures`.
+The "+45% structure supervision" in the warm-start was real in record count and **zero in
+effect**: those 3,494 cc_news/synthetic records carry `json_structures` with no
+`record_metadata`, so they supervise the record head with nothing. See item 0.1 -- that is the part still open.
 
-Where to look, in order: does `enable_records: true` actually construct a record
-decoder; does the preprocessor emit record targets for `json_structures` inputs; does
-the loss include a record term with non-zero weight; does the eval path score records
-at all or silently report 0 for a task it never decodes. Instrument each stage with a
-single known-good structure record before changing anything.
+### 0.1. cc_news and synthetic converters emit `json_structures` with NO `record_metadata`
+**Successor to item 0, and it needs a data-design decision, not a patch.** On the training
+path `Structure.get_record_metadata()` returns `None` unless `mode` is set, so a structure
+record without metadata produces no `RecordSpec` and no record targets. Counted across the
+warm-start mix:
+
+| source | structure records | reaching the record head |
+|---|--:|--:|
+| cc_news_haiku45 | 1,033 | 0 |
+| synthetic_haiku45_5k | 996 | 0 |
+| synthetic_sonnet5_1k | 1,465 | 0 |
+| replay_137k30 | 519 | 519 |
+| *137k base pool (text2json)* | *7,754* | *7,754* |
+
+So the warm-start **cut** record-head supervision from 7,754 to 519 (-93%) while appearing
+to add structure capability, and still only lost 0.0059 -- read that as replay working, not
+as the head failing.
+
+**Any future arm claiming structure capability from these corpora will add none.** Fixing
+it means assigning `mode` and `anchor` per structure type in the converters. `natural` +
+first-field anchor is the obvious default but is a real modelling choice about what anchors
+a `person_profile` or a `transaction`, so it wants a decision before it is written.
+
+### 0.2. `record_anchor_threshold` defaults to 0.5, which no model can use well
+Separate from the decode bug and still live. Nothing calibrates the record cutoffs --
+`threshold_sweep` moves the general decision threshold only. At the 0.5 default the models
+score 0.0000 / 0.0052 / 0.0654 / 0.0760 versus 0.0238 / 0.0552 / 0.1043 / 0.1119 at their
+swept thresholds: a 32-100% loss depending on scale. Either fold the record cutoffs into
+`threshold_sweep` or change the default; `tools/train/sweep_record_thresholds.py` is the
+sweep in the meantime.
 
 
 ### -1. `eval_metrics.py` CANNOT SCORE `json_structures` — every casualty model is affected
