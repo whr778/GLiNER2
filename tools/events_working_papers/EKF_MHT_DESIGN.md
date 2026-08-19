@@ -33,7 +33,15 @@ contaminated by three unrelated storms quoted in the same articles. A magnitude-
 scope gate recovers a **9× improvement** on the event it was designed against but
 **splits held-out** — 3.7× better on the contaminated stream, 2.3× worse on the clean
 one — and the reason is diagnostic: without a declared scope hierarchy, "a larger scope"
-and "the largest part" are indistinguishable from the numbers alone.
+and "the largest part" are indistinguishable from the numbers alone. We then declared one,
+and the reference it enables is itself a measured negative.
+
+Before building the multi-hypothesis association the design specifies, we price it. Assigning every
+observation to the scope it truly fits — an oracle, not a method — improves the shipped gate
+by **0.055 (9.3%)**. Perfect association is worth 9%, so multi-hypothesis tracking is not
+what is missing. The residual is 4.7% cross-event contamination against which no decode-side
+signal has worked, and the corpora offer no purchase on it: **0.0% of training documents
+contain a figure the model is supposed to leave alone.**
 
 We also report that our own strongest prior result does not reproduce. An ablation
 concluding the filter's advantage *widens* under noise and censoring was measured on
@@ -193,6 +201,25 @@ Without one, "a larger scope" and "the largest part" are genuinely indistinguish
 the numbers alone — Türkiye's 41,000 filed under Syria and Türkiye's 41,000 filed under
 Türkiye look identical to any ratio.
 
+**And the obvious fix for it was built, measured, and does not work.** Both events now
+declare containment explicitly — `rollup.json` carries a `hierarchy` block naming the
+aggregate and its parts — which enables the reference the diagnosis calls for: judge a part
+against its **implied maximum**, `aggregate - sum(other parts)`, rather than against a bare
+magnitude. That is the right shape for the dominant-part problem on paper. Turkey against an
+implied max of 46,800 − 5,800 = 41,000 sits exactly at its ceiling and is kept, while the
+same 41,000 filed under Syria faces an implied max of 5,800 and is rerouted.
+
+On Helene it is **much worse than the plain aggregate reference: 2.590 against 0.591.** The
+parts are themselves contaminated, so their raw sum exceeds the whole and every implied
+maximum clamps to zero; a two-pass version recovers most of that but Florida still sits at
+9.437. And Türkiye–Syria — the event that motivated the refinement — **still cannot test it**,
+because an implied maximum needs *independent* observations of the whole and that feed has
+none. Declaring the hierarchy does not manufacture the data.
+
+So the diagnosis stands and its first implementation is a measured negative. Plain aggregate
+remains the recommended reference wherever an aggregate stream exists, and where none exists
+no gate is possible at all. Detail in `EKF_MHT_BUILD_RECORD.md` §25.5.
+
 **Honest scorecard.** A 9× win with a clean control on the event it was designed against;
 held out, 3.7× better on one stream and 2.3× worse on the other. Both belong in any
 writeup, and the Helene number alone is the misleading half. The ratio was also chosen
@@ -317,12 +344,59 @@ reproduce.
 
 **Not built:** multi-hypothesis association — the half every real-event failure lives in.
 The scope gate of §5 is the first concrete instance of that layer doing useful work, in its
-simplest possible form and without a new model, and its held-out split points directly at
-what it is missing: a declared scope hierarchy per event.
+simplest possible form and without a new model.
 
-**The next step is an attribution mechanism, not more extractor fine-tuning.** That
-conclusion is the paper's main practical contribution, and it was only reachable by running
-the system against a real event and losing.
+### 7.1 How much is left for better association — measured, not argued
+
+The natural conclusion from §4 and §5 is "build the association layer properly," and MHT is
+the specified answer. Before spending on a hypothesis tree, a cost matrix, Hungarian
+assignment and track management, we measured what *any* better association could be worth.
+The measurement needs no new model: assign every observation to the scope it actually fits,
+using ground truth. It is a ceiling, not a method.
+
+| | per-place mean nRMSE |
+|---|--:|
+| no gate | 5.247 |
+| shipped scope gate | 0.591 |
+| **oracle hard association** (uses ground truth) | **0.537** |
+| headroom for any better association | **+0.055** (9.3%) |
+
+**Perfect association buys 0.055.** That is the entire prize, and it prices MHT out: a large
+subsystem competing for a 9% residual on a single-source feed.
+
+The per-place breakdown sharpens it. The gate already **beats** a perfect two-way assignment
+on Florida (0.704 vs 0.734) and South Carolina (0.365 vs 0.558), because it has a third
+option the oracle lacks — *drop*. Florida's 300 is not a casualty figure and North Carolina's
+1,400 is Hurricane Katrina's toll: neither belongs to *any* Helene scope, so no assignment
+scheme can place them correctly. Only Tennessee is a genuine association gap (0.817 vs
+0.320), and its contaminants — 32, 32, 32, 36, 50 against a truth of 18 — are instructive:
+too large for the state, too small to look national, so no magnitude test can catch them.
+That is the real case for richer association, and it is worth 0.055 across the event.
+
+### 7.2 What the residual actually is
+
+A context audit of all 106 observations puts the remainder somewhere else entirely: 82.1%
+genuine Helene casualties, **4.7% belonging to another event** (Katrina's 1,400, a typhoon's
+250, Milton's 230, Bosnia's 16, Hurricane John's 2 in Mexico), 3.8% non-casualty numbers
+(speeds, rainfall), and a 9.4% unclear tail.
+
+Cross-event contamination carries the *large* values, so it does the most damage per
+instance — and the scope gate removes the large ones for the wrong reason, because they are
+big rather than because they belong to another storm. It therefore keeps any *small*
+cross-event figure, which is exactly what happens with Bosnia's 16 and Mexico's 2. Bosnia is
+structurally invisible to every signal tried so far: it is a *place*, not a named storm, so
+nothing keyed on storm names can see it.
+
+**So the next step is neither MHT nor more extractor fine-tuning: it is negative supervision
+on event identity.** The evidence that it is a training-data gap rather than a decode gap is
+that binding collapses from 1.000 to 0.369 the moment documents become multi-event, and no
+decoder change has moved that. Every training corpus we have is complicit — measured over
+20,000 records per corpus, **0.0% of training documents have zero records**, so the model has
+never once been shown a casualty figure it is supposed to leave alone.
+
+That conclusion — reached by pricing the obvious next build and finding it not worth it — is
+the paper's main practical contribution, and it was only reachable by running the system
+against a real event and losing.
 
 ## 8. Limitations
 

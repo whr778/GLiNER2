@@ -224,6 +224,57 @@ is the true test.
 
 ---
 
+## 25. Scope gate — the implied-maximum reference (kept here for the negative)
+
+The scope gate's results are reported in `EKF_MHT_DESIGN.md` §5. One subsection is kept in
+the build record rather than the paper, because it is a *measured negative about a specific
+implementation* and it is cited by `PIPELINES.md` under its original number.
+
+**Re-verified 2026-08-19** on current code — `uv run python tools/ekf_showcase/scope_gate_test.py
+--dataset helene --reference implied` reproduces 2.590 at ratio 2.0 and Florida's 9.437 exactly.
+
+### 25.5 Declaring the hierarchy: done, and the reference it enables does NOT pay off
+
+Both events now declare containment explicitly rather than leaving a magnitude test to infer
+it. `rollup.json` gains:
+
+    "hierarchy": {"aggregate": "__aggregate__", "parts": ["florida", ...]}
+
+and `datasets/turkey2023/rollup.json` is created for the first time, declaring
+`turkey`/`syria` as parts and mapping the joint-scope phrasing this feed actually uses --
+verified present as *"Syria and Turkey"*, with the reverse order absent.
+
+The declaration enables an **implied-maximum** reference: judge a part against
+`aggregate - sum(other parts)` rather than against the aggregate directly. It is the right
+shape for the dominant-part problem -- Turkey against an implied max of 46,800 - 5,800 =
+41,000 is exactly at its ceiling and correctly kept, while the same 41,000 filed under Syria
+faces an implied max of 5,800 and is correctly rerouted.
+
+**Measured on Helene, it is much worse than the plain aggregate reference: 2.590 vs 0.591.**
+
+A one-pass version does nothing at all (5.228, and the control says it is no better than
+thinning), because the other parts are *themselves* contaminated -- North Carolina's stream
+holds 250 and Florida's holds 300, so the raw sum of parts exceeds the whole and every
+implied maximum clamps to zero. A two-pass version (gate against the raw aggregate first,
+then compute implied maxima from what survives) recovers most of that but still trails
+badly: Florida stays at 9.437 because early in the event the parts' running sum already
+meets the aggregate, the implied maximum clamps to zero anyway, and Florida's 300 walks
+straight through.
+
+**So the refinement that Turkiye motivated makes Helene worse, and Turkiye still cannot test
+it** -- the implied maximum needs *independent* observations of the whole, and Turkiye-Syria
+has none. Declaring the hierarchy does not manufacture the data. Getting those observations
+needs a re-extraction that labels joint-scope figures `__aggregate__`; the aliases for that
+now exist, but the original `--associate envelope` run's `--event-model` is not recorded in
+the pre-registration, so reproducing its 91 observations is a separate task.
+
+Net: the declaration is correct and worth keeping -- it is what tells the gate which streams
+are parts at all, previously hardcoded. The reference it was built to enable is a measured
+negative. **Plain aggregate remains the recommended reference wherever an aggregate stream
+exists, and no gate is possible where one does not.**
+
+---
+
 ## 27. Type vs event energies, and the negative-sampling axis they expose
 
 §25 removed the scope errors. The context audit of what remained (§26 and the 2026-08-11
