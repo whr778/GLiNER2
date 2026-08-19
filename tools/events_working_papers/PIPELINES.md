@@ -246,7 +246,9 @@ never priced the version of MHT worth building. Adding a reject option
 
 Still a ceiling that uses ground truth, still one event, and the tolerance is tuned and
 non-monotone — 0.25 is worse than 0.50, so there is no plateau to hide behind. But the prize
-for association is **double** what MHT was rejected on, and it lives in the reject option.
+for association is **double** what MHT was rejected on, and it splits almost evenly: 0.591 →
+0.537 is reassignment (+0.055, mostly Tennessee) and 0.537 → 0.480 is the reject option
+(+0.057). **About half the prize needs a null hypothesis; the other half does not.**
 
 The per-place breakdown says something sharper:
 
@@ -307,13 +309,23 @@ shows the pipeline over-extracts rather than starves.
 is tested by normalized innovation against its candidate tracks, and one that gates out of
 all of them is born into its own and leaves these streams. No ground truth anywhere.
 
-    no gate                                      5.247
-    symmetric birth, own+aggregate               1.059   q_rel 0.20 (the filter's own)
-    symmetric birth, tuned                       0.636   q_rel 2.00
-    one-sided birth, tuned                       0.608   q_rel 2.00
-    aggregate-only reference                     0.624   q_rel 0.20
-    SHIPPED magnitude scope gate                 0.591
-    three-way oracle (ground truth)              0.480
+    arm                                          Total   per-place   (sigma 4.0)
+    no gate                                      0.402       5.247
+    symmetric birth, own+aggregate               0.555       1.059   q_rel 0.20 (the filter's)
+    symmetric birth, tuned                       2.115       0.636   q_rel 2.00
+    one-sided birth, tuned                       2.115       0.608   q_rel 2.00
+    aggregate-only reference                     0.387       0.624   q_rel 0.20
+    SHIPPED magnitude scope gate                 0.316       0.591
+    three-way oracle (ground truth)              0.308       0.480
+
+**Read the pair, and the pair is what makes this an unambiguous loss.** The two tuned arms
+buy their per-place improvement by dumping junk into the aggregate: Total 2.115 against the
+gate's 0.316, a 6.7x degradation of the one stream this project calls its honest measurement.
+That is precisely the failure the shipped gate's three-outcome design exists to prevent —
+`gate()`'s docstring records that an earlier two-way version rerouted every reject to
+`__aggregate__` and destroyed the national stream. The associator reproduced a solved bug.
+So "0.608 against 0.591" understates it; the honest comparison is 2.115/0.608 against
+0.316/0.591.
 
 Two causes, both measured:
 

@@ -36,13 +36,21 @@ on what it adds rather than on what the two together are worth.
 RESULT, 2026-08-19: NEGATIVE. Innovation gating with track birth does not beat the fixed
 magnitude ratio it was meant to replace, at any setting swept.
 
-    no gate                                          5.247
-    innovation, symmetric birth, own+aggregate       1.059   (q_rel 0.20, the filter's own)
-    innovation, symmetric birth, tuned               0.636   (q_rel 2.00, 10x the filter's)
-    innovation, one-sided birth, tuned               0.608   (q_rel 2.00)
-    innovation, aggregate-only reference             0.624   (q_rel 0.20)
-    SHIPPED magnitude scope gate                     0.591
-    three-way oracle (reject, ground truth)          0.480
+    arm                                          Total   per-place   (sigma 4.0)
+    no gate                                      0.402       5.247
+    symmetric birth, own+aggregate               0.555       1.059   q_rel 0.20 (the filter's)
+    symmetric birth, tuned                       2.115       0.636   q_rel 2.00
+    one-sided birth, tuned                       2.115       0.608   q_rel 2.00
+    aggregate-only reference                     0.387       0.624   q_rel 0.20
+    SHIPPED magnitude scope gate                 0.316       0.591
+    three-way oracle (ground truth)              0.308       0.480
+
+Read the PAIR, never the per-place number alone. The two tuned arms buy their per-place
+improvement by DUMPING JUNK INTO THE AGGREGATE -- Total 2.115 against the gate's 0.316, a
+6.7x degradation of the one stream this project calls its honest measurement. That is the
+failure the shipped gate's three-outcome design was invented to prevent: its docstring
+records that an earlier two-way version rerouted every reject to ``__aggregate__`` and
+destroyed the national stream. This associator reproduced it.
 
 Two causes, both measured rather than argued.
 
@@ -244,11 +252,12 @@ def main() -> None:
         mean = sum(vals) / len(vals) if vals else float("nan")
         print(f"{sigma:>7.1f}{len(born):>6}{moved:>7}" + "".join(cells) + f"{mean:>9.3f}")
 
-    print("\n  reference points on this feed:")
-    print("    no gate                                  5.247")
-    print("    shipped magnitude scope gate             0.591")
-    print("    two-way oracle (no reject, ground truth) 0.537")
-    print("    three-way oracle (reject, ground truth)  0.480")
+    print("\n  reference points on this feed (Total / per-place):")
+    print("    no gate                                  0.402 / 5.247")
+    print("    shipped magnitude scope gate             0.316 / 0.591")
+    print("    two-way oracle (no reject, ground truth)   --   / 0.537")
+    print("    three-way oracle (reject, ground truth)  0.308 / 0.480")
+    print("  Read the PAIR: a per-place gain bought by poisoning Total is not a gain.")
 
 
 if __name__ == "__main__":

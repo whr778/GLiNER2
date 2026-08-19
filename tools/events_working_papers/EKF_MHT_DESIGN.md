@@ -41,10 +41,11 @@ first price is wrong. A two-way oracle — assign each observation to its own pl
 national total — improves the shipped gate by only 0.055, which reads as "association is not
 what is missing". But that oracle cannot *reject*, so a figure belonging to no scope in this
 event has no correct home; give it one and the ceiling moves to **0.111 (18.8%)**, double the
-figure. The prize is real and it lives in the null hypothesis. We then build the cheapest
-piece that delivers one — track birth by innovation gating — and **it loses to the fixed
-magnitude ratio it was meant to replace**, because judging a stream against its own track is
-circular in exactly the way §5's scope reference was. The residual underneath is 4.7%
+figure, with about half of it needing a null hypothesis and half not. We then build the
+cheapest piece that delivers one — track birth by innovation gating — and **it loses to the
+fixed magnitude ratio it was meant to replace**, degrading the national stream 6.7× while it
+does so, because judging a stream against its own track is circular in exactly the way §5's
+scope reference was. The residual underneath is 4.7%
 cross-event contamination against which no decode-side signal has worked, and the corpora
 offer no purchase on it: **0.0% of training documents contain a figure the model is supposed
 to leave alone.**
@@ -384,8 +385,10 @@ the tolerance rather than fixing it:
 | 0.25 | 76 | 0.499 |
 
 **The corrected headroom is 0.591 → 0.480 = +0.111, 18.8% — double the figure MHT was
-rejected on, and it lives in the reject option.** Still a ground-truth ceiling, still one
-event, and the tolerance is tuned and non-monotone, so there is no plateau to hide behind.
+rejected on.** It splits almost evenly: 0.591 → 0.537 is reassignment (+0.055, mostly
+Tennessee) and 0.537 → 0.480 is the reject option (+0.057), so about half the prize needs a
+null hypothesis and half does not. Still a ground-truth ceiling, still one event, and the
+tolerance is tuned and non-monotone, so there is no plateau to hide behind.
 
 The per-place breakdown sharpens it. The gate already **beats** a perfect two-way assignment
 on Florida (0.704 vs 0.734) and South Carolina (0.365 vs 0.558), because it has a third
@@ -405,15 +408,22 @@ that gates out of all of them is born into its own and leaves these streams. No 
 
 Nothing swept beats the fixed magnitude ratio it was meant to replace:
 
-| | per-place mean |
-|---|--:|
-| no gate | 5.247 |
-| symmetric birth, own + aggregate (`q_rel` 0.20, the filter's own) | 1.059 |
-| symmetric birth, tuned (`q_rel` 2.00) | 0.636 |
-| one-sided birth, tuned | 0.608 |
-| aggregate-only reference (`q_rel` 0.20) | 0.624 |
-| **shipped magnitude scope gate** | **0.591** |
-| three-way oracle (ground truth) | 0.480 |
+| | Total | per-place |
+|---|--:|--:|
+| no gate | 0.402 | 5.247 |
+| symmetric birth, own + aggregate (`q_rel` 0.20, the filter's own) | 0.555 | 1.059 |
+| symmetric birth, tuned (`q_rel` 2.00) | 2.115 | 0.636 |
+| one-sided birth, tuned | 2.115 | 0.608 |
+| aggregate-only reference (`q_rel` 0.20) | 0.387 | 0.624 |
+| **shipped magnitude scope gate** | **0.316** | **0.591** |
+| three-way oracle (ground truth) | 0.308 | 0.480 |
+
+**Both columns matter, and the second one alone would have flattered this.** The two tuned
+arms buy their per-place improvement by dumping junk into the aggregate — Total 2.115 against
+the gate's 0.316, a 6.7× degradation of the national stream, which is the one measurement
+§4 calls honest. That is exactly the failure the shipped gate's three-outcome design was
+invented to prevent: an earlier two-way version rerouted every reject to `__aggregate__` and
+destroyed that stream. This associator reproduced a bug the project had already fixed.
 
 Two causes, both measured. **Judging a stream against its own track is circular** — every
 contaminant the track accepts moves the reference the next test uses — and removing the
@@ -428,6 +438,13 @@ born. Birth is never the lever; the rerouting is.
 This does not kill deferred assignment; it is the first evidence *for* it. Hard assignment
 commits early and poisons its own reference, which is precisely what keeping rival hypotheses
 alive exists to prevent. Before this run that was a design preference.
+
+**And it sets up the section that follows.** The observations the reject option would remove
+are substantially the same observations the next section counts as cross-event contamination
+— Katrina's 1,400 is both. There are therefore two routes to them: a decode-side one (M4,
+now measurement-implicated but a large build against a 0.111 ceiling on a single-source
+feed) and a data-side one. The data-side route is the subject of §7.3, and the reason it goes
+first is that it is already built and instrumented while M4 is not.
 
 ### 7.3 What the residual actually is
 
