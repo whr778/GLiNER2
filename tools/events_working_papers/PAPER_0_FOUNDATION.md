@@ -2,9 +2,14 @@
 
 **William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
 
-¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 4.8) — design, implementation, and drafting
+¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
-*Working paper — engineering and methodology contributions on the `mmbert_training` branch. The from-encoder / long-context mmBERT results and the head-initialization finding (§10.6), plus a first broad-data head-init A/B (§10.7, a documented negative result), are complete (model: `whr778/mmbert-base-rams`); the §10.1–10.5 tables are the fastino DeBERTa-v3 baselines.*
+*Revision of 2026-08-19. The from-encoder / long-context mmBERT results and the
+head-initialization finding (§10.5), a broad-data head-init A/B reported as a negative
+result (§10.6), and an mmBERT data-scaling curve (§10.7) are complete; the §10.1–10.4
+tables are the fastino DeBERTa-v3 baselines. All results were re-checked against a
+split-contamination audit and the audit is reported in full in §7.1, including the one
+residual it could not remove.*
 
 ---
 
@@ -103,13 +108,14 @@ and `SchemaAPI`/`GLiNER2API`), plus the training data model:
   trigger and argument surface appears verbatim in the source text; wired
   through `validate()` / `sanitize()` / `to_dict()` / `from_dict()`.
 
-> ⚠ **Stale for the boundary architecture.** This previously read "A dedicated event loss
-> path (§6) lets event supervision be tuned independently." That path
-> (`event_struct_loss` / `event_struct_pos_weight`) exists only on the phase-2 span model
-> (`origin/mmbert_training`) and was dropped in the port to the boundary architecture,
-> where the loss decomposes by mechanism rather than by task. Event supervision is **not**
-> independently tunable on this branch today. Plan to restore the capability:
-> [`EVENT_LOSS_PHASE3_PLAN.md`](EVENT_LOSS_PHASE3_PLAN.md).
+**A note on tunable event supervision.** On the span architecture described here, a
+dedicated event loss path (`event_struct_loss` / `event_struct_pos_weight`, §6) allowed
+event supervision to be weighted independently of the other structure tasks. That path
+did not survive the port to the successor *boundary* architecture, where the loss
+decomposes by mechanism (span start/end, mention/pair scoring) rather than by task, so
+event supervision is not independently tunable there. We record this because the two
+architectures are easy to conflate when reading loss-configuration options: §6 describes
+the span model.
 
 ## 5. Training from arbitrary encoders and at scale
 
@@ -162,13 +168,96 @@ UTF-8, NFKC-normalized records with stray Unicode line separators stripped
 Converters are config-driven (e.g. entity mention-type filtering, label
 roll-up/remap) and stratify train/val/test splits deterministically.
 
+### 7.1 Split integrity: a contamination found mid-project, and what it changed
+
+**Every number in this paper was re-checked against a split-contamination audit
+completed 2026-08-18, and the audit is reported here rather than quietly fixed.** We
+think other groups will find the shape of the failure more useful than the specific
+counts: it was invisible to ordinary review, it was introduced by a plausible-looking
+line of code, and the first count we took of it was itself wrong.
+
+**The defect.** The split writer drew a random number **per row** rather than per
+document. Any document emitted more than once — which is normal in these corpora, where
+one document yields several task records — had its copies scattered independently across
+train, validation and test. Nothing crashed and no metric looked anomalous; the leak is
+silent by construction.
+
+**Scope.** A repo-wide gate over all corpora on disk found **45 of them shipping
+overlapping splits**, repaired by dropping **21,553 records of 2.3M (0.94%)** under the
+precedence *test > val > train*, so the blind test keeps every document it has and the
+training side gives up the duplicate. Worst affected were corpora unrelated to this paper
+(`gliclass_logic` 25.7%, `knowledgator_gliner` 15.6%, `klue_re` 11.3%). An earlier count
+of "~15 corpora" was taken from a truncated scan and was wrong — worth recording, because
+an under-count of a contamination is more dangerous than no count at all.
+
+Two tool defects had made some corpora *permanently* unrepairable and are the reason the
+audit had to be run over everything rather than sampled. The deduplicator derived split
+paths as `.val.jsonl` only, so corpora naming that split `dev` — including **WikiEvents
+and RAMS**, both used here — were silently skipped while the tool reported success on the
+pairs it did check. Separately, a require-all-three-splits check rejected any corpus
+missing a split outright.
+
+**Effect on this paper's results.** Of the corpora behind the results below:
+
+| corpus | pre-repair overlap | affects |
+|---|---|---|
+| RAMS | **none** — canonical 7,329 / 924 / 871 on disk, gate passes | §10.5–10.7 unaffected |
+| CASIE | **none** | §10.3 unaffected |
+| RE-DocRED | 1 document, train ∩ val (0.2% of val); **test untouched** | §10.4 blind test clean; checkpoint selection only |
+| WikiEvents | 1 document train ∩ test (5.0% of the 20-document test set), and 1 document train ∩ dev | §10.1, §10.2, §10.3 WikiEvents row |
+
+That RAMS is clean matters most: it carries §10.5–10.7, the head-initialization finding,
+which is this paper's principal empirical contribution.
+
+**What we did about WikiEvents.** The contaminated document was recovered by
+regenerating the pre-repair split from the converter (206 records, 202 distinct
+documents — matching the archived pre-repair count exactly, confirming the converter had
+not drifted) and diffing document keys against the repaired split. Every affected result
+was then **re-scored on the 19 uncontaminated test documents, same checkpoints, identical
+eval configuration**. The result:
+
+| WikiEvents blind test (base-v1) | as published | re-scored, 20 docs | **re-scored, clean 19** |
+|---|--:|--:|--:|
+| entity strict F1 | 0.764 | 0.7725 | **0.7718** |
+| event_type strict F1 | 0.953 | 0.9791 | **0.9791** |
+| event_trigger strict F1 | 0.551 | 0.5417 | **0.5417** |
+| event_argument strict F1 | 0.136 | 0.1366 | **0.1366** |
+| event strict F1 | 0.378 | 0.3845 | **0.3845** |
+
+**Every event metric is unchanged to four decimal places, and entity F1 moves by
+−0.0007.** The reason is specific rather than lucky: the contaminated document is a
+definitional passage carrying **13 entity mentions and zero events**, so it could not
+have influenced an event metric. `gliner2-large-v1` behaves identically (entity
+0.7949 → 0.7946, all event metrics unchanged), and the §10.2 windowing ablation
+reproduces on the clean set with its conclusion intact (§10.2).
+
+The gap between the "as published" and "re-scored" columns is **not** contamination —
+the test split is byte-identical. It is eval-code drift over the intervening months
+(chiefly event-type decoding and the fair-error analyser). We report both columns rather
+than silently restating, and the headline `event_argument` figure is unchanged either
+way.
+
+**What we could not fix by re-scoring, stated plainly.** The second WikiEvents overlap
+put one document in both train and dev, and that document *does* carry events — 23 of
+dev's 345 (6.7%), 21 of 428 arguments (4.9%). Checkpoints were selected on dev event
+F1, so **selection saw a mildly optimistic signal**. Removing that residual requires
+retraining on the repaired split, not re-scoring, and we have not done it; the reported
+WikiEvents figures should be read as carrying that caveat. It does not touch RAMS, CASIE
+or the RE-DocRED test split.
+
+**Now gated.** Within-split overlap is checked automatically before every training run
+(`tools/data/check_leakage.py --config`, wired into `tools/train/train.py`), the
+deduplicator handles `dev`-named and missing splits, and each hosted corpus carries its
+own pre-repair overlap counts on its dataset card so the contamination history travels
+with the data.
+
 ## 8. Evaluation methodology
 
 **Strict and relaxed regimes.** Every category (entity, relation, classification,
 and the event sub-metrics `event_type`, `event_trigger`, `event_argument`, and
 combined `event`) is scored twice: *strict* (exact surface, one-to-one) and
 *relaxed* (type exact + surface overlap, stopword-aware and normalized, so
-relaxed never scores below strict). Details in [`METRICS.md`](../../METRICS.md).
+relaxed never scores below strict). Details in `METRICS.md`.
 
 **Multilingual.** A per-language blind test uses language ID to bucket records,
 reports per-language then combined, and a multilingual stopword set (auto-detected
@@ -257,7 +346,7 @@ the beam uses **heuristic/config-set** weights (`GlobalDecodeConfig`). Recall is
 still bounded by within-window candidate recall — an argument more than ~one
 window from its trigger is never emitted and cannot be recovered by any
 post-hoc decode (this would require trigger-anchored windows or a two-stage
-document reader; see [`RECOMMENDATIONS.md`](../events_working_papers/RECOMMENDATIONS.md)). Trigger
+document reader; see `RECOMMENDATIONS.md`). Trigger
 clustering by span overlap can, rarely, merge two adjacent same-type events. The
 value the beam adds over greedy is cross-event conflict resolution.
 Correspondingly, the mode is only beneficial when documents exceed the encoder's
@@ -296,23 +385,25 @@ even the long-context window.
 
 ## 10. Results
 
-Blind test on the 20-document WikiEvents held-out set for the **base-v1** run
-(DeBERTa-v3-base, 15 epochs), evaluated with windowed global decoding
-(`chunk_size 384`, `chunk_overlap 128`, `global_decode true`). Micro unless noted.
+Blind test on the WikiEvents held-out set for the **base-v1** run (DeBERTa-v3-base,
+15 epochs), evaluated with windowed global decoding (`chunk_size 384`,
+`chunk_overlap 128`, `global_decode true`). Micro unless noted. **All WikiEvents figures
+in §10.1–10.3 are on the 19 uncontaminated test documents** (§7.1); the excluded
+document carries no events, so every event metric is identical on the full 20.
 
-### 10.1 WikiEvents blind test — base-v1 (this run)
+### 10.1 WikiEvents blind test — base-v1
 
 | Category | strict P / R / F1 | relaxed F1 | fair F1 | support |
 |---|---|---|---|---|
-| entity | 0.729 / 0.803 / **0.764** | 0.804 | 0.794 | 1602 |
-| event_type | 1.000 / 0.910 / **0.953** | 0.953 | — | 122 |
-| event_trigger | 0.520 / 0.586 / **0.551** | 0.567 | 0.572 | 239 |
-| event_argument | 0.155 / 0.120 / **0.136** | 0.435 | 0.467 | 515 |
-| event (combined) | 0.401 / 0.357 / **0.378** | 0.554 | — | 876 |
+| entity | 0.727 / 0.823 / **0.772** | 0.810 | 0.809 | 1589 |
+| event_type | 1.000 / 0.959 / **0.979** | 0.979 | — | 122 |
+| event_trigger | 0.495 / 0.598 / **0.542** | 0.557 | 0.564 | 239 |
+| event_argument | 0.158 / 0.120 / **0.137** | 0.437 | 0.474 | 515 |
+| event (combined) | 0.403 / 0.368 / **0.385** | 0.557 | — | 876 |
 
-Event *type* detection is nearly saturated (0.953, precision 1.00); *arguments*
-remain the bottleneck at strict 0.136 but recover strongly under relaxed (0.435)
-and fair (0.467) — the model often locates the right argument entity with an
+Event *type* detection is nearly saturated (0.979, precision 1.00); *arguments*
+remain the bottleneck at strict 0.137 but recover strongly under relaxed (0.437)
+and fair (0.474) — the model often locates the right argument entity with an
 inexact boundary/surface or under strict's double penalty. The fine-grained
 error counts bear this out: of the gold arguments the fair analysis scores,
 COR 175, typed near-misses (LE/LBE/BE\*) 46, pure misses (FN) 231, plus 123 false
@@ -325,16 +416,23 @@ path varies — over the full 20-document test set:
 
 | Eval configuration | event_argument strict F1 | arg relaxed | event strict F1 |
 |---|---|---|---|
-| A. whole-doc single pass | 0.086 | 0.395 | 0.356 |
-| B. chunk (overlap 128) + simple merge | **0.143** | 0.433 | 0.373 |
-| C. chunk + OneIE global decode (beam) | 0.136 | 0.435 | 0.378 |
-| D. chunk + beam, config fit on val | 0.129 | 0.402 | 0.387 |
+| A. whole-doc single pass | 0.086 | 0.393 | 0.369 |
+| B. chunk (overlap 128) + simple merge | **0.144** | 0.434 | 0.380 |
+| C. chunk + OneIE global decode (beam) | 0.137 | 0.437 | 0.385 |
+| D. chunk + beam, config fit on val † | 0.129 | 0.402 | 0.387 |
+
+† Rows A–C are re-measured on the clean 19-document test set (§7.1). Row D is
+carried from the original run: reproducing it requires re-fitting
+`GlobalDecodeConfig` on validation, and the validation split is the one whose
+residual contamination §7.1 could not remove, so a re-fit would not be cleaner. It
+is reported for the qualitative point it supports — that fitting the decoder does
+not change the verdict — not as a directly comparable number.
 
 **Windowing is the driver.** Chunking eval to match the model's trained window
-(A→B) lifts argument strict F1 **0.086 → 0.143** (+66% relative), fixing the
+(A→B) lifts argument strict F1 **0.086 → 0.144** (+67% relative), fixing the
 train/eval mismatch and the 512-token overflow. **The beam adds essentially
 nothing over a simple chunk-merge here** (B→C): argument strict is marginally
-*lower* (0.143 → 0.136) while event strict is marginally higher (0.373 → 0.378) —
+*lower* (0.144 → 0.137) while event strict is marginally higher (0.380 → 0.385) —
 within noise. This is the measured, honest answer to "does the beam earn its
 keep": on WikiEvents, not appreciably. Its value (cross-event conflict
 resolution under heuristic weights) is below the noise floor, and the default
@@ -364,21 +462,21 @@ what recovers the document-level argument bottleneck** on a short-context model;
 the decoder is an optional, roughly-neutral refinement pending learned weights or
 cardinality tuning.
 
-### 10.3 Loss-variant comparison
+### 10.3 Full event-dataset sweep
 
-| struct_loss | entity F1 | event_argument F1 | notes |
-|---|---|---|---|
-| bce / bce_posweight / focal / asl / dice / bce_dice | *TBD* | *TBD* | one config per variant |
+Blind-test micro-F1 for every fine-tuned configuration, evaluated with windowed global
+decoding. `event_argument` is given as strict / relaxed / fair. A dash means the category
+was not scored for that configuration, generally because the corpus as converted carries
+no annotation for that layer — RAMS and CMNEE, for instance, supply events without an
+entity layer.
 
-### 10.4 Full event-dataset sweep
+These rows are reported **as run**. Several converters have changed since (DocEE's
+splits were rebuilt as recently as 2026-08-19 after upstream contamination was found in
+them), so the entity/event coverage of a row does not always match what today's
+converter emits for that corpus — the MAVEN and DocEE rows in particular. They are kept
+because they are the measurements the models were actually scored on; they should be
+re-run rather than re-derived if the exact numbers matter.
 
-Blind-test micro-F1 per fine-tuned config, filled automatically as each run in
-`scripts/train_all_events.sh` finishes (via `scripts/update_paper_metrics.py`);
-the model is evaluated with windowed global decoding. Datasets without a
-held-out test split show no blind test. `event_argument` is given
-as strict / relaxed / fair.
-
-<!-- SWEEP_START -->
 | Config | entity | event_type | event_trigger | event_argument (S / R / Fair) | event | support |
 |---|--:|--:|--:|--:|--:|--:|
 | `gliner2-base-v1-casie` | 0.553 | 0.928 | 0.413 | 0.058 / 0.450 / 0.426 | 0.207 | 3454 |
@@ -389,11 +487,14 @@ as strict / relaxed / fair.
 | `gliner2-large-v1-casie` | 0.591 | 0.975 | 0.487 | 0.173 / 0.549 / 0.515 | 0.302 | 3454 |
 | `gliner2-large-v1-docee` | 0.360 | — | — | — / — / — | — | — |
 | `gliner2-large-v1-rams` | — | 1.000 | 0.903 | 0.444 / 0.697 / 0.627 | 0.684 | 3712 |
-| `gliner2-large-v1-wikievents` | 0.792 | 0.962 | 0.583 | 0.119 / 0.467 / 0.505 | 0.366 | 876 |
+| `gliner2-large-v1-wikievents` ‡ | 0.795 | 0.988 | 0.574 | 0.119 / 0.470 / 0.505 | 0.371 | 876 |
 | `gliner2-multi-v1-cmnee` | — | 0.986 | 0.874 | 0.221 / 0.709 / 0.671 | 0.466 | 27099 |
-<!-- SWEEP_END -->
 
-### 10.5 RE-DocRED relation extraction
+‡ Re-measured on the clean 19-document WikiEvents test set (§7.1); its event metrics are
+identical on the full 20 and entity moves −0.0003. Every other row is on a corpus the
+contamination audit found clean.
+
+### 10.4 RE-DocRED relation extraction
 
 Fine-tuning `fastino/gliner2-{base,large}-v1` on RE-DocRED (re-annotated DocRED:
 document-level NER + relation extraction). Blind-test strict micro-F1; the
@@ -410,7 +511,7 @@ Document-level strict relation F1 is a hard metric for a span-based extractor
 (cross-window pairs and coreferent arguments are recall ceilings); the large
 model leads on both entity and relation F1.
 
-### 10.6 From-encoder training and the head-initialization bottleneck
+### 10.5 From-encoder training and the head-initialization bottleneck
 
 We ran the experiment §12 proposed: train events from a *raw* encoder via
 `from_encoder()` (fresh GLiNER2 heads) on RAMS, on the long-context mmBERT-base
@@ -442,7 +543,7 @@ in 512 regardless). This refines §9.5: long context remedies window-bound
 head-competence bottleneck that dominates argument extraction from a cold start.
 
 **What the fastino head-init actually is** (verified against Zaratiana et al., 2025;
-see [`FASTINO_GLINER2_TRAINING.md`](../events_working_papers/FASTINO_GLINER2_TRAINING.md)).
+see `FASTINO_GLINER2_TRAINING.md`).
 The fastino heads were trained **fully supervised** on **254,334 examples** — 53% real
 text (news/Wikipedia/legal/PubMed/ArXiv) and 47% synthetic, *all* GPT-4o-annotated
 (LLM knowledge-distillation, not human labels) — for just **5 epochs** with a
@@ -461,7 +562,7 @@ The implication is constructive: the remedy is to give a from-encoder model the 
 *scale* of structure-extraction supervision. Because it is the structure head that
 transfers, the target is **not** ~10⁵–10⁶ *event* documents but a large
 **hierarchical-structure / argument** curriculum in the fastino mold (mixed
-real+synthetic text, LLM-annotated and validated). [`tools/data/synthetic/`](../data/synthetic/)
+real+synthetic text, LLM-annotated and validated). `tools/data/synthetic/`
 builds exactly that shape — broad-label, multi-task supervision (entities, relations,
 document-level events with triggers + arguments, classification, structures), either
 fully generated or projected as synthetic annotations onto real corpora, at the
@@ -488,9 +589,9 @@ support-weighted objective (§8) for apples-to-apples comparison with the
 baselines — which, for argument-sparse categories, *understates* the peak, so the
 from-encoder argument numbers above are conservative.
 
-### 10.7 Head-init pretraining: a first broad-data A/B (negative result)
+### 10.6 Head-init pretraining: a first broad-data A/B (negative result)
 
-§10.6 argued the remedy for the argument bottleneck is to give a from-encoder
+§10.5 argued the remedy for the argument bottleneck is to give a from-encoder
 model the same IE curriculum the fastino heads saw. We ran a first, deliberately
 cheap version of that experiment and report it as a **negative result**.
 
@@ -508,7 +609,7 @@ trigger / 515 argument mentions), strict micro-F1:
 | control | RAMS-only (`mmbert-base-rams`) | **0.944** | 0.085 | 0.0046 |
 | treatment | broad combined base | 0.573 | **0.133** | 0.0066 |
 
-The control reproduces the near-floor WikiEvents-from-RAMS result of §10.6
+The control reproduces the near-floor WikiEvents-from-RAMS result of §10.5
 (event_argument ~0, event_type ~0.95, event_trigger ~0.1) within run-to-run noise
 on 20 documents. **The broad+synthetic base gave no reliable downstream lift.**
 Argument-strict F1
@@ -517,12 +618,12 @@ correct arguments each, i.e. noise on 20 documents). The trigger edge to the
 treatment (0.133 vs 0.085) is precision-only on 239 mentions, within run-to-run
 noise, and the broad base *regressed* event_type (0.573 vs 0.944). For context, the
 combined base's own RAMS argument head was also weak (arg-strict 0.028) — though
-under a lighter regime than the 0.050 RAMS-only figure in §10.6 (2 epochs +
+under a lighter regime than the 0.050 RAMS-only figure in §10.5 (2 epochs +
 `eval_loss` selection vs 15 epochs + argument-strict selection), so it is context,
 not a controlled base-to-base claim; the controlled comparison is the WikiEvents
 A/B above.
 
-This does **not** refute §10.6 — it shows a *light* broad-data pass is not a
+This does **not** refute §10.5 — it shows a *light* broad-data pass is not a
 substitute for real head-init pretraining. The confounds point the same way: only
 2 base epochs, `eval_loss` selection (dominated by the ~77K multilingual-NER
 records), and argument dilution mean the argument head was never warmed at the
@@ -548,11 +649,11 @@ warm-starting collapses every span/relation task: strict micro-F1 entity 0.141, 
 only coarse event-type (0.998, few classes) survives. So ~1.5K synthetic records are an
 *adaptation* corpus, not a from-scratch pretraining set: the extraction heads need either
 a warm start or the fastino curriculum's ~10⁵–10⁶ scale. This restates the head-init
-thesis (§10.6) from the data side. Checkpoint: `whr778/deberta-base-fromenc-synthetic`.
+thesis (§10.5) from the data side. Checkpoint: `whr778/deberta-base-fromenc-synthetic`.
 
-### 10.8 How much data warms the head? An mmBERT data-scaling curve
+### 10.7 How much data warms the head? An mmBERT data-scaling curve
 
-§10.7's light broad pass did not lift arguments, but it was confounded (2 epochs,
+§10.6's light broad pass did not lift arguments, but it was confounded (2 epochs,
 NER-diluted, `eval_loss`-selected). This experiment isolates the one variable that
 matters — **Stage-A corpus size** — and measures it directly. We warm mmBERT-base
 fresh heads (`from_encoder`) on a structure/argument-dense event corpus of size N,
@@ -565,7 +666,7 @@ maven, text2json, events_biotech, mendeley_ed, casie), nested and proportional a
 `events_working_papers/SCALING_CURVE_EXPERIMENT.md`.
 
 Two endpoints are already known on their respective encoders: **N=0 = 0.050**
-(mmBERT `from_encoder` straight to RAMS, §10.6); the DeBERTa-v3 fastino warm-start
+(mmBERT `from_encoder` straight to RAMS, §10.5); the DeBERTa-v3 fastino warm-start
 (254K) reaches **0.462** as a *cross-encoder reference*, not an mmBERT point (there
 is no fastino-scale warm-start on mmBERT). RAMS blind test (871 docs), strict micro-F1:
 
@@ -597,27 +698,27 @@ more is better), then fine-tune. Checkpoints (private):
   tools/train/config/<name>.yaml`. WikiEvents configs enable windowed global
   decoding at eval (`eval.global_decode: true`, `chunk_size: 384`,
   `chunk_overlap: 128`).
-- **Convert** corpora with the scripts in [`tools/data/`](../data/) (see
-  `run_all_converters.sh` and [`TRAINING_DATA.md`](../data/TRAINING_DATA.md)).
+- **Convert** corpora with the scripts in `tools/data/` (see
+  `run_all_converters.sh` and `TRAINING_DATA.md`).
 - **Infer** at the document level: `tools/infer.py --model <ckpt> --input
   <doc> --events '{"Attack":["Attacker","Target","Place"]}' --global-decode`.
 - Design and verification notes:
-  [`DOCUMENT_EXTRACTION_PLAN.md`](../events_working_papers/DOCUMENT_EXTRACTION_PLAN.md),
-  [`METRICS.md`](../../METRICS.md), [`CORE_CHANGES.md`](../events_working_papers/CORE_CHANGES.md).
+  `DOCUMENT_EXTRACTION_PLAN.md`,
+  `METRICS.md`, `CORE_CHANGES.md`.
 
 ## 12. Limitations and future work
 
-- We ran the long-context mmBERT experiment (§10.6) and the result overturned the
+- We ran the long-context mmBERT experiment (§10.5) and the result overturned the
   expectation: a from-encoder mmBERT does **not** recover the argument bottleneck,
   because — as the DeBERTa-v3 encoder-isolation control shows — that bottleneck is
   **head initialization** (IE-curriculum pretraining), not the context window.
   Long context still remedies window-bound recall loss on genuinely long
   documents (its intended role, §9.5), but it is orthogonal to head competence.
-  We ran a first, cheap version of the head-init A/B (§10.7): a 2-epoch,
+  We ran a first, cheap version of the head-init A/B (§10.6): a 2-epoch,
   `eval_loss`-selected broad+synthetic base did **not** lift downstream WikiEvents
   events (arguments stayed at the floor; event_type regressed). The open work is
   therefore a *heavier* head-init pass — the broad-label, multi-task synthetic
-  curriculum in [`tools/data/synthetic/`](../data/synthetic/) at ~10⁵–10⁶ scale
+  curriculum in `tools/data/synthetic/` at ~10⁵–10⁶ scale
   with **argument-strict checkpoint selection**, matching the fastino curriculum —
   rather than a light multi-task warm-up, then re-run RAMS/WikiEvents and A/B
   against the fastino heads.
@@ -692,7 +793,7 @@ more is better), then fine-tune. Checkpoints (private):
 ### Datasets
 
 Datasets used for training/evaluation on this branch (full corpus list and
-provenance in [`tools/data/TRAINING_DATA.md`](../data/TRAINING_DATA.md)):
+provenance in `tools/data/TRAINING_DATA.md`):
 
 - Li, S., Ji, H., Han, J. (2021). *Document-Level Event Argument Extraction by
   Conditional Generation* (WikiEvents / BART-Gen). NAACL.
@@ -753,9 +854,11 @@ provenance in [`tools/data/TRAINING_DATA.md`](../data/TRAINING_DATA.md)):
 
 ## Appendix B: scope
 
-122 commits on `mmbert_training` vs. `main`. Core-package changes vs. `main` are
-catalogued in [`CORE_CHANGES.md`](../events_working_papers/CORE_CHANGES.md); the training tooling in
-`tools/train/` and `tools/data/` is net-new to this branch.
+The work described here spans two architectures. §1–§10.4 describe the **span**
+architecture (DeBERTa-v3, `fastino/gliner2-base-v1`); §10.5–10.7 use the same training and
+evaluation infrastructure on the long-context mmBERT backbone. Core-package changes are
+catalogued in `CORE_CHANGES.md`; the training tooling in `tools/train/` and `tools/data/`
+is net-new.
 
 ## Appendix C: Running the models — Hub download and the viewer
 

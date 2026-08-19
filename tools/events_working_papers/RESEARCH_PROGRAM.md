@@ -1,159 +1,159 @@
-# Research Program: Global Inference on Boundary-Head Candidates
+# Global Inference over Boundary-Head Candidates: A Research Programme
 
-> **⚠ 2026-08-18: every joint_ie / 137k number in this document predates a data repair
-> and is superseded.** 45 corpora shipped overlapping train/val/test, and the scaling
-> configs additionally paired regenerated train files against frozen val slices
-> (252 train-in-val, 22 val-in-test). All were repaired, the slices rebuilt, and the
-> four scaling points now gate CLEAN. The curve is being re-run from scratch — see
-> `JOINT_IE_SCALING.md` and [[lambda-137k-curve-restart]]. Numbers below are kept as
-> the record of what was measured and believed at the time; do not compare new results
-> against them.
+**William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
 
-Status: program map (one page). Date: 2026-08-09 (supersedes 2026-08-07). The unifying
-thesis, the three papers under their real names, and the working-paper → paper map.
+¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
-## The unifying thesis
+*Programme map, revision of 2026-08-19. States the unifying thesis, the three papers it
+decomposes into, what is established, and what is still open. Numbers quoted here are
+summaries; each one's primary record is the working paper cited beside it.*
 
-GLiNER2's **boundary head** emits candidate scores per chunk (spans, mention/pair logits,
-contextual `candidate_states`), then a **greedy per-chunk decode** selects a record set. That
-greedy decode is fine for sparse, single-document extraction — and **insufficient for dense
-or evolving structure**. The program's claim:
+---
 
-> **Global structured inference over the boundary candidate scores — not the greedy per-chunk
-> decode — is what dense document-level and beyond-document events require.**
+## 1. The thesis
 
-Two instantiations of the *same* top-K hypothesis inference at different scopes, both over the
-shared `candidate_scores → JointProblem` contract:
+GLiNER2's **boundary head** emits candidate scores per chunk — span boundaries,
+mention and pair logits, and contextual candidate states — and a **greedy per-chunk
+decode** then selects a record set from them. That decode is adequate for sparse,
+single-document extraction. The programme's claim is that it is not adequate for
+anything denser:
 
-| scope | mechanism | the "beam" is | target task |
+> **Dense document-level and beyond-document extraction require global structured
+> inference over the boundary candidate scores, not the greedy per-chunk decode.**
+
+The claim has two instantiations. They are the *same* top-K hypothesis inference at
+different scopes, over one shared `candidate_scores → JointProblem` contract:
+
+| scope | mechanism | what the beam ranges over | target task |
 |---|---|---|---|
-| **within a document** (combinatorial) | joint_ie global decode + typed constraints | top-K constraint-consistent assignments | **events (RAMS) _and_ relations (Re-DocRED)** |
-| **across documents / streaming** (temporal) | EKF/MHT tracker (Kalman bank + pruning) | top-K hypotheses over time (MHT) | evolving events (disaster streams, Venezuela) |
+| **within a document** (combinatorial) | global decode under typed constraints | top-K constraint-consistent assignments | events (RAMS) **and** relations (Re-DocRED) |
+| **across documents** (temporal) | EKF/MHT tracker — Kalman bank plus pruning | top-K hypotheses over time | evolving events in a document stream |
 
-The temporal row is two questions, not one: **track** an evolving quantity, and **diarize**
-observations into the right stream. The tracker is built and validated on synthetic data;
-the diarizer is **not built** — association currently ships as hard assignment on a string
-key, with no hypothesis enumeration ([[EKF_MHT_DESIGN]] §1a). Every real-event failure so
-far has been in the second half, which means the programme's central question remains
-unasked rather than answered.
+Within a document, the two faces are one mechanism: in the beam an event is a *trigger
+node plus role edges* and a relation is a *plain edge*, so a single typed-constraint
+decode covers both. A win on only one face is a weaker but still reportable result, and
+the honest negative — that global decoding helps relations and not events, or the
+reverse — localises where greedy per-query decoding actually costs you.
 
-The within-document scope is **both faces, not relations alone**: in the beam an event is a
-*trigger node plus role edges* and a relation is a *plain edge*, so one typed-constraint
-decode covers both ([[JOINT_IE_SCALING]] §3b). A win on only one face is a weaker but still
-reportable result; the honest negative — global decoding helps relations and not events, or
-the reverse — localizes where greedy per-query decoding actually costs you.
+Across documents the row is two questions, not one: **track** an evolving quantity, and
+**diarise** observations into the right stream. The distinction matters because the two
+halves fail independently, and the second can silently destroy the first.
 
-MHT's hypothesis beam and joint_ie's constraint beam are the **same machinery**; the boundary
-head is the shared substrate — it removed the span 19-instance cap that made either impossible
-([[COUNTING_LAYER]]).
+The boundary head is the shared substrate for both. It removed the span architecture's
+19-instances-per-type cap, which had made either mechanism impossible to express.
 
-### A sharpening, now CONFIRMED (2026-08-10)
+## 2. What is established
 
-Partly. The full 12-arm curve completed 2026-08-10, all points threshold-matched at 0.3.
-The *boundary* warm start reaches RAMS argument F1 **0.177 at 10K** and then barely moves:
-0.191 / 0.202 / 0.192 through 137K — a valid within-row result (support 2,016 throughout).
+**The span head, not the encoder, was the bottleneck.** Holding fresh heads fixed and
+swapping the encoder (mmBERT ↔ DeBERTa-v3) moves RAMS argument F1 barely at all
+(0.050 vs 0.042). Holding the encoder fixed and swapping fresh → IE-pretrained heads
+moves it roughly elevenfold (0.042 → 0.462). The deficit is head initialisation, not
+context window. *(Paper 0, §10.5.)*
 
-> **2026-08-15 — "barely moves" is now measured, not inferred.** A control re-ran the
-> published 137K recipe (same base, same 15 epochs) and scored **0.2151** against the
-> published **0.192** — **+0.023 from a re-run alone** ([[lambda-rams-warmstart-run]]).
-> Single-run variance is therefore ≥±0.02, and the entire boundary spread
-> (0.177–0.215) is **one run's noise**. "Barely moves" understates it: the boundary
-> curve does not measurably move at all. That *strengthens* the span-head reading
-> below, and it means the 0.177-vs-0.158 comparison flagged in the next paragraph is
-> marginal on variance grounds too, independent of the support question.
+**Head warming has a measurable data threshold.** Warming mmBERT's heads on a
+structure/argument corpus before RAMS fine-tuning does nothing at 10K, lifts arguments
+about 2.3× at 40K, and keeps climbing to 100K with no plateau. The knee is between 10K
+and 40K. *(Paper 0, §10.7.)*
 
-The comparison **against the span curve's 0.158 is not yet verified**: that number comes
-from a different experiment and its blind-test support has not been checked against this
-one. Given that a support mismatch has already invalidated the cold-base row of this very
-curve, the boundary-beats-span claim must be re-derived on a shared test set before it is
-used in Paper 0.
+**Windowing, not the global decoder, recovers document-level arguments** on a
+short-context model: 0.086 → 0.144 argument-strict F1 from matching the eval window to
+the trained window, against which the OneIE-style beam is neutral (0.144 → 0.137).
+Reported as a negative result for the decoder. *(Paper 0, §10.2.)*
 
-So the head-init deficit that motivated the scaling curve is largely an artifact of the
-**span head's fixed-width enumeration**, not a data-volume law about mmBERT. "Which head"
-is a first-order claim for Paper 0, and Paper 2's curve is *architecture × decode* rather
-than *data × decode*.
+**Replay protects a warm start, and record extraction transfers without record
+supervision.** Warm-starting the 137K joint base on real-plus-synthetic data with 30%
+exact replay held the original structure capability (0.1119 → 0.1060 on the base's own
+test set) while nearly tripling on the new distribution (0.0755 → 0.2179). The new
+corpora supplied *no* record-head supervision at all, so the gain is transfer from the
+span representations the record head reads its field fillers out of.
+*(`JOINT_IE_SCALING.md` §0b–0c.)*
 
-**A second finding was retracted the same day.** "The cold base is still climbing at 137K
-while the warm start is flat" compared rows evaluated on DIFFERENT blind tests: the mmbert
-arms straddle the 9 Aug fix that added the missing event `test:` keys, so 10k/40k/100k were
-scored on 3,527 argument instances and 137K on 20,845. The cold-base row is not a curve and
-the cross-row comparison never shared a test set. Only the RAMS row survives (support 2,016
-throughout): it saturates from 100K. Greedy arm only — the beam arm remains unmeasured.
+**Single-run variance on these metrics is ±0.02 or worse.** A control re-run of a
+published RAMS recipe scored +0.023 above it from the re-run alone. Any curve claim
+needs at least two seeds per point before it is quoted, and several earlier readings of
+this programme's own curves did not meet that bar.
 
-## The three papers
+## 3. What is not established
 
-- **Paper 0 — Foundation.** Draft: [[PAPER_0_FOUNDATION]] — *"Schema-Driven Information
-  Extraction Beyond the Sentence: Event Extraction, Multilingual Training, and Document-Level
-  Global Decoding for GLiNER2"*. GLiNER2 + the boundary head + head-init / multi-corpus
-  training — the substrate both other papers build on. Complete draft (Abstract → §13
-  References); **finish first, no new experiments required**.
-- **Paper 1 — Real-time events (temporal).** Design: [[EKF_MHT_DESIGN]] — *"EKF/MHT Event
-  Tracking on the Boundary Head — Design & Decisions"*. Censored measurement model,
-  learned/union gate, text→observation normalization, held-out synthetic, then the Venezuela
-  2026 double-blind. **Most mature — ships next.** §14-20 are already the results skeleton;
-  §20 closes the extraction gap the §19 probe predicted.
-- **Paper 2 — Traditional events (combinatorial).** Design: [[JOINT_IE_SCALING]] — *"joint_ie ×
-  Head-Init Scaling on the Boundary Head — Design"*. joint_ie global decode wired to the
-  boundary head: base-volume curve × decode arm on **both** RAMS (events) and Re-DocRED
-  (relations), then structured joint training (Phase B). **In flight** — Phase A curve running.
+**The central question is unasked, not answered.** The design specifies association as
+gate → Hungarian assignment → top-K hypotheses → track birth/death. What ships is hard
+assignment on an observable string key feeding one single-stream filter per key: no
+hypothesis enumeration, no deferred decision, no track birth or death. Every real-event
+failure so far is a failure of that placeholder rather than of MHT. *(`EKF_MHT_DESIGN.md`
+§1a.)*
 
-Papers 1 & 2 open with the same framing paragraph (above) and cross-cite; a later extended /
-journal version may merge them into the single "global inference on boundary candidates"
-statement.
+**On real news the tracker loses to a trivial baseline.** On the Türkiye–Syria 2023
+earthquake, pre-registered, `est_last_value` beats the EKF (0.208 vs 0.136), a 1999
+death toll quoted in an article's history section is tracked as a 2023 figure, and one
+of the two affected countries is never recovered at all. Attribution, not filtering and
+not extraction, is the bottleneck. *(`EKF_MHT_DESIGN.md` §21.)*
 
-## Working paper → paper map
+**The greedy-vs-beam comparison — the actual question of the combinatorial arm — has
+not been run.** Every number produced so far is the greedy arm.
 
-**Active — feed a paper:**
+**Structure supervision is not reaching the record head from most corpora.** The
+cc_news and synthetic converters emit structures without the metadata the training path
+needs, so records that appear to supply structure supervision supply none. This is a
+data-design decision rather than a defect to patch, and it gates any future arm claiming
+structure capability from those corpora.
 
-| working paper | feeds | role |
-|---|---|---|
-| [[COUNTING_LAYER]] | 0, 1, 2 | why the span 19-cap is a dead end; boundary removes it |
-| [[BOUNDARY_ARCHITECTURE]] | 0, 1, 2 | **the substrate reference** — how the boundary head works end to end, and how NER / structures / relations / events each flow through training, evaluation and extraction |
-| [[PROJECT_JOURNAL]] | all | chronological record of decisions, and of the ones later overturned |
-| [[TODO]] | all | open defects and next tests, with the evidence for each |
-| [[BOUNDARY_DECODE_AND_EKF]] | 1, 2 | verified boundary decode map + where global inference plugs in |
-| [[EKF_MHT_DESIGN]] §1-13 | 1 | tracker design + decisions |
-| [[EKF_MHT_DESIGN]] §14-20 | 1 | **results** (regime ablation, learned gate, normalization, model arm, missing probe, fine-tuned extractor) |
-| [[EKF_MHT_DESIGN]] §21 | 1 | **first real event** (Turkiye–Syria 2023): pre-registered, negative, attribution is the bottleneck |
-| [[JOINT_IE_SCALING]] §1-3c | 2 | thesis + boundary wiring (events, relations, structures in one beam) |
-| [[JOINT_IE_SCALING]] §4, §4b | 2 | experiment design + **first measured point** |
-| [[KALMAN_BEAM_SEARCH_EXPLORATION]] | 1 (+ framing) | the beam↔filter origin analysis |
-| [[SCALING_CURVE_EXPERIMENT]] | 0, 2 | the *span* head-init curve spec — the baseline Paper 2 is measured against |
-| [[HEAD_INIT_DATA_SCALE]] | 0, 2 | the prior estimate the curve tested (reasoned bracket) |
-| [[DOCUMENT_EXTRACTION_PLAN]] | 0 §9, 2 | OneIE-style global decode over windowed candidates |
-| `mmbert-head-init-finding` (memory) | 0, 2 | head-init scaling evidence (span arm: arg 0.050/0.115/0.158) |
+## 4. The three papers
 
-**Reference / implementation record — not paper inputs:**
+**Paper 0 — Foundation.** *Schema-Driven Information Extraction Beyond the Sentence.*
+GLiNER2 plus the boundary head plus head-initialisation and multi-corpus training: the
+substrate the other two build on. Complete; no new experiments required.
 
-| working paper | role |
+**Paper 1 — Real-time events (temporal).** The EKF/MHT line: censored measurement model,
+learned gate, text-to-observation normalisation, held-out synthetic validation, then a
+genuinely blind real event. Most mature on the tracking half. Blocked on the diarisation
+half, which is the honest statement of where it stands. Design and results:
+`EKF_MHT_DESIGN.md`.
+
+**Paper 2 — Traditional events (combinatorial).** Global decode wired to the boundary
+head, measured on both RAMS (events) and Re-DocRED (relations), then structured joint
+training. The base-volume × architecture curve is complete on repaired data; the
+decode arm is not. Design and results: `JOINT_IE_SCALING.md`.
+
+Papers 1 and 2 share the framing in §1 and cross-cite; a later extended version may
+merge them into the single global-inference statement.
+
+## 5. Method rules adopted after being learned the hard way
+
+**Verify splits before every run.** A per-row random draw scattered copies of the same
+document across train, validation and test in 45 corpora. It is silent — nothing crashes
+and no metric looks wrong. Within-split overlap is now gated automatically before
+training, and Paper 0 §7.1 reports the audit and its effect on that paper's results
+rather than quietly restating the numbers.
+
+**Never compare across test sets.** Two of this programme's retracted findings were
+cross-row comparisons on differently-composed blind tests. Support counts must match, or
+the comparison is not one.
+
+**Always report the trivial baseline beside the model.** A pre-registered EKF prediction
+was scored a success by a range-normalised metric that was blind to contamination landing
+mid-range; `est_last_value` alongside it would have caught this immediately.
+
+**Quote a curve only with the operating point it was read at.** A head whose decode
+threshold is never calibrated can read exactly zero while working correctly — which is
+how one head in this programme was misdiagnosed as broken across five measurements.
+
+**Graduation rule.** A finding lives in its working paper until verified held-out, then
+graduates into the target paper. The working papers stay as the design and decision
+record; the papers carry only verified, reproducible claims — including the honest
+negatives that scope the contributions.
+
+## 6. Source documents
+
+The working papers are the primary record; this map is a summary of them.
+
+| document | role |
 |---|---|
-| [[EVENT_LOSS_PLAN]] | event-loss separation from `structure_loss` (implemented) |
-| [[EVALUATION_PLAN]] | per-language blind-test methodology (feeds Paper 0 §8 indirectly) |
-| [[FASTINO_GLINER2_TRAINING]] | how `fastino/gliner2-base-v1` was trained; why it warms our event heads |
-| [[RE_DIFFERENCES]] | relation extraction: GLiNER vs GLiNER2 |
-| [[CORE_CHANGES]], [[MAIN_MERGE_CONFLICT_MAP]] | branch/merge archaeology — historical, not cited |
-| [[RECOMMENDATIONS]], [[DEFINITIONS]], [[EVALUATION]], [[INSTRUCTIONS]] | early scratch notes; superseded, kept for provenance |
-
-## Sequencing (by maturity; billing/effort aware)
-
-1. **Paper 0** — finish the existing draft (it's the substrate; no new runs). If §4b survives,
-   add the head-architecture claim to §10.
-2. **Paper 1** — EKF line: fine-tuned extractor **done** (§20); first real event **run and
-   lost** ([[EKF_MHT_DESIGN]] §21, Turkiye–Syria 2023). The tracker is beaten by
-   `est_last_value` on real news (0.208 vs 0.136) and a 1999 death toll is tracked as a
-   2023 one. **Attribution, not filtering, is the bottleneck** — so the next step is an
-   attribution mechanism (the §10/MHT crux), not more extractor fine-tuning. Venezuela
-   remains the blind test; it is no longer the *only* thing standing between here and a
-   paper.
-3. **Paper 2** — joint_ie line: Phase A curve **COMPLETE** (12/12 arms, ~23h on one H100,
-   all on HF). The base-volume × architecture result is in hand; the **greedy-vs-beam
-   comparison is still unmeasured**, and that is the actual Phase A question — every number
-   so far is the greedy arm. Then (Phase B) joint training → write.
-
-## Graduation rule
-
-A finding lives in its working paper (lab notebook) until **verified held-out**, then
-graduates into the target paper's draft. Working papers stay as the design/decision record;
-the papers carry only the verified, reproducible claims — including the honest negatives
-(e.g. symmetric 3σ gate, confidence-as-soft-R) that scope the contributions. §4b above is
-explicitly *pre*-graduation: one point, one arm, not metric-selected.
+| `PAPER_0_FOUNDATION.md` | Paper 0 draft — substrate, head-init finding, data-integrity audit |
+| `JOINT_IE_SCALING.md` | Paper 2 — thesis, boundary wiring, scaling curve, structure-head correction |
+| `EKF_MHT_DESIGN.md` | Paper 1 — tracker design, synthetic validation, first real event |
+| `BOUNDARY_ARCHITECTURE.md` | how the boundary head works end to end, per task |
+| `COUNTING_LAYER.md` | why the span 19-instance cap is a dead end |
+| `BOUNDARY_DECODE_AND_EKF.md` | verified decode map and where global inference attaches |
+| `KALMAN_BEAM_SEARCH_EXPLORATION.md` | the beam ↔ filter origin analysis |
+| `PROJECT_JOURNAL.md` | chronological record of decisions, including those later overturned |
+| `TODO.md` | open defects and next tests, with the evidence for each |
