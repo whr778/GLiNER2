@@ -145,7 +145,7 @@ def main() -> None:
     esch, bsch = event_schema(), binding_schema()
 
     rows = []
-    fill = {"records": 0, "location": 0, "event": 0}
+    contexts = []
     for a, o in obs:
         text = feed.get(round(a["t_hours"], 2), "")
         span = str(o["span"])
@@ -179,13 +179,7 @@ def main() -> None:
                 break
         bound = validate_binding(bound_raw, [t for t, _ in found])
 
-        # Field fill, measured on its own schema so nothing above is disturbed.
-        for r in model.extract(ctx, fill_schema()).get("casualty_report") or []:
-            fill["records"] += 1
-            for f in ("location", "event"):
-                if str(r.get(f) or "").strip():
-                    fill[f] += 1
-
+        contexts.append(ctx)
         rows.append({
             "span": span, "value": int(o["value"]),
             "label": LABELLED.get((span, int(o["value"])), "assumed-ok"),
@@ -224,14 +218,29 @@ def main() -> None:
               f"{sum(1 for r in ok if outcome(r) == state):>14}")
     print("  rejected = the model named something that is not an event the schema found")
 
+    # Fill runs as a SECOND PASS, after every C call has been made. Interleaving it inside
+    # the main loop is not equivalent and was measured not to be: an extra extract between
+    # observations moved fastino's C from 25/83 to 26/83. The C sequence above is therefore
+    # byte-for-byte the call sequence that produced every published C number.
+    fsch = fill_schema()
+    fill = {"records": 0, "location": 0, "event": 0}
+    for ctx in contexts:
+        for r in model.extract(ctx, fsch).get("casualty_report") or []:
+            fill["records"] += 1
+            for f in ("location", "event"):
+                if str(r.get(f) or "").strip():
+                    fill[f] += 1
+
     n = fill["records"]
     print(f"\nfield fill over {n} records the model produced on these windows")
     for f in ("location", "event"):
         pct = f"{fill[f] / n:.1%}" if n else "n/a"
         print(f"  {f:<10}{fill[f]:>4}/{n:<4} {pct}")
-    print("  measured on a SEPARATE schema, so signal C above is unaffected. This is the "
-          "Track A guard\n  (location supervision took it 26/33 -> 51/54); it had no "
-          "committed tool until now.")
+    print("  measured on a separate schema in a SECOND PASS, so signal C above is untouched.")
+    print("  This is the Track A guard, which until now had no committed tool. Its "
+          "denominator is\n  records-produced-on-these-windows and does NOT match the "
+          "hand-computed 51/54, which\n  counted a different window set -- compare the "
+          "RATE, not the fraction.")
 
     print("\ncross-event cases in detail:")
     for r in ce:

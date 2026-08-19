@@ -52,8 +52,35 @@
 # just extraction -- so the saturation point is an open question. If `best` lands at epoch 4,
 # the budget was too small and the run should be extended before its result is read as final.
 #
-# THE CONTROL'S BINDING NUMBERS DO NOT YET EXIST -- measure them before this arm runs.
-# Corrected 2026-08-19: the published `binding 3/11 @ 9.6% FP` and `location fill 51/54` were
+# CONTROL ROWS: COLLECTED 2026-08-19, in tools/ekf_showcase/control_rows/ (raw output kept).
+#
+#   model                                    C catches   C FP    binds (cross/ok)   loc fill
+#   fastino/gliner2-base-v1                     3/11    31.3%    10/11  ·  55/83      86.2%
+#   ...-casualty-loc-split       (fp16, e6)     3/11     9.6%     7/11  ·  23/83      91.5%
+#   ...-casualty-loc-split-clean (bf16, 8e)     1/11     3.6%     5/11  ·  12/83      83.5%  <- CONTROL
+#
+# Row 2 reproduces its published 9.6% on every run. Row 1's published figure is 30.1%; the
+# first run returned it and every run since returns 31.3%, which is 25 against 26 of 83 --
+# ONE observation of drift, not a moved eval path. Row 3 had never been measured at all: the
+# published 9.6% belongs to the crashed fp16 run, not to the clean model this arm is read
+# against.
+#
+# NOISE FLOOR, measured over four consecutive runs of the control. Signal C returned
+# IDENTICAL counts every time; location fill spanned 83.5-87.3%, a 3.8 point spread. So C is
+# a usable guard at face value and any fill comparison needs a tolerance of at least 4
+# points. A fill difference smaller than that is not a result.
+#
+# AND ROW 3 INVALIDATES A GUARD AS ORIGINALLY WRITTEN. The clean control's 3.6% false
+# positive rate looks like the best precision in the table and is nothing of the sort: it
+# binds 12 of 83 ordinary observations against the fp16 model's 23 and the base model's 55,
+# and leaves 6 of 11 cross-event cases unbound. That rate is ABSTENTION, not precision. A
+# model that binds nothing scores 0%, which is exactly how item 0's boundary arm read as
+# perfect. THIS ARM IS TRAINED TO SUPPRESS, so it is the most likely kind of arm to win on
+# false positives by abstaining, and an FP threshold alone would reward that. Guard 4 now
+# pairs the rate with a coverage floor.
+#
+# The historical note, kept because it explains the correction rather than hiding it:
+# the published `binding 3/11 @ 9.6% FP` and `location fill 51/54` were
 # measured on whr778/gliner2-base-v1-casualty-loc-split, which is the CRASHED fp16 epoch-6
 # checkpoint. The clean bf16 re-run that supersedes it, ...-casualty-loc-split-clean, only
 # ever had structure F1 (0.8485) measured; nobody has run the binding probe against it. So
@@ -77,13 +104,18 @@
 #      after re-running run_pipeline.py with this model.        control 5.247, want LOWER.
 #      Ungated is the right readout: it is the number cross-event contamination inflates,
 #      and it needs no gate to be tuned. The gated number must not regress past 0.591.
-#   2. GUARD -- location fill on the 40 Helene windows. The fp16 model scored 51/54; the
-#      clean control's own figure replaces that once measured, and is what must not regress.
+#   2. GUARD -- location fill, from the same probe run.   control 83.5%, floor 79.5%
+#      The 4-point allowance is the measured noise floor, not a courtesy. Note this
+#      denominator is records-produced-on-these-windows and does NOT match the hand-computed
+#      51/54, which counted a different window set; compare the rate, never the fraction.
 #   3. GUARD -- single-event binding stays ~1.000 (no worse than 0.964). The whole point of
 #      mixing k=0 documents into the corpus is that suppression must not cost extraction.
-#   4. GUARD -- binding false-positive rate no worse than the clean control's own, measured
-#      as above. 9.6% is the fp16 model's and is a placeholder until then. Use the probe
-#      fixed in 63249ed, and do NOT compare against any pre-63249ed published number.
+#   4. GUARD -- binding, read as a PAIR and never as a rate alone:
+#        false positives  <= 3.6%   (the clean control's, and C is stable run to run)
+#        binds an event   >= 12/83 ordinary and >= 5/11 cross-event  (the control's coverage)
+#      Failing the coverage floor while passing the rate means the arm learned to abstain,
+#      which is a NEGATIVE result reported as such, not a win. Use the probe fixed in
+#      63249ed; do not compare against any pre-63249ed published number.
 #   5. CONTROL -- casualty_loc_probe_focal_last. The focal snippet is parts[0], so muting is
 #      learnable from POSITION alone: "extract from the first paragraph" scores perfectly on
 #      this corpus without representing event identity at all. Score the 2,168 documents that

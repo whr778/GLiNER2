@@ -1,0 +1,45 @@
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+/Users/williamroe/development/git/GLiNER2/gliner2/models/span/model.py:88: RuntimeWarning: Encoder rejected attn_implementation='sdpa'; falling back to 'eager' (DebertaV2Model does not support an attention implementation through torch.nn.functional.scaled_dot_product_attention yet. Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`). On a ModernBERT encoder trained in bf16 this is a correctness issue, not just speed: sdpa+bf16 there produces non-finite losses (measured), so install 'kernels' to keep FA2. Set GLINER2_STRICT_ATTN=1 to make this an error instead.
+  self.encoder = self._load_encoder(
+[transformers] The new embeddings will be initialized from a multivariate normal distribution that has old embeddings' mean and covariance. As described in this article: https://nlp.stanford.edu/~johnhew/vocab-expansion.html. To disable this, use `mean_resizing=False`
+============================================================
+🧠 Model Configuration
+============================================================
+Encoder model      : microsoft/deberta-v3-base
+Counting layer     : count_lstm_v2
+Token pooling      : first
+============================================================
+
+104 observations
+
+signal                            catches cross-event   false positives
+A nearest is a competitor                        3/11     44/83 = 53.0%
+B only a competitor named                        3/11     42/83 = 50.6%
+C bound event is a competitor                    3/11     26/83 = 31.3%
+C-raw (UNSOUND, diagnostic)                      3/11     31/83 = 37.3%
+
+C binding coverage           cross-event    assumed-ok
+  competitor                           3            26
+  ours                                 7            30
+  rejected                             0             6
+  unbound                              1            21
+  rejected = the model named something that is not an event the schema found
+
+field fill over 130 records the model produced on these windows
+  location   112/130  86.2%
+  event      104/130  80.0%
+  measured on a SEPARATE schema, so signal C above is unaffected. This is the Track A guard
+  (location supervision took it 26/33 -> 51/54); it had no committed tool until now.
+
+cross-event cases in detail:
+  'at least two' nearest='John'                   bound='John'                   events=['John']
+  'at least 16'  nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene', 'Hurricane Helene', 'ne']
+  '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene']
+  '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene']
+  '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene']
+  '230'          nearest='Helene'                 bound='Helene'                 events=['Helene', 'Helene', 'Helene']
+  '230'          nearest='Helene'                 bound='Helene'                 events=['Helene', 'Helene', 'Katrina']
+  '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene', 'Hurricane Milton']
+  '1,400'        nearest='Hurricane Katrina'      bound='Hurricane Katrina'      events=['Hurricane Katrina']
+  '1,400'        nearest='Helene'                 bound='None'                   events=['Helene']
+  '250'          nearest='Typhoon Yinxing'        bound='hurricane'              events=['Typhoon Yinxing', 'hurricane']
