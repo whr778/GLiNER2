@@ -204,15 +204,42 @@ supervise the record head with exactly **zero** records.
 | *137k base pool (text2json)* | *7,754* | *7,754 (100%)* |
 
 So the arm did not add 45% more structure supervision. It **cut it by 93%**, from 7,754
-records to 519. Measured on the base's own blind test the warm-start scores 0.1060
-against the base's 0.1119 -- a 0.0059 dip under a 15x reduction in record-head
-supervision, which is a strikingly good showing for 30% replay, not a failure to add
-capability. (Scored on the base's test set: at the time of measurement the warm-start's own test set
-was unscorable, because all 452 of its structure records carry no `record_metadata` and
-nothing decoded without it. **That changed the same day** -- the builder now defaults to
-natural mode, so those records are scorable and the warm-start is being re-scored on its
-own test set. Note the anchor there is *synthesized* from the gold's first field rather
-than declared, which is a weaker guarantee than the 137k set's explicit metadata.)
+records to 519.
+
+And it worked anyway. Both checkpoints, both test sets, every cell at its own swept
+threshold -- the full 2x2, which is the only way to read this:
+
+| scored on | base 137k | warm-start | delta |
+|---|--:|--:|--:|
+| **137k test set** (856 records, text2json) | **0.1119** | 0.1060 | -0.0059 |
+| **warm test set** (452 records, cc_news + synthetic) | 0.0755 | **0.2179** | **+0.1424** |
+
+Read down the columns, never across the rows: the two test sets differ in difficulty and
+in distribution, so only same-test-set comparisons mean anything.
+
+**The warm-start held the old capability (-5% relative) and nearly TRIPLED on the new
+distribution (+189% relative).** That is the result the earlier "-0.0059, so it merely
+survived" reading missed entirely -- it was measured on one test set and could not see
+the gain.
+
+**The interesting part is that it got there with zero record supervision on that
+distribution.** Those 3,494 cc_news/synthetic structure records contributed no record
+targets; the record head saw 519 replay records, all text2json-derived. So the +0.1424 is
+not learned record structure, it is **transfer from the span/entity representations the
+record head reads its field fillers out of** -- and entity F1 on this arm moved 0.5158 ->
+0.6326 over the same run. Better spans, better records, no record supervision required.
+
+That reframes item 0.1 in TODO.md from a bug report into a quantified opportunity: the
+head reaches 0.2179 on a distribution it was never supervised on, so supplying real
+`record_metadata` for those corpora is a measurable next experiment rather than a
+speculative cleanup.
+
+Two caveats that must travel with the 0.2179. The warm test set's anchors are
+**synthesized** from the gold's first field rather than declared (it carries no
+`record_metadata`), which is a weaker guarantee than the 137k set's explicit metadata --
+though both models are scored identically, so the contrast is fair. And that test set was
+unscorable until the builder default landed on 2026-08-19; before then it decoded nothing
+and this entire row would have read 0.0000 for both models.
 
 ### Consequences
 
