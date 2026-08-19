@@ -1324,6 +1324,12 @@ extraction" was measured with a schema that could never have worked — the mode
 more record competence than credited, though it still returns `None` under the declared
 schema, so the *comparison* stands even though the *method* was wrong.
 
+> **This is a SECOND, still-open instance of the §0c defect (checked 2026-08-19).** The
+> `runtime.py` fix did not close it: that one dropped a key `build()` had produced, this one
+> is `build()` never producing it. Re-verified today — the plain form still yields
+> `record_metadata: None`. Tracked as TODO item 0.3. It matters most for the EKF/disaster
+> line, which builds its schemas through exactly this API.
+
 **Unresolved: why `location` did not learn.** Inspecting collated targets suggested no record
 targets were built for the `json_structures` training format, which would explain it — but
 the same probe reports `start_targets = None`, which cannot be true of a run that trained.

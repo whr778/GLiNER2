@@ -134,6 +134,29 @@ it means assigning `mode` and `anchor` per structure type in the converters. `na
 first-field anchor is the obvious default but is a real modelling choice about what anchors
 a `person_profile` or a `transaction`, so it wants a decision before it is written.
 
+### 0.3. `Schema().structure(name)` emits no `record_metadata` -- the SAME silent failure, user-facing
+**Still open, and it is the instance a user actually hits.** Item 0 fixed `runtime.py`
+dropping the key. This is a different drop, upstream of it: the fluent builder never
+produces the key at all unless the caller passes `mode=`. Verified 2026-08-19:
+
+    Schema().structure("casualty_report").field("dead", dtype="str")
+      -> build()["record_metadata"] is None        # head decodes NOTHING, silently
+
+    Schema().structure("casualty_report", mode="natural", anchor="dead") \
+            .field("dead", dtype="str", cardinality="required_one")
+      -> {"casualty_report": {"mode": "natural", "anchor": "dead", ...}}
+
+So anyone following the obvious API gets an empty extraction and no error. This is already
+recorded in `JOINT_IE_SCALING.md` as invalidating every earlier "records return None"
+measurement; what is new is that the `runtime.py` fix did NOT close it. It matters for the
+EKF/disaster line, which builds its schemas through this API.
+
+Fix is a default, and the default is the decision: `mode="natural"` with the first declared
+field as anchor matches what `Structure.get_record_metadata()` already does when `mode` is
+set but `anchor` is not. Making that the builder default would make the plain form work and
+would change no declared-form behaviour. Worth doing, but it silently alters what existing
+plain-form callers get, so decide before shipping.
+
 ### 0.2. `record_anchor_threshold` defaults to 0.5, which no model can use well
 Separate from the decode bug and still live. Nothing calibrates the record cutoffs --
 `threshold_sweep` moves the general decision threshold only. At the 0.5 default the models
