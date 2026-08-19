@@ -203,8 +203,8 @@ The design's claim is *diarization*: track AND assign, jointly, with decisions d
 
 | design element | status | evidence |
 |---|---|---|
-| deferred assignment (M4) | ⛔ not built | headroom measured at **+0.055** — see §4 |
-| track birth/death (M5) | ⛔ not built | untested; nearest real need is cross-event contamination |
+| deferred assignment (M4) | ⛔ not built | headroom **+0.111** once the null hypothesis is priced — see §4 |
+| track birth/death (M5) | ✅ built, ⛔ **measured negative** | 0.608 best against the magnitude gate's 0.591 — see §4.1 |
 | aggregate as sum row | ⛔ **do not build** | loses at every density except 80%, worst where predicted to win (§23) |
 | implied-max reference | ⛔ **do not build** | 2.590 vs 0.591 on Helene (§25.5) |
 | hard key assignment | ✅ built | what ships; the scope gate patches its worst failure |
@@ -224,6 +224,29 @@ scope it actually fits, using ground truth. It is a ceiling, not a method.
 
 **Perfect association buys 0.055.** MHT is a hypothesis tree, a cost matrix, Hungarian
 assignment and track management — a large subsystem — to compete for a 9% residual.
+
+**Corrected 2026-08-19: that oracle prices the wrong thing.** It is *two-way* — every
+observation goes to its own place or to Total — so a figure belonging to no Helene scope at
+all has no correct home, and it scores Katrina's 1,400 as badly as the shipped gate does.
+The tell was already in the per-place table below and was read as a curiosity: the gate
+**beats** the perfect oracle on Florida and South Carolina, because the gate can *drop* and
+the oracle cannot. MHT's track birth/death **is** a null hypothesis, so the two-way oracle
+never priced the version of MHT worth building. Adding a reject option
+(`oracle_gate_three_way`, swept over tolerance rather than fixed at one lucky value):
+
+    tol   kept    per-place mean
+   2.00    100          0.533
+   1.00    100          0.533
+   0.50     85          0.480
+   0.25     76          0.499
+
+    shipped scope gate            0.591
+    three-way oracle              0.480
+    corrected headroom           +0.111     (18.8% relative)
+
+Still a ceiling that uses ground truth, still one event, and the tolerance is tuned and
+non-monotone — 0.25 is worse than 0.50, so there is no plateau to hide behind. But the prize
+for association is **double** what MHT was rejected on, and it lives in the reject option.
 
 The per-place breakdown says something sharper:
 
@@ -273,5 +296,40 @@ Not yet, and MHT is probably not what is missing. In order:
    *sources disagreeing about the same event* is real association ambiguity in a way that
    one wire service's copy is not.
 
-MHT becomes the right move at step 3, not before. Building it now would optimize a 9%
-residual on a single-source feed whose real problem is that it is starved.
+MHT becomes the right move at step 3, not before — with two amendments. Its prize is 18.8%
+rather than 9%, and the cheapest piece of it has since been built and lost (§4.1). The
+"starved" clause in the earlier version of this sentence was also stale: the audit above
+shows the pipeline over-extracts rather than starves.
+
+### 4.1 M5 track birth: built, and it loses to the fixed ratio it replaces
+
+`tools/ekf_showcase/mht_associate.py`. Tracks advance jointly in time order; each observation
+is tested by normalized innovation against its candidate tracks, and one that gates out of
+all of them is born into its own and leaves these streams. No ground truth anywhere.
+
+    no gate                                      5.247
+    symmetric birth, own+aggregate               1.059   q_rel 0.20 (the filter's own)
+    symmetric birth, tuned                       0.636   q_rel 2.00
+    one-sided birth, tuned                       0.608   q_rel 2.00
+    aggregate-only reference                     0.624   q_rel 0.20
+    SHIPPED magnitude scope gate                 0.591
+    three-way oracle (ground truth)              0.480
+
+Two causes, both measured:
+
+1. **Judging a stream against its own track is circular.** Every contaminant the track
+   accepts moves the reference the next test uses. Removing the self-reference is worth more
+   than every other knob combined — 1.059 → 0.624 at native dynamics. This is the same
+   failure the implied-maximum reference hit on Türkiye, where Turkey was judged against a
+   reference Turkey itself defines, so it is now **two independent mechanisms defeated by one
+   cause**.
+2. **The innovation is not informative about scope on a rising toll.** At the filter's own
+   `q_rel = 0.20` the tracks are far too tight to admit real growth — Georgia keeps only
+   `[2, 3]` against a truth peak of 34 — and the sweep must reach `q_rel = 2.00` before real
+   rises survive, by which point only 1–4 observations are ever born. Birth is never the
+   lever; the rerouting is.
+
+**This strengthens rather than kills the case for M4.** Deferred assignment is the one piece
+that addresses cause (1) directly: hard assignment commits early and poisons its own
+reference, which is exactly what keeping rival hypotheses alive exists to prevent. Before
+this run that was a design preference; it is now the mechanism a measurement implicates.

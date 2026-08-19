@@ -68,8 +68,12 @@ delta is not a contamination estimate because the test was also recomposed.
 largely closed the attachment blocker. Two candidate next steps were then *closed by
 measurement rather than argument*:
 
-- **MHT is not the bottleneck.** Perfect association is worth **+0.055** — and the gate
-  already beats a perfect two-way assignment on two states, because it can *drop*. Item 6.
+- **MHT is not the bottleneck — but the number that said so was wrong, and is now corrected.**
+  Perfect *two-way* association is worth +0.055; that oracle cannot reject, so it never priced
+  a null hypothesis. With a reject option the ceiling is **+0.111 (18.8%)**. The cheapest
+  piece that delivers one — M5 track birth by innovation gating — was then **built and lost**
+  (0.608 against the magnitude gate's 0.591), because judging a stream against its own track
+  is circular. `PIPELINES.md` §4/§4.1, `tools/ekf_showcase/mht_associate.py`. Item 6.
 - **Extraction recall is not the bottleneck either**, and the claim that it was rested on a
   stale count from a superseded run. `extract_long` had already fixed it **4.2x**.
 

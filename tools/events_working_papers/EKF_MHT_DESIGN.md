@@ -36,12 +36,18 @@ one — and the reason is diagnostic: without a declared scope hierarchy, "a lar
 and "the largest part" are indistinguishable from the numbers alone. We then declared one,
 and the reference it enables is itself a measured negative.
 
-Before building the multi-hypothesis association the design specifies, we price it. Assigning every
-observation to the scope it truly fits — an oracle, not a method — improves the shipped gate
-by **0.055 (9.3%)**. Perfect association is worth 9%, so multi-hypothesis tracking is not
-what is missing. The residual is 4.7% cross-event contamination against which no decode-side
-signal has worked, and the corpora offer no purchase on it: **0.0% of training documents
-contain a figure the model is supposed to leave alone.**
+Before building the multi-hypothesis association the design specifies, we price it, and the
+first price is wrong. A two-way oracle — assign each observation to its own place or to the
+national total — improves the shipped gate by only 0.055, which reads as "association is not
+what is missing". But that oracle cannot *reject*, so a figure belonging to no scope in this
+event has no correct home; give it one and the ceiling moves to **0.111 (18.8%)**, double the
+figure. The prize is real and it lives in the null hypothesis. We then build the cheapest
+piece that delivers one — track birth by innovation gating — and **it loses to the fixed
+magnitude ratio it was meant to replace**, because judging a stream against its own track is
+circular in exactly the way §5's scope reference was. The residual underneath is 4.7%
+cross-event contamination against which no decode-side signal has worked, and the corpora
+offer no purchase on it: **0.0% of training documents contain a figure the model is supposed
+to leave alone.**
 
 We also report that our own strongest prior result does not reproduce. An ablation
 concluding the filter's advantage *widens* under noise and censoring was measured on
@@ -361,8 +367,25 @@ using ground truth. It is a ceiling, not a method.
 | **oracle hard association** (uses ground truth) | **0.537** |
 | headroom for any better association | **+0.055** (9.3%) |
 
-**Perfect association buys 0.055.** That is the entire prize, and it prices MHT out: a large
-subsystem competing for a 9% residual on a single-source feed.
+**Perfect association buys 0.055** — and that number prices the wrong thing, which we found
+only by trying to spend against it. The oracle is *two-way*: every observation goes to its own
+place or to Total, so a figure belonging to no Helene scope has no correct home and it scores
+Katrina's 1,400 exactly as badly as the shipped gate does. The tell was already in the table
+below, read as a curiosity rather than as a defect in the instrument.
+
+MHT's track birth/death **is** a null hypothesis, so give the oracle a reject option and sweep
+the tolerance rather than fixing it:
+
+| tol | kept | per-place mean |
+|---|--:|--:|
+| 2.00 | 100 | 0.533 |
+| 1.00 | 100 | 0.533 |
+| **0.50** | **85** | **0.480** |
+| 0.25 | 76 | 0.499 |
+
+**The corrected headroom is 0.591 → 0.480 = +0.111, 18.8% — double the figure MHT was
+rejected on, and it lives in the reject option.** Still a ground-truth ceiling, still one
+event, and the tolerance is tuned and non-monotone, so there is no plateau to hide behind.
 
 The per-place breakdown sharpens it. The gate already **beats** a perfect two-way assignment
 on Florida (0.704 vs 0.734) and South Carolina (0.365 vs 0.558), because it has a third
@@ -371,9 +394,42 @@ option the oracle lacks — *drop*. Florida's 300 is not a casualty figure and N
 scheme can place them correctly. Only Tennessee is a genuine association gap (0.817 vs
 0.320), and its contaminants — 32, 32, 32, 36, 50 against a truth of 18 — are instructive:
 too large for the state, too small to look national, so no magnitude test can catch them.
-That is the real case for richer association, and it is worth 0.055 across the event.
+That is the real case for richer association.
 
-### 7.2 What the residual actually is
+### 7.2 The cheapest piece of MHT, built and lost
+
+The reject option is where the prize is, and it is also the cheapest piece: track birth needs
+no cost matrix and no hypothesis tree. So we built it. Tracks advance jointly in time order,
+each observation is tested by normalized innovation against its candidate tracks, and one
+that gates out of all of them is born into its own and leaves these streams. No ground truth.
+
+Nothing swept beats the fixed magnitude ratio it was meant to replace:
+
+| | per-place mean |
+|---|--:|
+| no gate | 5.247 |
+| symmetric birth, own + aggregate (`q_rel` 0.20, the filter's own) | 1.059 |
+| symmetric birth, tuned (`q_rel` 2.00) | 0.636 |
+| one-sided birth, tuned | 0.608 |
+| aggregate-only reference (`q_rel` 0.20) | 0.624 |
+| **shipped magnitude scope gate** | **0.591** |
+| three-way oracle (ground truth) | 0.480 |
+
+Two causes, both measured. **Judging a stream against its own track is circular** — every
+contaminant the track accepts moves the reference the next test uses — and removing the
+self-reference is worth more than every other knob combined, 1.059 → 0.624. That is the same
+failure the implied-maximum reference hit on Türkiye in §5, so it is now two independent
+mechanisms defeated by one cause. And **the innovation is not informative about scope on a
+rising toll**: at the filter's own dynamics the tracks are too tight to admit real growth,
+Georgia keeping only 2 and 3 against a truth peak of 34, and the sweep must loosen them
+tenfold before real rises survive — by which point only one to four observations are ever
+born. Birth is never the lever; the rerouting is.
+
+This does not kill deferred assignment; it is the first evidence *for* it. Hard assignment
+commits early and poisons its own reference, which is precisely what keeping rival hypotheses
+alive exists to prevent. Before this run that was a design preference.
+
+### 7.3 What the residual actually is
 
 A context audit of all 106 observations puts the remainder somewhere else entirely: 82.1%
 genuine Helene casualties, **4.7% belonging to another event** (Katrina's 1,400, a typhoon's
@@ -394,9 +450,11 @@ decoder change has moved that. Every training corpus we have is complicit — me
 20,000 records per corpus, **0.0% of training documents have zero records**, so the model has
 never once been shown a casualty figure it is supposed to leave alone.
 
-That conclusion — reached by pricing the obvious next build and finding it not worth it — is
-the paper's main practical contribution, and it was only reachable by running the system
-against a real event and losing.
+That conclusion is the paper's main practical contribution, and reaching it took both a real
+event and a wrong price: the obvious next build was first rejected on a ceiling that measured
+the wrong thing, then rebuilt in its cheapest form and lost on its own terms. What survives is
+narrow and specific — the reject option is worth 0.111, innovation gating does not capture it,
+and the corpora have never once shown the model a figure to leave alone.
 
 ## 8. Limitations
 
