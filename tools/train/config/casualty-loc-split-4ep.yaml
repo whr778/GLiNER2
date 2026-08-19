@@ -1,0 +1,157 @@
+# CONTROL ARM for tools/train/config/casualty-loc-muted.yaml, at MATCHED EPOCHS.
+#
+# Why this exists rather than reusing whr778/gliner2-base-v1-casualty-loc-split-clean: that
+# model ran 8 epochs and the muting arm runs 4. Its `best` was epoch 1 and epochs 2-8 moved
+# nothing, so the confound is probably immaterial -- but "probably immaterial" is exactly the
+# kind of assumption this project has been burned by, and a matched control costs ~$1.30 on
+# an A10. Decided BEFORE any result was seen.
+#
+# Identical to casualty-loc-split.yaml except num_epochs, output_dir and experiment_name.
+# Read its comments for the corpus, the split-integrity verification and the recipe history.
+#
+# TRACK A GATE -- does LOCATION SUPERVISION fix number-to-place binding on real news?
+#
+# The question, and why this arm is the cheap way to ask it. Cross-event contamination
+# (TODO item 2) is the live defect, and the proposed fixes all assume the model must be
+# taught to bind a figure to the thing that owns it. Before moving the casualty extractor
+# to the boundary architecture and converting the corpus to events-form (Track B, ~2 GPU-h
+# plus trigger derivation), ask the same question in the cheapest possible setting: same
+# span architecture, same recipe, same base -- change ONLY whether the corpus supervises
+# `location`.
+#
+# The comparison this sets up, and the confound it removes. Measured 2026-08-17 on 40
+# Helene windows, `location` field fill:
+#   whr778/gliner2-base-v1-casualty-docee   (span, NO location supervision)  26/33
+#   whr778/gliner2-warmstart-natural-clean  (boundary, WITH location)         1/14
+# That comparison confounds architecture, mixture and head-init with the corpus, so it
+# cannot say whether location supervision helps or hurts. This arm holds everything but
+# the corpus fixed against casualty-docee.yaml -- the ONLY difference is `data.corpora`.
+#
+# Corpus. `casualty_loc_split` -- FETCHED AUTOMATICALLY. The registry carries
+# `hf_jsonl: whr778/casualty_loc_split`, so train.py pulls any missing split from the
+# private Hub repo under its exact basename; a fresh GPU box needs no rsync, only
+# HF_TOKEN in the environment. To rebuild locally instead, it was built 2026-08-17 by:
+#   datasets/disaster_streams/build_multievent_corpus.py
+#     --data datasets/disaster_streams_docee250 --split train
+#     --contexts datasets/disaster_streams/contexts250.json
+#     --streams-file <place-disjoint stream ids per split>
+# 23,744 train / 2,704 val / 2,873 test documents, mean ~2.48 casualty_report instances per
+# document, location located ~92%. This is the same generator and contexts as
+# `casualty_multi_loc`, which exists as a TRAIN SPLIT ONLY and is consumed by
+# build_warmstart_mix.py -- hence a new name rather than adding splits to it, which would
+# silently change every warmstart_mix corpus.
+#
+# SPLIT INTEGRITY -- all three axes clean, verified 2026-08-17.
+#   Documents:  0 duplicates within a split, 0 overlap across splits (sha1 of input text).
+#   Streams:    disjoint -- one incident's snippets never straddle a split.
+#   Locations:  disjoint. 0 shared location strings between any pair of splits.
+#   Gold:       every gold value appears verbatim in its own document (0 absent of 157,290).
+#
+# Getting locations disjoint needed two things a contiguous index slice cannot do, hence
+# `--streams-file`:
+#   1. Streams that share a DocEE place must land in the SAME split. 26 places are drawn by
+#      more than one stream, so slicing sorted ids splits them.
+#   2. Linking on the full place string is not enough. `_locate_place` falls back to the
+#      longest comma-separated COMPONENT, so "Sunnyvale, California" can emit "California"
+#      and collide with the stream whose place IS "California" -- which is exactly what a
+#      first attempt produced (1 train instance against 563 in val). Streams are therefore
+#      linked on every string the builder could emit -- the place and each of its
+#      components -- and each connected group is kept whole. 199 groups, largest 7 streams.
+#
+# The text carries NO fabricated news-agency credit. An earlier realization opened some
+# snippets with "SAN JUAN, June 26, 2026 (AP) --" and similar; those attributed synthetic
+# text to real agencies and were scrubbed, and realize.py now forbids them explicitly.
+#
+# PASS/FAIL, fixed before spending. Read against out/casualty-docee/best on the SAME
+# 40 Helene windows and the same probe, tools/ekf_showcase/event_binding_probe.py:
+#   location fill on real news   >= 26/33   (casualty-docee's zero-shot rate -- do not regress)
+#   binding correctness          the readout, via the fixed probe (63249ed)
+# A regression on the first line is itself the finding: it would say location supervision
+# on synthetic-realized prose actively hurts transfer to real wire copy, which is the
+# leading explanation for the boundary arm's 1/14 and would rule out Track B on this data.
+#
+model:
+  pretrained: fastino/gliner2-base-v1
+
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-loc-split-4ep
+  experiment_name: casualty_loc_split_4ep
+  data_parallel: false
+  num_epochs: 4
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 1.0e-5
+  task_lr: 3.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false                # bf16 since 2026-08-17: the fp16 run CRASHED at 79%
+                             # with a non-finite micro-batch loss. bf16's wider
+                             # exponent range is the fix, and it is changed on BOTH
+                             # arms together so the comparison still holds.
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  # Was eval_loss, which on a structures-only corpus is the ONLY key the
+  # evaluator emitted -- it latched at epoch 1 and picked a 6-minute model.
+  # eval_metrics.py can score json_structures since fb456e4.
+  metric_for_best: eval_structure_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: true
+  early_stopping: false
+
+eval:
+  batch_size: 16
+  threshold: 0.5
+  threshold_sweep: true
+  global_decode: false
+  eval_by_language: false
+
+labels:
+  entities: {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events: {rollup: false, separator: ".", map: {}}
+
+data:
+  corpora:
+    - data/casualty_loc_split
+  event_files: {}
+
+# RESULT 2026-08-17 (Lambda GH200, ~$2.15). Ran 79% then crashed: step 4,719/5,936, epoch
+# 6.3, FloatingPointError "1 non-finite micro-batch loss(es) were zeroed" -- fp16 overflow.
+# Readout uses checkpoint-epoch-6 (train loss had plateaued 5.81 -> 4.74 -> 4.50), so this
+# arm is 6 epochs against casualty-docee's 8. Small confound, stated not hidden.
+#   location fill  51/54  (gate was >= 26/33 -- PASSED, on more records: 54 vs 33)
+#   binding        3/11 catches @ 9.6% FP, vs the base model's 3/11 @ 30.1%
+#   and it binds EVENT NAMES, where casualty-docee answered an `event` query with the number
+# Pushed: whr778/gliner2-base-v1-casualty-loc-split (private, epoch 6).
+#
+# Two defects this run exposed, both in TODO items -1 and 0b:
+#   - eval_metrics.py scores no json_structures, so eval_loss is the ONLY selector here and
+#     it latched at epoch 1; `best/` is a 6-minute model. Do not trust `best/` for this or
+#     any casualty run until a structure scorer exists.
+#   - fp16 is marginal for this recipe. bf16 would likely survive, but changing it breaks
+#     comparability with casualty-docee -- change it for BOTH arms or neither.
+
+# RESULT of the CLEAN re-run, 2026-08-17 (A100). bf16 fixed the crash -- 8/8 epochs, no
+# non-finite loss, where the fp16 run died at 79%.
+#   blind test  structure strict F1 0.8485  (relaxed 0.9543, support 15,187)
+#   rescore vs the published fp16 model, same 400-record slice:  0.7693 -> 0.8351 (+0.066)
+# Pushed: whr778/gliner2-base-v1-casualty-loc-split-clean (private).
+#
+# FINDING, and it is not what the metric fix was expected to show: `best` is STILL epoch 1.
+# Structure F1 on val hits 0.8439 after one epoch and never improves through epoch 8, while
+# train loss falls 34.65 -> 3.42. This time that is REAL rather than a selector artifact --
+# the same recipe on casualty_docee re-selected six times, so the metric tracks fine when
+# there is something to track. Field extraction on this corpus saturates in one epoch.
+# Practical consequence: epochs 2-8 buy nothing measurable here, so ~85% of this arm's GPU
+# cost is waste. Cut num_epochs before running it again.
