@@ -149,7 +149,8 @@ The working papers are the primary record; this map is a summary of them.
 | document | role |
 |---|---|
 | `PAPER_0_FOUNDATION.md` | Paper 0 draft — substrate, head-init finding, data-integrity audit |
-| `JOINT_IE_SCALING.md` | Paper 2 — thesis, boundary wiring, scaling curve, structure-head correction |
+| `JOINT_IE_SCALING.md` | Paper 2 — joint decoding, scaling curve, replay, the three silent defects |
+| `JOINT_IE_DESIGN_RECORD.md` | Paper 2's build record — decisions, wiring map, cost model, deferred Phase B |
 | `EKF_MHT_DESIGN.md` | Paper 1 — tracker design, synthetic validation, first real event |
 | `BOUNDARY_ARCHITECTURE.md` | how the boundary head works end to end, per task |
 | `COUNTING_LAYER.md` | why the span 19-instance cap is a dead end |
