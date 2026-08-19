@@ -54,16 +54,21 @@ def test_missing_file_without_hf_jsonl_is_left_alone(spy, tmp_path):
     """Corpora with no hf_jsonl keep the old behaviour: the path is returned as-is
     and the downstream reader is what complains.
 
-    biomed_ner is registered but has no hf_jsonl, which is the case for every
-    corpus except the synthetic ones -- guard picked for that, so adding hf_jsonl
-    to a corpus elsewhere cannot silently make this test vacuous.
+    The corpus is chosen from the registry at run time rather than hardcoded. This test
+    named `biomed_ner` on the premise that only synthetic corpora carry `hf_jsonl`; that
+    stopped being true when 60 corpora were hosted on the Hub (`51e0a28`) and the test
+    broke on its own guard. Selecting dynamically keeps the guard's intent -- the test
+    still fails loudly rather than going vacuous -- without pinning it to a corpus whose
+    hosting status is expected to change.
     """
-    assert "hf_jsonl" not in (load_registry()["datasets"]["biomed_ner"] or {})
+    registry = load_registry()["datasets"]
+    name = next((k for k, v in sorted(registry.items()) if v and "hf_jsonl" not in v), None)
+    assert name, "every registered corpus now has hf_jsonl; this path is unreachable"
 
-    out = _split_files([str(tmp_path / "biomed_ner")], "val")
+    out = _split_files([str(tmp_path / name)], "val")
 
     assert spy == []
-    assert out == [str(tmp_path / "biomed_ner.val.jsonl")]
+    assert out == [str(tmp_path / f"{name}.val.jsonl")]
 
 
 def test_unknown_corpus_is_left_alone(spy, tmp_path):

@@ -45,11 +45,30 @@ def test_to_dict_from_dict_round_trip_preserves_records():
     assert rebuilt["record_metadata"]["purchase"]["anchor"] == "buyer"
 
 
-def test_missing_metadata_is_legacy():
+def test_plain_structure_still_gets_record_metadata():
+    """The plain form must NOT be legacy -- that was the defect, asserted as a contract.
+
+    This test previously required `record_metadata` to be ABSENT for a structure that
+    declares no mode. That absence is precisely what makes the boundary record head
+    decode nothing while raising no error, and it is how `structure` came to read exactly
+    0.0000 on every model this project measured. A caller writing the obvious
+    `Schema().structure(n).field(...)` got silence, not a warning.
+
+    The default matches what `_store_record_metadata` already picks when a caller sets
+    mode and omits anchor: natural, anchored on the first declared field. Opting out is
+    still possible and now explicit -- pass `mode="latent"` or declare no fields.
+    """
     s = Schema()
     s.structure("plain").field("a").field("b")
     built = s.build()
-    assert "record_metadata" not in built
+    assert built["record_metadata"]["plain"] == {"mode": "natural", "anchor": "a"}
+
+
+def test_structure_with_no_fields_emits_no_metadata():
+    """No fields means no anchor is possible, so there is nothing to declare."""
+    s = Schema()
+    s.structure("empty")._auto_finish()
+    assert "record_metadata" not in s.build()
 
 
 def test_natural_requires_valid_anchor():

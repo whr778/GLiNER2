@@ -111,6 +111,11 @@ def main() -> int:
     ap.add_argument("--config", type=Path, required=True)
     ap.add_argument("--run-dir", type=Path, required=True, help="out/<run>, containing best/")
     ap.add_argument("--sweep", type=Path, required=True, help="sweep_record_thresholds JSON")
+    ap.add_argument("--date", help=(
+        "Date to stamp on the card. The card labels this 'Trained on', so defaulting to "
+        "today silently backdates nothing but FORWARD-dates a model trained earlier -- "
+        "the 10k/40k cards went out reading 2026-08-19 for an 2026-08-18 run. Pass the "
+        "original date when refreshing an already-published card."))
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -165,7 +170,7 @@ def main() -> int:
         base_model=model_cfg.get("encoder") or model_cfg.get("pretrained"),
         cfg=cfg, config=_Cfg(), dataset_keys=dataset_keys, results=results,
         eval_metrics=eval_metrics, test_metrics=patched,
-        generated_at=datetime.now().strftime("%Y-%m-%d"),
+        generated_at=args.date or datetime.now().strftime("%Y-%m-%d"),
         dataset_counts=dataset_counts(corpora, event_files),
         threshold=threshold,
         threshold_calibrated="chosen_threshold" in sweep_tbl,

@@ -31,11 +31,12 @@ tracker.
 > | event | 0.1475 | 0.2232 | 0.2643 | **0.2688** |
 > | relation | 0.0058 | 0.0175 | 0.0486 | **0.2071** |
 > | event_argument | 0.0130 | 0.0502 | 0.0815 | 0.0692 |
-> | structure | 0.0238 | 0.0552 | 0.1043 | **0.1119** |
+> | structure | 0.0294 | 0.0568 | 0.1102 | **0.1119** |
 >
-> The `structure` row is CORRECTED (2026-08-19) and was 0.0000 across the
-> board here until then -- a decode bug, not a head defect, and not measured
-> on one test set across the four points. See §0c before quoting it.
+> The `structure` row is CORRECTED (2026-08-19) and read 0.0000 across the
+> board here until then -- a decode bug, not a head defect. Unlike every
+> other row it is measured on the full test splits for ALL FOUR points and
+> at each model's own swept record threshold. See §0c before quoting it.
 >
 > **Read the 100k -> 137k jump as RECALL UNLOCKING, not capability.** Only 1.37x the
 > data but event_trigger +0.29, relation +0.16, event_type +0.19. The precision/recall
@@ -157,21 +158,32 @@ moves the general decision threshold and never touches the record cutoffs).
 Re-scored from the SAME checkpoints -- nothing retrained -- by
 `tools/train/sweep_record_thresholds.py`, strict exact-match on `(name, field, value)`:
 
-| | 10k | 40k | 100k | 137k |
-|---|--:|--:|--:|--:|
-| structure strict F1 | 0.0238 | 0.0552 | 0.1043 | **0.1119** |
-| at record threshold | 0.05 | 0.05 | 0.07 | 0.10 |
+**All five checkpoints on ONE test set** -- the full test splits, 856 structure-bearing
+records, support 4,245. Quote this curve, not the per-card numbers:
 
-A clean monotone curve across a 13x data range, and the 100k -> 137k flattening matches
-what every other head does at that step. This is the ordinary shape of a head learning
-from 7,754 supervised records; there was never an anomaly to explain.
+| | 10k | 40k | 100k | 137k | warm-start |
+|---|--:|--:|--:|--:|--:|
+| structure strict F1 | 0.0294 | 0.0568 | 0.1102 | **0.1119** | 0.1060 |
+| precision | 0.0302 | 0.0783 | 0.3030 | 0.2365 | 0.2102 |
+| recall | 0.0287 | 0.0445 | 0.0674 | 0.0733 | 0.0709 |
+| at record threshold | 0.03 | 0.05 | 0.10 | 0.10 | 0.10 |
 
-> **These four points are NOT on one test set.** The 10k/40k/100k configs carry their own
-> subsampled slice test sets (148 structure-bearing records, support 758); the 137k config
-> uses the full ones (856 records, support 4,245). The three small points are mutually
-> comparable and the 137k point is not comparable to them. A unified full-test curve is
-> being measured; the model cards keep their own config's test set so that every row on a
-> card is read on one population.
+A monotone curve across a 13x data range that **flattens hard between 100k and 137k**
+(+0.0017, and 100k is the more precise model at 0.303 vs 0.237). This is the ordinary
+shape of a head learning from 7,754 supervised records. There was never an anomaly to
+explain -- and note that the extra 37k records bought recall (0.067 -> 0.073) at the cost
+of precision, the same recall-unlocking trade the other heads show at that step.
+
+Recall is the binding constraint everywhere: even the best model recovers 7.3% of gold
+triples. That, not the head's existence, is the real open question.
+
+> Two caveats on the table. **10k's best sits at the bottom edge of the grid (0.03)**, so
+> its 0.0294 is possibly understated -- left as-is rather than re-run, since precision was
+> already collapsing to 0.030 there and a lower cutoff buys nothing real. And **the model
+> cards report each config's OWN test set** (10k/40k/100k carry subsampled slice test sets
+> of 148 records, support 758, giving 0.0238 / 0.0552 / 0.1043), so that every row on a
+> given card is read on one population. Card numbers and this table are both correct and
+> are not interchangeable.
 
 ### What the warm-start actually did to structure
 
@@ -195,8 +207,12 @@ So the arm did not add 45% more structure supervision. It **cut it by 93%**, fro
 records to 519. Measured on the base's own blind test the warm-start scores 0.1060
 against the base's 0.1119 -- a 0.0059 dip under a 15x reduction in record-head
 supervision, which is a strikingly good showing for 30% replay, not a failure to add
-capability. (Scored on the base's test set deliberately: the warm-start's own test set
-carries no `record_metadata` either, so it is structurally silent even post-fix.)
+capability. (Scored on the base's test set: at the time of measurement the warm-start's own test set
+was unscorable, because all 452 of its structure records carry no `record_metadata` and
+nothing decoded without it. **That changed the same day** -- the builder now defaults to
+natural mode, so those records are scorable and the warm-start is being re-scored on its
+own test set. Note the anchor there is *synthesized* from the gold's first field rather
+than declared, which is a weaker guarantee than the 137k set's explicit metadata.)
 
 ### Consequences
 
@@ -1324,11 +1340,16 @@ extraction" was measured with a schema that could never have worked — the mode
 more record competence than credited, though it still returns `None` under the declared
 schema, so the *comparison* stands even though the *method* was wrong.
 
-> **This is a SECOND, still-open instance of the §0c defect (checked 2026-08-19).** The
-> `runtime.py` fix did not close it: that one dropped a key `build()` had produced, this one
-> is `build()` never producing it. Re-verified today — the plain form still yields
-> `record_metadata: None`. Tracked as TODO item 0.3. It matters most for the EKF/disaster
-> line, which builds its schemas through exactly this API.
+> **This was a SECOND instance of the §0c defect, and it is now FIXED (2026-08-19).** The
+> `runtime.py` fix did not close it: that one dropped a key `build()` had produced, this
+> one was `build()` never producing it. `StructureBuilder._auto_finish` now defaults to
+> `mode="natural"` anchored on the first declared field — the same choice
+> `_store_record_metadata` already made for a caller who set mode and omitted anchor.
+> Verified end-to-end on the 137k checkpoint: the plain and declared forms return
+> identical records where the plain form previously returned `None`. So the measurements
+> quoted just above were taken against a schema that could not work, and can now be
+> retaken. This matters most for the EKF/disaster line, which builds its schemas through
+> exactly this API.
 
 **Unresolved: why `location` did not learn.** Inspecting collated targets suggested no record
 targets were built for the `json_structures` training format, which would explain it — but

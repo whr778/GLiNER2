@@ -222,10 +222,26 @@ class StructureBuilder:
                     self.schema.schema["json_descriptions"] = {}
                 self.schema.schema["json_descriptions"][self.parent] = self.descriptions
 
-            if self._mode is not None:
+            # A structure that declares no mode still gets record_metadata. Without it
+            # `compile_record_specs` returns {}, the boundary record head decodes
+            # NOTHING, and no error is raised -- the extraction is simply empty. That
+            # silent failure is what made `structure` read exactly 0.0000 on every model
+            # this project has measured, and the plain builder form was its last
+            # surviving instance: `Schema().structure(n).field(...)` produced no metadata
+            # at all, so anyone following the obvious API got silence.
+            #
+            # "natural" anchored on the first declared field is not a new convention --
+            # `_store_record_metadata` already picks exactly that when a caller sets mode
+            # and omits anchor. This makes the plain form agree with the declared form
+            # instead of failing quietly. Span models are unaffected: their decoder
+            # ignores record metadata entirely.
+            mode = self._mode
+            if mode is None and self.field_order:
+                mode = "natural"
+            if mode is not None:
                 self.schema._store_record_metadata(
                     self.parent,
-                    mode=self._mode,
+                    mode=mode,
                     anchor=self._anchor,
                     occurrence_policy=self._occurrence_policy,
                     fields=dict(self._field_records),
