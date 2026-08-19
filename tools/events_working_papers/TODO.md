@@ -265,7 +265,7 @@ Models: `whr778/gliner2-base-v1-casualty-{docee,loc-split}-clean` (private).
 
 `casualty-events-boundary.yaml`, A100, ~$2.30, terminated. The same documents, splits and
 figures as Track A, re-emitted as trigger + typed arguments so the loss reaches the event
-path — the formulation [[EKF_MHT_DESIGN]] §27.2 says is missing.
+path — the formulation `EKF_MHT_BUILD_RECORD.md` §27.2 says is missing.
 
 **The run itself was clean.** 8/8 epochs, zero non-finite losses, FA2 confirmed active (0
 sdpa fallbacks — on mmBERT that is correctness, not speed). Selection re-selected
@@ -434,7 +434,7 @@ joint/beam/decode-mode flag at all, so the `TypedEndpoints` arm has never touche
 **Why not to run them anyway:**
 
 - **The beam arm is predicted-negative for the live defect, by our own measurement.**
-  [[EKF_MHT_DESIGN]] §27.2 found the type signal catches **0/11** on cross-event *"because the
+  `EKF_MHT_BUILD_RECORD.md` §27.2 found the type signal catches **0/11** on cross-event *"because the
   type is RIGHT there"* — Katrina is a storm too. `TypedEndpoints` is a type constraint, so it
   targets the scope problem the magnitude gate already mitigates, not the one that is live.
 - **The relation arm trains the wrong head.** A supervised `deaths_in(value, place)` is
@@ -460,7 +460,7 @@ over prompt-tuning: `explicit-scope` phrasing got the hard aggregate case exactl
 (120 → North Carolina, 17 → Tennessee, correctly *excluding* the national 227) while two other
 phrasings of the same request, same model, same text, got it wrong.
 
-Note also that attachment is **not** "solved" by the gate: [[EKF_MHT_DESIGN]] §25.6 records a
+Note also that attachment is **not** "solved" by the gate: `EKF_MHT_DESIGN.md` §5 records a
 9x win on Helene but a **2.3x loss on the clean held-out stream**. It is a stopgap with a
 measured cost, which is an argument for trained binding rather than for complacency.
 
@@ -491,7 +491,7 @@ casualties, **4.7% cross-event**, 3.8% non-casualty numbers, 9.4% unclear. The f
 Katrina 1400, a Typhoon's 250, Milton's 230, Bosnia's 16, and Hurricane John's 2 in Mexico —
 they carry the *large* values, so the most damage per instance.
 
-**Three signals tried, all failed** (EKF_MHT_DESIGN §27.2): nearest named event 3/11 at 32.5%
+**Three signals tried, all failed** (`EKF_MHT_BUILD_RECORD.md` §27.2): nearest named event 3/11 at 32.5%
 false positives, only-competitor-named 3/11 at 31.3%, record-head binding 2/11 at 26.5%.
 Helene articles routinely name Milton and Katrina for comparison. Bosnia's 16 is structurally
 invisible — Bosnia is a *place*, not a named storm.
@@ -1056,7 +1056,7 @@ under `out/gist-ab/`, so a re-probe needs no retrain.
 #### The original specification, kept because the cache and wiring are still sound
 The measured gap: with specific rival types, `people evacuated` outscores `death toll` on
 **11.2% of genuine death tolls**. "N people killed" vs "N people evacuated" — both counts of
-people, separated only by the verb. No type description fixes it (EKF_MHT_DESIGN §27.8); it
+people, separated only by the verb. No type description fixes it (`EKF_MHT_BUILD_RECORD.md` §27.8); it
 is a training-time boundary the model has never been taught.
 
 Hard negatives are mined on the **span** axis only — `select_hard_negative_candidates` picks

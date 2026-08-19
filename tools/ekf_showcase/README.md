@@ -1,7 +1,8 @@
 # EKF showcase
 
 A news feed in, a tracked casualty timeline out. This is the runnable half of Paper 1
-([[EKF_MHT_DESIGN]]); the scripts here built every result in its §14-27.
+(`EKF_MHT_DESIGN.md`); the scripts here built the results it reports, and the build
+detail for them is in `EKF_MHT_BUILD_RECORD.md`.
 
 The seam the whole directory turns on is one record — the **observation**
 `(t, role, value, qualifier, source, event_key)`. Everything upstream produces one,
@@ -79,14 +80,16 @@ kill an idea before it got built.
 | `framing_experiment.py` | why does record extraction depend on how the input is framed? | §17 |
 | `bullet_premise_test.py` | does restructuring text into self-contained bullets fix number-to-place attachment? | §26 |
 
-Section numbers refer to `../events_working_papers/EKF_MHT_DESIGN.md`. **The mapping is by
+Section numbers below refer to the ORIGINAL working-paper numbering, which is preserved
+in `../events_working_papers/EKF_MHT_BUILD_RECORD.md`; the paper itself was renumbered on
+2026-08-19. **The mapping is by
 topic, not by citation** — only `vector_state_test.py` is named in that document (§23). If
 you renumber its sections, this table does not move with them.
 
 ## Data
 
 Feeds and ground truth live under the committable `datasets/` tree, not the git-ignored
-`data/` — see [[EKF_MHT_DESIGN]] §13. The models the pipeline defaults to
+`data/` — see `EKF_MHT_DESIGN.md` §13. The models the pipeline defaults to
 (`whr778/gliner2-base-v1-casualty-docee` and friends) are on the Hub; the viewer's
 `backend/models.json` carries the full list if you want to swap one in.
 
@@ -122,7 +125,8 @@ missing split by basename. Wired for `casualty_loc_split`, `casualty_docee`,
 
 ## Related
 
-- `../events_working_papers/EKF_MHT_DESIGN.md` — the design, the decisions, and the results
+- `../events_working_papers/EKF_MHT_DESIGN.md` — the paper: results and what they mean
+- `../events_working_papers/EKF_MHT_BUILD_RECORD.md` — the design, decisions and build detail
 - `../events_working_papers/PIPELINES.md` §2 — the as-built stage map
 - `../events_working_papers/MODEL_LINEAGE.md` — which config trained the casualty models
 - `../../viewer/` — the same pipeline behind a UI, via the EKF panel

@@ -260,7 +260,7 @@ Not yet, and MHT is probably not what is missing. In order:
    coverage to 44 of the 45 articles that contain a casualty-bearing sentence. The feed has
    ~86 sentences carrying both casualty language and a digit, so at 106 the pipeline
    over-extracts rather than starves. The "25 observations from 70 articles" figure quoted
-   here and in EKF_MHT_DESIGN §23 came from the superseded `tracked_lead` run.
+   here and in `EKF_MHT_DESIGN.md` §6.2 came from the superseded `tracked_lead` run.
 2. **Cross-event contamination — the real top item.** Context audit of all 106 observations:
    82.1% are genuine Helene casualties, **4.7% belong to another event** (Katrina 1400,
    Typhoon 250, Milton 230, Bosnia 16, Mexico's Hurricane John 2), 3.8% are non-casualty

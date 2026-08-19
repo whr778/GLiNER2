@@ -79,14 +79,13 @@ this programme's own curves did not meet that bar.
 gate → Hungarian assignment → top-K hypotheses → track birth/death. What ships is hard
 assignment on an observable string key feeding one single-stream filter per key: no
 hypothesis enumeration, no deferred decision, no track birth or death. Every real-event
-failure so far is a failure of that placeholder rather than of MHT. *(`EKF_MHT_DESIGN.md`
-§1a.)*
+failure so far is a failure of that placeholder rather than of MHT. *(`EKF_MHT_DESIGN.md` §1.)*
 
 **On real news the tracker loses to a trivial baseline.** On the Türkiye–Syria 2023
 earthquake, pre-registered, `est_last_value` beats the EKF (0.208 vs 0.136), a 1999
 death toll quoted in an article's history section is tracked as a 2023 figure, and one
 of the two affected countries is never recovered at all. Attribution, not filtering and
-not extraction, is the bottleneck. *(`EKF_MHT_DESIGN.md` §21.)*
+not extraction, is the bottleneck. *(`EKF_MHT_DESIGN.md` §4.)*
 
 **The greedy-vs-beam comparison — the actual question of the combinatorial arm — has
 not been run.** Every number produced so far is the greedy arm.
@@ -151,7 +150,8 @@ The working papers are the primary record; this map is a summary of them.
 | `PAPER_0_FOUNDATION.md` | Paper 0 draft — substrate, head-init finding, data-integrity audit |
 | `JOINT_IE_SCALING.md` | Paper 2 — joint decoding, scaling curve, replay, the three silent defects |
 | `JOINT_IE_DESIGN_RECORD.md` | Paper 2's build record — decisions, wiring map, cost model, deferred Phase B |
-| `EKF_MHT_DESIGN.md` | Paper 1 — tracker design, synthetic validation, first real event |
+| `EKF_MHT_DESIGN.md` | Paper 1 — the filter, the real-event defeat, and the unbuilt association half |
+| `EKF_MHT_BUILD_RECORD.md` | Paper 1's build record — attachment points, generator spec, blind-test protocol |
 | `BOUNDARY_ARCHITECTURE.md` | how the boundary head works end to end, per task |
 | `COUNTING_LAYER.md` | why the span 19-instance cap is a dead end |
 | `BOUNDARY_DECODE_AND_EKF.md` | verified decode map and where global inference attaches |
