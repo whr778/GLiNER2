@@ -79,6 +79,25 @@ def binding_schema() -> Schema:
                    description="the hurricane, storm or disaster that caused these deaths"))
 
 
+def fill_schema() -> Schema:
+    """A SEPARATE schema for field-fill measurement, so signal C is untouched.
+
+    Location fill is the Track A guard -- location supervision took it from 26/33 to 51/54 --
+    but it was computed by hand and no committed tool reproduced it, which made the guard
+    unusable. Measuring it here keeps one instrument for both readouts. This runs its own
+    ``extract`` call rather than adding a field to ``binding_schema``: adding one would
+    change the record the C signal reads and silently break comparability with every C
+    number already published.
+    """
+    return (Schema().structure("casualty_report", mode="natural", anchor="dead")
+            .field("dead", dtype="str",
+                   description="number of people killed or confirmed dead")
+            .field("location", dtype="str",
+                   description="the place these deaths occurred")
+            .field("event", dtype="str",
+                   description="the hurricane, storm or disaster that caused these deaths"))
+
+
 _NUMERIC = re.compile(r"^[\d\s.,%-]+$")
 
 
@@ -126,6 +145,7 @@ def main() -> None:
     esch, bsch = event_schema(), binding_schema()
 
     rows = []
+    fill = {"records": 0, "location": 0, "event": 0}
     for a, o in obs:
         text = feed.get(round(a["t_hours"], 2), "")
         span = str(o["span"])
@@ -158,6 +178,13 @@ def main() -> None:
                 bound_raw = str(r.get("event") or "").strip() or None
                 break
         bound = validate_binding(bound_raw, [t for t, _ in found])
+
+        # Field fill, measured on its own schema so nothing above is disturbed.
+        for r in model.extract(ctx, fill_schema()).get("casualty_report") or []:
+            fill["records"] += 1
+            for f in ("location", "event"):
+                if str(r.get(f) or "").strip():
+                    fill[f] += 1
 
         rows.append({
             "span": span, "value": int(o["value"]),
@@ -196,6 +223,15 @@ def main() -> None:
         print(f"  {state:<24}{sum(1 for r in ce if outcome(r) == state):>14}"
               f"{sum(1 for r in ok if outcome(r) == state):>14}")
     print("  rejected = the model named something that is not an event the schema found")
+
+    n = fill["records"]
+    print(f"\nfield fill over {n} records the model produced on these windows")
+    for f in ("location", "event"):
+        pct = f"{fill[f] / n:.1%}" if n else "n/a"
+        print(f"  {f:<10}{fill[f]:>4}/{n:<4} {pct}")
+    print("  measured on a SEPARATE schema, so signal C above is unaffected. This is the "
+          "Track A guard\n  (location supervision took it 26/33 -> 51/54); it had no "
+          "committed tool until now.")
 
     print("\ncross-event cases in detail:")
     for r in ce:
