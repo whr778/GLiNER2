@@ -831,3 +831,11 @@ datasets:
     hf_jsonl: whr778/replay_pile30
     language: [en]
     description: "9,361-record seed-42 slice of pile_ner_def train, sized to be exactly 30% of a DocEE mixture. Guards against the catastrophic forgetting measured on zero-replay arms (-23% to -39% general-domain entity F1, label-space collapse per FairEval). SHARED across all DocEE arms so they differ only in starting checkpoint. Verified 0 overlap with pile_ner_def val, knowledgator_gliner val, docee val/test. NOTE: since pile_ner_def val is half the preservation eval, a good score there after training on this means the replay worked, not that capability survived unaided -- score knowledgator_gliner val separately as the out-of-replay-distribution half."
+  replay_137k30:
+    name: joint_ie 137k pool, 30% exact replay slice
+    tasks: mixed (replay)
+    license: mixed -- inherits the 13 source corpora of the 137k pool
+    source_url: derived from data/*.train.jsonl of joint-boundary-mmbert-137k.yaml
+    hf_jsonl: whr778/replay_137k30
+    language: [en, zh]
+    description: "9,151-record proportional slice of the 137k joint_ie training pool (seed 42, tools/train/build_137k_replay.py), sized to be exactly 30% of a real+synthetic warm-start mixture. UNLIKE replay_pile30 this is LITERAL replay: we own the 137k base and its pool, so the slice is drawn from exactly what that base trained on, making 'did the original capability survive' directly measurable against the same eval the base was scored on. Proportional across all 13 pool corpora rather than a flat draw, so the composition stays exact at small slice sizes. TRAIN splits only -- the base never saw val or test. Verified 0 overlap with all 23 val/test files of the 137k config and both preservation eval sets."

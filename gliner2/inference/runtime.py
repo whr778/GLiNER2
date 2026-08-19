@@ -210,6 +210,18 @@ class ExtractorRuntimeMixin:
                     schema_dict["json_structures"] = built_dict.get("json_structures", [])
                     if built_dict.get("json_descriptions"):
                         schema_dict["json_descriptions"] = built_dict["json_descriptions"]
+                    # Carry record_metadata across too. Without it the boundary record
+                    # head decodes NOTHING and reports no error: the processor's
+                    # `_record_meta` reads this key, `compile_record_specs` returns {}
+                    # with no spec to decode, and `structure` scores exactly 0.0000.
+                    # That is not hypothetical -- it read 0.0000 on all four points of
+                    # the joint_ie scaling curve AND on a warm start carrying +45% extra
+                    # structure supervision, and was very nearly written off as an
+                    # untrainable head. `build()` produces the key; only these two lines
+                    # were copying its output, so a schema that declared mode/anchor
+                    # correctly still lost them here.
+                    if built_dict.get("record_metadata"):
+                        schema_dict["record_metadata"] = built_dict["record_metadata"]
                     field_metadata = built._field_metadata
                     field_orders = built._field_orders
                 # `{"relations": ["works_for"]}` -- the plain-list form the from_dict
