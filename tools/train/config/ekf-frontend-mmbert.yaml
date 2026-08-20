@@ -104,7 +104,10 @@ training:
   save_best: true
   save_total_limit: 2
   logging_steps: 20
-  num_workers: 0
+  # 4, not 0. Smoke run on 1x A100-SXM4-40GB with num_workers: 0 held GPU utilisation at
+  # 58-76% while memory sat flat at 10.6 GB of 40 -- input starvation, not compute.
+  # Gradient checkpointing would RAISE utilisation, so it is not that. The box has 30 vCPUs.
+  num_workers: 4
   validate_data: false
   sliding_window: true
   window_stride: 3072
