@@ -210,6 +210,9 @@ The design's claim is *diarization*: track AND assign, jointly, with decisions d
 | hard key assignment | ✅ built | what ships; the scope gate patches its worst failure |
 | negative supervision (data-side) | ✅ built, ⛔ **superseded** | a plausibility ceiling beats it — see §4.2 |
 | per-event plausibility ceiling | ✅ built | 378.809 → 18.287 on the production model — §4.2 |
+| scope membership | ✅ built | 4/6 cross-event at 7.3% FP, no model — 21 filters → 6 |
+| span-embedding router | ⛔ blocked on the front end | no current model emits trigger+argument spans on wire copy — §4.4 |
+| EKF front-end model | 🔄 in build | cold-start mmBERT; English trigger→argument 798 → ~39,800 — §4.4 |
 | scope hierarchy declared | ✅ built | `rollup.json` `hierarchy` block |
 
 ---
@@ -396,3 +399,43 @@ in the tree either. Comparisons among those figures stand — one frozen artifac
 model can be placed on their scale, which is why §4.2 uses a fresh baseline. Full evidence in
 `../ekf_showcase/muting_arm_results/PROVENANCE.md`; `run_pipeline.py` now records its full
 invocation and a `-dirty` git marker in every output.
+
+
+### 4.4 The front end is being rebuilt, because nothing available emits the router's input
+
+The association work above all assumes an extractor that produces, per event, a trigger and
+arguments bound to *that* trigger. Measured 2026-08-20, nothing in the line does.
+
+**Span architecture** emits a *bag* of triggers and labels every one with the same role. No
+threshold works: at 0.4 and below the Katrina block is `[95:119]`, the bare name, missing the
+1,400 it should bind, while the Helene block runs `[0:212]` and swallows Katrina; at 0.5+
+Katrina yields nothing.
+
+**Boundary mmBERT `137k-clean`** yields nothing at trigger/argument threshold 0.3 and above on
+English disaster text, and nonsense at 0.1 — trigger `"remote"`, with both `dead` and
+`location` bound to `"Helene decimated"`. A textbook earthquake sentence returns empty even at
+0.1, despite the model scoring trigger 0.710 / argument 0.506 on its own test set.
+
+**The cause is the mix, and it is arithmetic.** Counting only corpora that bind arguments to a
+trigger — DocEE, ChFinAnn and DocFEE do not; they are stored as `entities` + `classifications`:
+
+| | English | Chinese | English share |
+|---|--:|--:|--:|
+| `137k-clean` as built | **798** | 20,884 | **3.7%** |
+| every available corpus | 39,783 | 20,884 | 65.6% |
+
+The English side is CASIE alone. MAVEN and Mendeley are trigger-only. So an argument F1 of
+0.506 is very nearly a Chinese-only number, and English trigger→argument rests on 798 examples
+— which no threshold reaches.
+
+`tools/train/config/ekf-frontend-mmbert.yaml` is the cold-start rebuild: 189,284 records, a
+50× increase in English trigger→argument, the Chinese corpora kept because they are why the
+argument head works at all. Split gate clean at 180,660 / 11,486 / 20,571.
+
+**The risk is in the config, stated before spending:** 72% of the new English trigger+argument
+data is synthetic, against 20% human-annotated real news, on a line whose recurring failure is
+in-domain-good / real-news-zero. The gates are on AP prose for that reason.
+
+**Smoke, 1× A100-SXM4-40GB:** 18.4 samples/s — 34% faster than the extrapolation every earlier
+cost estimate used. `num_workers` is *not* the bottleneck (18.4 at 0 workers, 18.5 at 4);
+utilisation swings 28–81% on variable sequence length while memory stays flat at 10.6 GB of 40.

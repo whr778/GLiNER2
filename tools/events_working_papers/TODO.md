@@ -101,7 +101,44 @@ event-shaped fix, the event-shaped one is the one that serves the programme *and
 that carries the right information: only the event formulation has an `event_key`, which is
 the field an EKF observation needs. See item 1 for the worked case.
 
-State at **2026-08-20**. **No GPUs running** (the muting-arm A10 is terminated, verified).
+### FRONT-END REBUILD IN FLIGHT — `ekf-frontend-mmbert` (2026-08-20)
+
+The EKF pipeline's router work is blocked on an extractor that emits, per event, a trigger
+and arguments bound to *that* trigger. Nothing in the line does.
+
+**Span arch** emits a bag of triggers, all sharing one role; no threshold fixes it — the
+Katrina block is either the bare name (missing its own 1,400) or swallows Helene.
+**Boundary `137k-clean`** yields nothing above threshold 0.3 on English disaster copy and
+nonsense at 0.1, despite trigger 0.710 / argument 0.506 on its own test set.
+
+**The arithmetic behind it.** Counting only corpora that bind arguments to a trigger — DocEE,
+ChFinAnn and DocFEE do *not*, they are `entities` + `classifications`:
+
+| | English | Chinese | English share |
+|---|--:|--:|--:|
+| `137k-clean` as built | **798** (CASIE alone) | 20,884 | **3.7%** |
+| every available corpus | 39,783 | 20,884 | 65.6% |
+
+MAVEN and Mendeley are trigger-only. So argument F1 0.506 is very nearly a Chinese-only
+number and English trigger→argument rests on 798 examples.
+
+`tools/train/config/ekf-frontend-mmbert.yaml` — cold start, 189,284 records, 50× the English
+trigger→argument supervision, Chinese kept. Split gate CLEAN (180,660 / 11,486 / 20,571).
+`rams` gained val+test by carving its 871-row test **by document**, which found 101 duplicate
+rows in test alone — the same hazard this file records for rams train.
+
+**Declared risk:** 72% of the new English trigger+argument data is synthetic against 20%
+human-annotated real news, on a line whose recurring failure is in-domain-good /
+real-news-zero. Gates are on AP prose for that reason, not held-out DocEE.
+
+**Smoke (1× A100-40GB):** 18.4 samples/s, 34% faster than the extrapolation every earlier cost
+estimate used. `num_workers` is NOT the bottleneck — 18.4 at 0 workers, 18.5 at 4 — so do not
+re-try it; utilisation swings 28–81% on variable sequence length while memory stays flat at
+10.6 GB of 40. **batch_size is the untested lever.**
+
+---
+
+State at **2026-08-20**. **A smoke GPU is running** (self-terminating watchdog on the box) (the muting-arm A10 is terminated, verified).
 A programme-wide caveat landed with it: the cached Helene observation set behind every
 published Helene figure **cannot be regenerated from any committed state** — see
 `tools/ekf_showcase/muting_arm_results/PROVENANCE.md`. Comparisons among the published
