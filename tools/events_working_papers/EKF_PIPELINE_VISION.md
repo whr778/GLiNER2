@@ -93,5 +93,37 @@ Filter DEATH / decay
   A stream with no support ages out. Without it every spurious birth is permanent, and
   birth is exactly the stage most likely to over-fire on a noisy feed.
 
+
+=== BUILD THIS FIRST: the routing evaluation set ===
+
+  Everything above is gated on it, including the claim that four mechanisms failed.
+
+  The labels this line has been scored against were a (span, value) string match. Audited
+  per occurrence 2026-08-20 they were 27% CORRECT on their own positive class -- 3 of 11.
+  All six '230's were marked cross-event (Milton) when every one is Helene's OWN national
+  total (truth 228). '250' likewise. One of the two '1,400's is "1,400 LANDSLIDES". And
+  three genuine cases were missed entirely: Maria's 3,000, the 1916 hurricanes' 80, a
+  Taiwan typhoon's "dozens".
+
+  Corrected, the ENTIRE Helene feed contains 6 cross-event instances.
+
+  You cannot train, tune or validate a matching function on n=6 from one event. That is
+  also why "four mechanisms failed" is weaker than it sounds: a detector scoring 3/11 on
+  the old set might have found exactly the three real cases or three of the eight false
+  ones, and nothing distinguished those outcomes. Re-measured on the corrected labels the
+  base model reads 4/6, not 3/11 -- the same model, a different instrument.
+
+  What the set has to be:
+    - labelled per OCCURRENCE, by reading context, never by value
+    - keyed on a context hash so labels survive re-extraction
+      (helene_audit_labels.json does this -- the feed text is fixed, so the same figure
+       in the same passage keys identically in any pipeline run)
+    - across SEVERAL events, so the cross-event cases are not all one value
+    - across SEVERAL sources, which is also the only regime where deferred assignment
+      earns its keep and where the filter's own 1-2% edge over last-value becomes testable
+
+  Multi-source and multi-event feeds produce this set as a side effect. That is the
+  argument for building them before the router, not after.
+
 ---
 Review, open questions and feasibility: EKF_PIPELINE_VISION_REVIEW.md
