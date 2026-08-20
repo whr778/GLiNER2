@@ -243,6 +243,31 @@ extraction: a time-ordered news feed in, a tracked casualty timeline out. The
 backend imports `tools/ekf_showcase/run_pipeline.py` directly, so the panel and
 the CLI run the *same* code — see `tools/ekf_showcase/README.md`.
 
+**Realigned with the research pipeline 2026-08-20**, after it had drifted for the
+second time. Four gaps are closed, each of which made the panel unable to reproduce a
+published number:
+
+- **`window: long`** now exists here. It chunks the whole document with overlap and is
+  the research default; on Helene it takes `dead` observations 25 → 106. Without it the
+  panel could not get near a published figure.
+- **The administrative rollup is applied.** It is resolved beside the feed by
+  convention, so `datasets/helene2024/_cache/feed.jsonl` picks up
+  `datasets/helene2024/rollup.json` automatically. Previously omitted entirely, so
+  city and county keys never folded up to their state.
+- **`associate` actually reaches the runner.** The frontend had always sent it and the
+  runner had always read it, but it was never declared on `EkfRequest`, so Pydantic
+  dropped it and every run silently pooled into one stream — the exact failure
+  association exists to fix. Six other read-but-undeclared fields were fixed with it.
+- **A per-event plausibility ceiling** (`Max plausible`, 0 = off). Anything above the
+  largest credible toll for the event is dropped before tracking. On Helene a ceiling
+  of 2,000 removes a 94,000 that is *Asheville's population* read as a death toll, and
+  is worth roughly 20× on ungated per-place error.
+
+Every run now records its full parameters, the rollup used, the ceiling, and the git
+commit — with a `-dirty` marker — in `result.invocation`. That exists because the
+archived 2026-08-10 Helene artifact stored only `associate` and is consequently
+unreproducible; see `tools/ekf_showcase/muting_arm_results/PROVENANCE.md`.
+
 Pick a feed, pick the models, press run. Four stages: **gate** (is this a
 mass-casualty report?) → **event** (type + "Casualties and Losses" spans) →
 **extract** (bind numbers to `{dead, injured, missing}`) → **track** (EKF plus a

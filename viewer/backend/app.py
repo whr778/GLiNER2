@@ -237,13 +237,27 @@ class EkfRequest(BaseModel):
     gate_model: str = "fastino/gliner2-base-v1"
     casualty_model: str = "whr778/gliner2-base-v1-casualty-docee"
     event_model: Optional[str] = None
-    window: str = "article"
+    window: str = "article"          # article | lead | event | long
     normalizer: str = "hybrid"
     gate_threshold: float = 0.5
     event_threshold: float = 0.3
     grid_step: float = 6.0
     device: Optional[str] = "cpu"
     limit: int = 0
+    # Everything below was READ by ekf.py and never DECLARED here, so model_dump() dropped
+    # it and the runner silently used its fallback. `associate` was the worst case: the
+    # viewer could not associate at all, which is the failure association exists to fix
+    # (multi-event nRMSE 102 -> 27.975). Declared 2026-08-20.
+    associate: str = "none"          # none | type | type+location | envelope | record
+    rollup: Optional[str] = None     # None resolves one beside the feed; "" disables
+    lead_chars: int = 1100
+    envelope_margin: int = 60
+    chunk_size: int = 200            # --window long: the framing curve's band, not 384
+    chunk_overlap: int = 50
+    # Drop observations above the largest credible toll for THIS event, before tracking.
+    # 0 disables. On Helene a ceiling of 2,000 removes a 94,000 that is Asheville's
+    # POPULATION and takes ungated per-place error 378.809 -> 18.190.
+    max_plausible: float = 0.0
 
 
 @app.get("/ekf-feeds")

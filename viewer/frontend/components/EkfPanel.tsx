@@ -182,6 +182,10 @@ export default function EkfPanel() {
   // that association was added to fix (multi-event nRMSE 102 -> 27.975), and what this
   // panel silently did until now.
   const [associate, setAssociate] = useState("record");
+  // 0 = off. A per-event plausibility ceiling: anything above the largest credible toll
+  // for this event is not a casualty figure. Measured on Helene -- dropping one 94,000
+  // (Asheville's population, read as a death toll) is worth 20x on ungated per-place error.
+  const [maxPlausible, setMaxPlausible] = useState(0);
   const [limit, setLimit] = useState(0);
 
   const [runs, setRuns] = useState<Run[]>([]);
@@ -216,6 +220,7 @@ export default function EkfPanel() {
       const started = await startEkfTrack({
         feed, casualty_model: casualtyModel, window: windowMode,
         normalizer, associate, limit: Number(limit) || 0,
+        max_plausible: Number(maxPlausible) || 0,
         ...(eventModel ? { event_model: eventModel } : {}),
       });
       setJob(started);
@@ -271,6 +276,7 @@ export default function EkfPanel() {
             <div style={{ flex: 1 }}>
               <label>Window</label>
               <select value={windowMode} onChange={(e) => setWindowMode(e.target.value)}>
+                <option value="long">whole doc, chunked (research default)</option>
                 <option value="article">whole article</option>
                 <option value="event">event envelope</option>
                 <option value="lead">article lead</option>
@@ -293,6 +299,13 @@ export default function EkfPanel() {
                 <option value="heuristic">heuristic</option>
                 <option value="classify">classify</option>
               </select>
+            </div>
+            <div style={{ width: 112 }}>
+              <label title="Drop observations above the largest credible toll for this event, before tracking. 0 = off. On Helene a ceiling of 2000 removes a 94,000 that is Asheville's population.">
+                Max plausible
+              </label>
+              <input type="number" min={0} value={maxPlausible}
+                     onChange={(e) => setMaxPlausible(Number(e.target.value))} />
             </div>
             <div style={{ width: 84 }}>
               <label>Limit</label>

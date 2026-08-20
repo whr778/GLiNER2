@@ -115,6 +115,20 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
         job.total = len(feed)
         device = params.get("device") or "cpu"
 
+        # Administrative rollup: folds city/county keys up to their state and multi-state
+        # phrases to __aggregate__. Resolved beside the feed by convention when not given,
+        # so the Helene and Turkiye feeds pick theirs up automatically.
+        rollup = None
+        rollup_path = params.get("rollup")
+        if rollup_path is None:
+            guess = feed_path.parent.parent / "rollup.json"
+            rollup_path = str(guess.relative_to(REPO)) if guess.is_file() else ""
+        if rollup_path:
+            rp_file = REPO / rollup_path
+            if rp_file.is_file():
+                rollup = json.loads(rp_file.read_text(encoding="utf-8"))
+                job.log.append(f"rollup: {rollup_path}")
+
         job.stage = "gate"
         job.log.append(f"gate: {params['gate_model']} on {len(feed)} articles")
         gate_model = AutoExtractor.from_pretrained(resolve_model(params["gate_model"]), map_location=device)
@@ -153,34 +167,74 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
             entry = {"t_hours": row["t_hours"], "text": row["text"], **gates[i],
                      "events": events[i], "observations": []}
             if gates[i]["relevant"]:
-                if window == "lead":
-                    envelopes = [{"text": row["text"][: int(params.get("lead_chars", 1100))]}]
-                else:
-                    envelopes = (rp.casualty_windows(row["text"], events[i],
-                                                     int(params.get("envelope_margin", 60)))
-                                 if window == "event" and events[i] else [])
-                entry["envelopes"] = envelopes
-                for env in (envelopes or [{"text": row["text"]}]):
-                    read_text = env["text"]
-                    records = (cas_model.extract(read_text, cas_schema,
-                                                 include_confidence=True)
-                               .get("casualty_report") or [])
-                    for rec in (records or [{}]):
+                if window == "long":
+                    # The research configuration, and the viewer lacked it entirely.
+                    # extract_long chunks the WHOLE document with overlap; on Helene it
+                    # took `dead` observations 25 -> 106, so a viewer without it cannot
+                    # reproduce any published number.
+                    chunk = int(params.get("chunk_size", 200))
+                    records = (cas_model.extract_long(
+                        row["text"], cas_schema,
+                        threshold=float(params.get("event_threshold", 0.3)),
+                        chunk_size=chunk,
+                        chunk_overlap=int(params.get("chunk_overlap", 50)),
+                    ).get("casualty_report") or [])
+                    entry["envelopes"] = [{"text": f"<extract_long chunks of {chunk} words>"}]
+                    for rec in records:
                         key = (rp.record_key(events[i], rec) if associate == "record"
-                               else rp.association_key(events[i], associate, env))
-                        rp._emit(rec, read_text, row, entry, modes, per_mode,
+                               else rp.association_key(events[i], associate, {}))
+                        rp._emit(rec, row["text"], row, entry, modes, per_mode,
                                  gate_model, cls_schema, event_key=key)
+                else:
+                    if window == "lead":
+                        envelopes = [{"text": row["text"][: int(params.get("lead_chars", 1100))]}]
+                    else:
+                        envelopes = (rp.casualty_windows(row["text"], events[i],
+                                                         int(params.get("envelope_margin", 60)))
+                                     if window == "event" and events[i] else [])
+                    entry["envelopes"] = envelopes
+                    for env in (envelopes or [{"text": row["text"]}]):
+                        read_text = env["text"]
+                        records = (cas_model.extract(read_text, cas_schema,
+                                                     include_confidence=True)
+                                   .get("casualty_report") or [])
+                        for rec in (records or [{}]):
+                            key = (rp.record_key(events[i], rec) if associate == "record"
+                                   else rp.association_key(events[i], associate, env))
+                            rp._emit(rec, read_text, row, entry, modes, per_mode,
+                                     gate_model, cls_schema, event_key=key)
             articles.append(entry)
             job.done = i + 1
 
         job.stage = "tracking"
+
+        # Plausibility ceiling: drop anything above the largest credible toll for THIS
+        # event, before tracking. Measured 2026-08-20 on Helene -- dropping a single
+        # 94,000 (Asheville's POPULATION, read as a death toll) takes ungated per-place
+        # error from 378.809 to 18.287. Off by default: it is prior knowledge about one
+        # event, not a general rule.
+        ceiling = float(params.get("max_plausible", 0) or 0)
+        culled = 0
+        if ceiling > 0:
+            for m in modes:
+                before = len(per_mode[m])
+                per_mode[m] = [o for o in per_mode[m] if float(o["value"]) <= ceiling]
+                culled += before - len(per_mode[m])
+            for entry in articles:
+                entry["observations"] = [o for o in entry["observations"]
+                                         if float(o["value"]) <= ceiling]
+            job.log.append(f"plausibility ceiling {ceiling:.0f}: dropped {culled}")
+
         t0, t1 = feed[0]["t_hours"], feed[-1]["t_hours"]
         step = float(params.get("grid_step", 6.0))
         grid = [t0 + k * step for k in range(int((t1 - t0) / step) + 1)]
         tracked = {m: rp.track(per_mode[m], grid) for m in modes}
         # Per-stream tracking is the point of associating at all; track_by_event also
-        # folds clipped location keys (syr -> syria) via merge_prefix_keys.
-        tracked_by_event = {m: rp.track_by_event(per_mode[m], grid) for m in modes}
+        # folds clipped location keys (syr -> syria) via merge_prefix_keys, and applies
+        # the administrative rollup when one is given -- the viewer omitted the rollup
+        # entirely, so city/county keys never folded up to their state and per-state
+        # streams could not be compared with the research runs.
+        tracked_by_event = {m: rp.track_by_event(per_mode[m], grid, rollup) for m in modes}
 
         result: Dict[str, Any] = {
             "feed": str(feed_path.relative_to(REPO)), "grid": grid,
@@ -188,6 +242,12 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
             "tracked": tracked, "tracked_by_event": tracked_by_event,
             "associate": associate, "mode": modes[0],
             "n_observations": {m: len(per_mode[m]) for m in modes},
+            # Record what produced this, for the reason PROVENANCE.md gives: the archived
+            # 2026-08-10 Helene artifact stored only `associate`, and is now unreproducible.
+            "invocation": {"params": dict(params), "rollup": rollup_path or None,
+                           "plausibility_ceiling": ceiling or None,
+                           "plausibility_dropped": culled,
+                           "git_commit": rp._git_commit()},
         }
         truth_path = params.get("truth") or str(
             feed_path.with_name(feed_path.stem + ".truth.jsonl").relative_to(REPO))
