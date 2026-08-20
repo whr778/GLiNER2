@@ -135,6 +135,53 @@ Yes -- Discern which filter or filters apply
   And scope membership above already does most of what clustering was hoped to do,
   with no metric to learn.
 
+  CANDIDATE ROUTER: span-embedding retrieval (proposed 2026-08-20)
+  Take min(start)..max(end) over an event's OWN trigger and arguments, vectorize that
+  block, attach it to (doc, event), index it, and match a new observation against the
+  live filters. Clustering forms filters; retrieval routes into them.
+
+  This is the first proposal that PRODUCES a representation instead of assuming one,
+  and the span construct is the right one -- it is per-event and local, so it is doing
+  the discourse-attachment job that proximity and type both failed at. Verified on the
+  hard case: in the Katrina passage the only named event the extractor finds is
+  `Hurricane Katrina` at (102,119), so the block is Katrina-local, not Helene-local.
+  (`include_spans=True` returns the offsets.)
+
+  Three things decide whether it works.
+
+  1. IT REQUIRES EVENTS-FORM OUTPUT, not records. min/max over trigger+arguments needs
+     per-event argument bindings; a `casualty_report` record carries no event span. So
+     this and the purpose-built events-all front end are the same decision, not two.
+
+  2. A SINGLE POOLED VECTOR IS THE WRONG RETRIEVAL. Lexical cosine as a proxy, on hand-
+     picked spans: cross-event scores 0.063-0.140 against a Helene centroid and genuine
+     spans score 0.195-0.289 -- but the WITHIN-Helene spread is 0.127-0.316, so a
+     genuine pair (0.127) is less similar than Katrina is (0.140). The classes overlap.
+     And stripping the storm name barely moves it (0.140 -> 0.149), so what separation
+     exists is incidental vocabulary, not the discriminating token.
+     That is the argument for COLBERT-style late interaction over a single dense vector:
+     MaxSim lets one token ("Katrina") dominate the match, which mean pooling averages
+     away. FAISS still earns its place underneath, for candidate generation.
+     (Caveat: TF-IDF on six spans is a proxy, not a measurement of a dense embedder.)
+
+  3. THE SELF-REFERENCE TRAP APPLIES. If a filter's centroid updates with every
+     observation it accepts, one contaminant moves the reference and the next match is
+     wrong -- the cause that killed M5, the implied-maximum reference and the naive
+     streaming tail cut. Anchor a filter on its DECLARED identity (name + place + date),
+     or on periodically re-pooled exemplars. Never an incrementally drifting centroid.
+
+  WHAT IT WILL NOT REACH: the 1916 case. The extractor finds only `hurricane` and
+  `hurricanes` there -- no name at all -- so the block is generic hurricane-casualty
+  language and the discriminating signal is temporal ("since 1916", "That year"). Same
+  shape as Bosnia's 16. The vector should be PAIRED with date and place features rather
+  than asked to carry identity alone.
+
+  ONE REAL BONUS: it improves the evaluation problem instead of inheriting it. A
+  classifier has 6 positives to learn from; a retrieval formulation has every
+  (observation x live filter) pair -- with 106 observations and 8 filters that is ~848
+  labelled comparisons from the same annotation. Ranking metrics are measurable where a
+  6-positive classification is not.
+
 Route text and extracted events to the 1..* filters
 Events from the text are reformatted for each filter and added to the filter's bucket
 
