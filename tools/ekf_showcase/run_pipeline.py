@@ -67,6 +67,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -627,6 +628,24 @@ def track_by_event(observations: List[Dict], grid: List[float],
 
 
 # --------------------------------------------------------------------------- #
+def _git_commit() -> str:
+    """Short HEAD, marked dirty when the tree has uncommitted changes.
+
+    The dirty flag is the part that matters: the archived Helene baseline was produced by a
+    tree that did not match any commit, and nothing in the artifact said so.
+    """
+    try:
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+                              text=True, cwd=Path(__file__).resolve().parents[2])
+        dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True,
+                               text=True, cwd=Path(__file__).resolve().parents[2])
+        if head.returncode:
+            return "unknown"
+        return head.stdout.strip() + ("-dirty" if dirty.stdout.strip() else "")
+    except OSError:
+        return "unknown"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--feed", required=True)
@@ -794,6 +813,16 @@ def main() -> None:
         "tracked_by_event": {m: track_by_event(per_mode[m], grid, rollup) for m in modes},
         "associate": args.associate,
         "n_observations": {m: len(per_mode[m]) for m in modes},
+        # EVERY argument, not just `associate`. The 2026-08-10 Helene run recorded only
+        # `associate` and its baseline (5.247 -> 0.591) is now unreproducible: the flag and
+        # the rollup file it used existed as uncommitted working-tree state and changed
+        # before being committed, so no git state regenerates it. That blocked the muting
+        # arm's pre-registered guard. See muting_arm_results/PROVENANCE.md.
+        "invocation": {
+            "args": vars(args),
+            "argv": sys.argv,
+            "git_commit": _git_commit(),
+        },
     }
 
     if args.truth and Path(args.truth).is_file():

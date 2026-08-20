@@ -24,11 +24,13 @@ C binding coverage           cross-event    assumed-ok
   unbound                              3            56
   rejected = the model named something that is not an event the schema found
 
-field fill over 128 records the model produced on these windows
-  location   118/128  92.2%
-  event       51/128  39.8%
-  measured on a SEPARATE schema, so signal C above is unaffected. This is the Track A guard
-  (location supervision took it 26/33 -> 51/54); it had no committed tool until now.
+field fill over 129 records the model produced on these windows
+  location   118/129  91.5%
+  event       54/129  41.9%
+  measured on a separate schema in a SECOND PASS, so signal C above is untouched.
+  This is the Track A guard, which until now had no committed tool. Its denominator is
+  records-produced-on-these-windows and does NOT match the hand-computed 51/54, which
+  counted a different window set -- compare the RATE, not the fraction.
 
 cross-event cases in detail:
   'at least two' nearest='None'                   bound='None'                   events=[]

@@ -53,6 +53,30 @@ Gated, the muted arm is slightly *worse* (3.729 vs 3.336), so the gain does not 
 mechanism that was already removing large contaminants by magnitude. That is consistent:
 both are attacking the same figures.
 
+### The fresh baseline, all four runs on ONE recorded invocation
+
+The archived reference turned out to be unreproducible (`PROVENANCE.md`), so the production
+`casualty-docee` model was run through the *same* settings as both arms. That makes a
+common-footing table, which is what guard 1 actually needs:
+
+| model | dead obs | ungated | gated @2.0 |
+|---|--:|--:|--:|
+| `casualty-docee` (production) | 88 | 378.809 | 378.555 |
+| control 4ep | 205 | 46.844 | 3.336 |
+| **muted** | **109** | **19.822** | 3.729 |
+
+On one footing **both new models beat the production model by an order of magnitude, and
+muting beats its own control 2.4x.** Read the docee row with care: it is destroyed by a
+single extraction, a **94,000 in the Tennessee stream** where the archived run's largest
+`dead` value anywhere is 3,000. That figure appears on current *and* on 2026-08-10 code, so
+it is not a regression introduced since — it is one of the things the archived invocation
+evidently avoided and this one does not.
+
+Settings for all four, now written into every output file's `invocation` block:
+
+    --associate record --rollup datasets/helene2024/rollup.json --window long
+    --device cpu            (grid-step at its default 6.0)
+
 ### THE CAVEAT, and it blocks reading guard 1 as pre-registered
 
 **These pipeline settings do not reproduce the archived baseline.** Running the *production*
@@ -69,8 +93,14 @@ Consequences, stated rather than smoothed over:
 - No absolute number here is comparable to any published Helene figure, including the 5.247
   and 0.591 that guard 1 was pre-registered against. **Guard 1 cannot be scored as written.**
 - This is the same provenance gap that stopped Türkiye–Syria being re-extracted
-  (`EKF_MHT_BUILD_RECORD.md` §25.5). Recovering the archived invocation is a prerequisite for
-  reading this arm against the programme's baseline, and it is a separate task.
+  (`EKF_MHT_BUILD_RECORD.md` §25.5).
+
+**Chased to a conclusion on 2026-08-20: the archived invocation cannot be recovered.** The
+`--rollup` flag did not exist in any commit before the artifact was written, and
+`rollup.json` was not in the tree either; both were uncommitted working-tree state that
+changed before being committed. Full evidence in `PROVENANCE.md`. The response is the
+fresh baseline above rather than further archaeology, and `run_pipeline.py` now writes its
+complete argument vector and git commit — with a `-dirty` marker — into every output.
 
 ## Reproduce
 

@@ -12,33 +12,35 @@ Token pooling      : first
 104 observations
 
 signal                            catches cross-event   false positives
-A nearest is a competitor                        3/11     31/83 = 37.3%
-B only a competitor named                        3/11     29/83 = 34.9%
-C bound event is a competitor                    3/11       8/83 = 9.6%
-C-raw (UNSOUND, diagnostic)                      4/11     12/83 = 14.5%
+A nearest is a competitor                        3/11     18/83 = 21.7%
+B only a competitor named                        3/11     18/83 = 21.7%
+C bound event is a competitor                    1/11       1/83 = 1.2%
+C-raw (UNSOUND, diagnostic)                      1/11       7/83 = 8.4%
 
 C binding coverage           cross-event    assumed-ok
-  competitor                           3             8
-  ours                                 4            15
-  rejected                             1             4
-  unbound                              3            56
+  competitor                           1             1
+  ours                                 4             9
+  rejected                             0             6
+  unbound                              6            67
   rejected = the model named something that is not an event the schema found
 
-field fill over 128 records the model produced on these windows
-  location   118/128  92.2%
-  event       51/128  39.8%
-  measured on a SEPARATE schema, so signal C above is unaffected. This is the Track A guard
-  (location supervision took it 26/33 -> 51/54); it had no committed tool until now.
+field fill over 155 records the model produced on these windows
+  location   149/155  96.1%
+  event       10/155  6.5%
+  measured on a separate schema in a SECOND PASS, so signal C above is untouched.
+  This is the Track A guard, which until now had no committed tool. Its denominator is
+  records-produced-on-these-windows and does NOT match the hand-computed 51/54, which
+  counted a different window set -- compare the RATE, not the fraction.
 
 cross-event cases in detail:
-  'at least two' nearest='None'                   bound='None'                   events=[]
-  'at least 16'  nearest='Hurricane Helene'       bound='None'                   events=['western north Carolina', 'Hurricane Helene', 'Hurricane Helene']
+  'at least two' nearest='John'                   bound='None'                   events=['John']
+  'at least 16'  nearest='None'                   bound='None'                   events=[]
   '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene']
   '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene']
   '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene']
-  '230'          nearest='FEMA'                   bound='the election'           events=['the election', 'FEMA']
-  '230'          nearest='Helene'                 bound='Georgia'                events=['Georgia', 'the Carolinas', 'Helene']
-  '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene', 'Hurricane Milton']
+  '230'          nearest='None'                   bound='None'                   events=[]
+  '230'          nearest='None'                   bound='None'                   events=[]
+  '230'          nearest='Hurricane Helene'       bound='Hurricane Helene'       events=['Hurricane Helene']
   '1,400'        nearest='Hurricane Katrina'      bound='Hurricane Katrina'      events=['Hurricane Katrina']
-  '1,400'        nearest='Helene'                 bound='None'                   events=['Helene'] raw='western North Caro'
+  '1,400'        nearest='Helene'                 bound='None'                   events=['Helene']
   '250'          nearest='Typhoon Yinxing'        bound='None'                   events=['Typhoon Yinxing']
