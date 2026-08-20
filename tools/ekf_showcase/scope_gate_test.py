@@ -295,6 +295,34 @@ def oracle_gate_three_way(observations: list, states: dict, series: dict,
     return kept
 
 
+def plausibility_filter(observations: list, ceiling: float) -> tuple[list, list]:
+    """Drop observations above the largest credible toll FOR THIS EVENT, whatever the stream.
+
+    Prior knowledge, declared per event, not fitted: Hurricane Helene killed on the order of
+    230 people, so a five- or six-figure "death toll" in any of its streams is not a casualty
+    figure at all. This is the cheapest response to the false-positive audit -- 129,933 is
+    FEMA flood-insurance policies, 94,000 is Asheville's population, 15,000 is wellness checks
+    -- and it needs no model change.
+
+    Two things it CANNOT do, both measured in `muting_arm_results/FALSE_POSITIVES.md`:
+
+    - It cannot see 1,500 active-duty troops or 8,000 power crews. Those are counts of living
+      people in the affected area, and they are plausible MAGNITUDES for a casualty figure;
+      only casualty-role semantics separate them.
+    - Set low enough to catch Katrina's 1,400 it is no longer a plausibility test, it is the
+      magnitude gate again, rejecting a cross-event toll for being large rather than for
+      belonging to another storm. The sweep below shows exactly where that line is.
+
+    Returns ``(kept, dropped)``. ``ceiling <= 0`` disables it.
+    """
+    if ceiling <= 0:
+        return list(observations), []
+    kept, dropped = [], []
+    for o in observations:
+        (dropped if float(o["value"]) > ceiling else kept).append(o)
+    return kept, dropped
+
+
 def score(kept: dict, series: dict, grid: list, states: dict,
           role: str = "dead") -> dict:
     """Per-state nRMSE plus the national stream, using the shipped estimators."""
@@ -319,6 +347,9 @@ def main() -> None:
     ap.add_argument("--reference", choices=("aggregate", "global-max", "implied"),
                     default=None)
     ap.add_argument("--mode", default="heuristic")
+    ap.add_argument("--max-plausible", type=float, default=0.0,
+                    help="drop any observation above this value before gating -- the largest "
+                         "credible toll for this event. 0 disables. Swept in the report.")
     ap.add_argument("--warmup", type=int, default=2)
     args = ap.parse_args()
 
@@ -330,8 +361,12 @@ def main() -> None:
     grid = res["grid"]
     obs = [o for a in res["articles"] for o in a["observations"]
            if o["mode"] == args.mode and o["role"] == "dead"]
+    obs_all = obs
+    obs, culled = plausibility_filter(obs, args.max_plausible)
     print(f"[{args.dataset}] {len(obs)} 'dead' observations over {res['n_articles']} "
-          f"articles, reference={reference}\n")
+          f"articles, reference={reference}"
+          + (f", plausibility ceiling {args.max_plausible:.0f} dropped {len(culled)}"
+             if args.max_plausible > 0 else "") + "\n")
 
     cols = ("Total",) + tuple(cfg["places"])
     print(f"{'ratio':>7}{'moved':>7}{'drop':>6}" +
@@ -371,6 +406,19 @@ def main() -> None:
         v = orc.get(c, (None, 0))[0]
         if v is not None:
             print(f"           {c:<16}{v:>8.3f}")
+
+    print("\n[PLAUSIBILITY] a declared per-event ceiling, applied BEFORE the gate, swept:")
+    print(f"{'ceiling':>9}{'dropped':>9}{'ungated':>10}{'gated@2.0':>11}   values dropped")
+    for ceil in (0.0, 20000.0, 5000.0, 2000.0, 1000.0, 500.0, 250.0):
+        sub, cut = plausibility_filter(obs_all, ceil)
+        ung = score(gate(sub, 0.0, args.warmup, states, reference)[0], series, grid, states)
+        gat = score(gate(sub, 2.0, args.warmup, states, reference)[0], series, grid, states)
+        def _m(sc):
+            v = [sc[p][0] for p in cfg["places"] if sc.get(p, (None,))[0] is not None]
+            return sum(v) / len(v) if v else float("nan")
+        vals = sorted({int(o["value"]) for o in cut}, reverse=True)[:6]
+        tag = "off" if ceil == 0 else f"{ceil:.0f}"
+        print(f"{tag:>9}{len(cut):>9}{_m(ung):>10.3f}{_m(gat):>11.3f}   {vals}")
 
     print("\n[ORACLE-3] adding a REJECT option -- the ceiling for association that can say "
           "'none of these':")
