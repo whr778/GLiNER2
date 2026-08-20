@@ -41,7 +41,9 @@ Extracted Events evaluation via Event Instance Map
 
 Event Instance Map where each event INSTANCE has a registered filters list 0..*
 
-  SCOPE MEMBERSHIP is a free first cut, and it beats every learned signal tried.
+  SCOPE MEMBERSHIP -- BUILT, run_pipeline.py --scope-filter (tests/test_scope_filter.py)
+
+  A free first cut, and it beats every learned signal tried.
   The declared hierarchy already says what is in scope (six states + __aggregate__ for
   Helene). Anything keyed OUTSIDE it is, by construction, not this event. Measured on
   the 106-observation feed with the corrected labels:
@@ -65,6 +67,20 @@ Event Instance Map where each event INSTANCE has a registered filters list 0..*
   cross-event cases whose places are IN scope -- a Taiwan typhoon's 32 keyed to
   tennessee, the 1916 hurricanes' 80 keyed to north carolina. Same place, different
   incident. Nothing about location reaches those.
+
+  AND IT DOES NOT MOVE nRMSE -- measured, so nobody expects it to. On the control-4ep
+  run, ungated per-place error is 46.850 with the stage against 46.844 without it.
+  The reason is structural: out-of-scope observations form their own streams (fema,
+  poweroutageus, scotland, gulf of mexico), and those streams were never among the six
+  scored places, so the metric never saw them. What the stage removes was already
+  invisible to the number.
+
+  ITS VALUE IS EXACTLY THE THING THIS ARCHITECTURE INTRODUCES. Every distinct key
+  spawns a FILTER here. On the archived feed that is 21 filters without the stage and
+  6 with it; on a fresh control-4ep run, 8 streams out (six states + __aggregate__ +
+  unknown) from 291 rejected observations. Junk filters are not free -- they are state
+  to advance, buckets to route into, and candidates the matching function must score
+  against. The stage is cheap upstream hygiene for the router, not a tracking gain.
 
 Do we have any filters mapped to that instance?
 No  -- track BIRTH: open a filter for this instance.

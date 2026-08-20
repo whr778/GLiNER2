@@ -592,6 +592,60 @@ def apply_rollup(observations: List[Dict], rollup: Dict[str, Any]) -> None:
             f"{etype}|{place}" if place else etype)
 
 
+def scope_filter(observations: List[Dict], rollup: Optional[Dict[str, Any]]):
+    """Reject observations keyed OUTSIDE the event's declared scope. Run AFTER the rollup.
+
+    The cheapest cross-event filter there is, and it beats every learned signal tried.
+    The hierarchy already declares what belongs to this event; a figure keyed to a place
+    outside it is, by construction, about something else. Measured on the 106-observation
+    Helene feed against the corrected audit labels:
+
+        scope membership (no model)          4/6 cross-event caught,  7.3% FP
+        best learned signal, one call/obs    4/6 cross-event caught, 31.7% FP
+
+    It works because the contaminating events happened SOMEWHERE ELSE -- Mexico, Puerto
+    Rico, Bosnia, Reading PA -- which is declared knowledge rather than a statistical
+    property. `rollup.json` has recorded it all along, and says so: out-of-scope places are
+    "deliberately NOT mapped ... they are other events leaking through the gate."
+
+    THREE dispositions, because two is wrong. A key that resolved to no place at all --
+    a bare event type like `Storm`, or `unknown` -- is *location unknown*, not out of
+    scope, and rejecting it costs genuine observations: 4 of the 6 false positives above
+    are exactly that. Those are kept and reported instead, so they can be aliased or
+    listed under `unresolved` in the rollup. Handling them separately puts the false
+    positive rate near 2%.
+
+    What it CANNOT do, and this is what the router is for: it misses cross-event figures
+    whose place is IN scope -- a Taiwan typhoon's 32 keyed to `tennessee`, the 1916
+    hurricanes' 80 keyed to `north carolina`. Same place, different incident.
+
+    Returns ``(kept, rejected, unresolved)``; ``unresolved`` is a subset of ``kept``.
+    """
+    hier = (rollup or {}).get("hierarchy") or {}
+    parts = set(hier.get("parts") or [])
+    if not parts:
+        return list(observations), [], []          # no declared scope -> no opinion
+    declared = parts | {hier.get("aggregate", "__aggregate__")}
+    markers = {str(u).lower() for u in (rollup.get("unresolved") or ["unknown", "all", ""])}
+
+    kept, rejected, unresolved = [], [], []
+    for o in observations:
+        key = str(o.get("event_key", ""))
+        if key in declared:
+            kept.append(o)
+        elif key.lower() in markers:
+            kept.append(o)
+            unresolved.append(o)
+        else:
+            # Mark the ORIGINAL, do not copy. The same dicts are referenced from each
+            # article's observation list, and the caller has to remove them from there
+            # too -- otherwise the persisted artifact still carries what was rejected and
+            # every downstream scorer reads the unfiltered stream.
+            o["_out_of_scope"] = key
+            rejected.append(o)
+    return kept, rejected, unresolved
+
+
 def merge_prefix_keys(observations: List[Dict]) -> None:
     """Fold `Earthquakes|syr` into `Earthquakes|syria`, in place.
 
@@ -694,6 +748,9 @@ def main() -> None:
                     help="with --window long: words per chunk. 200 is the measured band; "
                          "the library default 384 loses one binding on Turkiye")
     ap.add_argument("--chunk-overlap", type=int, default=50)
+    ap.add_argument("--scope-filter", action="store_true",
+                    help="drop observations keyed outside the rollup's declared hierarchy. "
+                         "Needs --rollup. 4/6 cross-event at 7.3%% FP on Helene, no model.")
     ap.add_argument("--window", choices=("article", "event", "lead", "long"), default="article",
                     help="event: pass each DocEE 'Casualties and Losses' window to stages "
                          "2-3 instead of the whole article (needs --event-model)")
@@ -804,13 +861,42 @@ def main() -> None:
             print(f"           {i + 1}/{len(feed)} articles")
 
     t0, t1 = feed[0]["t_hours"], feed[-1]["t_hours"]
+    # SCOPE MEMBERSHIP -- runs before tracking, and before the pooled `track`, so an
+    # out-of-scope figure corrupts neither the per-place streams nor the national one.
+    # The rollup is applied here rather than inside track_by_event so the membership test
+    # sees folded keys; track_by_event is then told not to apply it twice.
+    scoped = False
+    if rollup and args.scope_filter:
+        for m in modes:
+            apply_rollup(per_mode[m], rollup)
+            merge_prefix_keys(per_mode[m])
+            kept, rejected, unresolved = scope_filter(per_mode[m], rollup)
+            per_mode[m] = kept
+            # and out of the per-article lists, which are what gets persisted
+            for entry in articles:
+                entry["observations"] = [o for o in entry["observations"]
+                                         if "_out_of_scope" not in o]
+            print(f"   [scope] {m}: kept {len(kept)}, rejected {len(rejected)} out of scope, "
+                  f"{len(unresolved)} unresolved (kept)")
+            if rejected:
+                from collections import Counter
+                for key, n in Counter(o["_out_of_scope"] for o in rejected).most_common(8):
+                    print(f"           out of scope  {key:<24}{n}")
+            if unresolved:
+                from collections import Counter
+                for key, n in Counter(str(o.get("event_key")) for o in unresolved).most_common(5):
+                    print(f"           unresolved    {key:<24}{n}  <- alias it, or list it "
+                          f"under `unresolved` in the rollup")
+        scoped = True
+
     grid = [t0 + k * args.grid_step for k in range(int((t1 - t0) / args.grid_step) + 1)]
 
     result: Dict[str, Any] = {
         "feed": args.feed, "grid": grid, "articles": articles,
         "n_articles": len(feed), "n_relevant": len(kept),
         "tracked": {m: track(per_mode[m], grid) for m in modes},
-        "tracked_by_event": {m: track_by_event(per_mode[m], grid, rollup) for m in modes},
+        "tracked_by_event": {m: track_by_event(per_mode[m], grid,
+                                              None if scoped else rollup) for m in modes},
         "associate": args.associate,
         "n_observations": {m: len(per_mode[m]) for m in modes},
         # EVERY argument, not just `associate`. The 2026-08-10 Helene run recorded only
