@@ -1,0 +1,159 @@
+# EKF FRONT END -- a boundary/mmBERT model built to BE the pipeline's first stage,
+# not to warm-start other training.
+#
+# WHY THIS EXISTS, measured 2026-08-20. whr778/gliner2-joint-boundary-mmbert-137k-clean
+# emits nothing usable on English disaster wire copy: no events at trigger/argument
+# threshold 0.3+, and at 0.1 a trigger of "remote" with both `dead` and `location` bound
+# to "Helene decimated". A textbook earthquake sentence returns empty even at 0.1.
+#
+# That is not a threshold problem and not a bad model. It is what its mix asked for.
+# Counting ONLY corpora that carry arguments bound to a trigger -- the thing an EKF
+# router consumes:
+#
+#     137k-clean as built     en =    798    zh = 20,884     english share  3.7%
+#
+# The English side is CASIE alone; MAVEN and Mendeley are trigger-only, and DocEE,
+# ChFinAnn and DocFEE are not events at all -- they are stored as entities +
+# classifications, so the doc-level type is a class label and the arguments are NER
+# spans. Its argument F1 of 0.506 is very nearly a Chinese-only number.
+#
+# This mix takes English trigger->argument supervision from 798 to ~39,800, a 50x
+# increase, and inverts the language balance to ~66% English while KEEPING the Chinese
+# corpora (they are why the argument head works at all today, and dropping them to fix a
+# ratio would be trading a working capability for a cosmetic one).
+#
+# COLD START, deliberately. Not a warm start from 137k-clean: the point is a different
+# data mix, and warm-starting would carry that model's English-argument deficit in as an
+# initialisation prior. Different output dir and different HF name so nothing existing is
+# overwritten.
+#
+# THE RISK IN THIS MIX, stated up front. 72% of the new English trigger+argument data is
+# SYNTHETIC (casualty_events 23,627 + synthetic arms), against 20% human-annotated real
+# news (RAMS, CASIE, WikiEvents) and 7% real text with model labels (cc_news_haiku45).
+# This programme's recurring failure is exactly in-domain-good / real-news-zero -- Track B
+# scored 0.532 in-domain and ZERO on real news. The trainer has no per-corpus cap, so
+# casualty_events at 3.3x RAMS cannot be down-weighted from config. If the real-copy gate
+# below fails, downsampling casualty_events is the FIRST thing to try, before any recipe
+# change.
+#
+# PASS / FAIL, fixed before spending. The whole point is behaviour on AP prose, so the
+# gate is on AP prose -- not on held-out DocEE, which this model's predecessor scores well
+# on while emitting nonsense on Helene.
+#
+#   1. GATE -- events-form on the Helene feed, at a swept trigger/argument threshold:
+#      a trigger + >=1 bound argument on >= 50% of casualty-bearing windows.
+#      The incumbent scores ~0 at every threshold, so anything above noise is progress;
+#      50% is the bar for "the router has an input".
+#   2. GATE -- the span block is LOCAL. On the Katrina passage, min(start)..max(end) over
+#      the Katrina event must contain "1,400" and must NOT contain "Helene". The span
+#      model fails this at every threshold (block is the bare name, or swallows the
+#      competitor); it is the single most diagnostic case in the feed.
+#   3. GUARD -- no regression on the incumbent's own ground: event_trigger and
+#      event_argument F1 on the shared held-out splits, against 0.710 / 0.506.
+#   4. GUARD -- the other heads survive. entity / relation / structure F1 must not fall
+#      below the 137k-clean reference; this model has to carry the whole front end
+#      (NER, relations, structures, classification, events), not just events.
+#
+# SPLIT INTEGRITY. Run tools/data/check_leakage.py against this config BEFORE training and
+# paste the verdict here. Two known hazards: `rams` has 13.7% duplicate documents inside
+# train alone, and several corpora in this repo have shipped cross-split overlap before.
+# rams now has val + test: the shipped 871-row test was carved in half BY DOCUMENT
+# (tools/data/split_rams_test.py), which found 101 duplicate rows in test alone -- the same
+# hazard TODO records for rams train. Grouping by input text before splitting is what keeps
+# a document off both sides. 439 val / 432 test, 385 documents each, zero overlap.
+# wikievents is still train ONLY (200 rows; too small to carve).
+#
+# synthetic_haiku45_5k is included in its `_coerced` form ONLY. The two variants share 0
+# verbatim inputs but derive from one 5,000-sample Haiku batch, so shipping both is the
+# same content twice under different framing. The coerced arm carries more argument-bearing
+# rows (2,187 against 1,519).
+
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary
+  max_len: 8192
+  # Required for CORRECTNESS, not speed: sdpa+bf16 on this encoder goes non-finite
+  # (measured, 1x H100, step 15 of this exact recipe). Needs the `kernels` package.
+  attn_implementation: flash_attention_2
+  boundary_head:
+    enable_relations: true
+    enable_records: true
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  checkpoint_restart: None          # COLD START -- see header
+  output_dir: ./out/ekf-frontend-mmbert
+  experiment_name: ekf_frontend_mmbert
+  data_parallel: false
+  # 6 rather than the scaling curve's 5. That curve held epochs equal to isolate volume;
+  # this run is not on the curve and the mix is ~45% larger, so it gets a full pass more.
+  num_epochs: 6
+  batch_size: 4                     # PER-GPU under torchrun
+  gradient_accumulation_steps: 4    # effective 32 on 2 GPUs; halve again on 4
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: true
+  window_stride: 3072
+  max_len: 4096
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+
+eval:
+  batch_size: 2
+  threshold: 0.5
+  threshold_sweep: true
+  eval_by_language: false
+
+labels:
+  entities:  {rollup: false, separator: ".", map: {}}
+  relations: {rollup: false, separator: ".", map: {}}
+  events:    {rollup: false, separator: ".", map: {}}
+
+data:
+  # Relations + NER, so the front end carries the whole complement rather than events alone.
+  corpora:
+    - data/sentence_rex
+    - data/bio_ner_relations
+    - data/biored
+  event_files:
+    # --- ENGLISH trigger -> argument. THE POINT OF THIS RUN. ---
+    rams:            {train: data/rams.train.jsonl, val: data/rams.val.jsonl, test: data/rams.test.jsonl}
+    casualty_events: {train: data/casualty_events.train.jsonl, val: data/casualty_events.val.jsonl, test: data/casualty_events.test.jsonl}
+    cc_news_haiku45: {train: data/cc_news_haiku45.train.jsonl, val: data/cc_news_haiku45.val.jsonl, test: data/cc_news_haiku45.test.jsonl}
+    synthetic_coerced: {train: data/synthetic_haiku45_5k_coerced.train.jsonl, val: data/synthetic_haiku45_5k_coerced.val.jsonl, test: data/synthetic_haiku45_5k_coerced.test.jsonl}
+    synthetic_sonnet5: {train: data/synthetic_sonnet5_1k.train.jsonl, val: data/synthetic_sonnet5_1k.val.jsonl, test: data/synthetic_sonnet5_1k.test.jsonl}
+    wikievents:      {train: data/wikievents.train.jsonl}
+    casie:           {train: data/casie.train.jsonl, val: data/scaling_joint/casie.val.jsonl, test: data/casie.test.jsonl}
+
+    # --- CHINESE trigger -> argument. KEPT: this is why the argument head works today. ---
+    duee:            {train: data/duee.train.jsonl, val: data/scaling_joint/duee.val.jsonl}
+    cmnee:           {train: data/cmnee.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl, test: data/cmnee.test.jsonl}
+
+    # --- Trigger-only detection ---
+    maven:           {train: data/maven.train.jsonl}
+    mendeley_ed:     {train: data/mendeley_ed.train.jsonl, val: data/scaling_joint/mendeley_ed.val.jsonl, test: data/mendeley_ed.test.jsonl}
+
+    # --- Doc-level: classification + NER, NOT trigger/argument. Carried so the front end
+    #     keeps its classification head and its doc-level entity coverage. ---
+    docee:           {train: data/docee.train.jsonl, val: data/scaling_joint/docee.val.jsonl, test: data/docee.test.jsonl}
+    chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}
+    docfee:          {train: data/docfee.train.jsonl, val: data/scaling_joint/docfee.val.jsonl, test: data/docfee.test.jsonl}
+    events_biotech:  {train: data/events_biotech.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl, test: data/events_biotech.test.jsonl}
+    text2json:       {train: data/text2json.train.jsonl, val: data/scaling_joint/text2json.val.jsonl, test: data/text2json.test.jsonl}
