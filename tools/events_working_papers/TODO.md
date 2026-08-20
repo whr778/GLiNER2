@@ -81,6 +81,17 @@ The live bottleneck is **cross-event contamination** (item 2, quantified at 4.7%
 resistant to all three signals tried) and underneath it the query-axis training gap that
 GIST was built for (item 11 — **RAN 2026-08-14 and it is NEGATIVE**).
 
+**Update 2026-08-20 — item 2's data-side fix RAN and is SUPERSEDED.** The muting arm trained
+and the suppression is real, but a declared per-event **plausibility ceiling** — one
+threshold, no model — beats it outright, and the large false positives it removed were never
+other storms' tolls: populations, insurance policies, power crews, years. Both genuine
+cross-event figures survive both mechanisms. So **cross-event is still the live bottleneck,
+now with two mechanisms measured against it and neither touching it.** What did change:
+**item 3 (non-casualty numbers) is promoted** — at 3.8% of observations it carries the largest
+values and dominates nRMSE, and it splits into classes needing different fixes (entity typing
+reaches insurance policies and churches; it does not reach 1,500 troops or 8,000 power crews,
+which are living people and need casualty-role semantics).
+
 **Why events and not relations, when a fix is proposed.** The programme's priority is event
 extraction; NER, relations and structures are carried along with it. That is why the losses
 were separated in the first place — lumping structures, relations and events into one loss
@@ -90,7 +101,11 @@ event-shaped fix, the event-shaped one is the one that serves the programme *and
 that carries the right information: only the event formulation has an `event_key`, which is
 the field an EKF observation needs. See item 1 for the worked case.
 
-State at **2026-08-17**. **No GPUs running.** Two eval-side defects fixed on 08-14 (`c0ab89c`,
+State at **2026-08-20**. **No GPUs running** (the muting-arm A10 is terminated, verified).
+A programme-wide caveat landed with it: the cached Helene observation set behind every
+published Helene figure **cannot be regenerated from any committed state** — see
+`tools/ekf_showcase/muting_arm_results/PROVENANCE.md`. Comparisons among the published
+numbers stand; placing a new model on their scale does not. Earlier state at **2026-08-17**: Two eval-side defects fixed on 08-14 (`c0ab89c`,
 `7586411`); see "What the metrics fixes did and did not touch" below before re-reading any
 number in this file. A third is now open and unfixed — **item 0**, the cross-event probe's
 scoring — and it invalidates the readout item 2 would be measured with. Nothing is
@@ -538,7 +553,33 @@ that document covers the focal event only. Per-snippet span location (already im
 avoid labelling one event with another's number) is exactly the machinery needed to know
 which spans to leave unlabelled.
 
-#### BUILT 2026-08-12 — `--mute-interference-prob`, control proven; not yet trained on
+#### RAN 2026-08-20 — TRAINED, and SUPERSEDED by a one-line threshold
+
+> **Verdict first.** Both arms trained (4 epochs, A10, ~$2.35, terminated). The treatment is
+> real — blind-test precision up / recall down, and 15 of the control's 20 large Helene false
+> positives removed, cutting ungated per-place error 46.844 → 19.822. Then a **declared
+> per-event plausibility ceiling** — no model, no training, no GPU — recovered and exceeded
+> that gain: at a ceiling of 2,000 the CONTROL wins both ungated (5.853 vs 6.194) and gated
+> (3.336 vs 3.729), while carrying 81 *more* observations. The arm's pre-registered guard
+> passes only against an undefended control. **Do not cite this as a success.**
+>
+> **And it fixed the wrong class.** The large false positives were never other storms' tolls:
+> they were Asheville's population (94,000), Boone's (19,000), FEMA flood-insurance *policies*
+> (129,933), wellness checks (15,000), power crews (8,000), troops (1,500), churches (1,100)
+> and years read as tolls (1,916, 2,004). Both genuine cross-event figures — Katrina's 1,400
+> and Maria's 3,000 — survive muting **and** the ceiling. **Cross-event is still open.**
+>
+> Two things this promoted out of the footnotes. **Item 3 (non-casualty numbers) is worth more
+> than its 3.8% billing** — it carries the largest values, so it dominates nRMSE, and one
+> figure destroyed one state's stream. And it splits into classes needing different
+> mechanisms: entity typing reaches policies and churches but *not* troops and crews, which
+> are living people in the affected area and need casualty-role semantics.
+>
+> Full write-up, raw probe output and the ceiling sweep:
+> `tools/ekf_showcase/muting_arm_results/` (`README.md`, `FALSE_POSITIVES.md`,
+> `PLAUSIBILITY_CEILING.md`, `PROVENANCE.md`).
+
+#### BUILT 2026-08-12 — `--mute-interference-prob`, control proven
 
 `build_multievent_corpus.py` + `tests/test_multievent_muting.py` (6 tests). Four things
 the implementation settled, two of which change what the experiment can claim:
@@ -615,7 +656,11 @@ place, not a named storm, so nothing keyed on storm names can see it. And the ev
 this is a training-data gap rather than a decode gap: binding collapses 1.000 → 0.369 the
 moment documents become multi-event, which no decoder change has moved.
 
-**Pass/fail, fixed before spending:** cross-event share below 4.7% on the same 106-observation
+**Pass/fail as pre-registered — and note the readout it named could not be scored as written.**
+The 106-observation reference set turned out to be a cached artifact reproducible from no
+committed state of the repo (`muting_arm_results/PROVENANCE.md`), so the arm was read against
+a fresh baseline under one recorded invocation instead. Original text: cross-event share below
+4.7% on the same 106-observation
 audit; single-event binding stays ~1.000; the §20 harness unchanged.
 
 #### Second lever, same data side: base-word positive/negative samples

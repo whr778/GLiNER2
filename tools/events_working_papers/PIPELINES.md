@@ -208,6 +208,8 @@ The design's claim is *diarization*: track AND assign, jointly, with decisions d
 | aggregate as sum row | ⛔ **do not build** | loses at every density except 80%, worst where predicted to win (§23) |
 | implied-max reference | ⛔ **do not build** | 2.590 vs 0.591 on Helene (§25.5) |
 | hard key assignment | ✅ built | what ships; the scope gate patches its worst failure |
+| negative supervision (data-side) | ✅ built, ⛔ **superseded** | a plausibility ceiling beats it — see §4.2 |
+| per-event plausibility ceiling | ✅ built | 378.809 → 18.287 on the production model — §4.2 |
 | scope hierarchy declared | ✅ built | `rollup.json` `hierarchy` block |
 
 ---
@@ -345,3 +347,52 @@ Two causes, both measured:
 that addresses cause (1) directly: hard assignment commits early and poisons its own
 reference, which is exactly what keeping rival hypotheses alive exists to prevent. Before
 this run that was a design preference; it is now the mechanism a measurement implicates.
+
+### 4.2 The data-side route: built, and beaten by a threshold
+
+The other route to cross-event contamination is negative supervision — withhold an
+interfering event's records while keeping its text, so its figures become negatives for the
+same queries. `casualty_loc_muted`, two arms trained identically for four epochs.
+
+**It works as a treatment.** Blind-test precision up and recall down (0.8119/0.8182 →
+0.8273/0.7754), and on Helene it removes 15 of the control's 20 large false positives, cutting
+ungated per-place error 46.844 → 19.822.
+
+**Then a declared per-event plausibility ceiling beats it.** Auditing what those large values
+actually are found that none is a Helene death toll: Asheville's population (94,000), Boone's
+(19,000), FEMA flood-insurance *policies* (129,933), wellness checks (15,000), power crews
+(8,000), active-duty troops (1,500), churches (1,100), and two years read as tolls (1,916,
+2,004). Only Katrina's 1,400 and Maria's 3,000 are genuinely cross-event.
+
+Ungated per-place mean, ceiling swept:
+
+    ceiling   production   control 4ep   muted
+    off          378.809        46.844  19.822
+    20000         18.287        26.961  19.822
+    2000          18.190         5.853   6.194
+    1000          18.190         5.057   6.194
+
+At a ceiling of 2,000 — nine times Helene's true toll — **the control beats the muted arm both
+ungated (5.853 vs 6.194) and gated (3.336 vs 3.729)**, while carrying 81 *more* observations.
+The ceiling removes only junk; muting removed genuine signal too. Dropping the single 94,000
+is worth 20× on the production model.
+
+**Verdict: superseded.** The arm's pre-registered guard passes only against an undefended
+control. The suppression is real and learned; it is not worth having.
+
+**And neither mechanism touches cross-event.** Both true cross-event tolls survive muting and
+the ceiling alike — at 2,000 Katrina's 1,400 is a plausible magnitude, and a ceiling low
+enough to catch it is the magnitude gate again. The same holds for the troops and crews:
+living people in the affected area, wrong for a reason no ceiling sees and no entity-type
+check reaches. That residue — living people miscounted as dead, and another storm's dead — is
+what still needs the model to represent who a figure is *about*.
+
+### 4.3 The Helene reference is a cached artifact and cannot be regenerated
+
+Everything in §4, §4.1 and §4.2 above that cites 5.247 / 0.591 / 0.537 / 0.480 reads one
+cached file written 2026-08-10, which **no committed state of the repository reproduces**: the
+`--rollup` flag did not exist in any commit before it was written, and the rollup file was not
+in the tree either. Comparisons among those figures stand — one frozen artifact — but no new
+model can be placed on their scale, which is why §4.2 uses a fresh baseline. Full evidence in
+`../ekf_showcase/muting_arm_results/PROVENANCE.md`; `run_pipeline.py` now records its full
+invocation and a `-dirty` git marker in every output.

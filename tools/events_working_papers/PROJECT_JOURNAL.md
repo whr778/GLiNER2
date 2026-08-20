@@ -818,3 +818,61 @@ because the boundary head turns out not to climb *at all* within measurement.
   but its headline is confounded by threshold; best-vs-best is the deciding run.
 - `joint_beam_width` default is still 16; the measurement says 1.
 - `RequiredRoles` fill-vs-reject trap, recorded in the registry and deferred.
+
+---
+
+## Phase 17 — two builds lost, and the reference set turned out to be a ghost (19–20 Aug)
+
+Four corrections, three of them to claims made earlier in the same two days.
+
+**MHT was priced wrong, in our favour.** The `+0.055` that rejected MHT came from a *two-way*
+oracle — each observation goes to its own place or to the national total — which has no home
+for a figure belonging to no scope in the event, and therefore scores Katrina's 1,400 as badly
+as the shipped gate does. The tell had been sitting in the results and was read as a
+curiosity: the gate *beats* the perfect oracle on two states, because it can *drop*. Track
+birth/death **is** a null hypothesis, so with a reject option the ceiling moves to **+0.111
+(18.8%)** — double.
+
+**So we built the cheapest piece that delivers one, and it lost.** M5 track birth by
+innovation gating, tracks advanced jointly in time order, no ground truth: best 0.608 against
+the magnitude ratio's 0.591 — and the per-place number alone was the flattering half. With the
+Total column restored it is 2.115 against 0.316, a 6.7× degradation of the one stream the
+project calls honest. It had reproduced a bug `gate()`'s three-outcome design was written to
+prevent. Two causes, both measured: judging a stream against its own track is **circular**
+(removing the self-reference is worth more than every other knob), and the innovation is
+uninformative about scope on a rising toll. The circularity is the same one that killed the
+implied-maximum reference on Türkiye — two independent mechanisms, one cause. It is also the
+first evidence *for* deferred assignment, which addresses it directly.
+
+**The data-side route was built, trained, and beaten by a threshold.** `casualty_loc_muted`
+withholds an interfering event's records while keeping its text. Two arms, four epochs, one
+A10, ~$2.35. The suppression is real — precision up, recall down, 15 of 20 large Helene false
+positives removed, ungated error 46.844 → 19.822. Then a **declared per-event plausibility
+ceiling**, one threshold with no model behind it, recovered and exceeded the whole gain: at a
+ceiling of 2,000 the *control* wins both ungated (5.853 vs 6.194) and gated (3.336 vs 3.729),
+carrying 81 more observations. The ceiling removes only junk; muting removed real signal too.
+
+**And it fixed the class it was not built for.** Chasing a 94,000 that had wrecked Tennessee
+found Asheville's population — emitted as `dead` *and* `injured` *and* `missing` at confidence
+1.0. None of the large values was a Helene toll: populations, **FEMA flood-insurance
+policies** (129,933), wellness checks, power crews, troops, churches, and years read as tolls.
+The sharpest is a 15,000 whose sentence exists to warn against that exact error. Both genuine
+cross-event tolls survive muting *and* the ceiling. A correction inside the correction: troops
+and crews were first filed as "counts of non-people" — they are people, just not casualties,
+and that distinction is the point, because entity typing reaches insurance policies and stops
+dead at power crews.
+
+**The reference set behind all of it cannot be regenerated.** `tracked_rollup.json`, written
+2026-08-10 and the source of every published Helene number, reproduces from no committed
+state: the `--rollup` flag did not exist in any commit before the file was written, and the
+rollup file was not in the tree either. Both were uncommitted working-tree state, committed
+later in a form that does not reproduce it. Comparisons among the published figures stand —
+one frozen artifact — but no new model can be placed on their scale, which is what blocked the
+muting arm's pre-registered guard. `run_pipeline.py` now records its full invocation and a
+`-dirty` git marker in every output. Second time provenance has stopped this line; Türkiye is
+stalled the same way.
+
+**What is actually open, unchanged by two builds:** cross-event contamination. Katrina's 1,400
+and Maria's 3,000 survive every mechanism tried. A ceiling low enough to catch them is just
+the magnitude gate again, rejecting a figure for being large rather than for belonging to
+another storm.
