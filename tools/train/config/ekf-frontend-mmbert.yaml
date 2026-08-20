@@ -89,6 +89,9 @@ training:
   # 6 rather than the scaling curve's 5. That curve held epochs equal to isolate volume;
   # this run is not on the curve and the mix is ~45% larger, so it gets a full pass more.
   num_epochs: 6
+  # MEASURED HEADROOM, not yet spent: on 1x A100-40GB this recipe pins memory at 10.6 GB
+  # of 40 (26%), flat across the run. batch_size is the lever worth testing, not workers.
+  # Raising it is the first thing to try if the full run needs to be cheaper.
   batch_size: 4                     # PER-GPU under torchrun
   gradient_accumulation_steps: 4    # effective 32 on 2 GPUs; halve again on 4
   encoder_lr: 2.0e-5
@@ -104,9 +107,10 @@ training:
   save_best: true
   save_total_limit: 2
   logging_steps: 20
-  # 4, not 0. Smoke run on 1x A100-SXM4-40GB with num_workers: 0 held GPU utilisation at
-  # 58-76% while memory sat flat at 10.6 GB of 40 -- input starvation, not compute.
-  # Gradient checkpointing would RAISE utilisation, so it is not that. The box has 30 vCPUs.
+  # 4 rather than 0, but it buys NOTHING here and the measurement is recorded so nobody
+  # re-tries it: 18.4 samples/s at 0 workers against 18.5 at 4, on the same box and config.
+  # The 58-76% utilisation is not input starvation -- it is variable sequence length under
+  # sliding-window, with the GPU idling between differently sized batches.
   num_workers: 4
   validate_data: false
   sliding_window: true
