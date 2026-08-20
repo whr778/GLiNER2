@@ -41,6 +41,31 @@ Extracted Events evaluation via Event Instance Map
 
 Event Instance Map where each event INSTANCE has a registered filters list 0..*
 
+  SCOPE MEMBERSHIP is a free first cut, and it beats every learned signal tried.
+  The declared hierarchy already says what is in scope (six states + __aggregate__ for
+  Helene). Anything keyed OUTSIDE it is, by construction, not this event. Measured on
+  the 106-observation feed with the corrected labels:
+
+      scope membership (zero model calls)   4/6 cross-event caught,  7.3% FP
+      fastino signal C (one call per obs)   4/6 cross-event caught, 31.7% FP
+
+  Same recall, a quarter of the false positives, no model. It works because the
+  contaminating events happened SOMEWHERE ELSE -- Mexico, Puerto Rico, Bosnia, Reading
+  PA. That is declared knowledge, not a statistical property to be discovered, and
+  rollup.json already records it: out-of-scope places are "deliberately NOT mapped:
+  they are other events leaking through the gate". The pipeline records the signal
+  today and does not act on it.
+
+  Of the 6 remaining false positives, 4 are TYPE keys (Storm, Floods) that survive
+  because no place was extracted. Those are "location unknown", a different disposition
+  -- hold, or send to __aggregate__ -- not "out of scope". Handle them separately and
+  the false-positive rate is ~2%.
+
+  WHAT IT CANNOT DO, and this is the residue the router exists for: it misses the two
+  cross-event cases whose places are IN scope -- a Taiwan typhoon's 32 keyed to
+  tennessee, the 1916 hurricanes' 80 keyed to north carolina. Same place, different
+  incident. Nothing about location reaches those.
+
 Do we have any filters mapped to that instance?
 No  -- track BIRTH: open a filter for this instance.
        "continue" drops the observation. The reject/birth option is worth about half
@@ -77,6 +102,22 @@ Yes -- Discern which filter or filters apply
   signal is content-based rather than co-occurrence.
   THIS IS THE OPEN PIECE -- ceiling +0.111, four mechanisms tried and failed
   (nearest-named-event, only-competitor-named, record-head binding, type energies).
+
+  CLUSTERING (agglomerative, mean shift) does not solve it, and the reason is not
+  the algorithm. Clustering needs a metric in which instances separate, and measured
+  on this feed they do not:
+      value  -- 4 of 6 cross-event values fall INSIDE the genuine range (1..250)
+      time   -- 5 of 6 fall inside the genuine span
+  The feature that would separate them is a representation of "which event is this
+  figure predicated of", and constructing that IS the open problem. Clustering
+  CONSUMES a good representation; it does not produce one. Imbalance finishes the
+  argument: 6 positives in 106, so the dominant structure is Helene and the six are
+  singletons indistinguishable from noise.
+  One thing in its favour, worth keeping: clustering pools globally, so it obeys the
+  RULE above. If a representation ever exists, clustering over it is a sound way to
+  form instances -- it is just not a way to get the representation.
+  And scope membership above already does most of what clustering was hoped to do,
+  with no metric to learn.
 
 Route text and extracted events to the 1..* filters
 Events from the text are reformatted for each filter and added to the filter's bucket
