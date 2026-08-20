@@ -64,3 +64,98 @@ three are plausible magnitudes. Set low enough to catch Katrina it stops being a
 test and becomes the magnitude gate again — rejecting a cross-event toll for being large
 rather than for belonging to another storm. **Cross-event is still unsolved, by this and by
 the muting arm alike.**
+
+
+---
+
+# How the threshold is decided — and the answer changed
+
+## The hand-set ceiling was chosen from the answer
+
+Everything above uses 2,000, justified as "about nine times Helene's true toll, generous
+rather than tuned". That justification **requires knowing the true toll**, which is the
+ground truth being scored against. It is the same post-hoc criticism this programme already
+levelled at the scope-gate ratio, and it is worse than it looks in two ways.
+
+**The plateau only exists downward.** Below 2,000 the score is flat; above it degrades fast.
+An *uninformed* ceiling of 20,000 — "surely no event killed more than that" — recovers only
+26.961 of the control's 46.844 → 5.853, about 42% of the gain. The good result depends on the
+informed choice.
+
+**And it does not transfer at all.** Held out on Türkiye–Syria, whose true toll is ~41,000:
+
+| ceiling | dropped | kept | streams | ungated |
+|---:|--:|--:|--:|--:|
+| off | 0 | 91 | 2 | 1.815 |
+| 2,000 | 80 | **11** | **1** | 0.703 |
+
+The Helene ceiling deletes 80 of 91 observations *including every one of Turkey's true
+41,000s*, empties Syria's stream entirely — and the reported mean **improves**, because it is
+then an average over one stream where the baseline averaged two. The random-removal control
+does **not** catch this; it reports "selecting". Only the kept-count and the stream-count do,
+and both are now printed.
+
+## The fix: derive the cut from the event, do not choose it
+
+Suggested by the user: reject the distribution's tail instead of a fixed value. Implemented as
+`tail_cut` / `tail_filter` — **median + k·MAD on log10, upper tail only**, pooled over the
+event's own observations. Three choices, each measured:
+
+- **log10**, because values span 1 … 129,933 and the false positives are orders of magnitude
+  out, not a few sigma out;
+- **median/MAD**, robust in principle — though measured against mean/stdev on this data the
+  two are nearly identical, so the log transform is doing most of the work. A prediction that
+  masking would matter here was wrong;
+- **one-sided**, because contamination is documented as one-directional and a toll of 1 or 2
+  is legitimate.
+
+At **k = 1** the derived cuts reproduce every best hand-set result without being told any
+event's scale:
+
+| event / arm | derived cut | ungated | best hand-set ceiling |
+|---|--:|--:|--:|
+| Helene, archived | 351 | 4.283 | 4.283 |
+| Helene, `casualty-docee` | 352 | 18.190 | 18.190 |
+| Helene, control 4ep | 516 | 5.057 | 5.057 |
+| Helene, muted | 337 | 6.194 | 6.194 |
+| **Türkiye–Syria** | **47,622** | **1.815, unchanged — 0 dropped, both streams intact** | destroyed the event |
+
+The cut sits above each event's true peak and below its junk, on two events whose scales differ
+by two orders of magnitude, and neither was chosen.
+
+**k is a genuine knob and k = 0.5 is over-trimming.** It gives a much better ungated score
+(control 0.846) by cutting at 134 — below Helene's national total of 230 — and the tell is
+that the *gated* score gets worse (1.584 against 3.336). Selecting k by "the largest cut at
+which gating does not degrade" needs no knowledge of the toll.
+
+## Streaming: the CLT intuition holds, but only with the self-reference removed
+
+The cut should update as observations arrive. The naive version — recompute on the values
+**accepted so far** — collapses:
+
+    helene, cut recomputed on the accepted set:  n=8 -> 3, and it never recovers
+                                                 88 of 106 rejected, including 30, 32, 44, 50
+
+A death toll *starts small*, so the early sample is not a small sample of the final
+distribution, it is a biased sample of its low end. The cut locks onto it and then rejects the
+legitimate growth. **This is the same self-reference that defeated M5 track birth** — a
+mechanism judged against a reference its own decisions define.
+
+Pooling over every observation **seen**, accepted or not, fixes it and converges to the batch
+answer exactly:
+
+    helene archived   n=8 -> 3,    25 -> 84,    50 -> 272,  100 -> 339   final 351  (batch 351)
+    helene control    n=8 -> 15,   25 -> 31,    50 -> 93,   200 -> 478   final 516  (batch 516)
+    Türkiye           n=8 -> 2827, 25 -> 24404, 50 -> 38155              final 47622, keeps 41,020
+
+Residual cost, stated: during warm-up the cut is genuinely too low, so the streaming form
+rejects some real mid-range readings that the batch form keeps. Retrospective scoring should
+use the batch cut; a live tracker cannot, and pays that price.
+
+## What does not change
+
+The muting arm is still superseded. Under the derived cut at k = 1 the control beats it
+**5.057 against 6.194**, the same verdict the hand-set ceiling gave. And both cross-event
+tolls survive the tail cut exactly as they survived the ceiling: at a cut of 516, Katrina's
+1,400 is gone for being *large*, not for belonging to another storm — and on Türkiye, where
+the cut is 47,622, an equivalent cross-event figure would sail through.

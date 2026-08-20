@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from math import sqrt
 from pathlib import Path
+from statistics import median
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "datasets" / "disaster_streams"))
@@ -295,6 +297,57 @@ def oracle_gate_three_way(observations: list, states: dict, series: dict,
     return kept
 
 
+def tail_cut(observations: list, k: float, warmup: int = 8) -> float | None:
+    """The upper-tail cut, DERIVED from the event's own observations. No ground truth.
+
+    An absolute ceiling has to be told the event's scale, and gets it from the answer: 2,000
+    is defensible on Helene only because Helene killed ~230. Held out on Türkiye that same
+    ceiling deletes 80 of 91 observations including Turkey's true 41,000s, empties Syria's
+    stream, and the reported mean *improves* because it is then an average over one stream
+    instead of two. A ceiling is not a method; it is the answer smuggled in.
+
+    This is scale-free instead. Three choices, each measured rather than assumed:
+
+    ``log10``       values span 1 .. 129,933, and the false positives are *orders of
+                    magnitude* out, not a few sigma out.
+    ``median/MAD``  robust to the outliers being hunted. Measured against mean/stdev on this
+                    data the two are nearly identical -- the log transform does most of the
+                    work -- but MAD cannot be masked in principle and costs nothing.
+    ``one-sided``   contamination here is documented as one-directional, and a toll of 1 or 2
+                    is legitimate, so trimming the low tail would delete real readings.
+
+    Derived cuts: Helene 516, Türkiye 47,622. Both are above their event's true peak and
+    below its junk, and neither was chosen.
+    """
+    if k <= 0 or len(observations) < warmup:
+        return None
+    lv = [math.log10(max(float(o["value"]), 1.0)) for o in observations]
+    centre = median(lv)
+    mad = median([abs(x - centre) for x in lv])
+    if mad <= 0:
+        return None
+    return 10 ** (centre + k * 1.4826 * mad)      # 1.4826: sigma-consistent for normal data
+
+
+def tail_filter(observations: list, k: float, warmup: int = 8) -> tuple[list, list]:
+    """Reject the upper tail at ``k`` robust sigmas, pooled over the whole event.
+
+    **Pool over every observation, not over the ones already accepted.** Recomputing on the
+    accepted set is self-reinforcing and collapses: a death toll starts small, so the early
+    cut is small, and it then rejects the legitimate growth that follows -- measured, 88 of
+    106 rejected on Helene with the cut stuck at 3. That is the same self-reference that
+    defeated M5 track birth. Pooled over all observations the streaming estimate converges
+    to the batch one exactly (Helene 3 -> 84 -> 272 -> 351, batch 351).
+    """
+    cut = tail_cut(observations, k, warmup)
+    if cut is None:
+        return list(observations), []
+    keep, drop = [], []
+    for o in observations:
+        (drop if float(o["value"]) > cut else keep).append(o)
+    return keep, drop
+
+
 def plausibility_filter(observations: list, ceiling: float) -> tuple[list, list]:
     """Drop observations above the largest credible toll FOR THIS EVENT, whatever the stream.
 
@@ -407,8 +460,33 @@ def main() -> None:
         if v is not None:
             print(f"           {c:<16}{v:>8.3f}")
 
-    print("\n[PLAUSIBILITY] a declared per-event ceiling, applied BEFORE the gate, swept:")
-    print(f"{'ceiling':>9}{'dropped':>9}{'ungated':>10}{'gated@2.0':>11}   values dropped")
+    # Baseline stream count: a filter that EMPTIES a stream removes it from the mean, and
+    # the score then "improves" for the wrong reason. Flagged in both sweeps below.
+    base = score(gate(obs_all, 0.0, args.warmup, states, reference)[0], series, grid, states)
+    base_streams = sum(1 for pl in cfg["places"] if base.get(pl, (None,))[0] is not None)
+
+    print("\n[TAIL CUT] scale-free, DERIVED from the event -- median + k*MAD on log10, "
+          "upper tail only:")
+    print(f"{'k':>5}{'cut':>10}{'dropped':>9}{'kept':>7}{'streams':>9}{'ungated':>10}"
+          f"{'gated@2.0':>11}")
+    for k in (0.5, 1.0, 1.5, 2.0, 3.0):
+        sub, cut = tail_filter(obs_all, k)
+        thr = tail_cut(obs_all, k)
+        ung = score(gate(sub, 0.0, args.warmup, states, reference)[0], series, grid, states)
+        gat = score(gate(sub, 2.0, args.warmup, states, reference)[0], series, grid, states)
+        def _mk(sc):
+            v = [sc[pl][0] for pl in cfg["places"] if sc.get(pl, (None,))[0] is not None]
+            return (sum(v) / len(v) if v else float("nan")), len(v)
+        mu, ns = _mk(ung)
+        mg, _ = _mk(gat)
+        flag = "" if ns == base_streams else f"  <-- {base_streams - ns} STREAM(S) LOST"
+        print(f"{k:>5.1f}{thr or 0:>10.0f}{len(cut):>9}{len(sub):>7}{ns:>9}{mu:>10.3f}"
+              f"{mg:>11.3f}{flag}")
+
+    print("\n[PLAUSIBILITY] a hand-set per-event ceiling, for comparison -- it needs to be "
+          "told\n               the event's scale, and gets it from the answer:")
+    print(f"{'ceiling':>9}{'dropped':>9}{'kept':>7}{'streams':>9}{'ungated':>10}"
+          f"{'gated@2.0':>11}")
     for ceil in (0.0, 20000.0, 5000.0, 2000.0, 1000.0, 500.0, 250.0):
         sub, cut = plausibility_filter(obs_all, ceil)
         ung = score(gate(sub, 0.0, args.warmup, states, reference)[0], series, grid, states)
@@ -416,9 +494,21 @@ def main() -> None:
         def _m(sc):
             v = [sc[p][0] for p in cfg["places"] if sc.get(p, (None,))[0] is not None]
             return sum(v) / len(v) if v else float("nan")
-        vals = sorted({int(o["value"]) for o in cut}, reverse=True)[:6]
+        # Thinning control, and it is not optional here. On Turkiye the Helene-tuned
+        # ceiling deletes 80 of 91 observations INCLUDING Turkey's true 41,000s, and the
+        # score still IMPROVES -- nRMSE on a near-empty stream looks good. Without this
+        # column the sweep would recommend destroying the event.
+        # The mean is only comparable across rows if it is a mean over the SAME streams.
+        # A ceiling that empties a stream removes it from the average and the score
+        # "improves" -- on Turkiye, Helene's ceiling of 2,000 deletes Syria entirely and
+        # every one of Turkey's true 41,000s, and the reported mean falls from 1.815 to
+        # 0.703. The random-removal control does NOT catch this; it reports "selecting".
+        n_streams = sum(1 for pl in cfg["places"] if ung.get(pl, (None,))[0] is not None)
         tag = "off" if ceil == 0 else f"{ceil:.0f}"
-        print(f"{tag:>9}{len(cut):>9}{_m(ung):>10.3f}{_m(gat):>11.3f}   {vals}")
+        kept_n = len(obs_all) - len(cut)
+        flag = "" if n_streams == base_streams else f"  <-- {base_streams - n_streams} STREAM(S) LOST, mean not comparable"
+        print(f"{tag:>9}{len(cut):>9}{kept_n:>7}{n_streams:>9}{_m(ung):>10.3f}"
+              f"{_m(gat):>11.3f}{flag}")
 
     print("\n[ORACLE-3] adding a REJECT option -- the ceiling for association that can say "
           "'none of these':")
