@@ -1,0 +1,709 @@
+{
+  "_README": [
+    "Per-OCCURRENCE audit labels for the Helene 'dead' observations, assigned by reading",
+    "the context, 2026-08-20. They replace a (span, value) string match that was 27%",
+    "correct on its own positive class: it marked all six '230's cross-event when every",
+    "one is Helene's OWN national total (truth 228), marked '250' cross-event when that",
+    "too is Helene's national figure, and missed Maria's 3,000, the 1916 hurricanes' 80",
+    "and a Taiwan typhoon entirely.",
+    "",
+    "KEY = sha1('<value>|<context lowercased, whitespace collapsed>')[:16], where context",
+    "is the same +/-200 char window event_binding_probe.py reads. Keyed on context rather",
+    "than on the value so a label survives re-extraction: the feed text is fixed, so the",
+    "same figure in the same passage keys identically in any pipeline run.",
+    "",
+    "labels: helene | cross-event | non-casualty | unclear",
+    "'unclear' is a real category, not a dustbin -- two of them are spans the pipeline",
+    "emitted that cannot be located in the article text at all."
+  ],
+  "labels": {
+    "182e1414363bf9ef": {
+      "label": "cross-event",
+      "value": 3000,
+      "span": "3,000",
+      "n_obs": 1,
+      "why": "Hurricane Maria, Puerto Rico",
+      "value_error": ""
+    },
+    "c1739ea8d3856e68": {
+      "label": "cross-event",
+      "value": 1400,
+      "span": "1,400",
+      "n_obs": 1,
+      "why": "Hurricane Katrina",
+      "value_error": ""
+    },
+    "cda4b3d5149a96fe": {
+      "label": "non-casualty",
+      "value": 1400,
+      "span": "1,400",
+      "n_obs": 1,
+      "why": "1,400 landslides, not people",
+      "value_error": ""
+    },
+    "c456e7993bdae42d": {
+      "label": "non-casualty",
+      "value": 300,
+      "span": "300",
+      "n_obs": 1,
+      "why": "300 rescued",
+      "value_error": ""
+    },
+    "509b60202a746d71": {
+      "label": "helene",
+      "value": 250,
+      "span": "250",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "8d98776ae54c4887": {
+      "label": "unclear",
+      "value": 246,
+      "span": "246",
+      "n_obs": 1,
+      "why": "span not located in article text",
+      "value_error": ""
+    },
+    "31e24877bef38beb": {
+      "label": "helene",
+      "value": 246,
+      "span": "246",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "19537e46b12ef742": {
+      "label": "helene",
+      "value": 243,
+      "span": "243",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "c1c2cf34045320d8": {
+      "label": "helene",
+      "value": 236,
+      "span": "236",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "ac87d01addd8ac99": {
+      "label": "helene",
+      "value": 230,
+      "span": "230",
+      "n_obs": 3,
+      "why": "",
+      "value_error": ""
+    },
+    "ac824b4a27230c21": {
+      "label": "helene",
+      "value": 230,
+      "span": "230",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "94ef4533e1e617c7": {
+      "label": "helene",
+      "value": 230,
+      "span": "230",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "810df4052772bf53": {
+      "label": "helene",
+      "value": 230,
+      "span": "230",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "a39353e63e70ce5d": {
+      "label": "helene",
+      "value": 227,
+      "span": "227",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "e8330c1c17799b89": {
+      "label": "helene",
+      "value": 215,
+      "span": "215",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "13184a03b73e8335": {
+      "label": "unclear",
+      "value": 215,
+      "span": "215",
+      "n_obs": 1,
+      "why": "span not located in article text",
+      "value_error": ""
+    },
+    "deb9339a38869543": {
+      "label": "helene",
+      "value": 200,
+      "span": "200",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "4911223b82660ec4": {
+      "label": "helene",
+      "value": 200,
+      "span": "more than 200",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "ce96dd79eb476e8d": {
+      "label": "helene",
+      "value": 200,
+      "span": "200",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "af97a33799ff82ca": {
+      "label": "helene",
+      "value": 200,
+      "span": "more than 200",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "d3bb2ef5ea1ddcb0": {
+      "label": "helene",
+      "value": 200,
+      "span": "more than 200",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "bdb19fedf69aaa0f": {
+      "label": "helene",
+      "value": 200,
+      "span": "More than 200",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "1381dea219db4401": {
+      "label": "helene",
+      "value": 200,
+      "span": "more than 200",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "1b02d8f42c91d03b": {
+      "label": "helene",
+      "value": 200,
+      "span": "more than 200",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "b99161642ab53f81": {
+      "label": "helene",
+      "value": 189,
+      "span": "189",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "492cdf165f9f344b": {
+      "label": "helene",
+      "value": 189,
+      "span": "at least 189",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "e6c0ee3dfa0fbec2": {
+      "label": "helene",
+      "value": 180,
+      "span": "180",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "0068e93a73720a44": {
+      "label": "helene",
+      "value": 180,
+      "span": "180",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "c65d4d54a5aaaf6e": {
+      "label": "helene",
+      "value": 178,
+      "span": "178",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "e73dfd10a00a984c": {
+      "label": "helene",
+      "value": 166,
+      "span": "at least 166",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "c4cfb66362a85e67": {
+      "label": "helene",
+      "value": 160,
+      "span": "160",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "abf540f0e8a28f33": {
+      "label": "helene",
+      "value": 160,
+      "span": "160",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "fc5d2b17373a222a": {
+      "label": "helene",
+      "value": 160,
+      "span": "more than 160",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "bcdf8512ac41fa1d": {
+      "label": "helene",
+      "value": 150,
+      "span": "more than 150",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "46a3771931cefd70": {
+      "label": "helene",
+      "value": 150,
+      "span": "more than 150",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "99d51c7618210aa2": {
+      "label": "helene",
+      "value": 120,
+      "span": "120",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "657f647429a4ee71": {
+      "label": "helene",
+      "value": 100,
+      "span": "100",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "734ba77d26ac8516": {
+      "label": "helene",
+      "value": 98,
+      "span": "98",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "255fa54fd2dc7beb": {
+      "label": "helene",
+      "value": 91,
+      "span": "91",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "9683d3eac28e6b1d": {
+      "label": "cross-event",
+      "value": 80,
+      "span": "80",
+      "n_obs": 1,
+      "why": "the 1916 Appalachian hurricanes",
+      "value_error": ""
+    },
+    "cd605df8bda9cc85": {
+      "label": "helene",
+      "value": 72,
+      "span": "72",
+      "n_obs": 3,
+      "why": "",
+      "value_error": ""
+    },
+    "4fe1b33b4d6877db": {
+      "label": "helene",
+      "value": 70,
+      "span": "70",
+      "n_obs": 3,
+      "why": "",
+      "value_error": ""
+    },
+    "d23d4de39f658960": {
+      "label": "helene",
+      "value": 64,
+      "span": "64",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "b530df76b2b5c757": {
+      "label": "helene",
+      "value": 61,
+      "span": "61",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "11edbb3157b67c26": {
+      "label": "helene",
+      "value": 57,
+      "span": "57",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "5b820bd7e79b16d1": {
+      "label": "helene",
+      "value": 57,
+      "span": "57",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "3863224602e5d9b3": {
+      "label": "helene",
+      "value": 57,
+      "span": "57",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "212daeec129f882a": {
+      "label": "helene",
+      "value": 50,
+      "span": "more than 50",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "d3f2095de7800524": {
+      "label": "non-casualty",
+      "value": 50,
+      "span": "50",
+      "n_obs": 1,
+      "why": "50 patients rescued from a roof",
+      "value_error": ""
+    },
+    "fc40db56126b0448": {
+      "label": "helene",
+      "value": 48,
+      "span": "48",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "2e2ec4dcbb7d34f2": {
+      "label": "helene",
+      "value": 44,
+      "span": "at least 44",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "50c55e1529613257": {
+      "label": "non-casualty",
+      "value": 40,
+      "span": "40",
+      "n_obs": 1,
+      "why": "40 advocacy groups",
+      "value_error": ""
+    },
+    "e7d6d2645592b791": {
+      "label": "helene",
+      "value": 36,
+      "span": "36",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "51a3e79a75ff1f3a": {
+      "label": "helene",
+      "value": 32,
+      "span": "Dozens",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "61695f2a5a4f9efd": {
+      "label": "non-casualty",
+      "value": 32,
+      "span": "Dozens",
+      "n_obs": 1,
+      "why": "dozens of vehicles",
+      "value_error": ""
+    },
+    "e9b1b6a03d6e7550": {
+      "label": "non-casualty",
+      "value": 32,
+      "span": "dozens",
+      "n_obs": 1,
+      "why": "dozens evacuated",
+      "value_error": ""
+    },
+    "e881a8ee8e8ec90f": {
+      "label": "cross-event",
+      "value": 32,
+      "span": "dozens",
+      "n_obs": 1,
+      "why": "Typhoon headed to Taiwan (and injuries, not deaths)",
+      "value_error": ""
+    },
+    "b8f989cc00295c68": {
+      "label": "helene",
+      "value": 32,
+      "span": "dozens",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "c8bad9a33aca25d3": {
+      "label": "helene",
+      "value": 30,
+      "span": "30",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "64a0f12c62f1e3c4": {
+      "label": "unclear",
+      "value": 25,
+      "span": "25",
+      "n_obs": 2,
+      "why": "'25' ambiguous, no casualty sense in window",
+      "value_error": ""
+    },
+    "7ed9ce85b4409d65": {
+      "label": "helene",
+      "value": 20,
+      "span": "more than 20",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "5c40540c295554ec": {
+      "label": "cross-event",
+      "value": 16,
+      "span": "at least 16",
+      "n_obs": 1,
+      "why": "Bosnia floods/landslides",
+      "value_error": ""
+    },
+    "a4910b521c86425f": {
+      "label": "helene",
+      "value": 12,
+      "span": "12",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "aba8e806bca5b7ed": {
+      "label": "helene",
+      "value": 12,
+      "span": "12",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "3f80e02d6cfcfa22": {
+      "label": "non-casualty",
+      "value": 11,
+      "span": "11",
+      "n_obs": 1,
+      "why": "11 swept away; 2 confirmed dead",
+      "value_error": ""
+    },
+    "a86e19f7dacc2c6b": {
+      "label": "helene",
+      "value": 11,
+      "span": "11",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "8d0bfd8e6dcc3feb": {
+      "label": "non-casualty",
+      "value": 11,
+      "span": "11",
+      "n_obs": 2,
+      "why": "11 swept away; 5 rescued",
+      "value_error": ""
+    },
+    "808aefe00fc42513": {
+      "label": "helene",
+      "value": 9,
+      "span": "Nine",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "0a9cc9fbdf9c3a43": {
+      "label": "unclear",
+      "value": 9,
+      "span": "9",
+      "n_obs": 1,
+      "why": "'9' occurs 7x, window is wind speeds",
+      "value_error": ""
+    },
+    "d21917d71307c6ca": {
+      "label": "non-casualty",
+      "value": 6,
+      "span": "six",
+      "n_obs": 1,
+      "why": "six southeastern states",
+      "value_error": ""
+    },
+    "d4c6eb1811676b9f": {
+      "label": "helene",
+      "value": 6,
+      "span": "six dozen",
+      "n_obs": 1,
+      "why": "",
+      "value_error": "'six dozen' parsed as 6; the text says 72"
+    },
+    "309a70ff61d13e6f": {
+      "label": "helene",
+      "value": 6,
+      "span": "six",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "3a7e1ad5fd56e627": {
+      "label": "helene",
+      "value": 5,
+      "span": "Five",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "f4a9cfd26e6c9f6a": {
+      "label": "helene",
+      "value": 5,
+      "span": "five",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "a72066762cfed9df": {
+      "label": "helene",
+      "value": 4,
+      "span": "four",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "6f02308ff92ddb81": {
+      "label": "helene",
+      "value": 3,
+      "span": "at least three",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "545df96e7e787fd4": {
+      "label": "helene",
+      "value": 3,
+      "span": "three",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "e56c0c96e29a6eb2": {
+      "label": "helene",
+      "value": 3,
+      "span": "three",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "caecbb9a7c03534a": {
+      "label": "cross-event",
+      "value": 2,
+      "span": "at least two",
+      "n_obs": 1,
+      "why": "Hurricane John, Mexico",
+      "value_error": ""
+    },
+    "8861bf082b15fa2e": {
+      "label": "helene",
+      "value": 2,
+      "span": "two",
+      "n_obs": 3,
+      "why": "",
+      "value_error": ""
+    },
+    "a844b477f8bbcc62": {
+      "label": "non-casualty",
+      "value": 2,
+      "span": "two",
+      "n_obs": 1,
+      "why": "a two-day period",
+      "value_error": ""
+    },
+    "ef88b1e233535296": {
+      "label": "helene",
+      "value": 2,
+      "span": "two",
+      "n_obs": 2,
+      "why": "",
+      "value_error": ""
+    },
+    "fdff682628b89713": {
+      "label": "non-casualty",
+      "value": 2,
+      "span": "two",
+      "n_obs": 1,
+      "why": "the two states",
+      "value_error": ""
+    },
+    "72821533dbec1c59": {
+      "label": "helene",
+      "value": 2,
+      "span": "Two",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "d425aeb584ac5b84": {
+      "label": "helene",
+      "value": 1,
+      "span": "One",
+      "n_obs": 1,
+      "why": "",
+      "value_error": ""
+    },
+    "1efc37a9eb65f467": {
+      "label": "unclear",
+      "value": 1,
+      "span": "one",
+      "n_obs": 1,
+      "why": "'one' occurs 9x",
+      "value_error": ""
+    }
+  }
+}

@@ -42,6 +42,7 @@ artifact. Three fixes, all in this file:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -50,18 +51,38 @@ from gliner2 import AutoExtractor, Schema
 
 OURS = re.compile(r"\bhelene\b", re.I)
 
-# Same audit labels as energy_probe. Keyed on (span, value) -- see the caveat there; the
-# 230s and the "two"s are over-assigned, so per-case detail matters more than the totals.
-LABELLED = {
-    ("1,400", 1400): "cross-event",
-    ("250", 250): "cross-event",
-    ("230", 230): "cross-event",
-    ("at least 16", 16): "cross-event",
-    ("at least two", 2): "cross-event",
-    ("9", 9): "non-casualty",
-    ("25", 25): "non-casualty",
-    ("two", 2): "non-casualty",
-}
+# Per-OCCURRENCE audit labels, assigned by reading each context (2026-08-20).
+#
+# They replace a (span, value) string match that was **27% correct on its own positive
+# class** -- 3 of 11 -- and missed half the genuine cases:
+#
+#   '230' x6   marked cross-event (Milton). Every one is Helene's OWN national total;
+#              the truth is 228, and the windows read "Helene death toll hits 230".
+#   '250'      marked cross-event (a typhoon). Also Helene's national figure -- the
+#              typhoon appears only in a RELATED COVERAGE sidebar further down.
+#   '1,400' x2 one is Katrina (correct); the other is "causing 1,400 LANDSLIDES".
+#   missed     Maria's 3,000, the 1916 hurricanes' 80, a Taiwan typhoon's "dozens".
+#
+# The consequence is that every published score on this instrument is uninterpretable:
+# a detector reading 3/11 might have found exactly the three real cases or three of the
+# eight false ones, and nothing distinguished those outcomes.
+LABEL_FILE = Path(__file__).with_name("helene_audit_labels.json")
+
+
+def _ctx_key(context: str, value: int) -> str:
+    """sha1 over the value and the normalized context window.
+
+    Keyed on context, not on the value, so a label survives re-extraction: the feed text
+    is fixed, so the same figure in the same passage keys identically in any run.
+    """
+    norm = re.sub(r"\s+", " ", context).strip().lower()
+    return hashlib.sha1(f"{value}|{norm}".encode("utf-8")).hexdigest()[:16]
+
+
+def load_labels() -> dict:
+    if not LABEL_FILE.is_file():
+        return {}
+    return json.loads(LABEL_FILE.read_text(encoding="utf-8")).get("labels", {})
 
 
 def event_schema() -> Schema:
@@ -144,6 +165,7 @@ def main() -> None:
     model.eval()
     esch, bsch = event_schema(), binding_schema()
 
+    audit = load_labels()
     rows = []
     contexts = []
     for a, o in obs:
@@ -182,7 +204,8 @@ def main() -> None:
         contexts.append(ctx)
         rows.append({
             "span": span, "value": int(o["value"]),
-            "label": LABELLED.get((span, int(o["value"])), "assumed-ok"),
+            "label": (audit.get(_ctx_key(ctx, int(o["value"])), {})
+                      .get("label", "unlabelled")),
             "events": [t for t, _ in found], "nearest": nearest,
             "only_competitor": only_comp, "bound": bound, "bound_raw": bound_raw,
         })
@@ -201,18 +224,26 @@ def main() -> None:
         return "ours" if OURS.search(r["bound"]) else "competitor"
 
     print(f"\n{len(rows)} observations\n")
+    from collections import Counter
+    print("audit classes:", dict(Counter(r["label"] for r in rows)))
     ce = [r for r in rows if r["label"] == "cross-event"]
-    ok = [r for r in rows if r["label"] == "assumed-ok"]
-    print(f"{'signal':<32}{'catches cross-event':>21}{'false positives':>18}")
+    # The clean class is GENUINE HELENE casualties. Non-casualty numbers and unclear cases
+    # are excluded from the false-positive denominator rather than folded into it: flagging
+    # "1,400 landslides" is not a false positive for cross-event detection, it is a right
+    # answer to a different question, and counting it as clean was part of what made the
+    # old instrument unreadable.
+    ok = [r for r in rows if r["label"] == "helene"]
+    print(f"{'signal':<32}{'catches cross-event':>21}{'FP on genuine Helene':>22}")
     for key in ("A nearest is a competitor", "B only a competitor named",
                 "C bound event is a competitor", "C-raw (UNSOUND, diagnostic)"):
         c = sum(1 for r in ce if flags(r)[key])
         f = sum(1 for r in ok if flags(r)[key])
-        print(f"{key:<32}{f'{c}/{len(ce)}':>21}{f'{f}/{len(ok)} = {f/max(len(ok),1):.1%}':>18}")
+        print(f"{key:<32}{f'{c}/{len(ce)}':>21}"
+              f"{f'{f}/{len(ok)} = {f/max(len(ok),1):.1%}':>22}")
 
     # A signal that never binds scores 0 catches AND 0 false positives, which reads as
     # a clean sheet. Coverage tells the two apart.
-    print(f"\nC binding coverage        {'cross-event':>14}{'assumed-ok':>14}")
+    print(f"\nC binding coverage        {'cross-event':>14}{'genuine':>14}")
     for state in ("competitor", "ours", "rejected", "unbound"):
         print(f"  {state:<24}{sum(1 for r in ce if outcome(r) == state):>14}"
               f"{sum(1 for r in ok if outcome(r) == state):>14}")
