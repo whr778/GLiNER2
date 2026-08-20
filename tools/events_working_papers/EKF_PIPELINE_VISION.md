@@ -3,6 +3,27 @@ An EKF/MHT pipeline
 Input: News text ==> Joint Boundary Event Model (The JOINT_IE_SCALING models)
 Output: Extracted Events
 
+ROLE / PLAUSIBILITY stage -- before any routing
+
+  A figure has to be a casualty count before it is worth asking whose it is.
+  Re-audit of the Helene feed, by context: 11.3% of extracted `dead` figures are not
+  casualty numbers at all -- Asheville's POPULATION (94,000), FEMA flood-insurance
+  POLICIES (129,933), power crews (8,000), wellness checks (15,000), advocacy groups,
+  landslides, and years read as tolls (1916, 2004).
+  Routing a population into a death-toll filter corrupts that filter no matter how
+  good the router is.
+
+  Part of this is already free -- the derived tail cut: median + k*MAD on log10 of the
+  event's own pooled values, upper tail only, k=1. It derives its own threshold per
+  event (Helene 516, Turkiye 47,622) so it transfers without being told the scale, and
+  it obeys the RULE below (pooled over the event, never over what a stream accepted).
+
+  LIMIT, so it is not mistaken for attribution: it is anomaly detection, and it reaches
+  only the distributionally weird tail. Against the audited cross-event cases it catches
+  1 of 5 on Helene and 0 of 5 at Turkiye's scale. Milton's 230 and Bosnia's 16 are
+  statistically ORDINARY Helene figures -- wrong by identity, not magnitude. So is
+  "1,500 troops": people, in the affected area, wrong only in ROLE.
+
 Extracted Events evaluation via Event Instance Map
 
   Keyed on INSTANCE, not on type.
@@ -60,7 +81,17 @@ Yes -- Discern which filter or filters apply
 Route text and extracted events to the 1..* filters
 Events from the text are reformatted for each filter and added to the filter's bucket
 
+  PROVENANCE on every bucket entry: which extractor and revision, which router
+  decision and score, which thresholds, which commit (and whether the tree was dirty).
+  Not bookkeeping -- this programme has already lost a headline result to it. The
+  archived Helene artifact behind 5.247 -> 0.591 recorded only `associate`, and no
+  committed state of the repo reproduces it, so no new model can be put on its scale.
+
 EKF/MHT Filters reprocess and update
+
+Filter DEATH / decay
+  A stream with no support ages out. Without it every spurious birth is permanent, and
+  birth is exactly the stage most likely to over-fire on a noisy feed.
 
 ---
 Review, open questions and feasibility: EKF_PIPELINE_VISION_REVIEW.md
