@@ -876,3 +876,42 @@ stalled the same way.
 and Maria's 3,000 survive every mechanism tried. A ceiling low enough to catch them is just
 the magnitude gate again, rejecting a figure for being large rather than for belonging to
 another storm.
+
+
+---
+
+## Phase 18 — the critical path turned out to be the extractor (20 Aug)
+
+Three association mechanisms had to be built and lost before this was visible.
+
+**A router proposal that finally builds a representation.** Take `min(start)..max(end)` over
+an event's own trigger and arguments, embed that block, match against live filters. It fixes
+the objection that sank clustering — it *produces* a representation instead of assuming one —
+and it is per-event and local, which is the discourse attachment that proximity and type both
+failed at. Verified on the hard case: in the Katrina passage the only named event found is
+`Hurricane Katrina`, so the block is Katrina-local.
+
+**It could not be run.** The span architecture emits a bag of triggers all sharing one role;
+no threshold works, the Katrina block being either the bare name without its own 1,400 or a
+sweep that swallows Helene. The boundary base yields nothing above threshold 0.3 on English
+disaster copy and nonsense at 0.1.
+
+**The cause, and a correction to a claim made an hour earlier.** A first pass read the model
+card and said 68% of its event supervision was Chinese. Wrong, and the truth was worse: DocEE,
+ChFinAnn and DocFEE are not events at all — `entities` + `classifications` — so counting them
+flattered both sides. Corpora that actually bind arguments to triggers give **798 English rows
+against 20,884 Chinese**, a 3.7% English share, with CASIE the entire English side and MAVEN
+and Mendeley trigger-only. An argument F1 of 0.506 is a Chinese-only number.
+
+**So the front end is being rebuilt** — cold start, 189,284 records, English trigger→argument
+798 → ~39,800, Chinese kept because it is why the head works at all. The risk is declared up
+front: 72% of the new English data is synthetic, on a line whose recurring failure is
+in-domain-good and real-news-zero, so the gates are on AP prose.
+
+**Method notes from the day.** The smoke measured 18.5 samples/s against an extrapolated 12.1,
+so every cost estimate before it was 34% high — and `num_workers`, the obvious suspect for
+28–81% utilisation, was refuted (18.4 at 0, 18.5 at 4); the idling is variable sequence length,
+and memory sits at 10.6 GB of 40, so batch_size is the real untested lever. The gate harness
+was validated by running it against the incumbent and confirming it *fails*, because a gate
+that passes everything measures nothing. And rams finally got a val split, carved by document,
+which found 101 duplicate rows in its test set alone.

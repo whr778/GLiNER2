@@ -138,7 +138,24 @@ re-try it; utilisation swings 28–81% on variable sequence length while memory 
 
 ---
 
-State at **2026-08-20**. **A smoke GPU is running** (self-terminating watchdog on the box) (the muting-arm A10 is terminated, verified).
+**Smoke DONE, FULL RUN LIVE (overnight).** Smoke on 1x A100-40GB passed at ~$1.70: cu128 +
+FA2 clean with no non-finite loss over 586 steps, **18.5 samples/s** against an extrapolated
+12.1 -- so every cost figure produced before it was ~34% high. `num_workers` is NOT the
+bottleneck (18.4 at 0, 18.5 at 4); memory sits flat at 10.6 GB of 40, so **batch_size is the
+untested lever**. Logs in `tools/train/smoke_results/ekf-frontend-mmbert/`.
+
+The full 6-epoch run is on `gpu_1x_a100_sxm4` (~16.3h, ~$33), fully autonomous: the box
+trains, pushes model + logs + metrics to `whr778/gliner2-ekf-frontend-mmbert` (private), then
+terminates itself via the Lambda API. Nothing depends on the operator's session.
+
+Two supporting pieces landed with it. `tools/data/split_rams_test.py` gave rams a val split by
+carving its 871-row test **by document** -- which found 101 duplicate rows in test alone, the
+same hazard this file records for rams train. And `tools/ekf_showcase/frontend_gates.py`
+scores the two pre-registered gates; run against the incumbent it returns 0.0% and "no block
+contains the figure" at every threshold, which is what makes a non-zero result from the
+rebuild meaningful rather than a permissive harness.
+
+State at **2026-08-20**. **A full-run GPU is running overnight** (self-terminating) (the muting-arm A10 is terminated, verified).
 A programme-wide caveat landed with it: the cached Helene observation set behind every
 published Helene figure **cannot be regenerated from any committed state** — see
 `tools/ekf_showcase/muting_arm_results/PROVENANCE.md`. Comparisons among the published
