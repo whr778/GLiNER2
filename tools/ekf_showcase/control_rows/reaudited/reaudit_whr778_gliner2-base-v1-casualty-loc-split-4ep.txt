@@ -1,0 +1,42 @@
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+/Users/williamroe/development/git/GLiNER2/gliner2/models/span/model.py:88: RuntimeWarning: Encoder rejected attn_implementation='sdpa'; falling back to 'eager' (DebertaV2Model does not support an attention implementation through torch.nn.functional.scaled_dot_product_attention yet. Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`). On a ModernBERT encoder trained in bf16 this is a correctness issue, not just speed: sdpa+bf16 there produces non-finite losses (measured), so install 'kernels' to keep FA2. Set GLINER2_STRICT_ATTN=1 to make this an error instead.
+  self.encoder = self._load_encoder(
+============================================================
+🧠 Model Configuration
+============================================================
+Encoder model      : microsoft/deberta-v3-base
+Counting layer     : count_lstm_v2
+Token pooling      : first
+============================================================
+
+104 observations
+
+audit classes: {'cross-event': 6, 'helene': 82, 'non-casualty': 12, 'unclear': 4}
+signal                            catches cross-event  FP on genuine Helene
+A nearest is a competitor                         3/6         18/82 = 22.0%
+B only a competitor named                         3/6         18/82 = 22.0%
+C bound event is a competitor                     1/6           1/82 = 1.2%
+C-raw (UNSOUND, diagnostic)                       1/6           7/82 = 8.5%
+
+C binding coverage           cross-event       genuine
+  competitor                           1             1
+  ours                                 0            13
+  rejected                             0             6
+  unbound                              5            62
+  rejected = the model named something that is not an event the schema found
+
+field fill over 156 records the model produced on these windows
+  location   150/156  96.2%
+  event       11/156  7.1%
+  measured on a separate schema in a SECOND PASS, so signal C above is untouched.
+  This is the Track A guard, which until now had no committed tool. Its denominator is
+  records-produced-on-these-windows and does NOT match the hand-computed 51/54, which
+  counted a different window set -- compare the RATE, not the fraction.
+
+cross-event cases in detail:
+  'at least two' nearest='John'                   bound='None'                   events=['John']
+  '3,000'        nearest='Hurricane Maria'        bound='None'                   events=['Hurricane Maria']
+  'dozens'       nearest='Hurricane Helene'       bound='None'                   events=['Hurricane Helene']
+  '80'           nearest='None'                   bound='None'                   events=[]
+  'at least 16'  nearest='None'                   bound='None'                   events=[]
+  '1,400'        nearest='Hurricane Katrina'      bound='Hurricane Katrina'      events=['Hurricane Katrina']
