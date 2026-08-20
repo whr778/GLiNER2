@@ -24,18 +24,32 @@ All eight `dead` values >= 400 from the production model. **None is a Helene dea
 
 | value | source text | class |
 |---:|---|---|
-| 94,000 | "home to about 94,000 people" (Asheville) | population |
-| 3,100 | "a town of around 3,100" (Saluda) | population |
-| 19,000 | "a town of about 19,000 people" (Boone) | population |
-| 129,933 | "North Carolina has 129,933 such **policies** in force" (FEMA flood insurance) | count of non-people |
-| 15,000 | "his office said it had done 15,000 **wellness checks**" | count of non-people |
-| 8,000 | "8,000 **crews** are out working to restore power" | count of non-people |
-| 1,500 | "total number of active-duty **forces** to about 1,500" | count of non-people |
-| 1,100 | "of the convention's 3,000 churches, **1,100** are in communities affected" | count of non-people |
+| 94,000 | "home to about 94,000 people" (Asheville) | resident population |
+| 19,000 | "a town of about 19,000 people" (Boone) | resident population |
+| 3,100 | "a town of around 3,100" (Saluda) | resident population |
+| 1,500 | "total number of active-duty **forces** to about 1,500" | **people, not casualties** |
+| 8,000 | "8,000 **crews** are out working to restore power" | **people, not casualties** |
+| 129,933 | "North Carolina has 129,933 such **policies** in force" (FEMA flood insurance) | not people at all |
+| 1,100 | "of the convention's 3,000 churches, **1,100** are in communities affected" | not people at all |
+| 15,000 | "his office said it had done 15,000 **wellness checks**" | not people at all (actions) |
 | 2,004 | "**In 2004**, for example, four people were killed" | year-as-toll |
 | 1,916 | "one of the most significant weather events to happen since **1916**" | year-as-toll |
 | 1,400 | Hurricane **Katrina**, "left nearly 1,400 people dead" | cross-event |
 | 3,000 | Hurricane **Maria**, "which killed 3,000 people" | cross-event |
+
+**The three-way split in the middle is the load-bearing part, and an earlier version of this
+file got it wrong** by lumping troops and crews in as "counts of non-people". They are people
+— responders and non-residents lending assistance, alive and on the ground. So the classes
+demand different mechanisms:
+
+- *not people at all* (policies, churches, wellness checks) falls to an **entity-type** check:
+  is the counted noun a person?
+- *people, not casualties* (troops, crews) **survives that check completely**. Both are counts
+  of living people in the affected area. Separating them from the dead needs **casualty-role
+  semantics**, not entity typing — the same distinction that makes `death toll` vs `people
+  evacuated` a real query-axis problem rather than a noun-phrase one.
+- *resident population* also survives an entity-type check, and needs the idiom ("home to
+  about N people", "a town of N") or a plausibility ceiling.
 
 The 15,000 deserves its own note: the sentence exists *to warn against this exact error* —
 "that was mistakenly interpreted as meaning 15,000 people were missing." The extractor made
@@ -96,6 +110,12 @@ Re-attribution away from scored streams, not suppression.
   so it dominates nRMSE, and one figure destroyed one state's stream.
 - **A cheap sanity filter is available and is not implemented**: no US state lost six-figure
   numbers of people to this storm. A per-event plausibility ceiling would have killed
-  129,933, 94,000, 83,000 and 19,000 without any model change. It would not touch Katrina.
+  129,933, 94,000, 83,000 and 19,000 without any model change. It would not touch Katrina —
+  nor 1,500 troops or 8,000 crews, which are plausible *magnitudes* for a casualty figure and
+  are wrong for a reason no ceiling can see.
+- **Entity typing is not sufficient either.** It reaches policies and churches and stops at
+  troops and crews. The residue after both filters — living people miscounted as dead, and
+  another storm's dead — is the part that needs the model to represent who the figure is
+  *about*, which is the programme's open question in both its halves.
 - **Cross-event remains unsolved**, and this run is evidence *against* reading the muting
   arm's Helene win as progress on it.

@@ -57,8 +57,10 @@ dominates the error. Katrina's 1,400 *is* removed from North Carolina, so the cl
 directionally right and quantitatively misleading.
 
 More importantly, **muting fixed a different class than it was designed for.** It eliminates
-15 of the control's 20 large false positives — populations, counts of non-people, and five of
-seven years-read-as-tolls — but **both cross-event tolls survive** (Katrina 1,400, Maria
+15 of the control's 20 large false positives — resident populations, living people who are
+not casualties (troops, power crews), counts of things that are not people at all
+(flood-insurance policies, churches, wellness checks), and five of seven
+years-read-as-tolls — but **both cross-event tolls survive** (Katrina 1,400, Maria
 3,000). The cross-event class is the one this arm targets. What it actually cleaned up is
 `TODO.md`'s separate, smaller "non-casualty number rejection" item, which turns out to carry
 the largest values and therefore to dominate nRMSE.
