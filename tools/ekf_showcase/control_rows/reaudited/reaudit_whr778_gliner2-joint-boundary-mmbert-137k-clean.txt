@@ -1,0 +1,36 @@
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+Fetching 0 files: 0it [00:00, ?it/s]Fetching 0 files: 0it [00:00, ?it/s]
+/Users/williamroe/development/git/GLiNER2/gliner2/models/boundary/model.py:1096: RuntimeWarning: Encoder rejected attn_implementation='flash_attention_2'; falling back to 'sdpa' (FlashAttention2 has been toggled on, but it cannot be used due to the following error: the package for FlashAttention2 doesn't seem to be installed.). On a ModernBERT encoder trained in bf16 this is a correctness issue, not just speed: sdpa+bf16 there produces non-finite losses (measured), so install 'kernels' to keep FA2. Set GLINER2_STRICT_ATTN=1 to make this an error instead.
+  self.encoder = self._load_encoder(
+
+104 observations
+
+audit classes: {'cross-event': 6, 'helene': 82, 'non-casualty': 12, 'unclear': 4}
+signal                            catches cross-event  FP on genuine Helene
+A nearest is a competitor                         2/6         13/82 = 15.9%
+B only a competitor named                         2/6         13/82 = 15.9%
+C bound event is a competitor                     0/6           0/82 = 0.0%
+C-raw (UNSOUND, diagnostic)                       0/6           3/82 = 3.7%
+
+C binding coverage           cross-event       genuine
+  competitor                           0             0
+  ours                                 0             0
+  rejected                             0             3
+  unbound                              6            79
+  rejected = the model named something that is not an event the schema found
+
+field fill over 6 records the model produced on these windows
+  location     5/6    83.3%
+  event        6/6    100.0%
+  measured on a separate schema in a SECOND PASS, so signal C above is untouched.
+  This is the Track A guard, which until now had no committed tool. Its denominator is
+  records-produced-on-these-windows and does NOT match the hand-computed 51/54, which
+  counted a different window set -- compare the RATE, not the fraction.
+
+cross-event cases in detail:
+  'at least two' nearest='None'                   bound='None'                   events=[]
+  '3,000'        nearest='None'                   bound='None'                   events=[]
+  'dozens'       nearest='Mideast crisis'         bound='None'                   events=['eople', 'Mideast crisis']
+  '80'           nearest='None'                   bound='None'                   events=[]
+  'at least 16'  nearest='ne'                     bound='None'                   events=['ne']
+  '1,400'        nearest='None'                   bound='None'                   events=[]
