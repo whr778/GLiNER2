@@ -281,10 +281,41 @@ Filter DEATH / decay
     + date and place features alongside the vector  -- the 1916 case has no name at all,
         so this is the arm that could reach it.
 
-  BLOCKING PREREQUISITES, both known and both cheap
-    - events-form extraction has to actually fire on real wire copy. The boundary front
-      end binds 1 window in 40 at the default record threshold and 37 of 40 at 0.10;
-      calibrate before running, or the router is scored on an empty input.
+  BLOCKING PREREQUISITE: NO CURRENT MODEL CAN PRODUCE THE INPUT (measured 2026-08-20)
+
+    Calibration was attempted and the answer is that calibration is not the problem.
+
+    Span arch (fastino, kept only for posterity): emits a BAG of triggers and labels
+    every one with the same role. No threshold works -- at 0.4 and below Katrina's block
+    is [95:119], the name alone, missing the 1,400 it is supposed to bind; Helene's block
+    becomes [0:212] and swallows Katrina. At 0.5+ Katrina yields no spans at all. The
+    architecture does not bind arguments to their own trigger, so the block cannot be
+    formed.
+
+    Boundary mmBERT 137k-clean: on English disaster text the event head yields NOTHING at
+    threshold 0.3 and above, and nonsense at 0.1 -- trigger "remote", with both `dead` and
+    `location` bound to "Helene decimated". A textbook earthquake sentence returns empty
+    even at 0.1.
+
+    WHY, and it is not a mystery: 68% of that model's event supervision is Chinese --
+    62,900 rows (ChFinAnn, DocFEE, DuEE, CMNEE) against 29,190 English. Its argument F1 of
+    0.506 is carried by Chinese doc-level financial events. RAMS, the main English
+    trigger-to-argument corpus, was deliberately excluded, as were the real-synth and
+    synth arms, because the model was built to WARM-START other training and to support
+    preservation tests -- not to be a front end.
+
+    SO THE ORDER IS: rebuild -> calibrate -> run. Not calibrate -> run.
+
+  WHAT THE REBUILD HAS TO CORRECT, from the evidence rather than from taste
+    - English trigger-to-argument supervision. RAMS is the specific gap; the current
+      argument ability is real and in the wrong language.
+    - Event IDENTITY as a supervised field, not only type. Casualty fine-tuning
+      demonstrably destroys binding, and the router keys on instance.
+    - A REAL-WIRE-COPY GATE, not held-out DocEE. Note the caution: DocEE is ALREADY
+      21,842 English disaster events and this model still does nothing on Helene copy, so
+      "more event data of the same kind" is not automatically the fix. Gate on AP prose.
+
+  ALSO STILL REQUIRED
     - the corrected per-occurrence labels (helene_audit_labels.json) are the only valid
       scoring set. Do not use the old string-matched labels; they were 27% correct.
 
