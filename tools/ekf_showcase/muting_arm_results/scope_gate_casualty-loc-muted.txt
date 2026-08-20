@@ -1,0 +1,45 @@
+[helene] 109 'dead' observations over 70 articles, reference=aggregate
+
+  ratio  moved  drop    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin     mean
+    off      0     0    0.219    9.854   74.946    3.689    0.640    9.982        -   19.822
+    4.0     23     1    0.323    1.381    6.805    0.519    0.181    9.753        -    3.728
+    3.0     21     1    0.323    1.381    6.805    0.519    0.181    9.753        -    3.728
+    2.5     17     1    0.185    1.381    6.805    0.519    0.185    9.753        -    3.729
+    2.0     13     1    0.159    1.381    6.805    0.519    0.185    9.753        -    3.729
+    1.5     12     2    0.148    1.381    6.805    0.519    0.185    9.753        -    3.729
+
+[control] removing 14 per-place observations AT RANDOM (40 trials): mean 14.947
+[control] the gate removing the same number: 3.729  (gate is selecting)
+
+[ORACLE] perfect hard association (uses ground truth -- a CEILING, not a method): per-place mean 0.639
+[ORACLE] shipped gate 3.729 vs ceiling 0.639 -> headroom for better association = +3.089
+           Total              4.079
+           Florida            0.777
+           Georgia            1.653
+           South Carolina     0.227
+           North Carolina     0.229
+           Tennessee          0.310
+
+[ORACLE-3] adding a REJECT option -- the ceiling for association that can say 'none of these':
+    tol   kept    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin     mean
+   2.00    107    0.094    0.777        -    0.227    0.229    0.310        -    0.386
+   1.00    107    0.094    0.777        -    0.227    0.229    0.310        -    0.386
+   0.50     99    0.094    0.737        -    0.227    0.229    0.326        -    0.380
+   0.25     95    0.094    0.836        -    0.433    0.229    0.326        -    0.456
+[ORACLE-3] two-way oracle 0.639 -- the gap between these prices a null hypothesis (MHT track birth/death), which the two-way oracle cannot express
+
+[detail at ratio=2.0] 13 rerouted, 1 dropped:
+    reroute florida                value=   150  t=  146.9h
+    reroute florida                value=   230  t=  262.7h
+    reroute florida                value=   230  t=  262.7h
+    reroute florida                value=   230  t=  299.1h
+    reroute north carolina         value=   180  t=  153.2h
+    reroute north carolina         value=   180  t=  153.2h
+    reroute north carolina         value=   200  t=  186.9h
+    reroute north carolina         value=   230  t=  262.7h
+    reroute north carolina         value=   230  t=  398.6h
+    reroute south carolina         value=    53  t=  122.9h
+    reroute south carolina         value=   225  t=  223.4h
+    reroute tennessee              value=   200  t=  863.2h
+    reroute tennessee              value=   250  t=  887.1h
+    DROP    georgia                value=  3000  t=  862.9h

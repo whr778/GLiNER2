@@ -1,0 +1,18 @@
+{
+  "eval_structure_strict_micro_precision": 0.8119445896497648,
+  "eval_structure_strict_micro_recall": 0.8181997761243168,
+  "eval_structure_strict_micro_f1": 0.8150601816929585,
+  "eval_structure_strict_macro_precision": 0.8765034940163325,
+  "eval_structure_strict_macro_recall": 0.8846657722406648,
+  "eval_structure_strict_macro_f1": 0.8805454397785251,
+  "eval_structure_strict_support": 15187,
+  "eval_structure_strict_classification_report": "label                                     precision     recall         f1    support\n----------------------------------------------------------------------------------\ncasualty_report.dead                         0.9762     0.9952     0.9856       2922\ncasualty_report.injured                      0.9809     0.9962     0.9885       3190\ncasualty_report.location                     0.5527     0.5546     0.5536       6091\ncasualty_report.missing                      0.9963     0.9926     0.9945       2984\n----------------------------------------------------------------------------------\nmicro avg                                    0.8119     0.8182     0.8151      15187\nmacro avg                                    0.8765     0.8847     0.8805      15187",
+  "eval_structure_relaxed_micro_precision": 0.9519079979090433,
+  "eval_structure_relaxed_micro_recall": 0.9592414565088563,
+  "eval_structure_relaxed_micro_f1": 0.9555606572431208,
+  "eval_structure_relaxed_macro_precision": 0.9643265200801543,
+  "eval_structure_relaxed_macro_recall": 0.9727959732609003,
+  "eval_structure_relaxed_macro_f1": 0.968521765305479,
+  "eval_structure_relaxed_support": 15187,
+  "eval_structure_relaxed_classification_report": "label                                     precision     recall         f1    support\n----------------------------------------------------------------------------------\ncasualty_report.dead                         0.9772     0.9962     0.9866       2922\ncasualty_report.injured                      0.9812     0.9966     0.9888       3190\ncasualty_report.location                     0.9023     0.9054     0.9039       6091\ncasualty_report.missing                      0.9966     0.9930     0.9948       2984\n----------------------------------------------------------------------------------\nmicro avg                                    0.9519     0.9592     0.9556      15187\nmacro avg                                    0.9643     0.9728     0.9685      15187"
+}

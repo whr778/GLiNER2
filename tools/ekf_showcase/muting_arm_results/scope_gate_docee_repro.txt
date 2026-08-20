@@ -1,0 +1,42 @@
+[helene] 88 'dead' observations over 70 articles, reference=aggregate
+
+  ratio  moved  drop    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin     mean
+    off      0     0    0.196    6.953    0.695    0.549    1.197 2168.573   94.889  378.809
+    4.0     13     1    0.451    6.290    0.695    0.700    0.222 2168.566   94.889  378.560
+    3.0     12     2    0.475    6.290    0.695    0.700    0.222 2168.566   94.889  378.560
+    2.5     12     2    0.475    6.290    0.695    0.700    0.222 2168.566   94.889  378.560
+    2.0     10     2    0.238    6.290    0.695    0.700    0.189 2168.566   94.889  378.555
+    1.5      9     2    0.218    6.290    0.695    0.710    0.189 2168.566   94.889  378.556
+
+[control] removing 12 per-place observations AT RANDOM (40 trials): mean 355.153
+[control] the gate removing the same number: 378.555  (NO BETTER THAN THINNING)
+
+[ORACLE] perfect hard association (uses ground truth -- a CEILING, not a method): per-place mean 0.525
+[ORACLE] shipped gate 378.555 vs ceiling 0.525 -> headroom for better association = +378.030
+           Total             35.599
+           Georgia            0.695
+           South Carolina     0.543
+           North Carolina     0.260
+           Tennessee          0.602
+
+[ORACLE-3] adding a REJECT option -- the ceiling for association that can say 'none of these':
+    tol   kept    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin     mean
+   2.00     86    0.129        -    0.695    0.543    0.260    0.602        -    0.525
+   1.00     86    0.129        -    0.695    0.543    0.260    0.602        -    0.525
+   0.50     85    0.129        -    0.695    0.543    0.260    0.512        -    0.502
+   0.25     81    0.097        -    0.695    0.543    0.267        -        -    0.502
+[ORACLE-3] two-way oracle 0.525 -- the gap between these prices a null hypothesis (MHT track birth/death), which the two-way oracle cannot express
+
+[detail at ratio=2.0] 10 rerouted, 2 dropped:
+    reroute florida                value=   250  t= 1001.7h
+    reroute north carolina         value=    57  t=  145.5h
+    reroute north carolina         value=    70  t=  149.5h
+    reroute north carolina         value=    61  t=  153.2h
+    reroute north carolina         value=    72  t=  173.6h
+    reroute north carolina         value=   227  t=  223.4h
+    reroute north carolina         value=   170  t=  885.5h
+    reroute south carolina         value=    25  t=   83.8h
+    reroute south carolina         value=    36  t=  133.7h
+    reroute tennessee              value=   250  t=  887.1h
+    DROP    north carolina         value=   160  t=  138.3h
+    DROP    north carolina         value=  2004  t=  138.3h
