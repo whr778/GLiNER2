@@ -159,3 +159,45 @@ The muting arm is still superseded. Under the derived cut at k = 1 the control b
 tolls survive the tail cut exactly as they survived the ceiling: at a cut of 516, Katrina's
 1,400 is gone for being *large*, not for belonging to another storm — and on Türkiye, where
 the cut is 47,622, an equivalent cross-event figure would sail through.
+
+
+## It is anomaly detection, which is also the statement of its limit
+
+`median + k·MAD` with the 1.4826 scaling is the **Hampel identifier**; applied per point it is
+the **modified z-score** (Iglewicz & Hoaglin). Standard ground, not invented here.
+
+It is the **third** anomaly detector this line has built, and the comparison is the useful
+part:
+
+| mechanism | form | outcome |
+|---|---|---|
+| scope gate (§5) | ratio against an external reference stream | works, 5.247 → 0.591 |
+| M5 track birth | normalized innovation squared — the classical form | **lost**, self-referential |
+| tail cut | Hampel on log10, pooled over the event | works, and transfers |
+
+The two that work judge against something the contaminant cannot move — a *larger scope*, or
+the *whole event's* distribution. The one that lost judged each stream against its own
+history. That is the single lesson these three share.
+
+**And anomaly detection cannot reach what is left, by construction.** Against the five audited
+cross-event contaminants:
+
+| cut | catches |
+|---|---|
+| Helene, archived (351) | **1 of 5** — Katrina's 1,400 only |
+| Helene, control (516) | **1 of 5** |
+| at Türkiye's derived scale (47,622) | **0 of 5** |
+
+Milton's 230, the typhoon's 250, Bosnia's 16 and Mexico's 2 are *statistically ordinary*
+Helene casualty figures. They are wrong because of **identity**, not magnitude, and no test on
+the value's distribution can see that. The single catch is Katrina's 1,400, removed for being
+large rather than for being Katrina — and at Türkiye's scale even that becomes invisible.
+
+The same holds for the 1,500 troops and 8,000 power crews: plausible magnitudes, living people
+in the affected area, wrong only in *role*.
+
+So the honest scope of this mechanism: it cleans the distributionally weird tail, cheaply and
+transferably, and is structurally incapable of the rest. Anything further needs a
+**conditional** judgement — is this number a casualty count, of *this* event, in *this* place —
+which is not anomaly detection on a value. It is the binding problem, and it is what the
+programme's remaining two halves are about.
