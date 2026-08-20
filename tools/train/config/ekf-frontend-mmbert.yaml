@@ -93,7 +93,11 @@ training:
   # of 40 (26%), flat across the run. batch_size is the lever worth testing, not workers.
   # Raising it is the first thing to try if the full run needs to be cheaper.
   batch_size: 4                     # PER-GPU under torchrun
-  gradient_accumulation_steps: 4    # effective 32 on 2 GPUs; halve again on 4
+  # 8 for the SINGLE-GPU full run: 4 x 8 x 1 = effective batch 32, matching the recipe the
+  # 137k curve and every comparable run used. On 2 GPUs this is 4, on 4 GPUs 2, on 8 GPUs 1.
+  # (The smoke ran at 4 -- effective 16 -- which is fine for a mechanical/throughput check
+  # but is NOT the recipe.)
+  gradient_accumulation_steps: 8
   encoder_lr: 2.0e-5
   task_lr: 5.0e-4
   warmup_ratio: 0.05
