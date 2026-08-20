@@ -22,8 +22,30 @@ Event Instance Map where each event INSTANCE has a registered filters list 0..*
 
 Do we have any filters mapped to that instance?
 No  -- track BIRTH: open a filter for this instance.
-       ("continue" drops the observation; the reject/birth option is worth about half
-        the +0.111 association headroom, so it should not be dropped)
+       "continue" drops the observation. The reject/birth option is worth about half
+       the +0.111 association headroom, so it should not be dropped.
+
+       CAUTION -- birth has been built once and it LOST.
+       M5 track birth by innovation gating: each observation tested by normalized
+       innovation against its candidate tracks, born into its own if it gated out of
+       all of them. Best setting 0.608 per-place against the shipped magnitude ratio's
+       0.591 -- and the per-place number was the flattering half. With the national
+       stream included it is 2.115 against 0.316, a 6.7x degradation of the one
+       measurement this project calls honest, because rejected junk was being assigned
+       into the aggregate. It had reproduced a bug the scope gate's three-outcome
+       design was written to prevent.
+
+       WHY it lost, and the rule that follows:
+       it judged each stream against ITS OWN track history, so every contaminant the
+       track accepted moved the reference the next test used. Removing that
+       self-reference was worth more than every other knob combined (1.059 -> 0.624).
+       The same cause has now killed three mechanisms -- M5 birth, the implied-maximum
+       scope reference on Turkiye, and the naive streaming form of the tail cut (which
+       locked onto the small early values of a rising toll and rejected 88 of 106).
+
+       RULE: judge against something the contaminant cannot move.
+       A larger scope, or the whole event's pooled distribution -- never the accepting
+       stream's own history. The two mechanisms that work both obey it.
 Yes -- Discern which filter or filters apply
 
   Which filter? -- a MATCHING function, not a classifier.
