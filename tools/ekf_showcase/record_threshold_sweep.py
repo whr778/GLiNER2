@@ -22,6 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gliner2 import AutoExtractor                       # noqa: E402
 from event_binding_probe import binding_schema, window  # noqa: E402
 
+if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+    sys.exit(__doc__)
+
 d = json.loads((REPO / "datasets/helene2024/_cache/tracked_rollup.json").read_text(encoding="utf-8"))
 feed = {round(r["t_hours"], 2): r["text"]
         for r in (json.loads(l) for l in (REPO / "datasets/helene2024/_cache/feed.jsonl").open(encoding="utf-8"))}
@@ -36,6 +39,8 @@ for a in d["articles"]:
 pairs = pairs[:40]
 print(f"{len(pairs)} windows\n")
 
+if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+    sys.exit(__doc__)
 model = AutoExtractor.from_pretrained(sys.argv[1], map_location="cpu")
 model.eval()
 sch = binding_schema()
