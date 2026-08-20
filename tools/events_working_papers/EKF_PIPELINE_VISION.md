@@ -229,5 +229,69 @@ Filter DEATH / decay
   Multi-source and multi-event feeds produce this set as a side effect. That is the
   argument for building them before the router, not after.
 
+
+=== NEXT EXPERIMENT: the span-embedding router ===
+
+  HYPOTHESIS
+  A per-event span block, retrieved with late interaction, routes an observation to the
+  right event INSTANCE better than the hard string key -- and better than the free
+  scope-membership test.
+
+  WHY IT IS WORTH A RUN. It is the first candidate that builds a representation rather
+  than assuming one, it needs NO new training for a first pass, and it is cheap to
+  falsify. Design and its three conditions are above, under "Which filter?".
+
+  BUILD (first pass, all local, no GPU)
+    1. events-form extraction over the Helene feed with include_spans=True
+    2. per event: block = text[min(start) .. max(end)] over its trigger + arguments
+    3. embed each block; index with FAISS
+    4. score a new observation's block against each live filter; argmax, or birth
+       below threshold
+    5. filters anchored on DECLARED identity (name + place + date), not on a centroid
+       that drifts with whatever it accepts
+
+  THE BAR IS NOT THE STRING KEY -- IT IS SCOPE MEMBERSHIP
+  A free, model-free test already gets 4/6 cross-event at 7.3% FP. Beating the string
+  key proves nothing; beating a test that costs one dict lookup is the real bar.
+
+  PASS / FAIL, fixed before spending
+
+    PRIMARY -- and it is deliberately the hardest thing to fake:
+      catch at least ONE of the two cases scope membership STRUCTURALLY CANNOT --
+      the Taiwan typhoon's 32 keyed to `tennessee`, the 1916 hurricanes' 80 keyed to
+      `north carolina`. Both are cross-event with an IN-SCOPE place. A router that
+      recovers only the other four has reproduced a free test with a model attached,
+      and should be reported as negative however good its aggregate score looks.
+
+    GUARD  cross-event overall  >= 4/6 at <= 7.3% FP     (do not regress on the free test)
+    GUARD  genuine observations stay on their own stream -- report per-place assignment
+           accuracy, not just cross-event catches. A router that routes everything to
+           __aggregate__ scores well on the primary and is useless.
+    REPORT MRR and precision@1 over all (observation x live filter) pairs. With 106
+           observations and ~8 filters that is ~848 labelled comparisons out of the same
+           annotation -- the one formulation so far that is not stuck at n=6.
+
+  ABLATIONS, each testing a stated condition rather than tuning
+    late interaction vs mean-pooled single vector   -- tests the ColBERT claim. If they
+        tie, the token-level argument is wrong and a dense vector is enough.
+    anchored identity vs drifting centroid          -- tests the self-reference caution.
+        If they tie, the trap does not bite here and the simpler form wins.
+    span block vs whole document                    -- tests that LOCALITY is what helps,
+        not just "embeddings help".
+    + date and place features alongside the vector  -- the 1916 case has no name at all,
+        so this is the arm that could reach it.
+
+  BLOCKING PREREQUISITES, both known and both cheap
+    - events-form extraction has to actually fire on real wire copy. The boundary front
+      end binds 1 window in 40 at the default record threshold and 37 of 40 at 0.10;
+      calibrate before running, or the router is scored on an empty input.
+    - the corrected per-occurrence labels (helene_audit_labels.json) are the only valid
+      scoring set. Do not use the old string-matched labels; they were 27% correct.
+
+  WHAT WOULD RETIRE THE IDEA
+    It fails the primary -- catches neither in-scope case -- while scope membership sits
+    there getting 4/6 for free. Then instance identity is not recoverable from the span's
+    content on this data, and the next move is the multi-source feed, not a better encoder.
+
 ---
 Review, open questions and feasibility: EKF_PIPELINE_VISION_REVIEW.md
