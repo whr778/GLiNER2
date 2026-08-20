@@ -297,12 +297,38 @@ Filter DEATH / decay
     `location` bound to "Helene decimated". A textbook earthquake sentence returns empty
     even at 0.1.
 
-    WHY, and it is not a mystery: 68% of that model's event supervision is Chinese --
-    62,900 rows (ChFinAnn, DocFEE, DuEE, CMNEE) against 29,190 English. Its argument F1 of
-    0.506 is carried by Chinese doc-level financial events. RAMS, the main English
-    trigger-to-argument corpus, was deliberately excluded, as were the real-synth and
-    synth arms, because the model was built to WARM-START other training and to support
-    preservation tests -- not to be a front end.
+    WHY. A first pass at this said "68% of its event supervision is Chinese", read off
+    the model card's row counts. That was WRONG and the truth is worse. DocEE, ChFinAnn
+    and DocFEE are not stored as events at all -- they are `entities` + `classifications`,
+    so the doc-level type is a classification label and the arguments are NER spans. They
+    contribute no trigger-to-argument binding whatsoever.
+
+    Counting only corpora that actually carry arguments bound to a trigger, which is what
+    the router needs:
+
+        137k-clean as built     en =    798    zh = 20,884     english share  3.7%
+
+    The English side is CASIE alone. MAVEN and Mendeley are trigger-only. So the model's
+    argument F1 of 0.506 is very nearly a Chinese-only number, and English trigger-to-
+    argument extraction rests on 798 examples. That is why it emits nonsense on AP copy,
+    and it is not something a threshold can reach.
+
+    With every available event corpus added:
+
+        with everything added   en = 39,783    zh = 20,884     english share 65.6%
+
+    English trigger-to-argument supervision goes 798 -> 39,783, a 50x increase:
+    casualty_events 23,627 · rams 7,079 · cc_news_haiku45 2,898 · synthetic arms 5,194 ·
+    wikievents 187.
+
+    THE COMPOSITION MATTERS MORE THAN THE RATIO, and it is the risk in this rebuild:
+        human-annotated real text    8,064   20%   RAMS, CASIE, WikiEvents
+        real text, model labels      2,898    7%   cc_news_haiku45
+        synthetic                   28,821   72%   casualty_events + synthetic_*
+    72% synthetic on a line whose recurring failure is exactly in-domain-good /
+    real-news-zero (Track B: 0.532 in-domain, 0 on real news). RAMS is the largest block
+    of genuine English news argument annotation available and should be weighted as such
+    rather than drowned by casualty_events, which is 3x its size and synthetic.
 
     SO THE ORDER IS: rebuild -> calibrate -> run. Not calibrate -> run.
 
