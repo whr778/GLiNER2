@@ -44,10 +44,24 @@ Ungated per-place mean nRMSE, all three runs on identical pipeline settings:
 | muted | 109 | **19.822** | 3.729 |
 
 **Muting more than halves the ungated error, 46.844 → 19.822 (2.4x).** The win is almost
-entirely one state: **North Carolina 127.504 → 0.640**, which is where Katrina's 1,400 lives
-— the single largest cross-event contaminant and exactly what this arm was built to remove.
-The muted arm also extracts 47% fewer `dead` observations (205 → 109), which is the
-suppression doing what it was trained to do rather than a recall collapse.
+entirely one state: **North Carolina 127.504 → 0.640**. The muted arm also extracts 47% fewer
+`dead` observations (205 → 109), which is the suppression doing what it was trained to do
+rather than a recall collapse.
+
+**Corrected 2026-08-20 — the mechanism is not the one first claimed here.** This section
+originally attributed North Carolina's improvement to removing Katrina's 1,400, "exactly what
+this arm was built to remove". Tracing every large value (`FALSE_POSITIVES.md`) shows that is
+the wrong driver. North Carolina's control stream carries **129,933 twice** — FEMA
+flood-insurance *policies* in force — against a truth peak of 123, and that, not Katrina,
+dominates the error. Katrina's 1,400 *is* removed from North Carolina, so the claim was
+directionally right and quantitatively misleading.
+
+More importantly, **muting fixed a different class than it was designed for.** It eliminates
+15 of the control's 20 large false positives — populations, counts of non-people, and five of
+seven years-read-as-tolls — but **both cross-event tolls survive** (Katrina 1,400, Maria
+3,000). The cross-event class is the one this arm targets. What it actually cleaned up is
+`TODO.md`'s separate, smaller "non-casualty number rejection" item, which turns out to carry
+the largest values and therefore to dominate nRMSE.
 
 Gated, the muted arm is slightly *worse* (3.729 vs 3.336), so the gain does not survive a
 mechanism that was already removing large contaminants by magnitude. That is consistent:
