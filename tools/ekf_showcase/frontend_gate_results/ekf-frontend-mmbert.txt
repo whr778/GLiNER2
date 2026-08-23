@@ -1,0 +1,36 @@
+model: whr778/gliner2-ekf-frontend-mmbert
+60 casualty-bearing Helene windows
+
+GATE 1 -- usable events-form on real wire copy (want >= 50%)
+ thresh   windows w/ trigger+arg    share
+   0.50                        3     5.0%
+   0.40                        4     6.7%
+   0.30                        6    10.0%
+   0.20                        6    10.0%
+   0.10                       15    25.0%
+   0.05                       29    48.3%   (diagnostic, not pre-registered)
+   0.01                       52    86.7%   (diagnostic, not pre-registered)
+  -> gate 1 FAIL -- best 25.0% at threshold 0.10 over the REGISTERED range 0.1-0.5
+     (reaches 86.7% at 0.01, below the registered range -- check WHAT it binds there before reading that as progress)
+
+GATE 2 -- the span block is LOCAL (Katrina block must hold '1,400', not 'Helene')
+ thresh  case      block                                    verdict
+   0.50  KATRINA  -                                        no block contains the figure
+   0.50  HELENE   -                                        no block contains the figure
+   0.40  KATRINA  -                                        no block contains the figure
+   0.40  HELENE   -                                        no block contains the figure
+   0.30  KATRINA  -                                        no block contains the figure
+   0.30  HELENE   -                                        no block contains the figure
+   0.20  KATRINA  -                                        no block contains the figure
+   0.20  HELENE   -                                        no block contains the figure
+   0.10  KATRINA  -                                        no block contains the figure
+   0.10  HELENE   -                                        no block contains the figure
+   0.05  KATRINA  -                                        no block contains the figure
+   0.05  HELENE   -                                        no block contains the figure
+   0.01  KATRINA  -                                        no block contains the figure
+   0.01  HELENE   Appalachia, left millions without powe... LOCAL -- ok
+  -> gate 2 FAIL (scored on the REGISTERED range)
+
+Gates 3 and 4 come from the run's own test_metrics.json:
+  3. event_trigger >= 0.710 and event_argument >= 0.506 (the incumbent's)
+  4. entity / relation / structure F1 not below the 137k-clean reference

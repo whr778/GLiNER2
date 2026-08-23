@@ -1,0 +1,36 @@
+model: whr778/gliner2-joint-boundary-mmbert-137k-clean
+60 casualty-bearing Helene windows
+
+GATE 1 -- usable events-form on real wire copy (want >= 50%)
+ thresh   windows w/ trigger+arg    share
+   0.50                        0     0.0%
+   0.40                        0     0.0%
+   0.30                        5     8.3%
+   0.20                       12    20.0%
+   0.10                       39    65.0%
+   0.05                       55    91.7%   (diagnostic, not pre-registered)
+   0.01                       60   100.0%   (diagnostic, not pre-registered)
+  -> gate 1 PASS -- best 65.0% at threshold 0.10 over the REGISTERED range 0.1-0.5
+
+GATE 2 -- the span block is LOCAL (Katrina block must hold '1,400', not 'Helene')
+ thresh  case      block                                    verdict
+   0.50  KATRINA  -                                        no block contains the figure
+   0.50  HELENE   -                                        no block contains the figure
+   0.40  KATRINA  -                                        no block contains the figure
+   0.40  HELENE   -                                        no block contains the figure
+   0.30  KATRINA  -                                        no block contains the figure
+   0.30  HELENE   -                                        no block contains the figure
+   0.20  KATRINA  -                                        no block contains the figure
+   0.20  HELENE   -                                        no block contains the figure
+   0.10  KATRINA  -                                        no block contains the figure
+   0.10  HELENE   Helene decimated remote towns througho... LOCAL -- ok
+   0.05  KATRINA  -                                        no block contains the figure
+   0.05  HELENE   Helene decimated remote towns througho... LOCAL -- ok
+   0.01  KATRINA  At a recent rally in Reading, Pennsylv... LOCAL -- ok
+   0.01  HELENE   Helene decimated remote towns througho... SWALLOWS Katrina
+  -> gate 2 FAIL (scored on the REGISTERED range)
+     (the Katrina block is local only BELOW the registered range)
+
+Gates 3 and 4 come from the run's own test_metrics.json:
+  3. event_trigger >= 0.710 and event_argument >= 0.506 (the incumbent's)
+  4. entity / relation / structure F1 not below the 137k-clean reference

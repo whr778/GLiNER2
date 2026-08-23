@@ -8,8 +8,17 @@ metrics do not predict what this model is for.
     uv run python tools/ekf_showcase/frontend_gates.py <model-id> [--device cpu]
 
 GATE 1  usable events-form on the Helene feed: a trigger AND >=1 bound argument on >= 50%
-        of casualty-bearing windows, at a swept threshold. The incumbent is ~0 at every
-        threshold, so this is the bar for "the router has an input at all".
+        of casualty-bearing windows, at a swept threshold -- the bar for "the router has
+        an input at all".
+
+        CORRECTED 2026-08-23. This used to read "the incumbent is ~0 at every threshold".
+        That was an artifact of this harness: it set only the Schema's per-event
+        thresholds, which a boundary model never reads, so every sweep row actually ran
+        at the default 0.5 -- where 0.0% is indeed what the incumbent scores. Measured
+        properly it is 0.0% at 0.5/0.4, 8.3% at 0.3, 20.0% at 0.2 and 65.0% at 0.1, so
+        the incumbent PASSES this gate on the registered range. Gate 1 measures FORM,
+        not content: at 0.1 the incumbent's bindings are the documented nonsense, which
+        is what gate 2 is for.
 
 GATE 2  the span block is LOCAL. On the Katrina passage, min(start)..max(end) over the
         event containing the 1,400 must CONTAIN "1,400" and must NOT contain "Helene".
@@ -138,7 +147,7 @@ def main() -> None:
 
     print("GATE 2 -- the span block is LOCAL (Katrina block must hold '1,400', not 'Helene')")
     print(f"{'thresh':>7}  case      block                                    verdict")
-    g2 = False
+    g2 = g2_ext = False
     for th in REGISTERED + EXTENDED:
         for name, text, must, forbid in (("KATRINA", KATRINA, "1,400", "Helene"),
                                          ("HELENE ", HELENE, "246", "Katrina")):
@@ -150,11 +159,17 @@ def main() -> None:
                 v = f"SWALLOWS {forbid}"
             else:
                 v = "LOCAL -- ok"
-                if name == "KATRINA":
+                # Same rule as gate 1: only the pre-registered range can score it.
+                if name == "KATRINA" and th in REGISTERED:
                     g2 = True
+                elif name == "KATRINA":
+                    g2_ext = True
             frag = (hit["text"][:38] + "...") if hit else "-"
             print(f"{th:>7.2f}  {name}  {frag:<40} {v}")
-    print(f"  -> gate 2 {'PASS' if g2 else 'FAIL'}\n")
+    print(f"  -> gate 2 {'PASS' if g2 else 'FAIL'} (scored on the REGISTERED range)")
+    if g2_ext and not g2:
+        print("     (the Katrina block is local only BELOW the registered range)")
+    print()
 
     print("Gates 3 and 4 come from the run's own test_metrics.json:")
     print("  3. event_trigger >= 0.710 and event_argument >= 0.506 (the incumbent's)")

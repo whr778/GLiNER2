@@ -44,6 +44,13 @@
 #      a trigger + >=1 bound argument on >= 50% of casualty-bearing windows.
 #      The incumbent scores ~0 at every threshold, so anything above noise is progress;
 #      50% is the bar for "the router has an input".
+#      >> CORRECTION 2026-08-23, after the run. "~0 at every threshold" was WRONG, and
+#      >> it was our instrument, not the incumbent: frontend_gates set only the Schema's
+#      >> per-event thresholds, which a boundary model never reads, so every sweep row
+#      >> ran at 0.5. Re-measured on the fixed harness the incumbent is 0.0% at 0.5/0.4,
+#      >> 8.3% at 0.3, 65.0% at 0.1 -- it PASSES gate 1. The rebuilt model scores 25.0%
+#      >> at 0.1 and FAILS. The premise below (nothing usable at 0.3+, nonsense at 0.1)
+#      >> still holds; the "~0 everywhere" strengthening of it did not.
 #   2. GATE -- the span block is LOCAL. On the Katrina passage, min(start)..max(end) over
 #      the Katrina event must contain "1,400" and must NOT contain "Helene". The span
 #      model fails this at every threshold (block is the bare name, or swallows the

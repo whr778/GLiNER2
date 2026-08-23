@@ -101,7 +101,7 @@ event-shaped fix, the event-shaped one is the one that serves the programme *and
 that carries the right information: only the event formulation has an `event_key`, which is
 the field an EKF observation needs. See item 1 for the worked case.
 
-### FRONT-END REBUILD IN FLIGHT — `ekf-frontend-mmbert` (2026-08-20)
+### FRONT-END REBUILD — DONE AND NEGATIVE — `ekf-frontend-mmbert` (run 2026-08-20/21, scored 2026-08-23)
 
 The EKF pipeline's router work is blocked on an extractor that emits, per event, a trigger
 and arguments bound to *that* trigger. Nothing in the line does.
@@ -138,24 +138,56 @@ re-try it; utilisation swings 28–81% on variable sequence length while memory 
 
 ---
 
-**Smoke DONE, FULL RUN LIVE (overnight).** Smoke on 1x A100-40GB passed at ~$1.70: cu128 +
-FA2 clean with no non-finite loss over 586 steps, **18.5 samples/s** against an extrapolated
-12.1 -- so every cost figure produced before it was ~34% high. `num_workers` is NOT the
-bottleneck (18.4 at 0, 18.5 at 4); memory sits flat at 10.6 GB of 40, so **batch_size is the
+**RUN DONE (2026-08-21), GATES FAIL, AND THE HARNESS THAT JUSTIFIED IT WAS BROKEN.**
+
+Smoke on 1x A100-40GB passed at ~$1.70: cu128 + FA2 clean, **18.5 samples/s** against an
+extrapolated 12.1 -- every cost figure produced before it was ~34% high. `num_workers` is NOT
+the bottleneck (18.4 at 0, 18.5 at 4); memory flat at 10.6 GB of 40, so **batch_size is the
 untested lever**. Logs in `tools/train/smoke_results/ekf-frontend-mmbert/`.
 
-The full 6-epoch run is on `gpu_1x_a100_sxm4` (~16.3h, ~$33), fully autonomous: the box
-trains, pushes model + logs + metrics to `whr778/gliner2-ekf-frontend-mmbert` (private), then
-terminates itself via the Lambda API. Nothing depends on the operator's session.
+The full 6-epoch run completed autonomously and self-terminated: 35,484 steps, 62,249 s
+(17.3 h), 18.24 samples/s, ~$35, eval_loss falling every epoch 1.2672 -> 0.8917 (still
+improving at 6 -- no plateau). Model + artifacts on `whr778/gliner2-ekf-frontend-mmbert`.
 
-Two supporting pieces landed with it. `tools/data/split_rams_test.py` gave rams a val split by
-carving its 871-row test **by document** -- which found 101 duplicate rows in test alone, the
-same hazard this file records for rams train. And `tools/ekf_showcase/frontend_gates.py`
-scores the two pre-registered gates; run against the incumbent it returns 0.0% and "no block
-contains the figure" at every threshold, which is what makes a non-zero result from the
-rebuild meaningful rather than a permissive harness.
+**Gate results, both models re-measured on the fixed harness** (registered range 0.1-0.5;
+`tools/ekf_showcase/frontend_gate_results/`):
 
-State at **2026-08-20**. **A full-run GPU is running overnight** (self-terminating) (the muting-arm A10 is terminated, verified).
+| gate | rebuild `ekf-frontend` | incumbent `137k-clean` |
+|---|---|---|
+| 1 -- trigger + >=1 bound arg on >=50% of Helene windows | **FAIL** 25.0% @ 0.1 | **PASS** 65.0% @ 0.1 |
+| 2 -- Katrina block holds "1,400", not "Helene" | **FAIL** | **FAIL** (local only at 0.01) |
+
+**The rebuild is a negative result: it forms events on FEWER wire-copy windows than the model
+it was built to replace.** In-distribution it is fine (right trigger, right bound argument,
+right spans on its own casualty corpus), which is this line's standing failure mode --
+in-domain-good / real-news-poor, with 72% of the new English trigger+argument data synthetic.
+
+**The instrument was the problem, and this file carried the bad claim.** The sentence that
+used to sit here -- "run against the incumbent it returns 0.0% and 'no block contains the
+figure' at every threshold" -- was an artifact. `frontend_gates.py` set only the Schema's
+per-event `trigger_threshold`/`argument_threshold`, which the boundary greedy path never
+reads (only the span engine does), so all five sweep rows ran at the default 0.5 -- where
+0.0% is genuinely what the incumbent scores. Fixed in bf42950; the gate now drives
+`extract(threshold=)`. **The config's original premise still stands** (nothing usable at
+0.3+, nonsense at 0.1); the "~0 at EVERY threshold" strengthening of it did not.
+
+Gate 1 measures *form*, not content -- the incumbent's nominal pass at 0.1 still binds the
+documented nonsense, which is what gate 2 catches. Both models fail gate 2.
+
+**Still open: gates 3 and 4 are NOT scored.** They cannot be read off the run's own
+`test_metrics.json` -- different test composition (added corpora, rams test re-carved) and a
+different threshold (0.3 calibrated vs the reference's 0.5). One eval of the new checkpoint
+over the 137k blind test (15,456 rows) at a pinned 0.5 settles both. Watch the strict/relaxed
+trap while reading them: the incumbent's quoted 0.710 / **0.506** are RELAXED numbers.
+
+**Pre-registered next move on a gate-1 FAIL, from the config:** downsample `casualty_events`
+(23,627 records, 3.3x RAMS) FIRST, before any recipe change. Weigh that against the new
+picture -- the incumbent now out-forms the rebuild, so "is the mix the lever at all" is live.
+
+`tools/data/split_rams_test.py` gave rams a val split by carving its 871-row test **by
+document**, which found 101 duplicate rows in test alone.
+
+State at **2026-08-23**. **No GPU running** (the front-end A100 self-terminated 2026-08-21, verified 0 instances).
 A programme-wide caveat landed with it: the cached Helene observation set behind every
 published Helene figure **cannot be regenerated from any committed state** — see
 `tools/ekf_showcase/muting_arm_results/PROVENANCE.md`. Comparisons among the published

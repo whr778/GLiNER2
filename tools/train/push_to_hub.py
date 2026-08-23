@@ -75,12 +75,18 @@ def main() -> None:
         # save_pretrained writes only weights/config/tokenizer, so without this the
         # card train.py generated stays on disk and the Hub page renders EMPTY. The
         # Hub reads the card from README.md specifically -- MODEL_CARD.md is ignored.
-        card = checkpoint / "MODEL_CARD.md"
-        if card.is_file():
+        # train.py writes the card to <output_dir>/best/, so pushing an epoch
+        # checkpoint directly found nothing and shipped an empty Hub page (the EKF
+        # front-end run: card written to best/, push pointed at checkpoint-epoch-6).
+        card = next((c for c in (checkpoint / "MODEL_CARD.md",
+                                 checkpoint.parent / "best" / "MODEL_CARD.md")
+                     if c.is_file()), None)
+        if card:
             shutil.copyfile(card, Path(tmp_dir) / "README.md")
-            print(f"Including model card ({card.stat().st_size} bytes) as README.md")
+            print(f"Including model card ({card.stat().st_size} bytes) from {card} as README.md")
         else:
-            print(f"WARNING: no MODEL_CARD.md in {checkpoint}; Hub page will be empty")
+            print(f"WARNING: no MODEL_CARD.md in {checkpoint} or {checkpoint.parent}/best; "
+                  "Hub page will be empty")
 
         print(f"Uploading to https://huggingface.co/{args.repo_id}")
         api.upload_folder(
