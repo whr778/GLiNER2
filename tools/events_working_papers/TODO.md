@@ -193,14 +193,18 @@ rather than asserted.
 The config pre-registers that remedy for a gate-1 failure, but two measurements taken since
 say it cannot work:
 
-1. **Gate 2 is unreachable by any mix change.** `_decode_events` emits ONE instance per
-   event type and pools every trigger and argument into it -- its own docstring says the
-   mention path "carries no instance dimension". Measured on the incumbent with two
-   hurricanes in one passage: `n_event_instances=1`, with Helene's 246 and Katrina's 1,400
-   both filed as `dead` on the same event, at 0.1 and at 0.01. Gate 2 takes
-   min(start)..max(end) over that single pooled instance, so it can only pass when the model
-   happens to emit few enough spans -- it is measuring SPARSITY, not binding. That is why
-   both models "pass" it only at 0.01, where output is otherwise nonsense.
+1. **Gate 2 scores sparsity, not binding, so a mix change cannot reliably move it.**
+   `_decode_events` emits ONE instance per event type and pools every trigger and argument
+   into it -- its own docstring says the mention path "carries no instance dimension".
+   Measured on the incumbent with two hurricanes in one passage: `n_event_instances=1`, with
+   Helene's 246 and Katrina's 1,400 both filed as `dead` on the same event, at 0.1 and at
+   0.01. Gate 2 takes min(start)..max(end) over that single pooled instance, so it passes
+   only when the model happens to emit *nothing but* Katrina-local spans.
+   **Not impossible -- the incumbent does produce a LOCAL Katrina block at 0.01** (the
+   passage carries one Hurricane-typed event; Helene is a mention, not a second extracted
+   event). But what the gate rewards there is sparsity, which is why it only lands at the
+   threshold where the rest of the output is nonsense. Pooling makes it fragile, and no
+   corpus teaches a model to emit fewer spans on demand.
 2. **`casualty_events` cannot teach the missing capability anyway.** It carries 8 event types
    and no named identities, so it has no same-type discrimination (Helene vs Katrina) in it
    -- which is the live defect in item 2.
