@@ -64,8 +64,9 @@ def test_every_config_corpus_has_a_registry_entry():
             if key not in ds:
                 missing.add(key)
         for name in (data.get("event_files") or {}):
-            if name not in ds:
-                missing.add(name)
+            key = canonical_dataset_key(name)
+            if key not in ds:
+                missing.add(key)
         model = cfg.get("model") or {}
         bm = model.get("encoder") or model.get("pretrained")
         if bm and bm not in base:

@@ -97,19 +97,31 @@ def _dataset_counts(corpora: List[str], event_files: Dict[str, Dict[str, str]]) 
         except OSError:
             return 0
 
+    # Key by the SAME canonical key the card resolves datasets under, or the lookup
+    # misses and the count columns render blank: `sentence_rex.j10k` is credited to
+    # `sentence_rex`, and an event_files label like `synthetic_coerced` to its registry
+    # name. Counts for slices/aliases of one dataset are summed rather than overwritten.
+    from model_card import canonical_dataset_key
+
     counts: Dict[str, Dict[str, int]] = {}
+
+    def _add(key: str, split: str, n: int) -> None:
+        counts.setdefault(key, {})
+        counts[key][split] = counts[key].get(split, 0) + n
+
     for c in (corpora or []):
-        key = Path(c).name
-        counts[key] = {}
+        key = canonical_dataset_key(Path(c).name)
+        counts.setdefault(key, {})
         for split in ("train", "val", "test"):
             p = f"{c}.{split}.jsonl"
             if Path(p).is_file():
-                counts[key][split] = _count(p)
+                _add(key, split, _count(p))
     for name, by_split in (event_files or {}).items():
-        counts[name] = {}
+        key = canonical_dataset_key(name)
+        counts.setdefault(key, {})
         for split, path in (by_split or {}).items():
             if path and Path(path).is_file():
-                counts[name][split] = _count(path)
+                _add(key, split, _count(path))
     return counts
 
 
@@ -209,7 +221,7 @@ def _write_model_card(
         # the card reports the real corpus and its real license.
         from model_card import canonical_dataset_key
         dataset_keys = [canonical_dataset_key(Path(c).name) for c in corpora] + [
-            name for name, by_split in (event_files or {}).items()
+            canonical_dataset_key(name) for name, by_split in (event_files or {}).items()
             if any(p and Path(p).is_file() for p in by_split.values())
         ]
         # A streamed source (data.hf_streaming) is a real training dataset too;

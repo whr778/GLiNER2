@@ -171,9 +171,24 @@ def main() -> None:
         print("     (the Katrina block is local only BELOW the registered range)")
     print()
 
-    print("Gates 3 and 4 come from the run's own test_metrics.json:")
-    print("  3. event_trigger >= 0.710 and event_argument >= 0.506 (the incumbent's)")
-    print("  4. entity / relation / structure F1 not below the 137k-clean reference")
+    print("Gates 3 and 4 are NOT scored here, and NOT from the run's own test_metrics.json.")
+    print("  That file is a different test composition at a different threshold, so its")
+    print("  numbers are not comparable to the reference. Score the candidate on the 137k")
+    print("  blind test at a PINNED 0.5:")
+    print("    uv run python tools/train/eval.py \\")
+    print("      --config tools/train/config/joint-boundary-mmbert-137k.yaml \\")
+    print("      --checkpoint <ckpt> --threshold 0.5")
+    print()
+    print("  3. event_trigger / event_argument vs the incumbent, LIKE FOR LIKE:")
+    print("       strict  0.7447 / 0.1014      fair (Ortmann)  0.7480 / 0.5629")
+    print("     The 0.710 / 0.506 this line used to quote are RELAXED own-test numbers;")
+    print("     comparing a strict score against them is a category error that made a")
+    print("     2x improvement in strict argument F1 read as a halving.")
+    print("  4. entity 0.6306 / relation 0.1573 strict, and structure 0.1119 -- the last")
+    print("     one SWEPT to record threshold 0.1 (record_sweep_results/137k.json), so it")
+    print("     is only comparable to a candidate swept the same way, not to a default-")
+    print("     cutoff number: the record head's max object probability is 0.178, under")
+    print("     the 0.5 default.")
 
 
 if __name__ == "__main__":

@@ -136,7 +136,7 @@ def main() -> int:
     corpora = cfg["data"].get("corpora") or []
     event_files = cfg["data"].get("event_files") or {}
     dataset_keys = [canonical_dataset_key(Path(c).name) for c in corpora] + [
-        n for n, by in event_files.items()
+        canonical_dataset_key(n) for n, by in event_files.items()
         if any(p and Path(p).is_file() for p in by.values())]
 
     # Feed the card EVERY artifact training fed it. Rebuilding from the YAML alone is

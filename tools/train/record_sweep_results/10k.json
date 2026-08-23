@@ -1,0 +1,88 @@
+{
+  "config": "tools/train/config/joint-boundary-mmbert-10k.yaml",
+  "checkpoint": "out/joint-boundary-mmbert-10k/best",
+  "n_records": 148,
+  "by_threshold": [
+    {
+      "threshold": 0.5,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 1,
+      "fn": 758
+    },
+    {
+      "threshold": 0.3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 9,
+      "fn": 758
+    },
+    {
+      "threshold": 0.2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 15,
+      "fn": 758
+    },
+    {
+      "threshold": 0.15,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 31,
+      "fn": 758
+    },
+    {
+      "threshold": 0.1,
+      "precision": 0.04854368932038835,
+      "recall": 0.006596306068601583,
+      "f1": 0.011614401858304297,
+      "tp": 5,
+      "fp": 98,
+      "fn": 753
+    },
+    {
+      "threshold": 0.07,
+      "precision": 0.04433497536945813,
+      "recall": 0.011873350923482849,
+      "f1": 0.018730489073881373,
+      "tp": 9,
+      "fp": 194,
+      "fn": 749
+    },
+    {
+      "threshold": 0.05,
+      "precision": 0.03880597014925373,
+      "recall": 0.017150395778364115,
+      "f1": 0.02378774016468435,
+      "tp": 13,
+      "fp": 322,
+      "fn": 745
+    },
+    {
+      "threshold": 0.03,
+      "precision": 0.023192360163710776,
+      "recall": 0.022427440633245383,
+      "f1": 0.022803487592219986,
+      "tp": 17,
+      "fp": 716,
+      "fn": 741
+    }
+  ],
+  "best": {
+    "threshold": 0.05,
+    "precision": 0.03880597014925373,
+    "recall": 0.017150395778364115,
+    "f1": 0.02378774016468435,
+    "tp": 13,
+    "fp": 322,
+    "fn": 745
+  }
+}

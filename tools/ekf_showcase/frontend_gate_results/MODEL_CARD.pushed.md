@@ -58,8 +58,8 @@ See [License](#license) for the full determination and per-dataset terms.
 | RAMS | Event extraction (trigger + args) | 7,329 | 439 | 432 | en | see source | [link](https://nlp.jhu.edu/rams/) |
 | Multi-event casualty corpus, EVENTS form | event extraction (trigger + typed arguments, multi-instance) | 23,627 | 2,666 | 2,852 | en | see source | — |
 | CC-News real text, Haiku-4.5 annotations | multi-task IE (NER, relations, classification, events, structures) | 15,839 | 2,075 | 2,043 | en | see source | [link](https://huggingface.co/datasets/vblagoje/cc_news) |
-| ⚠️ `synthetic_coerced` | unknown | — | — | — | — | **UNKNOWN — not in registry** | — |
-| ⚠️ `synthetic_sonnet5` | unknown | — | — | — | — | **UNKNOWN — not in registry** | — |
+| Synthetic Haiku-4.5 multi-task 5K (coerced entity types) | multi-task IE (NER, relations, classification, events, structures) | 4,020 | 496 | 484 | en | see source | — |
+| Synthetic Sonnet-5 multi-task | multi-task IE (NER, relations, classification, events) | 1,497 | 191 | 194 | en | see source | — |
 | WikiEvents | NER + event extraction | 200 | — | — | en | see source | [link](https://github.com/raspberryice/gen-arg) |
 | CASIE | Event extraction (cybersecurity) | 798 | 95 | 107 | en | see source | [link](https://github.com/Ebiquity/CASIE) |
 | DuEE 1.0 | Event extraction (Chinese, trigger + args) | 11,603 | 150 | — | zh | see source | [link](https://www.luge.ai/#/luge/dataDetail?id=6) |
@@ -80,6 +80,8 @@ See [License](#license) for the full determination and per-dataset terms.
 - **RAMS** — Multi-sentence event extraction with triggers and typed arguments; 139 event types, 65 argument roles.
 - **Multi-event casualty corpus, EVENTS form** — The same documents, splits and figures as casualty_loc_split, re-emitted as trigger + typed arguments instead of anchored json_structures records, for Track B: does the EVENT formulation bind figures better than the structure one? Built by build_multievent_corpus.py --emit events. 23,627 / 2,666 / 2,852 documents, mean ~2.4 instances, 8 event types, 57,726 triggers and 124,561 arguments all verbatim in their own document. TRIGGERS ARE DERIVED, NOT GOLD: DocEE gives a type and never a span, so _locate_trigger matches a per-type surface list inside the snippet's own slice -- 97.6% coverage, worst type Road Crash at 8.7% missing. A gain here is a gain over that trigger definition. The corpus carries 8 event TYPES and no named identities, so it can teach trigger->argument binding and cannot teach same-type discrimination (Helene vs Katrina), which is the live defect in TODO item 2.
 - **CC-News real text, Haiku-4.5 annotations** — REAL news documents with model-written labels (19,957 records: 15,839 train / 2,075 val / 2,043 test) -- the real-text half of the real/synthetic mixture, and the counterpart to synthetic_haiku45_5k where the documents themselves were generated. Text is English CC-News (LID-filtered with lumi_language_id; the corpus is ~98.75% en, remainder `und` junk), annotated by claude-haiku-4-5 through synthetic/generate.py --annotate-from. Deduplicated on the document key AT COLLECTION, before annotation was paid for: news syndication republishes the same wire story and a first 10K pull dropped 512 such copies. Verified 0 overlap against every other corpus in data/. Entity spans are checked verbatim against the source (~5% dropped), and absent types are seeded as negatives. CAVEATS: the upstream card declares license `unknown` and the articles remain publisher copyright, so this is a private research cache, not redistributable; domain coverage is skewed (244 domains, but taiwannews.com.tw alone is 18%); and events/structures are sparse on real news (0.26 and 0.08 per document) versus synthetic, where they are guaranteed by construction.
+- **Synthetic Haiku-4.5 multi-task 5K (coerced entity types)** — Superseded first run of synthetic_haiku45_5k (5,000 records). Entity TYPES are unreliable -- each document was offered only 14 of 125 types, so spans were filed under the nearest available one (52% purity on repeated surfaces). Kept for comparison, not for training.
+- **Synthetic Sonnet-5 multi-task** — Locally generated synthetic multi-task IE corpus (1,882 records) covering entities, relations, text classification, document-level events, and json_structures; produced with Claude Sonnet 5. Narrow original ontology, so entity types are clean (96% purity on repeated surfaces) but the corpus carries no negatives.
 - **WikiEvents** — KAIROS-ontology event extraction co-trained with typed entity mentions; 49 event types, 57 argument roles.
 - **CASIE** — Cybersecurity event extraction co-trained with typed entity mentions; 5 event types, 26 argument roles.
 - **DuEE 1.0** — Sentence-level Chinese event extraction (65 event types, 121 roles) via the no-login HuggingFace mirror; train + val only, no test.
@@ -191,11 +193,11 @@ Micro precision / recall / F1, strict → relaxed.
 - MAVEN (see source)
 - Multi-event casualty corpus, EVENTS form (see source)
 - RAMS (see source)
+- Synthetic Haiku-4.5 multi-task 5K (coerced entity types) (see source)
+- Synthetic Sonnet-5 multi-task (see source)
 - WikiEvents (see source)
 - bio-NER-relations (see card)
 - mmBERT-base (see model card)
-- synthetic_coerced (unknown) (unspecified)
-- synthetic_sonnet5 (unknown) (unspecified)
 - text2json-training-data (see card)
 
 **Permissive**

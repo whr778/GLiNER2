@@ -57,6 +57,14 @@
 #      competitor); it is the single most diagnostic case in the feed.
 #   3. GUARD -- no regression on the incumbent's own ground: event_trigger and
 #      event_argument F1 on the shared held-out splits, against 0.710 / 0.506.
+#      >> CORRECTION 2026-08-23. 0.710 / 0.506 are RELAXED numbers off the incumbent's
+#      >> OWN test set, so scoring a candidate's STRICT F1 against them is a category
+#      >> error -- it makes a 2x gain in strict argument F1 (0.1014 -> 0.214) read as a
+#      >> halving. Like-for-like on the shared 137k blind test at a pinned threshold
+#      >> 0.5: strict 0.7447 / 0.1014, fair 0.7480 / 0.5629.
+#      >> Gate 4's structure reference is 0.1119, and it is SWEPT to record threshold
+#      >> 0.1 -- the record head's max object probability is 0.178, so a default-0.5
+#      >> number measures a cutoff the head cannot reach. Sweep the candidate too.
 #   4. GUARD -- the other heads survive. entity / relation / structure F1 must not fall
 #      below the 137k-clean reference; this model has to carry the whole front end
 #      (NER, relations, structures, classification, events), not just events.

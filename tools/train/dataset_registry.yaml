@@ -203,6 +203,7 @@ datasets:
     tasks: Relation extraction
     license: Apache-2.0
     hf_id: knowledgator/sentence_rex
+    hf_jsonl: whr778/sentence_rex
     source_url: https://huggingface.co/datasets/knowledgator/sentence_rex
     language: [en]
     description: "Sentence-level relation extraction over Wikidata-property labels; 818 relation types."
@@ -245,6 +246,7 @@ datasets:
     name: BioRED
     tasks: NER + relations (biomedical)
     license: NLM / NCBI
+    hf_jsonl: whr778/biored
     source_url: https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/
     language: [en]
     description: "Biomedical document-level NER + RE from NCBI BioC; 6 entity types, 8 relation types."
@@ -288,6 +290,7 @@ datasets:
     tasks: Classification (multi-label)
     license: ODC-BY
     hf_id: knowledgator/events_classification_biotech
+    hf_jsonl: whr778/events_biotech
     source_url: https://huggingface.co/datasets/knowledgator/events_classification_biotech
     language: [en]
     description: "Multi-label biotech event-type classification; 29 labels."
@@ -297,6 +300,7 @@ datasets:
     tasks: Schema-driven structured extraction
     license: see card
     hf_id: knowledgator/text2json-training-data
+    hf_jsonl: whr778/text2json
     source_url: https://huggingface.co/datasets/knowledgator/text2json-training-data
     language: [en]
     description: "Schema-driven structured extraction; per-record field schemas define the output JSON structure."
@@ -321,6 +325,7 @@ datasets:
     name: RAMS
     tasks: Event extraction (trigger + args)
     license: see source
+    hf_jsonl: whr778/rams
     source_url: https://nlp.jhu.edu/rams/
     language: [en]
     description: "Multi-sentence event extraction with triggers and typed arguments; 139 event types, 65 argument roles."
@@ -328,6 +333,7 @@ datasets:
     name: MAVEN
     tasks: Event detection (trigger)
     license: see source
+    hf_jsonl: whr778/maven
     source_url: https://github.com/THU-KEG/MAVEN-dataset
     language: [en]
     description: "Large general-domain event trigger detection; 168 event types, trigger-only."
@@ -342,6 +348,7 @@ datasets:
     name: CASIE
     tasks: Event extraction (cybersecurity)
     license: see source
+    hf_jsonl: whr778/casie
     source_url: https://github.com/Ebiquity/CASIE
     language: [en]
     description: "Cybersecurity event extraction co-trained with typed entity mentions; 5 event types, 26 argument roles."
@@ -370,6 +377,7 @@ datasets:
     name: ChFinAnn
     tasks: Event extraction (Chinese financial, doc-level)
     license: MIT
+    hf_jsonl: whr778/chfinann
     source_url: https://github.com/dolphin-zs/Doc2EDAG
     language: [zh]
     description: "Trigger-free document-level Chinese financial event extraction (5 event types); mapped to role-typed entities and multi-label event-type classification."
@@ -386,6 +394,7 @@ datasets:
     tasks: Event extraction (Chinese, trigger + args)
     license: see source
     hf_id: nlhappy/DuEE
+    hf_jsonl: whr778/duee
     source_url: https://www.luge.ai/#/luge/dataDetail?id=6
     language: [zh]
     description: "Sentence-level Chinese event extraction (65 event types, 121 roles) via the no-login HuggingFace mirror; train + val only, no test."

@@ -1,0 +1,85 @@
+{
+  "config": "tools/train/config/eval-preservation-ner.yaml",
+  "split": "val",
+  "stride": 6,
+  "n_records": 1003,
+  "grid": [
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8
+  ],
+  "legs": {
+    "mix_best": {
+      "checkpoint": "tools/train/out/gliner2-base-v1-real-synth-mix/best",
+      "chosen_threshold": 0.3,
+      "selection_score": 0.32671028188353124,
+      "entity_strict_micro_f1": 0.32671028188353124,
+      "entity_strict_precision": null,
+      "entity_strict_recall": null,
+      "entity_fair_micro_f1": 0.4023075216330153,
+      "entity_strict_support": 12375,
+      "by_threshold": {
+        "0.2": {
+          "selection_score": 0.3133807454234163,
+          "entity_strict_micro_f1": 0.3133807454234163,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.38460432688852153,
+          "entity_strict_support": 12375
+        },
+        "0.3": {
+          "selection_score": 0.32671028188353124,
+          "entity_strict_micro_f1": 0.32671028188353124,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.4023075216330153,
+          "entity_strict_support": 12375
+        },
+        "0.4": {
+          "selection_score": 0.3237069365772124,
+          "entity_strict_micro_f1": 0.3237069365772124,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.39706929887045894,
+          "entity_strict_support": 12375
+        },
+        "0.5": {
+          "selection_score": 0.31046931407942235,
+          "entity_strict_micro_f1": 0.31046931407942235,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.3759693177682596,
+          "entity_strict_support": 12375
+        },
+        "0.6": {
+          "selection_score": 0.28759864712514094,
+          "entity_strict_micro_f1": 0.28759864712514094,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.34213631000998274,
+          "entity_strict_support": 12375
+        },
+        "0.7": {
+          "selection_score": 0.2583424341706103,
+          "entity_strict_micro_f1": 0.2583424341706103,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.3026412914406752,
+          "entity_strict_support": 12375
+        },
+        "0.8": {
+          "selection_score": 0.22235210078576534,
+          "entity_strict_micro_f1": 0.22235210078576534,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.25417358030544174,
+          "entity_strict_support": 12375
+        }
+      }
+    }
+  }
+}

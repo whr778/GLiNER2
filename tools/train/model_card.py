@@ -143,9 +143,20 @@ def _fmt_duration(seconds: Optional[float]) -> str:
 
 _SLICE_SUFFIX = re.compile(r"\.j\d+k$")
 
+# A config's `event_files` key is a free label, so some configs name a corpus something
+# shorter than its registry key. Same dataset, same license -- without the map the card
+# reports it as an unknown dataset and the license verdict is computed from a gap.
+_KEY_ALIASES = {
+    "synthetic_coerced": "synthetic_haiku45_5k_coerced",
+    "synthetic_sonnet5": "synthetic_sonnet5_1k",
+}
+
 
 def canonical_dataset_key(key: str) -> str:
-    """Strip a scaling-slice suffix: ``sentence_rex.j10k`` -> ``sentence_rex``.
+    """Resolve a config's dataset label to its registry key.
+
+    Strips a scaling-slice suffix (``sentence_rex.j10k`` -> ``sentence_rex``) and then
+    applies ``_KEY_ALIASES`` for configs that label a corpus with a short name.
 
     Scaling configs point ``data.corpora`` at sliced copies of a corpus (see
     ``build_joint_scaling_mix.py``), and ``corpora`` derives its registry key from
@@ -153,7 +164,8 @@ def canonical_dataset_key(key: str) -> str:
     license, so the card must credit the parent -- otherwise every sliced corpus
     reports as an unknown dataset with no license and the license verdict is wrong.
     """
-    return _SLICE_SUFFIX.sub("", key)
+    key = _SLICE_SUFFIX.sub("", key)
+    return _KEY_ALIASES.get(key, key)
 
 
 def _resolve_datasets(registry: Dict[str, Any], keys: List[str]) -> List[tuple]:

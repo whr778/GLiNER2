@@ -1,0 +1,221 @@
+{
+  "config": "tools/train/config/eval-preservation-ner.yaml",
+  "split": "val",
+  "stride": 6,
+  "n_records": 1003,
+  "grid": [
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8
+  ],
+  "legs": {
+    "base": {
+      "checkpoint": "fastino/gliner2-base-v1",
+      "chosen_threshold": 0.4,
+      "selection_score": 0.5321793729582962,
+      "entity_strict_micro_f1": 0.5321793729582962,
+      "entity_strict_precision": null,
+      "entity_strict_recall": null,
+      "entity_fair_micro_f1": 0.629570747217806,
+      "entity_strict_support": 12375,
+      "by_threshold": {
+        "0.2": {
+          "selection_score": 0.5210779939318222,
+          "entity_strict_micro_f1": 0.5210779939318222,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.6204382363099121,
+          "entity_strict_support": 12375
+        },
+        "0.3": {
+          "selection_score": 0.5314553251760632,
+          "entity_strict_micro_f1": 0.5314553251760632,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.6330335414241879,
+          "entity_strict_support": 12375
+        },
+        "0.4": {
+          "selection_score": 0.5321793729582962,
+          "entity_strict_micro_f1": 0.5321793729582962,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.629570747217806,
+          "entity_strict_support": 12375
+        },
+        "0.5": {
+          "selection_score": 0.5222076334495405,
+          "entity_strict_micro_f1": 0.5222076334495405,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.6132471416855613,
+          "entity_strict_support": 12375
+        },
+        "0.6": {
+          "selection_score": 0.5051899773089363,
+          "entity_strict_micro_f1": 0.5051899773089363,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.5875255623721881,
+          "entity_strict_support": 12375
+        },
+        "0.7": {
+          "selection_score": 0.47773946162952297,
+          "entity_strict_micro_f1": 0.4777394616295229,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.5495919139505973,
+          "entity_strict_support": 12375
+        },
+        "0.8": {
+          "selection_score": 0.43606010016694485,
+          "entity_strict_micro_f1": 0.43606010016694485,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.4933186787759588,
+          "entity_strict_support": 12375
+        }
+      }
+    },
+    "synthetic_haiku5k": {
+      "checkpoint": "/home/ubuntu/ckpt_synthetic_haiku5k",
+      "chosen_threshold": 0.3,
+      "selection_score": 0.40988158432013067,
+      "entity_strict_micro_f1": 0.40988158432013067,
+      "entity_strict_precision": null,
+      "entity_strict_recall": null,
+      "entity_fair_micro_f1": 0.5060489291155122,
+      "entity_strict_support": 12375,
+      "by_threshold": {
+        "0.2": {
+          "selection_score": 0.4018581382883687,
+          "entity_strict_micro_f1": 0.4018581382883687,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.4952749897282386,
+          "entity_strict_support": 12375
+        },
+        "0.3": {
+          "selection_score": 0.40988158432013067,
+          "entity_strict_micro_f1": 0.40988158432013067,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.5060489291155122,
+          "entity_strict_support": 12375
+        },
+        "0.4": {
+          "selection_score": 0.4044199883684517,
+          "entity_strict_micro_f1": 0.40441998836845167,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.4961972072094104,
+          "entity_strict_support": 12375
+        },
+        "0.5": {
+          "selection_score": 0.3951476487361655,
+          "entity_strict_micro_f1": 0.3951476487361655,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.47900923593618805,
+          "entity_strict_support": 12375
+        },
+        "0.6": {
+          "selection_score": 0.37997618677848527,
+          "entity_strict_micro_f1": 0.3799761867784853,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.4554620912483984,
+          "entity_strict_support": 12375
+        },
+        "0.7": {
+          "selection_score": 0.35320897179658,
+          "entity_strict_micro_f1": 0.35320897179658,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.4177304964539007,
+          "entity_strict_support": 12375
+        },
+        "0.8": {
+          "selection_score": 0.32119914346895073,
+          "entity_strict_micro_f1": 0.32119914346895073,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.3719013424914143,
+          "entity_strict_support": 12375
+        }
+      }
+    },
+    "ccnews_real_best": {
+      "checkpoint": "tools/train/out/gliner2-base-v1-ccnews-real/best",
+      "chosen_threshold": 0.3,
+      "selection_score": 0.3595797228850099,
+      "entity_strict_micro_f1": 0.3595797228850099,
+      "entity_strict_precision": null,
+      "entity_strict_recall": null,
+      "entity_fair_micro_f1": 0.43902884264330044,
+      "entity_strict_support": 12375,
+      "by_threshold": {
+        "0.2": {
+          "selection_score": 0.3471252788371591,
+          "entity_strict_micro_f1": 0.3471252788371591,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.42452275489004737,
+          "entity_strict_support": 12375
+        },
+        "0.3": {
+          "selection_score": 0.3595797228850099,
+          "entity_strict_micro_f1": 0.3595797228850099,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.43902884264330044,
+          "entity_strict_support": 12375
+        },
+        "0.4": {
+          "selection_score": 0.35512713048337524,
+          "entity_strict_micro_f1": 0.35512713048337524,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.43054254538089576,
+          "entity_strict_support": 12375
+        },
+        "0.5": {
+          "selection_score": 0.3401360544217687,
+          "entity_strict_micro_f1": 0.3401360544217687,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.40827071792902975,
+          "entity_strict_support": 12375
+        },
+        "0.6": {
+          "selection_score": 0.32165466055446407,
+          "entity_strict_micro_f1": 0.32165466055446407,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.38029936101304235,
+          "entity_strict_support": 12375
+        },
+        "0.7": {
+          "selection_score": 0.29779024903542617,
+          "entity_strict_micro_f1": 0.29779024903542617,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.346655136203595,
+          "entity_strict_support": 12375
+        },
+        "0.8": {
+          "selection_score": 0.2660418619181506,
+          "entity_strict_micro_f1": 0.2660418619181506,
+          "entity_strict_precision": null,
+          "entity_strict_recall": null,
+          "entity_fair_micro_f1": 0.30248924801251137,
+          "entity_strict_support": 12375
+        }
+      }
+    }
+  }
+}
