@@ -140,8 +140,21 @@ wire-copy result is the known failure mode of this training programme, and the c
 most likely the mix: 72% of the new English trigger-and-argument supervision is
 synthetic, against 20% human-annotated real news.
 
-**So: do not deploy this on real news.** It is a useful baseline for the mix question
-and a reasonable warm start; it is not an extractor you should trust on journalism.
+**On held-out corpora it is the better model.** Scored against its predecessor
+(`whr778/gliner2-joint-boundary-mmbert-137k-clean`) by one command on one machine, same
+15,456-row blind test, threshold pinned to 0.5, it leads on *every* head: entity +0.0158,
+relation +0.0593, classification +0.0160, structure +0.0096, event_type +0.0155,
+event_trigger +0.0145, event_argument +0.0133, event +0.0043.
+
+**That is the whole point of the warning.** This model improved every corpus metric
+available while getting *worse* at the job it was built for -- on the Helene feed it forms
+usable events on 25% of windows where its predecessor manages 65%. Held-out F1 did not
+predict wire-copy behaviour, in the wrong direction, which is why the gates were fixed on
+AP prose before training.
+
+**So: do not deploy this on real news**, and do not read the table below as evidence that
+it will work there. It is a strong general multi-task extractor and a reasonable warm
+start; it is not an event extractor you should trust on journalism.
 
 ### Reading the metrics below
 
