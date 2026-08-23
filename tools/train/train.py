@@ -158,11 +158,24 @@ def _fetch_if_missing(path: str) -> None:
 
 
 def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[str]:
+    """Resolve the event-file paths for one split, fetching what is absent.
+
+    This used to silently drop any path that was not already on disk, while the
+    `corpora` path (`_split_files`) fetched from the Hub. On a fresh box that meant a
+    blind test quietly scored ONLY the corpora -- 3 files instead of 11 -- and reported
+    the subset as if it were the whole test set. A missing corpus is now fetched, and
+    one that still cannot be resolved is named rather than dropped in silence.
+    """
     paths: List[str] = []
     for by_split in event_files.values():
         p = by_split.get(suffix)
-        if p and Path(p).is_file():
+        if not p:
+            continue
+        _fetch_if_missing(p)
+        if Path(p).is_file():
             paths.append(p)
+        else:
+            print(f"[data] {p} unavailable and not fetchable; NOT scored")
     return paths
 
 
