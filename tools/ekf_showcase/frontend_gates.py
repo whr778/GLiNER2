@@ -18,6 +18,12 @@ GATE 2  the span block is LOCAL. On the Katrina passage, min(start)..max(end) ov
         is the single most diagnostic case in the feed, because it is the one the whole
         span-embedding router turns on.
 
+The threshold that matters here is ``extract(threshold=...)``. The per-event
+``trigger_threshold``/``argument_threshold`` carried on the Schema are read only by the
+span engine (``inference/runtime.py``); the boundary greedy path (``_decode_events``)
+gates candidates on the single global threshold and never consults them, so setting only
+the Schema values sweeps nothing on a boundary model. Both are set below.
+
 Gates 3 and 4 (no regression on event_trigger/event_argument; the other heads survive)
 are read from the run's own test_metrics.json and are not scored here.
 """
@@ -59,7 +65,7 @@ def blocks(model, text: str, th: float):
     """Every event's min(start)..max(end) over its own trigger + argument spans."""
     out = []
     for etype in EVENT_TYPES:
-        res = model.extract(text, schema(etype, th), include_spans=True)
+        res = model.extract(text, schema(etype, th), threshold=th, include_spans=True)
         for ev in (res.get("event_extraction") or {}).get(etype, []):
             pts = []
             for t in ev.get("triggers") or []:
@@ -108,7 +114,7 @@ def main() -> None:
     print("GATE 1 -- usable events-form on real wire copy (want >= 50%)")
     print(f"{'thresh':>7}{'windows w/ trigger+arg':>25}{'share':>9}")
     best = (0.0, 0.0)
-    for th in (0.5, 0.4, 0.3, 0.2, 0.1):
+    for th in (0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01):
         hits = sum(1 for w in wins if any(b["n_args"] for b in blocks(model, w, th)))
         share = hits / max(len(wins), 1)
         if share > best[1]:
@@ -120,7 +126,7 @@ def main() -> None:
     print("GATE 2 -- the span block is LOCAL (Katrina block must hold '1,400', not 'Helene')")
     print(f"{'thresh':>7}  case      block                                    verdict")
     g2 = False
-    for th in (0.5, 0.4, 0.3, 0.2, 0.1):
+    for th in (0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01):
         for name, text, must, forbid in (("KATRINA", KATRINA, "1,400", "Helene"),
                                          ("HELENE ", HELENE, "246", "Katrina")):
             bs = blocks(model, text, th)
