@@ -50,6 +50,11 @@ HELENE = ("Helene decimated remote towns throughout Appalachia, left millions wi
           "power, knocked out cellular service and killed at least 246 people. It was the "
           "deadliest hurricane to hit the U.S. mainland since Katrina in 2005.")
 
+# The sweep fixed before spending. EXTENDED is diagnostic only -- added after seeing
+# that this architecture emits nothing above 0.05, so it cannot score the gate.
+REGISTERED = (0.5, 0.4, 0.3, 0.2, 0.1)
+EXTENDED = (0.05, 0.01)
+
 EVENT_TYPES = ["Floods", "Storm", "Hurricane", "Earthquakes", "Tropical Storm"]
 ROLES = {"dead": "number of people killed", "location": "where the deaths occurred",
          "event_name": "the name of the storm or disaster"}
@@ -113,20 +118,28 @@ def main() -> None:
 
     print("GATE 1 -- usable events-form on real wire copy (want >= 50%)")
     print(f"{'thresh':>7}{'windows w/ trigger+arg':>25}{'share':>9}")
-    best = (0.0, 0.0)
-    for th in (0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01):
+    best, best_ext = (0.0, 0.0), (0.0, 0.0)
+    for th in REGISTERED + EXTENDED:
         hits = sum(1 for w in wins if any(b["n_args"] for b in blocks(model, w, th)))
         share = hits / max(len(wins), 1)
-        if share > best[1]:
+        if th in REGISTERED and share > best[1]:
             best = (th, share)
-        print(f"{th:>7.2f}{hits:>25}{share:>9.1%}")
-    print(f"  -> best {best[1]:.1%} at threshold {best[0]:.2f}   "
-          f"{'PASS' if best[1] >= 0.50 else 'FAIL'}\n")
+        if share > best_ext[1]:
+            best_ext = (th, share)
+        tag = "" if th in REGISTERED else "   (diagnostic, not pre-registered)"
+        print(f"{th:>7.2f}{hits:>25}{share:>9.1%}{tag}")
+    print(f"  -> gate 1 {'PASS' if best[1] >= 0.50 else 'FAIL'} "
+          f"-- best {best[1]:.1%} at threshold {best[0]:.2f} over the REGISTERED range "
+          f"{REGISTERED[-1]}-{REGISTERED[0]}")
+    if best_ext[1] >= 0.50 > best[1]:
+        print(f"     (reaches {best_ext[1]:.1%} at {best_ext[0]:.2f}, below the registered "
+              f"range -- check WHAT it binds there before reading that as progress)")
+    print()
 
     print("GATE 2 -- the span block is LOCAL (Katrina block must hold '1,400', not 'Helene')")
     print(f"{'thresh':>7}  case      block                                    verdict")
     g2 = False
-    for th in (0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01):
+    for th in REGISTERED + EXTENDED:
         for name, text, must, forbid in (("KATRINA", KATRINA, "1,400", "Helene"),
                                          ("HELENE ", HELENE, "246", "Katrina")):
             bs = blocks(model, text, th)

@@ -417,8 +417,15 @@ def build_model_card(
     dataset_counts: Optional[Dict[str, Dict[str, int]]] = None,
     threshold: Optional[float] = None,
     threshold_calibrated: bool = False,
+    limitations: Optional[str] = None,
 ) -> str:
-    """Render a complete MODEL_CARD.md as a Markdown string."""
+    """Render a complete MODEL_CARD.md as a Markdown string.
+
+    ``limitations`` is free Markdown placed ABOVE the metrics tables. Held-out F1
+    describes the test splits and nothing else; where a run has measured that the
+    model behaves differently on its actual target distribution, that belongs next
+    to the numbers rather than in a commit message nobody reads.
+    """
     registry = registry or load_registry()
     datasets = _resolve_datasets(registry, dataset_keys)
 
@@ -477,6 +484,9 @@ def build_model_card(
         "## Evaluation",
         "",
     ]
+
+    if limitations:
+        parts += ["### Intended use and limitations", "", limitations.strip(), ""]
 
     if threshold is not None:
         source = "calibrated against the validation set" if threshold_calibrated else "config default"
