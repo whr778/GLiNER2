@@ -401,7 +401,7 @@ model can be placed on their scale, which is why §4.2 uses a fresh baseline. Fu
 invocation and a `-dirty` git marker in every output.
 
 
-### 4.4 The front end is being rebuilt, because nothing available emits the router's input
+### 4.4 The front end was rebuilt, and the rebuild did not fix the router's input
 
 The association work above all assumes an extractor that produces, per event, a trigger and
 arguments bound to *that* trigger. Measured 2026-08-20, nothing in the line does.
