@@ -174,15 +174,42 @@ reads (only the span engine does), so all five sweep rows ran at the default 0.5
 Gate 1 measures *form*, not content -- the incumbent's nominal pass at 0.1 still binds the
 documented nonsense, which is what gate 2 catches. Both models fail gate 2.
 
-**Still open: gates 3 and 4 are NOT scored.** They cannot be read off the run's own
-`test_metrics.json` -- different test composition (added corpora, rams test re-carved) and a
-different threshold (0.3 calibrated vs the reference's 0.5). One eval of the new checkpoint
-over the 137k blind test (15,456 rows) at a pinned 0.5 settles both. Watch the strict/relaxed
-trap while reading them: the incumbent's quoted 0.710 / **0.506** are RELAXED numbers.
+**Gates 3 and 4: SCORED 2026-08-23, both PASS.** Both models run by one command on one
+box, same 11 files / 15,456 rows, threshold pinned 0.5
+(`tools/ekf_showcase/frontend_gate_results/GATES_3_4.md`). The candidate leads on **every**
+head: entity +0.0158, relation +0.0593, classification +0.0160, structure +0.0096,
+event_type +0.0155, event_trigger +0.0145, event_argument +0.0133, event +0.0043; fair
+entity/trigger/argument +0.0278 / +0.0147 / +0.0570. Structure also swept to the record
+head's own thresholds (0.1184 vs 0.1132) because its max object probability is 0.178 and a
+default-0.5 number measures an unreachable cutoff.
 
-**Pre-registered next move on a gate-1 FAIL, from the config:** downsample `casualty_events`
-(23,627 records, 3.3x RAMS) FIRST, before any recipe change. Weigh that against the new
-picture -- the incumbent now out-forms the rebuild, so "is the mix the lever at all" is live.
+**So the verdict is SPLIT: gates 1-2 FAIL, gates 3-4 PASS.** The rebuild improved every
+corpus metric available and made the behaviour it was built for worse. That is the case for
+pre-registering gates on AP prose rather than held-out corpora, and it is now demonstrated
+rather than asserted.
+
+### The next move is NOT downsampling casualty_events
+
+The config pre-registers that remedy for a gate-1 failure, but two measurements taken since
+say it cannot work:
+
+1. **Gate 2 is unreachable by any mix change.** `_decode_events` emits ONE instance per
+   event type and pools every trigger and argument into it -- its own docstring says the
+   mention path "carries no instance dimension". Measured on the incumbent with two
+   hurricanes in one passage: `n_event_instances=1`, with Helene's 246 and Katrina's 1,400
+   both filed as `dead` on the same event, at 0.1 and at 0.01. Gate 2 takes
+   min(start)..max(end) over that single pooled instance, so it can only pass when the model
+   happens to emit few enough spans -- it is measuring SPARSITY, not binding. That is why
+   both models "pass" it only at 0.01, where output is otherwise nonsense.
+2. **`casualty_events` cannot teach the missing capability anyway.** It carries 8 event types
+   and no named identities, so it has no same-type discrimination (Helene vs Katrina) in it
+   -- which is the live defect in item 2.
+
+More English argument data already made wire-copy form-rate worse (25.0% vs the incumbent's
+65.0%) while improving every corpus metric. The mix is not the lever. **The next move is the
+instance dimension -- the record head -- not another corpus.** Note the record head decodes
+but is miscalibrated (max object probability 0.178 against a 0.5 default) and, per the CASIE
+Tier 2 run, was never trained on events.
 
 `tools/data/split_rams_test.py` gave rams a val split by carving its 871-row test **by
 document**, which found 101 duplicate rows in test alone.
