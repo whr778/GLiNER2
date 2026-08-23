@@ -416,6 +416,14 @@ English disaster text, and nonsense at 0.1 — trigger `"remote"`, with both `de
 `location` bound to `"Helene decimated"`. A textbook earthquake sentence returns empty even at
 0.1, despite the model scoring trigger 0.710 / argument 0.506 on its own test set.
 
+> **Corrected 2026-08-23.** Two things here were wrong. (a) 0.710 / 0.506 are **relaxed**
+> numbers on the model's own test set; like-for-like on the shared blind test at a pinned
+> 0.5 the base is strict 0.7487 / 0.0913, fair 0.7523 / 0.4939. (b) The "no events above
+> 0.3, nonsense at 0.1" reading came from a harness whose threshold sweep was inert — it
+> set a Schema value the boundary decode never reads, so every row ran at 0.5. Re-measured
+> properly the base forms usable events on 0.0 / 0.0 / 8.3 / 20.0 / 65.0% of Helene windows
+> across 0.5→0.1. The qualitative premise stands; "~0 at every threshold" did not.
+
 **The cause is the mix, and it is arithmetic.** Counting only corpora that bind arguments to a
 trigger — DocEE, ChFinAnn and DocFEE do not; they are stored as `entities` + `classifications`:
 
@@ -427,6 +435,12 @@ trigger — DocEE, ChFinAnn and DocFEE do not; they are stored as `entities` + `
 The English side is CASIE alone. MAVEN and Mendeley are trigger-only. So an argument F1 of
 0.506 is very nearly a Chinese-only number, and English trigger→argument rests on 798 examples
 — which no threshold reaches.
+
+**The rebuild was run, and it refutes the inference drawn from this table.** 50× more
+English trigger→argument supervision produced a model that beats the base on all eight
+held-out heads and forms usable events on **25%** of Helene windows against the base's
+**65%**. The English-share arithmetic below is correct; the conclusion that it was the
+binding constraint is not. See EKF_MHT_DESIGN §7.6.
 
 `tools/train/config/ekf-frontend-mmbert.yaml` is the cold-start rebuild: 189,284 records, a
 50× increase in English trigger→argument, the Chinese corpora kept because they are why the

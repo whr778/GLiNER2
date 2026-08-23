@@ -309,7 +309,8 @@ Filter DEATH / decay
         137k-clean as built     en =    798    zh = 20,884     english share  3.7%
 
     The English side is CASIE alone. MAVEN and Mendeley are trigger-only. So the model's
-    argument F1 of 0.506 is very nearly a Chinese-only number, and English trigger-to-
+    argument F1 of 0.506 (a RELAXED own-test number; strict is 0.0913 on the shared
+    blind test) is very nearly a Chinese-only number, and English trigger-to-
     argument extraction rests on 798 examples. That is why it emits nonsense on AP copy,
     and it is not something a threshold can reach.
 

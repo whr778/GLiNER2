@@ -902,6 +902,7 @@ ChFinAnn and DocFEE are not events at all — `entities` + `classifications` —
 flattered both sides. Corpora that actually bind arguments to triggers give **798 English rows
 against 20,884 Chinese**, a 3.7% English share, with CASIE the entire English side and MAVEN
 and Mendeley trigger-only. An argument F1 of 0.506 is a Chinese-only number.
+*(0.506 is a RELAXED own-test figure — see Phase 19 for the category error this nearly caused, and for the rebuild's outcome.)*
 
 **So the front end is being rebuilt** — cold start, 189,284 records, English trigger→argument
 798 → ~39,800, Chinese kept because it is why the head works at all. The risk is declared up
@@ -915,3 +916,78 @@ and memory sits at 10.6 GB of 40, so batch_size is the real untested lever. The 
 was validated by running it against the incumbent and confirming it *fails*, because a gate
 that passes everything measures nothing. And rams finally got a val split, carved by document,
 which found 101 duplicate rows in its test set alone.
+
+## Phase 19 — the rebuild won every benchmark and lost the job, and our gate was the problem (21–23 Aug)
+
+The front end from Phase 18 trained cleanly and self-terminated: 35,484 steps, 6 epochs,
+17.3 h, ~$35, eval loss falling every epoch 1.2672 → 0.8917 and still falling at the end.
+Then scoring it produced three reversals in a row.
+
+**Reversal 1: the harness had never swept anything.** `frontend_gates.py` set
+`Schema().events(trigger_threshold=…, argument_threshold=…)` — values read only by the
+*span* engine (`inference/runtime.py`). The boundary greedy decode this model runs gates on
+the single global `extract(threshold=)` and never looks at them. So all five rows of a
+five-point sweep ran at the default 0.5. Proven both directions: via the Schema, thresholds
+0.999 and 0.01 return byte-identical output; via the global knob, the Katrina case is empty
+at 0.05 and above and emits at 0.01.
+
+The Phase 18 note above says the harness "was validated by running it against the incumbent
+and confirming it *fails*". That validation is exactly why the defect survived a month. The
+harness returned the expected answer, so nobody asked how. **A gate that fails the thing you
+expect it to fail is not thereby verified.**
+
+**Reversal 2: corrected, the incumbent passes the gate the rebuild fails.** Over the
+pre-registered 0.1–0.5 range, on the same 60 Helene windows: the rebuild forms a trigger
+plus ≥1 bound argument on **25.0%** of them, the incumbent on **65.0%**. The claim that
+justified the rebuild — "the incumbent is ~0 at every threshold" — was true only at 0.5.
+Its real curve is 0.0 / 0.0 / 8.3 / 20.0 / 65.0 across 0.5→0.1. The Phase 18 premise
+survives (nothing usable at 0.3+, nonsense at 0.1); the strengthened version, which is what
+was actually acted on, does not.
+
+Corrected at all three sites that carried it — harness docstring, the config's
+pre-registration block, and TODO — by dated correction rather than erasure.
+
+**Reversal 3: on held-out corpora the rebuild beats the incumbent on every single head.**
+Both scored by one command on one A100, same 11 files / 15,456 rows, threshold pinned 0.5
+($1.83). entity +0.0158, relation +0.0593, classification +0.0160, structure +0.0096,
+event_type +0.0155, event_trigger +0.0145, event_argument +0.0133, event +0.0043; fair
+entity/trigger/argument +0.0278 / +0.0147 / +0.0570. Structure swept to the record head's
+own thresholds (0.178 max object probability, so 0.5 is unreachable): 0.1184 vs 0.1132.
+
+**So gates 1–2 FAIL and gates 3–4 PASS.** Every benchmark up, the target behaviour down.
+This is the strongest case the programme has produced for pre-registering gates on the real
+distribution: scored the normal way, this model is an unambiguous improvement and ships.
+
+**A category error we came within one step of committing.** Gate 3 was written as
+"event_trigger ≥ 0.710 and event_argument ≥ 0.506 (the incumbent's)". Those are **relaxed**
+figures from the incumbent's *own* test set. The rebuild's strict argument F1 is 0.214 — set
+against 0.506 that reads as a halving, when like-for-like it is a doubling (0.1046 vs
+0.0913 strict on the shared split). Fixed in the harness and the config.
+
+**Why the pre-registered remedy is declined.** The config fixed "downsample
+`casualty_events` first" as the response to a gate-1 failure. Two measurements say it cannot
+work. `_decode_events` returns a single-element list per event type and pools every trigger
+and argument into it — its own docstring says the mention path "carries no instance
+dimension" — so a passage naming two hurricanes returns `n_event_instances=1` with Helene's
+246 and Katrina's 1,400 both bound as `dead` on the same event, at 0.1 and at 0.01. Gate 2
+takes min..max over that one instance, so it rewards sparsity rather than binding. (Not
+impossible: the incumbent does produce a local Katrina block at 0.01, and that passage
+carries one Hurricane-typed event, not two extracted ones. Fragile and threshold-lucky,
+which no corpus fixes.) And `casualty_events` carries 8 event types and no named identities,
+so it holds no same-type discrimination to teach. **The next constraint is the instance
+dimension — the record head — not another corpus.**
+
+**A silent-truncation bug, caught by arithmetic.** Provisioning the eval box, the blind test
+printed "scoring against 3 files" where a count verified an hour earlier said 11.
+`_event_split` dropped any event file not already on disk — no fetch, no warning — while the
+`corpora` path fetched from the Hub. On a fresh box that silently removed every event corpus,
+i.e. the entire subject of gates 3–4, and reported the remainder as a completed blind test.
+It could only ever appear on a box, because locally those files exist. Fixed to fetch, and to
+name anything it still cannot resolve.
+
+**Housekeeping with a real finding in it.** Eight run memories still read LIVE against zero
+running instances. Reconciling them turned up the 4th cell of the real-vs-synth 2×2, measured
+but never written down: the real+synthetic **mix preserved worst of all three arms, 0.3267,
+−38.6% vs base** — worse than either arm alone, so mixing did not split the difference. It had
+been cited second-hand as "−39%" and now has a primary source. Those JSONs lived only in
+gitignored `out/`; they are committed now.

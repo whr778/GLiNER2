@@ -240,11 +240,12 @@ defect that hid this once already.
 
 ## Stage 5 — Application training (the EKF extractor)
 
-Downstream of Paper 0's models, upstream of Paper 1's tracker. All init from
-`fastino/gliner2-base-v1`.
+Downstream of Paper 0's models, upstream of Paper 1's tracker. The `casualty-*` arms all
+init from `fastino/gliner2-base-v1`; `ekf-frontend-mmbert` is a deliberate cold start.
 
 | config | data | working paper | role |
 |---|---|---|---|
+| `ekf-frontend-mmbert.yaml` | 189,284 records, English trigger→argument 798 → ~39,800 | [[EKF_MHT_DESIGN]] §7.5-7.6 | **cold start from `jhu-clsp/mmBERT-base`**, built to BE the pipeline's first stage. Beats `137k-clean` on all 8 held-out heads and FAILS both real-copy gates (25.0% vs 65.0% form-rate on the Helene feed). Kept as the measured case that benchmark gains can move opposite to target behaviour. Do not deploy on real news |
 | `casualty-finetune.yaml` | `casualty_ft` (Sonnet-5 realized) | [[EKF_MHT_DESIGN]] §19-20 | closes the extraction gap the §19 `missing`-role probe predicted: zero-shot precision 0.63 + confidence-cut selection bias |
 | `casualty-multievent.yaml` | `casualty_multi` | [[EKF_MHT_DESIGN]] §20, [[COUNTING_LAYER]] | the §20 corpus had exactly one `casualty_report` in all 31,539 docs, so the count head only ever saw "1". This fixes that |
 | `casualty-docee.yaml` | `casualty_docee` | [[EKF_MHT_DESIGN]] §20-21 | successor to `casualty-multievent`: synthetic trajectories paired with **real** DocEE contexts |
@@ -300,6 +301,13 @@ the known table.
 **Matched thresholds.** Curve points and A/B arms must be compared at the same decision
 threshold. [[JOINT_IE_SCALING]] §4b documents a case where an unmatched threshold produced a
 result that survived review and was later retracted.
+
+**Matched regimes, and a matched instrument.** Strict, relaxed and fair are three different
+measurements; [[EKF_MHT_DESIGN]] §7.6 records a gate written to compare a candidate's STRICT
+score against the incumbent's RELAXED one, which turned a doubling into an apparent halving.
+The same section records a threshold sweep that was inert for five measurements. When
+comparing two checkpoints, score BOTH with one command on one machine — the historical
+number in a table is not a substitute, and re-measuring the incumbent costs one extra eval.
 
 ## Related
 

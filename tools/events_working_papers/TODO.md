@@ -110,6 +110,9 @@ and arguments bound to *that* trigger. Nothing in the line does.
 Katrina block is either the bare name (missing its own 1,400) or swallows Helene.
 **Boundary `137k-clean`** yields nothing above threshold 0.3 on English disaster copy and
 nonsense at 0.1, despite trigger 0.710 / argument 0.506 on its own test set.
+*(0.710 / 0.506 are RELAXED own-test numbers — strict on the shared split is 0.7487 /
+0.0913. And "nothing usable" holds at 0.3+ but NOT below: the corrected curve is
+0.0 / 0.0 / 8.3 / 20.0 / 65.0% across 0.5→0.1. See the scored result further down.)*
 
 **The arithmetic behind it.** Counting only corpora that bind arguments to a trigger — DocEE,
 ChFinAnn and DocFEE do *not*, they are `entities` + `classifications`:

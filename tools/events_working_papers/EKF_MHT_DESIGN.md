@@ -60,9 +60,27 @@ genuine cross-event figures survive muting *and* the ceiling.
 The remaining candidate — embedding each event's own trigger-and-argument span and matching
 against live filters — could not be run at all, because no extractor we have emits that input
 on wire copy. Counting only corpora that bind an argument to a trigger, the boundary base has
-**798 English rows against 20,884 Chinese**, so its argument score is very nearly a
-Chinese-only number. **The critical path is therefore the extractor, not the tracker** — a
-conclusion three built-and-failed association mechanisms were needed to reach.
+**798 English rows against 20,884 Chinese**. **The critical path is therefore the extractor,
+not the tracker** — a conclusion three built-and-failed association mechanisms were needed to
+reach.
+
+So we rebuilt the extractor against exactly that arithmetic: a cold start with **50× more
+English trigger→argument supervision**, gates fixed on AP prose before spending. The result
+is the sharpest instance in this programme of a pattern it keeps producing. On held-out
+corpora the rebuild beats the model it replaces on **every one of eight heads** — measured
+by one command on one machine, same 15,456-row blind test, threshold pinned. On the wire
+copy it was built for it is **worse**: usable events on 25% of casualty-bearing windows
+against the incumbent's 65%. Held-out F1 did not merely fail to predict the target
+behaviour, it pointed the wrong way. **The mix was not the lever**, and the measurement
+that says what is says it structurally: the decode emits one event instance per event type
+and pools every trigger and argument into it, so a passage naming two hurricanes returns a
+single event with both tolls bound to it. The next constraint is the instance dimension,
+not another corpus.
+
+We also report that the claim which justified that spend was our own instrument. The
+harness scoring the gates set a per-event threshold the boundary decode never reads, so
+every row of a five-point "sweep" ran at one value — the value at which the incumbent
+genuinely scores zero. Corrected, the incumbent *passes* the gate the rebuild fails.
 
 We also report that our own strongest prior result does not reproduce. An ablation
 concluding the filter's advantage *widens* under noise and censoring was measured on
@@ -552,7 +570,7 @@ price, and two builds that lost: the obvious next build was first rejected on a 
 measuring the wrong thing, rebuilt in its cheapest form and lost on its own terms (§7.2), and
 the data-side alternative was then beaten by a threshold.
 
-### 7.5 The critical path moved to the extractor, and it is being rebuilt
+### 7.5 The critical path moved to the extractor
 
 *Added 2026-08-20, after §7.4.* With negative supervision superseded and MHT re-priced, the
 remaining candidate is a **span-embedding router**: take `min(start)..max(end)` over an
@@ -583,21 +601,105 @@ only corpora that bind arguments to a trigger:
 | the base as built | **798** (CASIE alone) | 20,884 | **3.7%** |
 | every corpus available | 39,783 | 20,884 | 65.6% |
 
-MAVEN and Mendeley are trigger-only. So an argument F1 of 0.506 is very nearly a Chinese-only
+MAVEN and Mendeley are trigger-only. So that argument score is very nearly a Chinese-only
 number, and English trigger→argument rests on 798 examples — which no threshold reaches.
 
-A cold-start rebuild is training now: 189,284 records, a 50× increase in English
-trigger→argument, the Chinese corpora kept because they are why the argument head works at
-all. Its gates are on AP prose rather than held-out DocEE, for the reason this section
-exists. The declared risk is that 72% of the new English data is synthetic, on a programme
-whose recurring failure is in-domain-good and real-news-zero.
+> **Precision note added 2026-08-23.** This section originally quoted the base at
+> "trigger 0.710 / argument 0.506". Those are **relaxed** figures on the model's *own* test
+> set. Scoring a candidate's *strict* F1 against them — which we came close to doing — turns
+> a 2× improvement into an apparent halving. Like-for-like on the shared blind test at a
+> pinned threshold, the base is strict 0.7487 / 0.0913, fair 0.7523 / 0.4939.
+
+A cold-start rebuild followed: 189,284 records, a 50× increase in English trigger→argument,
+the Chinese corpora kept because they are why the argument head works at all. Gates on AP
+prose rather than held-out DocEE, for the reason this section exists. The declared risk was
+that 72% of the new English data is synthetic, on a programme whose recurring failure is
+in-domain-good and real-news-zero.
 
 **So the critical path is no longer the tracker or the association layer. It is the
 extractor**, and that is a conclusion three failed association mechanisms had to be built
 before anyone could reach.
 
+### 7.6 The rebuild: better on every benchmark, worse at the job
+
+The rebuild trained cleanly — 6 epochs, 17.3 h, one A100, eval loss falling monotonically
+to the last epoch. Then it failed the gates it was built to pass, and passed the ones it
+was only meant not to break.
+
+**On the wire copy, both pre-registered gates fail.** Scored over the registered 0.1–0.5
+threshold range on 60 casualty-bearing Helene windows:
+
+| gate | rebuild | incumbent |
+|---|---|---|
+| 1 — trigger + ≥1 bound argument on ≥50% of windows | **FAIL** 25.0% | **PASS** 65.0% |
+| 2 — the Katrina block holds "1,400", not "Helene" | **FAIL** | **FAIL** |
+
+**On held-out corpora it wins everywhere.** Both checkpoints scored by one command on one
+machine, the same 11 files and 15,456 rows, threshold pinned to 0.5 — so no
+different-test-set or different-operating-point confound survives:
+
+| strict micro F1 | rebuild | incumbent | Δ |
+|---|--:|--:|--:|
+| entity | 0.6358 | 0.6200 | +0.0158 |
+| relation | 0.0943 | 0.0350 | +0.0593 |
+| classification | 0.6488 | 0.6328 | +0.0160 |
+| structure | 0.0851 | 0.0755 | +0.0096 |
+| event_type | 0.9542 | 0.9387 | +0.0155 |
+| event_trigger | 0.7632 | 0.7487 | +0.0145 |
+| event_argument | 0.1046 | 0.0913 | +0.0133 |
+| event | 0.3752 | 0.3708 | +0.0043 |
+
+Fair (Ortmann) entity / trigger / argument: 0.6732 / 0.7671 / 0.5508 against 0.6454 /
+0.7523 / 0.4939. Structure swept to the record head's own thresholds — its maximum object
+probability is 0.178, so a default 0.5 measures a cutoff it cannot reach — is 0.1184
+against 0.1132.
+
+**Eight heads up, and the target behaviour down.** This is the cleanest statement we have
+of why the gates were pre-registered on AP prose. Had we scored this rebuild the way models
+in this line are normally scored, it would read as an unambiguous improvement and ship.
+
+**The instrument, not just the model.** The claim that motivated the spend — "the incumbent
+is ~0 at every threshold" — was an artifact of our own harness, which set
+`Schema().events(trigger_threshold=…)`, a value the boundary greedy decode never reads.
+Every row of the sweep therefore ran at the default 0.5, where 0.0% is the incumbent's real
+score. Driving `extract(threshold=)` instead gives 0.0 / 0.0 / 8.3 / 20.0 / 65.0% across
+0.5→0.1. The section's original premise survives — nothing usable at 0.3 and above,
+nonsense at 0.1 — but the "~0 everywhere" strengthening of it did not, and it was the
+strengthened form that justified a rebuild.
+
+**Why more data cannot be the answer here.** `_decode_events` returns a single-element list
+per event type and pools every trigger and argument into it; its own docstring records that
+the mention path "carries no instance dimension". Measured on the incumbent, a passage
+naming two hurricanes returns `n_event_instances=1`, with Helene's 246 and Katrina's 1,400
+both bound as `dead` on the same event, at 0.1 and at 0.01. Gate 2 takes
+min(start)..max(end) over that one pooled instance, so it rewards **sparsity rather than
+binding** — which is why it only lands at the threshold where the rest of the output is
+nonsense. That does not make gate 2 impossible; the incumbent does produce a local Katrina
+block at 0.01, and that passage carries one Hurricane-typed event rather than two extracted
+ones. It makes passing fragile and threshold-lucky, and no corpus teaches a model to emit
+fewer spans on demand.
+
+The pre-registered remedy for a gate-1 failure was to downsample the dominant synthetic
+corpus first. We are not taking it. That corpus carries 8 event types and no named
+identities, so it contains no same-type discrimination to learn from; and the mix has now
+been moved 50× in the direction the arithmetic recommended, with the target behaviour
+getting worse. **The next constraint is the instance dimension — the record head — not
+another corpus.** That head decodes but is miscalibrated, and has never been trained on
+events.
+
 ## 8. Limitations
 
+- **A pre-registered gate was scored by an instrument we had not verified.** The
+  threshold sweep behind §7.6's gate 1 was inert for five measurements before anyone
+  checked, and it produced the specific claim that justified a rebuild. The gate values
+  were fixed in advance and the harness was tested against the incumbent — it "correctly"
+  failed it — which is precisely why the defect survived: a harness that returns the
+  expected answer is not audited. Pre-registration constrains the threshold, not the
+  measurement apparatus.
+- **Gate 2 measures sparsity as though it were locality.** Taking min(start)..max(end)
+  over a decode that pools all spans of one type into a single instance means a model is
+  rewarded for emitting less. Both models "pass" it only where their output is otherwise
+  unusable. The gate needs rewriting against a decode that carries an instance dimension.
 - **One real event, one source per feed.** Both real evaluations draw ground truth from a
   single tracker page. The multi-source disagreement case — the most plausible remaining
   argument for a filter over a last-value baseline — is untested.
