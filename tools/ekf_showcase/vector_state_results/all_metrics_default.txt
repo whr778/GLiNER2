@@ -1,0 +1,12 @@
+
+ per-state report rate   parts-only     vector     delta vector wins | ABSOLUTE: mean per-state RMSE (deaths), national total RMSE
+  (wins/delta are nRMSE, which weighs Virginia's 1->2 range like North Carolina's 6->123 -- read the absolute columns)
+                  10%       0.4348     0.6085   +0.1737 4/40       | deaths 15.91->16.26  +0.35 | total  87.6->28.5   -59.1
+                  20%       0.3135     0.3940   +0.0805 10/40       | deaths 11.97->11.62  -0.35 | total  65.5->28.8   -36.8
+                  35%       0.2292     0.2860   +0.0568 10/40       | deaths  9.30->8.69   -0.61 | total  49.6->29.8   -19.8
+                  50%       0.2030     0.2234   +0.0203 22/40       | deaths  7.98->7.13   -0.85 | total  42.1->27.9   -14.1
+                  80%       0.1556     0.1520   -0.0036 30/40       | deaths  6.20->5.51   -0.69 | total  30.9->24.3    -6.6
+
+The aggregate cannot disaggregate on its own -- it constrains the SUM, not the
+split -- so the gain should be largest where per-state reports are sparse and
+shrink as they become dense enough to pin each state directly.

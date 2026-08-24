@@ -106,33 +106,64 @@ def kalman(obs, n_steps, dim, q, seed_x, seed_P, q_prop: float = 0.15,
     return np.array(traj)
 
 
-def run_trial(truth, rng, p_state, noise, q, q_prop=0.15, q_rho=0.0):
+# Per-state report rates measured from the Helene feed: `dead` observations keyed to each
+# state, over 31 truth snapshots. The simulation's uniform p_state does not resemble this,
+# and the difference is not cosmetic -- Virginia is NEVER reported directly, which is the
+# one case an aggregate is uniquely good for, and a uniform draw never produces it.
+REAL_RATES = {"Florida": 16 / 31, "Georgia": 5 / 31, "South Carolina": 9 / 31,
+              "North Carolina": 26 / 31, "Tennessee": 10 / 31, "Virginia": 0.0}
+
+
+def run_trial(truth, rng, p_state, noise, q, q_prop=0.15, q_rho=0.0,
+              real_rates=False, drop_unobserved=False):
     steps = list(range(len(truth)))
-    x_true = np.array([x for _, x in truth])
-    dim = len(STATES)
+    x_full = np.array([x for _, x in truth])
+    # A component the feed NEVER reports is a sink for the aggregate's residual: the sum
+    # row can only say what the total is, so error with nowhere else to go accumulates
+    # there. Measured: Virginia carries 110.5% of the vector arm's excess while all five
+    # reported states IMPROVE. Dropping it is what the aggregate constraint needs to work.
+    idx = [j for j in range(len(STATES))
+           if not (drop_unobserved and REAL_RATES[STATES[j]] == 0.0)]
+    x_true = x_full[:, idx]
+    dim = len(idx)
 
     part_obs, agg_obs = [], []
     for k in steps:
         for j in range(dim):                                   # sparse per-state reports
-            if rng.random() < p_state:
+            rate = min(REAL_RATES[STATES[idx[j]]], 1.0) if real_rates else p_state
+            if rng.random() < rate:
                 v = x_true[k, j] * (1 + rng.gauss(0, noise))
                 H = np.zeros(dim); H[j] = 1.0
                 r = max((noise * max(x_true[k, j], 1.0)) ** 2, 1.0)
                 part_obs.append((k, H, v, r))
-        total = float(x_true[k].sum()) * (1 + rng.gauss(0, noise))   # frequent aggregate
-        agg_obs.append((k, np.ones(dim), total, max((noise * max(x_true[k].sum(), 1.0)) ** 2, 1.0)))
+        # The aggregate stays the NATIONAL total even when a state is dropped -- you do
+        # not get to subtract a figure you never observed. Measured bias: negligible here,
+        # since Virginia runs 1->2 against a total reaching 249.
+        total = float(x_full[k].sum()) * (1 + rng.gauss(0, noise))
+        agg_obs.append((k, np.ones(dim), total, max((noise * max(x_full[k].sum(), 1.0)) ** 2, 1.0)))
 
     seed_x = x_true[0].copy()
     kw = {"q_prop": q_prop, "q_rho": q_rho}
     parts_only = kalman(part_obs, len(steps), dim, q, seed_x, seed_P=25.0, **kw)
     vector = kalman(part_obs + agg_obs, len(steps), dim, q, seed_x, seed_P=25.0, **kw)
 
-    def nrmse(est):
+    def scores(est):
+        """(nRMSE, RMSE in deaths, national-total RMSE).
+
+        nRMSE divides each state's RMSE by that state's OWN range and macro-averages, so
+        Virginia (range 1->2) counts as much as North Carolina (6->123). Reporting it
+        alone inverted this experiment's verdict for weeks: the aggregate constraint
+        LOSES on nRMSE and WINS on both absolute metrics, because a ~1.4-death error in
+        Virginia is 1.4 nRMSE there and noise anywhere else. For a casualty tracker the
+        absolute columns are the ones that mean something.
+        """
+        per_state = np.sqrt(((est - x_true) ** 2).mean(axis=0))
         rng_ = x_true.max(axis=0) - x_true.min(axis=0)
         rng_[rng_ == 0] = 1.0
-        return float(np.mean(np.sqrt(((est - x_true) ** 2).mean(axis=0)) / rng_))
+        total = float(np.sqrt(((est.sum(axis=1) - x_true.sum(axis=1)) ** 2).mean()))
+        return (float(np.mean(per_state / rng_)), float(np.mean(per_state)), total)
 
-    return nrmse(parts_only), nrmse(vector), len(part_obs)
+    return scores(parts_only), scores(vector), len(part_obs)
 
 
 def main() -> None:
@@ -153,6 +184,17 @@ def main() -> None:
                          "NEGATIVE: monotonically worse in rho, and it degrades parts-only "
                          "too, so these trajectories really are near-independent.")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--drop-unobserved", action="store_true", dest="drop_unobserved",
+                    help="Exclude states the feed never reports (Virginia). The aggregate "
+                         "constrains the SUM, so a never-observed component is a sink for "
+                         "its residual -- VA carries 110.5%% of the vector arm's excess "
+                         "error while all five reported states IMPROVE. With this the "
+                         "aggregate constraint WINS.")
+    ap.add_argument("--real-rates", action="store_true", dest="real_rates",
+                    help="Draw each state at its MEASURED feed rate (NC 84%%, FL 52%%, "
+                         "TN 32%%, SC 29%%, GA 16%%, VA 0%%) instead of a uniform p_state. "
+                         "The real process is severely skewed and never reports Virginia "
+                         "at all -- the one case an aggregate is uniquely good for.")
     ap.add_argument("--seeds", type=int, default=1,
                     help="Independent RNG streams (seed, seed+1, ...). With 1 the output "
                          "is the historical single-stream table. With N>1 each density "
@@ -168,30 +210,48 @@ def main() -> None:
     print(f"[sim]   reporting process only: totals every snapshot, per-state sparse, "
           f"{args.noise:.0%} noise\n")
     print(f"{'per-state report rate':>22} {'parts-only':>12} {'vector':>10} {'delta':>9} "
-          f"{'vector wins':>12}")
+          f"{'vector wins':>9} | ABSOLUTE: mean per-state RMSE (deaths), national total RMSE")
+    print("  (wins/delta are nRMSE, which weighs Virginia's 1->2 range like North "
+          "Carolina's 6->123 -- read the absolute columns)")
 
-    for p_state in (0.10, 0.20, 0.35, 0.50, 0.80):
+    # With --real-rates the per-state rate is fixed by the feed, so p_state is
+    # ignored and sweeping it would print the same experiment five times under
+    # five different labels.
+    densities = (0.355,) if args.real_rates else (0.10, 0.20, 0.35, 0.50, 0.80)
+    for p_state in densities:
         per_seed = []
         for sd in range(args.seed, args.seed + args.seeds):
             rng = random.Random(sd)
             a, b, wins = [], [], 0
             for _ in range(args.trials):
                 pa, vb, n = run_trial(truth, rng, p_state, args.noise, args.q,
-                                      args.q_prop, args.q_rho)
-                a.append(pa); b.append(vb); wins += vb < pa
-            per_seed.append((sum(a) / len(a), sum(b) / len(b), wins))
+                                      args.q_prop, args.q_rho, args.real_rates,
+                                      args.drop_unobserved)
+                a.append(pa); b.append(vb); wins += vb[0] < pa[0]
+            per_seed.append((sum(x[0] for x in a) / len(a),
+                             sum(x[0] for x in b) / len(b), wins,
+                             sum(x[1] for x in a) / len(a), sum(x[1] for x in b) / len(b),
+                             sum(x[2] for x in a) / len(a), sum(x[2] for x in b) / len(b)))
         ma = sum(x[0] for x in per_seed) / len(per_seed)
         mb = sum(x[1] for x in per_seed) / len(per_seed)
+        dth_a = sum(x[3] for x in per_seed) / len(per_seed)
+        dth_b = sum(x[4] for x in per_seed) / len(per_seed)
+        tot_a = sum(x[5] for x in per_seed) / len(per_seed)
+        tot_b = sum(x[6] for x in per_seed) / len(per_seed)
         wins = sum(x[2] for x in per_seed)
         tot = args.trials * args.seeds
+        label = "REAL(35.5%)" if args.real_rates else f"{p_state:.0%}"
         if args.seeds == 1:
-            print(f"{p_state:>21.0%} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
-                  f"{wins}/{tot:<11}")
+            print(f"{label:>21} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
+                  f"{wins}/{tot:<8} | deaths {dth_a:>5.2f}->{dth_b:<5.2f} "
+                  f"{dth_b-dth_a:>+6.2f} | total {tot_a:>5.1f}->{tot_b:<5.1f} "
+                  f"{tot_b-tot_a:>+6.1f}")
         else:
             deltas = [x[1] - x[0] for x in per_seed]
             spread = max(deltas) - min(deltas)
-            print(f"{p_state:>21.0%} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
-                  f"{wins}/{tot:<11} spread={spread:.4f} "
+            print(f"{label:>21} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
+                  f"{wins}/{tot:<8} | deaths {dth_b-dth_a:>+6.2f} | total "
+                  f"{tot_b-tot_a:>+6.1f} | spread={spread:.4f} "
                   f"[{min(deltas):+.4f},{max(deltas):+.4f}]"
                   f"{'  CLEARS' if abs(mb - ma) > spread else '  WITHIN FLOOR'}")
 
