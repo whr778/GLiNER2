@@ -1,0 +1,8 @@
+North Carolina: 16 obs, values 1-98, truth final 102
+   ORACLE best-available RMSE = 23.0 deaths   (EKF+gates achieved 52.4 / 26.7)
+   max observation 98 vs truth max 123 -> 25 deaths never appear in the feed
+
+Total: 45 obs, values 3-250, truth final 233
+   ORACLE best-available RMSE = 16.0 deaths   (EKF+gates achieved 52.4 / 26.7)
+   max observation 250 vs truth max 250 -> 0 deaths never appear in the feed
+
