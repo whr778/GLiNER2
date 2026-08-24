@@ -1126,8 +1126,24 @@ Wikipedia trajectories with `--q-prop 0.15`:
 
 It loses everywhere except 80% density, and loses **worst exactly where it was predicted to
 win**. An aggregate constrains the SUM and says nothing about the SPLIT, so when parts are
-sparse the filter must guess the division and the total injects error. Do not revisit this
-without a new reason; it is not "deferred pending recall", it was tried and it lost.
+sparse the filter must guess the division and the total injects error.
+
+**QUALIFIED 2026-08-24 against a measured noise floor** (10 RNG streams x 40 trials, three
+noise levels -- `vector_state_results/NOISE_FLOOR.md`). The table above is ONE stream at
+noise 0.10; re-running it reproduces, which is determinism, not variance.
+
+- The rejection **holds where it matters**: at 10-20% density it clears the floor at every
+  noise level. Real feeds are in that regime.
+- The **middle rows were never readable**: +0.0568 at 35% and +0.0203 at 50% sit inside
+  floors of 0.0678 and 0.0275. They were quoted as measurements and they are noise.
+- At **80% density AND noise 0.20 the vector arm WINS and clears the floor** (-0.0112,
+  spread 0.0069, 350/400). The recorded experiment fixed noise at 0.10 and never looked.
+
+So the constraint is not wrong in general -- it is wrong in the regime we measured and
+right in one we did not. It stays closed for THIS pipeline because sparse per-state
+reporting is what the feed provides, but "it was tried and it lost" overstates it: the
+correct statement is that it loses when parts are sparse, and pays when parts are dense and
+individually noisy.
 (Isotropic `Q` makes it 7.7x worse still — proportional process noise is a precondition,
 not a tuning knob, since Virginia ranges 1→2 while North Carolina ranges 6→123. As of
 2026-08-24 `--q-prop 0.15` is the tool's DEFAULT, because the documented trap was the

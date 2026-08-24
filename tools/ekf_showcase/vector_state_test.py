@@ -153,6 +153,13 @@ def main() -> None:
                          "NEGATIVE: monotonically worse in rho, and it degrades parts-only "
                          "too, so these trajectories really are near-independent.")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seeds", type=int, default=1,
+                    help="Independent RNG streams (seed, seed+1, ...). With 1 the output "
+                         "is the historical single-stream table. With N>1 each density "
+                         "reports the mean delta and its SPREAD across streams -- the "
+                         "noise floor. Re-running one seed reproduces, it does not "
+                         "measure variance, and a delta smaller than the floor is not a "
+                         "result.")
     args = ap.parse_args()
 
     truth = truth_series(Path(args.truth))
@@ -164,15 +171,29 @@ def main() -> None:
           f"{'vector wins':>12}")
 
     for p_state in (0.10, 0.20, 0.35, 0.50, 0.80):
-        rng = random.Random(args.seed)
-        a, b, wins, nobs = [], [], 0, 0
-        for _ in range(args.trials):
-            pa, vb, n = run_trial(truth, rng, p_state, args.noise, args.q,
-                                  args.q_prop, args.q_rho)
-            a.append(pa); b.append(vb); wins += vb < pa; nobs += n
-        ma, mb = sum(a) / len(a), sum(b) / len(b)
-        print(f"{p_state:>21.0%} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
-              f"{wins}/{args.trials:<11}")
+        per_seed = []
+        for sd in range(args.seed, args.seed + args.seeds):
+            rng = random.Random(sd)
+            a, b, wins = [], [], 0
+            for _ in range(args.trials):
+                pa, vb, n = run_trial(truth, rng, p_state, args.noise, args.q,
+                                      args.q_prop, args.q_rho)
+                a.append(pa); b.append(vb); wins += vb < pa
+            per_seed.append((sum(a) / len(a), sum(b) / len(b), wins))
+        ma = sum(x[0] for x in per_seed) / len(per_seed)
+        mb = sum(x[1] for x in per_seed) / len(per_seed)
+        wins = sum(x[2] for x in per_seed)
+        tot = args.trials * args.seeds
+        if args.seeds == 1:
+            print(f"{p_state:>21.0%} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
+                  f"{wins}/{tot:<11}")
+        else:
+            deltas = [x[1] - x[0] for x in per_seed]
+            spread = max(deltas) - min(deltas)
+            print(f"{p_state:>21.0%} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
+                  f"{wins}/{tot:<11} spread={spread:.4f} "
+                  f"[{min(deltas):+.4f},{max(deltas):+.4f}]"
+                  f"{'  CLEARS' if abs(mb - ma) > spread else '  WITHIN FLOOR'}")
 
     print("\nThe aggregate cannot disaggregate on its own -- it constrains the SUM, not the\n"
           "split -- so the gain should be largest where per-state reports are sparse and\n"
