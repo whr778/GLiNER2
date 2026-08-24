@@ -1,0 +1,24 @@
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+/Users/williamroe/development/git/GLiNER2/gliner2/models/span/model.py:88: RuntimeWarning: Encoder rejected attn_implementation='sdpa'; falling back to 'eager' (DebertaV2Model does not support an attention implementation through torch.nn.functional.scaled_dot_product_attention yet. Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`). On a ModernBERT encoder trained in bf16 this is a correctness issue, not just speed: sdpa+bf16 there produces non-finite losses (measured), so install 'kernels' to keep FA2. Set GLINER2_STRICT_ATTN=1 to make this an error instead.
+  self.encoder = self._load_encoder(
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+============================================================
+🧠 Model Configuration
+============================================================
+Encoder model      : microsoft/deberta-v3-base
+Counting layer     : count_lstm_v2
+Token pooling      : first
+============================================================
+  gliner2-base-v1-casualty-docee     SpanExtractor          default(0.5)   records= 12 scope={'unclear': 12}
+      dead cells: ['None', '21', 'None', '30', '44']
+  gliner2-base-v1-casualty-docee     (span arch, no record head) skipped
+  gliner2-base-v1-casualty-docee     (span arch, no record head) skipped
+Fetching 0 files: 0it [00:00, ?it/s]Fetching 0 files: 0it [00:00, ?it/s]
+/Users/williamroe/development/git/GLiNER2/gliner2/models/boundary/model.py:1096: RuntimeWarning: Encoder rejected attn_implementation='flash_attention_2'; falling back to 'sdpa' (FlashAttention2 has been toggled on, but it cannot be used due to the following error: the package for FlashAttention2 doesn't seem to be installed.). On a ModernBERT encoder trained in bf16 this is a correctness issue, not just speed: sdpa+bf16 there produces non-finite losses (measured), so install 'kernels' to keep FA2. Set GLINER2_STRICT_ATTN=1 to make this an error instead.
+  self.encoder = self._load_encoder(
+  gliner2-ekf-frontend-mmbert        BoundaryExtractor      default(0.5)   records=  2 scope={'unclear': 2}
+      dead cells: ['64', '30']
+  gliner2-ekf-frontend-mmbert        BoundaryExtractor      anchor=0.15    records=  8 scope={'sub-place': 2, 'unclear': 5, 'place': 1}
+      dead cells: ['4', '44', '48', '23', '50']
+  gliner2-ekf-frontend-mmbert        BoundaryExtractor      anchor=0.05    records= 15 scope={'sub-place': 2, 'unclear': 12, 'place': 1}
+      dead cells: ['4', '300', '100', '44', '48']

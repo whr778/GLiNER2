@@ -1214,11 +1214,41 @@ gate's inferred scope agree? Two independent routes to the same field, checkable
 than self-reported, and it degrades gracefully: high agreement means trust the field and
 skip the gate, low means the corpus needs work before leaning on it.
 
-**Status: plumbing complete and tested (18 tests), field quality UNMEASURED.** `scope` is
-unsupervised -- no training data carries it -- so a re-extraction over the 70-article
-Helene feed is needed to find out whether the model can fill it zero-shot. Measure
-`scope_agreement` first; if it is near chance, the field needs supervision before the
-routing above is worth switching on.
+**Status: plumbing complete and tested (18 tests). Field quality MEASURED 2026-08-24 --
+it is a zero-shot NO-OP and needs supervision.**
+
+| model | records | scope values |
+|---|--:|---|
+| `casualty-docee` (span), 12 articles | 11-12 | **`unclear` x all** |
+| `ekf-frontend-mmbert` (boundary), anchor 0.5 | 2 | `unclear` x2 |
+| `ekf-frontend-mmbert`, anchor 0.15 | 8 | `unclear` x8 |
+| `ekf-frontend-mmbert`, anchor 0.05 | 15 | `unclear` x14, **`sub-place` x1** |
+
+The span model returns `None` for `scope` on 10 of 11 records. The one non-empty cell it
+produced was **`'94,000'`** -- a NUMBER, not a scope class, and the exact value 9.1 names as
+the reproduction signature. The model does not treat `scope` as a categorical slot; it
+reaches for the nearest figure, as it does for every other field in the record.
+
+**The `unclear` abstention class earned its keep on first contact.** A confidence float
+would have returned 0.62 on `'94,000'` and looked meaningful. The categorical routed it to
+"defer to the ratio gate", degrading to current behaviour instead of asserting a wrong
+scope. That is the design question answered by measurement rather than argument.
+
+**One real signal:** mmBERT at anchor 0.05 produced the only non-`unclear` value seen,
+a single `sub-place` out of 15. That is noise as a rate, but the span model produced zero
+across 12 articles, so the field is REACHABLE rather than inert.
+
+**Also measured: the boundary model is a viable stage-2 extractor at its own threshold.**
+It does not fail silently as predicted -- at the 0.5 default it under-fires 6x (2 records
+vs the span model's 12), and at anchor 0.05 it produces MORE (15) and without the span
+model's `None` cells. Its record head's max object probability is 0.178, so 0.5 is a cutoff
+it can barely reach. Same shape as the extractor gates being read 100x too high.
+`boundary_settings` is a FROZEN dataclass -- use `dataclasses.replace`.
+See `tools/ekf_showcase/record_threshold_probe.py`.
+
+**Next: SUPERVISION.** No model fills this field without training data, and swapping
+architectures did not change that. The routing above stays off until a supervised `scope`
+exists.
 
 **The scope direction is open and is where the remaining error lives.** The failure is
 filing a national total under a state — measured on real text: "The number of deaths stood
