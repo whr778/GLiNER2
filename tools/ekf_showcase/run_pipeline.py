@@ -556,9 +556,18 @@ def track(observations: List[Dict], grid: List[float]) -> Dict[str, Any]:
     series: Dict[str, Any] = {}
     for role in ROLES:
         obs = sorted((o for o in observations if o["role"] == role), key=lambda o: o["t_hours"])
+        ci = ekf.est_ekf_ci(obs, grid, role) if obs else None
         series[role] = {
             "n_obs": len(obs),
-            "ekf": ekf.est_ekf(obs, grid, role) if obs else [0.0] * len(grid),
+            "ekf": [c["mean"] for c in ci] if ci else [0.0] * len(grid),
+            # The filter's OWN uncertainty, which it computes at every step and which this
+            # pipeline used to discard. It widens with time since the last report and
+            # narrows as reports agree, so it distinguishes "settled" from "no news" --
+            # something the point estimate cannot express. NOT an extraction confidence:
+            # a mis-bound figure makes the filter confidently wrong.
+            "sigma": [c["sigma"] for c in ci] if ci else [None] * len(grid),
+            "lo": [c["lo"] for c in ci] if ci else [None] * len(grid),
+            "hi": [c["hi"] for c in ci] if ci else [None] * len(grid),
             "last_value": ekf.est_last_value(obs, grid) if obs else [0.0] * len(grid),
         }
     return series

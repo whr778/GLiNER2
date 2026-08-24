@@ -117,6 +117,16 @@ def est_ekf_rise(obs: List[Dict], grid: List[float]) -> List[float]:
     """1D random-walk smoother, censoring-aware. Holds between reports (no rise
     over-shoot); fuses reports weighted by source/qualifier; ignores 'at least'
     bounds below the estimate (one-sided). q_rel sets smoothing strength."""
+    return [m for m, _ in _ekf_rise(obs, grid)]
+
+
+def _ekf_rise(obs: List[Dict], grid: List[float]) -> List[tuple]:
+    """The recursion, returning (mu, P) so callers can have the filter's own uncertainty.
+
+    P is maintained at every step anyway; returning only the mean threw away the one thing
+    an EKF gives you that a last-value baseline cannot -- a calibrated statement of how
+    sure it is. `est_ekf_rise` keeps its float-list signature for the six existing callers.
+    """
     obs = sorted(obs, key=lambda o: o["t_hours"])
     q_rel = 0.20
     mu = P = None; t_cur = 0.0; j = 0; out = []
@@ -140,14 +150,18 @@ def est_ekf_rise(obs: List[Dict], grid: List[float]) -> List[float]:
                     K = P / S; mu = mu + K * (z - mu); P = (1 - K) * P
             j += 1
         if mu is None:
-            out.append(0.0)
+            out.append((0.0, None))
         else:
             P = grow(mu, P, t_cur, gt); t_cur = gt
-            out.append(float(mu))
+            out.append((float(mu), float(P)))
     return out
 
 
 def est_ekf_decay(obs: List[Dict], grid: List[float]) -> List[float]:
+    return [m for m, _ in _ekf_decay(obs, grid)]
+
+
+def _ekf_decay(obs: List[Dict], grid: List[float]) -> List[tuple]:
     obs = sorted(obs, key=lambda o: o["t_hours"])
     mu = P = None; t_cur = 0.0; j = 0; out = []
     for gt in grid:
@@ -165,16 +179,42 @@ def est_ekf_decay(obs: List[Dict], grid: List[float]) -> List[float]:
                 K = P / S; mu = mu + K * (o["value"] - mu); P = (1 - K) * P
             j += 1
         if mu is None:
-            out.append(0.0)
+            out.append((0.0, None))
         else:
             dt = max(0.0, (gt - t_cur) / 24.0); f = math.exp(-GAMMA * dt)
             mu = f * mu; P = f * f * P; t_cur = gt
-            out.append(float(mu))
+            out.append((float(mu), float(P)))
     return out
 
 
 def est_ekf(obs, grid, role):
     return est_ekf_decay(obs, grid) if role in DECAY_ROLES else est_ekf_rise(obs, grid)
+
+
+def est_ekf_ci(obs, grid, role, z: float = 1.96):
+    """(mean, lo, hi, sigma) per grid point -- the filter's own uncertainty, exposed.
+
+    `sigma = sqrt(P)`. Two things it is NOT. It is not calibrated against held-out error:
+    P reflects the model's assumptions (source/qualifier sigmas, q_rel) and inherits any
+    error in them, so a narrow band is a statement about the model's self-consistency.
+    And it is a state uncertainty, not an extraction confidence -- if the front end binds
+    the wrong figure the filter is confidently wrong, which is the dominant error mode
+    measured (~50% of bound tolls are the wrong number).
+
+    Where sigma is genuinely informative: it WIDENS with time since the last report
+    (`grow`) and NARROWS as reports agree, so it separates 'no news' from 'settled'.
+    Before any report it is None -- absent, not zero.
+    """
+    pairs = (_ekf_decay if role in DECAY_ROLES else _ekf_rise)(obs, grid)
+    out = []
+    for mu, P in pairs:
+        if P is None:
+            out.append({"mean": mu, "lo": None, "hi": None, "sigma": None})
+        else:
+            sd = math.sqrt(P)
+            out.append({"mean": mu, "lo": max(0.0, mu - z * sd), "hi": mu + z * sd,
+                        "sigma": sd})
+    return out
 
 
 def est_moe(obs: List[Dict], grid: List[float], role: str) -> List[float]:
