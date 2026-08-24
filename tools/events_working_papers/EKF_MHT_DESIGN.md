@@ -316,7 +316,7 @@ validated.* The case for the filter must rest on something other than the
 harder-regime argument, most plausibly multi-source disagreement, which no benchmark here
 has tested because every feed so far has a single source.
 
-### 6.2 Aggregates cannot constrain their parts
+### 6.2 Aggregates constrain the sum, and our metric only scored the split
 
 Making the state a vector so a national total becomes a linear observation over states is
 the theoretically right move — a Kalman filter fuses "120 in North Carolina" and "227
@@ -330,7 +330,38 @@ at every realistic reporting density and only reaches parity at 80%:
 | 35% | **0.2292** | 0.2860 | 10/40 |
 | 80% | 0.1556 | **0.1520** | 30/40 |
 
-Right in principle, and it does not pay off at the densities real feeds provide.
+Right in principle, and on this metric it does not pay off at the densities real feeds
+provide.
+
+**Corrected 2026-08-24: that metric answers a different question than the one asked.**
+`nrmse` divides each state's RMSE by *that state's own range* and then weights all six
+states equally. Virginia ranges 1 → 2, so its denominator is 1 and a 1.4-death error there
+reads as **1.4 nRMSE**; the identical error in North Carolina (6 → 123) reads as 0.012.
+Virginia was carrying **110.5% of the vector arm's excess error** while all five reported
+states improved. Scored on the same runs:
+
+| density | nRMSE Δ | per-state RMSE Δ (deaths) | national total RMSE Δ |
+|---|--:|--:|--:|
+| 10% | +0.1737 | +0.35 | 87.6 → 28.5 = **−59.1** |
+| 35% | +0.0568 | −0.61 | 49.6 → 29.8 = **−19.8** |
+| 80% | −0.0036 | −0.69 | 30.9 → 24.3 = **−6.6** |
+
+**The aggregate improves the national total at every density**, by the largest margin
+exactly where this section claimed it "loses worst" — a 67% reduction in total error at 10%
+per-state reporting — and the margin narrows as per-state reports get dense, which is the
+predicted behaviour rather than a surprise.
+
+The *mechanism* stated below is right and is worth keeping: an aggregate constrains the SUM
+and says nothing about the SPLIT. Those three columns are that sentence made measurable —
+the split does not improve at sparse density, the sum improves enormously. The error was
+concluding "therefore it does not pay off" while scoring only the split. For a casualty
+tracker the national toll is the headline number, not a diagnostic.
+
+What remains true: per-state *relative* accuracy genuinely does not improve until parts are
+dense, so if the consumer needs per-state figures the aggregate buys little. If it needs a
+national toll — which is what this pipeline reports — the aggregate roughly halves the
+error. This is one simulated reporting process over 31 real snapshots; it says the question
+is open, not that the vector state ships.
 
 **The result is robust to the process-noise model, which is the obvious way it could have
 been an artifact.** Q enters this experiment three ways and the verdict survives all of

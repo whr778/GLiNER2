@@ -1100,3 +1100,50 @@ likely to flip a result this monotone, but neither has been ruled out.
 non-diagonal through the Jacobian. A closed question reopened by an analogy from another
 field, tested in minutes, and closed again with more support than it had before. Cheaper
 than leaving it shut on one process model.
+
+## Phase 22 — a closed result reopened by asking what the column was (24 Aug)
+
+Phase 21 closed the aggregate-constraint question for the third time, having checked it
+against isotropic, proportional-diagonal and correlated process noise. Then: *"the vector
+column is that mse?"*
+
+It is not. It is RMSE per state, divided by **that state's own range**, macro-averaged.
+Virginia ranges 1 → 2, so its denominator is 1 and a 1.4-death error reads as 1.4 nRMSE;
+the same error in North Carolina (6 → 123) reads as 0.012. Virginia carried **110.5% of the
+vector arm's excess error** while all five reported states improved.
+
+Scored in absolute units, on the same runs, the verdict inverts:
+
+| density | nRMSE Δ | deaths Δ | national total RMSE Δ |
+|---|--:|--:|--:|
+| 10% | +0.1737 | +0.35 | 87.6 → 28.5 (**−59.1**) |
+| 35% | +0.0568 | −0.61 | 49.6 → 29.8 (−19.8) |
+| 80% | −0.0036 | −0.69 | 30.9 → 24.3 (−6.6) |
+
+**The aggregate improves the national total at every density**, most where §6.2 said it
+"loses worst", and by less as parts get dense — the predicted shape.
+
+**The mechanism was right and the verdict was wrong, from the same sentence.** §6.2 says an
+aggregate "constrains the SUM and says nothing about the SPLIT". True, and the columns are
+that sentence made measurable. What followed was "therefore it does not pay off" — decided
+by a scorer that only measures the split. The metric was never wrong about what it measured;
+it was answering a question nobody had asked out loud.
+
+**How close this came to standing.** The conclusion had survived three deliberate robustness
+attacks in two days, each of which strengthened confidence in it: proportional Q, correlated
+Q, and a seed/noise floor. None of them could find the problem, because all three varied the
+*model* and none varied the *scorer*. Robustness checks that all sit downstream of the same
+metric cannot detect a metric error, and passing more of them feels like increasing
+confidence.
+
+Two detours worth recording as errors. The real arrival pattern (NC 84%, FL 52%, VA 0%) made
+the vector arm look far worse — I read that as strengthening the rejection, when it was the
+metric artifact concentrating. `--drop-unobserved` then "rescued" it by deleting Virginia,
+which flips nRMSE positive and clears the floor; that treats the symptom. Both are kept
+because both were wrong in the same direction, and the direction was "defend the existing
+conclusion".
+
+This is the fourth instrument defect in three days, after the inert threshold sweep, the
+strict-versus-relaxed gate 3, and gate 1 counting firings. The pattern is now explicit
+enough to state: **every one was found by someone asking what a number meant, and none by
+running more of the analysis that produced it.**

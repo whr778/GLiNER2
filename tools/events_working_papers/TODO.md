@@ -1114,7 +1114,17 @@ regardless of the threshold requested.
 ### 10. Aggregate SCOPE (not the aggregate constraint) — the sharpened target
 Two different things wear the word "aggregate" and only one of them is open.
 
-**The constraint direction is measured and it LOSES.** `vector_state_test.py` feeds the
+**REOPENED 2026-08-24 — the constraint direction was rejected by the METRIC.** `nrmse`
+normalises each state by its own range and macro-averages, so Virginia (1→2) counts like
+North Carolina (6→123) and carried 110.5% of the vector arm's excess error. On the same
+runs the aggregate cuts **national total RMSE at every density** — 87.6→28.5 at 10%
+reporting, the density where this section says it "loses worst". The mechanism recorded
+below ("constrains the SUM, says nothing about the SPLIT") is correct; concluding "so it
+does not pay off" while scoring only the split is not. See
+`tools/ekf_showcase/vector_state_results/METRIC_INVERTED_THE_VERDICT.md`. The text below is
+kept as measured, and its verdict is withdrawn.
+
+**The constraint direction is measured and it LOSES *on nRMSE*.** `vector_state_test.py` feeds the
 national total in as a sum row over the six state components. Against `parts-only`, on real
 Wikipedia trajectories with `--q-prop 0.15`:
 
