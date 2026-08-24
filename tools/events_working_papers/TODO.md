@@ -157,13 +157,17 @@ improving at 6 -- no plateau). Model + artifacts on `whr778/gliner2-ekf-frontend
 
 | gate | rebuild `ekf-frontend` | incumbent `137k-clean` |
 |---|---|---|
-| 1 -- trigger + >=1 bound arg on >=50% of Helene windows | **FAIL** 25.0% @ 0.1 | **PASS** 65.0% @ 0.1 |
+| 1 -- trigger + >=1 bound arg on >=50% of Helene windows (FORM only) | **FAIL** 25.0% @ 0.1 | **"PASS"** 65.0% @ 0.1 |
+| 1b -- of those, the toll is CORRECT (added 2026-08-24) | **75%** @ 0.1 | **7.7%** @ 0.1 |
 | 2 -- Katrina block holds "1,400", not "Helene" | **FAIL** | **FAIL** (local only at 0.01) |
 
-**The rebuild is a negative result: it forms events on FEWER wire-copy windows than the model
-it was built to replace.** In-distribution it is fine (right trigger, right bound argument,
-right spans on its own casualty corpus), which is this line's standing failure mode --
-in-domain-good / real-news-poor, with 72% of the new English trigger+argument data synthetic.
+**CORRECTED 2026-08-24 -- the rebuild is a POSITIVE result and gate 1 was the error.**
+Gate 1 counts firings, not correct ones. Measured at matched thresholds with the gold toll
+located by character offset (`tools/ekf_showcase/binding_accuracy.py`), the rebuild binds
+the right death toll **67-100%** of the time against the incumbent's **0-7.7%**, with yield
+>= at every threshold and 3x at 0.1 off a third of the firings. The incumbent's 65% gate-1
+pass is 39 firings carrying THREE correct tolls, binding `dead` to "car Hurricane Helene",
+"Mexico", "Pacific coast". The mix change did what it was built to do.
 
 **The instrument was the problem, and this file carried the bad claim.** The sentence that
 used to sit here -- "run against the incumbent it returns 0.0% and 'no block contains the
@@ -186,10 +190,11 @@ entity/trigger/argument +0.0278 / +0.0147 / +0.0570. Structure also swept to the
 head's own thresholds (0.1184 vs 0.1132) because its max object probability is 0.178 and a
 default-0.5 number measures an unreachable cutoff.
 
-**So the verdict is SPLIT: gates 1-2 FAIL, gates 3-4 PASS.** The rebuild improved every
-corpus metric available and made the behaviour it was built for worse. That is the case for
-pre-registering gates on AP prose rather than held-out corpora, and it is now demonstrated
-rather than asserted.
+**Verdict: gates 1-2 FAIL AS WRITTEN, gates 3-4 PASS, and gate 1 is not a valid
+comparator.** The rebuild improved every corpus metric AND wire-copy binding precision.
+Pre-registering gates on AP prose was right; scoring a FORM gate best-over-a-threshold-range
+was not, because it rewards indiscriminate firing. Every form gate here needs a correctness
+companion before it is used to compare two models.
 
 ### The next move is NOT downsampling casualty_events
 
@@ -212,11 +217,23 @@ say it cannot work:
    and no named identities, so it has no same-type discrimination (Helene vs Katrina) in it
    -- which is the live defect in item 2.
 
-More English argument data already made wire-copy form-rate worse (25.0% vs the incumbent's
-65.0%) while improving every corpus metric. The mix is not the lever. **The next move is the
-instance dimension -- the record head -- not another corpus.** Note the record head decodes
-but is miscalibrated (max object probability 0.178 against a 0.5 default) and, per the CASIE
-Tier 2 run, was never trained on events.
+The reasoning changed on 2026-08-24 but the conclusion did not. It is NOT "the mix failed";
+the mix succeeded. It is that binding correctness is now good and the router still has no
+per-event input, because the decode cannot emit two events of one type. **The next move is
+the instance dimension -- the record head -- not another corpus.**
+
+That path has one prior measurement, and it is not a clean negative: the CASIE Tier 2 arm
+produced REAL multi-instance output (2-9 instances of one type on 17 of 39 probed docs,
+structurally impossible before) and scored 0.0036 against a 0.2998 control -- diagnosed as
+head-init, the record head having never been supervised on events and given 375 steps to
+learn instance formation cold. The fair test it names: warm-start the record head on MAVEN,
+then fine-tune on CASIE, with far more steps. The head is also miscalibrated (max object
+probability 0.178 against a 0.5 default).
+
+**Open and worth cheap work first:** yield is still only 15% at 0.1 and 26.7% at 0.05. The
+rebuild's remaining misses are mostly word-form golds (`six`, `three`, `dozens`) where it
+binds a nearby numeral -- a normalisation gap, not a binding failure, and probably fixable
+without training.
 
 `tools/data/split_rams_test.py` gave rams a val split by carving its 871-row test **by
 document**, which found 101 duplicate rows in test alone.

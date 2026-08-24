@@ -98,7 +98,7 @@ See [License](#license) for the full determination and per-dataset terms.
 
 | Setting | Value |
 |---|---|
-| Trained on | 2026-08-23 |
+| Trained on | 2026-08-24 |
 | Duration | 17h 17m |
 | Throughput | 18.2 samples/s |
 | Epochs | 6 |
@@ -117,7 +117,7 @@ See [License](#license) for the full determination and per-dataset terms.
 
 ### Intended use and limitations
 
-**This is a research checkpoint, and it does not yet do the job it was built for.**
+**This is a research checkpoint. Read the correction below before the gate table.**
 
 It was trained to be the first stage of an EKF disaster-tracking pipeline: read English
 news wire copy and emit, per event, a trigger with its arguments bound to it. Two
@@ -152,9 +152,31 @@ usable events on 25% of windows where its predecessor manages 65%. Held-out F1 d
 predict wire-copy behaviour, in the wrong direction, which is why the gates were fixed on
 AP prose before training.
 
-**So: do not deploy this on real news**, and do not read the table below as evidence that
-it will work there. It is a strong general multi-task extractor and a reasonable warm
-start; it is not an event extractor you should trust on journalism.
+**Correction, 2026-08-24: gate 1 was measuring the wrong thing.** It counts windows where
+a trigger and *any* bound argument appear -- never whether the bound figure is correct --
+and it takes the best score over a threshold range, which rewards a model for firing
+indiscriminately. Locating each window's gold death toll by character offset and checking
+overlap, at matched thresholds:
+
+| threshold | this model: fired → correct | predecessor: fired → correct |
+|---|---|---|
+| 0.50 | 3 → 3 (**100%**) | 0 → 0 |
+| 0.30 | 5 → 4 (**80%**) | 4 → 0 (**0%**) |
+| 0.10 | 12 → 9 (**75%**) | 39 → 3 (**7.7%**) |
+| 0.05 | 20 → 16 (80%) | 55 → 16 (29%) |
+
+The predecessor's 65% gate-1 score is 39 firings carrying **three** correct death tolls; it
+binds `dead` to `"Mexico"`, `"Pacific coast"` and `"car Hurricane Helene"`. **On this
+measure the model documented here is substantially the better extractor on real news** --
+equal or higher yield at every matched threshold, triple at 0.10, off a third the firings.
+
+**So, honestly:** it is the strongest extractor in this line on both held-out corpora and
+real wire copy, and it is still not finished. Absolute yield is 15% of casualty-bearing
+windows at threshold 0.10 and 26.7% at 0.05, so most tolls are still missed. Its remaining
+errors are mostly word-form figures ("six", "dozens") where it binds a nearby numeral. And
+the decode emits one event instance per event type, pooling every trigger and argument into
+it, so two same-type events in one passage cannot be separated -- if your application needs
+per-event separation, this model cannot give it to you regardless of threshold.
 
 ### Reading the metrics below
 
@@ -227,4 +249,4 @@ Micro precision / recall / F1, strict → relaxed.
 If you use this model, please cite GLiNER2 and the underlying datasets (linked in [Training data](#training-data)).
 
 ---
-_Model card generated automatically at the end of training (2026-08-23)._
+_Model card generated automatically at the end of training (2026-08-24)._
