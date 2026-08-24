@@ -1053,3 +1053,50 @@ event type and pools every span into it, so the router still has no per-event in
 is 15% at 0.1 — the rebuild is the better extractor and not yet a sufficient one. The next
 constraint remains the instance dimension, now for a clean reason rather than a confused
 one: not "the mix failed" but "the mix succeeded and this is what is left".
+
+## Phase 21 — the process-noise question, asked properly and closed (24 Aug)
+
+A review of the pipeline turned into a question about the filter: are the vectors
+normalized? Three answers, and the third is the useful one.
+
+**The shipped filter has no vectors.** `est_ekf_rise` is 1-D per role. It avoids needing
+normalization by making every noise term relative — `R = (sig · max(ref,1))²`, growth
+`q_rel · max(mu,1) · dt`, init `P = (0.4·max(z,1))²` — so a 5% error on 120 and on 12 are
+treated alike. That is the right call and it is why the question does not arise there.
+
+**The vector arm's default was the trap this file already documents.** `--q-prop`
+defaulted to 0, i.e. isotropic. TODO item 10 called proportional Q "a precondition, not a
+tuning knob", and Phase 12 records a session mistaking the isotropic default's +1.3379 for
+a new catastrophic result. This session reproduced that number for the third time before
+noticing. The default is now 0.15 and matches every recorded table; isotropic needs
+`--q-prop 0`. **A documented trap that is also the default will keep being paid for.**
+
+**The real question was whether Q should be diagonal at all.** Both options assert state
+tolls accrue independently, and the aggregate row `H = [1..1]` is exactly where that bites
+because `Var(sum) = Σᵢⱼ Pᵢⱼ`. If the aggregate constraint was rejected on a process model
+that cannot represent what the aggregate observes, that is a reason to revisit a closed
+question. Tested with `--q-rho`, uniform correlation with marginals preserved:
+
+| ρ | 10% | 35% | 80% |
+|---|--:|--:|--:|
+| 0.0 | +0.174 (4/40) | +0.057 (10/40) | −0.004 (30/40) |
+| 0.6 | +0.286 (5/40) | +0.096 (3/40) | +0.016 (4/40) |
+| 0.9 | +0.308 (5/40) | +0.098 (5/40) | +0.024 (2/40) |
+
+**Monotonically worse.** The rejection survives isotropic, proportional-diagonal and
+correlated Q. And the *reason* is the finding: correlation degrades parts-only as well, so
+these trajectories genuinely are near-independent. One storm drives all six states, yet the
+dynamics are dominated by the reporting and revision process — NC's 123 → 102 → 96 is a
+reclassification about NC — not by the physical event. Any future joint model of these
+streams has to start from that.
+
+Two caveats kept on the record: uniform ρ is the crude first model, where geographic
+adjacency or a common-mode factor with per-state loadings would be more physical; and 40
+trials over 31 real snapshots with a simulated reporting process is thin. Neither looks
+likely to flip a result this monotone, but neither has been ruled out.
+
+**The method note.** The candidate reason came from outside the work — a standard attitude
+-estimation formulation, `Q_t = σ²W_tW_tᵀ`, where isotropic source noise becomes
+non-diagonal through the Jacobian. A closed question reopened by an analogy from another
+field, tested in minutes, and closed again with more support than it had before. Cheaper
+than leaving it shut on one process model.

@@ -332,6 +332,29 @@ at every realistic reporting density and only reaches parity at 80%:
 
 Right in principle, and it does not pay off at the densities real feeds provide.
 
+**The result is robust to the process-noise model, which is the obvious way it could have
+been an artifact.** Q enters this experiment three ways and the verdict survives all of
+them. Isotropic `σ²I` fits badly here — Virginia ranges 1→2 while North Carolina ranges
+6→123, so equal *absolute* accrual noise is the wrong model, and it makes the vector arm
+look 7.7× worse than the table above; proportional Q is a precondition rather than a
+tuning knob, and is now the tool's default.
+
+The sharper objection is that both of those are **diagonal**, asserting that state tolls
+accrue independently. One storm does not work that way, and the aggregate row
+`H = [1,1,1,1,1,1]` is precisely where the assumption is load-bearing, since
+`Var(sum) = Σᵢⱼ Pᵢⱼ` gives the off-diagonals a direct say — so the constraint might have
+been rejected on a process model that cannot represent what the aggregate observes. Adding
+uniform correlation with the marginals held fixed does not rescue it; the vector arm
+degrades monotonically, +0.174 → +0.308 at 10% density as ρ goes 0 → 0.9, and the 80%
+parity of −0.004 becomes +0.024.
+
+Why it fails is worth more than that it fails: correlation degrades the **parts-only** arm
+too (0.4348 → 0.5280 at ρ=0.9), so ρ>0 is simply a poor fit for these trajectories. The
+revisions in the real data are idiosyncratic — North Carolina's 123 → 102 → 96 is a
+reclassification about North Carolina — rather than common-mode. Despite one storm driving
+all six states, the **reporting and revision process dominates the dynamics, not the
+physical event**. That is a constraint on any future joint model of these streams.
+
 ### 6.3 Restructuring the text does not fix attribution
 
 The proposal was a summarizer emitting self-contained bullets so number-to-place binding
