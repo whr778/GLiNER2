@@ -99,7 +99,11 @@ def count_figures(rec):
                 if (a.get("role") or "").lower() == "location"]
         for a in args:
             role = (a.get("role") or "").lower()
-            if role in COUNT_ROLES:
+            # Scope is defined RELATIVE to a location. An event with no location
+            # argument has nothing to be relative to, so asking for a scope label
+            # there measures nothing (6% of figures, and 18% of the disagreements
+            # in the first run).
+            if role in COUNT_ROLES and locs:
                 out.append({"role": role, "entity": a.get("entity", ""),
                             "event_type": ev.get("event_type", ""), "locations": locs})
     return out
@@ -114,19 +118,33 @@ def n_locations(rec):
     return len(locs)
 
 
-def window_for(text, entity, pad=200):
+def _standalone_spans(text, entity):
+    """Offsets where `entity` occurs as a whole number, not inside a longer one.
+
+    Plain ``str.find`` is wrong for short figures: find("6") matches the 6 inside
+    "2026", so the window lands on a date rather than the casualty figure. Measured
+    at 22% of figures before this guard.
+    """
+    pat = re.compile(r"(?<![\d,.])" + re.escape(entity) + r"(?![\d,.])")
+    return [m.start() for m in pat.finditer(text)]
+
+
+def window_for(text, entity, locations=(), pad=200):
     """The passage a figure actually lives in.
 
     ``casualty_events`` records concatenate several unrelated disaster snippets, so
     handing a labeller the whole record forces it to first locate the figure among
     three other disasters -- a needle-in-haystack task layered on top of the scope
     judgement, which is not what we are trying to measure and not what the pipeline
-    does at inference. Prefer the containing paragraph; fall back to the +/-200 char
-    window ``event_binding_probe.py`` and ``helene_audit_labels.json`` already use.
+    does at inference. Among repeated occurrences prefer the one nearest this event's
+    own location, then return the containing paragraph, falling back to the +/-200
+    char window ``event_binding_probe.py`` and ``helene_audit_labels.json`` use.
     """
-    i = text.find(entity)
-    if i < 0:
-        return text
+    hits = _standalone_spans(text, entity) or [text.find(entity)]
+    hits = [h for h in hits if h >= 0] or [0]
+    loc_at = [m for l in locations for m in _standalone_spans(text, l) or [text.find(l)]
+              if m >= 0]
+    i = min(hits, key=lambda h: min((abs(h - m) for m in loc_at), default=h))
     for para in re.split(r"\n\s*\n", text):
         j = text.find(para)
         if j <= i < j + len(para):
@@ -142,7 +160,7 @@ def user_msg(rec, figs, window=True):
                      f'event={f["event_type"]} locations=[{loc}]')
         if window:
             blocks.append(f'--- passage for figure {i} ---\n'
-                          f'{window_for(rec["input"], f["entity"])}')
+                          f'{window_for(rec["input"], f["entity"], f["locations"])}')
     body = "\n\n".join(blocks) if window else f"TEXT:\n{rec['input']}"
     return f"{body}\n\nFIGURES TO LABEL:\n" + "\n".join(lines)
 
@@ -267,7 +285,7 @@ def report(items, cand, ref, a, total_cost):
         for k, f in enumerate(figs):
             rows.append({"rec": i, "stratum": stratum, "fig": k, "role": f["role"],
                          "entity": f["entity"], "locations": f["locations"],
-                         "passage": window_for(rec["input"], f["entity"]),
+                         "passage": window_for(rec["input"], f["entity"], f["locations"]),
                          "cand": c[k], "ref": r[k]})
     if skipped:
         print(f"WARNING: {skipped} records dropped (refusal / max_tokens / no text block)")
