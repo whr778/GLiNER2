@@ -1,0 +1,23 @@
+60 casualty-bearing Helene windows, gold death toll located by offset
+
+=== whr778/gliner2-joint-boundary-mmbert-137k-clean
+ thresh   fired    hit     prec    yield
+   0.50       0      0       --     0.0%
+   0.40       0      0       --     0.0%
+   0.30       4      0     0.0%     0.0%
+         miss: gold 'at least 44' -> bound ['car Hurricane Helene']
+         miss: gold 'three' -> bound ['car Hurricane Helene', 'car Hurricane Helene']
+         miss: gold 'three' -> bound ['car Hurricane Helene', 'car Hurricane Helene']
+   0.20      10      0     0.0%     0.0%
+         miss: gold 'at least 44' -> bound ['car Hurricane Helene', 'car Hurricane Helene', 'car Hurricane Helene']
+         miss: gold 'three' -> bound ['car Hurricane Helene', 'car Hurricane Helene', 'car Hurricane Helene']
+         miss: gold 'three' -> bound ['car Hurricane Helene', 'car Hurricane Helene', 'car Hurricane Helene']
+   0.10      39      3     7.7%     5.0%
+         miss: gold 'at least two' -> bound ['Mexico', 'Pacific coast', 'a Category 3 hurricane']
+         miss: gold 'One' -> bound ['Carolinas', 'Florida', 'Georgia']
+         miss: gold 'two' -> bound ['we', 'Florida', 'south Georgia']
+   0.05      55     16    29.1%    26.7%
+         miss: gold 'at least two' -> bound ['Mexico', 'Pacific coast', 'a Category 3 hurricane']
+         miss: gold 'One' -> bound ['Carolinas', 'Florida', 'Georgia']
+         miss: gold 'two' -> bound ['we', 'Florida', 'south Georgia']
+

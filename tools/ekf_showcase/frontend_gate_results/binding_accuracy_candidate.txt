@@ -1,0 +1,25 @@
+60 casualty-bearing Helene windows, gold death toll located by offset
+
+=== whr778/gliner2-ekf-frontend-mmbert
+ thresh   fired    hit     prec    yield
+   0.50       3      3   100.0%     5.0%
+   0.40       4      4   100.0%     6.7%
+   0.30       5      4    80.0%     6.7%
+         miss: gold 'six' -> bound ['160']
+   0.20       6      4    66.7%     6.7%
+         miss: gold 'dozens' -> bound ['5', '11', '5']
+         miss: gold 'six' -> bound ['160']
+   0.10      12      9    75.0%    15.0%
+         miss: gold 'three' -> bound ['70s', '70s', '70s']
+         miss: gold 'three' -> bound ['70s', '70s', '70s']
+         miss: gold 'dozens' -> bound ['5', '11', '5']
+   0.05      20     16    80.0%    26.7%
+         miss: gold 'dozens' -> bound ['11', '11']
+         miss: gold 'three' -> bound ['70s', '70s', '70s']
+         miss: gold 'three' -> bound ['70s', '70s', '70s']
+
+=== whr778/gliner2-joint-boundary-mmbert-137k-clean
+ thresh   fired    hit     prec    yield
+Traceback (most recent call last):
+  File "/Users/williamroe/development/git/GLiNER2/tools/ekf_showcase/binding_accuracy.py", line 123, in <module>
+    main()
