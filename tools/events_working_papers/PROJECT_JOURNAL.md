@@ -917,7 +917,7 @@ was validated by running it against the incumbent and confirming it *fails*, bec
 that passes everything measures nothing. And rams finally got a val split, carved by document,
 which found 101 duplicate rows in its test set alone.
 
-## Phase 19 — the rebuild won every benchmark and lost the job, and our gate was the problem (21–23 Aug)
+## Phase 19 — the rebuild won every benchmark and appeared to lose the job (21–23 Aug; conclusion overturned in Phase 20)
 
 The front end from Phase 18 trained cleanly and self-terminated: 35,484 steps, 6 epochs,
 17.3 h, ~$35, eval loss falling every epoch 1.2672 → 0.8917 and still falling at the end.
@@ -955,6 +955,10 @@ entity/trigger/argument +0.0278 / +0.0147 / +0.0570. Structure swept to the reco
 own thresholds (0.178 max object probability, so 0.5 is unreachable): 0.1184 vs 0.1132.
 
 **So gates 1–2 FAIL and gates 3–4 PASS.** Every benchmark up, the target behaviour down.
+
+> **This reading is WRONG — see Phase 20.** Gate 1 counts firings, not correct ones. The
+> rebuild's bindings are right 67–100% of the time against the incumbent's 0–7.7%, so the
+> mix change worked. The paragraph is kept because how it failed is the lesson.
 This is the strongest case the programme has produced for pre-registering gates on the real
 distribution: scored the normal way, this model is an unambiguous improvement and ships.
 
