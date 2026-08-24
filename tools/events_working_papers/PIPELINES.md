@@ -401,7 +401,7 @@ model can be placed on their scale, which is why §4.2 uses a fresh baseline. Fu
 invocation and a `-dirty` git marker in every output.
 
 
-### 4.4 The front end was rebuilt, and the rebuild did not fix the router's input
+### 4.4 The front end was rebuilt, and it worked -- but the router's input is still blocked
 
 The association work above all assumes an extractor that produces, per event, a trigger and
 arguments bound to *that* trigger. Measured 2026-08-20, nothing in the line does.
@@ -436,11 +436,13 @@ The English side is CASIE alone. MAVEN and Mendeley are trigger-only. So an argu
 0.506 is very nearly a Chinese-only number, and English trigger→argument rests on 798 examples
 — which no threshold reaches.
 
-**The rebuild was run, and it refutes the inference drawn from this table.** 50× more
-English trigger→argument supervision produced a model that beats the base on all eight
-held-out heads and forms usable events on **25%** of Helene windows against the base's
-**65%**. The English-share arithmetic below is correct; the conclusion that it was the
-binding constraint is not. See EKF_MHT_DESIGN §7.6.
+**The rebuild was run, and the arithmetic below was right.** 50× more English
+trigger→argument supervision produced a model that beats the base on all eight held-out
+heads AND binds the correct death toll 67-100% of the time on Helene wire copy, against the
+base's 0-7.7%. A pre-registered form gate initially said the reverse -- it counts firings,
+not correct ones, and the base fires on 39 of 60 windows while getting 3 right. What still
+blocks the router is not the mix but the decode: one event instance per type, all spans
+pooled. See EKF_MHT_DESIGN §7.6.
 
 `tools/train/config/ekf-frontend-mmbert.yaml` is the cold-start rebuild: 189,284 records, a
 50× increase in English trigger→argument, the Chinese corpora kept because they are why the

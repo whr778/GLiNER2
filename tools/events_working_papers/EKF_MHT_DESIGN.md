@@ -65,17 +65,25 @@ not the tracker** — a conclusion three built-and-failed association mechanisms
 reach.
 
 So we rebuilt the extractor against exactly that arithmetic: a cold start with **50× more
-English trigger→argument supervision**, gates fixed on AP prose before spending. The result
-is the sharpest instance in this programme of a pattern it keeps producing. On held-out
-corpora the rebuild beats the model it replaces on **every one of eight heads** — measured
-by one command on one machine, same 15,456-row blind test, threshold pinned. On the wire
-copy it was built for it is **worse**: usable events on 25% of casualty-bearing windows
-against the incumbent's 65%. Held-out F1 did not merely fail to predict the target
-behaviour, it pointed the wrong way. **The mix was not the lever**, and the measurement
-that says what is says it structurally: the decode emits one event instance per event type
-and pools every trigger and argument into it, so a passage naming two hurricanes returns a
-single event with both tolls bound to it. The next constraint is the instance dimension,
-not another corpus.
+English trigger→argument supervision**, gates fixed on AP prose before spending. **The
+rebuild works**, and establishing that took two corrections to our own instruments. It beats
+the model it replaces on **every one of eight held-out heads**, measured by one command on
+one machine at a pinned threshold. On the wire copy it was built for, its `dead` bindings
+are correct **67–100%** of the time against the incumbent's **0–7.7%**, and it delivers
+three times the correct death tolls at a matched threshold off one third the firings.
+
+The pre-registered gate said the opposite, and we believed it for a day. Gate 1 counts
+windows carrying a trigger and a bound argument — it never asks whether the bound figure is
+the right one — so the incumbent "wins" it by firing on 39 of 60 windows at a permissive
+threshold while binding `dead` to `"Mexico"`, `"Pacific coast"` and `"car Hurricane
+Helene"`. Three of those 39 are correct. **A gate scored best-over-a-threshold-range
+rewards indiscriminate firing**, which is the same comparison error this programme already
+documents for A/B arms and had never applied to its own gates.
+
+What does not move is the second gate: neither model separates two same-type events,
+because the decode emits one instance per event type and pools every trigger and argument
+into it — a passage naming two hurricanes returns a single event with both tolls bound to
+it. That, not the corpus mix, is the next constraint.
 
 We also report that the claim which justified that spend was our own instrument. The
 harness scoring the gates set a per-event threshold the boundary decode never reads, so
@@ -620,7 +628,7 @@ in-domain-good and real-news-zero.
 extractor**, and that is a conclusion three failed association mechanisms had to be built
 before anyone could reach.
 
-### 7.6 The rebuild: better on every benchmark, worse at the job
+### 7.6 The rebuild: better on every benchmark, and better at the job than the gate said
 
 The rebuild trained cleanly — 6 epochs, 17.3 h, one A100, eval loss falling monotonically
 to the last epoch. Then it failed the gates it was built to pass, and passed the ones it
@@ -654,9 +662,39 @@ Fair (Ortmann) entity / trigger / argument: 0.6732 / 0.7671 / 0.5508 against 0.6
 probability is 0.178, so a default 0.5 measures a cutoff it cannot reach — is 0.1184
 against 0.1132.
 
-**Eight heads up, and the target behaviour down.** This is the cleanest statement we have
-of why the gates were pre-registered on AP prose. Had we scored this rebuild the way models
-in this line are normally scored, it would read as an unambiguous improvement and ship.
+**And then gate 1 turned out to be measuring the wrong thing.** It counts windows carrying
+a trigger and at least one bound argument. It never asks whether the bound figure is
+*correct*. Locating each window's gold death toll by character offset and calling a `dead`
+argument a hit when its span overlaps:
+
+| threshold | rebuild fired → hit (prec) | incumbent fired → hit (prec) |
+|---|---|---|
+| 0.50 | 3 → 3 (**100%**) | 0 → 0 (—) |
+| 0.40 | 4 → 4 (**100%**) | 0 → 0 (—) |
+| 0.30 | 5 → 4 (**80%**) | 4 → 0 (**0%**) |
+| 0.20 | 6 → 4 (**67%**) | 10 → 0 (**0%**) |
+| 0.10 | 12 → 9 (**75%**) | 39 → 3 (**7.7%**) |
+| 0.05 | 20 → 16 (80%) | 55 → 16 (29%) |
+
+**The incumbent's 65% gate-1 pass is 39 firings carrying three correct death tolls.** What
+it binds to `dead` instead is `"car Hurricane Helene"`, `"Mexico"`, `"Pacific coast"`,
+`"Carolinas"` — locations and fragments, not numbers. The rebuild's yield equals or beats it
+at every matched threshold and triples it at 0.1, off one third the firings.
+
+So the rebuild is the better extractor on wire copy as well as on corpora, and **the mix
+change did what it was meant to do**. Two of our own instruments had to be corrected before
+that was visible: the inert threshold sweep, and gate 1 itself.
+
+**Gate 1's defect is structural, not a tuning error.** Scored as best-over-a-range against a
+form-only criterion, it rewards a model for firing indiscriminately at a permissive
+threshold. This programme already documents that error for A/B arms — see MODEL_LINEAGE's
+matched-threshold caution — and had never applied it to the gates those arms are judged by.
+A form gate needs a correctness companion; on its own it is a liveness check, not a score.
+
+**What has not moved.** Yield is 15% at 0.1 and 26.7% at 0.05 — better, and still not a
+front end the router can lean on. The remaining misses are mostly word-form golds (`six`,
+`three`, `dozens`) where the model binds a nearby numeral (`160`, `70s`, `11`), which is a
+normalisation gap rather than a binding failure. And gate 2 still fails for both models.
 
 **The instrument, not just the model.** The claim that motivated the spend — "the incumbent
 is ~0 at every threshold" — was an artifact of our own harness, which set
@@ -680,12 +718,20 @@ ones. It makes passing fragile and threshold-lucky, and no corpus teaches a mode
 fewer spans on demand.
 
 The pre-registered remedy for a gate-1 failure was to downsample the dominant synthetic
-corpus first. We are not taking it. That corpus carries 8 event types and no named
-identities, so it contains no same-type discrimination to learn from; and the mix has now
-been moved 50× in the direction the arithmetic recommended, with the target behaviour
-getting worse. **The next constraint is the instance dimension — the record head — not
-another corpus.** That head decodes but is miscalibrated, and has never been trained on
-events.
+corpus first. We are not taking it — and the reason is now the opposite of the one we first
+gave. The mix change **worked**: binding precision went from near-zero to 67–100%. There is
+no real-news regression to repair. What remains is that neither model can separate two
+events of one type, which is a property of the decode and not of the corpus;
+`casualty_events` could not teach it in any case, carrying 8 event types and no named
+identities. **The next constraint is the instance dimension — the record head — not another
+corpus.**
+
+That path has been tried once. The CASIE Tier 2 arm produced genuine multi-instance output
+— 2–9 instances of one event type on 17 of 39 probed documents, structurally impossible
+before it — and scored 0.0036 against a 0.2998 control, diagnosed as head-init: the record
+head had never been supervised on events and got 375 steps to learn instance formation
+cold. The fair test it asks for is a warm start on MAVEN followed by CASIE, with far more
+steps.
 
 ## 8. Limitations
 
@@ -696,6 +742,12 @@ events.
   failed it — which is precisely why the defect survived: a harness that returns the
   expected answer is not audited. Pre-registration constrains the threshold, not the
   measurement apparatus.
+- **Gate 1 measures form as though it were performance.** It counts a window as satisfied
+  when a trigger and any bound argument appear, never checking whether the bound figure is
+  the right one, and it is scored best-over-a-threshold-range. A model that fires
+  indiscriminately at a permissive threshold therefore wins it: the incumbent's 65% is 39
+  firings carrying 3 correct death tolls. We acted on that number for a day. Every form
+  gate in this programme needs a correctness companion before it is used to compare models.
 - **Gate 2 measures sparsity as though it were locality.** Taking min(start)..max(end)
   over a decode that pools all spans of one type into a single instance means a model is
   rewarded for emitting less. Both models "pass" it only where their output is otherwise

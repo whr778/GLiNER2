@@ -991,3 +991,61 @@ but never written down: the real+synthetic **mix preserved worst of all three ar
 −38.6% vs base** — worse than either arm alone, so mixing did not split the difference. It had
 been cited second-hand as "−39%" and now has a primary source. Those JSONs lived only in
 gitignored `out/`; they are committed now.
+
+## Phase 20 — the gate was wrong, and the free measurement caught it (24 Aug)
+
+Phase 19 closed with "eight benchmarks up, the target behaviour down" and a recommendation
+built on it. Asked to defend that recommendation, it came apart in two steps.
+
+**First, the recommendation only addressed one of the two failing gates.** Gate 1 asks for
+a trigger plus ≥1 bound argument; one event instance satisfies it, so pooling is irrelevant
+to it. Gate 2 is the one pooling breaks. "The next constraint is the instance dimension"
+therefore answered gate 2 and left gate 1's regression unexplained — while the
+pre-registered remedy it declined, downsampling the synthetic corpus, was aimed precisely
+at gate 1.
+
+**Second, and worse, gate 1's numbers do not mean what they were read to mean.** The two
+models' curves cross: the rebuild leads at 0.5 and 0.4, ties at 0.3, and loses only as the
+threshold opens up. The incumbent's 65% is entirely a low-threshold phenomenon, and gate 2
+had already shown that its low-threshold bindings are nonsense. Gate 1 counts FORM.
+
+So we measured the thing neither gate measures, free, on CPU: locate each window's gold
+death toll by character offset, and count a `dead` argument as a hit when its span overlaps.
+
+| threshold | rebuild fired → hit (prec) | incumbent fired → hit (prec) |
+|---|---|---|
+| 0.50 | 3 → 3 (100%) | 0 → 0 |
+| 0.40 | 4 → 4 (100%) | 0 → 0 |
+| 0.30 | 5 → 4 (80%) | 4 → 0 (0%) |
+| 0.20 | 6 → 4 (67%) | 10 → 0 (0%) |
+| 0.10 | 12 → 9 (75%) | 39 → 3 (7.7%) |
+| 0.05 | 20 → 16 (80%) | 55 → 16 (29%) |
+
+**The incumbent's gate-1 win is 39 firings carrying three correct death tolls.** It binds
+`dead` to `"car Hurricane Helene"`, `"Mexico"`, `"Pacific coast"`, `"Carolinas"`. The
+rebuild matches or beats its yield at every matched threshold and triples it at 0.1, off a
+third of the firings.
+
+**So the rebuild worked.** The mix change did what it was built to do; there is no
+real-news regression to repair; and Phase 19's headline — which had already reached the
+paper's abstract, TODO, MODEL_LINEAGE and the pushed model card — was wrong. Corrected in
+all of them.
+
+**The lesson is about the gate, not the model.** A form-only criterion scored
+best-over-a-threshold-range rewards a model for firing indiscriminately. That is the same
+error MODEL_LINEAGE's matched-threshold caution exists to prevent; we had applied it to A/B
+arms and never to the gates those arms are judged by. It cost a day and would have cost a
+training run. **Every form gate needs a correctness companion before it is used to compare
+two models** — and the companion here was twenty minutes of local CPU, cheaper than any of
+the reasoning built on top of the wrong number.
+
+Three of this programme's own instruments have now been the error rather than the model:
+the inert threshold sweep (Phase 19), the strict-versus-relaxed gate 3 (Phase 19), and gate
+1 itself. In each case the instrument returned a plausible answer, which is why none was
+audited until something else contradicted it.
+
+**What still stands.** Gate 2 fails for both models; the decode emits one instance per
+event type and pools every span into it, so the router still has no per-event input. Yield
+is 15% at 0.1 — the rebuild is the better extractor and not yet a sufficient one. The next
+constraint remains the instance dimension, now for a clean reason rather than a confused
+one: not "the mix failed" but "the mix succeeded and this is what is left".

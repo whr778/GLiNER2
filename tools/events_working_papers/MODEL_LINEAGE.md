@@ -245,7 +245,7 @@ init from `fastino/gliner2-base-v1`; `ekf-frontend-mmbert` is a deliberate cold 
 
 | config | data | working paper | role |
 |---|---|---|---|
-| `ekf-frontend-mmbert.yaml` | 189,284 records, English trigger→argument 798 → ~39,800 | [[EKF_MHT_DESIGN]] §7.5-7.6 | **cold start from `jhu-clsp/mmBERT-base`**, built to BE the pipeline's first stage. Beats `137k-clean` on all 8 held-out heads and FAILS both real-copy gates (25.0% vs 65.0% form-rate on the Helene feed). Kept as the measured case that benchmark gains can move opposite to target behaviour. Do not deploy on real news |
+| `ekf-frontend-mmbert.yaml` | 189,284 records, English trigger→argument 798 → ~39,800 | [[EKF_MHT_DESIGN]] §7.5-7.6 | **cold start from `jhu-clsp/mmBERT-base`**, built to BE the pipeline's first stage. Beats `137k-clean` on all 8 held-out heads AND on wire-copy binding precision (67-100% vs 0-7.7%). **The best extractor in this line on real news.** It fails the pre-registered form gate, which counts firings rather than correct ones -- see §7.6. Still blocked for the router by the one-instance-per-type decode, not by data |
 | `casualty-finetune.yaml` | `casualty_ft` (Sonnet-5 realized) | [[EKF_MHT_DESIGN]] §19-20 | closes the extraction gap the §19 `missing`-role probe predicted: zero-shot precision 0.63 + confidence-cut selection bias |
 | `casualty-multievent.yaml` | `casualty_multi` | [[EKF_MHT_DESIGN]] §20, [[COUNTING_LAYER]] | the §20 corpus had exactly one `casualty_report` in all 31,539 docs, so the count head only ever saw "1". This fixes that |
 | `casualty-docee.yaml` | `casualty_docee` | [[EKF_MHT_DESIGN]] §20-21 | successor to `casualty-multievent`: synthetic trajectories paired with **real** DocEE contexts |
