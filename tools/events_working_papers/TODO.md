@@ -1216,6 +1216,30 @@ Per-state **5.247 → 0.591 (8.9x)** and the national stream *improves* too. Fla
 2.5, so it is not a knife-edge setting. **Control:** removing the same 25 observations at
 random over 40 trials gives 4.427, so the gate is selecting rather than thinning.
 
+**Re-checked in ABSOLUTE deaths 2026-08-24, and it SURVIVES** — worth stating because the
+same macro-averaged nRMSE reversed the aggregate-constraint verdict in
+[[EKF_MHT_DESIGN]] 6.2. Per-place RMSE goes **217.4 → 21.9 deaths (9.9x)** and the national
+stream 80.9 → 63.5. The normalisation was *understating* this gate, not flattering it.
+
+**But it misdirects the remaining work.** Residual at ratio 2.0, in deaths:
+
+| stream | RMSE (deaths) | nRMSE | n_obs |
+|---|--:|--:|--:|
+| **Total** | **63.5** | 0.316 | 45 |
+| **North Carolina** | **60.6** | 0.518 | 16 |
+| Tennessee | 14.7 | **0.817** | 9 |
+| Florida | 12.7 | 0.704 | 7 |
+| South Carolina | 11.7 | 0.365 | 5 |
+| Georgia | 10.0 | 0.553 | 4 |
+
+Tennessee has the WORST nRMSE and nearly the smallest absolute error; North Carolina has a
+middling nRMSE and the largest. **Optimising the macro-average sends you to Tennessee when
+the deaths are in North Carolina and the national stream** — those two carry ~80% of the
+residual between them. Rank remaining association work in deaths, not nRMSE.
+
+**Not wired in.** The ratio gate lives in `scope_gate_test.py`; `run_pipeline.py` applies
+only the hierarchy-membership `scope_filter`. A measured 9.9x sits outside the pipeline.
+
 Three-way classification is load-bearing. A two-way version that rerouted every reject wrecked
 the national stream (0.402 → 2.110), because North Carolina's **1400** is not a national
 total — it is not a casualty count at all, and it poisoned `__aggregate__`.

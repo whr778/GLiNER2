@@ -90,6 +90,20 @@ def at(seq, t):
 
 
 def nrmse(pred, seq, grid):
+    r = errors(pred, seq, grid)
+    return None if r is None else r[0]
+
+
+def errors(pred, seq, grid):
+    """(nRMSE, RMSE in deaths) -- both, deliberately.
+
+    nRMSE divides by the stream's OWN range, so a place whose toll never moves far has a
+    tiny denominator and can dominate a macro-average over streams. That is not
+    hypothetical here: the same normalisation reversed the aggregate-constraint verdict in
+    EKF_MHT_DESIGN 6.2, where Virginia (range 1->2) outvoted North Carolina (6->123).
+    Every per-place mean in this file is such a macro-average, so the absolute column is
+    what says whether a gain is deaths or arithmetic.
+    """
     pairs = [(p, at(seq, t)) for p, t in zip(pred, grid)]
     pairs = [(p, g) for p, g in pairs if g is not None]
     if not pairs:
@@ -97,7 +111,7 @@ def nrmse(pred, seq, grid):
     vals = [g for _, g in pairs]
     rng = max(vals) - min(vals)
     err = sqrt(sum((p - g) ** 2 for p, g in pairs) / len(pairs))
-    return err / rng if rng > 0 else None
+    return (err / rng if rng > 0 else None), err
 
 
 def running_max(observations: list, predicate) -> list:
@@ -388,7 +402,8 @@ def score(kept: dict, series: dict, grid: list, states: dict,
         if not rows:
             continue
         e = ekf.est_ekf(rows, grid, role)
-        out[state] = (nrmse(e, series[state], grid), len(rows))
+        r = errors(e, series[state], grid)
+        out[state] = (None, len(rows)) if r is None else (r[0], len(rows), r[1])
     return out
 
 
@@ -423,7 +438,9 @@ def main() -> None:
 
     cols = ("Total",) + tuple(cfg["places"])
     print(f"{'ratio':>7}{'moved':>7}{'drop':>6}" +
-          "".join(f"{c.split()[-1][:6]:>9}" for c in cols) + f"{'mean':>9}")
+          "".join(f"{c.split()[-1][:6]:>9}" for c in cols) +
+          f"{'mean':>9} | {'deaths':>8}{'Total_d':>9}")
+    print(f"{'':>20}{'(per-place nRMSE, then the same streams in DEATHS)':<60}")
     for ratio in (0.0, 4.0, 3.0, 2.5, 2.0, 1.5):
         kept, moved, dropped = gate(obs, ratio, args.warmup, states, reference)
         sc = score(kept, series, grid, states)
@@ -433,8 +450,25 @@ def main() -> None:
             cells.append(f"{v:>9.3f}" if v is not None else f"{'-':>9}")
         vals = [sc[p][0] for p in cfg["places"] if sc.get(p, (None,))[0] is not None]
         mean = sum(vals) / len(vals) if vals else float("nan")
+        # Same streams, absolute. A macro-averaged nRMSE hides which places the gain is in.
+        avals = [sc[p][2] for p in cfg["places"]
+                 if len(sc.get(p, ())) > 2 and sc[p][2] is not None]
+        amean = sum(avals) / len(avals) if avals else float("nan")
+        tot = sc.get("Total", (None, 0, None))
+        atot = tot[2] if len(tot) > 2 and tot[2] is not None else float("nan")
         tag = "off" if ratio == 0.0 else f"{ratio:.1f}"
-        print(f"{tag:>7}{len(moved):>7}{len(dropped):>6}" + "".join(cells) + f"{mean:>9.3f}")
+        print(f"{tag:>7}{len(moved):>7}{len(dropped):>6}" + "".join(cells) +
+              f"{mean:>9.3f} | {amean:>8.1f}{atot:>9.1f}")
+
+    # Where the residual actually sits, in deaths, at the shipped setting. The macro
+    # -averaged nRMSE above cannot show this: a place with a small range dominates it.
+    kept2, _, _ = gate(obs, 2.0, args.warmup, states, reference)
+    sc2 = score(kept2, series, grid, states)
+    print(f"\n[residual @ratio 2.0, in DEATHS]  {'stream':<18}{'RMSE':>8}{'nRMSE':>8}{'n_obs':>7}")
+    for c in cols:
+        r = sc2.get(c)
+        if r and len(r) > 2 and r[2] is not None:
+            print(f"{'':<34}{c:<18}{r[2]:>8.1f}{r[0]:>8.3f}{r[1]:>7}")
 
     # ratio 2.0 is the setting chosen on Helene; it is NOT retuned per dataset.
     kept, moved, dropped = gate(obs, 2.0, args.warmup, states, reference)
