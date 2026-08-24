@@ -1,0 +1,13 @@
+89 `dead` observations, truth 1014 -> 40000 (range 38986)
+of which the 1999 Izmit 17,500 appears 16 times
+
+arm                               nRMSE  RMSE deaths    final  sigma_end
+last_value baseline               0.118         4603    40642         --
+default (as recorded)             0.208         8118    26972       2573
+innovation gate 3-sigma           0.122         4751    39598       4250
+innovation gate 2-sigma           0.122         4751    39598       4250
+rate filter 300/h                 0.433        16878    10680       1935
+gate 3s + rate 300/h              0.399        15566    12906       2384
+gate 3s + rate + conf-R           0.401        15639    12910       2385
+
+truth final: 40000

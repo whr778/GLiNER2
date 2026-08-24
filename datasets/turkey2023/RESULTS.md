@@ -356,3 +356,42 @@ Two concrete fixes before Helene is a usable instrument, neither of which is the
    is keyed on, and pool to a national stream when the source reports an aggregate.
 2. **`extract_long` instead of the lead window** (Addendum 4), which reads the whole
    article and would recover the tolls that appear below the fold.
+
+---
+
+## Addendum, 2026-08-24: the gate built for this failure was never switched on
+
+Re-scored offline from `_cache/tracked_default.json` -- no model, no GPU
+(`tools/ekf_showcase/rescore_recorded_run.py`, output in `_rescore/`).
+
+**EXPLORATORY, not pre-registered.** These switches are turned on *after* seeing the
+failure they address. That is the same post-hoc move that inflated a gate elsewhere in
+this programme, so read it as "there is a lever here", not as a new result.
+
+| arm | nRMSE | RMSE (deaths) | final (truth 40,000) | sigma_end |
+|---|--:|--:|--:|--:|
+| `last_value` baseline | 0.118 | 4,603 | 40,642 | -- |
+| default EKF (as recorded above) | 0.208 | 8,118 | 26,972 | 2,573 |
+| **+ innovation gate 3-sigma** | **0.122** | **4,751** | **39,598** | 4,250 |
+| + rate filter 300/h | 0.433 | 16,878 | 10,680 | 1,935 |
+| gate + rate | 0.399 | 15,566 | 12,906 | 2,384 |
+
+The default reproduces the 0.208 recorded above, so this is the same run.
+
+**`REJECT_SIGMA` defaults to `None`.** Section B diagnosed the failure precisely --
+"heavy-tailed contamination of that kind drags a smoother down while leaving 'repeat the
+last reading' untouched" -- and the innovation gate exists for exactly that. With it on
+the EKF goes 0.208 -> 0.122 and finishes at 39,598 against a truth of 40,000. It still
+does not *beat* `last_value` (0.118 / 4,603), but "earned nothing here" overstates a tie.
+
+**Why it works, and why the rate filter does not.** The gate is one-sided: it rejects
+readings implausibly BELOW the estimate. The 1999 Izmit figure of 17,500 appears 16 times
+in this feed, and once the real toll overtakes it, it is exactly such a reading. The rate
+filter fails for the mirror-image reason -- Turkiye's toll genuinely rose about 110/hour
+and faster in bursts, so a 300/h cap rejects real data. A dynamics bound needs the event's
+real accrual rate, which is not known in advance.
+
+**What this does not change.** Syria (nRMSE > 3.2 in every arm) is an association failure,
+not a filtering one, and no gate touches it. Absolute error is now reported alongside
+nRMSE, per the metric defect documented in `EKF_MHT_DESIGN` 6.2 -- an nRMSE of 0.118 here
+is 4,603 deaths, which is the number a reader should see.
