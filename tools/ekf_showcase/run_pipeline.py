@@ -121,6 +121,9 @@ GATE_LABELS_V2 = {
 }
 
 
+from scope_gate import gate as scope_gate  # noqa: E402
+
+
 def build_gate_schema(model):
     """Multiple classification tasks in one pass (tutorial 1, 'Multiple Tasks').
 
@@ -745,6 +748,21 @@ def main() -> None:
                          "pairs. The default 60 sits in the starved regime")
     ap.add_argument("--lead-chars", type=int, default=1100,
                     help="with --window lead: how much of the article head to read")
+    ap.add_argument("--scope-ratio", type=float, default=2.0, dest="scope_ratio",
+                    help="Ratio scope gate: judge each place observation against the "
+                         "running NATIONAL total and keep / reroute-to-aggregate / drop. "
+                         "Measured on Helene at 2.0: per-place RMSE 217.4 -> 21.9 deaths "
+                         "(9.9x), flat from 1.5 to 2.5. 0 disables and reproduces every "
+                         "run recorded before 2026-08-24. Needs --rollup and --scope-filter.")
+    ap.add_argument("--scope-warmup", type=int, default=2, dest="scope_warmup",
+                    help="Observations per stream exempted before the gate applies; a "
+                         "stream needs some history before it can be judged.")
+    ap.add_argument("--scope-reference", default="aggregate", dest="scope_reference",
+                    choices=("aggregate", "global-max", "implied"),
+                    help="What a place is judged against. `aggregate` is the measured "
+                         "default; `global-max` for feeds with no aggregate stream "
+                         "(Turkiye-Syria); `implied` = aggregate minus the other parts, "
+                         "the only one that survives a dominant part like Turkey at 87.6%%.")
     ap.add_argument("--rollup", default="",
                     help="json map folding city/county/region keys up to the level the "
                          "ground truth is keyed on, plus __aggregate__ for multi-state "
@@ -896,6 +914,29 @@ def main() -> None:
                 for key, n in Counter(str(o.get("event_key")) for o in unresolved).most_common(5):
                     print(f"           unresolved    {key:<24}{n}  <- alias it, or list it "
                           f"under `unresolved` in the rollup")
+
+            # The RATIO gate, on top of the membership filter above. They catch different
+            # things: membership rejects a place outside the declared hierarchy (Puerto
+            # Rico, Reading PA), the ratio gate rejects a figure that is the wrong SCOPE
+            # for an in-scope place -- a national total filed under Florida. Measured on
+            # Helene: per-place RMSE 217.4 -> 21.9 deaths. It lived in scope_gate_test.py
+            # and was never in the pipeline.
+            if args.scope_ratio > 0:
+                parts = (rollup.get("hierarchy") or {}).get("parts") or []
+                states = {str(k).lower(): str(k) for k in parts}
+                if states:
+                    gated, moved, dropped = scope_gate(
+                        per_mode[m], args.scope_ratio, args.scope_warmup, states,
+                        args.scope_reference)
+                    per_mode[m] = [o for lst in gated.values() for o in lst]
+                    print(f"   [scope-ratio {args.scope_ratio}] {m}: rerouted "
+                          f"{len(moved)} to __aggregate__, dropped {len(dropped)} "
+                          f"as exceeding the whole")
+                    for o in dropped[:6]:
+                        print(f"           drop  {o.get('_from','?'):<20}"
+                              f"value={float(o['value']):>8.0f}")
+                else:
+                    print("   [scope-ratio] no hierarchy.parts in the rollup; gate skipped")
         scoped = True
 
     grid = [t0 + k * args.grid_step for k in range(int((t1 - t0) / args.grid_step) + 1)]
