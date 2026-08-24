@@ -28,7 +28,7 @@ import json
 import math
 import sys
 from datetime import datetime, timezone
-from math import sqrt
+from math import exp, log, sqrt
 from pathlib import Path
 from statistics import median
 
@@ -136,9 +136,11 @@ def random_control(observations: list, n_removed: int, trials: int, series: dict
             if id(o) not in drop:
                 kept.setdefault(str(o.get("event_key")), []).append(o)
         sc = score(kept, series, grid, states)
-        vals = [sc[s][0] for s in states.values() if sc.get(s, (None,))[0] is not None]
-        if vals:
-            means.append(sum(vals) / len(vals))
+        # Pooled, to match the headline. A macro-average here would compare the gate
+        # against a control measured on a different scale from the gate's own number.
+        pooled = pooled_rmse(sc, list(states.values()))
+        if pooled == pooled:                       # not NaN
+            means.append(pooled)
     return sum(means) / len(means) if means else float("nan")
 
 
@@ -299,8 +301,38 @@ def score(kept: dict, series: dict, grid: list, states: dict,
             continue
         e = ekf.est_ekf(rows, grid, role)
         r = errors(e, series[state], grid)
-        out[state] = (None, len(rows)) if r is None else (r[0], len(rows), r[1])
+        if r is None:
+            out[state] = (None, len(rows))
+            continue
+        pairs = [(pp, at(series[state], t)) for pp, t in zip(e, grid)]
+        pairs = [(pp, g) for pp, g in pairs if g is not None]
+        sse = sum((pp - g) ** 2 for pp, g in pairs)
+        out[state] = (r[0], len(rows), r[1], sse, len(pairs))
     return out
+
+
+def pooled_rmse(sc: dict, places) -> float:
+    """Micro-average: one RMSE over every (stream, time) point, no per-stream vote.
+
+    The headline number. A macro-average lets a stream with a tiny range -- or a tiny toll
+    -- carry the same weight as the largest, which is how a range-normalised mean reversed
+    the aggregate-constraint verdict in EKF_MHT_DESIGN 6.2. Pooling needs no normalisation
+    choice, stays in deaths, and cannot be moved by a small stream.
+
+    Caveat: pooling weights each stream by its number of grid points. Every stream shares
+    one grid here, so that is uniform; on a feed where streams have different lifetimes it
+    becomes an implicit weighting and would need revisiting.
+    """
+    sse = sum(sc[p][3] for p in places if len(sc.get(p, ())) > 3)
+    n = sum(sc[p][4] for p in places if len(sc.get(p, ())) > 4)
+    return sqrt(sse / n) if n else float("nan")
+
+
+def geometric_mean(vals) -> float:
+    """For the NORMALISED column only. Those are ratios spanning 0.4 to 9.8, and an
+    arithmetic mean of ratios is hostage to a single blown-up stream."""
+    v = [max(float(x), 1e-9) for x in vals]
+    return exp(sum(log(x) for x in v) / len(v)) if v else float("nan")
 
 
 def main() -> None:
@@ -335,8 +367,9 @@ def main() -> None:
     cols = ("Total",) + tuple(cfg["places"])
     print(f"{'ratio':>7}{'moved':>7}{'drop':>6}" +
           "".join(f"{c.split()[-1][:6]:>9}" for c in cols) +
-          f"{'mean':>9} | {'deaths':>8}{'Total_d':>9}")
-    print(f"{'':>20}{'(per-place nRMSE, then the same streams in DEATHS)':<60}")
+          f"{'geoN':>8} || {'POOLED':>8}{'Total_d':>9}")
+    print(f"{'':>7}{'per-stream nRMSE (diagnosis)':^62}"
+          f"{'geo':>8} || headline, deaths")
     for ratio in (0.0, 4.0, 3.0, 2.5, 2.0, 1.5):
         kept, moved, dropped = gate(obs, ratio, args.warmup, states, reference)
         sc = score(kept, series, grid, states)
@@ -344,17 +377,21 @@ def main() -> None:
         for c in cols:
             v = sc.get(c, (None, 0))[0]
             cells.append(f"{v:>9.3f}" if v is not None else f"{'-':>9}")
+        # Normalised column: GEOMETRIC. These are ratios, and one blown-up stream
+        # dominates an arithmetic mean of them (Florida alone is 9.797 with the gate off).
         vals = [sc[p][0] for p in cfg["places"] if sc.get(p, (None,))[0] is not None]
-        mean = sum(vals) / len(vals) if vals else float("nan")
-        # Same streams, absolute. A macro-averaged nRMSE hides which places the gain is in.
-        avals = [sc[p][2] for p in cfg["places"]
-                 if len(sc.get(p, ())) > 2 and sc[p][2] is not None]
-        amean = sum(avals) / len(avals) if avals else float("nan")
+        geo = geometric_mean(vals) if vals else float("nan")
+        # HEADLINE: pooled micro-RMSE in deaths, no per-stream vote.
+        pool = pooled_rmse(sc, cfg["places"])
         tot = sc.get("Total", (None, 0, None))
         atot = tot[2] if len(tot) > 2 and tot[2] is not None else float("nan")
         tag = "off" if ratio == 0.0 else f"{ratio:.1f}"
         print(f"{tag:>7}{len(moved):>7}{len(dropped):>6}" + "".join(cells) +
-              f"{mean:>9.3f} | {amean:>8.1f}{atot:>9.1f}")
+              f"{geo:>8.3f} || {pool:>8.1f}{atot:>9.1f}")
+    print("  POOLED = one RMSE over every (place, time) point, in deaths -- the number to "
+          "quote.\n  Per-stream columns are for DIAGNOSIS: they rank differently, and the "
+          "deaths ranking\n  is the one that says where the work is (see the residual "
+          "breakdown below).")
 
     # Where the residual actually sits, in deaths, at the shipped setting. The macro
     # -averaged nRMSE above cannot show this: a place with a small range dominates it.
@@ -371,20 +408,18 @@ def main() -> None:
     n = len(moved) + len(dropped)
     ctrl = random_control(obs, n, 40, series, grid, states)
     sc = score(kept, series, grid, states)
-    vals = [sc[p][0] for p in cfg["places"] if sc.get(p, (None,))[0] is not None]
-    gated = sum(vals) / len(vals) if vals else float("nan")
+    gated = pooled_rmse(sc, cfg["places"])
     print(f"\n[control] removing {n} per-place observations AT RANDOM (40 trials): "
-          f"mean {ctrl:.3f}")
-    print(f"[control] the gate removing the same number: {gated:.3f}  "
+          f"pooled {ctrl:.1f} deaths")
+    print(f"[control] the gate removing the same number: {gated:.1f} deaths  "
           f"({'gate is selecting' if gated < ctrl else 'NO BETTER THAN THINNING'})")
 
     orc = score(oracle_gate(obs, states, series), series, grid, states)
-    ovals = [orc[p][0] for p in cfg["places"] if orc.get(p, (None,))[0] is not None]
-    omean = sum(ovals) / len(ovals) if ovals else float("nan")
+    omean = pooled_rmse(orc, cfg["places"])
     print(f"\n[ORACLE] perfect hard association (uses ground truth -- a CEILING, not a "
-          f"method): per-place mean {omean:.3f}")
-    print(f"[ORACLE] shipped gate {gated:.3f} vs ceiling {omean:.3f} -> "
-          f"headroom for better association = {gated - omean:+.3f}")
+          f"method): pooled {omean:.1f} deaths")
+    print(f"[ORACLE] shipped gate {gated:.1f} vs ceiling {omean:.1f} -> "
+          f"headroom for better association = {gated - omean:+.1f} deaths")
     for c in ("Total",) + tuple(cfg["places"]):
         v = orc.get(c, (None, 0))[0]
         if v is not None:
@@ -444,7 +479,7 @@ def main() -> None:
           "'none of these':")
     print(f"{'tol':>7}{'kept':>7}" + "".join(f"{c.split()[-1][:6]:>9}"
                                              for c in ("Total",) + tuple(cfg["places"]))
-          + f"{'mean':>9}")
+          + f"{'geoN':>8} || {'POOLED':>9}")
     for tol in (2.0, 1.0, 0.5, 0.25):
         k3 = oracle_gate_three_way(obs, states, series, tol)
         s3 = score(k3, series, grid, states)
@@ -454,9 +489,10 @@ def main() -> None:
             v = s3.get(c, (None, 0))[0]
             cells.append(f"{v:>9.3f}" if v is not None else f"{'-':>9}")
         v3 = [s3[p][0] for p in cfg["places"] if s3.get(p, (None,))[0] is not None]
-        m3 = sum(v3) / len(v3) if v3 else float("nan")
-        print(f"{tol:>7.2f}{n3:>7}" + "".join(cells) + f"{m3:>9.3f}")
-    print(f"[ORACLE-3] two-way oracle {omean:.3f} -- the gap between these prices a null "
+        print(f"{tol:>7.2f}{n3:>7}" + "".join(cells) +
+              f"{geometric_mean(v3) if v3 else float('nan'):>8.3f} || "
+              f"{pooled_rmse(s3, cfg['places']):>9.1f}")
+    print(f"[ORACLE-3] two-way oracle {omean:.1f} deaths -- the gap between these prices a null "
           f"hypothesis (MHT track birth/death), which the two-way oracle cannot express")
 
     print(f"\n[detail at ratio=2.0] {len(moved)} rerouted, {len(dropped)} dropped:")

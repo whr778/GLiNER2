@@ -1,13 +1,16 @@
 [helene] 106 'dead' observations over 70 articles, reference=aggregate
 
-  ratio  moved  drop    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin     mean |   deaths  Total_d
-                    (per-place nRMSE, then the same streams in DEATHS)          
-    off      0     0    0.402    9.797    5.961    4.043    5.637    0.796        -    5.247 |    217.4     80.9
-    4.0     35     2    0.395    0.704    0.553    0.670    0.835    0.817        -    0.716 |     31.3     79.4
-    3.0     34     2    0.395    0.704    0.553    0.670    0.797    0.817        -    0.708 |     30.4     79.4
-    2.5     26     3    0.316    0.704    0.553    0.365    0.521    0.817        -    0.592 |     22.0     63.5
-    2.0     22     3    0.316    0.704    0.553    0.365    0.518    0.817        -    0.591 |     21.9     63.5
-    1.5     17     5    0.317    0.704    0.553    0.386    0.518    0.796        -    0.591 |     22.0     63.7
+  ratio  moved  drop    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin    geoN ||   POOLED  Total_d
+                        per-stream nRMSE (diagnosis)                      geo || headline, deaths
+    off      0     0    0.402    9.797    5.961    4.043    5.637    0.796        -   4.027 ||    314.5     80.9
+    4.0     35     2    0.395    0.704    0.553    0.670    0.835    0.817        -   0.708 ||     45.8     79.4
+    3.0     34     2    0.395    0.704    0.553    0.670    0.797    0.817        -   0.702 ||     43.9     79.4
+    2.5     26     3    0.316    0.704    0.553    0.365    0.521    0.817        -   0.571 ||     29.4     63.5
+    2.0     22     3    0.316    0.704    0.553    0.365    0.518    0.817        -   0.570 ||     29.3     63.5
+    1.5     17     5    0.317    0.704    0.553    0.386    0.518    0.796        -   0.573 ||     29.3     63.7
+  POOLED = one RMSE over every (place, time) point, in deaths -- the number to quote.
+  Per-stream columns are for DIAGNOSIS: they rank differently, and the deaths ranking
+  is the one that says where the work is (see the residual breakdown below).
 
 [residual @ratio 2.0, in DEATHS]  stream                RMSE   nRMSE  n_obs
                                   Total                 63.5   0.316     45
@@ -17,11 +20,11 @@
                                   North Carolina        60.6   0.518     16
                                   Tennessee             14.7   0.817      9
 
-[control] removing 25 per-place observations AT RANDOM (40 trials): mean 4.427
-[control] the gate removing the same number: 0.591  (gate is selecting)
+[control] removing 25 per-place observations AT RANDOM (40 trials): pooled 244.7 deaths
+[control] the gate removing the same number: 29.3 deaths  (gate is selecting)
 
-[ORACLE] perfect hard association (uses ground truth -- a CEILING, not a method): per-place mean 0.537
-[ORACLE] shipped gate 0.591 vs ceiling 0.537 -> headroom for better association = +0.055
+[ORACLE] perfect hard association (uses ground truth -- a CEILING, not a method): pooled 29.3 deaths
+[ORACLE] shipped gate 29.3 vs ceiling 29.3 -> headroom for better association = -0.1 deaths
            Total              2.082
            Florida            0.734
            Georgia            0.553
@@ -49,12 +52,12 @@
       250        4    102        5     4.282      0.591
 
 [ORACLE-3] adding a REJECT option -- the ceiling for association that can say 'none of these':
-    tol   kept    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin     mean
-   2.00    100    0.310    0.704    0.566    0.558    0.518    0.320        -    0.533
-   1.00    100    0.310    0.704    0.566    0.558    0.518    0.320        -    0.533
-   0.50     85    0.308    0.702    0.639    0.508    0.284    0.268        -    0.480
-   0.25     76    0.308    0.834    0.639    0.508    0.258    0.256        -    0.499
-[ORACLE-3] two-way oracle 0.537 -- the gap between these prices a null hypothesis (MHT track birth/death), which the two-way oracle cannot express
+    tol   kept    Total   Florid   Georgi   Caroli   Caroli   Tennes   Virgin    geoN ||    POOLED
+   2.00    100    0.310    0.704    0.566    0.558    0.518    0.320        -   0.517 ||      29.3
+   1.00    100    0.310    0.704    0.566    0.558    0.518    0.320        -   0.517 ||      29.3
+   0.50     85    0.308    0.702    0.639    0.508    0.284    0.268        -   0.445 ||      18.4
+   0.25     76    0.308    0.834    0.639    0.508    0.258    0.256        -   0.447 ||      17.6
+[ORACLE-3] two-way oracle 29.3 deaths -- the gap between these prices a null hypothesis (MHT track birth/death), which the two-way oracle cannot express
 
 [detail at ratio=2.0] 22 rerouted, 3 dropped:
     reroute florida                value=     5  t=   18.9h

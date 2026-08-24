@@ -1216,6 +1216,30 @@ Per-state **5.247 → 0.591 (8.9x)** and the national stream *improves* too. Fla
 2.5, so it is not a knife-edge setting. **Control:** removing the same 25 observations at
 random over 40 trials gives 4.427, so the gate is selecting rather than thinning.
 
+**Headline metric changed 2026-08-24 to POOLED (micro) RMSE in deaths** -- one RMSE over
+every (place, time) point, no per-stream vote. A macro-average lets a small-toll stream
+outvote the largest, which is how the same normalisation reversed 6.2. The per-stream table
+is kept for DIAGNOSIS (it is what says where the work is); the normalised column is now a
+GEOMETRIC mean, since those are ratios spanning 0.4 to 9.8 and one blown-up stream dominates
+an arithmetic mean of them. Pooled: **314.5 -> 29.3 deaths (10.7x)**, control 244.7.
+
+**Two recorded claims do not survive the change.**
+
+1. **Association headroom on Helene is ZERO for assignment, and all of it is in the REJECT
+   option.** The two-way oracle -- perfect hard assignment -- scores 29.3 deaths against the
+   shipped gate's 29.3: **no headroom at all**. The three-way oracle, which can say "none of
+   these", scores 18.4 (tol 0.5) and 17.6 (tol 0.25), so the whole ~11 deaths of association
+   headroom is the null hypothesis. In macro-averaged nRMSE this read as +0.055 vs +0.111 --
+   the same shape, but "build better assignment" was never on the table and the deaths
+   number says so outright.
+
+2. **The Turkiye transfer does not hold.** Recorded as "partly transfers" on the nRMSE mean
+   (1.815 -> 0.723). In pooled deaths at the shipped ratio 2.0 it is **13,603.7 -> 14,765.0,
+   a LOSS**: Turkiye is 87.6% of the total and the gate hurts it (0.228 -> 0.522) while
+   helping Syria, which the macro-average rewarded. `--reference implied` is a no-op there
+   (0 observations moved) because Turkiye-Syria has no `__aggregate__` stream to imply from.
+   The gate is validated on Helene and does not currently transfer.
+
 **Re-checked in ABSOLUTE deaths 2026-08-24, and it SURVIVES** — worth stating because the
 same macro-averaged nRMSE reversed the aggregate-constraint verdict in
 [[EKF_MHT_DESIGN]] 6.2. Per-place RMSE goes **217.4 → 21.9 deaths (9.9x)** and the national
