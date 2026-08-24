@@ -16,7 +16,10 @@ overlaps that range. Both models at **matched** thresholds -- never best-over-ra
 | 0.10 | 12 | 9 | **75.0%** | **15.0%** | 39 | 3 | **7.7%** | 5.0% |
 | 0.05 | 20 | 16 | 80.0% | 26.7% | 55 | 16 | 29.1% | 26.7% |
 
-`fired` is what gate 1 counts. `hit` is whether the figure was the right one.
+`hit` is whether the figure was the right one. `fired` is gate-1-like but NOT identical:
+gate 1 accepts *any* bound role, this counts `dead` only. They coincide for the incumbent
+(39 = 39 at 0.1) and not for the rebuild (12 here against gate 1's 15), so read `fired` as
+"committed to a death toll", not as gate 1's number.
 
 ## This reverses the gate 1 verdict
 

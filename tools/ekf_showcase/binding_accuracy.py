@@ -11,7 +11,12 @@ So: for each casualty-bearing Helene window we know where the gold death toll si
 character offset. A `dead` argument is CORRECT when its span overlaps that range. Two
 models are reported side by side at each MATCHED threshold, never best-over-range.
 
-    uv run python tools/ekf_showcase/binding_accuracy.py <model-a> [<model-b>] [--device cpu]
+    uv run python tools/ekf_showcase/binding_accuracy.py <model> [--device cpu]
+
+ONE model per invocation. It accepts several, but loading a second boundary checkpoint in
+the same process raises `KeyError: 'kernels-community/flash-attn2'` -- the first load leaves
+an attn implementation registered that the second cannot resolve without `kernels`
+installed. Run the tool twice and compare the two tables.
 
 fired  -- windows with >=1 `dead` argument (what gate 1 counts)
 hit    -- windows where a `dead` argument actually overlaps the gold figure

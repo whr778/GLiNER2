@@ -51,6 +51,13 @@
 #      >> 8.3% at 0.3, 65.0% at 0.1 -- it PASSES gate 1. The rebuilt model scores 25.0%
 #      >> at 0.1 and FAILS. The premise below (nothing usable at 0.3+, nonsense at 0.1)
 #      >> still holds; the "~0 everywhere" strengthening of it did not.
+#      >> CORRECTION 2 (2026-08-24): this gate is NOT a valid comparator between models.
+#      >> It counts windows where ANY argument is bound and never checks the figure is the
+#      >> right one, scored best-over-a-range -- so it rewards indiscriminate firing. The
+#      >> incumbent's 65% "pass" is 39 firings carrying THREE correct death tolls (it binds
+#      >> `dead` to "Mexico", "car Hurricane Helene"). The rebuild binds correctly 9 of 12
+#      >> at the same threshold. Run tools/ekf_showcase/binding_accuracy.py alongside this
+#      >> gate; do not act on gate 1 alone.
 #   2. GATE -- the span block is LOCAL. On the Katrina passage, min(start)..max(end) over
 #      the Katrina event must contain "1,400" and must NOT contain "Helene". The span
 #      model fails this at every threshold (block is the bare name, or swallows the
