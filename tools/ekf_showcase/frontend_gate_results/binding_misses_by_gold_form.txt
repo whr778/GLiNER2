@@ -1,0 +1,12 @@
+model=whr778/gliner2-ekf-frontend-mmbert  threshold=0.1
+gold form     n  correct  role-miss  recog-miss
+digit        36        8          0          28
+word         24        1          0          23
+
+role misses (model DID find the figure, filed it elsewhere):
+
+recognition misses (nothing overlaps the gold at all):
+  gold 'at least two' -> model bound []
+  gold 'at least three' -> model bound []
+  gold 'One' -> model bound []
+  gold 'two' -> model bound ['Florida', 'south Georgia', 'storm', 'Florida']

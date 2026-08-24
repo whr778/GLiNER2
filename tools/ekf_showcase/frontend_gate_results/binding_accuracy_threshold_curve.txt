@@ -1,0 +1,29 @@
+60 casualty-bearing Helene windows, gold death toll located by offset
+
+=== whr778/gliner2-ekf-frontend-mmbert
+ thresh   fired    hit   w-prec    yield   spans    s-prec
+  0.100      12      9    75.0%    15.0%      15     60.0%
+         miss: gold 'three' -> bound ['70s']
+         miss: gold 'three' -> bound ['70s']
+         miss: gold 'dozens' -> bound ['11', '5']
+  0.050      20     16    80.0%    26.7%      25     64.0%
+         miss: gold 'dozens' -> bound ['11']
+         miss: gold 'three' -> bound ['70s']
+         miss: gold 'three' -> bound ['70s']
+  0.020      39     30    76.9%    50.0%      52     57.7%
+         miss: gold 'three' -> bound ['44']
+         miss: gold 'three' -> bound ['44']
+         miss: gold 'two' -> bound ['four', 'Four']
+  0.010      46     34    73.9%    56.7%      62     54.8%
+         miss: gold 'at least three' -> bound ['4']
+         miss: gold 'three' -> bound ['44']
+         miss: gold 'three' -> bound ['44']
+  0.005      58     43    74.1%    71.7%      81     53.1%
+         miss: gold 'at least three' -> bound ['4']
+         miss: gold 'One' -> bound ['two']
+         miss: gold 'three' -> bound ['44']
+  0.001      60     49    81.7%    81.7%     111     44.1%
+         miss: gold 'at least three' -> bound ['4', '11']
+         miss: gold 'One' -> bound ['190,000', '30,000', 'two']
+         miss: gold 'three' -> bound ['44']
+

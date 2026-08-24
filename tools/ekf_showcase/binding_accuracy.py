@@ -81,14 +81,28 @@ def dead_spans(model, text: str, th: float):
                 e = a.get("entity")
                 if isinstance(e, dict) and "start" in e:
                     found.append((e["start"], e["end"], e["text"]))
-    return found
+    # One span found under three event types is ONE candidate, not three. Without this
+    # the span counts are inflated ~5x by the EVENT_TYPES loop and `spans` reads as a
+    # candidate-list length it is not.
+    return sorted({(a, b, t) for a, b, t in found})
 
 
 def score(model, wins, th):
-    fired = hit = 0
+    """Window-level and span-level accuracy.
+
+    Two precisions, because they answer different questions and diverge badly as the
+    threshold drops. `w-prec` is per WINDOW -- of windows where the model committed to a
+    toll, how often was one of its `dead` spans right. That number inflates as the model
+    emits more candidates per window, and degenerates to `yield` once it fires everywhere:
+    a model tagging every numeral `dead` scores 100%. `s-prec` is per SPAN -- of every
+    `dead` span emitted, how many hit. That is what a router picking ONE value faces.
+    """
+    fired = hit = n_spans = span_hit = 0
     misses = []
     for text, gs, ge, gold in wins:
         spans = dead_spans(model, text, th)
+        n_spans += len(spans)
+        span_hit += sum(1 for s, e, _ in spans if s < ge and e > gs)
         if not spans:
             continue
         fired += 1
@@ -96,7 +110,7 @@ def score(model, wins, th):
             hit += 1
         elif len(misses) < 3:
             misses.append((gold, [t for _, _, t in spans][:3]))
-    return fired, hit, misses
+    return fired, hit, misses, n_spans, span_hit
 
 
 def main() -> None:
@@ -105,6 +119,8 @@ def main() -> None:
     ap.add_argument("models", nargs="+")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--limit", type=int, default=60)
+    ap.add_argument("--thresholds", type=float, nargs="+", default=list(THRESHOLDS),
+                    help="Decision thresholds to score, matched across models.")
     args = ap.parse_args()
 
     wins = windows(args.limit)
@@ -114,11 +130,13 @@ def main() -> None:
         model = AutoExtractor.from_pretrained(name, map_location=args.device)
         model.eval()
         print(f"=== {name}")
-        print(f"{'thresh':>7}{'fired':>8}{'hit':>7}{'prec':>9}{'yield':>9}")
-        for th in THRESHOLDS:
-            fired, hit, misses = score(model, wins, th)
+        print(f"{'thresh':>7}{'fired':>8}{'hit':>7}{'w-prec':>9}{'yield':>9}"
+              f"{'spans':>8}{'s-prec':>10}")
+        for th in args.thresholds:
+            fired, hit, misses, n_spans, span_hit = score(model, wins, th)
             prec = f"{hit / fired:.1%}" if fired else "--"
-            print(f"{th:>7.2f}{fired:>8}{hit:>7}{prec:>9}{hit / len(wins):>9.1%}")
+            print(f"{th:>7.3f}{fired:>8}{hit:>7}{prec:>9}{hit / len(wins):>9.1%}"
+                  f"{n_spans:>8}{(f'{span_hit / n_spans:.1%}' if n_spans else '--'):>10}")
             for gold, got in misses:
                 print(f"         miss: gold {gold!r} -> bound {got}")
         print()
