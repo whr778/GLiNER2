@@ -1129,7 +1129,29 @@ win**. An aggregate constrains the SUM and says nothing about the SPLIT, so when
 sparse the filter must guess the division and the total injects error. Do not revisit this
 without a new reason; it is not "deferred pending recall", it was tried and it lost.
 (Isotropic `Q` makes it 7.7x worse still — proportional process noise is a precondition,
-not a tuning knob, since Virginia ranges 1→2 while North Carolina ranges 6→123.)
+not a tuning knob, since Virginia ranges 1→2 while North Carolina ranges 6→123. As of
+2026-08-24 `--q-prop 0.15` is the tool's DEFAULT, because the documented trap was the
+default behaviour and the journal records someone mistaking the isotropic run for a new
+catastrophic result.)
+
+**A candidate reason to revisit, tested and eliminated (2026-08-24).** Both Q options are
+strictly DIAGONAL, which asserts state tolls accrue independently — and the aggregate row
+`H = [1,1,1,1,1,1]` is exactly where that bites, since `Var(sum) = Σᵢⱼ Pᵢⱼ` gives the
+off-diagonals a direct say. So the constraint may have been rejected on a process model
+that cannot represent what the aggregate observes. `--q-rho` adds uniform correlation with
+the marginals preserved. It does not rescue it — the vector arm gets monotonically worse:
+
+| rho | 10% | 35% | 80% |
+|---|--:|--:|--:|
+| 0.0 | +0.174 (4/40) | +0.057 (10/40) | **−0.004 (30/40)** |
+| 0.3 | +0.256 (3/40) | +0.091 (1/40) | +0.011 (9/40) |
+| 0.6 | +0.286 (5/40) | +0.096 (3/40) | +0.016 (4/40) |
+| 0.9 | +0.308 (5/40) | +0.098 (5/40) | +0.024 (2/40) |
+
+Correlation degrades **parts-only** too (0.4348 → 0.5280 at ρ=0.9), so ρ>0 is simply a
+worse fit for these trajectories: the real revisions are idiosyncratic — North Carolina's
+123→102→96 reclassification is about North Carolina — not common-mode. The rejection now
+survives isotropic, proportional-diagonal AND correlated Q.
 
 **The scope direction is open and is where the remaining error lives.** The failure is
 filing a national total under a state — measured on real text: "The number of deaths stood

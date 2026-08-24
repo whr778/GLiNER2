@@ -63,7 +63,8 @@ def truth_series(path: Path):
     return out
 
 
-def kalman(obs, n_steps, dim, q, seed_x, seed_P, q_prop: float = 0.0):
+def kalman(obs, n_steps, dim, q, seed_x, seed_P, q_prop: float = 0.15,
+           q_rho: float = 0.0):
     """Plain linear KF over a random-walk state; obs = [(step, H, z, r), ...].
 
     Deliberately the simplest filter that can express the question, and IDENTICAL for both
@@ -84,7 +85,16 @@ def kalman(obs, n_steps, dim, q, seed_x, seed_P, q_prop: float = 0.0):
         # makes the gain distribute proportionally instead.
         Qd = np.eye(dim) * q
         if q_prop:
-            Qd = np.diag((q_prop * np.maximum(np.abs(x), 1.0)) ** 2)
+            sig = q_prop * np.maximum(np.abs(x), 1.0)
+            if q_rho:
+                # Both diagonal options assert state tolls accrue INDEPENDENTLY. One storm
+                # does not, and the aggregate row H=[1..1] is where that bites, since
+                # Var(sum) = sum_ij P_ij. C keeps the marginals and adds uniform
+                # correlation, so any change is the correlation and not a bigger Q.
+                C = (1 - q_rho) * np.eye(dim) + q_rho * np.ones((dim, dim))
+                Qd = np.diag(sig) @ C @ np.diag(sig)
+            else:
+                Qd = np.diag(sig ** 2)
         P = P + Qd                                    # predict (random walk)
         for H, z, r in by_step.get(k, []):
             H = H.reshape(1, -1)
@@ -96,7 +106,7 @@ def kalman(obs, n_steps, dim, q, seed_x, seed_P, q_prop: float = 0.0):
     return np.array(traj)
 
 
-def run_trial(truth, rng, p_state, noise, q, q_prop=0.0):
+def run_trial(truth, rng, p_state, noise, q, q_prop=0.15, q_rho=0.0):
     steps = list(range(len(truth)))
     x_true = np.array([x for _, x in truth])
     dim = len(STATES)
@@ -113,7 +123,7 @@ def run_trial(truth, rng, p_state, noise, q, q_prop=0.0):
         agg_obs.append((k, np.ones(dim), total, max((noise * max(x_true[k].sum(), 1.0)) ** 2, 1.0)))
 
     seed_x = x_true[0].copy()
-    kw = {"q_prop": q_prop}
+    kw = {"q_prop": q_prop, "q_rho": q_rho}
     parts_only = kalman(part_obs, len(steps), dim, q, seed_x, seed_P=25.0, **kw)
     vector = kalman(part_obs + agg_obs, len(steps), dim, q, seed_x, seed_P=25.0, **kw)
 
@@ -131,8 +141,17 @@ def main() -> None:
     ap.add_argument("--trials", type=int, default=40)
     ap.add_argument("--noise", type=float, default=0.10)
     ap.add_argument("--q", type=float, default=9.0)
-    ap.add_argument("--q-prop", type=float, default=0.0,
-                    help="process noise proportional to |x| (0 = isotropic)")
+    ap.add_argument("--q-prop", type=float, default=0.15,
+                    help="process noise proportional to |x|. DEFAULT, and a precondition "
+                         "rather than a tuning knob: Virginia ranges 1->2 while North "
+                         "Carolina ranges 6->123, so equal ABSOLUTE accrual noise fits "
+                         "badly and makes the vector arm look 7.7x worse than it is. "
+                         "Pass 0 for isotropic (sigma^2 I) only to reproduce that.")
+    ap.add_argument("--q-rho", type=float, default=0.0,
+                    help="uniform correlation in Q, marginals preserved. Tests whether "
+                         "the aggregate row needs off-diagonal process noise. MEASURED "
+                         "NEGATIVE: monotonically worse in rho, and it degrades parts-only "
+                         "too, so these trajectories really are near-independent.")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -148,7 +167,8 @@ def main() -> None:
         rng = random.Random(args.seed)
         a, b, wins, nobs = [], [], 0, 0
         for _ in range(args.trials):
-            pa, vb, n = run_trial(truth, rng, p_state, args.noise, args.q, args.q_prop)
+            pa, vb, n = run_trial(truth, rng, p_state, args.noise, args.q,
+                                  args.q_prop, args.q_rho)
             a.append(pa); b.append(vb); wins += vb < pa; nobs += n
         ma, mb = sum(a) / len(a), sum(b) / len(b)
         print(f"{p_state:>21.0%} {ma:>12.4f} {mb:>10.4f} {mb - ma:>+9.4f} "
