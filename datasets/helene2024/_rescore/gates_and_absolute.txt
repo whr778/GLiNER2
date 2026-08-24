@@ -1,0 +1,22 @@
+106 `dead` observations; scope filter rejects 17 out-of-scope, keeps 89
+largest surviving values: [1400, 300, 250, 246, 246, 243]
+
+arm                         mean nRMSE  mean RMSE  NC final  FL final  total final
+default (as recorded)            3.999      163.6       268       222           67
+innovation gate 3-sigma          4.124      159.9       268       228          203
+rate filter 20/h                 3.998      163.5       268       222           67
+rate filter 5/h                  3.293       83.7       248       222           67
+rate filter 1/h                  0.815       37.6       248        12           67
+gate 3s + rate 5/h               3.415       79.9       248       228          203
+TRUTH                                                   102        26          233
+
+stream              truth  n_obs         default  innovation gat  rate filter 5/
+florida                26     16     222/    173     228/    182     222/    172
+georgia                33      5     147/    105     147/    105     147/    105
+south carolina         51      9     192/    127     192/    127     185/    120
+north carolina        102     26     268/    645     268/    645     248/     92
+tennessee              18     10       8/     14      11/     24       8/     14
+virginia                2      0       0/      2       0/      2       0/      2
+__aggregate__         233     23      67/     80     203/     34      67/     81
+
+  columns are final estimate / RMSE in deaths
