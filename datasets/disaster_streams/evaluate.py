@@ -52,6 +52,20 @@ CONF_R = False
 # rises over time pass. None = off (default).
 MAX_RATE = None
 
+# Treat an ``at_least`` reading BELOW the estimate as uninformative (a lower bound that is
+# already satisfied). Logically correct -- "at least 96" is consistent with 123 -- and right
+# for a strictly rising toll. It is WRONG where the truth can fall: Helene's ground truth
+# drops four times in North Carolina (largest 25, 21% of the running value) and three times
+# in the national total, as deaths are reclassified. 31% of that feed's `dead` observations
+# are `at_least`, so after a downward revision the filter cannot follow the truth down --
+# the phrasing is boilerplate, not a claim that the earlier higher figure still stands.
+# MEASURED 2026-08-24 and the rule EARNS ITS KEEP: turning it off is worse, pooled 28.7 ->
+# 32.4 deaths on the gated Helene streams, almost all of it South Carolina (12.1 -> 35.5).
+# So the truth's non-monotonicity is real but this is not how it costs us -- a downward
+# revision does not arrive as an `at_least` below the estimate often enough to matter.
+# True = the historical behaviour and the default. Set False to reproduce the negative.
+CENSOR_AT_LEAST = True
+
 
 def _R_at(o: Dict, ref: float) -> float:
     """Measurement-noise variance scaled by a reference LEVEL (the current estimate),
@@ -142,7 +156,7 @@ def _ekf_rise(obs: List[Dict], grid: List[float]) -> List[tuple]:
                 mu = float(z); P = (0.4 * max(z, 1.0)) ** 2; t_cur = o["t_hours"]; j += 1
                 continue
             P = grow(mu, P, t_cur, o["t_hours"]); t_cur = o["t_hours"]
-            if not (o["qualifier"] == "at_least" and z <= mu):   # else: uninformative lower bound
+            if not (CENSOR_AT_LEAST and o["qualifier"] == "at_least" and z <= mu):
                 R = _R_at(o, mu); S = P + R
                 # one-sided gate: a rising toll is non-decreasing, so reject only readings
                 # implausibly BELOW the estimate (a mis-bound low figure); admit real jumps.
