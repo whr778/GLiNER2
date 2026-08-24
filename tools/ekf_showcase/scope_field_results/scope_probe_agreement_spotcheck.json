@@ -1,0 +1,392 @@
+[
+  {
+    "rec": 165,
+    "stratum": "hard",
+    "fig": 3,
+    "role": "missing",
+    "entity": "17",
+    "locations": [
+      "San Juan"
+    ],
+    "cand": "unclear",
+    "ref": "unclear",
+    "passage": "Officials confirmed on 2026-07-04 that at least 173 people were injured when flight MH370 crashed near Chuhuiv, Kharkiv Oblast, Ukraine. A government spokesperson said the impact also displaced 932 residents from surrounding neighborhoods, complicating rescue efforts. Emergency crews remain on site as authorities continue assessing the full scope of the disaster."
+  },
+  {
+    "rec": 116,
+    "stratum": "hard",
+    "fig": 1,
+    "role": "dead",
+    "entity": "12",
+    "locations": [
+      "Monticello, Utah"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Officials in Monticello, Utah confirmed on July 3, 2026, that a gas explosion has left 12 people dead, with about 2 others still reported missing. State emergency management said the blast damaged 6 buildings and displaced 530 residents, according to an official government statement. Search and recovery operations continue at the site."
+  },
+  {
+    "rec": 14,
+    "stratum": "random",
+    "fig": 0,
+    "role": "injured",
+    "entity": "17",
+    "locations": [
+      "Nepal"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "A major news outlet reported that a massive pileup involving 12 vehicles struck a highway in Nepal on 2026-06-26, leaving around a dozen and a half people injured, roughly 17 in all. The same report noted that 542 people have been displaced from nearby settlements due to the chaos triggered by the crash. Rescue teams continue to comb the wreckage as authorities assess the scale of the disaster."
+  },
+  {
+    "rec": 147,
+    "stratum": "hard",
+    "fig": 1,
+    "role": "injured",
+    "entity": "131",
+    "locations": [
+      "Mexico City"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Mexico City, June 28, 2026 -- Officials said the gas explosion that tore through a residential block has left as many as 55 people feared missing, while 131 were injured, according to government sources. Authorities reported 40 buildings damaged and said 827 residents have been displaced as rescue crews continue sifting through the wreckage."
+  },
+  {
+    "rec": 35,
+    "stratum": "random",
+    "fig": 2,
+    "role": "missing",
+    "entity": "18",
+    "locations": [
+      "the city of Mariana"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "A major news outlet reported that as of June 29, 2026, the death toll from the mine collapse in the city of Mariana, Minas Gerais, stands at exactly 12, while about 18 workers remain missing after the shaft caved in some 180 metres underground. Officials said the disaster has also displaced 545 people from nearby communities as rescue teams continue searching the site."
+  },
+  {
+    "rec": 165,
+    "stratum": "hard",
+    "fig": 0,
+    "role": "injured",
+    "entity": "173",
+    "locations": [
+      "Chuhuiv, Kharkiv Oblast, Ukraine"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Officials confirmed on 2026-07-04 that at least 173 people were injured when flight MH370 crashed near Chuhuiv, Kharkiv Oblast, Ukraine. A government spokesperson said the impact also displaced 932 residents from surrounding neighborhoods, complicating rescue efforts. Emergency crews remain on site as authorities continue assessing the full scope of the disaster."
+  },
+  {
+    "rec": 176,
+    "stratum": "hard",
+    "fig": 1,
+    "role": "missing",
+    "entity": "4",
+    "locations": [
+      "Northallerton North"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Rescue crews worked through the night at Northallerton North after Friday's collision, with a major news outlet reporting that at least 23 people are dead following the crash, which sent eight carriages off the tracks. Officials said 4 more people are feared missing as search efforts continued on July 3, 2026, while local authorities confirmed roughly 557 residents nearby had been displaced as a precaution. Emergency teams remain on scene assessing the wreckage."
+  },
+  {
+    "rec": 10,
+    "stratum": "random",
+    "fig": 1,
+    "role": "dead",
+    "entity": "47",
+    "locations": [
+      "Sabak Bernam"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "According to early, unconfirmed reports from Sabak Bernam on 2026-06-28, at least 47 people are dead, at least 221 have been injured, and about 191 remain missing after a vessel built to carry only 90 passengers capsized. The bodies of 15 passengers were found near the shore, while officials say the disaster has displaced some 1,052 people from surrounding coastal settlements. Rescue teams continue combing the waters as the toll is expected to rise."
+  },
+  {
+    "rec": 68,
+    "stratum": "random",
+    "fig": 3,
+    "role": "dead",
+    "entity": "15",
+    "locations": [
+      "Wheatley"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Officials confirmed 15 dead after the gas explosion tore through Wheatley on July 1, 2026, according to a major news outlet. Rescue crews say dozens of people, roughly 64, were injured, while a handful, around 6, remain missing. The blast damaged 14 buildings and forced 660 residents from their homes as search operations continue."
+  },
+  {
+    "rec": 159,
+    "stratum": "hard",
+    "fig": 0,
+    "role": "dead",
+    "entity": "9",
+    "locations": [
+      "BRUMADINHO, Brazil"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "BRUMADINHO, Brazil — Rescue crews digging some 250 metres underground confirmed on 2026-06-29 that at least 9 people have died after the mine collapse, a major news outlet reported, while about 106 others were injured. Authorities said roughly 765 residents have been displaced from surrounding areas as search operations continue. Nearly 300 people are still missing, officials cautioned, as the toll is expected to rise."
+  },
+  {
+    "rec": 166,
+    "stratum": "hard",
+    "fig": 0,
+    "role": "injured",
+    "entity": "16",
+    "locations": [
+      "a coast road in Bunbury"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "A crash involving three vehicles on a coast road in Bunbury on June 24, 2026 has left about 1 person dead, according to an official government source, with a 63-year-old woman among 16 confirmed injured. Authorities said the collision also disrupted nearby communities, with roughly 540 residents temporarily displaced as emergency crews cleared the scene."
+  },
+  {
+    "rec": 79,
+    "stratum": "random",
+    "fig": 0,
+    "role": "missing",
+    "entity": "1",
+    "locations": [
+      "northern Myanmar"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "A major news outlet reported that at least 1 worker remains missing after a mine collapse in northern Myanmar on 2026-06-29, with rescue teams struggling to reach areas some 540 metres underground. The disaster has already forced 502 people from their homes, according to local authorities, as search operations continue at the site."
+  },
+  {
+    "rec": 24,
+    "stratum": "random",
+    "fig": 1,
+    "role": "injured",
+    "entity": "3,291",
+    "locations": [
+      "near Bir Zeit, north of Ramallah in the central West Bank"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "A major news outlet reported that as of June 30, 2026, 2,025 people have been confirmed dead near Bir Zeit, north of Ramallah in the central West Bank, with at least 3,291 others injured amid fighting that has spread across three districts. Among the dead, the outlet noted, was another Palestinian teen, 17-year-old Mohammed Hamed al-Masri. Officials said the violence has also displaced 8,727 people from their homes."
+  },
+  {
+    "rec": 114,
+    "stratum": "hard",
+    "fig": 3,
+    "role": "injured",
+    "entity": "225",
+    "locations": [
+      "a remote airfield in Nepal's Everest region"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "A major news outlet reported that flight MH370 crashed on July 7, 2026, at a remote airfield in Nepal's Everest region, killing 18 people. Officials said 2 people are feared missing, while about 225 were injured in the disaster. The crash also displaced 1,062 people in the surrounding area, authorities added."
+  },
+  {
+    "rec": 169,
+    "stratum": "hard",
+    "fig": 0,
+    "role": "dead",
+    "entity": "8",
+    "locations": [
+      "The Winter Cherry shopping and entertainment complex"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Early, unconfirmed reports on 2026-07-01 say a fire tore through The Winter Cherry shopping and entertainment complex, killing 8 people. The blaze, which authorities say has scorched some 300 hectares of surrounding land, has also forced 520 residents from their homes. Officials cautioned that details remain preliminary as emergency crews continue to assess the scene."
+  },
+  {
+    "rec": 170,
+    "stratum": "hard",
+    "fig": 2,
+    "role": "missing",
+    "entity": "1",
+    "locations": [
+      "the Ob River"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "According to an official UN source, fighting near the North Darfur town of Thabit has left at least 1,552 people missing and at least 10,894 injured as of 2026-06-27, in a toll reminiscent of the '21 dead from both sides' reported in earlier clashes. The violence has spread across 7 districts, displacing an estimated 27,735 people so far. Humanitarian teams say the figures are likely to rise as access to affected areas improves."
+  },
+  {
+    "rec": 71,
+    "stratum": "random",
+    "fig": 4,
+    "role": "dead",
+    "entity": "380",
+    "locations": [
+      "near Bir Zeit, north of Ramallah in the central West Bank"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "An official government source confirmed on 2026-06-24 that exactly 380 people have died in renewed fighting near Bir Zeit, north of Ramallah in the central West Bank. The violence, which has spread across 3 districts, has forced some 1,450 residents to flee their homes, officials said. Among those killed was another Palestinian teen, 17-year-old Mohammed Hamed al-Masri, according to the source."
+  },
+  {
+    "rec": 197,
+    "stratum": "hard",
+    "fig": 1,
+    "role": "injured",
+    "entity": "20",
+    "locations": [
+      "Italian Alpine village"
+    ],
+    "cand": "unclear",
+    "ref": "unclear",
+    "passage": "Officials in Mariana, Minas Gerais state, confirmed on 2026-06-24 that 1 person has died following the mine collapse, which occurred at a depth of roughly 180 metres. Authorities said 502 people have been displaced from surrounding areas as rescue and safety operations continue. The death toll stands precisely at 1, according to the government source."
+  },
+  {
+    "rec": 101,
+    "stratum": "hard",
+    "fig": 0,
+    "role": "injured",
+    "entity": "186",
+    "locations": [
+      "about 420 meters past the runway end"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "An official government source confirmed on 2026-06-30 that at least 186 people were injured when flight AF447 overran the runway and came to rest about 420 meters past the runway end. Officials said 965 people were displaced from nearby residential areas as emergency crews secured the crash site. The source noted that among the injured, several sustained serious wounds requiring hospitalization while others suffered only minor injuries."
+  },
+  {
+    "rec": 158,
+    "stratum": "hard",
+    "fig": 5,
+    "role": "missing",
+    "entity": "9",
+    "locations": [
+      "Machu Picchu"
+    ],
+    "cand": "unclear",
+    "ref": "unclear",
+    "passage": "Emergency crews in Dagenham, United Kingdom, said Saturday's collision on June 27, 2026, left exactly 117 people injured, while dozens are confirmed dead, with the toll standing at 21. About 5 passengers remain missing after eight carriages derailed in the crash, which also forced some 792 residents from nearby homes, according to a major news outlet."
+  },
+  {
+    "rec": 94,
+    "stratum": "hard",
+    "fig": 0,
+    "role": "dead",
+    "entity": "20",
+    "locations": [
+      "the coast of Senegal"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Off the coast of Senegal, a major news outlet reported on June 26, 2026, that at least 20 people are dead after a wooden vessel carrying an estimated 480 passengers capsized. About 54 others remain missing, while at least 186 survivors were injured, some critically. Authorities said roughly 965 people have been displaced from coastal villages as rescue operations continue."
+  },
+  {
+    "rec": 184,
+    "stratum": "hard",
+    "fig": 0,
+    "role": "dead",
+    "entity": "587",
+    "locations": [
+      "the capital"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "An official government source reported on 2026-06-25 that fighting across five districts of the capital has left hundreds dead, with the toll now around 587, while about 5,413 others were injured. The same source said an estimated 14,032 people have been displaced by the violence, with humanitarian teams struggling to reach affected neighborhoods."
+  },
+  {
+    "rec": 31,
+    "stratum": "random",
+    "fig": 2,
+    "role": "missing",
+    "entity": "1",
+    "locations": [
+      "Mexico City"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "According to early, unconfirmed reports out of Mexico City on 2026-07-21, at least 25 people died in the gas explosion, while at least 1 person remained missing as search efforts continued. Officials said roughly 40 buildings were damaged in the blast, forcing an estimated 562 residents from their homes. Authorities cautioned that the toll could still rise as crews continue combing through the wreckage."
+  },
+  {
+    "rec": 143,
+    "stratum": "hard",
+    "fig": 1,
+    "role": "injured",
+    "entity": "79",
+    "locations": [
+      "East Knox County"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "East Knox County officials confirmed on June 27, 2026, that 9 miners have died in the collapse at the 540-metre-deep shaft, with dozens more injured — roughly 79 in all — including chute puller Cody Maggard, 26. Authorities said 11 workers are still feared missing underground, while 697 residents from nearby communities have been displaced as rescue crews continue searching the site."
+  },
+  {
+    "rec": 199,
+    "stratum": "hard",
+    "fig": 4,
+    "role": "injured",
+    "entity": "178",
+    "locations": [
+      "Canecão Mineiro nightclub"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "An official government source reported on 2026-07-09 that the fire at the Canecão Mineiro nightclub has left at least 1 person missing and injured about 178 others. Authorities said roughly 945 people have been displaced as blazes tied to the disaster have scorched some 8,600 hectares of surrounding land. Search and rescue operations continue as officials work to confirm the full scope of the tragedy."
+  },
+  {
+    "rec": 30,
+    "stratum": "random",
+    "fig": 2,
+    "role": "injured",
+    "entity": "126",
+    "locations": [
+      "La Libertad neighborhood"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Government officials confirmed on 2026-06-26 that flight JT610 crashed into the La Libertad neighborhood, leaving at least 126 people injured. Authorities said about 18 residents remain missing as search efforts continue through the wreckage. Separately, disaster response teams reported that 815 people have been displaced from surrounding homes damaged in the crash."
+  },
+  {
+    "rec": 169,
+    "stratum": "hard",
+    "fig": 1,
+    "role": "missing",
+    "entity": "23",
+    "locations": [
+      "Lamma Island"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Government officials said late Wednesday, July 1, 2026, that 23 people are feared missing after a passenger vessel carrying an estimated capacity of 480 sank off Lamma Island. Authorities added that 557 people have been displaced from nearby coastal communities as rescue operations continue. More than 90 people were hospitalised following the disaster, the official source confirmed."
+  },
+  {
+    "rec": 77,
+    "stratum": "random",
+    "fig": 1,
+    "role": "dead",
+    "entity": "888",
+    "locations": [
+      "near Damascus"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "An official government source reported on 2026-06-26 that fighting near Damascus has left at least hundreds dead, with the toll placed at around 888, while thousands remain missing, estimated near 8,766. The violence has spread across 7 districts, forcing some 22,415 residents to flee their homes, the source said."
+  },
+  {
+    "rec": 86,
+    "stratum": "hard",
+    "fig": 1,
+    "role": "missing",
+    "entity": "14",
+    "locations": [
+      "Xinjiang Uygur Autonomous Region"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Early, unconfirmed reports from Xinjiang Uygur Autonomous Region say about 57 people were injured and about 14 remain missing after a mine collapse struck a shaft roughly 250 metres deep on 2026-06-30. Rescue teams are still assessing the scene, while local authorities said some 642 residents have been displaced from nearby areas as a precaution. Officials cautioned that the toll could change as more information emerges."
+  },
+  {
+    "rec": 116,
+    "stratum": "hard",
+    "fig": 3,
+    "role": "dead",
+    "entity": "1,600",
+    "locations": [
+      "Yemeni city of Aden"
+    ],
+    "cand": "place",
+    "ref": "place",
+    "passage": "Aden, July 11, 2026 – A UN official said fighting across three districts of the Yemeni city of Aden has killed at least thousands, with the death toll believed to have reached around 1,600, while 12,266 people have been confirmed injured. The same source reported that 31,165 residents have been displaced by the ongoing violence."
+  }
+]
