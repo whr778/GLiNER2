@@ -119,3 +119,99 @@ def gate(observations: list, ratio: float, warmup: int,
     for o in moved:
         kept.setdefault("__aggregate__", []).append(o)
     return kept, moved, dropped
+
+
+# --------------------------------------------------------------------------- #
+# Extracted scope: the field the ratio gate exists to reconstruct
+# --------------------------------------------------------------------------- #
+SCOPE_CLASSES = ("place", "national", "sub-place", "unclear")
+
+
+def apply_extracted_scope(observations: list, states: dict, aggregate_key="__aggregate__"):
+    """Route by the scope the EXTRACTOR emitted, before falling back to the ratio gate.
+
+    The ratio gate infers extent from magnitude after the fact -- a figure near the
+    running national total is probably the national total. That works, and it is a
+    reconstruction of a field the model could have produced beside the number. Where the
+    model states the extent, use it:
+
+        national   -> reroute to the aggregate stream (it is the whole, not the part)
+        sub-place  -> drop from the place stream: a county or town figure is not the
+                      place's total, and filing it as one is what puts `"one"` against a
+                      North Carolina truth of 123
+        place      -> keep
+        unclear    -> fall through to the ratio gate, which is why `unclear` is a real
+                      class rather than a guess
+
+    Returns ``(kept, moved, dropped, deferred)``; `deferred` are the `unclear` ones the
+    caller should still pass through ``gate()``.
+    """
+    kept: dict[str, list] = {}
+    moved: list = []
+    dropped: list = []
+    deferred: list = []
+    for o in observations:
+        key = str(o.get("event_key"))
+        sc = str(o.get("scope") or "unclear").lower()
+        if key not in states or sc not in SCOPE_CLASSES or sc == "unclear":
+            deferred.append(o)
+            kept.setdefault(key, []).append(o)
+        elif sc == "national":
+            moved.append(dict(o, event_key=aggregate_key, _from=key))
+        elif sc == "sub-place":
+            dropped.append(dict(o, _from=key))
+        else:
+            kept.setdefault(key, []).append(o)
+    for o in moved:
+        kept.setdefault(aggregate_key, []).append(o)
+    return kept, moved, dropped, deferred
+
+
+def scope_agreement(observations: list, states: dict, ratio: float, warmup: int,
+                    reference: str = "aggregate") -> dict:
+    """Do the EXTRACTED scope and the INFERRED (ratio) scope agree?
+
+    This is the tunable signal to reach for, not a self-reported confidence. This
+    architecture's confidence saturates -- every one of Helene's 106 `dead` observations
+    carries exactly 1.000, contaminants included -- so a model-emitted `scope_confidence`
+    would very likely be constant too. Agreement between two INDEPENDENT routes to the
+    same field is checkable, and it degrades gracefully: high agreement means trust the
+    extracted scope and skip the gate, low agreement means the corpus needs work before
+    the field can be leaned on.
+
+    Returns counts keyed ``"<extracted>/<inferred>"`` plus an ``agreement`` rate over the
+    observations where both express an opinion.
+    """
+    gated, moved, dropped = gate(observations, ratio, warmup, states, reference)
+    inferred = {}
+    for o in moved:
+        inferred[id(o.get("_orig", o))] = "national"
+    for o in dropped:
+        inferred[id(o.get("_orig", o))] = "drop"
+    counts: dict[str, int] = {}
+    agree = total = 0
+    for o in observations:
+        if str(o.get("event_key")) not in states:
+            continue
+        ex = str(o.get("scope") or "unclear").lower()
+        # `gate` copies rejects, so match on value+time rather than identity.
+        inf = "place"
+        for m in moved:
+            if m["t_hours"] == o["t_hours"] and m["value"] == o["value"]:
+                inf = "national"
+                break
+        else:
+            for dd in dropped:
+                if dd["t_hours"] == o["t_hours"] and dd["value"] == o["value"]:
+                    inf = "drop"
+                    break
+        counts[f"{ex}/{inf}"] = counts.get(f"{ex}/{inf}", 0) + 1
+        if ex != "unclear":
+            total += 1
+            if (ex == "national" and inf == "national") or \
+               (ex == "place" and inf == "place") or \
+               (ex == "sub-place" and inf == "drop"):
+                agree += 1
+    counts["agreement"] = (agree / total) if total else float("nan")
+    counts["_n_opinionated"] = total
+    return counts

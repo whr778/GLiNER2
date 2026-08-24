@@ -121,7 +121,9 @@ GATE_LABELS_V2 = {
 }
 
 
-from scope_gate import gate as scope_gate  # noqa: E402
+from scope_gate import (  # noqa: E402
+    apply_extracted_scope, gate as scope_gate, scope_agreement,
+)
 
 
 def build_gate_schema(model):
@@ -302,7 +304,7 @@ def event_envelopes(text: str, block: Dict[str, Any], margin: int = 40) -> List[
 # Stage 2 - casualty structure extraction
 # --------------------------------------------------------------------------- #
 def build_casualty_schema(with_location: bool = False, record_mode: str = "natural",
-                          anchor: str = "dead"):
+                          anchor: str = "dead", with_scope: bool = False):
     """Identical to datasets/disaster_streams/model_arm.py, so numbers from this demo
     are comparable with the measured EKF results.
 
@@ -328,6 +330,24 @@ def build_casualty_schema(with_location: bool = False, record_mode: str = "natur
     if with_location:
         s = s.field("location", dtype="str",
                     description="the country or place these deaths occurred in")
+    if with_scope:
+        # EXTENT, extracted beside the number rather than inferred from magnitude
+        # downstream. `location` says WHICH place is named; it cannot say whether the
+        # figure is the toll OF that place or merely adjacent to it -- "The number of
+        # deaths stood at 225 on Friday; two more were recorded in South Carolina" binds
+        # 225 -> south carolina with a perfectly correct location. That distinction is
+        # what the ratio gate reconstructs from magnitude, after the fact, statistically.
+        #
+        # CATEGORICAL with an explicit `unclear`, deliberately, not a confidence float.
+        # This architecture's confidence saturates: all 106 Helene `dead` observations
+        # carry exactly 1.000, contaminants included, and Turkiye's 89 sit in 0.997-1.000.
+        # An abstention CLASS is something a model can express and be supervised on; a
+        # calibrated scalar from the same head is not.
+        s = s.field("scope", dtype="str",
+                    description="whether this figure counts deaths for the named place "
+                                "only, for a whole country or nation, or for a smaller "
+                                "area such as a single county or town: one of "
+                                "'place', 'national', 'sub-place', 'unclear'")
     return (s
             .field("dead", dtype="str",
                    description="number of people killed or confirmed dead, not injured/missing/displaced")
@@ -342,6 +362,36 @@ def _cell(v):
     if isinstance(v, dict):
         return v.get("text", ""), float(v.get("confidence", 1.0))
     return (v or ""), 1.0
+
+
+SCOPE_CLASSES = ("place", "national", "sub-place", "unclear")
+_SCOPE_ALIASES = {
+    "state": "place", "province": "place", "region": "place", "statewide": "place",
+    "country": "national", "nationwide": "national", "countrywide": "national",
+    "total": "national", "overall": "national", "aggregate": "national",
+    "county": "sub-place", "city": "sub-place", "town": "sub-place",
+    "local": "sub-place", "district": "sub-place",
+}
+
+
+def normalize_scope(cell) -> str:
+    """Map a free-text scope cell onto the four declared classes.
+
+    Anything unrecognised becomes `unclear` rather than a guess. `unclear` is a real
+    answer here -- it routes an observation to the ratio gate instead of overriding it --
+    so mapping an unknown string onto `place` would silently assert the thing we are
+    trying to measure.
+    """
+    span, _ = _cell(cell)
+    v = str(span or "").strip().lower()
+    if not v:
+        return "unclear"
+    if v in SCOPE_CLASSES:
+        return v
+    for k, cls in _SCOPE_ALIASES.items():
+        if k in v:
+            return cls
+    return "unclear"
 
 
 def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
@@ -371,7 +421,8 @@ def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
                 continue
             o = {"t_hours": row["t_hours"], "role": role, "value": value,
                  "qualifier": qual, "source": src, "confidence": conf,
-                 "span": span, "mode": mode, "event_key": event_key}
+                 "span": span, "mode": mode, "event_key": event_key,
+                 "scope": normalize_scope(rec.get("scope"))}
             per_mode[mode].append(o)
             # Keep EVERY mode on the article: retaining only the first made
             # `--normalizer both` unscoreable, which is the whole point of it.
@@ -748,6 +799,14 @@ def main() -> None:
                          "pairs. The default 60 sits in the starved regime")
     ap.add_argument("--lead-chars", type=int, default=1100,
                     help="with --window lead: how much of the article head to read")
+    ap.add_argument("--with-scope", action="store_true", dest="with_scope",
+                    help="Extract an explicit SCOPE field beside each figure (place / "
+                         "national / sub-place / unclear) instead of reconstructing extent "
+                         "from magnitude downstream. `location` says which place is named; "
+                         "it cannot say whether the figure is that place's toll. Routes "
+                         "national -> aggregate and sub-place -> dropped, and defers "
+                         "`unclear` to --scope-ratio. Needs re-extraction; the field is "
+                         "unsupervised so far, so measure agreement before trusting it.")
     ap.add_argument("--scope-ratio", type=float, default=2.0, dest="scope_ratio",
                     help="Ratio scope gate: judge each place observation against the "
                          "running NATIONAL total and keep / reroute-to-aggregate / drop. "
@@ -817,7 +876,8 @@ def main() -> None:
     print(f"[stage 2] casualty        {args.casualty_model}")
     cas_model = AutoExtractor.from_pretrained(args.casualty_model, map_location=args.device)
     cas_schema = build_casualty_schema(with_location=args.associate == "record",
-                                       record_mode=args.record_mode or None)
+                                       record_mode=args.record_mode or None,
+                                       with_scope=args.with_scope)
 
     modes = ["heuristic", "classify", "hybrid"] if args.normalizer == "both" else [args.normalizer]
     cls_schema = (build_normalizer_schema(gate_model)
@@ -921,9 +981,26 @@ def main() -> None:
             # for an in-scope place -- a national total filed under Florida. Measured on
             # Helene: per-place RMSE 217.4 -> 21.9 deaths. It lived in scope_gate_test.py
             # and was never in the pipeline.
+            parts = (rollup.get("hierarchy") or {}).get("parts") or []
+            states = {str(k).lower(): str(k) for k in parts}
+
+            # Extracted scope FIRST, where it exists. The ratio gate reconstructs this
+            # field from magnitude; if the model stated it, prefer the statement and let
+            # the gate handle only what the model called `unclear`.
+            if args.with_scope and states:
+                sc_kept, sc_moved, sc_dropped, deferred = apply_extracted_scope(
+                    per_mode[m], states)
+                per_mode[m] = [o for lst in sc_kept.values() for o in lst]
+                agr = scope_agreement(per_mode[m], states, args.scope_ratio,
+                                      args.scope_warmup, args.scope_reference)
+                print(f"   [scope-field] {m}: {len(sc_moved)} -> aggregate, "
+                      f"{len(sc_dropped)} dropped as sub-place, {len(deferred)} unclear "
+                      f"deferred to the ratio gate")
+                print(f"   [scope-field] agreement with the inferred scope: "
+                      f"{agr['agreement']:.1%} over {agr['_n_opinionated']} opinionated "
+                      f"observations  <- the tunable signal, not a confidence float")
+
             if args.scope_ratio > 0:
-                parts = (rollup.get("hierarchy") or {}).get("parts") or []
-                states = {str(k).lower(): str(k) for k in parts}
                 if states:
                     gated, moved, dropped = scope_gate(
                         per_mode[m], args.scope_ratio, args.scope_warmup, states,

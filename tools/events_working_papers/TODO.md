@@ -1179,6 +1179,47 @@ worse fit for these trajectories: the real revisions are idiosyncratic — North
 123→102→96 reclassification is about North Carolina — not common-mode. The rejection now
 survives isotropic, proportional-diagonal AND correlated Q.
 
+### 10a. It is a DATA MODELLING problem being fixed with a gate (2026-08-24)
+
+The observation tuple is `(t, role, value, qualifier, source)` plus a `location`. **There
+is no field for EXTENT.** `location` says which place is named; it cannot say whether the
+figure is that place's toll or merely adjacent to it. The example below is the whole
+issue: 225 binds to south carolina with a *perfectly correct* location.
+
+Every mechanism built against this -- ratio gate, innovation gate, rate filter, membership
+filter -- reconstructs that missing field downstream from magnitude and position. The
+oracle says that is exhausted: **perfect hard assignment buys ZERO deaths** (two-way
+oracle 29.3 against the shipped gate's 29.3), and all ~11 deaths of headroom sit in the
+REJECT option. A perfect assigner cannot win a problem whose inputs do not determine the
+answer.
+
+**Built 2026-08-24: `--with-scope`.** A `scope` field on the casualty record --
+`place` / `national` / `sub-place` / `unclear` -- extracted beside the number by the same
+decode step, exactly the argument `with_location` already makes for place. Routing:
+national -> aggregate, sub-place -> dropped (this is what puts `"one"` against a North
+Carolina truth of 123, and the ratio gate is blind to it since it only rejects figures too
+LARGE), place -> keep, unclear -> defer to the ratio gate.
+
+**CATEGORICAL, not a confidence float, and that is measured.** A `scope_confidence` was
+proposed and rejected on evidence: this architecture's confidence SATURATES. All 106 of
+Helene's `dead` observations carry exactly **1.000** -- contaminants included -- and
+Turkiye's 89 sit in 0.997-1.000. `CONF_R`, built to consume that field, defaults to off
+for the same reason. Consistent with the extractor result that span precision is flat at
+44-64% across a 100x threshold sweep: **this model's confidence does not discriminate**, so
+a self-reported scope confidence would very likely be constant too. An abstention CLASS is
+something a model can express and be supervised on.
+
+**The tunable signal is `scope_agreement()`** -- do the extracted scope and the ratio
+gate's inferred scope agree? Two independent routes to the same field, checkable rather
+than self-reported, and it degrades gracefully: high agreement means trust the field and
+skip the gate, low means the corpus needs work before leaning on it.
+
+**Status: plumbing complete and tested (18 tests), field quality UNMEASURED.** `scope` is
+unsupervised -- no training data carries it -- so a re-extraction over the 70-article
+Helene feed is needed to find out whether the model can fill it zero-shot. Measure
+`scope_agreement` first; if it is near chance, the field needs supervision before the
+routing above is worth switching on.
+
 **The scope direction is open and is where the remaining error lives.** The failure is
 filing a national total under a state — measured on real text: "The number of deaths stood
 at 225 on Friday; two more were recorded in South Carolina" binds **225 → south carolina**.
