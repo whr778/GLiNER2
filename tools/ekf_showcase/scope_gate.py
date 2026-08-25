@@ -236,8 +236,8 @@ def scope_agreement(observations: list, states: dict, ratio: float, warmup: int,
 # --------------------------------------------------------------------------- #
 # Viterbi scope decode
 # --------------------------------------------------------------------------- #
-OWN, AGG, REJ = 0, 1, 2
-_STATE_NAME = {OWN: "own", AGG: "aggregate", REJ: "reject"}
+OWN, AGG, REJ, REV = 0, 1, 2, 3
+_STATE_NAME = {OWN: "own", AGG: "aggregate", REJ: "reject", REV: "revised"}
 
 
 def _emissions(v: float, m_own: float, natl: float, sigma: float, reject_cost: float,
@@ -555,3 +555,118 @@ def _viterbi_ev(rows, extra, sigma, reject_cost, stay, part_ratio):
     for i in range(n - 1, 0, -1):
         path.append(back[i][path[-1]])
     return path[::-1]
+
+
+def _rev_emission(v, m_own, natl, sigma, part_ratio):
+    """Emission for a DOWNWARD REVISION of this place's own toll.
+
+    Identical to `own` except the stale penalty is dropped -- a revision is defined by
+    being below the established level, so penalising that is exactly wrong. A reading at
+    or above the level is not a revision at all and is ruled out.
+
+    What separates a revision from a stale reading is not the value, it is PERSISTENCE: a
+    reclassification sticks and the readings after it stay low, whereas a stale figure is
+    isolated and the next report returns to the true level. That distinction lives in the
+    transition matrix (entering this state costs `revise_cost`, so a lone low reading is
+    cheaper to call `reject`), not here.
+    """
+    if v >= max(m_own, 1.0):
+        return -1e3
+    lv = math.log(max(v, 1.0))
+    ln = math.log(max(natl, 1.0))
+    pen_high = max(0.0, lv - (ln - math.log(max(part_ratio, 1.0))))
+    return -(pen_high ** 2) / (2 * sigma ** 2)
+
+
+def _viterbi4(rows, extra, sigma, reject_cost, stay, part_ratio, revise_cost):
+    """Four-state decode. Entering `revised` carries an explicit cost, which is what makes
+    an isolated low reading resolve to `reject` and a sustained one to `revised`."""
+    n = len(rows)
+    if not n:
+        return []
+
+    def em(i):
+        e = list(_emissions(*rows[i], sigma, reject_cost, part_ratio))
+        e[REJ] += extra[i]
+        e.append(_rev_emission(*rows[i], sigma, part_ratio))
+        return e
+
+    def trans(p, st):
+        c = stay if p == st else 0.0
+        if st == REV and p != REV:
+            c -= revise_cost
+        return c
+
+    delta = [em(0)]
+    delta[0][REV] -= revise_cost
+    back = [[0] * 4]
+    for i in range(1, n):
+        e = em(i)
+        cur, bk = [0.0] * 4, [0] * 4
+        for st in range(4):
+            best, arg = -1e18, 0
+            for pr in range(4):
+                sc = delta[i - 1][pr] + trans(pr, st)
+                if sc > best:
+                    best, arg = sc, pr
+            cur[st] = best + e[st]
+            bk[st] = arg
+        delta.append(cur); back.append(bk)
+    path = [max(range(4), key=lambda st: delta[-1][st])]
+    for i in range(n - 1, 0, -1):
+        path.append(back[i][path[-1]])
+    return path[::-1]
+
+
+def hmm_gate4(observations: list, states: dict, reference: str = "aggregate",
+              sigma: float = 0.3, reject_cost: float = 4.0, stay: float = 0.1,
+              iters: int = 4, part_ratio: float = 2.0, revise_cost: float = 3.0):
+    """``hmm_gate`` plus a fourth state for downward reclassification.
+
+    Helene's ground truth for North Carolina falls four times as deaths are reclassified
+    (25, 14, 21 and 7 deaths -- the largest 21% of the running value), and the national
+    total falls three times. Every other mechanism in this pipeline treats a falling toll
+    as an error: the one-sided innovation gate rejects it, CENSOR_AT_LEAST discards it,
+    and the stale rule added in the two-sided gate drops it. This state says a toll CAN
+    fall, and re-levels the track when it decides one has.
+    """
+    kept: dict[str, list] = {}
+    moved: list = []
+    dropped: list = []
+    by_key: dict[str, list] = {}
+    for o in observations:
+        by_key.setdefault(str(o.get("event_key")), []).append(o)
+
+    for key, obs in by_key.items():
+        obs = sorted(obs, key=lambda o: o["t_hours"])
+        scale = reference_for(observations, key, states, reference)
+        extra = [float(o.get("_reject_logodds") or 0.0) for o in obs]
+        path = [OWN] * len(obs)
+        own_set, rev_set = list(obs), []
+        for _ in range(max(1, iters)):
+            run, levels = 0.0, []
+            for o in obs:
+                levels.append(run)
+                if o in rev_set:
+                    run = float(o["value"])        # a revision RE-LEVELS the track
+                elif o in own_set:
+                    run = max(run, float(o["value"]))
+            rows = [(float(o["value"]), levels[i], scale_at(scale, o["t_hours"]))
+                    for i, o in enumerate(obs)]
+            path = _viterbi4(rows, extra, sigma, reject_cost, stay, part_ratio,
+                             revise_cost)
+            new_own = [o for o, st in zip(obs, path) if st == OWN]
+            new_rev = [o for o, st in zip(obs, path) if st == REV]
+            if new_own == own_set and new_rev == rev_set:
+                break
+            own_set, rev_set = new_own, new_rev
+        for o, st in zip(obs, path):
+            if st in (OWN, REV):
+                kept.setdefault(key, []).append(dict(o, _revised=(st == REV)))
+            elif st == AGG:
+                moved.append(dict(o, event_key="__aggregate__", _from=key))
+            else:
+                dropped.append(dict(o, _from=key))
+    for o in moved:
+        kept.setdefault("__aggregate__", []).append(o)
+    return kept, moved, dropped

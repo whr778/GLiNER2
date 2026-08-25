@@ -1,0 +1,36 @@
+helene: shipped gate 29.3 | 3-state HMM 20.7 | oracle 17.6
+        North Carolina nRMSE: gate 0.518  3-state 0.313
+
+   revise_cost  REV fires   kept  drop ||   POOLED  NC nRMSE
+           5.0          0     44    13 ||     20.4     0.313
+           6.0          0     44    13 ||     20.4     0.313
+           8.0          0     44    13 ||     20.4     0.313
+          12.0          0     44    13 ||     20.4     0.313
+          20.0          0     44    13 ||     20.4     0.313
+
+  3-state reference for the same columns: pooled 20.7, NC 0.313
+
+=== why the state never fires ===
+sigma sweep (largest real revision is 21% of the running value):
+   sigma  rev/sigma  REV fires   POOLED
+    0.30        0.7          0     20.4
+    0.20        1.0          0     20.4
+    0.10        2.1          0     20.4
+    0.05        4.2          0     20.3
+Not a noise-floor effect -- it stays silent at 4.2 sigma.
+
+1. The reports never follow a reclassification down. After each of North Carolina's four
+   truth revisions the later readings are:
+     after t= 241.7h (truth  94): 230, 230, 230, 1, 1400, 98
+     after t= 290.2h (truth  84): 230, 1, 1400, 98, 250
+     after t= 997.7h (truth 123): 250
+   The press keeps reporting ~230-250 while the official toll falls to 84-123.
+
+2. What LOOKS like a sustained downward move in the raw stream is contamination, and the
+   three-state decode already reroutes it. Florida:
+     300 -> reject | 150 -> reject | 160,180,230,230 -> aggregate
+     1,2,3,5,9,12,11 -> own
+   The own level therefore never gets poisoned, so the later genuine readings are never
+   "below the level" and there is nothing for a revision state to explain.
+
+VERDICT: mechanism correct, inert on this data. Not shipped.
