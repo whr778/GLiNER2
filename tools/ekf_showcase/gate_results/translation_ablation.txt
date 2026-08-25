@@ -1,0 +1,33 @@
+60 clean Turkish negatives sampled
+  multilingual on TURKISH   :  25/60 false-admitted
+  translated 60 to English
+  multilingual on ENGLISH   :  28/60 false-admitted
+  english model on ENGLISH  :  17/60 false-admitted   <- the gate in its designed setting
+  verdict:
+    English versions fail too -> hypothesis B, the LABEL DESCRIPTIONS.
+    Translation would not help; the descriptions need rewriting.
+  English translations the ENGLISH gate still admits:
+    [Dünya] # UN International Migration Organization Director General: Aid Initiatives on the Brink of Collapse  Amy Pope, Director General of the United Nations
+    [Eğitim] # Translation  TRT provided journalism training to high school students in Kütahya. TRT's Journalism for Youth project opened its doors to young peopl
+    [Dünya] # NATO: Russia's Military Losses in Ukraine Exceed 300,000  NATO Secretary General Jens Stoltenberg stated at a press conference following the NATO Fo
+    [Türkiye] # Heavy Snow in Kars: 110 People Stranded on Road Rescued  Due to heavy snowfall that started in the afternoon and was effective in Kars, the Kars-Ard
+    [Dünya] # Translation  New rifles, tanks, armored vehicles, mortar ammunition and missiles were tested on Palestinians. Israel, which is being tried in the In
+    [Dünya] # Translation  The Houthis announced that a US ship was targeted in the Gulf of Aden. Houthi Military Spokesperson Yahya Serei stated in a statement t
+
+CAVEAT ON THE ABSOLUTE NUMBER. My "negatives" are heuristic -- articles with no Turkish
+disaster or casualty word -- and that rule is wrong for some of them. "NATO: Russia's
+soldier losses in Ukraine exceed 300,000" is, by the gate's OWN definition, a correct
+admission: it states a toll for a group of people. My regex missed it because it looked
+for deprem/oldu/yarali and not for war-casualty vocabulary.
+
+So the 28% splits three ways, and only the third is a gate failure:
+  1. correct admissions my labels got wrong   (Ukraine 300,000 losses)
+  2. genuine hard negatives the descriptions do not cover
+       "Heavy snow in Kars: 110 people stranded on road rescued"  -- a number, a rescue,
+       no deaths; and conflict coverage with no toll at all
+  3. true failures ("TRT provided journalism education to high school students")
+
+What survives the caveat is the COMPARISON, because all three conditions score the same
+articles under the same labels: translation does not help. The fix is the label
+descriptions, and the examples say what v3 must decide -- whether a war casualty total
+counts, and how to exclude a rescue or evacuation that carries a number but no deaths.
