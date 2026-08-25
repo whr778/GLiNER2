@@ -1,0 +1,29 @@
+
+=== helene: 106 'dead' observations | three-way oracle (tol 0.25) = 17.6 deaths ===
+ ratio   down  moved  drop  stale ||   POOLED
+   2.0    0.0     22     3      0 ||     29.3  <- one-sided baseline
+   2.0    5.0     22     8      5 ||     23.8
+   2.0    4.0     22    11      8 ||     26.0
+   2.0    3.0     22    11      8 ||     26.0
+   2.0    2.5     22    12      9 ||     21.7
+   2.0    2.0     22    12      9 ||     21.7
+   2.0    1.5     21    17     14 ||     23.1
+
+=== turkey: 91 'dead' observations | three-way oracle (tol 0.25) = 3287.4 deaths ===
+ ratio   down  moved  drop  stale ||   POOLED
+   2.0    0.0     65     0      0 ||  14765.0  <- one-sided baseline
+   2.0    5.0     65     7      7 ||  14961.3
+   2.0    4.0     65     7      7 ||  14961.3
+   2.0    3.0     65    11     11 ||  15349.4
+   2.0    2.5     65    11     11 ||  15349.4
+   2.0    2.0     65    11     11 ||  15349.4
+   2.0    1.5     65    11     11 ||  15349.4
+
+=== does the down rule pick the oracle's stale observations? ===
+helene   down=2.0  my stale drops=  9  oracle stale= 17  hit=  7  precision= 78%  recall=41%
+helene   down=5.0  my stale drops=  5  oracle stale= 17  hit=  5  precision=100%  recall=29%
+turkey   down=2.0  my stale drops=  9  oracle stale= 13  hit=  4  precision= 44%  recall=31%
+turkey   down=5.0  my stale drops=  5  oracle stale= 13  hit=  4  precision= 80%  recall=31%
+
+VERDICT: 1-for-2. Real on Helene, a small regression on Turkey. Not shippable as a
+default; down_ratio stays 0.0 (off) until a better stale criterion is found.

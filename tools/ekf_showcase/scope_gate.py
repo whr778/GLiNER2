@@ -83,7 +83,7 @@ def reference_for(observations: list, key: str, states: dict, mode: str) -> list
 
 
 def gate(observations: list, ratio: float, warmup: int,
-         states: dict, reference: str = "aggregate"):
+         states: dict, reference: str = "aggregate", down_ratio: float = 0.0):
     """Classify each state observation as its own toll, the national total, or neither.
 
     Three outcomes, not two. The earlier two-way version rerouted every reject to
@@ -94,6 +94,14 @@ def gate(observations: list, ratio: float, warmup: int,
     ``keep``    below ``ratio`` of the running national total -- plausibly the state's own
     ``reroute`` within [1/ratio, ratio] of the national total -- it IS the national figure
     ``drop``    above the national total -- no scope in this event can exceed the whole
+
+    ``down_ratio`` adds the SECOND side. The rule above only ever rejects upward, but
+    measured on Helene 63% of the three-way oracle's rejects are readings BELOW the
+    place's own truth -- an article still saying "three" dead in North Carolina at
+    t=83.8h when the toll is 46 (``reject_headroom.py``). A death toll does not fall,
+    so a reading far below this stream's own running maximum is stale, not a rival
+    claim, and it drags the filter down. Rejecting it needs no national reference and
+    no model. 0.0 disables, preserving the original one-sided behaviour exactly.
     """
     kept: dict[str, list] = {}
     moved: list = []
@@ -108,10 +116,15 @@ def gate(observations: list, ratio: float, warmup: int,
             kept.setdefault(key, []).extend(obs)
             continue
         scale = reference_for(observations, key, states, reference)
+        run = 0.0                      # this stream's own running max over KEPT values
         for i, o in enumerate(obs):
             v, natl = float(o["value"]), scale_at(scale, o["t_hours"])
+            if down_ratio > 0 and i >= warmup and run > 0 and v < run / down_ratio:
+                dropped.append(dict(o, _from=key, _stale=True))
+                continue
             if ratio <= 0 or i < warmup or natl <= 0 or v < natl / ratio:
                 kept.setdefault(key, []).append(o)
+                run = max(run, v)
             elif v <= natl * ratio:
                 moved.append(dict(o, event_key="__aggregate__", _from=key))
             else:
