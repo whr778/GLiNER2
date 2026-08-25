@@ -1,0 +1,12 @@
+sampled 200 negatives, 100 heuristic positives (threshold 0.5, 1800 chars max)
+  model                            FP on negatives   admitted positives     sec
+  fastino/gliner2-base-v1            199/200              100/100           101  <- shipped default, ENGLISH-only
+  fastino/gliner2-multi-v1            56/200               86/100            89  <- multilingual
+  The FP column is the number that matters. v1's failure was 58.5%.
+
+The shipped gate does not filter Turkish at all -- it admits 99.5% of clean non-disaster
+news, worse than v1's 58.5% failure on English. It cannot read the text (DeBERTa-v3,
+vocab 128,011, English-only), so it answers mass_casualty to almost everything.
+
+The multilingual model genuinely reads Turkish -- 86% of heuristic positives admitted --
+but still false-admits 28.0%. Better by 3.5x and still far too high to ship.
