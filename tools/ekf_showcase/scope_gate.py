@@ -261,7 +261,12 @@ def _emissions(v: float, m_own: float, natl: float, sigma: float, reject_cost: f
     # so this is a soft version of that rule, not a different one. Without it the one-sided
     # penalty scores a reading at 83% of the national total as a PERFECT part (measured on
     # the smoke case: 500 against a national 600 decoded as `own`).
-    pen_high = max(0.0, lv - (ln - math.log(max(part_ratio, 1.0))))
+    # A missing reference is not evidence that a reading is too large. Without this
+    # guard natl=0 makes ln=0, every value scores "above the whole event", and the decode
+    # rejects the entire stream -- measured on the Aegean feed, which has no aggregate
+    # stream at all: 52 of 53 observations dropped at ZERO feature weight.
+    pen_high = (0.0 if natl <= 0
+                else max(0.0, lv - (ln - math.log(max(part_ratio, 1.0)))))
     own = -(pen_low ** 2 + pen_high ** 2) / (2 * sigma ** 2)
     agg = -((lv - ln) ** 2) / (2 * sigma ** 2) if natl > 0 else -1e3
     return (own, agg, -reject_cost)
@@ -574,7 +579,12 @@ def _rev_emission(v, m_own, natl, sigma, part_ratio):
         return -1e3
     lv = math.log(max(v, 1.0))
     ln = math.log(max(natl, 1.0))
-    pen_high = max(0.0, lv - (ln - math.log(max(part_ratio, 1.0))))
+    # A missing reference is not evidence that a reading is too large. Without this
+    # guard natl=0 makes ln=0, every value scores "above the whole event", and the decode
+    # rejects the entire stream -- measured on the Aegean feed, which has no aggregate
+    # stream at all: 52 of 53 observations dropped at ZERO feature weight.
+    pen_high = (0.0 if natl <= 0
+                else max(0.0, lv - (ln - math.log(max(part_ratio, 1.0)))))
     return -(pen_high ** 2) / (2 * sigma ** 2)
 
 

@@ -1,0 +1,51 @@
+aegean: 53 dead observations, true peak 117
+  contaminants >500: [2679, 17000, 17000, 17800, 220000, 220000]
+  bound to a gated place: 0 of 53   (the rest are 'unknown')
+  _f_date fires on 8, _f_scope on 41
+
+  shipped gate @2.0       74.38
+  viterbi (magnitude)     15.74
+  oracle                  19.10
+
+   feature weight  dropped  17000 gone ||    POOLED
+              0.0       15           0 ||     15.74
+              1.0       15           0 ||     15.74
+              2.0       20           2 ||     15.74
+              3.0       21           3 ||     15.74
+
+=== gate ratio sweep: the shipped gate does NOTHING on this event ===
+   ratio off 74.38 | 4.0 74.38 | 3.0 74.38 | 2.0 74.38 | 1.5 74.38
+Only 12 of 53 observations are bound to a gated place, and the ratio rule never fires on
+those twelve, so the gate is inert at every setting.
+
+=== oracle is tol-specific, not a global ceiling ===
+   tol 4.0 75.08 | 2.0 75.08 | 1.0 75.08 | 0.5 21.33 | 0.25 19.10 | 0.1 19.10
+Viterbi's 15.74 beats the tol=0.25 oracle because that oracle applies a FIXED rule (drop
+when relative error against both scopes exceeds tol) rather than optimising the estimate.
+Keeping a slightly-wrong reading at a useful time can beat dropping it once the filter
+smooths. Not a contradiction, but the oracle is not a bound here the way it is on Helene.
+
+=== PREDICTION VERDICTS ===
+1. "the collapse shows a LARGE gain here"          FALSIFIED
+   The emission features change pooled RMSE by nothing -- 15.74 at every weight from 0 to
+   3 -- even though they do catch contaminants (drops 15 -> 21, three of the >500 figures
+   rejected at weight 3).
+2. "the rejection is carried by the DATE feature"   PARTIAL
+   _f_date fires on 8 of 53 and catches the 17,000s at weight >= 2. But it cannot show up
+   in the score.
+3. "sparsity does not reverse it"                   HELD
+
+=== why prediction 1 failed, and it is NOT scale separation ===
+The contaminants are keyed 'unknown' and 'marmara', not 'Izmir'. Only 12 of 53
+observations are bound to a gated place at all. So the ASSOCIATION step already isolates
+the contamination from the scored stream, and rejecting it afterwards cannot move a number
+it was never part of. This is the same structural reason the Helene collapse showed no
+trajectory gain, and it means the collapse can only ever be measured on cross-event
+catch/false-reject metrics -- never on pooled RMSE -- unless the contaminants land IN a
+scored stream.
+
+=== the result that did land ===
+   shipped gate @2.0    74.38
+   viterbi (magnitude)  15.74     -79%
+That is the Viterbi decode's third event and its third win: Helene -29.4%, Turkiye -9.8%,
+Aegean -79%.

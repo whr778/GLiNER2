@@ -60,6 +60,23 @@ DATASETS = {
         "key_of": lambda name: f"Earthquakes|{name}",
         "reference": "global-max",
     },
+    # The third event, chosen for SCALE SEPARATION: 119 deaths against an Izmit 1999
+    # reference of ~17,000 (143x), where Helene's contaminants differ by 6x and Turkiye's
+    # by 3x-and-crossing. Samos is flat at 2 dead and is not expected to be scoreable;
+    # this event tests cross-event REJECTION, not association.
+    "aegean": {
+        "onset": datetime(2020, 10, 30, 11, 51, tzinfo=timezone.utc),
+        "tracked": "datasets/aegean2020/_cache/tracked_rollup.json",
+        "truth": "datasets/aegean2020/ground_truth.json",
+        "places": ("Izmir", "Samos"),
+        # This rollup maps aliases to CAPITALISED canonical names ("Izmir"), unlike
+        # Helene's which collapses to lowercase, so the key is the place verbatim.
+        # Lowercasing here silently matched nothing and scored every arm as nan.
+        "key_of": lambda name: name,
+        # No aggregate stream is produced for this feed, so the reference has to come from
+        # the streams themselves -- same situation as Turkiye-Syria.
+        "reference": "global-max",
+    },
 }
 
 

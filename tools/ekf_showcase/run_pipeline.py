@@ -498,7 +498,7 @@ _BARE_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
 def out_of_window(text: str, span: str, events: Dict[str, Any], event_year: int,
-                  slack: int = 1) -> Optional[int]:
+                  slack: int = 1, mode: str = "nearest", radius: int = 220) -> Optional[int]:
     """The year of the nearest date to `span`, when that year predates the event.
 
     Returns None when the figure is temporally plausible, so the caller keeps it. A
@@ -529,6 +529,30 @@ def out_of_window(text: str, span: str, events: Dict[str, Any], event_year: int,
     if i < 0:
         return None
     mid = i + len(span) / 2
+    if mode == "any":
+        # ANY out-of-window year within `radius`, not just the nearest one.
+        #
+        # Nearest-by-distance is too weak here, and the Aegean feed shows exactly how it
+        # fails: "...in 1999, a 7.6 magnitude earthquake all but destroyed the town of
+        # Izmit... resulting in the deaths of over 17,000" has 1999 at -152 chars and an
+        # unrelated 2020 at +117, so the nearest year is the CURRENT one and the gate
+        # returns None on a 143x contaminant. This function's own docstring justifies the
+        # nearest-proxy on the grounds that competing dates are "far apart rather than
+        # adjacent"; 117 against 152 chars is not far apart.
+        #
+        # `any` trades precision for recall on purpose. It is the wrong shape for a hard
+        # reject and the right shape for ADDITIVE evidence in the HMM emission, where the
+        # measured design rule keeps a feature's weight below reject_cost so it can tip a
+        # marginal case but never force one on its own.
+        best = None
+        for d in dates:
+            if abs((d["start"] + d["end"]) / 2 - mid) > radius:
+                continue
+            m = _YEAR_RE.search(_span_text(d))
+            if m and int(m.group(0)) < event_year - slack:
+                y = int(m.group(0))
+                best = y if best is None else min(best, y)
+        return best
     near = min(dates, key=lambda d: abs((d["start"] + d["end"]) / 2 - mid))
     m = _YEAR_RE.search(_span_text(near))
     if not m:
