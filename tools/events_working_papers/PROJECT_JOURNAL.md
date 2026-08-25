@@ -1248,3 +1248,63 @@ disagreeing with stated intent** (500 against a national 600 decoding as `own`),
 beating a control that looked wrong**, and **a result inverting where the hypothesis said it
 would not**. Two conclusions were proposed and retracted — the structural divergence, and
 the revision state being silenced by the noise floor, refuted at 4.2σ.
+
+## Phase 24 — the third event, and a pre-registered prediction that failed (25 Aug)
+
+Phase 23 ended with the association layer resolved and a third event pre-registered to
+test the one thing two events could not. It was built, it ran, and the prediction that
+justified building it is false.
+
+**The decode won a third time, and by the widest margin yet.** On the 2020 Aegean
+earthquake the shipped gate scores 74.38 pooled deaths and is *inert* — 74.38 at ratio
+off, 4.0, 3.0, 2.0 and 1.5 alike. The Viterbi decode scores **15.74, −79%**. Across three
+events now: Helene −29.4%, Türkiye −9.8%, Aegean −79%.
+
+**And the collapse showed nothing, for a reason that was not the hypothesis.** The event
+was chosen for scale separation: 119 deaths against an İzmit 1999 reference of ~17,000,
+143× where Helene's contaminants differ by 6× and Türkiye's by 3×-and-crossing. The feed
+delivered exactly that — 17,000 ×2, 17,800, 220,000 ×2 and 2,679 against a true peak of
+117. The emission features catch them (drops 15 → 21, three of six rejected at weight 3)
+and pooled RMSE does not move: **15.74 at every weight from 0 to 3**.
+
+The contaminants are keyed `unknown` and `marmara`, never `Izmir`, and only **12 of 53**
+observations are bound to a gated place at all. **Association isolates the contamination
+before the gate ever sees it.** Helene has the same shape — its cross-event figures live in
+mexico / puerto rico / bosnia / reading-pennsylvania streams, none of them scored. Two
+events, same structure, and it means the collapse cannot be validated on pooled RMSE on
+either. Its effect is real but only visible on cross-event catch and false-reject rates,
+where Helene went 5/6 at 19.8% false to 4/6 at 9.9%. **A fourth event would not fix this**,
+which is the useful part of the negative: the limit is structural, not a sampling problem.
+
+**Where the errors were this time.** Three in the harness, all mine, and the third is the
+one worth remembering. The emission treated a *missing* reference as evidence a reading was
+too large — this feed has no aggregate stream, so `natl=0` and every value scored above the
+whole event, dropping **52 of 53 observations at zero feature weight**. The dataset was
+registered against an `aggregate` reference that does not exist here. And `key_of`
+lowercased the place while this rollup capitalises canonical names, so `score()` matched
+nothing and every arm read `nan` — **including the controls, which is what made it
+visible**. A defect that breaks the arm alone is dangerous; one that breaks the control too
+announces itself.
+
+A fourth, in the pipeline rather than the harness: `out_of_window` missed the 17,000
+completely, because nearest-date-by-character-distance picked **2020 at +117 chars over
+1999 at −152**. The function's own docstring defends that proxy on competing dates being
+"far apart rather than adjacent". 117 against 152 is not far apart, and the justification
+had never been checked on a feed that violates it.
+
+**Two findings from the same day that belong here.** First, the relevance gate does not
+filter Turkish at all: the shipped model admits **199 of 200** clean non-disaster articles,
+because it is DeBERTa-v3 with a 128k English vocabulary and cannot read the text. That is
+worse than the 58.5% failure that forced the v1→v2 rewrite, and it is silent — nothing
+reports that the gate has stopped discriminating. The multilingual model cuts it to 28%,
+and translating the articles into English does *not* help (17/60 still admitted by the
+English model on English text), so it is the label descriptions and not the language.
+
+Second, and prompted by a question rather than a measurement: **rescued is not injured.**
+Twelve of Helene's 106 `dead` observations are audited non-casualty, and six are exposure
+counts — 300 rescued, 50 patients rescued, 32 evacuated, 11 swept away. A rescued person is
+a counterfactual casualty. The other six are unit confusion: a two-day period, six states,
+dozens of vehicles, 1,400 landslides. The root cause is the schema — `casualty_events` has
+`location`, `injured`, `missing`, `dead` and no role for exposure, while the prose is full
+of it. **A number with no correct home lands in a wrong one.** That is a data-modelling fix,
+not another gate, and it is the same diagnosis as item 10a reached for `scope`.

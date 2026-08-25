@@ -110,3 +110,69 @@ existing feed manages. The third event gets a cleaner design than the first two.
 
 **Predictions 1-3 stand unchanged** -- they are about the collapse, not about where the
 prose comes from -- and remain untested until the news feed exists.
+
+---
+
+## RESULT, 2026-08-25 — prediction 1 falsified, and the reason is not scale separation
+
+The feed was built (71 articles, t=3.4h..678.2h, 18 carrying the Izmit contaminant) and
+the pipeline run (61/71 relevant, 108 observations: 53 dead, 34 injured, 21 missing).
+
+    shipped gate @2.0    74.38    (and 74.38 at ratio off / 4.0 / 3.0 / 2.0 / 1.5 -- inert)
+    viterbi (magnitude)  15.74    -79%
+    oracle (tol 0.25)    19.10
+
+**The decode's third event and third win**: Helene -29.4%, Turkiye -9.8%, Aegean -79%.
+
+### Prediction 1: FALSIFIED
+
+The emission features move pooled RMSE by nothing -- 15.74 at every weight from 0 to 3 --
+although they demonstrably work: drops rise 15 -> 21 and three of the six >500
+contaminants are rejected at weight 3. The event has the contaminants it was chosen for
+(17,000 x2, 17,800, 220,000 x2, 2,679 against a true peak of 117), and rejecting them
+changes the score by zero.
+
+**The reason is not the one under test.** The contaminants are keyed `unknown` and
+`marmara`, never `Izmir`, and only 12 of 53 observations are bound to a gated place at all.
+ASSOCIATION isolates the contamination from the scored stream before the gate ever sees it,
+so rejecting it afterwards cannot move a number it was never part of.
+
+Helene showed the same structure -- its cross-event figures sit in mexico / puerto rico /
+bosnia / reading-pennsylvania streams, none of them scored. Two events, same shape.
+
+### What that costs the programme, stated plainly
+
+**The collapse cannot be validated on pooled RMSE at all**, on any feed where association
+routes contaminants out of the scored streams first -- which is both feeds we have and
+probably most feeds. Its measurable effect is on cross-event catch and false-reject rates,
+where Helene did show 5/6 at 19.8% false becoming 4/6 at 9.9%.
+
+Picking a fourth event does not fix this. What would: a feed where a contaminant is bound
+to a SCORED place, which is the Helene "1916 hurricanes killed at least 80 in North
+Carolina" case -- in-scope place, out-of-window date. That case exists but is rare, and one
+occurrence cannot move a pooled metric either.
+
+### Predictions 2 and 3
+
+2. PARTIAL. `_f_date` fires on 8 of 53 and catches the 17,000s at weight >= 2, carried by
+   the date feature and not by scope membership as predicted. It cannot reach the score.
+3. HELD. Nothing reversed.
+
+### Three bugs found getting here, all mine
+
+1. The emission treated a MISSING reference as evidence a reading is too large. This feed
+   produces no aggregate stream, so natl=0, ln=0, and every value scored above the whole
+   event: **52 of 53 observations dropped at zero feature weight**. Guarded.
+2. The dataset was registered with reference `aggregate` when the feed has no aggregate
+   stream. Switched to `global-max`, as Turkiye already does for the same reason.
+3. `key_of` lowercased the place while this rollup maps aliases to capitalised canonical
+   names, so `score()` matched nothing and every arm read `nan` -- controls included, which
+   is what made it visible.
+
+### A fourth finding, about the date gate itself
+
+`out_of_window` missed the 17,000 entirely. Its nearest-date-by-character-distance proxy
+picked **2020 at +117 chars over 1999 at -152**. The function's own docstring defends that
+proxy on the grounds that competing dates are "far apart rather than adjacent"; 117 against
+152 chars is not far apart. Added `mode="any"` -- any out-of-window year within a radius --
+which is lower precision and the right shape for additive evidence rather than a veto.

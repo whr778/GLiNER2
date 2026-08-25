@@ -1857,7 +1857,7 @@ never reported. This reframes `CENSOR_AT_LEAST`: the filter is not wrong to refu
 descend, **the data never descends**. Fixing it needs a source carrying reclassification
 bulletins, not a better filter.
 
-### 13a. The third event — IN FLIGHT
+### 13a. The third event — RUN 2026-08-25; prediction 1 FALSIFIED
 
 Turkiye cannot validate the cross-event collapse, and the reason is now diagnosed rather
 than guessed: its contaminant (Izmit 1999, 17,500) is the same order of magnitude as the
@@ -1881,7 +1881,56 @@ against an Izmit reference of ~17,000, a **143x** separation.
   Turkiye 2023 carry the same reference. Hence GT from Wikipedia, documents from news,
   which also makes this the first feed with genuinely independent sources on both sides.
 
-Predictions 1-3 stand and remain untested until the feed lands.
+**RESULT.** Feed built (71 articles, 18 carrying the contaminant), pipeline run (61/71
+relevant, 108 observations).
+
+    shipped gate @2.0    74.38    inert -- same at ratio off/4.0/3.0/2.0/1.5
+    viterbi (magnitude)  15.74    -79%
+    oracle (tol 0.25)    19.10
+
+The decode's third win: Helene -29.4%, Turkiye -9.8%, Aegean -79%.
+
+**Prediction 1 FALSIFIED.** The emission features move pooled RMSE by nothing (15.74 at
+every weight 0-3) although they work -- drops 15 -> 21, three of six >500 contaminants
+rejected. The contaminants are keyed `unknown`/`marmara`, never `Izmir`, and only 12 of 53
+observations are bound to a gated place: ASSOCIATION isolates them before the gate sees
+them. Helene is the same shape (cross-event figures sit in mexico/puerto rico/bosnia
+streams, none scored).
+
+**Consequence, and it is structural rather than a sampling problem: the collapse cannot be
+validated on pooled RMSE on either feed, and a fourth event would not change that.** Its
+effect is real but only measurable on cross-event catch/false-reject rates -- Helene 5/6 at
+19.8% false becoming 4/6 at 9.9%. Prediction 2 partial (`_f_date` carries it, cannot reach
+the score); prediction 3 held.
+
+### 15. The relevance gate does not filter non-English at all (2026-08-25)
+
+Measured on 200 clean negatives from denizzhansahin/Turkish_News-2024:
+
+    fastino/gliner2-base-v1   199/200 = 99.5% false admits   <- SHIPPED DEFAULT
+    fastino/gliner2-multi-v1   56/200 = 28.0%
+
+The shipped default is DeBERTa-v3, vocab 128,011, English-only. It cannot read the text so
+it answers mass_casualty to nearly everything -- worse than the 58.5% that forced v1 -> v2,
+and SILENT, since nothing reports that the gate stopped discriminating. Translating to
+English does not fix it (17/60 still admitted by the English model on English text), so it
+is the LABEL DESCRIPTIONS, not the language. A v3 rewrite has to decide two things the
+current text does not cover: whether a war casualty total counts, and how to exclude a
+rescue or evacuation carrying a number but no deaths.
+
+### 16. Exposure counts are not casualties, and the schema has nowhere to put them
+
+12 of Helene's 106 `dead` observations are audited non-casualty: six are EXPOSURE (300
+rescued, 50 patients rescued, 32 evacuated, 11 swept away) and six are UNIT CONFUSION (a
+two-day period, six states, dozens of vehicles, 1,400 landslides). A rescued person is a
+counterfactual casualty -- averted harm, not realized harm -- and exposure counts run
+systematically LARGER than casualty counts, so a mis-bind is the same magnitude as
+cross-event contamination and points the same way, upward.
+
+Root cause is the schema: `casualty_events` has location/injured/missing/dead and no role
+for exposure while the prose is full of it. Adding `displaced` and `rescued` fixes it at
+source. Same diagnosis as 10a reached for `scope`: a data-modelling problem being handled
+by a gate. Full taxonomy in `ekf_showcase/gate_results/EXPOSURE_VS_CASUALTY.md`.
 
 ### 14. Scope supervision — do NOT buy labels under the current scheme (2026-08-25)
 
