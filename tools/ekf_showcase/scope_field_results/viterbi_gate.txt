@@ -1,0 +1,42 @@
+
+=== helene ===  shipped gate @2.0 = 29.3   oracle = 17.6
+   sigma  reject  stay |  kept moved  drop ||    POOLED
+     0.3     1.0   0.1 |    50    19    14 ||      20.7  <-- beats gate
+     0.3     2.0   0.1 |    50    21    12 ||      20.7  <-- beats gate
+     0.3     4.0   0.1 |    50    22    11 ||      20.7  <-- beats gate
+     0.3     8.0   0.1 |    53    23     7 ||      23.7  <-- beats gate
+     0.5     1.0   0.1 |    50    22    11 ||      20.7  <-- beats gate
+     0.5     2.0   0.1 |    51    22    10 ||      24.9  <-- beats gate
+     0.5     4.0   0.1 |    54    23     6 ||      23.7  <-- beats gate
+     0.5     8.0   0.1 |    55    24     4 ||      23.7  <-- beats gate
+     0.8     1.0   0.1 |    51    23     9 ||      24.9  <-- beats gate
+     0.8     2.0   0.1 |    54    23     6 ||      23.7  <-- beats gate
+     0.8     4.0   0.1 |    55    24     4 ||      23.7  <-- beats gate
+     0.8     8.0   0.1 |    57    24     2 ||      23.7  <-- beats gate
+
+=== turkey ===  shipped gate @1.5 = 11581.5   oracle = 3287.4
+   sigma  reject  stay |  kept moved  drop ||    POOLED
+     0.3     1.0   0.1 |    19    61    11 ||   10745.5  <-- beats gate
+     0.3     2.0   0.1 |    23    61     7 ||   10695.5  <-- beats gate
+     0.3     4.0   0.1 |    23    61     7 ||   10695.5  <-- beats gate
+     0.3     8.0   0.1 |    25    61     5 ||   10441.3  <-- beats gate
+     0.5     1.0   0.1 |    23    61     7 ||   10695.5  <-- beats gate
+     0.5     2.0   0.1 |    23    61     7 ||   10695.5  <-- beats gate
+     0.5     4.0   0.1 |    25    61     5 ||   10441.3  <-- beats gate
+     0.5     8.0   0.1 |    25    61     5 ||   10441.3  <-- beats gate
+     0.8     1.0   0.1 |    31    55     5 ||   12165.6
+     0.8     2.0   0.1 |    31    55     5 ||   12165.6
+     0.8     4.0   0.1 |    32    55     4 ||   12196.1
+     0.8     8.0   0.1 |    33    55     3 ||   12680.5
+
+=== the warmup was the whole story ===
+                     helene            turkey
+  warmup=2 (greedy)  21.8-26.1         12306.7-12775.7   (turkey LOSES to the gate)
+  warmup=0           20.7-24.9         10441.3-10745.5   (turkey BEATS the gate)
+
+Syria's first two readings are contaminating Turkiye figures -- 9057 and 17674 against a
+true peak of 5800. warmup=2 pinned them to `own`, poisoning the level, and the genuine
+3317s were then rejected as stale. That is the greedy commitment this decode exists to
+remove, smuggled back in as a knob copied from the greedy algorithm.
+
+VERDICT: 2-for-2. Recommended sigma=0.3, reject_cost=4.0, stay=0.1, warmup=0.

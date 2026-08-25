@@ -14,6 +14,9 @@ a national total; it is not a casualty count at all.
 """
 from __future__ import annotations
 
+import math
+
+
 def running_max(observations: list, predicate) -> list:
     """Running (t, max) over the observations matching ``predicate``, in time order."""
     out, run = [], 0.0
@@ -228,3 +231,130 @@ def scope_agreement(observations: list, states: dict, ratio: float, warmup: int,
     counts["agreement"] = (agree / total) if total else float("nan")
     counts["_n_opinionated"] = total
     return counts
+
+
+# --------------------------------------------------------------------------- #
+# Viterbi scope decode
+# --------------------------------------------------------------------------- #
+OWN, AGG, REJ = 0, 1, 2
+_STATE_NAME = {OWN: "own", AGG: "aggregate", REJ: "reject"}
+
+
+def _emissions(v: float, m_own: float, natl: float, sigma: float, reject_cost: float,
+               part_ratio: float = 2.0):
+    """Log-likelihood of one reading under each hypothesis.
+
+    ONE-SIDED for `own`, for the same reason the shipped gate and the Student-t model are:
+    a rising toll may legitimately exceed the level established so far, so only a reading
+    far BELOW that level is evidence against `own`. Exceeding the whole event's total is
+    evidence against it in the other direction, and that side IS penalised.
+
+    `reject` is the standard clutter model -- a flat density, so it wins exactly when both
+    structured hypotheses have made the reading sufficiently improbable.
+    """
+    lv = math.log(max(v, 1.0))
+    lo = math.log(max(m_own, 1.0))
+    ln = math.log(max(natl, 1.0))
+    pen_low = max(0.0, lo - lv)            # stale: below the level already established
+    # A part is only credible as a part while it stays clear of the whole. The band top is
+    # natl/part_ratio, the same place the shipped gate puts its keep/reroute boundary --
+    # so this is a soft version of that rule, not a different one. Without it the one-sided
+    # penalty scores a reading at 83% of the national total as a PERFECT part (measured on
+    # the smoke case: 500 against a national 600 decoded as `own`).
+    pen_high = max(0.0, lv - (ln - math.log(max(part_ratio, 1.0))))
+    own = -(pen_low ** 2 + pen_high ** 2) / (2 * sigma ** 2)
+    agg = -((lv - ln) ** 2) / (2 * sigma ** 2) if natl > 0 else -1e3
+    return (own, agg, -reject_cost)
+
+
+def _viterbi(rows, sigma, reject_cost, stay, part_ratio=2.0):
+    """Decode the most likely state sequence. Returns a list of OWN/AGG/REJ."""
+    n = len(rows)
+    if not n:
+        return []
+    delta = [list(_emissions(*rows[0], sigma, reject_cost, part_ratio))]
+    back = [[0, 0, 0]]
+    for i in range(1, n):
+        em = _emissions(*rows[i], sigma, reject_cost, part_ratio)
+        cur, bk = [0.0] * 3, [0] * 3
+        for s in range(3):
+            best, arg = -1e18, 0
+            for p in range(3):
+                sc = delta[i - 1][p] + (stay if p == s else 0.0)
+                if sc > best:
+                    best, arg = sc, p
+            cur[s] = best + em[s]
+            bk[s] = arg
+        delta.append(cur); back.append(bk)
+    path = [max(range(3), key=lambda s: delta[-1][s])]
+    for i in range(n - 1, 0, -1):
+        path.append(back[i][path[-1]])
+    return path[::-1]
+
+
+def viterbi_gate(observations: list, states: dict, reference: str = "aggregate",
+                 sigma: float = 0.5, reject_cost: float = 2.0, stay: float = 0.5,
+                 iters: int = 4, warmup: int = 0, part_ratio: float = 2.0):
+    """Global scope decode. Same (kept, moved, dropped) contract as ``gate``.
+
+    The shipped gate walks each stream in time order and commits per observation against
+    a running reference. That is greedy, and it fails the way greedy fails: on Turkiye one
+    large figure admitted early poisons the running maximum and every legitimate later
+    reading looks stale (measured -- see two_sided_gate.txt). Viterbi decides the whole
+    sequence jointly, so no single early reading can commit the rest.
+
+    The `own` level is itself unknown, so this is hard-EM: decode, re-estimate the level
+    from whatever the decode called `own`, repeat. `iters=1` is a single pass.
+
+    The REJECT state is not optional. Measured, assignment headroom on Helene is ZERO --
+    the two-way oracle scores exactly what the shipped gate does -- and the entire ~11.7
+    death prize is in being able to say `none of these`.
+    """
+    kept: dict[str, list] = {}
+    moved: list = []
+    dropped: list = []
+    by_key: dict[str, list] = {}
+    for o in observations:
+        by_key.setdefault(str(o.get("event_key")), []).append(o)
+
+    for key, obs in by_key.items():
+        obs = sorted(obs, key=lambda o: o["t_hours"])
+        if key not in states:
+            kept.setdefault(key, []).extend(obs)
+            continue
+        scale = reference_for(observations, key, states, reference)
+        own_set = list(obs)                       # seed: assume everything is own
+        path = [OWN] * len(obs)
+        for _ in range(max(1, iters)):
+            run = 0.0
+            levels = []
+            for o in obs:                          # causal running max over the OWN set
+                levels.append(run)
+                if o in own_set:
+                    run = max(run, float(o["value"]))
+            rows = [(float(o["value"]), levels[i], scale_at(scale, o["t_hours"]))
+                    for i, o in enumerate(obs)]
+            path = _viterbi(rows, sigma, reject_cost, stay, part_ratio)
+            # NO warmup by default. The shipped gate needs one because it commits per
+            # observation and must establish a scale before it can judge anything. Forcing
+            # the first k readings to `own` here reintroduces exactly the greedy commitment
+            # this decode exists to remove -- measured on Syria, whose first two readings
+            # are contaminating Turkiye figures (9057, 17674 against a true peak of 5800).
+            # Pinning them to `own` poisoned the level and the genuine 3317s were then
+            # rejected as stale.
+            for i in range(min(warmup, len(path))):
+                path[i] = OWN
+            new_own = [o for o, s in zip(obs, path) if s == OWN]
+            if new_own == own_set:
+                break
+            own_set = new_own
+        for o, s in zip(obs, path):
+            if s == OWN:
+                kept.setdefault(key, []).append(o)
+            elif s == AGG:
+                moved.append(dict(o, event_key="__aggregate__", _from=key))
+            else:
+                dropped.append(dict(o, _from=key, _viterbi=True))
+    for o in moved:
+        kept.setdefault("__aggregate__", []).append(o)
+    return kept, moved, dropped
