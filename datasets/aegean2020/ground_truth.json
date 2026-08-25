@@ -1,0 +1,778 @@
+{
+ "event": "2020 Aegean Sea earthquake",
+ "onset_utc": "2020-10-30T11:51:00Z",
+ "source": "English Wikipedia revision history, infobox casualties field",
+ "note": "Izmir = Turkiye's toll, Samos = Greece's. GT and the document feed share a source; see the module docstring.",
+ "points": [
+  {
+   "snapshot": "2020-10-30T17:44:49Z",
+   "revid": 986245979,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 12,
+    "Total": 14
+   },
+   "injured": {
+    "Samos": 8,
+    "Izmir": 419
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986245979"
+  },
+  {
+   "snapshot": "2020-10-30T23:59:31Z",
+   "revid": 986296633,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 17,
+    "Total": 19
+   },
+   "injured": {
+    "Samos": 8,
+    "Izmir": 709
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986296633"
+  },
+  {
+   "snapshot": "2020-10-31T05:26:27Z",
+   "revid": 986332688,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 24,
+    "Total": 26
+   },
+   "injured": {
+    "Samos": 8,
+    "Izmir": 804
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986332688"
+  },
+  {
+   "snapshot": "2020-10-31T11:57:49Z",
+   "revid": 986367327,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 25,
+    "Total": 27
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 804
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986367327"
+  },
+  {
+   "snapshot": "2020-10-31T16:48:23Z",
+   "revid": 986401665,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 35,
+    "Total": 37
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 885
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986401665"
+  },
+  {
+   "snapshot": "2020-10-31T22:06:48Z",
+   "revid": 986442647,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 37,
+    "Total": 39
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 885
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986442647"
+  },
+  {
+   "snapshot": "2020-11-01T05:17:27Z",
+   "revid": 986489911,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 37,
+    "Total": 39
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 885
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986489911"
+  },
+  {
+   "snapshot": "2020-11-01T11:32:40Z",
+   "revid": 986523264,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 51,
+    "Total": 53
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 896
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986523264"
+  },
+  {
+   "snapshot": "2020-11-01T17:52:11Z",
+   "revid": 986570112,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 62,
+    "Total": 64
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 940
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986570112"
+  },
+  {
+   "snapshot": "2020-11-01T23:26:06Z",
+   "revid": 986615208,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 69,
+    "Total": 71
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 949
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986615208"
+  },
+  {
+   "snapshot": "2020-11-02T04:11:20Z",
+   "revid": 986647595,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 69,
+    "Total": 71
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 949
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986647595"
+  },
+  {
+   "snapshot": "2020-11-02T11:55:08Z",
+   "revid": 986689220,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 83,
+    "Total": 85
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 994
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986689220"
+  },
+  {
+   "snapshot": "2020-11-02T17:54:23Z",
+   "revid": 986732912,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 91,
+    "Total": 93
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 994
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986732912"
+  },
+  {
+   "snapshot": "2020-11-02T20:26:46Z",
+   "revid": 986753688,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 92,
+    "Total": 94
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 994
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986753688"
+  },
+  {
+   "snapshot": "2020-11-03T00:29:09Z",
+   "revid": 986786464,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 98,
+    "Total": 100
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 994
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986786464"
+  },
+  {
+   "snapshot": "2020-11-03T11:43:59Z",
+   "revid": 986856142,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 105,
+    "Total": 107
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1027
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986856142"
+  },
+  {
+   "snapshot": "2020-11-03T17:32:10Z",
+   "revid": 986901409,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 110,
+    "Total": 112
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1027
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986901409"
+  },
+  {
+   "snapshot": "2020-11-03T22:54:00Z",
+   "revid": 986948824,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 111,
+    "Total": 113
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1036
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986948824"
+  },
+  {
+   "snapshot": "2020-11-04T05:23:58Z",
+   "revid": 986992280,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 113,
+    "Total": 115
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1036
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=986992280"
+  },
+  {
+   "snapshot": "2020-11-04T11:54:22Z",
+   "revid": 987025141,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987025141"
+  },
+  {
+   "snapshot": "2020-11-04T16:23:48Z",
+   "revid": 987052069,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987052069"
+  },
+  {
+   "snapshot": "2020-11-04T21:58:22Z",
+   "revid": 987096109,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987096109"
+  },
+  {
+   "snapshot": "2020-11-05T02:02:10Z",
+   "revid": 987124438,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987124438"
+  },
+  {
+   "snapshot": "2020-11-05T10:56:38Z",
+   "revid": 987172937,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987172937"
+  },
+  {
+   "snapshot": "2020-11-05T16:57:50Z",
+   "revid": 987212051,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 116,
+    "Total": 118
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987212051"
+  },
+  {
+   "snapshot": "2020-11-05T22:10:00Z",
+   "revid": 987257010,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987257010"
+  },
+  {
+   "snapshot": "2020-11-06T00:32:16Z",
+   "revid": 987275816,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987275816"
+  },
+  {
+   "snapshot": "2020-11-06T11:02:17Z",
+   "revid": 987338271,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987338271"
+  },
+  {
+   "snapshot": "2020-11-06T14:44:07Z",
+   "revid": 987359669,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987359669"
+  },
+  {
+   "snapshot": "2020-11-06T22:39:18Z",
+   "revid": 987419385,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987419385"
+  },
+  {
+   "snapshot": "2020-11-07T00:23:20Z",
+   "revid": 987430591,
+   "deaths": {
+    "Samos": 2,
+    "Izmir": 114,
+    "Total": 116
+   },
+   "injured": {
+    "Samos": 19,
+    "Izmir": 1035
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987430591"
+  },
+  {
+   "snapshot": "2020-11-07T10:55:53Z",
+   "revid": 987487417,
+   "deaths": {
+    "Izmir": 114,
+    "Samos": 2,
+    "Total": 116
+   },
+   "injured": {
+    "Izmir": 1035,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987487417"
+  },
+  {
+   "snapshot": "2020-11-07T20:24:48Z",
+   "revid": 987556095,
+   "deaths": {
+    "Izmir": 114,
+    "Samos": 2,
+    "Total": 116
+   },
+   "injured": {
+    "Izmir": 1035,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987556095"
+  },
+  {
+   "snapshot": "2020-11-08T14:38:10Z",
+   "revid": 987667418,
+   "deaths": {
+    "Izmir": 114,
+    "Samos": 2,
+    "Total": 116
+   },
+   "injured": {
+    "Izmir": 1035,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987667418"
+  },
+  {
+   "snapshot": "2020-11-09T07:46:05Z",
+   "revid": 987791916,
+   "deaths": {
+    "Izmir": 114,
+    "Samos": 2,
+    "Total": 116
+   },
+   "injured": {
+    "Izmir": 1035,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987791916"
+  },
+  {
+   "snapshot": "2020-11-09T13:18:34Z",
+   "revid": 987824461,
+   "deaths": {
+    "Izmir": 114,
+    "Samos": 2,
+    "Total": 116
+   },
+   "injured": {
+    "Izmir": 1035,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987824461"
+  },
+  {
+   "snapshot": "2020-11-09T19:42:21Z",
+   "revid": 987877398,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=987877398"
+  },
+  {
+   "snapshot": "2020-11-10T21:40:33Z",
+   "revid": 988070604,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=988070604"
+  },
+  {
+   "snapshot": "2020-11-11T10:31:01Z",
+   "revid": 988143656,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=988143656"
+  },
+  {
+   "snapshot": "2020-11-11T16:49:25Z",
+   "revid": 988184308,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=988184308"
+  },
+  {
+   "snapshot": "2020-11-12T08:40:29Z",
+   "revid": 988294521,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=988294521"
+  },
+  {
+   "snapshot": "2020-11-12T17:16:50Z",
+   "revid": 988352424,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=988352424"
+  },
+  {
+   "snapshot": "2020-11-12T22:42:02Z",
+   "revid": 988396782,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=988396782"
+  },
+  {
+   "snapshot": "2020-11-14T03:39:57Z",
+   "revid": 988597515,
+   "deaths": {
+    "Izmir": 115,
+    "Samos": 2,
+    "Total": 117
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=988597515"
+  },
+  {
+   "snapshot": "2020-11-16T20:07:34Z",
+   "revid": 989054194,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=989054194"
+  },
+  {
+   "snapshot": "2020-11-17T12:33:22Z",
+   "revid": 989165265,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=989165265"
+  },
+  {
+   "snapshot": "2020-11-17T19:54:43Z",
+   "revid": 989228960,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=989228960"
+  },
+  {
+   "snapshot": "2020-11-19T15:41:49Z",
+   "revid": 989537680,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=989537680"
+  },
+  {
+   "snapshot": "2020-11-20T09:24:13Z",
+   "revid": 989666860,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=989666860"
+  },
+  {
+   "snapshot": "2020-11-23T22:00:02Z",
+   "revid": 990292796,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=990292796"
+  },
+  {
+   "snapshot": "2020-11-24T04:24:00Z",
+   "revid": 990381939,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=990381939"
+  },
+  {
+   "snapshot": "2020-11-24T07:03:40Z",
+   "revid": 990396111,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=990396111"
+  },
+  {
+   "snapshot": "2020-11-27T07:28:58Z",
+   "revid": 990920109,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=990920109"
+  },
+  {
+   "snapshot": "2020-11-29T21:31:16Z",
+   "revid": 991400304,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=991400304"
+  },
+  {
+   "snapshot": "2020-11-30T10:42:38Z",
+   "revid": 991495746,
+   "deaths": {
+    "Izmir": 116,
+    "Samos": 2,
+    "Total": 118
+   },
+   "injured": {
+    "Izmir": 1034,
+    "Samos": 19
+   },
+   "revision_url": "https://en.wikipedia.org/w/index.php?oldid=991495746"
+  }
+ ]
+}

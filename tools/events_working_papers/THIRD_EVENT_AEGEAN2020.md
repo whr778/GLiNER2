@@ -71,3 +71,42 @@ Same recipe as the two existing feeds:
    URLs, extracted observations and the GT trajectory, per the standing policy.
 3. `rollup.json` declaring the hierarchy (izmir / samos under an aggregate).
 4. Register in `DATASETS` in `scope_gate_test.py`; everything downstream then works.
+
+---
+
+## CORRECTION, 2026-08-25: the premise was checked and half of it failed
+
+The feasibility check falsified part of the pre-registration before the build, which is
+what it was for.
+
+**What failed.** The Izmit 1999 and Smyrna 1688 comparisons come from the CURRENT (2026)
+Wikipedia article. The **2020-era revisions do not contain them**. Measured on the 55
+sampled revisions: 1999 appears 0 times, 1688 appears 0 times, and the only historical
+years present are 2017, 2000, 1985, 1975 and 1904. The one "15,000" in the text is
+**homeless, not dead** -- Izmir's mayor on 4 November. There is no 143x death-toll
+contaminant in the contemporaneous encyclopedia prose.
+
+**What that means.** I tested the wrong SOURCE, not the wrong event. Wikipedia during an
+unfolding event is a rapidly-edited stub; the historical-comparison sections accumulate
+later. News copy behaves the opposite way, and the control is unambiguous:
+
+    Al Jazeera coverage of Turkiye 2023: 15 of 16 articles mention Izmit 1999
+    Wikipedia revisions of Aegean 2020:   0 of 55 revisions mention it
+
+Journalists reach for the historical comparison in the first paragraph; encyclopedists
+add it months later.
+
+**Revised plan, and it is strictly better.**
+
+* **Ground truth: keep Wikipedia.** 55 points parsed with zero failures, Izmir
+  12 -> 37 -> 91 -> 113 -> 116 -> 114 -> 116, including a genuine downward
+  reclassification at 2020-11-05 (116 -> 114). Public, timestamped, citable.
+* **Documents: harvest news copy**, not Wikipedia prose. An archived live blog or wire
+  tracker for the Izmir quake, the same route used for Turkiye 2023.
+
+This also **removes the shared-source caveat** recorded above. Ground truth from the
+Wikipedia infobox and documents from news wire are genuinely independent, which neither
+existing feed manages. The third event gets a cleaner design than the first two.
+
+**Predictions 1-3 stand unchanged** -- they are about the collapse, not about where the
+prose comes from -- and remain untested until the news feed exists.

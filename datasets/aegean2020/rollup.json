@@ -1,0 +1,17 @@
+{
+ "_comment": [
+  "Administrative rollup for the 2020 Aegean Sea earthquake (30 Oct 2020, M7.0).",
+  "Two reporting authorities either side of a border, as with Turkiye/Syria 2023:",
+  "Turkiye reports Izmir province, Greece reports Samos. Keep them separate --",
+  "they are revised independently and on different schedules.",
+  "Deliberately narrow, covering only the places this event actually touched."
+ ],
+ "collapse_type": true,
+ "hierarchy": {"aggregate": "__aggregate__", "parts": ["Izmir", "Samos"]},
+ "aliases": {
+  "izmir": "Izmir", "i̇zmir": "Izmir", "izmir province": "Izmir",
+  "smyrna": "Izmir", "bayrakli": "Izmir", "bayraklı": "Izmir",
+  "seferihisar": "Izmir", "turkey": "Izmir", "turkiye": "Izmir",
+  "samos": "Samos", "greece": "Samos", "vathy": "Samos", "karlovasi": "Samos"
+ }
+}
