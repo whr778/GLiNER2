@@ -235,8 +235,8 @@ documents contain a figure the model is supposed to leave alone.**
 **So we built that corpus** — withholding an interfering event's records while keeping its
 text — and trained on it. The suppression is real: it removes 15 of 20 large false positives
 and more than halves the ungated error. **Then a declared per-event plausibility ceiling —
-one threshold, no model, no training — beat it** (378.809 → 18.287 pooled RMSE in deaths,
-on the production model),
+one threshold, no model, no training — beat it** (ungated per-place mean nRMSE
+378.809 → 18.287 on the production model),
 because the large false positives were never other storms' tolls. They were Asheville's
 population, FEMA flood-insurance policies, power crews, and years read as death tolls. Both
 genuine cross-event figures survive muting *and* the ceiling.

@@ -20,6 +20,18 @@ live at different layers. Conflating them has already inverted one verdict for a
 
 ---
 
+## Metrics quoted on this page
+
+| metric | units | meaning |
+|---|---|---|
+| **pooled RMSE** | deaths | one RMSE over every (stream, time-grid) point. The headline |
+| **nRMSE** | dimensionless | per-stream RMSE normalised by that stream's range, then averaged |
+| **caught / false positives** | counts, % | cross-event figures rejected, against genuine ones wrongly rejected |
+| **FP rate** | % | share of clean negatives a gate wrongly admits |
+
+Thresholds and knobs (`--gate-threshold 0.5`, σ=0.3, `reject_cost`) are settings, not
+measurements, and are named by their parameter.
+
 ## The flow
 
 Article text in, trajectory out. Each stage can only remove or re-route what the stage
@@ -109,8 +121,8 @@ figure be rejected" -- so it is not a per-observation reject and cannot be used 
 ### [4] normalize() — HEURISTIC, on
 `_detect_qualifier` / `_detect_source` keyword rules produce `qualifier`
 (point/about/interval/feared/at_least) and `source` (official/major_outlet/preliminary).
-This is the pipeline's weakest normalized field: 0.724 zero-shot, 0.691 after
-fine-tuning. `--normalizer classify` swaps in a NEURAL alternative and `--normalizer
+This is the pipeline's weakest normalized field: accuracy 0.724 zero-shot, 0.691
+after fine-tuning. `--normalizer classify` swaps in a NEURAL alternative and `--normalizer
 both` scores them against each other on the same feed.
 
 ### [5] out_of_window() — HEURISTIC, on
@@ -161,7 +173,9 @@ than veto. Recommended σ=0.3, reject_cost=4.0, stay=0.1, **warmup=0**.
 
 Measured at that one setting on every event we have:
 
-| event | ratio gate | decode | |
+*Pooled RMSE, in deaths — lower is better.*
+
+| event | ratio gate | decode | change |
 |---|---|---|---|
 | Helene | 29.3 | **20.7** | −29.4% |
 | Türkiye–Syria | 11,581.5 | **10,695.5** | −7.6% |
@@ -198,11 +212,11 @@ what "natl" means -- `aggregate` (works while a part is small relative to the wh
 `global-max` (needed where no aggregate stream exists, but circular for the dominant
 stream), or `implied`.
 
-Helene at ratio 2.0: pooled 314.5 -> **29.3 deaths**, a 10.7x reduction.
+Helene at ratio 2.0: pooled RMSE **314.5 -> 29.3 deaths**, a 10.7x reduction.
 
 `down_ratio` adds the second side (drop a reading far below the stream's own running
-max, since a toll does not fall). **Measured 1-for-2 and left OFF:** Helene 29.3 ->
-21.7, Turkey 14765 -> 15349 (worse). See `scope_field_results/two_sided_gate.txt`. The
+max, since a toll does not fall). **Measured 1-for-2 and left OFF** (pooled RMSE, deaths):
+Helene 29.3 -> 21.7, Türkiye 14,765 -> 15,349 (worse). See `scope_field_results/two_sided_gate.txt`. The
 global decode reaches the same place on Helene (20.7) and wins on Turkiye too, which is
 why this knob is not needed.
 

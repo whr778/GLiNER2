@@ -1,5 +1,24 @@
 # Pipeline maps — as-built and as-designed
 
+## Metrics quoted in this document
+
+**Unless a figure says otherwise it is per-stream nRMSE** — RMSE normalised by that
+stream's range, then averaged — which was this programme's headline metric until the
+metric error recorded in `EKF_MHT_DESIGN.md` §6. Normalising per stream lets a stream with
+a tiny range outvote the largest one, which is how a correct mechanism got recorded as a
+failure. **Pooled RMSE in deaths** replaced it as the headline and is always named
+explicitly here. The two are not comparable: 0.591 is dimensionless, 29.3 is a death count.
+
+| metric | units | where it appears |
+|---|---|---|
+| nRMSE | dimensionless | the default below; every pre-2026-08-24 figure |
+| pooled RMSE | deaths | the global-decode row, and anywhere it says "deaths" |
+| binding precision | % | of figures bound to a role, the share that are correct |
+| strict F1 | — | exact span *and* role match |
+
+Thresholds and knobs (`--gate-threshold 0.5`, ratio 2.0, σ=0.3) are settings, not
+measurements.
+
 Two pipelines, drawn separately because they are two programmes that share an extractor, not
 two halves of one:
 
@@ -133,7 +152,7 @@ Stage 2 calls the *whole* of pipeline 1 as a subroutine.
         |   keep     value <  natl/ratio          plausibly this place's own
         |   reroute  value <= natl*ratio          it IS the national figure
         |   drop     otherwise                    exceeds the whole; not a toll
-        |   per-state 5.247 -> 0.591; the aggregate improves too (0.402 -> 0.316)
+        |   per-state nRMSE 5.247 -> 0.591; the aggregate improves too (0.402 -> 0.316)
         |   ⚠ needs an __aggregate__ stream. No aggregate => no gate.
         v
   [4] TRACK                       per event_key                                ✅
@@ -203,11 +222,11 @@ The design's claim is *diarization*: track AND assign, jointly, with decisions d
 
 | design element | status | evidence |
 |---|---|---|
-| **global decode, 3 states (M4′)** | ✅ **built 2026-08-25, SHIPS** | Helene −29.4%, Türkiye −7.6%, Aegean −78.8% at one setting — `scope_gate.hmm_gate` |
-| deferred assignment (M4) | ⛔ not built as MHT | headroom **+0.111** once the null hypothesis is priced — see §4. Taken by the global decode above, which needs no hypothesis tree |
-| track birth/death (M5) | ✅ built, ⛔ **measured negative** | 0.608 best against the magnitude gate's 0.591 — see §4.1 |
+| **global decode, 3 states (M4′)** | ✅ **built 2026-08-25, SHIPS** | pooled RMSE in deaths: Helene −29.4%, Türkiye −7.6%, Aegean −78.8% at one setting — `scope_gate.hmm_gate` |
+| deferred assignment (M4) | ⛔ not built as MHT | headroom **+0.111 nRMSE** once the null hypothesis is priced — see §4. Taken by the global decode above, which needs no hypothesis tree |
+| track birth/death (M5) | ✅ built, ⛔ **measured negative** | nRMSE 0.608 best against the magnitude gate's 0.591 — see §4.1 |
 | aggregate as sum row | ⛔ **do not build** | loses at every density except 80%, worst where predicted to win (§23) |
-| implied-max reference | ⛔ **do not build** | 2.590 vs 0.591 on Helene (§25.5) |
+| implied-max reference | ⛔ **do not build** | nRMSE 2.590 vs 0.591 on Helene (§25.5) |
 | hard key assignment | ✅ built | what shipped until 2026-08-25; the scope gate patched its worst failure |
 | Student-t measurement model | ✅ built, ⛔ **measured negative** | Helene −1.7, Türkiye +651; retires no threshold |
 | soft PDA association | ✅ built, ⛔ **measured negative** | loses to the hard decode on both; hypotheses are nested, so it double-counts |
@@ -261,7 +280,7 @@ never priced the version of MHT worth building. Adding a reject option
 
 Still a ceiling that uses ground truth, still one event, and the tolerance is tuned and
 non-monotone — 0.25 is worse than 0.50, so there is no plateau to hide behind. But the prize
-for association is **double** what MHT was rejected on, and it splits almost evenly: 0.591 →
+for association is **double** what MHT was rejected on, and it splits almost evenly (nRMSE): 0.591 →
 0.537 is reassignment (+0.055, mostly Tennessee) and 0.537 → 0.480 is the reject option
 (+0.057). **About half the prize needs a null hypothesis; the other half does not.**
 
@@ -334,19 +353,19 @@ all of them is born into its own and leaves these streams. No ground truth anywh
     three-way oracle (ground truth)              0.308       0.480
 
 **Read the pair, and the pair is what makes this an unambiguous loss.** The two tuned arms
-buy their per-place improvement by dumping junk into the aggregate: Total 2.115 against the
+buy their per-place improvement by dumping junk into the aggregate: Total nRMSE 2.115 against the
 gate's 0.316, a 6.7x degradation of the one stream this project calls its honest measurement.
 That is precisely the failure the shipped gate's three-outcome design exists to prevent —
 `gate()`'s docstring records that an earlier two-way version rerouted every reject to
 `__aggregate__` and destroyed the national stream. The associator reproduced a solved bug.
-So "0.608 against 0.591" understates it; the honest comparison is 2.115/0.608 against
+So "nRMSE 0.608 against 0.591" understates it; the honest comparison is 2.115/0.608 against
 0.316/0.591.
 
 Two causes, both measured:
 
 1. **Judging a stream against its own track is circular.** Every contaminant the track
    accepts moves the reference the next test uses. Removing the self-reference is worth more
-   than every other knob combined — 1.059 → 0.624 at native dynamics. This is the same
+   than every other knob combined — nRMSE 1.059 → 0.624 at native dynamics. This is the same
    failure the implied-maximum reference hit on Türkiye, where Turkey was judged against a
    reference Turkey itself defines, so it is now **two independent mechanisms defeated by one
    cause**.
@@ -377,7 +396,7 @@ actually are found that none is a Helene death toll: Asheville's population (94,
 (8,000), active-duty troops (1,500), churches (1,100), and two years read as tolls (1,916,
 2,004). Only Katrina's 1,400 and Maria's 3,000 are genuinely cross-event.
 
-Ungated per-place mean, ceiling swept:
+Ungated per-place mean **nRMSE**, ceiling swept:
 
     ceiling   production   control 4ep   muted
     off          378.809        46.844  19.822
@@ -386,7 +405,8 @@ Ungated per-place mean, ceiling swept:
     1000          18.190         5.057   6.194
 
 At a ceiling of 2,000 — nine times Helene's true toll — **the control beats the muted arm both
-ungated (5.853 vs 6.194) and gated (3.336 vs 3.729)**, while carrying 81 *more* observations.
+ungated (nRMSE 5.853 vs 6.194) and gated (3.336 vs 3.729)**, while carrying 81 *more*
+observations.
 The ceiling removes only junk; muting removed genuine signal too. Dropping the single 94,000
 is worth 20× on the production model.
 
@@ -448,7 +468,7 @@ The English side is CASIE alone. MAVEN and Mendeley are trigger-only. So an argu
 
 **The rebuild was run, and the arithmetic below was right.** 50× more English
 trigger→argument supervision produced a model that beats the base on all eight held-out
-heads AND binds the correct death toll 67-100% of the time on Helene wire copy, against the
+heads AND binds the correct death toll 67-100% of the time (binding precision) on Helene wire copy, against the
 base's 0-7.7%. A pre-registered form gate initially said the reverse -- it counts firings,
 not correct ones, and the base fires on 39 of 60 windows while getting 3 right. What still
 blocks the router is not the mix but the decode: one event instance per type, all spans
