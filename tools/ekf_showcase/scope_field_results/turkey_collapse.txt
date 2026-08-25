@@ -1,0 +1,14 @@
+turkey: 91 'dead' observations
+  _f_scope   fires on   0/91
+  _f_date    fires on   0/91
+  _f_boiler  fires on   0/91
+
+  shipped gate @1.5     11581.5
+  viterbi (magnitude)   10695.5
+  oracle                 3287.4
+
+   flat weight |    POOLED
+           0.0 |   10695.5   (7 dropped)
+           1.0 |   10695.5   (7 dropped)
+           2.0 |   10695.5   (7 dropped)
+           4.0 |   10695.5   (7 dropped)
