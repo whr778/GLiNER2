@@ -924,9 +924,13 @@ class SchemaTransformer:
             # still safe because records are matched by name, not position.
             is_record = bool(record_meta.get(parent, {}).get("mode"))
 
-            all_fields = set()
-            for occ in occurrences:
-                all_fields.update(occ.keys())
+            # Declared order, deduped. `list(set(...))` here was hash-randomized per
+            # PROCESS, so the same article, model and schema built a different prompt
+            # field list every run -- "( missing source location dead injured )" against
+            # "( location dead missing source injured )" -- which moved the confidences,
+            # flipped threshold decisions and changed how many records came back. Training
+            # is unaffected: `random.shuffle` below re-randomizes when sampling is on.
+            all_fields = dict.fromkeys(k for occ in occurrences for k in occ)
             common = list(all_fields)
 
             if sampling and sampling.shuffle_json_fields:
