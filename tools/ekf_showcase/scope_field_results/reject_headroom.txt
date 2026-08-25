@@ -1,0 +1,42 @@
+oracle tol=0.25: 66 observations, 30 rejected (45%)
+
+(restricted to GATED observations -- non-gated are kept by construction)
+
+single-feature AUC for predicting the oracle's REJECT (0.5 = no signal):
+  ratio      0.147   <- gate already uses this
+  logv       0.147   
+  conf       0.500   
+  official   0.575   
+  atleast    0.389   
+  t          0.360   
+  span_num   0.181   
+  span_len   0.631   
+
+within ratio-matched bands (does any feature add to what the gate has?):
+  (AUC below 0.5 means the feature predicts KEEP; 1-AUC is its strength)
+  official   pooled within-band AUC 0.565  (n=64)
+  atleast    pooled within-band AUC 0.395  (n=64)
+  conf       pooled within-band AUC 0.500  (n=64)
+  logv       pooled within-band AUC 0.158  (n=64)
+  span_num   pooled within-band AUC 0.192  (n=64)
+
+--- what the oracle actually rejects ---
+  REJECTED  n= 30  median value     6.0  digit-span   33%
+  KEPT      n= 36  median value    99.0  digit-span   97%
+
+  sample rejects:
+    v=     1  t=     8.3h  florida          official       'One'
+    v=     1  t=   569.6h  north carolina   official       'one'
+    v=     2  t=     8.3h  florida          official       'two'
+    v=     2  t=     8.3h  georgia          official       'two'
+    v=     2  t=    34.2h  georgia          official       'two'
+    v=     2  t=    65.9h  south carolina   official       'two'
+    v=     2  t=   887.1h  tennessee        major_outlet   'Two'
+    v=     3  t=    34.2h  florida          official       'three'
+    v=     3  t=    34.2h  georgia          official       'three'
+    v=     3  t=    83.8h  north carolina   official       'three'
+
+=== breakdown of the 30 oracle rejects (gated observations only) ===
+  no truth coverage at that time :   5 (17%)
+  STALE  (value BELOW place truth):  19 (63%)  <- the ratio gate is blind to these
+  OVER   (value ABOVE place truth):   6 (20%)  <- what the ratio gate targets
