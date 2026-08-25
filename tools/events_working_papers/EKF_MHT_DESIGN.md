@@ -140,12 +140,17 @@ Two halves, co-equal, and the second is not downstream of the first:
 | half | mechanism | status |
 |---|---|---|
 | **track** — recover an evolving quantity from noisy, censored, lagged reports | Extended Kalman Filter (§2) | built; validated on synthetic streams |
-| **diarize** — decide *which* event stream each observation belongs to | multi-hypothesis association | **not built** |
+| **diarize** — decide *which* event stream each observation belongs to | multi-hypothesis association | **not built** — *built 2026-08-25, but not as MHT; see §7.7* |
 
 "Diarize" is borrowed deliberately from speaker diarization. It is not "who spoke when"
 but *which event is this figure about, over time*, and naming it that way makes obvious
 that the two halves fail independently and that the second can silently destroy the
 first.
+
+*(Status corrected 2026-08-25: the association half is now built and wins on all three
+events — as a global decode with a reject state, not as the hypothesis tree specified here.
+§7.7 has the result. The paragraph below is the position as it stood, and it is why the
+paper exists.)*
 
 **The association half is unbuilt, and this should be stated plainly rather than
 discovered by a reader.** The design specifies association as gate → Hungarian assignment

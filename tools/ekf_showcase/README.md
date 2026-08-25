@@ -29,13 +29,19 @@ so the demo doubles as an ablation:
 
 `--help` is the authority on flags; it carries the full rationale.
 
-## The three feeds
+## The four feeds
 
 | feed | built by | what it is |
 |---|---|---|
 | synthetic | `make_demo_feed.py` | mixed-topic, time-ordered; on-topic disaster snippets interleaved with distractors. Free |
 | DocEE | `make_docee_feed.py` | real DocEE articles, multi-event — the synthetic feed's only "place" is the region, so type+location association has nothing to bite on |
-| real events | `build_turkey_feed.py`, `build_helene_feed.py` | archived wire copy for Turkiye-Syria 2023 and Hurricane Helene 2024 |
+| real events | `build_turkey_feed.py`, `build_helene_feed.py`, `build_aegean_feed.py` | archived wire copy for Turkiye-Syria 2023, Hurricane Helene 2024, and the 2020 Aegean earthquake |
+
+The Aegean feed is the only one with genuinely independent sources on both sides: ground
+truth from the Wikipedia REVISION HISTORY (55 timestamped points, Izmir 12 -> 116 including
+a real downward reclassification), documents from Hurriyet Daily News and Daily Sabah. The
+Turkiye feed reads truth from the same sentence the extractor reads, which is why
+`est_last_value` scores 0.000 there by construction.
 
 Real-event runs are three steps: harvest ground truth, build the feed, score the run.
 
@@ -48,7 +54,14 @@ uv run python tools/ekf_showcase/score_helene.py --run run.jsonl
 
 Scoring is kept out of `run_pipeline.py` on purpose: the pipeline's built-in `--truth`
 pools truth across streams, which is exactly the assumption the real-event tests exist to
-challenge.
+challenge. It also expects JSONL, not the `{"points": [...]}` shape the harvesters emit —
+pass `--truth` only to the scorers.
+
+**What ships for association, as of 2026-08-25: `scope_gate.hmm_gate`**, a global decode
+over {own, aggregate, reject} at σ=0.3, reject_cost=4.0, stay=0.1, **warmup=0**. It beats
+the ratio gate on every event (Helene −29.4%, Türkiye −7.6%, Aegean −78.8%) and replaces
+the date gate and the scope gate as separate stages. `GATES.md` in the working papers has
+the full flow and every knob's default.
 
 ## Script index
 
@@ -63,6 +76,8 @@ challenge.
 | `build_helene_feed.py` | Hurricane Helene 2024 from archived AP wire copy |
 | `harvest_turkey_gt.py` | death-toll trajectory from archived pages |
 | `harvest_helene_gt.py` | per-state Helene tolls from archived Wikipedia |
+| `build_aegean_feed.py` | 2020 Aegean earthquake from archived Turkish English-language wire copy |
+| `harvest_aegean_gt.py` | Aegean trajectory from the Wikipedia revision history |
 | `score_turkey.py` | score tracked streams against the sourced trajectory |
 | `score_helene.py` | score per-state streams; aggregate-vs-parts aware |
 
@@ -79,6 +94,26 @@ kill an idea before it got built.
 | `event_binding_probe.py` | which storm does this number belong to — the cross-event half, measured three ways | §27.2 |
 | `framing_experiment.py` | why does record extraction depend on how the input is framed? | §17 |
 | `bullet_premise_test.py` | does restructuring text into self-contained bullets fix number-to-place attachment? | §26 |
+
+**The association rebuild (2026-08-25)** — five mechanisms measured against every event.
+One ships; the rest are kept because the negatives localize why.
+
+| script | the question it answers | verdict |
+|---|---|---|
+| `reject_headroom.py` | what is the reject option actually rejecting? | 63% STALE-LOW, not cross-scope-high — the gate is one-sided |
+| `viterbi_gate_sweep.py` | does a GLOBAL decode beat the greedy gate? | **yes, both events** — Helene −29.4%, Türkiye −9.8% |
+| `robust_filter_sweep.py` | does a Student-t model retire the hard thresholds? | no — 1-for-2, retires nothing |
+| `imm_gate_sweep.py` | does SOFT (PDA) association beat hard? | no — soft cannot remove, and nested hypotheses double-count |
+| `revision_state_test.py` | does a 4th state for downward revision earn its place? | correct but inert — reports never follow a revision down |
+| `two_sided_gate_sweep.py` | should the ratio gate reject downward too? | 1-for-2, superseded by the decode |
+| `gate56_composition.py` | should the date and scope gates merge? | complementary, but OR costs +10 false rejects for +1 catch |
+| `hmm_collapse_test.py` | can one emission absorb date + scope + page furniture? | yes — false rejections 19.8% → 9.9% |
+| `turkey_collapse_check.py` | does the collapse hold on Türkiye? | features never fire there; safe, unproven |
+| `aegean_collapse_test.py` | the pre-registered third-event test | decode −78.8%; **prediction 1 falsified** |
+| `span_giou_headroom.py` | is a GIoU-shaped span target worth a training run? | no — 11× blast radius for a 6% signal |
+| `scope_label_probe.py` | is Haiku good enough to label the `scope` field? | not cleared (kappa 0.121) — and the SCHEME is the defect |
+| `gate_turkish_fp.py` | does the relevance gate work on non-English? | **no** — 199/200 false admits on the shipped model |
+| `gate_translation_ablation.py` | would translating at ingest fix that? | no — it is the label descriptions |
 
 Section numbers below refer to the ORIGINAL working-paper numbering, which is preserved
 in `../events_working_papers/EKF_MHT_BUILD_RECORD.md`; the paper itself was renumbered on

@@ -203,11 +203,15 @@ The design's claim is *diarization*: track AND assign, jointly, with decisions d
 
 | design element | status | evidence |
 |---|---|---|
-| deferred assignment (M4) | ⛔ not built | headroom **+0.111** once the null hypothesis is priced — see §4 |
+| **global decode, 3 states (M4′)** | ✅ **built 2026-08-25, SHIPS** | Helene −29.4%, Türkiye −7.6%, Aegean −78.8% at one setting — `scope_gate.hmm_gate` |
+| deferred assignment (M4) | ⛔ not built as MHT | headroom **+0.111** once the null hypothesis is priced — see §4. Taken by the global decode above, which needs no hypothesis tree |
 | track birth/death (M5) | ✅ built, ⛔ **measured negative** | 0.608 best against the magnitude gate's 0.591 — see §4.1 |
 | aggregate as sum row | ⛔ **do not build** | loses at every density except 80%, worst where predicted to win (§23) |
 | implied-max reference | ⛔ **do not build** | 2.590 vs 0.591 on Helene (§25.5) |
-| hard key assignment | ✅ built | what ships; the scope gate patches its worst failure |
+| hard key assignment | ✅ built | what shipped until 2026-08-25; the scope gate patched its worst failure |
+| Student-t measurement model | ✅ built, ⛔ **measured negative** | Helene −1.7, Türkiye +651; retires no threshold |
+| soft PDA association | ✅ built, ⛔ **measured negative** | loses to the hard decode on both; hypotheses are nested, so it double-counts |
+| downward-revision state | ✅ built, ⛔ **inert** | correct, but the reports never follow a reclassification down |
 | negative supervision (data-side) | ✅ built, ⛔ **superseded** | a plausibility ceiling beats it — see §4.2 |
 | per-event plausibility ceiling | ✅ built | 378.809 → 18.287 on the production model — §4.2 |
 | scope membership | ✅ built | 4/6 cross-event at 7.3% FP, no model — 21 filters → 6 |
@@ -226,6 +230,12 @@ scope it actually fits, using ground truth. It is a ceiling, not a method.
     shipped scope gate            0.591
     oracle hard association       0.537
     headroom                     +0.055     (9.3% relative)
+
+*(Superseded 2026-08-25 — and the correction below is the one that mattered. Perfect
+two-way assignment buys 0.055 because it cannot REJECT; with a reject option the ceiling
+doubles, and a global decode over {own, aggregate, reject} then takes most of it without
+any hypothesis tree. Hungarian assignment solves the half worth nothing. See
+`EKF_MHT_DESIGN.md` §7.7.)*
 
 **Perfect association buys 0.055.** MHT is a hypothesis tree, a cost matrix, Hungarian
 assignment and track management — a large subsystem — to compete for a 9% residual.

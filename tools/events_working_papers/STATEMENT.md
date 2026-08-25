@@ -25,6 +25,20 @@ probe before the gate is trusted, and it is **not yet tested**.
 
 ## On MHT itself
 
+**MHT is still not built, and now it should not be — the residual it was aimed at has been
+taken by something cheaper.** (Updated 2026-08-25; the paragraphs below are the position
+that led there and are kept.)
+
+The specified answer was a hypothesis tree with a Hungarian cost matrix and track
+birth/death. What ships instead is a **global Viterbi decode over three states — own place,
+aggregate, reject** — which improves every event we have at one setting: Helene 29.3 → 20.7
+(−29.4%), Türkiye–Syria 11,581.5 → 10,695.5 (−7.6%), Aegean 2020 74.4 → 15.7 (−78.8%). The
+oracle below predicted exactly the two properties that made it work, and neither of them is
+a hypothesis tree: the decision has to be **global** (a greedy rule commits per observation,
+and one large figure admitted early poisons a stream's scale for everything after), and it
+has to be able to **reject** (assignment headroom is measured at zero, so a decoder without
+a null hypothesis has nothing to win). Hungarian assignment solves the half worth nothing.
+
 **MHT is not built here, deliberately — but the number that justified that has been
 corrected, and one piece has since been built and lost.**
 

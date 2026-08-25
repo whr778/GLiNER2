@@ -41,6 +41,22 @@ Extracted Events evaluation via Event Instance Map
 
 Event Instance Map where each event INSTANCE has a registered filters list 0..*
 
+  GLOBAL DECODE -- BUILT 2026-08-25, scope_gate.hmm_gate. THE RECOMMENDED FILTER.
+
+  Three states {own, aggregate, reject} decided over the WHOLE stream at once rather
+  than per observation, with the filters below folded in as additive evidence instead
+  of applied as vetoes. One setting, every event:
+
+      Helene         29.3 -> 20.7   -29.4%
+      Turkiye-Syria  11581.5 -> 10695.5   -7.6%
+      Aegean 2020    74.4 -> 15.7   -78.8%
+
+  Two properties are load-bearing: GLOBAL (a greedy rule commits per observation, and
+  one large figure admitted early poisons the running scale for everything after) and
+  ABLE TO REJECT (assignment headroom is measured at zero; the whole residual is the
+  null hypothesis). Keep feature weights BELOW reject_cost so no single signal can
+  force a reject alone.
+
   SCOPE MEMBERSHIP -- BUILT, run_pipeline.py --scope-filter (tests/test_scope_filter.py)
 
   A free first cut, and it beats every learned signal tried.

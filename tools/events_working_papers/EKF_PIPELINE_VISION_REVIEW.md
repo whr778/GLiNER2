@@ -11,6 +11,10 @@ measured, and the front end currently emits nothing routable on real news.**
 Extraction → route → per-track filter is the standard multi-hypothesis decomposition, and it
 is a real improvement on what ships today, which is hard assignment on a string key.
 
+*(Updated 2026-08-25: what ships is now `scope_gate.hmm_gate`, a global decode over
+{own, aggregate, reject}, which beats the string-key gate on all three events. The review
+below predates it and is kept as written.)*
+
 Two details are better than they may look:
 
 - **`0..*` and `1..*` are the right cardinalities.** Zero matching filters is *track birth*;

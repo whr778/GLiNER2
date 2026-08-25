@@ -75,11 +75,22 @@ this programme's own curves did not meet that bar.
 
 ## 3. What is not established
 
-**The central question is unasked, not answered.** The design specifies association as
-gate → Hungarian assignment → top-K hypotheses → track birth/death. What ships is hard
-assignment on an observable string key feeding one single-stream filter per key: no
-hypothesis enumeration, no deferred decision, no track birth or death. Every real-event
-failure so far is a failure of that placeholder rather than of MHT. *(`EKF_MHT_DESIGN.md` §1.)*
+**The central question is now asked and answered — and the specified design was the wrong
+answer.** *(Updated 2026-08-25.)* The design specified association as gate → Hungarian
+assignment → top-K hypotheses → track birth/death, and for a long time what shipped was hard
+assignment on an observable string key: no hypothesis enumeration, no deferred decision, no
+track birth or death. Every real-event failure recorded below is a failure of that
+placeholder.
+
+What replaces it is **not** the specified design. A **global Viterbi decode over three
+states — own place, aggregate, reject** — improves every event we have at one setting:
+Helene 29.3 → 20.7 (−29.4%), Türkiye–Syria 11,581.5 → 10,695.5 (−7.6%), Aegean 2020
+74.4 → 15.7 (−78.8%). Two properties carry it, and a hypothesis tree is neither: the
+decision must be **global**, because a greedy rule commits per observation and one large
+figure admitted early poisons a stream's scale for everything after; and it must be able to
+**reject**, because assignment headroom is measured at **zero** and the entire residual is
+the null hypothesis. Hungarian assignment optimises the half that is worth nothing.
+*(`EKF_MHT_DESIGN.md` §7.7.)*
 
 **On real news the tracker loses to a trivial baseline.** On the Türkiye–Syria 2023
 earthquake, pre-registered, `est_last_value` beats the EKF (0.208 vs 0.136), a 1999
@@ -150,8 +161,10 @@ The working papers are the primary record; this map is a summary of them.
 | `PAPER_0_FOUNDATION.md` | Paper 0 draft — substrate, head-init finding, data-integrity audit |
 | `JOINT_IE_SCALING.md` | Paper 2 — joint decoding, scaling curve, replay, the three silent defects |
 | `JOINT_IE_DESIGN_RECORD.md` | Paper 2's build record — decisions, wiring map, cost model, deferred Phase B |
-| `EKF_MHT_DESIGN.md` | Paper 1 — the filter, the real-event defeat, and the unbuilt association half |
+| `EKF_MHT_DESIGN.md` | Paper 1 — the filter, the real-event defeat, and the association half rebuilt as a global decode (§7.7) |
 | `EKF_MHT_BUILD_RECORD.md` | Paper 1's build record — attachment points, generator spec, blind-test protocol |
+| `GATES.md` | every gate in the pipeline, its type, and whether it is on |
+| `THIRD_EVENT_AEGEAN2020.md` | the third event: pre-registration, and the prediction it falsified |
 | `BOUNDARY_ARCHITECTURE.md` | how the boundary head works end to end, per task |
 | `COUNTING_LAYER.md` | why the span 19-instance cap is a dead end |
 | `BOUNDARY_DECODE_AND_EKF.md` | verified decode map and where global inference attaches |

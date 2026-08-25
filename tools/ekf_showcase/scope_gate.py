@@ -89,6 +89,12 @@ def gate(observations: list, ratio: float, warmup: int,
          states: dict, reference: str = "aggregate", down_ratio: float = 0.0):
     """Classify each state observation as its own toll, the national total, or neither.
 
+    SUPERSEDED 2026-08-25 by ``hmm_gate``, which decides the whole stream at once instead of
+    committing per observation and beats this on every event (Helene -29.4%, Turkiye -7.6%,
+    Aegean -78.8%). Kept as the control every one of those numbers is measured against, and
+    because its band boundary is the one ``hmm_gate``'s emission softens rather than
+    replaces.
+
     Three outcomes, not two. The earlier two-way version rerouted every reject to
     ``__aggregate__`` and that is what destroyed the national stream: 1400 filed under
     North Carolina is not a national total, it is not a casualty count at all, and moving
