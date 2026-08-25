@@ -23,13 +23,35 @@ subject of this paper.
 over three states — *own place, aggregate, reject* — improves every event we have at one
 setting:
 
-| event | ratio gate | global decode | | three-way oracle |
+*Pooled RMSE, in deaths — lower is better.*
+
+| event | ratio gate | global decode | change | three-way oracle |
 |---|---|---|---|---|
 | Hurricane Helene 2024 | 29.3 | **20.7** | −29.4% | 17.6 |
 | Türkiye–Syria 2023 | 11,581.5 | **10,695.5** | −7.6% | 3,287.4 |
 | Aegean Sea 2020 | 74.4 | **15.7** | −78.8% | 19.1 |
 
-*(pooled micro-RMSE in deaths, σ=0.3, reject_cost=4.0, stay=0.1, warmup=0)*
+*(σ=0.3, reject_cost=4.0, stay=0.1, warmup=0. The oracle column consults ground truth and
+cannot ship; it prices the ceiling. On Aegean the decode beats it because that oracle applies
+a fixed drop rule rather than optimising the estimate — see §7.)*
+
+### Metrics used in this paper
+
+Two scales appear, and they are not comparable. **Anything quoted below states which.**
+
+| metric | units | meaning |
+|---|---|---|
+| **pooled RMSE** | deaths | one RMSE over every (stream, time-grid) point. **The headline.** |
+| **nRMSE** | dimensionless | per-stream RMSE normalised by that stream's range, then macro-averaged |
+| **binding precision** | % | of the figures a model binds to a role, the share that are the *correct* figure |
+| **strict F1** | — | exact span *and* role match, no partial credit |
+| **catch / false-reject** | counts, % | cross-event figures rejected, against genuine observations wrongly rejected |
+
+nRMSE was the headline until the metric error in §6: normalising per stream lets a stream
+with a tiny range outvote the largest one, which is how a correct mechanism was recorded as
+a failure. Pooled RMSE in deaths replaced it. **Numbers from before that correction are in
+nRMSE and are marked as such** — they are kept because the arguments built on them are still
+the arguments, and re-running every historical arm on the new metric was not affordable.
 
 Two properties carry it, and the specified design — a hypothesis tree with Hungarian
 assignment — is neither. The decision must be **global**, because a greedy rule commits per
@@ -80,7 +102,7 @@ every filter, its type, and its default.
 generator, realizer and blind-test protocol are in the build record.
 
 **On real news the tracker lost to a trivial baseline.** On the pre-registered Türkiye–Syria
-2023 run, `est_last_value` beat the EKF (0.208 vs 0.136), a 1999 death toll quoted in an
+2023 run, `est_last_value` beat the EKF (nRMSE 0.208 vs 0.136), a 1999 death toll quoted in an
 article's history section was tracked as a 2023 figure, and one of the two affected countries
 was never recovered at all. **Attribution, not filtering and not extraction, was the
 bottleneck** — and that diagnosis has held ever since.
@@ -94,7 +116,7 @@ where it is a correct observation instead of a corrupting one. Pooled error on H
 **314.5 → 29.3 deaths**.
 
 It then split on held-out data: 3.7× better on the contaminated stream, 2.3× worse on the
-clean one. The reason is diagnostic and set up everything after it — **without a declared
+clean one (nRMSE, per stream). The reason is diagnostic and set up everything after it — **without a declared
 scope hierarchy, "a larger scope" and "the largest part" are indistinguishable from the
 numbers alone.** We declared one (`rollup.json`), and the reference it enables turned out to
 be a measured negative in its own right (§6).
@@ -106,9 +128,9 @@ be a measured negative in its own right (§6).
 Before spending on a hypothesis tree, we priced it. Assign every observation to the scope it
 actually fits, using ground truth: a ceiling, not a method.
 
-    shipped scope gate      0.591
-    two-way oracle          0.537
-    headroom               +0.055     (9.3% relative)
+    shipped scope gate      0.591   nRMSE
+    two-way oracle          0.537   nRMSE
+    headroom               +0.055   (9.3% relative)
 
 **That number prices the wrong thing, and the tell was already in the table.** The oracle is
 *two-way* — every observation goes to its own place or to the national total — so a figure
@@ -144,8 +166,8 @@ an article at t=83.8h still saying "three" dead in North Carolina when the toll 
 ### 4.3 Track birth, built and lost — and what the failure localized
 
 The cheapest piece of MHT that delivers a null hypothesis is track birth by innovation
-gating. It was built and **lost to the fixed magnitude ratio it was meant to replace** (0.608
-against 0.591), degrading the national stream 6.7× while doing so, because judging a stream
+gating. It was built and **lost to the fixed magnitude ratio it was meant to replace**
+(nRMSE 0.608 against 0.591), degrading the national stream 6.7× while doing so, because judging a stream
 against its own track is circular in exactly the way the scope reference was.
 
 The missing property was not a better birth rule. It is that **the decision has to be made
@@ -175,8 +197,8 @@ marginal. The sweep shows a cliff exactly at that boundary, and it is what prote
 have been the third intervention in a row helping Helene and hurting Türkiye, and we proposed
 the divergence was structural — Türkiye's `global-max` reference is self-referential for its
 dominant stream. **The per-stream diagnostic refuted that**, in the opposite direction: the
-decode helped the self-referenced dominant stream (0.403 → 0.377) and hurt the *minor* one
-(0.923 → 1.858). Chasing the inversion found the cause — a `warmup` parameter copied from the
+decode helped the self-referenced dominant stream (nRMSE 0.403 → 0.377) and hurt the *minor*
+one (0.923 → 1.858). Chasing the inversion found the cause — a `warmup` parameter copied from the
 greedy gate, which pins the first readings to `own`. Syria's first two are contaminating
 Türkiye figures (9,057 and 17,674 against a true peak of 5,800); pinning them poisoned the
 level and the genuine 3,317s were then rejected as stale. **That is precisely the greedy
@@ -186,11 +208,11 @@ commitment the global decode exists to remove, smuggled back in as a knob.**
 
 - **Student-t measurement model.** One-sided IRLS reweighting. Helene −1.7 deaths, Türkiye
   +651. Retires none of `REJECT_SIGMA`, `MAX_RATE` or the gate's drop branch, which was the
-  reason to want it: with the gate off, Helene is 314.5 under every ν tested. **Whatever the
+  reason to want it: with the gate off, Helene is 314.5 deaths under every ν tested. **Whatever the
   gate catches, it is not a fat tail.** The symmetric textbook form is much worse on both
   events, so the one-sidedness is measured rather than assumed.
-- **Soft PDA association.** Loses to the hard decode on both events (Helene 28.7 vs 20.7;
-  Türkiye 19,150 vs 10,696). Two structural reasons: soft weighting cannot **remove**, and
+- **Soft PDA association.** Loses to the hard decode on both events (pooled RMSE, deaths:
+  Helene 28.7 vs 20.7; Türkiye 19,150 vs 10,696). Two structural reasons: soft weighting cannot **remove**, and
   the headroom is in removal; and PDA arbitrates *independent* targets while ours are
   **nested** — a place's toll is part of the national toll — so an ambiguous reading is
   soft-assigned to both part and whole at once (106 observations became 118 assignments).
@@ -213,7 +235,8 @@ documents contain a figure the model is supposed to leave alone.**
 **So we built that corpus** — withholding an interfering event's records while keeping its
 text — and trained on it. The suppression is real: it removes 15 of 20 large false positives
 and more than halves the ungated error. **Then a declared per-event plausibility ceiling —
-one threshold, no model, no training — beat it** (378.809 → 18.287 on the production model),
+one threshold, no model, no training — beat it** (378.809 → 18.287 pooled RMSE in deaths,
+on the production model),
 because the large false positives were never other storms' tolls. They were Asheville's
 population, FEMA flood-insurance policies, power crews, and years read as death tolls. Both
 genuine cross-event figures survive muting *and* the ceiling.
@@ -222,8 +245,8 @@ The remaining candidate was a span-embedding router, and it was **blocked on the
 no model then available emitted trigger-and-argument spans on wire copy at all. That put the
 extractor on the critical path, and it was rebuilt (mmBERT, English trigger→argument
 798 → ~39,800 examples). The rebuild **works**: it binds the correct death toll 67–100% of
-the time against the incumbent's 0–7.7%, and beats it on all eight strict heads of the shared
-blind test.
+the time (binding precision) against the incumbent's 0–7.7%, and beats it on all eight strict
+F1 heads of the shared blind test.
 
 **Its pre-registered gates 1 and 2 failed anyway, and gate 1 was the instrument.** Gate 1
 counts a window as satisfied when a trigger and *any* bound argument appear, never checking
@@ -250,7 +273,7 @@ That remains open.
   bullets does not repair number-to-place binding.
 - **Guide-filtered negative sampling: wired, tested, negative.** The guide veto lost on 7 of
   8 metrics.
-- **The implied-max reference loses badly** (2.590 vs 0.591 on Helene) — the same circular
+- **The implied-max reference loses badly** (nRMSE 2.590 vs 0.591 on Helene) — the same circular
   self-reference as track birth.
 - **Declared knowledge beats learned signal at cross-event rejection.** Scope membership,
   with zero model calls, catches 4 of 6 cross-event figures at **7.3% false positives**; the
@@ -301,7 +324,7 @@ That remains open.
 availability has since changed; the extracted observations and the ground-truth trajectory
 are committed, the article text is not (it belongs to its publishers) and lives in a
 gitignored cache. The Türkiye feed reads truth from the same sentence the extractor reads,
-which is why `est_last_value` scores 0.000 there by construction — a defect the Helene and
+which is why `est_last_value` scores nRMSE 0.000 there by construction — a defect the Helene and
 Aegean feeds were built to avoid. **Aegean is the only feed with genuinely independent
 sources on both sides**: ground truth from the Wikipedia revision history (55 timestamped
 points, İzmir 12 → 116, including a real downward reclassification), documents from Turkish
