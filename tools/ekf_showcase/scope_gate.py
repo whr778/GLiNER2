@@ -455,3 +455,103 @@ def imm_gate(observations: list, states: dict, reference: str = "aggregate",
     for o in moved:
         kept.setdefault("__aggregate__", []).append(o)
     return kept, moved, dropped
+
+
+# --------------------------------------------------------------------------- #
+# Full HMM: can one decode absorb the date gate, the scope gate and page furniture?
+# --------------------------------------------------------------------------- #
+def hmm_gate(observations: list, states: dict, reference: str = "aggregate",
+             sigma: float = 0.3, reject_cost: float = 4.0, stay: float = 0.1,
+             iters: int = 4, part_ratio: float = 2.0, gate_all: bool = True):
+    """``viterbi_gate`` with per-observation REJECT evidence, and gating every stream.
+
+    Two changes, and the second is the architectural one.
+
+    1. Each observation may carry ``_reject_logodds`` -- evidence from OUTSIDE the
+       magnitude channel that it belongs to no scope in this event: a nearest date that
+       predates the event, a place outside the declared hierarchy, a syndication marker
+       between the article body and the figure. It is ADDED to the reject emission, so it
+       argues rather than vetoes. That is the whole point: measured, the date gate's
+       marginal contribution over the scope gate is +1 cross-event catch for +10
+       false rejections, because a hard `continue` cannot be outvoted by strong magnitude
+       evidence. Here it can be.
+
+       Weights are hand-set log-odds, NOT fitted. There are six positive examples in the
+       whole audit set; nothing can be learned from that, and the declared hierarchy is
+       knowledge we already have rather than a statistic to re-estimate.
+
+    2. ``gate_all`` decodes EVERY stream, not only the ones in ``states``. The shipped
+       pipeline lets an out-of-scope place form its own ungated stream, so scope
+       membership has to act before streams exist. Folding it into the emission requires
+       the decode to see those observations at all.
+    """
+    kept: dict[str, list] = {}
+    moved: list = []
+    dropped: list = []
+    by_key: dict[str, list] = {}
+    for o in observations:
+        by_key.setdefault(str(o.get("event_key")), []).append(o)
+
+    for key, obs in by_key.items():
+        obs = sorted(obs, key=lambda o: o["t_hours"])
+        gated = key in states
+        if not gated and not gate_all:
+            kept.setdefault(key, []).extend(obs)
+            continue
+        scale = reference_for(observations, key, states, reference)
+        own_set = list(obs)
+        path = [OWN] * len(obs)
+        extra = [float(o.get("_reject_logodds") or 0.0) for o in obs]
+        for _ in range(max(1, iters)):
+            run = 0.0
+            levels = []
+            for o in obs:
+                levels.append(run)
+                if o in own_set:
+                    run = max(run, float(o["value"]))
+            rows = [(float(o["value"]), levels[i], scale_at(scale, o["t_hours"]))
+                    for i, o in enumerate(obs)]
+            path = _viterbi_ev(rows, extra, sigma, reject_cost, stay, part_ratio)
+            new_own = [o for o, s in zip(obs, path) if s == OWN]
+            if new_own == own_set:
+                break
+            own_set = new_own
+        for o, s in zip(obs, path):
+            if s == OWN:
+                kept.setdefault(key, []).append(o)
+            elif s == AGG:
+                moved.append(dict(o, event_key="__aggregate__", _from=key))
+            else:
+                dropped.append(dict(o, _from=key, _hmm=True))
+    for o in moved:
+        kept.setdefault("__aggregate__", []).append(o)
+    return kept, moved, dropped
+
+
+def _viterbi_ev(rows, extra, sigma, reject_cost, stay, part_ratio):
+    """Viterbi with an additive per-observation log-odds term on the REJECT state."""
+    n = len(rows)
+    if not n:
+        return []
+    def em(i):
+        e = list(_emissions(*rows[i], sigma, reject_cost, part_ratio))
+        e[REJ] += extra[i]
+        return e
+    delta = [em(0)]
+    back = [[0, 0, 0]]
+    for i in range(1, n):
+        e = em(i)
+        cur, bk = [0.0] * 3, [0] * 3
+        for st in range(3):
+            best, arg = -1e18, 0
+            for p in range(3):
+                sc = delta[i - 1][p] + (stay if p == st else 0.0)
+                if sc > best:
+                    best, arg = sc, p
+            cur[st] = best + e[st]
+            bk[st] = arg
+        delta.append(cur); back.append(bk)
+    path = [max(range(3), key=lambda st: delta[-1][st])]
+    for i in range(n - 1, 0, -1):
+        path.append(back[i][path[-1]])
+    return path[::-1]

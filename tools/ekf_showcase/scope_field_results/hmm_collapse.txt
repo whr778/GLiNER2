@@ -1,0 +1,24 @@
+helene: 106 obs, 81 genuine, 6 cross-event
+  shipped gate 29.3 | viterbi (magnitude only) 20.7 | oracle 17.6
+  series-of-hard-gates reference: 5/6 caught, 16/81 false = 19.8%
+
+  arm               scope   date   boil |  caught falseRej ||   POOLED
+  flat               2.00   2.00   2.00 |    3/6      8/81 ||     20.7
+  measured           2.20   1.40   3.30 |    4/6      8/81 ||     20.7
+
+=== which cross-event figures the HMM drops (measured weights) ===
+  v=    2 mexico                 scope=1 date=0 boil=0 -> DROPPED
+  v= 3000 puerto rico            scope=1 date=1 boil=0 -> DROPPED
+  v=   32 tennessee              scope=0 date=0 boil=1 -> kept
+  v=   80 north carolina         scope=0 date=1 boil=0 -> kept
+  v=   16 bosnia                 scope=1 date=1 boil=1 -> DROPPED
+  v= 1400 reading pennsylvania   scope=1 date=1 boil=0 -> DROPPED
+
+The two it misses are exactly the two whose PLACE IS IN SCOPE, where a single weak feature
+cannot outvote magnitude evidence saying the reading is plausible. Raising those weights
+catches them at an FP cost -- which is the operating point, now continuous and tunable
+instead of a fixed AND/OR.
+
+CAVEAT: pooled RMSE is identical to magnitude-only Viterbi (20.7) because cross-event
+figures mostly sit in out-of-scope streams that are not scored. The collapse's value is in
+cross-event rejection, not in the trajectory.
