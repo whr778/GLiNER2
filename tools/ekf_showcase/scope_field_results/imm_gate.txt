@@ -1,0 +1,43 @@
+
+=== helene ===  gate 29.3   viterbi 20.7   oracle 17.6
+    down  clutter |  kept moved  drop ||    POOLED
+    1.00    1e+00 |    56    35    27 ||      36.5  
+    1.00    1e+02 |    56    27    27 ||      38.2  
+    1.00    1e+04 |    45     7    38 ||      28.7  beats gate
+    1.00    1e+06 |    22     0    61 ||      29.5  
+    0.50    1e+00 |    43    41    40 ||      53.0  
+    0.50    1e+02 |    55    27    28 ||      37.9  
+    0.50    1e+04 |    45     7    38 ||      28.7  beats gate
+    0.50    1e+06 |    22     0    61 ||      29.5  
+    0.25    1e+00 |    43    41    40 ||      53.0  
+    0.25    1e+02 |    55    27    28 ||      37.4  
+    0.25    1e+04 |    46     7    37 ||      28.8  beats gate
+    0.25    1e+06 |    22     0    61 ||      29.5  
+
+=== turkey ===  gate 11581.5   viterbi 10695.5   oracle 3287.4
+    down  clutter |  kept moved  drop ||    POOLED
+    1.00    1e+00 |    21    74    70 ||   19460.7  
+    1.00    1e+02 |    23    67    68 ||   19429.9  
+    1.00    1e+04 |     8     3    83 ||   19154.6  
+    1.00    1e+06 |     3     0    88 ||   19149.8  
+    0.50    1e+00 |    20    74    71 ||   19369.2  
+    0.50    1e+02 |    22    67    69 ||   19403.7  
+    0.50    1e+04 |     8     3    83 ||   19154.4  
+    0.50    1e+06 |     3     0    88 ||   19149.8  
+    0.25    1e+00 |    20    74    71 ||   19336.3  
+    0.25    1e+02 |    22    67    69 ||   19387.1  
+    0.25    1e+04 |     8     3    83 ||   19154.3  
+    0.25    1e+06 |     3     0    88 ||   19149.8  
+observations 106 -> assignments 45+7+38 = 90
+  a reading can be BOTH down-weighted in its place AND added to the aggregate.
+
+=== assignment counts per observation (Helene, 106 observations) ===
+  clutter=1e+00: kept  56 + moved  35 + dropped  27 = 118  DOUBLE-COUNTED
+  clutter=1e+02: kept  56 + moved  27 + dropped  27 = 110  DOUBLE-COUNTED
+  clutter=1e+04: kept  45 + moved   7 + dropped  38 =  90
+  clutter=1e+06: kept  22 + moved   0 + dropped  61 =  83
+
+Double counting is real but confined to the low-clutter settings, where a reading is both
+down-weighted in its place AND added to the aggregate. At high clutter the failure is the
+opposite -- readings are lost entirely (83 of 106 assignments), which is why every
+setting is worse than the hard decode.

@@ -358,3 +358,100 @@ def viterbi_gate(observations: list, states: dict, reference: str = "aggregate",
     for o in moved:
         kept.setdefault("__aggregate__", []).append(o)
     return kept, moved, dropped
+
+
+# --------------------------------------------------------------------------- #
+# Soft scope association (IMM / PDA form)
+# --------------------------------------------------------------------------- #
+def imm_gate(observations: list, states: dict, reference: str = "aggregate",
+             sigma_own: float = 0.35, sigma_agg: float = 0.25,
+             down_factor: float = 1.0,
+             p_own: float = 0.60, p_agg: float = 0.30, p_clutter: float = 0.10,
+             clutter_scale: float = 1.0, min_beta: float = 0.02):
+    """Never commit: weight each reading by its posterior origin probability.
+
+    Classical IMM mixes competing DYNAMICS. Our hypotheses are about an observation's
+    ORIGIN -- this reading is the place's own toll, or the national figure, or clutter --
+    which is data association, so the correct form is PDA: compute the posterior over
+    origins and update each track with the reading scaled by its own posterior.
+
+    The Viterbi decode (``viterbi_gate``) still makes a hard call, it just makes it
+    globally. This makes none: an ambiguous reading moves both tracks a little and
+    inflates both covariances, which is the honest thing to do when you cannot tell.
+
+    Returns the same (kept, moved, dropped) contract, carrying the weight in each
+    observation's ``confidence`` field. Nothing is dropped except readings whose own-track
+    posterior is below ``min_beta`` -- with ``CONF_R`` enabled the filter reads
+    ``R /= confidence**2``, so a weight of 0.1 inflates that reading's noise 100x. The
+    soft decision therefore reaches the estimate through machinery that already exists.
+    """
+    kept: dict[str, list] = {}
+    moved: list = []
+    dropped: list = []
+    by_key: dict[str, list] = {}
+    for o in observations:
+        by_key.setdefault(str(o.get("event_key")), []).append(o)
+
+    vmax = max((float(o["value"]) for o in observations), default=1.0)
+
+    for key, obs in by_key.items():
+        obs = sorted(obs, key=lambda o: o["t_hours"])
+        if key not in states:
+            kept.setdefault(key, []).extend(obs)
+            continue
+        scale = reference_for(observations, key, states, reference)
+        mu = P = None
+        t_prev = None
+        for o in obs:
+            v = float(o["value"])
+            natl = scale_at(scale, o["t_hours"])
+            if mu is None:                       # first reading establishes the track
+                mu, P, t_prev = v, (0.4 * max(v, 1.0)) ** 2, o["t_hours"]
+                kept.setdefault(key, []).append(dict(o, _beta=1.0))
+                continue
+            dt = max(0.0, (o["t_hours"] - t_prev) / 24.0)
+            P = P + (0.20 * max(mu, 1.0) * max(dt, 1e-3)) ** 2
+            t_prev = o["t_hours"]
+
+            # ASYMMETRIC own-likelihood. A rising toll may legitimately jump above the
+            # current estimate, so readings ABOVE keep the full sigma; readings BELOW are
+            # scored against a tighter one (sigma_own * down_factor), which is what makes
+            # a stale reading improbable under `own` and pushes its weight to the clutter
+            # hypothesis. down_factor=1.0 is the symmetric textbook PDA, kept as the
+            # control so the asymmetry is measured rather than assumed -- the same choice
+            # that mattered for the Student-t model and the Viterbi emissions.
+            sig = sigma_own * (down_factor if v < mu else 1.0)
+            R = (sig * max(mu, 1.0)) ** 2
+            S = P + R
+            l_own = math.exp(-0.5 * (v - mu) ** 2 / S) / math.sqrt(S)
+            R = (sigma_own * max(mu, 1.0)) ** 2      # gain uses the symmetric noise
+            if natl > 0:
+                Sa = (sigma_agg * natl) ** 2
+                l_agg = math.exp(-0.5 * (v - natl) ** 2 / Sa) / math.sqrt(Sa)
+            else:
+                l_agg = 0.0
+            l_clut = clutter_scale / max(vmax, 1.0)     # uniform over the value range
+
+            num = (p_own * l_own, p_agg * l_agg, p_clutter * l_clut)
+            tot = sum(num) or 1.0
+            b_own, b_agg, _b_clut = (n / tot for n in num)
+
+            # PDA update: gain scaled by the association posterior, plus the
+            # spread-of-innovations term that inflates P when the origin is ambiguous.
+            K = P / S
+            nu = v - mu
+            mu = mu + b_own * K * nu
+            P = (1 - b_own * K) * P + b_own * (1 - b_own) * (K * nu) ** 2
+
+            conf = float(o.get("confidence") or 1.0)
+            if b_own >= min_beta:
+                kept.setdefault(key, []).append(
+                    dict(o, confidence=max(conf * b_own, 1e-3), _beta=b_own))
+            else:
+                dropped.append(dict(o, _from=key, _beta=b_own))
+            if b_agg >= min_beta:
+                moved.append(dict(o, event_key="__aggregate__", _from=key,
+                                  confidence=max(conf * b_agg, 1e-3), _beta=b_agg))
+    for o in moved:
+        kept.setdefault("__aggregate__", []).append(o)
+    return kept, moved, dropped
