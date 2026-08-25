@@ -1,6 +1,6 @@
 turkey: 91 'dead' observations
   _f_scope   fires on   0/91
-  _f_date    fires on   0/91
+  _f_date    fires on  18/91
   _f_boiler  fires on   0/91
 
   shipped gate @1.5     11581.5
@@ -11,4 +11,40 @@ turkey: 91 'dead' observations
            0.0 |   10695.5   (7 dropped)
            1.0 |   10695.5   (7 dropped)
            2.0 |   10695.5   (7 dropped)
-           4.0 |   10695.5   (7 dropped)
+           4.0 |   10695.5   (9 dropped)
+
+=== the detector was BROKEN on this feed, and fixing it is not enough ===
+The Turkiye events block has no `date` key at all (event_type / event_confidence /
+casualties / location / cause), so out_of_window returned None on its first guard and
+_f_date could never fire. A bare-year fallback over the raw text fixes that: 0/91 -> 18/91,
+and the 1999 Izmit toll of 17,500 -- which IS in the 2023 observation stream, repeated as
+boilerplate in 15 of 16 articles -- now resolves to 1999.
+
+Helene is unaffected: it has real date spans, never reaches the fallback, still 20.7 with
+4/6 caught at 9.9% false rejections.
+
+But removing the contamination makes Turkiye WORSE:
+
+   date weight  dropped  17500 gone |    POOLED
+           0.0        7           0 |   10695.5
+           4.0        9           2 |   10695.5
+           6.0       23          16 |   15763.4
+          20.0       23          16 |   15763.4
+
+Because 17,500 CROSSES the true trajectory. Turkiye's toll passes through 17,674 at
+t=96.5h, so the repeated Izmit figure is accidentally a good reading for a long stretch:
+   t= 23.4h  v=17500  truth  2316   <- 7.5x over-report, damaging
+   t= 96.5h  v=17500  truth 17674   <- coincidentally correct
+   t=193.7h  v=17500  truth 31643   <- stale under-report
+On a sparse stream, dropping 16 accidentally-useful readings costs more coverage than the
+impurity costs accuracy.
+
+The cliff between weight 4 and 6 is the reject_cost=4.0 boundary. Design rule, now
+measured: keep feature weights BELOW reject_cost so no single feature can force a reject
+on its own -- it can only tip a case magnitude has already made marginal.
+
+VERDICT: Turkiye still does not validate the collapse, and now we know why. Its
+contaminant is the SAME ORDER OF MAGNITUDE as the event (17.5k vs 50k, and crossing),
+whereas Helene's differ by 6x (Katrina 1,400 vs Helene ~230). Scale separation between an
+event and its contaminants is the property that decides whether cross-event rejection can
+pay for itself. A third event needs that property to be a real test.

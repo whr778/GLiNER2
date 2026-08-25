@@ -494,6 +494,9 @@ _GENERIC_PLACE = {
 }
 
 
+_BARE_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
 def out_of_window(text: str, span: str, events: Dict[str, Any], event_year: int,
                   slack: int = 1) -> Optional[int]:
     """The year of the nearest date to `span`, when that year predates the event.
@@ -511,6 +514,15 @@ def out_of_window(text: str, span: str, events: Dict[str, Any], event_year: int,
     resolve to an old year.
     """
     dates = [d for d in (events or {}).get("date") or [] if isinstance(d, dict) and "start" in d]
+    if not dates:
+        # FALLBACK: scan the raw text for bare years. Some feeds are extracted with a
+        # schema that carries no `date` field at all -- the Turkiye 2023 feed's events
+        # block has only event_type/confidence/casualties/location/cause -- and without
+        # this the gate returns None on its first guard and can never fire, however much
+        # historical text the article contains. Measured: that feed puts the 1999 Izmit
+        # toll of 17,500 into the 2023 stream, and the gate could not see it.
+        dates = [{"start": m.start(), "end": m.end(), "text": m.group(0)}
+                 for m in _BARE_YEAR_RE.finditer(text)]
     if not dates:
         return None
     i = text.find(span)
