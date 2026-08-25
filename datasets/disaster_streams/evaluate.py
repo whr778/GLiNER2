@@ -66,6 +66,35 @@ MAX_RATE = None
 # True = the historical behaviour and the default. Set False to reproduce the negative.
 CENSOR_AT_LEAST = True
 
+# Student-t measurement model. None = Gaussian (default, unchanged behaviour).
+#
+# REJECT_SIGMA, MAX_RATE and the scope gate's drop branch are three hard thresholds all
+# standing in for one thing: the measurement noise has a fat tail. A Student-t likelihood
+# says so directly. Implemented as the standard one-step IRLS reweighting -- a Student-t
+# is a scale mixture of Gaussians, so the update is the Kalman update with R inflated by
+# w = (nu+1)/(nu+d^2), d^2 the squared normalized innovation. w -> 1 as nu -> infinity, so
+# large nu recovers the Gaussian exactly.
+#
+# ONE-SIDED by default, because the physics is one-sided and a symmetric robust model
+# would fight it: for a rising toll a reading far ABOVE the estimate is a real jump and
+# must be admitted, while one far BELOW is implausible. Only the implausible side is
+# down-weighted. STUDENT_T_SYMMETRIC = True restores the textbook symmetric form so the
+# difference can be measured rather than assumed.
+STUDENT_T_NU = None
+STUDENT_T_SYMMETRIC = False
+
+
+def _robust_R(R: float, P: float, resid: float) -> float:
+    """Inflate R by the Student-t IRLS weight. `resid` is signed IMPLAUSIBLE-side residual."""
+    if STUDENT_T_NU is None:
+        return R
+    if not STUDENT_T_SYMMETRIC and resid <= 0:
+        return R
+    S = max(P + R, 1e-9)
+    d2 = (resid * resid) / S
+    w = (STUDENT_T_NU + 1.0) / (STUDENT_T_NU + d2)
+    return R / max(w, 1e-6)
+
 
 def _R_at(o: Dict, ref: float) -> float:
     """Measurement-noise variance scaled by a reference LEVEL (the current estimate),
@@ -157,7 +186,7 @@ def _ekf_rise(obs: List[Dict], grid: List[float]) -> List[tuple]:
                 continue
             P = grow(mu, P, t_cur, o["t_hours"]); t_cur = o["t_hours"]
             if not (CENSOR_AT_LEAST and o["qualifier"] == "at_least" and z <= mu):
-                R = _R_at(o, mu); S = P + R
+                R = _robust_R(_R_at(o, mu), P, mu - z); S = P + R
                 # one-sided gate: a rising toll is non-decreasing, so reject only readings
                 # implausibly BELOW the estimate (a mis-bound low figure); admit real jumps.
                 if REJECT_SIGMA is None or (mu - z) <= REJECT_SIGMA * math.sqrt(S):
@@ -186,7 +215,7 @@ def _ekf_decay(obs: List[Dict], grid: List[float]) -> List[tuple]:
             else:
                 dt = max(0.0, (o["t_hours"] - t_cur) / 24.0); f = math.exp(-GAMMA * dt)
                 mu = f * mu; P = f * f * P + (0.10 * max(mu, 1.0) * max(dt, 1e-3)) ** 2; t_cur = o["t_hours"]
-            R = _R_at(o, mu); S = P + R
+            R = _robust_R(_R_at(o, mu), P, o["value"] - mu); S = P + R
             # one-sided gate: a decaying count is non-increasing, so reject readings
             # implausibly ABOVE the estimate; admit real drops.
             if REJECT_SIGMA is None or (o["value"] - mu) <= REJECT_SIGMA * math.sqrt(S):
@@ -391,12 +420,19 @@ def main(argv=None) -> None:
     ap.add_argument("--conf-r", action="store_true",
                     help="fold extractor confidence into R (soft down-weight) instead of "
                          "a hard --min-conf cut")
+    ap.add_argument("--student-t", type=float, default=None, dest="student_t",
+                    help="Student-t measurement model with this many degrees of freedom "
+                         "(one-sided; large nu -> Gaussian). None = off.")
+    ap.add_argument("--student-t-symmetric", action="store_true", dest="student_t_symmetric",
+                    help="down-weight BOTH tails instead of only the implausible side")
     ap.add_argument("--max-rate", type=float, default=None,
                     help="dynamics filter: drop obs whose upward accrual rate exceeds this "
                          "per hour (defends rising signals against mis-bound high outliers)")
     args = ap.parse_args(argv)
 
-    global REJECT_SIGMA, CONF_R, MAX_RATE
+    global REJECT_SIGMA, CONF_R, MAX_RATE, STUDENT_T_NU, STUDENT_T_SYMMETRIC
+    STUDENT_T_NU = args.student_t
+    STUDENT_T_SYMMETRIC = args.student_t_symmetric
     REJECT_SIGMA = args.reject_sigma
     CONF_R = args.conf_r
     MAX_RATE = args.max_rate

@@ -1,0 +1,33 @@
+
+=== helene === three-way oracle ceiling 17.6 deaths
+      nu |   gate 2.0   gate OFF |    sym 2.0
+  gaussian |       29.3      314.5 |       29.3
+       1 |       27.6      315.0 |       52.7
+       2 |       27.8      314.9 |       52.5
+       3 |       28.0      314.9 |       52.3
+       5 |       28.3      314.8 |       51.9
+      10 |       28.6      314.8 |       50.6
+      30 |       29.0      314.7 |       40.8
+
+=== turkey === three-way oracle ceiling 3287.4 deaths
+      nu |   gate 2.0   gate OFF |    sym 2.0
+  gaussian |    14765.0    13603.7 |    14765.0
+       1 |    15092.3    14307.3 |    18950.8
+       2 |    15119.3    14282.2 |    19070.8
+       3 |    15139.4    14270.2 |    19152.7
+       5 |    15160.4    14253.9 |    19246.3
+      10 |    15150.5    14202.9 |    19279.9
+      30 |    15012.1    13998.6 |    18736.3
+
+=== at each event's BEST gate setting, not the shipped default ===
+        nu |  helene@2.0  turkey@1.5
+     gauss |        29.3     11581.5
+         1 |        27.6     12232.6
+         3 |        28.0     12141.8
+        10 |        28.6     11961.0
+
+=== the Turkey gate is non-monotone; 2.0 is simply mistuned there ===
+  ratio off 13603.7 | 4.0 19676.3 | 3.0 19632.7 | 2.5 19632.7 | 2.0 14765.0 | 1.5 11581.5
+
+VERDICT: 1-for-2. Helene -1.7 deaths, Turkey +651. Retires no knob. Default stays
+Gaussian (STUDENT_T_NU = None).
