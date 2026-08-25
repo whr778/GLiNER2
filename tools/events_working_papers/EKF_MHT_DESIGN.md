@@ -1,4 +1,9 @@
-# Tracking Events Through a News Stream: A Filter That Works, an Attribution Layer That Does Not
+# Tracking Events Through a News Stream: A Filter That Works, and an Attribution Layer That Needed a Global Decision
+
+*Title corrected 2026-08-25. It read "an Attribution Layer That Does Not" until the
+association layer was rebuilt as a global decode with a reject state and won on all three
+events. The body below is kept as written -- the route to that result is most of its
+value -- with the overturn stated in the abstract addendum and in §7.7.*
 
 **William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
 
@@ -98,6 +103,32 @@ number here — including the 9× scope-gate result — turns out to be unreprod
 committed state of the repository, which we document rather than quietly re-baseline.
 
 ---
+
+### Addendum, 2026-08-25 — the second half is now built, and it works
+
+Everything above stands as the record of how the problem was localized. Its conclusion does
+not. The attribution layer was rebuilt as a **global Viterbi decode over three states —
+own place, aggregate, reject** — and at one recommended setting it improves every event we
+have:
+
+| event | shipped gate | global decode | |
+|---|---|---|---|
+| Helene | 29.3 | **20.7** | −29.4% |
+| Türkiye–Syria | 11,581.5 | **10,695.5** | −7.6% |
+| Aegean 2020 | 74.4 | **15.7** | −78.8% |
+
+Two things in that design are load-bearing, and §7.1's oracle predicted both. The decision
+had to be **global** — the greedy rule commits per observation, and one large figure
+admitted early poisons a stream's running scale for everything after it. And it had to be
+able to **reject** — §7.1 measured assignment headroom at zero and the whole residual in
+the null hypothesis, which is exactly what a two-state decoder cannot express.
+
+Four alternatives were built against the same three events and lost: a Student-t
+measurement model (helps one event, hurts another, retires no threshold), soft PDA
+association (loses to the hard decode on both, and double-counts because our hypotheses are
+nested rather than independent), a fourth state for downward reclassification (correct and
+inert — the reports never follow a revision down), and folding the date and scope gates into
+the emission (real, but not measurable the way we hoped; see §8).
 
 ## 1. The question, stated as it was actually asked
 
@@ -497,6 +528,12 @@ That is the real case for richer association.
 
 ### 7.2 The cheapest piece of MHT, built and lost
 
+*Superseded by §7.7, 2026-08-25. The null hypothesis this section reaches for was the right
+target — §7.1's oracle is unambiguous that the whole residual is there — and innovation-gated
+track birth was the wrong way to deliver it. What works is a global decode with reject as a
+state, not a per-observation birth test. Kept because the failure localizes the property that
+mattered: the decision has to be made over the sequence, not at each observation.*
+
 The reject option is where the prize is, and it is also the cheapest piece: track birth needs
 no cost matrix and no hypothesis tree. So we built it. Tracks advance jointly in time order,
 each observation is tested by normalized innovation against its candidate tracks, and one
@@ -787,8 +824,88 @@ head had never been supervised on events and got 375 steps to learn instance for
 cold. The fair test it asks for is a warm start on MAVEN followed by CASIE, with far more
 steps.
 
+### 7.7 The attribution layer, rebuilt as a global decode — and it wins on all three events
+
+§7.1 measured two things that between them specify the fix, and §7.2 built the wrong piece
+of it. Assignment headroom is **zero** — a two-way oracle scores exactly what the shipped
+gate does — while a three-way oracle with a reject option reaches 17.6 against the gate's
+29.3 on Helene, getting there purely by dropping more (106 observations kept down to 76).
+So the entire residual is in the null hypothesis, and none of it is in assigning better.
+
+§7.2 built track birth by innovation gating and lost, because judging a stream against its
+own track is circular. The property it was missing is not a better birth rule: it is that
+the decision has to be made **over the whole sequence at once**. A greedy rule commits per
+observation, and one large figure admitted early poisons a stream's running scale for
+everything that follows.
+
+**What was built.** A Viterbi decode over three states — `own`, `aggregate`, `reject` — with
+one-sided emissions (a rising toll may exceed the level established so far, so only a
+reading far *below* it argues against `own`), a band top at `natl/part_ratio` so it is a
+soft form of §5's rule rather than a rival to it, and hard-EM around the decode because the
+`own` level is itself unknown. At one setting (σ=0.3, reject_cost=4.0, stay=0.1, warmup=0):
+
+| event | shipped gate | global decode | | oracle |
+|---|---|---|---|---|
+| Helene | 29.3 | **20.7** | −29.4% | 17.6 |
+| Türkiye–Syria | 11,581.5 | **10,695.5** | −7.6% | 3,287.4 |
+| Aegean 2020 | 74.4 | **15.7** | −78.8% | 19.1 |
+
+On Helene it beats the gate at all twelve knob settings swept, and captures 73% of the
+measured reject headroom. On Aegean the shipped gate is *inert* — 74.4 at ratio off, 4.0,
+3.0, 2.0 and 1.5 alike — so that column is not a tuning margin.
+
+**It nearly read as another split result.** The first sweep had Türkiye worse, which would
+have been the third intervention in a row helping Helene and hurting Türkiye, and we
+proposed the divergence was structural: Türkiye's `global-max` reference is self-referential
+for its dominant stream. **The per-stream diagnostic refuted that**, and in the opposite
+direction — the decode helped the self-referenced dominant stream (0.403 → 0.377) and hurt
+the *minor* one (0.923 → 1.858). Chasing the inversion found the cause: a `warmup` parameter
+copied from the greedy gate, which pins the first readings to `own`. Syria's first two are
+contaminating Türkiye figures (9,057 and 17,674 against a true peak of 5,800); pinning them
+poisoned the level and the genuine 3,317s were then rejected as stale. That is precisely the
+greedy commitment the global decode exists to remove, smuggled back in as a knob.
+
+**Four alternatives, all measured against the same events, all rejected.**
+
+- **Student-t measurement model.** Helene −1.7 deaths, Türkiye +651. Retires none of
+  `REJECT_SIGMA`, `MAX_RATE` or the gate's drop branch, which was the reason to want it —
+  with the gate off, Helene is 314.5 under every ν tested. Whatever the gate catches, it is
+  not a fat tail.
+- **Soft PDA association.** Loses to the hard decode on both events (Helene 28.7 against
+  20.7; Türkiye 19,150 against 10,696). Two structural reasons: soft weighting cannot
+  *remove*, and the headroom is in removal; and PDA arbitrates *independent* targets while
+  ours are **nested** — a place's toll is part of the national toll — so an ambiguous reading
+  is soft-assigned to both part and whole at once (106 observations became 118 assignments).
+- **A fourth state for downward reclassification.** Correct and inert. Helene's North
+  Carolina truth falls four times, but **the reports never follow it down**: after each
+  revision the later readings are 230, 230, 230, 1,400, 98, 250 while the official toll falls
+  to 84–123. No state, filter or change-point detector can track a revision that is never
+  reported. This reframes `CENSOR_AT_LEAST` — the filter is not wrong to refuse to descend,
+  the *data* never descends — and makes it a source-acquisition problem, not a modelling one.
+- **Folding the date and scope gates into the emission.** Real on its own terms and not
+  measurable the way we hoped; see §8.
+
 ## 8. Limitations
 
+- **The gate collapse cannot be validated on the headline metric, on any feed we have.**
+  Folding the date gate, the scope gate and syndication boilerplate into the decode's
+  emission as additive evidence does work on its own terms — on Helene it takes cross-event
+  rejection from 5/6 caught at 19.8% false rejections to 4/6 at 9.9%, at no cost to the
+  trajectory. But it moves pooled RMSE by **nothing**, on Helene or on the Aegean event
+  built specifically to test it (15.74 at every feature weight from 0 to 3, while
+  demonstrably rejecting three of six contaminants). The reason is structural rather than a
+  sampling accident: **association routes contaminants out of the scored streams before the
+  gate ever sees them.** Aegean's 17,000s are keyed `unknown` and `marmara`, never `Izmir`,
+  and only 12 of 53 observations are bound to a gated place at all; Helene's cross-event
+  figures sit in mexico / puerto rico / bosnia streams, none of them scored. A fourth event
+  would not change this. The collapse's effect is real and is only measurable on cross-event
+  catch and false-reject rates.
+- **A pre-registered prediction failed, and the failure was informative.** The Aegean event
+  was chosen for scale separation — 119 deaths against an İzmit 1999 reference of ~17,000,
+  143× where Helene's contaminants differ by 6× and Türkiye's by 3×-and-crossing — and
+  registered a prediction that the collapse would show a large gain there. It did not, for
+  the reason above, which has nothing to do with scale separation. The hypothesis was
+  falsifiable, was tested, and was wrong.
 - **A pre-registered gate was scored by an instrument we had not verified.** The
   threshold sweep behind §7.6's gate 1 was inert for five measurements before anyone
   checked, and it produced the specific claim that justified a rebuild. The gate values
