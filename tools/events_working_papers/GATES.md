@@ -211,3 +211,57 @@ range it rewards indiscriminate firing, and it inverted a verdict for a day: the
 incumbent's "65%" was 39 firings carrying **three** correct tolls, while the rebuild it
 rejected binds the right figure 67-100% of the time. Pair every form gate with a
 correctness companion -- that is what `binding_accuracy.py` is for.
+
+---
+
+## Should [5] and [6] be merged into one LEARNED gate?
+
+Measured 2026-08-25 (`gate56_composition.py`), against the 86 hand-audited Helene
+occurrence labels. **No -- but the current composition is the worst term in the system
+and should be fixed.**
+
+They are genuinely complementary. All six cross-event figures, and what catches each:
+
+| value | keyed to | in declared scope | nearest-date year | caught by |
+|---|---|---|---|---|
+| 2 | mexico | no | - | [6] |
+| 3000 | puerto rico | no | 2020 | [6] + [5] |
+| 32 | tennessee | **yes** | - | **neither** |
+| 80 | north carolina | **yes** | **1916** | **[5] only** |
+| 16 | bosnia | no | - | [6] |
+| 1400 | reading pennsylvania | no | 2005 | [6] + [5] |
+
+So [5] catches one figure [6] structurally *cannot* -- the 1916 hurricanes' "80", keyed
+to North Carolina, which is legitimately in scope. Series composition is already OR, and
+it reaches 5/6.
+
+But the trade is bad:
+
+| rule | caught | false-rejects of genuine |
+|---|---|---|
+| [6] scope only | 4/6 | 6/81 = **7.4%** |
+| [5] date only | 3/6 | 10/81 = 12.3% |
+| UNION (as shipped) | 5/6 | 16/81 = **19.8%** |
+| INTERSECTION | 2/6 | 0/81 = **0.0%** |
+
+**[5]'s marginal contribution over [6] alone is +1 catch for +10 false rejections.** It
+is a hard reject (`continue`), not a flag, so that cost is realised.
+
+Three reasons not to make the merge *learned*:
+
+1. **It was already tried and lost.** Best learned signal, one call per observation:
+   4/6 at 31.7% FP, against declared scope's 4/6 at 7.4%. Same recall, 4.3x the false
+   positives. Replacing knowledge that is written down and correct with a statistical
+   estimate of it is strictly worse.
+2. **The one figure neither gate catches is not a filter failure.** "Typhoon headed to
+   Taiwan injures dozens" was bound to Tennessee because "11 workers at a Tennessee f..."
+   follows it. That is `association_key`'s nearest-place heuristic failing at [5] -- the
+   same failure mode `out_of_window`'s own docstring cites for the Turkiye standfirst. No
+   filter downstream of a bad binding can repair it.
+3. **There are six positive examples.** A learned gate cannot be fitted on that, and the
+   audit set is 86 rows total.
+
+**What to do instead:** the operating point between AND (0% FP, 2/6) and OR (19.8% FP,
+5/6) is unexplored, and [5] is the miscalibrated half. Either require the old date to be
+nearer the span than any current-year date before rejecting, or demote [5] from hard
+reject to a feature and let [6] keep the veto. Both are arithmetic.
