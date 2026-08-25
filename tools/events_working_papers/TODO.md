@@ -1046,6 +1046,17 @@ small to look national**, exactly what a magnitude rule cannot catch.
 Revisit when multi-source feeds land (item 7): sources disagreeing about one event is real
 association ambiguity in a way one wire service's copy is not.
 
+**REVISED 2026-08-25 — the conclusion holds for ASSIGNMENT and fails for the REJECT
+OPTION.** "Do not build MHT" remains right: the two-way oracle scores exactly what the
+shipped gate does, so perfect assignment is worth nothing and a Hungarian cost matrix has
+no prize. But the third option this item already identifies -- *drop* -- turned out to
+carry the entire residual. Re-derived on the pooled metric: shipped gate 29.3 deaths,
+three-way oracle 17.6, and it gets there purely by dropping more (106 kept -> 76). A
+global Viterbi decode over {own, aggregate, reject} captures 73% of that and beats the
+gate on BOTH events (Helene -29.4%, Turkiye -9.8%). See item 13. The lesson is that the
+decode had to be global and had to include the reject state; neither alone would have
+paid.
+
 ### 7. Still no benchmark that can score the filter
 Turkiye's baseline was an oracle by construction — truth read from the sentence the extractor
 reads, so `est_last_value` scored 0.000. Helene's per-state streams were mis-bound until the
@@ -1814,3 +1825,80 @@ are event metrics on RAMS, which carries no descriptions.
 - The anchorless arm is deliberately **not** published: it learned nothing (1 of 9 instances),
   so it is evidence for the papers rather than an artifact worth shipping. The natural arm is
   on the Hub as `whr778/gliner2-joint-boundary-warmstart-natural`, private.
+
+
+### 13. The association layer, RESOLVED 2026-08-25 — ship the HMM decode
+
+Five mechanisms built and measured against Helene AND Turkiye, each at that event's best
+shipped setting rather than the shipped default:
+
+| # | mechanism | verdict |
+|---|---|---|
+| 1 | Student-t measurement model | Helene -1.7, Turkiye +651, retires no knob. **OFF** |
+| 2 | Viterbi decode, {own, aggregate, reject} | Helene -29.4%, Turkiye -9.8%. **SHIP** |
+| 3 | IMM / PDA soft association | loses to the hard decode on both. **No** |
+| 4 | 4th state for downward revision | correct, inert on this data. **No** |
+| 5 | date + scope + boilerplate folded into the emission | false rejections 19.8% -> 9.9%. **SHIP** |
+
+**What to ship:** `scope_gate.hmm_gate`, which is `viterbi_gate` plus emission features --
+a strict superset, same three states, same decoder. Recommended sigma 0.3, reject_cost
+4.0, stay 0.1, **warmup 0**. It replaces the ratio gate and lets gates [5] `out_of_window`
+and [6] `scope_filter` be deleted as separate stages.
+
+**Design rule, measured:** keep feature weights BELOW `reject_cost`, so no single feature
+can force a reject alone -- it can only tip a case magnitude has already made marginal.
+The sweep shows a cliff exactly at that boundary, and it is what protects Turkiye.
+
+**Why item 4 is inert, which is the more useful negative.** Helene's North Carolina truth
+falls four times as deaths are reclassified, but the REPORTS never follow it down -- after
+each revision the later readings are 230, 230, 230, 1400, 98, 250 while the official toll
+falls to 84-123. No filter, state or change-point detector can track a revision that is
+never reported. This reframes `CENSOR_AT_LEAST`: the filter is not wrong to refuse to
+descend, **the data never descends**. Fixing it needs a source carrying reclassification
+bulletins, not a better filter.
+
+### 13a. The third event — IN FLIGHT
+
+Turkiye cannot validate the cross-event collapse, and the reason is now diagnosed rather
+than guessed: its contaminant (Izmit 1999, 17,500) is the same order of magnitude as the
+event (~50,000) and **crosses** the true trajectory, so rejecting it costs more coverage
+than the impurity costs accuracy. Helene's differ by 6x. **Scale separation is the
+property that decides whether cross-event rejection pays.**
+
+2020 Aegean Sea earthquake, pre-registered in `THIRD_EVENT_AEGEAN2020.md`: 119 deaths
+against an Izmit reference of ~17,000, a **143x** separation.
+
+* Ground truth **BUILT** -- `datasets/aegean2020/ground_truth.json`, 55 points from the
+  Wikipedia revision history, zero parse failures, Izmir 12 -> 116 with a genuine
+  downward reclassification (116 -> 114 on 5 Nov).
+* Feed **IN FLIGHT** -- `build_aegean_feed.py`, Hurriyet Daily News + Daily Sabah via
+  Wayback. First 76 articles: 68 quake-relevant, 60 carrying a toll, **20 mentioning
+  1999** with the contaminant in the expected shape ("the 7.4-magnitude earthquake in
+  Golcuk in 1999. It killed more than 17,000 people").
+* Half the pre-registration was **falsified before the build**: the Izmit and Smyrna
+  comparisons live in the CURRENT Wikipedia article, not the 2020-era revisions (0 of 55
+  mention 1999). Wrong SOURCE, not wrong event -- 15 of 16 Al Jazeera articles about
+  Turkiye 2023 carry the same reference. Hence GT from Wikipedia, documents from news,
+  which also makes this the first feed with genuinely independent sources on both sides.
+
+Predictions 1-3 stand and remain untested until the feed lands.
+
+### 14. Scope supervision — do NOT buy labels under the current scheme (2026-08-25)
+
+Closes the open question in item 10a. A $2.25 dual-label probe (Haiku 4.5 vs Opus 5, 200
+records, `scope_label_probe.py`) says:
+
+* **Haiku is not cleared** -- 83.0% agreement but **kappa 0.121**, which is the number that
+  matters when 86% of the corpus is one class.
+* **The model is not the variable.** Hand-adjudicating 14 place<->sub-place disagreements
+  came out **7-7**. `sub-place` conflates a genuinely narrower counting unit ("three
+  districts IN Iraq") with a narrower incident SITE whose number is still the bound place's
+  full toll ("across 2 districts OF Baghdad", "a mine collapse in Xinjiang"). Case two
+  mislabelled makes `apply_extracted_scope` DROP a valid observation.
+* **The corpus cannot teach the class that matters.** `national` is 0.0% of the unbiased
+  sample and 0.5% of the hard stratum. `casualty_events` can teach place-vs-sub-place and
+  not place-vs-national -- which is the only distinction the gate exists to arbitrate.
+
+Next: rewrite the question to be about the COUNTING UNIT rather than the incident site,
+re-probe, and beat kappa 0.121. Separately, find a source of place-vs-national supervision;
+the 86 hand-audited Helene occurrences are the existing precedent.

@@ -1147,3 +1147,104 @@ This is the fourth instrument defect in three days, after the inert threshold sw
 strict-versus-relaxed gate 3, and gate 1 counting firings. The pattern is now explicit
 enough to state: **every one was found by someone asking what a number meant, and none by
 running more of the analysis that produced it.**
+
+## Phase 23 — the modelling finally paid, and my own instruments failed ten times (25 Aug)
+
+The phase where the association layer got its first genuine win on both events, and where
+the defect count moved from "the analysis I inherited" to "the analysis I just wrote".
+
+**The supervision question closed, and not the way it was posed.** The `scope` field is a
+zero-shot no-op, so the plan was to buy LLM labels. A $2.25 probe against Haiku 4.5 and
+Opus 5 on 200 records answered two questions, and the second mattered more. Haiku is not
+cleared — 83.0% agreement but **kappa 0.121**, which is the number that matters when 86%
+of a corpus is one class. Then hand-adjudicating fourteen place↔sub-place disagreements
+came out **7–7**. Neither model is the variable: `sub-place` conflates a genuinely
+narrower counting unit ("three districts IN Iraq") with a narrower incident SITE whose
+number is still the bound place's full toll ("across 2 districts OF Baghdad"). Case two
+mislabelled makes `apply_extracted_scope` **drop a valid observation**. Independently,
+`national` is **0.0%** of the corpus on both strata — so `casualty_events` cannot teach the
+one distinction the ratio gate exists to arbitrate, and no labeller upgrade fixes that.
+The $11 batch is not worth buying under this scheme.
+
+**A cheap idea priced and killed before it cost anything.** The DETR reading suggested
+span-GIoU. Soft-IoU turned out to already exist and be on by default (`losses.py:288-311`,
+weight 0.2, annealed), so it was a four-line delta — and the wrong one. 71.9% of candidate
+pairs score IoU exactly 0, but only 8.3% of those sit within three tokens of gold, so the
+near-misses GIoU would newly distinguish are **5.9% of candidates**. Meanwhile the BCE
+consumer needs targets in [0,1] while GIoU is [-1,1], and the rescale moves **66.6% of all
+candidates** off zero — 28% of the zero-IoU ones would get a target above 0.25 despite no
+overlap with gold. An 11× blast radius for a 6% signal, in a model whose binding
+constraint is precision. Rejected on a free measurement rather than a $35 run.
+
+**The reject headroom is the opposite shape to the one the gate was built for.** Helene's
+three-way oracle reaches 17.6 against the shipped gate's 29.3, and it gets there purely by
+dropping more. Restricted to the gated population — the two-way oracle keeps everything
+else by construction, which was handing a `gated` feature AUC 0.763 for free — the rejects
+have **median value 6.0 against the kept set's 99.0**. Split by direction: **63% stale-LOW,
+20% over, 17% no truth coverage**. The gate rejects upward only. It is blind to two thirds
+of its own prize by construction.
+
+**Five mechanisms built and tested against both events.**
+
+| # | mechanism | verdict |
+|---|---|---|
+| 1 | Student-t measurement model | Helene −1.7, Turkiye +651. Retires no knob. OFF |
+| 2 | **Viterbi decode, 3 states with reject** | **Helene −29.4%, Turkiye −9.8%. SHIP** |
+| 3 | IMM / PDA soft association | loses to hard decode on both. Not adopted |
+| 4 | 4th state for downward revision | correct, inert. Not shipped |
+| 5 | document structure → HMM emission collapse | false rejections **19.8% → 9.9%** |
+
+The through-line: every winner was a **hard, global, one-sided** decision. Soft assignment
+lost because the measured headroom is in removal, not down-weighting — and because PDA
+arbitrates *independent* targets while ours are nested, so an ambiguous reading gets
+soft-assigned to both the part and the whole (106 observations became 118 assignments).
+One-sidedness mattered in three of the five; the symmetric textbook forms were measurably
+worse every time.
+
+**The result that nearly did not happen.** Viterbi first read 1-for-2 — good on Helene,
+worse on Turkiye — which would have been the fourth intervention in a row with that shape.
+I proposed the divergence was structural: Turkiye's `global-max` reference is
+self-referential for its dominant stream. **The per-stream diagnostic refuted it**, and in
+the opposite direction: Viterbi helped the self-referenced dominant stream (0.403 → 0.377)
+and hurt the *minor* one (0.923 → 1.858). Chasing that inversion found the real cause.
+`warmup=2`, copied from the greedy gate, pins the first readings to `own` — and Syria's
+first two are contaminating Turkiye figures (9057, 17674 against a true peak of 5800). It
+poisoned the level and the genuine 3317s were then rejected as stale. That is precisely the
+greedy commitment the global decode exists to remove, smuggled back in as a knob. With
+`warmup=0`, Turkiye goes 12306 → 10441 and the result is 2-for-2.
+
+**What Turkiye actually cannot test.** Its contaminant is the 1999 İzmit toll of 17,500
+against a 50,000-death event — the same order of magnitude, and it **crosses** the true
+trajectory (truth 2,316 at t=23h, 17,674 at t=96h, 31,643 at t=194h). Rejecting it costs
+more coverage than the impurity costs accuracy: forcing all 16 copies out takes pooled
+10695 → 15763. Helene's contaminants differ by 6× (Katrina's 1,400 against ~230). **Scale
+separation between an event and its contaminants is what decides whether cross-event
+rejection can pay for itself**, and it is why a third event is needed rather than more
+tuning.
+
+**One decode absorbing three gates.** Gates [5] date and [6] scope are complementary — [5]
+catches the 1916 hurricanes' "80" keyed to North Carolina, which scope membership
+structurally cannot, since North Carolina is in scope — but the series is a bad trade: [5]
+adds **+1 catch for +10 false rejections**, because a hard `continue` cannot be outvoted.
+Folded into the emission as additive log-odds they argue instead of vetoing: **5/6 at 19.8%
+false becomes 4/6 at 9.9%**, at no trajectory cost. The weights are hand-set, not fitted —
+composition of knowledge we already have, which is what keeps it consistent with the
+earlier finding that a learned cross-event signal loses to declared scope membership 31.7%
+to 7.4%.
+
+**Ten defects, all mine.** Whole-record instead of passage windowing (kappa 0.247 vs
+0.469); `str.find` matching the "6" inside "2026" (22% of figures); location-less figures
+asked for a relative judgment (18% of disagreements); an emission scoring 83%-of-total as a
+perfect part; the warmup above; `revise_cost < reject_cost` inverting the revision logic;
+`out_of_window` structurally unable to fire on a feed whose events block has no `date` key;
+a control run at warmup 8 against a true control of 2; a `gated` feature separating for
+free; and a fabricated "145 assignments" in a commit message, amended.
+
+Phase 22 ended by noting that every defect so far was found by someone asking what a number
+meant. These were found differently, and the mechanisms are worth naming because they are
+repeatable: **comparing a new measurement against a published one** (gate 6 reproducing its
+own docstring's 7.3% only after the scope set came from `rollup.json`), **a smoke test
+disagreeing with stated intent** (500 against a national 600 decoding as `own`), **an arm
+beating a control that looked wrong**, and **a result inverting where the hypothesis said it
+would not**. Two conclusions were proposed and retracted — the structural divergence, and
+the revision state being silenced by the noise floor, refuted at 4.2σ.
