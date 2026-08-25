@@ -115,6 +115,9 @@ def main() -> None:
     ap.add_argument("--cache", default="datasets/aegean2020/_cache")
     ap.add_argument("--out", default="datasets/aegean2020/_cache/feed.jsonl")
     ap.add_argument("--max-articles", type=int, default=250)
+    ap.add_argument("--window", type=float, nargs=2, default=(-24.0, 720.0),
+                    metavar=("FROM_H", "TO_H"),
+                    help="keep articles whose first capture falls in this t_hours window")
     args = ap.parse_args()
     cache = Path(args.cache)
 
@@ -139,8 +142,18 @@ def main() -> None:
             continue
         stamp = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[8:10]),
                          int(ts[10:12]), int(ts[12:14]), tzinfo=timezone.utc)
+        t_hours = round((stamp - ONSET).total_seconds() / 3600.0, 2)
+        # The hubs are general news homepages, not an event hub, so they link stories from
+        # any date and "earliest capture" then dates an article to when it was FIRST
+        # crawled, not to this event. Measured without this: a 2018 piece ("no big
+        # earthquake expected in Istanbul before 2045") landed at t = -23,256h and a July
+        # 2020 Istanbul risk feature at t = -2,751h. Both are earthquake articles about a
+        # different thing, which is exactly what would corrupt a time series.
+        if not (args.window[0] <= t_hours <= args.window[1]):
+            skipped += 1
+            continue
         rows.append({
-            "t_hours": round((stamp - ONSET).total_seconds() / 3600.0, 2),
+            "t_hours": t_hours,
             "text": text,
             "date": f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}",
             "places_named": sorted({p for p in PLACES if p in text}),
