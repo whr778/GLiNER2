@@ -15,6 +15,7 @@ live at different layers. Conflating them has already inverted one verdict for a
 | **HEURISTIC** | hand-written rule over text (keywords, character distance, nearest-match) |
 | **ARITHMETIC** | a closed-form inequality on numbers already in the stream |
 | **STATISTICAL** | derived from the event's own distribution at run time |
+| **DECODE** | one decision over the WHOLE sequence, not per observation. Can revisit |
 | **ORACLE** | consults ground truth. Prices a ceiling; can never ship |
 
 ---
@@ -46,12 +47,16 @@ above it passed.
       scope_filter() ............ DECLARED    opt-in  drop places outside the event
         |
   [7] apply_extracted_scope() ... NEURAL      opt-in  route on the model's `scope` field
-      gate() upward ............. ARITHMETIC  ON      keep / reroute / drop by magnitude
+      hmm_gate() ................ DECODE      SHIP    own / aggregate / reject, globally
+      viterbi_gate() ............ DECODE      -       hmm_gate without the extra features
+      gate() upward ............. ARITHMETIC  legacy  keep / reroute / drop by magnitude
       gate() downward ........... ARITHMETIC  OFF     drop stale readings (down_ratio)
+      hmm_gate4() ............... DECODE      OFF     + a downward-revision state (inert)
       plausibility_filter() ..... HEURISTIC   opt-in  hand-set per-event ceiling
       tail_filter() ............. STATISTICAL opt-in  median + k*MAD on log10, upper tail
         |
   [8] EKF update ................ STATISTICAL ON      relative-noise Kalman filter
+      STUDENT_T_NU .............. STATISTICAL OFF     robust one-sided measurement model
       REJECT_SIGMA .............. STATISTICAL OFF     one-sided innovation gate
       MAX_RATE .................. ARITHMETIC  OFF     impossible-accrual-rate filter
       CONF_R .................... STATISTICAL OFF     fold extractor confidence into R
@@ -74,6 +79,19 @@ messages. v2 describes the negatives it actually meets -- personal requests, pol
 news, aid-logistics inventories carrying huge numbers, single-casualty medical items --
 and names two traps verbatim: a lone death is not a mass-casualty event, and disaster
 words used metaphorically ("explosion in crowdfunding").
+
+**It does not filter non-English at all, and the failure is silent.** Measured on 200 clean
+Turkish news articles, English label descriptions against Turkish text:
+
+    fastino/gliner2-base-v1   199/200 = 99.5% false admits   <- THE SHIPPED DEFAULT
+    fastino/gliner2-multi-v1   56/200 = 28.0%
+
+The default is DeBERTa-v3, vocab 128,011, English-only. It cannot read the text, so it
+answers `mass_casualty` to nearly everything — worse than the 58.5% that forced the v1→v2
+rewrite, and nothing in the pipeline reports that the gate has stopped discriminating.
+Translating the articles into English does NOT fix it (17/60 still admitted by the English
+model on English text), so the remaining fault is the label descriptions, not the language.
+Check the encoder before pointing this gate at any non-English feed.
 
 ### [2] Extraction thresholds — THRESHOLD, on
 `extract(threshold=)` is the single global cut the boundary greedy path gates on.
@@ -105,6 +123,21 @@ numbers on the Turkiye standfirst). It is defensible for dates only because date
 sparse and clustered, so competing hypotheses sit far apart. Measured: 13/15 Izmit
 envelopes resolve to "August 1999", and no genuine observation resolves to an old year.
 
+**Two later fixes, both from feeds that broke an unstated assumption.**
+
+*A feed with no dates at all.* The gate reads date spans from the events block and returns
+None on its first guard when there are none — so on the Türkiye 2023 feed, whose events
+block carries only event_type/confidence/casualties/location/cause, it was structurally
+unable to fire while the 1999 İzmit toll of 17,500 sat in the 2023 observation stream. Now
+falls back to scanning the raw text for bare years.
+
+*Competing dates that are NOT far apart.* On the Aegean feed the nearest year to İzmit's
+17,000 is **2020 at +117 chars**, beating **1999 at −152**, so nearest-by-distance returns
+the current year and misses a 143× contaminant. 117 against 152 is not "far apart", and
+this docstring's own justification does not hold there. `mode="any"` takes any
+out-of-window year within a radius instead — lower precision, and the right shape for
+additive evidence in the decode's emission rather than for a veto.
+
 ### [6] scope_filter() — DECLARED, opt-in
 Rejects observations keyed to a place outside the event's declared hierarchy. Run after
 the rollup. **The cheapest cross-event filter available, and it beats every learned
@@ -118,7 +151,39 @@ signal tried:**
 It works because the contaminating events happened *somewhere else* -- Mexico, Puerto
 Rico, Bosnia, Reading PA -- which is declared knowledge, not a statistical property.
 
-### [7] gate() — ARITHMETIC, upward on / downward off
+### [7] hmm_gate() — DECODE, the recommended replacement for the ratio gate
+
+`scope_gate.hmm_gate` decides the whole stream at once over three states — `own`,
+`aggregate`, `reject` — instead of committing per observation. It is `viterbi_gate` plus
+per-observation REJECT evidence from outside the magnitude channel (an out-of-window date,
+a place outside the declared hierarchy, a syndication marker), so those gates ARGUE rather
+than veto. Recommended σ=0.3, reject_cost=4.0, stay=0.1, **warmup=0**.
+
+Measured at that one setting on every event we have:
+
+| event | ratio gate | decode | |
+|---|---|---|---|
+| Helene | 29.3 | **20.7** | −29.4% |
+| Türkiye–Syria | 11,581.5 | **10,695.5** | −7.6% |
+| Aegean 2020 | 74.4 | **15.7** | −78.8% |
+
+Two properties are load-bearing and both were predicted by the three-way oracle:
+**global** (a greedy rule commits per observation, and one large figure admitted early
+poisons a stream's running scale for everything after) and **able to reject** (assignment
+headroom is measured at zero; the entire residual is the null hypothesis).
+
+**Design rule, measured:** keep every feature weight BELOW `reject_cost`, so no single
+feature can force a reject on its own — it can only tip a case magnitude has already made
+marginal. The sweep shows a cliff exactly at that boundary.
+
+**Two traps that cost real time, both from importing assumptions:** `warmup`, copied from
+the greedy gate, pins the first readings to `own` and reintroduces exactly the commitment
+the decode exists to remove — it alone flipped Türkiye from a loss to a win. And a MISSING
+reference must not be read as evidence a value is too large: on a feed with no aggregate
+stream `natl=0` made every value score above the whole event and dropped 52 of 53
+observations at zero feature weight.
+
+### [7] gate() — ARITHMETIC, legacy; superseded by hmm_gate
 Three outcomes against the running larger-scope reference, per stream in time order:
 
 ```
@@ -137,7 +202,9 @@ Helene at ratio 2.0: pooled 314.5 -> **29.3 deaths**, a 10.7x reduction.
 
 `down_ratio` adds the second side (drop a reading far below the stream's own running
 max, since a toll does not fall). **Measured 1-for-2 and left OFF:** Helene 29.3 ->
-21.7, Turkey 14765 -> 15349 (worse). See `scope_field_results/two_sided_gate.txt`.
+21.7, Turkey 14765 -> 15349 (worse). See `scope_field_results/two_sided_gate.txt`. The
+global decode reaches the same place on Helene (20.7) and wins on Turkiye too, which is
+why this knob is not needed.
 
 ### [7] plausibility_filter vs tail_filter — HEURISTIC vs STATISTICAL, both opt-in
 `plausibility_filter` is a hand-set ceiling and has to be *told* the event's scale --
@@ -151,6 +218,13 @@ Measurement noise is **relative**: `R = (sig * max(ref,1))^2`, with `sig` from
 `QUAL_FACTOR` (point 1.0 ... feared 2.5). Process noise grows as
 `q_rel * max(mu,1) * dt`, so real jumps stay admissible between reports.
 
+- **STUDENT_T_NU** (OFF): a Student-t measurement model, applied as one-step IRLS
+  reweighting (`R` inflated by `w = (nu+1)/(nu+d^2)`) and ONE-SIDED, because the physics is
+  — a rising toll may legitimately surge above the estimate, only a reading far below it is
+  implausible. The symmetric textbook form is much worse on both events. Measured 1-for-2
+  (Helene −1.7 deaths, Türkiye +651) and it retires none of the thresholds below, which was
+  the reason to want it: with the scope gate off, Helene is 314.5 under every nu tested.
+  Whatever the gate catches, it is not a fat tail.
 - **REJECT_SIGMA** (OFF): one-sided innovation gate. A rising toll is non-decreasing, so
   it rejects only readings implausibly *below* the estimate; the decay roles invert it.
 - **MAX_RATE** (OFF): drops an observation whose upward accrual rate exceeds the limit --
@@ -192,6 +266,29 @@ option, and 63% of those rejects are stale readings *below* truth, which the upw
 gate cannot see. See `scope_field_results/reject_headroom.txt`.
 
 ---
+
+## What these gates are actually filtering
+
+Eleven percent of Helene's `dead` observations are hand-audited **non-casualty**, and they
+split into two kinds that need different fixes:
+
+| kind | examples | fix |
+|---|---|---|
+| **exposure counts** | 300 rescued, 50 patients rescued, 32 evacuated, 11 swept away | a schema role |
+| **unit confusion** | a two-day period, six states, dozens of vehicles, 1,400 landslides | a schema role |
+
+A rescued person is a **counterfactual casualty** — averted harm, not realized harm. And
+exposure counts run systematically LARGER than casualty counts in disaster copy (505
+displaced against 6 dead; 300 rescued against Florida's true peak of 26), so a mis-bind is
+the same magnitude as cross-event contamination and points the same way, upward. The gates
+therefore catch some of them — for the wrong reason, magnitude rather than category, which
+is the gate-1 lesson again.
+
+**The root cause is upstream of every gate on this page.** `casualty_events` has exactly
+four roles — `location`, `injured`, `missing`, `dead` — and no role for exposure, while the
+prose is full of it. A number with no correct home lands in a wrong one. Adding `displaced`
+and `rescued` removes the ambiguity at source instead of filtering it downstream. Full
+taxonomy in `ekf_showcase/gate_results/EXPOSURE_VS_CASUALTY.md`.
 
 ## Not pipeline stages: the pre-registered gates 1-4
 
