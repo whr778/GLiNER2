@@ -2,6 +2,7 @@
 - Be simple. Approach tasks in a simple, incremental way.
 - Work incrementally ALWAYS. Small simple steps.  Validate and check each increment before moving on.
 - Use LATEST apis as of NOW.
+- metrics and table metrics should define the metric: nrmse, mse, f1, etc
 
 ## MANDATORY CODE STYLE
 - Do not overengineer.  Do not program defensively.  Use exception managers only when necessary.
