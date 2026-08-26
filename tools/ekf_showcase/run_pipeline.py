@@ -123,6 +123,7 @@ GATE_LABELS_V2 = {
 
 from scope_gate import (  # noqa: E402
     apply_extracted_scope, gate as scope_gate, scope_agreement,
+    viterbi_gate, hmm_gate,
 )
 
 
@@ -754,7 +755,10 @@ def merge_prefix_keys(observations: List[Dict]) -> None:
     longer one with the same event type -- that catches truncation without asserting
     that similar-looking places are the same place.
     """
-    keys = {o.get("event_key", "all") for o in observations}
+    # sorted, because `min(longer, key=len)` below breaks ties by iteration order and a
+    # bare set of strings is ordered by the per-process hash seed -- the same defect that
+    # made the whole pipeline non-reproducible (gliner2/processor.py).
+    keys = sorted({o.get("event_key", "all") for o in observations})
     canon = {}
     for k in keys:
         longer = [c for c in keys
@@ -843,6 +847,24 @@ def main() -> None:
                          "national -> aggregate and sub-place -> dropped, and defers "
                          "`unclear` to --scope-ratio. Needs re-extraction; the field is "
                          "unsupervised so far, so measure agreement before trusting it.")
+    ap.add_argument("--scope-method", choices=("decode", "ratio", "off"), default="decode",
+                    dest="scope_method",
+                    help="how to decide own/aggregate/reject. `decode` is the global "
+                         "Viterbi over the whole stream and is the default: it beats "
+                         "`ratio` on every event measured (Helene -29.4%%, Turkiye -7.6%%, "
+                         "Aegean -78.8%% pooled RMSE in deaths). `ratio` is the greedy "
+                         "per-observation gate, kept as the control every one of those "
+                         "numbers was measured against.")
+    ap.add_argument("--decode-sigma", type=float, default=0.3, dest="decode_sigma")
+    ap.add_argument("--decode-reject-cost", type=float, default=4.0,
+                    dest="decode_reject_cost")
+    ap.add_argument("--decode-stay", type=float, default=0.1, dest="decode_stay")
+    ap.add_argument("--decode-features", action="store_true", dest="decode_features",
+                    help="fold the date gate and scope membership into the emission as "
+                         "additive reject evidence rather than applying them as vetoes. "
+                         "Halves false rejections on Helene (19.8%% -> 9.9%%) and does not "
+                         "move pooled RMSE, because association routes contaminants out "
+                         "of the scored streams first.")
     ap.add_argument("--scope-ratio", type=float, default=2.0, dest="scope_ratio",
                     help="Ratio scope gate: judge each place observation against the "
                          "running NATIONAL total and keep / reroute-to-aggregate / drop. "
@@ -1018,7 +1040,12 @@ def main() -> None:
             # Helene: per-place RMSE 217.4 -> 21.9 deaths. It lived in scope_gate_test.py
             # and was never in the pipeline.
             parts = (rollup.get("hierarchy") or {}).get("parts") or []
-            states = {str(k).lower(): str(k) for k in parts}
+            # Key by the part VERBATIM. Lowercasing here was a no-op for Helene, whose
+            # rollup already uses lowercase canonical names, and silently disabled the
+            # gate for any rollup that does not: `apply_rollup` emits whatever the alias
+            # maps to, so an "Izmir" observation never matched an "izmir" state key and
+            # every stream fell through as ungated -- 0 rerouted, 0 rejected, no error.
+            states = {str(k): str(k) for k in parts}
 
             # Extracted scope FIRST, where it exists. The ratio gate reconstructs this
             # field from magnitude; if the model stated it, prefer the statement and let
@@ -1036,8 +1063,51 @@ def main() -> None:
                       f"{agr['agreement']:.1%} over {agr['_n_opinionated']} opinionated "
                       f"observations  <- the tunable signal, not a confidence float")
 
-            if args.scope_ratio > 0:
-                if states:
+            if args.scope_method != "off":
+                moved, dropped = [], []
+                # The gates COPY each observation (`dict(o, _from=...)`), so their verdicts
+                # never reached the dicts the artifact persists: `tracked` reflected the
+                # gate while `articles` did not, and every downstream scorer read the
+                # UNGATED stream. Measured: ratio and decode returned byte-identical
+                # observations on all three feeds while the log reported 12 rejections.
+                # Tag the originals here, apply the verdicts back by tag below.
+                for n, o in enumerate(per_mode[m]):
+                    o["_idx"] = n
+                if not states:
+                    print(f"   [scope-{args.scope_method}] no hierarchy.parts in the "
+                          f"rollup; skipped")
+                elif args.scope_method == "decode":
+                    # The GLOBAL decode. A greedy rule commits per observation, and one
+                    # large figure admitted early poisons a stream's running scale for
+                    # everything after it -- measured on Syria, whose first two readings
+                    # are contaminating Turkiye figures. Deciding the sequence jointly
+                    # removes that, which is why warmup is 0 here and 2 for the ratio gate.
+                    if args.decode_features:
+                        for o in per_mode[m]:
+                            o["_reject_logodds"] = 2.0 * (
+                                str(o.get("event_key", "")).lower() not in states)
+                        gated, moved, dropped = hmm_gate(
+                            per_mode[m], states, args.scope_reference,
+                            sigma=args.decode_sigma,
+                            reject_cost=args.decode_reject_cost,
+                            stay=args.decode_stay, part_ratio=args.scope_ratio)
+                    else:
+                        gated, moved, dropped = viterbi_gate(
+                            per_mode[m], states, args.scope_reference,
+                            sigma=args.decode_sigma,
+                            reject_cost=args.decode_reject_cost,
+                            stay=args.decode_stay, warmup=0,
+                            part_ratio=args.scope_ratio)
+                    per_mode[m] = [o for lst in gated.values() for o in lst]
+                    print(f"   [scope-decode sigma={args.decode_sigma} "
+                          f"reject={args.decode_reject_cost}"
+                          f"{' +features' if args.decode_features else ''}] {m}: "
+                          f"rerouted {len(moved)} to __aggregate__, "
+                          f"rejected {len(dropped)}")
+                    for o in dropped[:6]:
+                        print(f"           reject {o.get('_from','?'):<20}"
+                              f"value={float(o['value']):>8.0f}")
+                elif args.scope_ratio > 0:
                     gated, moved, dropped = scope_gate(
                         per_mode[m], args.scope_ratio, args.scope_warmup, states,
                         args.scope_reference)
@@ -1048,8 +1118,23 @@ def main() -> None:
                     for o in dropped[:6]:
                         print(f"           drop  {o.get('_from','?'):<20}"
                               f"value={float(o['value']):>8.0f}")
-                else:
-                    print("   [scope-ratio] no hierarchy.parts in the rollup; gate skipped")
+
+                # Back onto the per-article lists, which are what gets persisted. A
+                # reroute rewrites the key in place; a rejection removes the observation,
+                # exactly as the membership filter above does with `_out_of_scope`.
+                reroute = {o["_idx"]: o["event_key"] for o in moved if "_idx" in o}
+                gone = {o["_idx"] for o in dropped if "_idx" in o}
+                for entry in articles:
+                    for o in entry["observations"]:
+                        if o.get("_idx") in reroute:
+                            o["event_key"] = reroute[o["_idx"]]
+                    entry["observations"] = [o for o in entry["observations"]
+                                             if o.get("_idx") not in gone]
+                for o in per_mode[m]:
+                    o.pop("_idx", None)
+                for entry in articles:
+                    for o in entry["observations"]:
+                        o.pop("_idx", None)
         scoped = True
 
     grid = [t0 + k * args.grid_step for k in range(int((t1 - t0) / args.grid_step) + 1)]
