@@ -16,7 +16,10 @@ from gliner2.training.trainer import GLiNER2Trainer as T
 
 def _stub(output_dir, mode):
     return types.SimpleNamespace(
-        output_dir=output_dir, config=types.SimpleNamespace(checkpoint_restart=mode)
+        output_dir=output_dir,
+        # bf16/fp16: upstream's reload path consults them before deciding whether
+        # to move the model to float32.
+        config=types.SimpleNamespace(checkpoint_restart=mode, bf16=False, fp16=False),
     )
 
 
@@ -88,6 +91,8 @@ def test_load_checkpoint_reapplies_gradient_checkpointing(tmp_path):
     class FakeModel:
         def __init__(self):
             self.encoder = FakeEncoder()
+        def float(self):          # upstream's reload calls this when not bf16/fp16
+            return self
         @classmethod
         def from_pretrained(cls, d):
             return cls()
@@ -99,7 +104,11 @@ def test_load_checkpoint_reapplies_gradient_checkpointing(tmp_path):
     stub = types.SimpleNamespace(
         model=FakeModel(),
         device=torch.device("cpu"),
-        config=types.SimpleNamespace(use_lora=False, gradient_checkpointing=True),
+        # bf16/fp16: upstream's reload consults them before deciding whether to
+        # move the model to float32.
+        config=types.SimpleNamespace(
+            use_lora=False, gradient_checkpointing=True, bf16=False, fp16=False
+        ),
         _setup_distributed=lambda: None,
         lora_layers={},
     )

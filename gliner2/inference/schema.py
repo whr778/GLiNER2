@@ -267,7 +267,8 @@ class Schema:
             "relations": [],
             "events": OrderedDict(),
             "json_descriptions": {},
-            "entity_descriptions": OrderedDict()
+            "entity_descriptions": OrderedDict(),
+            "relation_descriptions": OrderedDict(),
         }
         self._field_metadata = {}
         self._entity_metadata = {}
@@ -292,10 +293,16 @@ class Schema:
             "validators": validators or []
         }
 
-    def _store_entity_metadata(self, entity, dtype, threshold):
+    def _store_entity_metadata(
+        self, entity, dtype, threshold, validators=None
+    ):
         if threshold is not None and not 0 <= threshold <= 1:
             raise ValueError(f"Threshold must be 0-1, got {threshold}")
-        self._entity_metadata[entity] = {"dtype": dtype, "threshold": threshold}
+        self._entity_metadata[entity] = {
+            "dtype": dtype,
+            "threshold": threshold,
+            "validators": validators or [],
+        }
 
     def _store_field_order(self, parent, order):
         self._field_orders[parent] = order
@@ -386,7 +393,8 @@ class Schema:
         self,
         entity_types: Union[str, List[str], Dict[str, Union[str, Dict]]],
         dtype: Literal["str", "list"] = "list",
-        threshold: Optional[float] = None
+        threshold: Optional[float] = None,
+        validators: Optional[List[RegexValidator]] = None,
     ) -> 'Schema':
         """Add entity extraction task."""
         if self._active_builder:
@@ -403,7 +411,8 @@ class Schema:
             self._store_entity_metadata(
                 name,
                 config.get("dtype", dtype),
-                config.get("threshold", threshold)
+                config.get("threshold", threshold),
+                config.get("validators", validators),
             )
 
             if "description" in config:
@@ -543,6 +552,9 @@ class Schema:
             if rel_threshold is not None and not 0 <= rel_threshold <= 1:
                 raise ValueError(f"Threshold must be 0-1, got {rel_threshold}")
             self._relation_metadata[name] = {"threshold": rel_threshold}
+            description = config.get("description")
+            if description:
+                self.schema["relation_descriptions"][name] = description
 
         return self
 
@@ -828,9 +840,24 @@ class Schema:
                 result["classifications"].append(cls_def)
 
         if self.schema["relations"]:
-            result["relations"] = self._relation_order if self._relation_order else [
+            relation_order = self._relation_order if self._relation_order else [
                 list(rel_dict.keys())[0] for rel_dict in self.schema["relations"]
             ]
+            relation_configs = {}
+            for name in relation_order:
+                config = {}
+                description = self.schema["relation_descriptions"].get(name)
+                if description:
+                    config["description"] = description
+                rel_threshold = self._relation_metadata.get(name, {}).get("threshold")
+                if rel_threshold is not None:
+                    config["threshold"] = rel_threshold
+                relation_configs[name] = config
+            result["relations"] = (
+                relation_configs
+                if any(relation_configs.values())
+                else relation_order
+            )
 
         if self.schema["events"]:
             event_order = self._event_order or list(self.schema["events"].keys())

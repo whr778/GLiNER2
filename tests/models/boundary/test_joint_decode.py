@@ -124,10 +124,12 @@ def test_joint_decode_matches_greedy_on_the_same_candidates():
     common = dict(
         offset=0, start_map=START_MAP, end_map=END_MAP, text=TEXT, text_len=4,
         include_confidence=False, include_spans=True,
-        layout=_layout_from_ext_specs(SPECS),
     )
+    # `layout` goes to the joint decode only: after the g2.5 merge `_decode_relations`
+    # builds pairs through upstream's relation_pair_generator and no longer takes it.
     joint = model._decode_joint(
-        None, 0, _core(model), _candidates(), threshold=0.5, specs=SPECS, **common
+        None, 0, _core(model), _candidates(), threshold=0.5, specs=SPECS,
+        layout=_layout_from_ext_specs(SPECS), **common
     )
     greedy = model._decode_relations(
         0, _core(model), _candidates(), {"relation_metadata": {}},

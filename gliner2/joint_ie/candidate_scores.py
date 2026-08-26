@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Hashable, List, Mapping, Optional, Sequence, Tuple
 
 from gliner2.joint_ie.candidates import (
+    CandidateSource,
     EdgeCandidate,
     JointProblem,
     NodeCandidate,
@@ -32,6 +33,13 @@ class MentionScore:
     end: int
     logit: float
     probability: float
+    # None, not 0.5 -- same reason as ScoredRelationEdge.threshold. The scoring guard
+    # reads `m.threshold if m.threshold is not None else decision_threshold`, so a 0.5
+    # default pins NODE utilities to 0.5 and the caller's threshold never reaches node
+    # admission. Upstream's own converter passes `threshold=` explicitly, so an explicit
+    # per-mention value still wins.
+    threshold: Optional[float] = None
+    candidate_threshold: Optional[float] = None
 
     @property
     def key(self) -> Tuple[str, int, int]:
@@ -49,6 +57,33 @@ class RelationRoleScore:
     probability: float
 
 
+@dataclass(frozen=True)
+class ScoredRelationEdge:
+    """A scored (head, tail) relation proposal referencing mention keys.
+
+    ``slot``/``hypothesis`` carry record semantics: a *role edge* of an event instance
+    sets ``hypothesis`` to its trigger node key and, for a scalar role, ``slot`` to the
+    role name -- which is what makes scalar cardinality fall out of the optimizer's
+    ``exclusion_keys`` for free. Plain relations leave both ``None``.
+    """
+
+    relation_type: str
+    head: Hashable
+    tail: Hashable
+    logit: float
+    probability: float
+    # None, not 0.5. Upstream's own scoring guards `threshold is not None` and falls back
+    # to the caller's `decision_threshold`, but a 0.5 DEFAULT makes that guard always take
+    # the edge's value -- which silently pins edge selection to 0.5 and stops the decode
+    # responding to --threshold at all. That regression is measured, not hypothetical:
+    # joint recall moved only 0.1498 -> 0.1591 across thresholds 0.5 -> 0.1 on Re-DocRED
+    # while the greedy arm moved 0.0461 -> 0.4134. An explicit per-edge threshold still wins.
+    threshold: Optional[float] = None
+    candidate_threshold: Optional[float] = None
+    slot: Optional[Hashable] = None
+    hypothesis: Optional[Hashable] = None
+
+
 @dataclass
 class CandidateScoreSet:
     """Sparse, architecture-neutral candidate scores for one text."""
@@ -56,8 +91,12 @@ class CandidateScoreSet:
     text: str
     mentions: Tuple[MentionScore, ...]
     relation_roles: Tuple[RelationRoleScore, ...] = ()
+    edges: Tuple[ScoredRelationEdge, ...] = ()
     classifications: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    text_tokens: Tuple[str, ...] = ()
+    start_mappings: Tuple[int, ...] = ()
+    end_mappings: Tuple[int, ...] = ()
 
 
 def score_lattice_to_candidate_score_set(lattice: Any) -> CandidateScoreSet:
@@ -103,71 +142,334 @@ def score_lattice_to_candidate_score_set(lattice: Any) -> CandidateScoreSet:
                     )
             query_id += 1
 
-    return CandidateScoreSet(text=lattice.text, mentions=tuple(mentions))
+    return CandidateScoreSet(
+        text=lattice.text,
+        mentions=tuple(mentions),
+        text_tokens=tuple(getattr(lattice, "text_tokens", ())),
+        start_mappings=tuple(getattr(lattice, "start_mappings", ())),
+        end_mappings=tuple(getattr(lattice, "end_mappings", ())),
+    )
 
 
 def boundary_candidates_to_candidate_score_set(
+    text: str,
+    candidates: Any,
+    query_specs: Sequence[Any],
+    *,
+    sample_index: int = 0,
+    token_offset: int = 0,
+    text_length: Optional[int] = None,
+    pair_temperature: float = 1.0,
+    entity_thresholds: Optional[Mapping[str, Optional[float]]] = None,
+    entity_candidate_thresholds: Optional[
+        Mapping[str, Optional[float]]
+    ] = None,
+    extra_mentions: Sequence[MentionScore] = (),
+    edges: Sequence[ScoredRelationEdge] = (),
+    text_tokens: Sequence[str] = (),
+    start_mappings: Sequence[int] = (),
+    end_mappings: Sequence[int] = (),
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> CandidateScoreSet:
+    """Convert one boundary candidate batch row into sparse joint scores."""
+    if pair_temperature <= 0:
+        raise ValueError("pair_temperature must be positive")
+    if text_length is None:
+        text_length = len(start_mappings)
+    thresholds = dict(entity_thresholds or {})
+    candidate_thresholds = dict(entity_candidate_thresholds or {})
+    best: dict[Tuple[str, int, int], MentionScore] = {
+        mention.key: mention for mention in extra_mentions
+    }
+
+    for query_id, spec in enumerate(query_specs):
+        task_type = (
+            spec.get("task_type")
+            if isinstance(spec, Mapping)
+            else getattr(spec, "task_type", None)
+        )
+        if task_type != "entities" or query_id >= candidates.indices.shape[1]:
+            continue
+        entity_type = str(
+            spec.get("field_name")
+            if isinstance(spec, Mapping)
+            else getattr(spec, "role_name", query_id)
+        )
+        threshold = thresholds.get(entity_type)
+        threshold = 0.5 if threshold is None else float(threshold)
+        valid = (
+            candidates.valid_mask[sample_index, query_id]
+            & candidates.query_mask[sample_index, query_id]
+        )
+        candidate_ids = valid.nonzero(as_tuple=False).flatten().tolist()
+        for candidate_id in candidate_ids:
+            start = int(
+                candidates.indices[sample_index, query_id, candidate_id, 0]
+            ) - token_offset
+            end = int(
+                candidates.indices[sample_index, query_id, candidate_id, 1]
+            ) - token_offset
+            if not (0 <= start < end <= int(text_length)):
+                continue
+            logit = float(
+                candidates.pair_logits[
+                    sample_index, query_id, candidate_id
+                ].detach().float()
+            ) / pair_temperature
+            mention = MentionScore(
+                query_id=query_id,
+                entity_type=entity_type,
+                start=start,
+                end=end,
+                logit=logit,
+                probability=sigmoid(logit),
+                threshold=threshold,
+                candidate_threshold=candidate_thresholds.get(entity_type),
+            )
+            previous = best.get(mention.key)
+            if previous is None or mention.logit > previous.logit:
+                best[mention.key] = mention
+
+    mentions = tuple(sorted(
+        best.values(),
+        key=lambda item: (
+            item.entity_type, item.start, item.end, -item.logit
+        ),
+    ))
+    return CandidateScoreSet(
+        text=text,
+        mentions=mentions,
+        edges=tuple(edges),
+        metadata=dict(metadata or {}),
+        text_tokens=tuple(text_tokens),
+        start_mappings=tuple(start_mappings),
+        end_mappings=tuple(end_mappings),
+    )
+
+
+def candidate_score_set_to_problem(
+    score_set: CandidateScoreSet,
+    edges: Optional[Sequence[ScoredRelationEdge]] = None,
+    *,
+    mention_threshold: float = 0.5,
+    constraints: Sequence[Any] = (),
+    decision_threshold: float = 0.5,
+    extra_nodes: Sequence[NodeCandidate] = (),
+    pre_scored_edges: Sequence["ScoredRelationEdge"] = (),
+    max_mentions_per_type: Optional[int] = None,
+    max_mentions_by_type: Optional[Mapping[str, int]] = None,
+    rescue_relation_endpoints: bool = False,
+    edge_candidate_threshold: float = 0.0,
+    max_edges_per_type: Optional[int] = None,
+    entity_weight: float = 1.0,
+    relation_weight: float = 1.0,
+) -> JointProblem:
+    """Build a :class:`JointProblem` from sparse mention + edge scores.
+
+    Node/edge utilities are centered log-odds (positive => above threshold), so
+    the existing greedy/beam optimizers and constraints work unchanged.
+
+    ``decision_threshold`` is what makes the optimizers threshold-aware: it sets where
+    utility crosses zero, and the optimizers only ever take a node or edge whose utility
+    is positive. Leaving it at 0.5 while the caller asked for 0.1 is not a mild
+    miscalibration -- it silently pins edge selection to 0.5 and the decode stops
+    responding to the threshold at all.
+
+    ``pre_scored_edges`` carry utilities that are **already** on the right scale and must
+    not be re-centered: a record role edge's scalar utility is the ABSENT-relative
+    log-odds ``logit_c - logit_ABSENT``, which is a comparison against the head's own
+    ABSENT class rather than against a probability cutoff. Shifting it by a threshold
+    offset would move scalar roles against a baseline that does not exist for them.
+    ``extra_nodes`` bypass for the same reason.
+    """
+    raw_edges = tuple(score_set.edges if edges is None else edges)
+    edge_by_key: dict[Tuple[Any, ...], ScoredRelationEdge] = {}
+    for edge in raw_edges:
+        threshold = (
+            edge_candidate_threshold
+            if edge.candidate_threshold is None
+            else edge.candidate_threshold
+        )
+        if edge.probability < threshold:
+            continue
+        key = (edge.relation_type, edge.head, edge.tail)
+        previous = edge_by_key.get(key)
+        if previous is None or edge.logit > previous.logit:
+            edge_by_key[key] = edge
+    edge_counts: dict[str, int] = {}
+    retained_edges: List[ScoredRelationEdge] = []
+    for edge in sorted(
+        edge_by_key.values(),
+        key=lambda item: (
+            item.relation_type, -item.logit, str(item.head), str(item.tail)
+        ),
+    ):
+        if (
+            max_edges_per_type is not None
+            and edge_counts.get(edge.relation_type, 0) >= max_edges_per_type
+        ):
+            continue
+        retained_edges.append(edge)
+        edge_counts[edge.relation_type] = (
+            edge_counts.get(edge.relation_type, 0) + 1
+        )
+    relation_edges = tuple(retained_edges)
+    rescue_ids = {
+        endpoint
+        for edge in relation_edges
+        for endpoint in (edge.head, edge.tail)
+    } if rescue_relation_endpoints else set()
+    selected_mentions: List[MentionScore] = []
+    per_type: dict[str, int] = {}
+    type_limits = dict(max_mentions_by_type or {})
+    for m in sorted(
+        score_set.mentions,
+        key=lambda item: (
+            item.entity_type, -item.probability, item.start, item.end
+        ),
+    ):
+        candidate_threshold = (
+            mention_threshold
+            if m.candidate_threshold is None
+            else m.candidate_threshold
+        )
+        if m.probability < candidate_threshold and m.key not in rescue_ids:
+            continue
+        type_limit = type_limits.get(m.entity_type, max_mentions_per_type)
+        if (
+            type_limit is not None
+            and per_type.get(m.entity_type, 0) >= type_limit
+            and m.key not in rescue_ids
+        ):
+            continue
+        selected_mentions.append(m)
+        per_type[m.entity_type] = per_type.get(m.entity_type, 0) + 1
+
+    nodes: List[NodeCandidate] = []
+    keep_ids = set()
+    for m in selected_mentions:
+        candidate_threshold = (
+            mention_threshold
+            if m.candidate_threshold is None
+            else m.candidate_threshold
+        )
+        node = NodeCandidate(
+            entity_type=m.entity_type,
+            start=m.start,
+            end=m.end,
+            score=entity_weight * center_logit(
+                m.logit,
+                m.threshold if m.threshold is not None else decision_threshold,
+            ),
+            probability=m.probability,
+            source=(
+                CandidateSource.RELATION_RESCUE
+                if (
+                    m.key in rescue_ids
+                    and m.probability < candidate_threshold
+                )
+                else CandidateSource.ENTITY
+            ),
+            candidate_id=m.key,
+        )
+        nodes.append(node)
+        keep_ids.add(m.key)
+
+    for node in extra_nodes:  # synthetic record-instance nodes; not thresholded
+        nodes.append(node)
+        keep_ids.add(node.candidate_id)
+
+    edge_cands: List[EdgeCandidate] = []
+    for edge_slot, (e, recenter) in enumerate(
+            [(edge, True) for edge in relation_edges]
+            + [(edge, False) for edge in pre_scored_edges]):
+        if e.head not in keep_ids or e.tail not in keep_ids:
+            continue
+        edge_cands.append(
+            EdgeCandidate(
+                relation_type=e.relation_type,
+                head=e.head,
+                tail=e.tail,
+                score=(
+                    relation_weight * center_logit(
+                        e.logit,
+                        e.threshold if getattr(e, "threshold", None) is not None
+                        else decision_threshold,
+                    )
+                ) if recenter else e.logit,
+                head_probability=e.probability,
+                tail_probability=e.probability,
+                # Our record edges carry slot/hypothesis (trigger key + role name),
+                # which is what makes scalar cardinality fall out of exclusion_keys.
+                # Plain relation edges have neither, and fall back to upstream's
+                # per-edge slot index and relation type.
+                # OURS, deliberately, not upstream's per-edge index. `slot is None`
+                # means NO exclusion keys (candidates.py), and both optimizers tie-break
+                # on `str(edge.slot)` -- so filling plain edges with 0,1,2 both invents
+                # exclusion groups and reorders the beam, silently changing joint decode
+                # output. Upstream needs distinct slots only for an opt-in
+                # UniqueRelationSlot constraint we never pass.
+                slot=e.slot,
+                hypothesis=e.hypothesis,
+            )
+        )
+
+    return JointProblem(
+        nodes=tuple(nodes),
+        edges=tuple(edge_cands),
+        constraints=tuple(constraints),
+    )
+
+
+def joint_decode(
     candidates: Any,
     query_types: Sequence[str],
-    text: str,
-    sample_index: int = 0,
+    pairs: Any,
+    relation_logits: Sequence[float],
     *,
+    constraints: Sequence[Any] = (),
+    sample_index: int = 0,
+    text: str = "",
+    mention_threshold: float = 0.5,
+    beam_width: int = 16,
     pair_temperature: float = 1.0,
-) -> CandidateScoreSet:
-    """Map one sample's boundary ``CandidateTensorBatch`` to a sparse score set (mentions).
+    relation_temperature: float = 1.0,
+    extra_edges: Sequence["ScoredRelationEdge"] = (),
+    extra_nodes: Sequence[NodeCandidate] = (),
+    decision_threshold: float = 0.5,
+):
+    """End-to-end boundary joint decode: candidates + relation pairs → mentions + edges →
+    typed-constraint beam → the selected node/edge solution. Composes the two boundary
+    adapters with the shared `BeamOptimizer`; this is the joint_ie side of the boundary
+    ``--joint-decode`` wiring. The engine caller converts the solution's token spans to
+    char offsets and formats the output dict (the remaining `BoundaryExtractor` piece)."""
+    from gliner2.joint_ie.optimizers import BeamOptimizer
 
-    The boundary architecture produces sparse candidates directly, so this is a flat walk
-    over real ``(query, candidate)`` cells -- no lattice. Each candidate becomes a
-    :class:`MentionScore` typed by ``query_types[query_id]`` (the schema field/role of that
-    query), with the span from ``indices`` and the score from ``pair_logits`` (the
-    mention-in-context score the boundary decode itself uses). Relation edges are built
-    separately from the relation pair generator -> :class:`ScoredRelationEdge`.
-    """
-    idx = candidates.indices[sample_index]          # [Q, C, 2]
-    pair = candidates.pair_logits[sample_index]     # [Q, C]
-    valid = candidates.valid_mask[sample_index]     # [Q, C]
-    qmask = candidates.query_mask[sample_index]     # [Q]
-    num_queries, num_cands = int(valid.shape[0]), int(valid.shape[1])
-
-    mentions: List[MentionScore] = []
-    for q in range(num_queries):
-        if not bool(qmask[q]):
-            continue
-        entity_type = query_types[q] if q < len(query_types) else str(q)
-        for c in range(num_cands):
-            if not bool(valid[q, c]):
-                continue
-            logit = float(pair[q, c]) / pair_temperature
-            mentions.append(
-                MentionScore(
-                    query_id=q,
-                    entity_type=entity_type,
-                    start=int(idx[q, c, 0]),
-                    end=int(idx[q, c, 1]),
-                    logit=logit,
-                    probability=sigmoid(logit),
-                )
-            )
-    return CandidateScoreSet(text=text, mentions=tuple(mentions))
+    css = boundary_candidates_to_scores(
+        candidates, query_types, text, sample_index, pair_temperature=pair_temperature)
+    edges = boundary_relation_pairs_to_edges(
+        pairs, relation_logits, relation_temperature=relation_temperature)
+    # Record role edges (sec 3b) go in pre-scored: their utilities are ABSENT-relative
+    # and must not be re-centered on the caller's threshold.
+    problem = candidate_score_set_to_problem(
+        css, edges, mention_threshold=mention_threshold, constraints=constraints,
+        decision_threshold=decision_threshold, extra_nodes=extra_nodes,
+        pre_scored_edges=extra_edges)
+    return BeamOptimizer(beam_width=beam_width).optimize(problem)
 
 
-@dataclass(frozen=True)
-class ScoredRelationEdge:
-    """A scored (head, tail) relation proposal referencing mention keys.
-
-    ``slot``/``hypothesis`` carry record semantics: a *role edge* of an event
-    instance sets ``hypothesis`` to its trigger node key and, for a scalar role,
-    ``slot`` to the role name -- which is what makes scalar cardinality fall out of
-    the optimizer's ``exclusion_keys`` for free. Plain relations leave both ``None``.
-    """
-
-    relation_type: str
-    head: Hashable
-    tail: Hashable
-    logit: float
-    probability: float
-    slot: Optional[Hashable] = None
-    hypothesis: Optional[Hashable] = None
+__all__ = [
+    "MentionScore",
+    "RelationRoleScore",
+    "CandidateScoreSet",
+    "ScoredRelationEdge",
+    "score_lattice_to_candidate_score_set",
+    "boundary_candidates_to_candidate_score_set",
+    "boundary_relation_pairs_to_edges",
+    "boundary_record_groups_to_role_edges",
+    "candidate_score_set_to_problem",
+    "joint_decode",
+]
 
 
 def boundary_relation_pairs_to_edges(
@@ -333,126 +635,51 @@ def boundary_record_instance_nodes(
             ))
     return nodes
 
-
-def candidate_score_set_to_problem(
-    score_set: CandidateScoreSet,
-    edges: Sequence[ScoredRelationEdge] = (),
-    *,
-    mention_threshold: float = 0.5,
-    constraints: Sequence[Any] = (),
-    decision_threshold: float = 0.5,
-    extra_nodes: Sequence[NodeCandidate] = (),
-    pre_scored_edges: Sequence["ScoredRelationEdge"] = (),
-) -> JointProblem:
-    """Build a :class:`JointProblem` from sparse mention + edge scores.
-
-    Node/edge utilities are centered log-odds (positive => above threshold), so
-    the existing greedy/beam optimizers and constraints work unchanged.
-
-    ``decision_threshold`` is what makes the optimizers threshold-aware: it sets where
-    utility crosses zero, and the optimizers only ever take a node or edge whose utility
-    is positive. Leaving it at 0.5 while the caller asked for 0.1 is not a mild
-    miscalibration -- it silently pins edge selection to 0.5 and the decode stops
-    responding to the threshold at all.
-
-    ``pre_scored_edges`` carry utilities that are **already** on the right scale and must
-    not be re-centered: a record role edge's scalar utility is the ABSENT-relative
-    log-odds ``logit_c - logit_ABSENT``, which is a comparison against the head's own
-    ABSENT class rather than against a probability cutoff. Shifting it by a threshold
-    offset would move scalar roles against a baseline that does not exist for them.
-    ``extra_nodes`` bypass for the same reason.
-    """
-    nodes: List[NodeCandidate] = []
-    keep_ids = set()
-    for m in score_set.mentions:
-        if m.probability < mention_threshold:
-            continue
-        node = NodeCandidate(
-            entity_type=m.entity_type,
-            start=m.start,
-            end=m.end,
-            score=center_logit(m.logit, decision_threshold),
-            probability=m.probability,
-            candidate_id=m.key,
-        )
-        nodes.append(node)
-        keep_ids.add(m.key)
-
-    for node in extra_nodes:  # synthetic record-instance nodes; not thresholded
-        nodes.append(node)
-        keep_ids.add(node.candidate_id)
-
-    edge_cands: List[EdgeCandidate] = []
-    for e, recenter in ([(e, True) for e in edges]
-                        + [(e, False) for e in pre_scored_edges]):
-        if e.head not in keep_ids or e.tail not in keep_ids:
-            continue
-        edge_cands.append(
-            EdgeCandidate(
-                relation_type=e.relation_type,
-                head=e.head,
-                tail=e.tail,
-                score=center_logit(e.logit, decision_threshold) if recenter else e.logit,
-                head_probability=e.probability,
-                tail_probability=e.probability,
-                slot=e.slot,
-                hypothesis=e.hypothesis,
-            )
-        )
-
-    return JointProblem(
-        nodes=tuple(nodes),
-        edges=tuple(edge_cands),
-        constraints=tuple(constraints),
-    )
-
-
-def joint_decode(
+# Our converter. Upstream defines a function of the SAME original name with a
+# different contract -- theirs is (text, candidates, query_specs) with per-type
+# thresholds; ours is (candidates, query_types, text) typing mentions from a flat
+# sequence of type names, which is what the joint decode is built against. Renamed
+# rather than merged: both are live, and collapsing them silently breaks one.
+def boundary_candidates_to_scores(
     candidates: Any,
     query_types: Sequence[str],
-    pairs: Any,
-    relation_logits: Sequence[float],
-    *,
-    constraints: Sequence[Any] = (),
+    text: str,
     sample_index: int = 0,
-    text: str = "",
-    mention_threshold: float = 0.5,
-    beam_width: int = 16,
+    *,
     pair_temperature: float = 1.0,
-    relation_temperature: float = 1.0,
-    extra_edges: Sequence["ScoredRelationEdge"] = (),
-    extra_nodes: Sequence[NodeCandidate] = (),
-    decision_threshold: float = 0.5,
-):
-    """End-to-end boundary joint decode: candidates + relation pairs → mentions + edges →
-    typed-constraint beam → the selected node/edge solution. Composes the two boundary
-    adapters with the shared `BeamOptimizer`; this is the joint_ie side of the boundary
-    ``--joint-decode`` wiring. The engine caller converts the solution's token spans to
-    char offsets and formats the output dict (the remaining `BoundaryExtractor` piece)."""
-    from gliner2.joint_ie.optimizers import BeamOptimizer
+) -> CandidateScoreSet:
+    """Map one sample's boundary ``CandidateTensorBatch`` to a sparse score set (mentions).
 
-    css = boundary_candidates_to_candidate_score_set(
-        candidates, query_types, text, sample_index, pair_temperature=pair_temperature)
-    edges = boundary_relation_pairs_to_edges(
-        pairs, relation_logits, relation_temperature=relation_temperature)
-    # Record role edges (sec 3b) go in pre-scored: their utilities are ABSENT-relative
-    # and must not be re-centered on the caller's threshold.
-    problem = candidate_score_set_to_problem(
-        css, edges, mention_threshold=mention_threshold, constraints=constraints,
-        decision_threshold=decision_threshold, extra_nodes=extra_nodes,
-        pre_scored_edges=extra_edges)
-    return BeamOptimizer(beam_width=beam_width).optimize(problem)
+    The boundary architecture produces sparse candidates directly, so this is a flat walk
+    over real ``(query, candidate)`` cells -- no lattice. Each candidate becomes a
+    :class:`MentionScore` typed by ``query_types[query_id]`` (the schema field/role of that
+    query), with the span from ``indices`` and the score from ``pair_logits`` (the
+    mention-in-context score the boundary decode itself uses). Relation edges are built
+    separately from the relation pair generator -> :class:`ScoredRelationEdge`.
+    """
+    idx = candidates.indices[sample_index]          # [Q, C, 2]
+    pair = candidates.pair_logits[sample_index]     # [Q, C]
+    valid = candidates.valid_mask[sample_index]     # [Q, C]
+    qmask = candidates.query_mask[sample_index]     # [Q]
+    num_queries, num_cands = int(valid.shape[0]), int(valid.shape[1])
 
-
-__all__ = [
-    "MentionScore",
-    "RelationRoleScore",
-    "CandidateScoreSet",
-    "ScoredRelationEdge",
-    "score_lattice_to_candidate_score_set",
-    "boundary_candidates_to_candidate_score_set",
-    "boundary_relation_pairs_to_edges",
-    "boundary_record_groups_to_role_edges",
-    "candidate_score_set_to_problem",
-    "joint_decode",
-]
+    mentions: List[MentionScore] = []
+    for q in range(num_queries):
+        if not bool(qmask[q]):
+            continue
+        entity_type = query_types[q] if q < len(query_types) else str(q)
+        for c in range(num_cands):
+            if not bool(valid[q, c]):
+                continue
+            logit = float(pair[q, c]) / pair_temperature
+            mentions.append(
+                MentionScore(
+                    query_id=q,
+                    entity_type=entity_type,
+                    start=int(idx[q, c, 0]),
+                    end=int(idx[q, c, 1]),
+                    logit=logit,
+                    probability=sigmoid(logit),
+                )
+            )
+    return CandidateScoreSet(text=text, mentions=tuple(mentions))

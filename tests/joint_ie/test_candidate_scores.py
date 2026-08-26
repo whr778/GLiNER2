@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from types import SimpleNamespace
 
 import torch
@@ -10,13 +12,13 @@ from gliner2.joint_ie.candidate_scores import (
     CandidateScoreSet,
     MentionScore,
     ScoredRelationEdge,
-    boundary_candidates_to_candidate_score_set,
+    boundary_candidates_to_scores,
     boundary_relation_pairs_to_edges,
     candidate_score_set_to_problem,
     joint_decode,
     score_lattice_to_candidate_score_set,
 )
-from gliner2.joint_ie.constraints import TypedEndpoints
+from gliner2.joint_ie.constraints import TypedEndpoints, UniqueRelationSlot
 from gliner2.joint_ie.optimizers import BeamOptimizer, GreedyOptimizer
 
 
@@ -59,6 +61,45 @@ def test_typed_endpoints_and_optimizers_select_relation():
         assert len(solution.nodes) == 2
 
 
+@pytest.mark.xfail(
+    reason="Deliberate divergence from upstream. Upstream fills every plain relation "
+           "edge's `slot` with its edge index so UniqueRelationSlot(..., 'slot') can "
+           "separate them. We keep slot=None for plain edges: `slot is None` means NO "
+           "exclusion keys (joint_ie/candidates.py), and both optimizers tie-break on "
+           "str(edge.slot), so filling it invents exclusion groups AND reorders the beam "
+           "-- silently changing joint decode output. Our record role edges still carry "
+           "their role name in `slot`, which is what scalar cardinality depends on. "
+           "Revisit if we ever pass UniqueRelationSlot on the 'slot' endpoint.",
+    strict=True,
+)
+def test_sparse_boundary_edges_receive_distinct_relation_slots():
+    css = CandidateScoreSet(
+        text="A X B Y",
+        mentions=(
+            MentionScore(0, "person", 0, 1, 4.0, 0.98),
+            MentionScore(1, "org", 1, 2, 4.0, 0.98),
+            MentionScore(0, "person", 2, 3, 4.0, 0.98),
+            MentionScore(1, "org", 3, 4, 4.0, 0.98),
+        ),
+        edges=(
+            ScoredRelationEdge(
+                "works_for", ("person", 0, 1), ("org", 1, 2), 4.0, 0.98
+            ),
+            ScoredRelationEdge(
+                "works_for", ("person", 2, 3), ("org", 3, 4), 4.0, 0.98
+            ),
+        ),
+    )
+    problem = candidate_score_set_to_problem(
+        css,
+        constraints=(UniqueRelationSlot("works_for", "slot"),),
+    )
+    solution = GreedyOptimizer().optimize(problem)
+
+    assert len(solution.edges) == 2
+    assert len({edge.slot for edge in solution.edges}) == 2
+
+
 def test_score_lattice_to_candidate_score_set_maps_halfopen_spans():
     # A minimal ScoreLattice-shaped object: one entity task, L=2, W=2.
     role_logits = torch.full((1, 2, 2, 2), -5.0)   # [count, types, L, W]
@@ -83,7 +124,7 @@ def test_score_lattice_to_candidate_score_set_maps_halfopen_spans():
     assert (m.entity_type, m.start, m.end) == ("a", 0, 1)  # inclusive 0 -> half-open [0,1)
 
 
-def test_boundary_candidates_to_candidate_score_set_maps_sparse():
+def test_boundary_candidates_to_scores_maps_sparse():
     # A minimal boundary CandidateTensorBatch: B=1, Q=2 ("person","org"), C=2.
     from gliner2.models.outputs import CandidateTensorBatch
 
@@ -96,7 +137,7 @@ def test_boundary_candidates_to_candidate_score_set_maps_sparse():
         valid_mask=valid, query_mask=qmask,
     )
 
-    css = boundary_candidates_to_candidate_score_set(
+    css = boundary_candidates_to_scores(
         cands, ["person", "org"], "Alice works at Acme"
     )
     assert len(css.mentions) == 3  # query0: 2 valid, query1: 1 valid (second is padding)
@@ -223,7 +264,7 @@ def test_two_relation_types_sharing_field_names_keep_distinct_nodes_and_edges():
     assert len(pairs) > 0
 
     query_types = [qualified_query_type(q.query_id, q.role_name) for q in layout.queries]
-    css = boundary_candidates_to_candidate_score_set(cands, query_types, "text")
+    css = boundary_candidates_to_scores(cands, query_types, "text")
     keys = [m.key for m in css.mentions]
     assert len(keys) == len(set(keys)), "mention keys collide across relation types"
 

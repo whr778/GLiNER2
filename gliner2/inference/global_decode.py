@@ -95,7 +95,7 @@ def _merge_cluster(
     triggers: List[Any] = []
     for m in mentions:
         triggers.extend(_trigger_spans(m))
-    triggers = _dedupe_items(triggers, remove_overlaps=True)
+    triggers = _dedupe_items(triggers, overlap_policy="disallow")
 
     by_role: "OrderedDict[str, List[Any]]" = OrderedDict()
     for m in mentions:
@@ -112,7 +112,7 @@ def _merge_cluster(
     arguments: List[Dict[str, Any]] = []
     for role, entities in by_role.items():
         spans = [e for e in entities if _is_span_dict(e)]
-        for entity in _dedupe_items(spans, remove_overlaps=True):
+        for entity in _dedupe_items(spans, overlap_policy="disallow"):
             arguments.append({"role": role, "entity": entity})
 
     return {"triggers": triggers, "arguments": arguments}

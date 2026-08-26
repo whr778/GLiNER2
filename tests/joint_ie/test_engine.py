@@ -150,8 +150,22 @@ def test_from_pretrained_splits_wrapper_and_model_options(monkeypatch):
     # architecture because the joint decode arms are trained on BOUNDARY models.
     # Patching the wrong symbol lets the call escape to a real network fetch.
     monkeypatch.setattr(gliner2, "AutoExtractor", Loader)
-    engine = JointIE.from_pretrained("repo", quantize=True, map_location="cpu")
-    assert captured == {"path": "repo", "kwargs": {"quantize": True, "map_location": "cpu"}}
+    engine = JointIE.from_pretrained(
+        "repo",
+        quantize=True,
+        map_location="cpu",
+        revision="release",
+        use_flashdeberta=False,
+    )
+    assert captured == {
+        "path": "repo",
+        "kwargs": {
+            "quantize": True,
+            "map_location": "cpu",
+            "revision": "release",
+            "use_flashdeberta": False,
+        },
+    }
     assert engine.model is not None
     with pytest.raises(TypeError, match="JointIEConfig"):
         JointIE.from_pretrained("repo", beam_size=4)

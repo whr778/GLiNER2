@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Dict, Mapping, Optional
 
 try:  # Literal is stdlib on 3.8+
     from typing import Literal
@@ -60,7 +60,7 @@ class BoundaryHeadSettings:
     # the marginal objective: standard weighted BCE or asymmetric focal loss.
     boundary_negative_weight: float = 1.0
     boundary_marginal_loss: str = "bce"  # "bce" | "asymmetric_focal"
-    loss_reduction: str = "global"  # "global" | "per_query"
+    loss_reduction: str = "global"  # "global" | "per_query" | "sum"
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -503,9 +503,10 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             "boundary_head.task_loss_weight_scope must be 'span' or 'all', got "
             f"{result['task_loss_weight_scope']!r}"
         )
-    if result["loss_reduction"] not in ("global", "per_query"):
+    if result["loss_reduction"] not in ("global", "per_query", "sum"):
         raise ValueError(
-            "boundary_head.loss_reduction must be 'global' or 'per_query', got "
+            "boundary_head.loss_reduction must be 'global', 'per_query', or "
+            f"'sum', got "
             f"{result['loss_reduction']!r}"
         )
     if (
@@ -766,6 +767,16 @@ class ExtractorConfig(PretrainedConfig):
 
     model_type = "extractor"
     current_config_version = 3
+
+    @classmethod
+    def from_dict(cls, config_dict: Mapping[str, Any], **kwargs: Any):
+        """Construct from a migrated raw dictionary.
+
+        ``PretrainedConfig.from_pretrained`` delegates here, making migration
+        part of both local and Hub loading without changing direct construction
+        defaults for newly-created configs.
+        """
+        return super().from_dict(migrate_config_dict(config_dict), **kwargs)
 
     def __init__(
         self,

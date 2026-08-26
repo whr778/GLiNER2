@@ -23,6 +23,7 @@ class _StubModel:
 
     def __init__(self):
         self.to = Mock(return_value=self)
+        self.float = Mock(return_value=self)
         self.processor = Mock()
         self.save_pretrained = Mock()
 

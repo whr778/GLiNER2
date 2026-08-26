@@ -18,6 +18,7 @@ from typing import Any, Optional
 import torch
 
 from ..joint_ie.calibration import Calibrator
+from ..models.loading import LOAD_OPTIONS
 from .compiler import CompiledClassificationSchema, compile_schema, _fingerprint
 from .decoding import build_problem, decode as _decode
 from .errors import SchemaError
@@ -27,7 +28,7 @@ from .scoring import ClassificationScorer
 
 _DECODERS = ("auto", "independent", "exact", "beam")
 _ON_INFEASIBLE = ("relax", "min_violations", "raise")
-_MODEL_LOAD_OPTIONS = frozenset({"quantize", "compile", "map_location"})
+_MODEL_LOAD_OPTIONS = LOAD_OPTIONS
 _CACHE_CAP = 128
 
 

@@ -430,7 +430,11 @@ def build_boundary_batch_metadata(
                             continue
                         for hs, he in _iter_inclusive_spans(instance[0]):
                             for ts, te in _iter_inclusive_spans(instance[1]):
-                                gold_pairs.append((hs, he + 1, ts, te + 1))
+                                if (
+                                    0 <= hs <= he < text_length
+                                    and 0 <= ts <= te < text_length
+                                ):
+                                    gold_pairs.append((hs, he + 1, ts, te + 1))
                 sample_relation_gold.append(gold_pairs)
 
             if not build_targets or not labels or labels[0] == 0:
