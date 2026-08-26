@@ -808,13 +808,32 @@ def main() -> None:
     ap.add_argument("--feed", required=True)
     ap.add_argument("--truth", default=None)
     ap.add_argument("--out", default="datasets/ekf_showcase/tracked.json")
-    ap.add_argument("--gate-model", default="fastino/gliner2-base-v1",
-                    help="general model for the relevance gate + normalizer classification")
+    ap.add_argument("--gate-model", default="whr778/gliner2-base-v1-casualty-docee",
+                    help="relevance gate + normalizer classification. Measured against "
+                         "fastino/gliner2-base-v1 on 1,000 expert-annotated messages "
+                         "(community-datasets/disaster_response_messages): false-positive "
+                         "rate on related=0 is 1/410 vs fastino's 34/410, and fastino "
+                         "cannot reach it at ANY threshold -- at 0.99 it still admits "
+                         "15/410 while losing recall. This model's keeps are a strict "
+                         "SUBSET of fastino's (0 kept here that fastino drops), and the "
+                         "172 extra fastino keeps are overwhelmingly what GATE_LABELS_V2 "
+                         "calls `other`: aid logistics, condolences, one individual's "
+                         "death, and EXPOSURE counts (\'1.8 million displaced\') -- the "
+                         "same class that contaminated the EKF streams. Pass "
+                         "fastino/gliner2-base-v1 to reproduce older runs.")
     ap.add_argument("--casualty-model", default="whr778/gliner2-base-v1-casualty-docee",
                     help="best on all three showcase gates: multi-event correct 0.450, "
                          "wrong-event 0.181, single-event 1.000")
     ap.add_argument("--event-model", default=None,
-                    help="boundary checkpoint for stage 1; omit to skip event extraction")
+                    help="checkpoint for stage 1; omit to skip event extraction. Use "
+                         "whr778/gliner2-base-v1-casualty-docee, NOT a fastino model and "
+                         "NOT an mmBERT one: on the 27-label DocEE set it ties fastino at "
+                         "90.0%% top-1 while ekf-frontend-mmbert scores 9.0%% and "
+                         "joint-boundary-mmbert-137k-clean 27.0%% (chance 3.7%%) -- both "
+                         "mmBERT heads collapse onto a single label. Enabling stage 1 "
+                         "CHANGES KEYING: with a collapse_type rollup a record with no "
+                         "location falls back to the bare event type, which the scope "
+                         "filter then rejects as out of scope.")
     ap.add_argument("--normalizer", choices=("heuristic", "classify", "hybrid", "both"), default="heuristic")
     ap.add_argument("--gate-threshold", type=float, default=0.5)
     ap.add_argument("--event-threshold", type=float, default=0.3)
