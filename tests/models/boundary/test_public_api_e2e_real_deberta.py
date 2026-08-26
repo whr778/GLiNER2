@@ -158,3 +158,44 @@ def test_boundary_public_api_lifecycle_real_deberta(tmp_path):
     )
     assert isinstance(reloaded_entities.get("entities"), dict)
     assert "topic" in reloaded_classification
+
+
+@pytest.mark.slow
+@pytest.mark.quality
+def test_boundary_public_api_converges_real_deberta(tmp_path):
+    """Our pre-g2.5 quality gate, restored alongside upstream's lifecycle smoke test.
+
+    g2.5 cut max_steps from 1000 to 1 and replaced `recall == 1.0` / `accuracy == 1.0`
+    with isinstance checks, deliberately -- "a lifecycle contract, not an overfit/quality
+    test ... no seed-sensitive convergence gate". That is a reasonable CI trade, but it
+    means nothing in the suite still proves the boundary train -> save -> load path can
+    actually LEARN. This keeps that proof, seeded and marked slow/quality so it can be
+    deselected with -m "not slow".
+    """
+    torch.manual_seed(0)
+    model = _build_model()
+
+    config = TrainingConfig(
+        output_dir=str(tmp_path / "run"),
+        max_steps=1000,  # classification overfit needs ~800 steps to converge here
+        batch_size=4,
+        gradient_accumulation_steps=1,
+        encoder_lr=2e-5,
+        task_lr=5e-3,
+        warmup_ratio=0.0,
+        scheduler_type="constant",
+        logging_steps=20,
+        eval_strategy="no",
+        fp16=False,
+        bf16=False,
+    )
+    trainer = ExtractorTrainer(model, config)
+    result = trainer.train(train_data=EXAMPLES)
+    assert torch.isfinite(torch.tensor(result["train_metrics_history"][-1]["loss"]))
+
+    assert _entity_recall(model, EXAMPLES) == 1.0
+    assert _cls_accuracy(model, EXAMPLES) == 1.0
+
+    reloaded = AutoExtractor.from_pretrained(str(tmp_path / "run" / "final"))
+    assert _entity_recall(reloaded, EXAMPLES) == 1.0
+    assert _cls_accuracy(reloaded, EXAMPLES) == 1.0
