@@ -49,6 +49,10 @@ dependencies = [
     "kernels>=0.12,<0.13",
     "langcodes[data]",
     "lumi-language-id-2",
+    # Mac-only: Metal FlashAttention for MPS. Marker-guarded because this package
+    # does not install on the Linux CUDA boxes the training runs use, and an
+    # unconditional entry here would break `uv sync` there.
+    "mps-flash-attn>=0.6.1; sys_platform == 'darwin'",
     "numpy",
     "openai>=2.53.0",
     "peft",

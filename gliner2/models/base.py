@@ -39,12 +39,41 @@ def resolve_device(map_location: Optional[str] = None) -> str:
     GPU without the caller having to ask.
     """
     if map_location is not None:
-        return map_location
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
+        device = map_location
+    elif torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+    if str(device).startswith("mps"):
+        _enable_mps_flash_attention()
+    return device
+
+
+_MPS_FLASH_ENABLED = False
+
+
+def _enable_mps_flash_attention() -> None:
+    """Swap in Metal FlashAttention for SDPA. MPS only, and only once.
+
+    Measured on mmBERT, 3 alternating rounds of 15 extracts each: 75.7 -> 70.7 ms with
+    non-overlapping ranges (73-78 against 70-71), and lower variance. The import lives
+    here rather than at module scope because the package is Mac-only -- CUDA and CPU
+    never touch it. Unavailable is a warning, not an error, matching how the encoder
+    handles an attention backend it cannot get.
+    """
+    global _MPS_FLASH_ENABLED
+    if _MPS_FLASH_ENABLED:
+        return
+    _MPS_FLASH_ENABLED = True
+    try:
+        from mps_flash_attn import replace_sdpa
+    except ImportError as exc:
+        warnings.warn(f"mps-flash-attn unavailable, MPS keeps stock SDPA ({exc})",
+                      RuntimeWarning, stacklevel=2)
+        return
+    replace_sdpa()
 
 
 # =============================================================================
