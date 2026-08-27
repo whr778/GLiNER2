@@ -359,7 +359,7 @@ currently justify one.
 uv run python tools/train/eval.py --config <config> --checkpoint out/<run>/best --split test
 ```
 
-Five rules that have each changed a conclusion in this project:
+Six rules that have each changed a conclusion in this project:
 
 1. **Sweep the threshold per checkpoint, then compare at matched thresholds.**
    `metric_sweep: true` selects each checkpoint at *its own* best threshold — right for
@@ -370,18 +370,28 @@ Five rules that have each changed a conclusion in this project:
    control on a second seed gave relation strict **±0.041** on `mix_natural`, four times the
    0.01 that had been assumed — large enough to void a published-looking result.
 3. **Report per capability.** A single aggregate hides which capability moved which way.
-4. **A flat aggregate is not a null result — test the discordant rows.** gate2 v2 scored
-   `relevance` 0.8341 against v1's 0.8368 and was written off as no improvement. Scored on
-   identical rows stratified toward the hard classes, it wins 37 rows to 17: exact McNemar
-   **p = 0.0091**. The aggregate was flat because easy rows dominate it. Two models on the
-   same corpus give *paired* data, so test the rows where exactly one model is right rather
-   than differencing two means.
+4. **A flat aggregate is not a null result — but rule 1 still applies to the paired test.**
+   gate2 v2 scored `relevance` 0.8341 against v1's 0.8368 and was written off. Scored on
+   identical rows stratified toward the hard classes it wins 37 to 17, exact McNemar
+   p = 0.0091 — and that result does **not** survive: with each model at the threshold its
+   own validation split chooses, the score is **18 / 18, p = 1.0000**. The models are
+   indistinguishable; the p = 0.0091 was measuring the gap between two *operating points*
+   that a shared argmax happened to put in different places. Paired testing is necessary and
+   not sufficient — pair the rows *and* match the thresholds, or the test just launders a
+   calibration difference into a capability claim.
 5. **Give every class enough rows to have an opinion.** That same gate's `exposure_only`
    accuracy was recorded at 0.250 from a 16-row sample; on all 72 rows in the split it is
    0.431. Part of the gap being chased did not exist. Take *every* row of the scarce classes
    and cap only the plentiful ones.
+6. **`argmax` is an operating point, not a neutral default, and a saturated softmax makes
+   it a bad one.** The same gate needs threshold **0.998** to sit at its stated recall bar;
+   0.5 falls deep inside its positive region. Moving there takes false positives on
+   exposure text (`220,000 victims have been served meals`) from **0.556 to 0.097** and
+   overall accuracy from 0.719 to 0.847, at 0.70 recall — no retraining. Every number
+   recorded for this gate before that, including a 21.5% Turkish FP rate, was measured at
+   the broken default. Choose the threshold on **val**, then report test once.
 
-`tools/ekf_showcase/gate_perclass.py` does 4 and 5 for the relevance gate — stratified
+`tools/ekf_showcase/gate_perclass.py --sweep` does 4, 5 and 6 for the relevance gate — stratified
 sampling, paired scoring, exact McNemar (the normal approximation reports p = 1.32 at three
 discordant pairs each way). Its per-class p-values are labelled exploratory in the output:
 five uncorrected comparisons are not five results.

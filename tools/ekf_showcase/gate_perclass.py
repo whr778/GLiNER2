@@ -74,7 +74,13 @@ def stratified_rows(test_path, ann_path, seed):
 
 
 def score(model_id, rows, device):
-    """Add this model's boolean prediction to every row, in place."""
+    """Store P(mass_casualty) on every row, in place.
+
+    The score, not the decision, because the decision is what gets swept. `relevance` is a
+    single-label task, so runtime.py takes a SOFTMAX over the two labels and reports the
+    argmax with its probability -- which makes 1 - confidence the other label's probability
+    exactly, not an approximation. At threshold 0.5 this reproduces the argmax decision.
+    """
     from gliner2 import AutoExtractor
     model = AutoExtractor.from_pretrained(model_id, map_location=device)
     schema = build_gate_schema(model)
@@ -82,19 +88,26 @@ def score(model_id, rows, device):
     for row in rows:
         relevance = model.extract(row["text"], schema, include_confidence=True).get("relevance")
         label = relevance.get("label") if isinstance(relevance, dict) else relevance
-        row[model_id] = label == "mass_casualty"
+        confidence = float(relevance.get("confidence", 1.0)) if isinstance(relevance, dict) else 1.0
+        row[model_id] = confidence if label == "mass_casualty" else 1.0 - confidence
     return (time.time() - start) / len(rows) * 1000
 
 
-def mcnemar(rows, first, second):
+def admits(row, model, threshold):
+    return row[model] >= threshold
+
+
+def mcnemar(rows, first, second, threshold):
     """Exact two-sided McNemar: discordant pairs are binomial(n, 0.5) under the null.
 
     Exact rather than the normal approximation because the cells are small -- with 3
     discordant pairs each way the continuity-corrected z goes negative and reports
     p = 1.32, which is not a probability.
     """
-    only_first = sum(1 for r in rows if r[first] == r["gold"] and r[second] != r["gold"])
-    only_second = sum(1 for r in rows if r[second] == r["gold"] and r[first] != r["gold"])
+    only_first = sum(1 for r in rows if admits(r, first, threshold) == r["gold"]
+                     and admits(r, second, threshold) != r["gold"])
+    only_second = sum(1 for r in rows if admits(r, second, threshold) == r["gold"]
+                      and admits(r, first, threshold) != r["gold"])
     n = only_first + only_second
     if n == 0:
         return only_first, only_second, 1.0
@@ -102,8 +115,52 @@ def mcnemar(rows, first, second):
     return only_first, only_second, min(1.0, 2 * tail / 2 ** n)
 
 
-def report(rows, models):
-    accuracy = lambda rs, m: sum(1 for r in rs if r[m] == r["gold"]) / len(rs)
+RECALL_TARGETS = (0.95, 0.90, 0.85, 0.80, 0.70, 0.60, 0.50)
+
+
+def threshold_for_recall(positives, model, target):
+    """Lowest threshold that still admits `target` of the true tolls."""
+    scores = sorted((r[model] for r in positives), reverse=True)
+    return scores[min(len(scores), max(1, math.ceil(target * len(scores)))) - 1]
+
+
+def sweep(rows, models):
+    """Compare gates at MATCHED recall, because argmax puts them at different operating points.
+
+    Reading raw argmax numbers across models compares two things at once -- how well a gate
+    separates the classes, and where its decision happens to sit. v2 admits 282 of 541 rows
+    and casualty-docee 116, so v2 looking better on true tolls and worse on exposure text is
+    what any pair of thresholds on one curve would produce. Fixing recall isolates the part
+    that is a property of the model.
+
+    Every negative class here has gold `other` throughout, so its column is a false-positive
+    rate: lower is better, and 0.000 would be a gate that admits none of it.
+    """
+    positives = [r for r in rows if r["gold"]]
+    negatives = {}
+    for label in {r["label"] for r in rows}:
+        subset = [r for r in rows if r["label"] == label]
+        if not any(r["gold"] for r in subset):
+            negatives[label] = subset
+    order = sorted(negatives, key=lambda k: -len(negatives[k]))
+
+    print(f"\n  Matched-recall sweep. Recall is on the {len(positives)} true tolls; "
+          f"the rest are false-positive rates (lower is better).")
+    for tag, model in zip("ABCDEFGH", models):
+        print(f"\n  {tag}: {model}")
+        print(f"    {'recall':>7s}{'thresh':>8s}" + "".join(f"{k[:15]:>17s}" for k in order)
+              + f"{'overall acc':>13s}")
+        for target in RECALL_TARGETS:
+            t = threshold_for_recall(positives, model, target)
+            recall = sum(1 for r in positives if admits(r, model, t)) / len(positives)
+            fps = "".join(f"{sum(1 for r in negatives[k] if admits(r, model, t)) / len(negatives[k]):>17.3f}"
+                          for k in order)
+            accuracy = sum(1 for r in rows if admits(r, model, t) == r["gold"]) / len(rows)
+            print(f"    {recall:>7.3f}{t:>8.3f}{fps}{accuracy:>13.3f}")
+
+
+def report(rows, models, threshold):
+    accuracy = lambda rs, m: sum(1 for r in rs if admits(r, m, threshold) == r["gold"]) / len(rs)
     labels = sorted({r["label"] for r in rows},
                     key=lambda k: -sum(1 for r in rows if r["label"] == k))
     first, second = models[0], models[-1]
@@ -120,7 +177,7 @@ def report(rows, models):
         subset = rows if label == "ALL" else [r for r in rows if r["label"] == label]
         line = f"  {label:22s}" + "".join(f"{accuracy(subset, m):>10.3f}" for m in models)
         if paired:
-            a, b, p = mcnemar(subset, first, second)
+            a, b, p = mcnemar(subset, first, second, threshold)
             line += (f"{accuracy(subset, second) - accuracy(subset, first):>+9.3f}"
                      f"{a:>8d}{b:>8d}{p:>9.4f}")
         print(line + f"{len(subset):>7d}")
@@ -138,7 +195,11 @@ def main():
     ap.add_argument("--annotations", default="data/gate_ann.jsonl")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--seed", type=int, default=7)
-    ap.add_argument("--out", type=Path, help="write per-row predictions here")
+    ap.add_argument("--threshold", type=float, default=0.5,
+                    help="admit when P(mass_casualty) >= this (0.5 reproduces argmax)")
+    ap.add_argument("--sweep", action="store_true",
+                    help="also compare the models at matched recall")
+    ap.add_argument("--out", type=Path, help="write per-row scores here")
     a = ap.parse_args()
 
     rows = stratified_rows(a.test, a.annotations, a.seed)
@@ -146,10 +207,12 @@ def main():
     print(f"evaluation set: {composition}", flush=True)
     for tag, model_id in zip("ABCDEFGH", a.models):
         print(f"  {tag}: {model_id} at {score(model_id, rows, a.device):.0f} ms/row", flush=True)
-    report(rows, a.models)
+    report(rows, a.models, a.threshold)
+    if a.sweep:
+        sweep(rows, a.models)
     if a.out:
         a.out.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
-        print(f"\n  per-row predictions -> {a.out}")
+        print(f"\n  per-row scores -> {a.out}")
 
 
 if __name__ == "__main__":
