@@ -12,7 +12,10 @@ all 71 Aegean news articles while scoring F1 1.0000 on its own test split.
 
 So this checks two different things, because neither sees the other:
 
-  SURFACE  -- length, punctuation, script, digits, case. Catches the first two.
+  SURFACE  -- length, punctuation, script, digits, case, and the two LEXICAL
+              shortcuts that matter here: does it contain a casualty word at
+              all, and does it match a numeric toll pattern. If either alone
+              separates the classes, the corpus teaches keyword matching.
   PROVENANCE -- generated-text markers per class. A surface check CANNOT catch that;
                 a synthetic-vs-real corpus with matched lengths passes it cleanly.
 
@@ -28,6 +31,9 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from annotate_gate import CUE, TOLLNUM  # noqa: E402
+
 # Phrasing that betrays generated text. Every one of these was measured at 86.5% of the
 # positive class in casualty_events and 0% in the real corpora.
 SYNTH = re.compile(
@@ -42,7 +48,7 @@ _ARAB = re.compile(r"[؀-ۿ]")
 FEATURES = [
     "chars", "words", "mean_word_len", "ends_on_punct", "digit_frac", "punct_frac",
     "upper_frac", "space_frac", "newline_frac", "cjk_frac", "cyr_frac", "arab_frac",
-    "comma_per_kchar", "period_per_kchar",
+    "comma_per_kchar", "period_per_kchar", "has_cue", "has_toll_pattern",
 ]
 
 
@@ -64,6 +70,8 @@ def featurize(text: str) -> list[float]:
         len(_ARAB.findall(text)) / n,
         text.count(",") * 1000 / n,
         text.count(".") * 1000 / n,
+        1.0 if CUE.search(text) else 0.0,
+        1.0 if TOLLNUM.search(text) else 0.0,
     ]
 
 

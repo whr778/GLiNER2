@@ -1,30 +1,42 @@
-"""Build the 2-label relevance-gate corpus for a multilingual boundary fine-tune.
+"""Build the 2-label relevance-gate corpus. ALL TEXT IS REAL.
 
-The gate asks one question: does this text REPORT A TOLL for a group of people?
+The gate asks one question: does this text REPORT A CURRENT TOLL for a group of people?
 
-Positives come from `casualty_events`, whose events carry `dead`/`injured`/`missing`
-arguments with numeric entities -- an actual toll, which is the concept the gate needs.
+## Why the previous version was thrown away
 
-Negatives are drawn from three pools and LENGTH-MATCHED to the positives:
+It drew positives from `casualty_events`, which is SYNTHETIC -- 99.9% of those documents
+are dated 2026 and 86.5% carry generation templates ("A major news outlet reported...").
+Every negative was real. So the two classes were separable on PROVENANCE, the trained
+gate learned "generated disaster template -> mass_casualty", and it then rejected all 590
+benchmark messages and all 71 Aegean news articles while scoring F1 1.0000 on its own
+test split. Length, sentence-ending punctuation and CJK script were all downstream
+symptoms of that one split; fixing them one at a time never had a chance.
 
-  * `docee` records whose gold class is not a casualty type -- real news articles about
-    sports, awards, finance. Long, English, and definitively not casualty reports.
-  * `chfinann` and `cmnee` -- Chinese news, which carries the multilingual signal at
-    news register rather than SMS register.
-  * `disaster_response_messages` at `related=0`, using the `original` column where
-    non-empty (French, Haitian Creole).
+Two label traps found the same way, by reading samples rather than trusting counts:
 
-Length matching is not cosmetic. A first version drew negatives only from the SMS pool,
-and a classifier using LENGTH ALONE scored 98.5% on it (positives median 1,104 chars,
-negatives 93). Trained on that a model learns "long text = casualty report" and then
-admits every long foreign news article -- which is precisely the failure being fixed
-(the English-only gate admitted 199 of 200 clean Turkish articles).
+  * `casualty_events` records with no toll ARGUMENT still report tolls in their text
+    ("27 people died and 159 were injured") -- they annotate `location` alone. They are
+    not negatives.
+  * `cmnee` `Injure` marks a casualty MENTIONED anywhere in a document, so ship-naming
+    and procurement articles carrying a historical toll are labelled Injure (~45%
+    precise). Dropped. `duee` disaster events verified clean 16/16 and ARE used.
 
-Deliberately NOT used: that dataset's `death` / `missing_people` labels as positives.
-They mean the message MENTIONS death, not that it reports a toll -- "the kids are
-starving to death" carries `death=1`. Training positives on them would teach exactly
-the confusion that makes the incumbent gate admit "cholera symptoms ... can lead to
-death if untreated".
+## How this one is built
+
+Positives and negatives both come from real news, adjudicated by
+`tools/data/annotate_gate.py` -- because a regex cannot tell a current toll from
+"220,000 victims have been served meals" or "in 1999 ... deaths of over 17,000", which
+are the measured false positives of the shipped gate.
+
+Balance is by CONSTRUCTION, not by patching. Within every (source, length-decile) cell
+the two classes are equalised, so neither source nor length carries any signal. Negatives
+prefer the ADJUDICATED hard cases (historical / exposure) over cue-free filler, and
+cue-free filler is capped, so "contains a casualty word" cannot be the rule either.
+
+Verify before training, and before booking a GPU:
+
+    uv run python tools/data/build_gate_corpus.py
+    uv run python tools/data/check_gate_corpus.py data/gate2
 """
 from __future__ import annotations
 
@@ -33,27 +45,23 @@ import json
 import random
 import re
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _split import dumps_record  # noqa: E402
+from _split import SplitWriter, normalize_group_key  # noqa: E402
+from annotate_gate import CUE, MAX_CHARS  # noqa: E402
 
 TASK = "relevance"
 POSITIVE, NEGATIVE = "mass_casualty", "other"
 LABELS = [POSITIVE, NEGATIVE]
-TOLL_ROLES = {"dead", "injured", "missing", "killed"}
-_NUM = re.compile(r"\d")
 
+# Cue-free filler is real and free, but if the negative class were mostly filler the
+# model could pass by keyword-matching "died". Capped as a FRACTION of negatives.
+FILLER_FRAC = 0.25
 
-def _has_toll(record: dict) -> bool:
-    """True when an event carries a casualty role whose entity contains a number."""
-    for event in (record.get("output") or {}).get("events") or []:
-        for arg in event.get("arguments") or []:
-            if str(arg.get("role", "")).lower() in TOLL_ROLES and _NUM.search(
-                str(arg.get("entity", ""))
-            ):
-                return True
-    return False
+CN_NUM = re.compile(r"[0-9０-９一二两三四五六七八九十百千万余多]")
+DUEE_TOLL = {"死亡人数", "受伤人数", "失踪人数"}
 
 
 def _row(text: str, label: str) -> dict:
@@ -65,123 +73,150 @@ def _row(text: str, label: str) -> dict:
     }
 
 
-def positives(path: Path, limit: int) -> list[dict]:
+def _source(name: str) -> str:
+    """Both cc_news pulls are one distribution; splitting them only thins the cells."""
+    return "cc_news" if name.startswith("cc_news") else name
+
+
+def load_annotated(path: Path) -> list[dict]:
+    rows = []
+    for line in path.open(encoding="utf-8"):
+        rec = json.loads(line)
+        label = rec["label"]
+        rows.append({
+            "text": rec["input"],
+            "positive": label == "current_toll",
+            "source": _source(rec["source"]),
+            "kind": label,
+        })
+    return rows
+
+
+def load_filler(paths: list[Path], seen: set, cap: int, seed: int) -> list[dict]:
+    """Cue-free real documents. No casualty word at all, so definitionally no toll."""
     out = []
-    with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            rec = json.loads(line)
-            text = (rec.get("input") or "").strip()
-            if text and _has_toll(rec):
-                out.append(_row(text, POSITIVE))
-            if len(out) >= limit:
-                break
-    return out
-
-
-def _pool_from_jsonl(path: Path, exclude_casualty: bool, cap: int) -> list[tuple[str, str]]:
-    """(text, source) pairs; optionally skip records whose gold class is a casualty type."""
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ekf_showcase"))
-    from run_pipeline import DOCEE_CASUALTY_TYPES  # noqa: E402
-
-    casualty = set(DOCEE_CASUALTY_TYPES)
-    out = []
-    if not path.exists():
-        return out
-    with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            rec = json.loads(line)
-            if exclude_casualty:
-                cls = ((rec.get("output") or {}).get("classifications") or [{}])[0]
-                if (cls.get("true_label") or [None])[0] in casualty:
-                    continue
-            text = (rec.get("input") or "").strip()
-            if text:
-                out.append((text, path.stem.split(".")[0]))
-            if len(out) >= cap:
-                break
-    return out
-
-
-def _sms_pool(seed: int, cap: int) -> list[tuple[str, str]]:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ekf_showcase"))
-    from benchmark_gate import load  # noqa: E402
-
-    df = load("train", 0, seed)
-    out = []
-    for _, r in df.iterrows():
-        if int(r.get("related", 1)) != 0:
+    for path in paths:
+        if not path.exists():
             continue
-        original = str(r.get("original") or "").strip()
-        message = str(r.get("message") or "").strip()
-        text = original if len(original) > 3 else message
-        if text:
-            out.append((text, "sms_original" if len(original) > 3 else "sms_en"))
-        if len(out) >= cap:
-            break
+        for line in path.open(encoding="utf-8"):
+            text = (json.loads(line).get("input") or "").strip()[:MAX_CHARS]
+            if not text or CUE.search(text):
+                continue
+            key = normalize_group_key(text)[:300]
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"text": text, "positive": False,
+                        "source": _source(path.stem.split(".")[0]), "kind": "cue_free"})
+    random.Random(seed).shuffle(out)
+    return out[:cap]
+
+
+def load_duee() -> list[dict]:
+    """The Chinese stratum: same corpus, same register, both classes."""
+    out = []
+    for split in ("train", "val"):
+        path = Path(f"data/duee.{split}.jsonl")
+        if not path.exists():
+            continue
+        for line in path.open(encoding="utf-8"):
+            rec = json.loads(line)
+            text = (rec.get("input") or "").strip()
+            if not text:
+                continue
+            events = (rec.get("output") or {}).get("events") or []
+            toll = any(a.get("role") in DUEE_TOLL and CN_NUM.search(str(a.get("entity", "")))
+                       for ev in events for a in ev.get("arguments") or [])
+            disaster = any(str(ev.get("event_type", "")).startswith("灾害/意外")
+                           for ev in events)
+            if toll:
+                out.append({"text": text, "positive": True, "source": "duee",
+                            "kind": "duee_toll"})
+            elif not disaster:
+                out.append({"text": text, "positive": False, "source": "duee",
+                            "kind": "duee_other"})
     return out
 
 
-def negatives(pos_lengths: list[int], seed: int) -> tuple[list[dict], dict]:
-    """Length-MATCHED negatives, so length alone carries no signal."""
-    pool: list[tuple[str, str]] = []
-    pool += _pool_from_jsonl(Path("data/docee.train.jsonl"), True, 6000)
-    pool += _pool_from_jsonl(Path("data/chfinann.train.jsonl"), False, 4000)
-    pool += _pool_from_jsonl(Path("data/cmnee.train.jsonl"), False, 4000)
-    pool += _sms_pool(seed, 4000)
+def balance(rows: list[dict], seed: int, deciles: int = 10) -> list[dict]:
+    """Equalise the classes inside every (source, length-decile) cell.
 
+    This is the whole design. Matching on aggregate statistics leaves the model free to
+    use source or length WITHIN a stratum; equalising per cell means P(positive | source,
+    length band) is 0.5 by construction, so neither can carry signal at all.
+    """
     rng = random.Random(seed)
-    rng.shuffle(pool)
-    by_len = sorted(pool, key=lambda t: len(t[0]))
-    lens = [len(t[0]) for t in by_len]
-    used, out, sources = set(), [], {}
-    import bisect
-    for target in pos_lengths:
-        i = bisect.bisect_left(lens, target)
-        pick = None
-        for off in range(0, len(by_len)):
-            for j in (i - off, i + off):
-                if 0 <= j < len(by_len) and j not in used:
-                    pick = j
-                    break
-            if pick is not None:
-                break
-        if pick is None:
-            break
-        used.add(pick)
-        text, src = by_len[pick]
-        # trim only when the negative is far longer, so the match is on length not topic
-        out.append(_row(text[:max(target, 200)], NEGATIVE))
-        sources[src] = sources.get(src, 0) + 1
-    return out, sources
+    pos = [r for r in rows if r["positive"]]
+    if not pos:
+        return []
+    edges = _decile_edges([len(r["text"]) for r in pos], deciles)
+
+    cells: dict[tuple, dict[bool, list]] = defaultdict(lambda: {True: [], False: []})
+    for row in rows:
+        cell = (row["source"], _bucket(len(row["text"]), edges))
+        cells[cell][row["positive"]].append(row)
+
+    out, dropped = [], Counter()
+    for cell, sides in sorted(cells.items(), key=lambda kv: str(kv[0])):
+        take = min(len(sides[True]), len(sides[False]))
+        if not take:
+            dropped[cell[0]] += len(sides[True]) + len(sides[False])
+            continue
+        rng.shuffle(sides[True])
+        # Hard, adjudicated negatives before cue-free filler: same balance, more signal.
+        sides[False].sort(key=lambda r: (r["kind"] == "cue_free", rng.random()))
+        out += sides[True][:take] + sides[False][:take]
+    if dropped:
+        print(f"[gate2] cells with no counterpart, dropped: {dict(dropped)}")
+    rng.shuffle(out)
+    return out
+
+
+def _decile_edges(lengths: list[int], deciles: int) -> list[int]:
+    ordered = sorted(lengths)
+    return [ordered[int(len(ordered) * i / deciles)] for i in range(1, deciles)]
+
+
+def _bucket(length: int, edges: list[int]) -> int:
+    for i, edge in enumerate(edges):
+        if length < edge:
+            return i
+    return len(edges)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--casualty", default="data/casualty_events.train.jsonl")
+    ap.add_argument("--annotated", default="data/gate_ann.jsonl")
     ap.add_argument("--out-prefix", default="data/gate2")
-    ap.add_argument("--max-per-class", type=int, default=5000)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--val-frac", type=float, default=0.1)
     args = ap.parse_args()
 
-    pos = positives(Path(args.casualty), args.max_per_class)
-    pos_lengths = [len(r["input"]) for r in pos]
-    neg, sources = negatives(pos_lengths, args.seed)
-    print(f"[gate2] positives (toll reported) {len(pos)}")
-    print(f"[gate2] negatives (length-matched) {len(neg)}  by source: {sources}")
+    rows = load_annotated(Path(args.annotated))
+    print(f"[gate2] adjudicated {len(rows)}: {dict(Counter(r['kind'] for r in rows))}")
 
-    rows = pos + neg
-    random.Random(args.seed).shuffle(rows)
-    cut = int(len(rows) * (1 - args.val_frac))
-    for split, part in (("train", rows[:cut]), ("val", rows[cut:])):
-        path = Path(f"{args.out_prefix}.{split}.jsonl")
-        with path.open("w", encoding="utf-8") as fh:
-            for rec in part:
-                fh.write(dumps_record(rec) + "\n")
-        n_pos = sum(1 for r in part
-                    if r["output"]["classifications"][0]["true_label"] == [POSITIVE])
-        print(f"[gate2] {path}: {len(part)} rows ({n_pos} positive, "
-              f"{len(part) - n_pos} negative)")
+    rows += load_duee()
+    n_pos = sum(r["positive"] for r in rows)
+    seen = {normalize_group_key(r["text"])[:300] for r in rows}
+    filler_cap = int(n_pos * FILLER_FRAC / (1 - FILLER_FRAC))
+    rows += load_filler([Path("data/docee.train.jsonl"),
+                         Path("data/cc_news_parts/cc_news_10k_raw.jsonl"),
+                         Path("data/cc_news_parts/cc_news_10k_b_raw.jsonl")],
+                        seen, filler_cap, args.seed)
+
+    final = balance(rows, args.seed)
+    kinds = Counter(r["kind"] for r in final)
+    n_pos = sum(r["positive"] for r in final)
+    print(f"[gate2] balanced {len(final)}: {n_pos} positive, {len(final) - n_pos} negative")
+    print(f"[gate2]   by kind  : {dict(kinds)}")
+    print(f"[gate2]   by source: {dict(Counter(r['source'] for r in final))}")
+
+    # Grouped on the normalized LEAD, the same key the near-dup dedup uses, so a
+    # syndicated retelling cannot land on the far side of the split from its twin.
+    with SplitWriter(Path(args.out_prefix), seed=args.seed) as writer:
+        for row in final:
+            writer.write(_row(row["text"], POSITIVE if row["positive"] else NEGATIVE),
+                         group=normalize_group_key(row["text"])[:300])
+    print(f"[gate2] {writer.summary()}")
 
 
 if __name__ == "__main__":
