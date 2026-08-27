@@ -296,9 +296,14 @@ class BaseExtractorModel(PreTrainedModel):
         # Trying the repo form BEFORE degrading repairs every checkpoint already published
         # with the plain string -- twelve of ours -- without re-uploading any of them.
         requested = attn_implementation
-        if requested == _HUB_FLASH_ATTN_2 and not torch.cuda.is_available():
-            # A checkpoint trained on GPU saves the hub repo id into its config. Loading it
-            # on CPU must fall through to sdpa rather than accept-then-explode.
+        if requested in ("flash_attention_2", _HUB_FLASH_ATTN_2) and not torch.cuda.is_available():
+            # A checkpoint trained on GPU saves flash attention into its config, under
+            # either the plain name or the hub repo id. Off CUDA BOTH must fall through to
+            # sdpa rather than accept-then-explode: transformers normalizes the plain name
+            # to the hub id, load succeeds, and the first forward raises
+            # KeyError('kernels-community/flash-attn2') from ALL_ATTENTION_FUNCTIONS.
+            # Measured on gate2-mmbert-v2 (trained attn_implementation=flash_attention_2)
+            # on Apple Silicon -- the hub-id-only guard did not catch it.
             requested = "sdpa"
         candidates = [requested]
         # CUDA-ONLY, and the guard is load-bearing: the Hub kernel is ACCEPTED at load time
