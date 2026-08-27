@@ -389,6 +389,37 @@ datasets:
     hf_jsonl: whr778/docfee
     language: [zh]
     description: "Trigger-free document-level Chinese financial event extraction (9 event types); mapped to best-effort role-typed entities and multi-label event-type classification."
+  gate2:
+    name: Casualty-report relevance gate (2-label)
+    tasks: Classification (relevance gate)
+    # Derived from DocEE, CC-News and DuEE; all three carry third-party copyright and
+    # DocEE declares no license at all. Private research cache only.
+    license: none declared (derived from docee + cc_news + duee; not redistributable)
+    source_url: local (tools/data/build_gate_corpus.py), pushed private to the Hub
+    hf_jsonl: whr778/gate2-casualty-relevance
+    language: [en, zh]
+    description: "Stage-0 filter for casualty tracking: does this document report a
+      CURRENT toll for a group of people? 14,646 records (11,781 / 1,419 / 1,446),
+      balanced 7,323 positive / 7,323 negative. ALL TEXT IS REAL -- the previous version
+      drew positives from a SYNTHETIC corpus (99.9% dated 2026, 86.5% template-marked)
+      against real negatives, so the classes were separable on provenance and the trained
+      gate scored F1 1.0000 in-distribution while admitting 0 of 590 benchmark messages
+      and 0 of 71 real news articles. Labels are adjudicated by claude-haiku-4-5 four ways
+      (current_toll / historical_toll / exposure_only / no_toll) because a pattern cannot
+      separate a live toll from '220,000 victims have been served meals' or 'in 1999 ...
+      deaths of over 17,000'; the three non-positive labels become hard negatives, and
+      cue-free filler is capped at 25% so 'contains a casualty word' cannot be the rule.
+      Scoring a numeric-toll regex against these labels gives precision 0.824 but recall
+      0.317. Balanced within every (source, length-decile) cell, so source and length
+      carry no signal: check_gate_corpus.py reports 57.8% from non-lexical surface
+      features and a 0.0-point provenance gap, against 99.3% and 91.2 points for the
+      version it replaces. Splits route on the normalized 300-char lead, so syndicated
+      retellings stay together; zero train/val/test overlap. CAVEATS: gate2.test is 69.7%
+      contained in docee.train (the corpus is BUILT from DocEE), so fine-tune from a stock
+      encoder and treat any docee-trained model's score here as inflated; Chinese is thin
+      at 602 rows and Turkish, the deployment target, is absent entirely. gate_ann.jsonl
+      in the same repo is the raw 17,630-row adjudication with evidence quotes, kept so
+      the binary corpus can be rebuilt without paying for annotation again."
   duee:
     name: DuEE 1.0
     tasks: Event extraction (Chinese, trigger + args)
