@@ -359,7 +359,7 @@ currently justify one.
 uv run python tools/train/eval.py --config <config> --checkpoint out/<run>/best --split test
 ```
 
-Three rules that have each changed a conclusion in this project:
+Five rules that have each changed a conclusion in this project:
 
 1. **Sweep the threshold per checkpoint, then compare at matched thresholds.**
    `metric_sweep: true` selects each checkpoint at *its own* best threshold — right for
@@ -370,6 +370,21 @@ Three rules that have each changed a conclusion in this project:
    control on a second seed gave relation strict **±0.041** on `mix_natural`, four times the
    0.01 that had been assumed — large enough to void a published-looking result.
 3. **Report per capability.** A single aggregate hides which capability moved which way.
+4. **A flat aggregate is not a null result — test the discordant rows.** gate2 v2 scored
+   `relevance` 0.8341 against v1's 0.8368 and was written off as no improvement. Scored on
+   identical rows stratified toward the hard classes, it wins 37 rows to 17: exact McNemar
+   **p = 0.0091**. The aggregate was flat because easy rows dominate it. Two models on the
+   same corpus give *paired* data, so test the rows where exactly one model is right rather
+   than differencing two means.
+5. **Give every class enough rows to have an opinion.** That same gate's `exposure_only`
+   accuracy was recorded at 0.250 from a 16-row sample; on all 72 rows in the split it is
+   0.431. Part of the gap being chased did not exist. Take *every* row of the scarce classes
+   and cap only the plentiful ones.
+
+`tools/ekf_showcase/gate_perclass.py` does 4 and 5 for the relevance gate — stratified
+sampling, paired scoring, exact McNemar (the normal approximation reports p = 1.32 at three
+discordant pairs each way). Its per-class p-values are labelled exploratory in the output:
+five uncorrected comparisons are not five results.
 
 Structures are **not scored by the blind test**: `_schema_from_gold` builds no schema for
 `json_structures`, so structure-only records are skipped — 35.1% of `mix_natural`'s val. Use
@@ -416,6 +431,13 @@ On MPS, mixed precision is disabled automatically (`GradScaler` is CUDA-only) an
 logs the choice. MPS also hits a Metal assertion with relations in the batch on bf16 mmBERT —
 use CPU for local debugging.
 
+For **inference** the MPS verdict is workload-dependent, and both directions are measured:
+a 2-label mmBERT classification runs **~28% faster** on MPS than CPU (188 vs 265 ms/row)
+once warm, after a ~380 ms/row first round of Metal shader warm-up that one-shot callers
+pay and batch jobs do not; a 139-type event decode is **3–4× slower** on MPS, because that
+path is many tiny ops with CPU/GPU syncs. `mps-flash-attn` replaces SDPA automatically
+whenever the device resolves to MPS. Measure the workload; neither device wins by default.
+
 ---
 
 ## 10. The span architecture
@@ -459,6 +481,7 @@ model.extract_entities("Marie Curie discovered radium in Paris.", ["scientist", 
 |---|---|---|
 | `ModuleNotFoundError: torch`/`transformers` | `local` extra not installed | `uv sync --extra local` |
 | bf16 loss goes non-finite ~step 50, and training is ~11× slow | FA2 never hooked; transformers resolved outside the pinned range | `uv pip install -e ".[local]"`, verify `kernels-community/flash-attn2`, set `GLINER2_STRICT_ATTN=1` |
+| `KeyError: 'kernels-community/flash-attn2'` on the first extract, off CUDA | The checkpoint config stores `attn_implementation: flash_attention_2`; transformers accepts it there, normalizes it to the hub repo id, and only the forward discovers no kernel is registered | Fixed in `8af9c5f`: off CUDA both spellings degrade to sdpa at load. On an older checkout, pass a config with `attn_implementation: sdpa` |
 | `config.max_width` error loading a checkpoint | Loaded a boundary checkpoint with `GLiNER2` | Use `AutoExtractor.from_pretrained` |
 | A treatment arm scores identically to its control | A `boundary_head` override was dropped | Confirm the value on `model.boundary_head.settings`, not just `model.config` |
 | CUDA `Error 802: system not yet initialized`, but `nvidia-smi` is healthy | Host-side fault (no NVSwitch, `GPU Fabric GUID: N/A`) | Not fixable in-guest. Terminate and relaunch, ideally another region |
