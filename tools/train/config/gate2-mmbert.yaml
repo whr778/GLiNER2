@@ -1,0 +1,76 @@
+# Multilingual 2-label relevance gate, boundary/mmBERT.
+#
+# Why this exists: off-the-shelf boundary models fail the gate ZERO-SHOT (FP 0.290 on
+# related=0 vs the span casualty-docee's 0.002) but learn in-mix label sets very well
+# (chfinann 5-label 100%, docfee 9-label 97.5%). So the gate is trained EXPLICITLY.
+#
+# Corpus: tools/data/build_gate_corpus.py. Positives are casualty_events records that
+# carry a numeric dead/injured/missing argument -- an actual toll. Negatives are
+# LENGTH-MATCHED non-casualty news (docee non-casualty, chfinann, cmnee), 52% CJK.
+# The length matching is load-bearing: a first version drew negatives from Haiti-era
+# SMS and a LENGTH-ONLY classifier scored 98.5% on it, which would have taught
+# 'long text = casualty report' -- the exact failure being fixed (the English-only
+# gate admits 199 of 200 clean Turkish articles). Now length-only scores 52.8%.
+#
+# Success bar: match casualty-docee's false-positive rate on related=0 (1/410 = 0.002)
+# on benchmark_gate.py while holding recall near 0.676, AND cut the Turkish FP rate
+# from gate_turkish_fp.py.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary
+  max_len: 2048
+  attn_implementation: flash_attention_2
+  boundary_head:
+    enable_relations: false
+    enable_records: false
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+  sampling: {}
+training:
+  output_dir: ./out/gate2-mmbert
+  experiment_name: gate2_mmbert_multilingual
+  data_parallel: false
+  num_epochs: 3
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-05
+  task_lr: 0.0005
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_classification_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: false
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+eval:
+  threshold: 0.5
+labels:
+  entities:
+    rollup: false
+    separator: .
+    map: {}
+  relations:
+    rollup: false
+    separator: .
+    map: {}
+  events:
+    rollup: false
+    separator: .
+    map: {}
+data:
+  corpora:
+  - data/gate2
+  event_files: {}
