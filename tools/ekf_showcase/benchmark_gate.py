@@ -56,6 +56,53 @@ def load(split: str, limit: int, seed: int):
     return df.reset_index(drop=True)
 
 
+SWEEP_THRESHOLDS = (0.5, 0.9, 0.95, 0.99, 0.998, 0.9999)
+
+
+def sweep(decisions, df) -> None:
+    """The whole operating curve from ONE inference pass.
+
+    Every external number this project has recorded for the gate was taken at threshold
+    0.5, and on the gate's own test split moving to 0.998 changed accuracy more than any
+    training intervention did. A single point cannot distinguish a gate that discriminates
+    from one that has simply stopped firing, so the FP column is only interpretable beside
+    the recall column.
+
+    `relevance` is single-label, so runtime.py softmaxes over the two labels and
+    1 - confidence is P(mass_casualty) exactly on messages answered `other`.
+    """
+    # Stage 0 rejects unsupported languages BEFORE the model runs, reporting
+    # relevance="unsupported_language" at confidence 0.0. Those rows carry no model
+    # score, and `1 - confidence` turns each one into a 1.0 -- a maximum-confidence false
+    # positive that never happened. This corpus is multilingual (en/es/fr/ht/ur), so that
+    # bug put an identical ~13-message floor under every model's FP count and made the
+    # curves look model-independent. Drop them and say how many.
+    dropped = sum(1 for d in decisions if d["relevance"] == "unsupported_language")
+    usable = [d["relevance"] != "unsupported_language" for d in decisions]
+    if dropped:
+        print(f"\n  {dropped}/{len(decisions)} messages dropped by the language gate and "
+              f"excluded below\n  (they never reached the model, so they are neither its "
+              f"hits nor its false positives)")
+
+    scores = [d["relevance_confidence"] if d["relevance"] == "mass_casualty"
+              else 1.0 - d["relevance_confidence"] for d in decisions]
+    neg = [s for s, n, u in zip(scores, df["related"] == 0, usable) if n and u]
+    cas = ((df.get("death", 0) == 1) | (df.get("missing_people", 0) == 1))
+    pos = [s for s, c, u in zip(scores, cas, usable) if c and u]
+
+    print(f"\n  {'threshold':>10s}{'FP related=0':>15s}{'recall death|missing':>23s}")
+    for t in SWEEP_THRESHOLDS:
+        fp = sum(1 for x in neg if x >= t)
+        hit = sum(1 for x in pos if x >= t)
+        print(f"  {t:>10.4f}{fp:>9d}/{len(neg):<5d}{hit:>16d}/{len(pos):<6d}")
+
+    wins = sum((p > n) + 0.5 * (p == n) for p in pos for n in neg)
+    auc = wins / max(len(pos) * len(neg), 1)
+    print(f"    AUC = {auc:.4f}   (related=0 vs death|missing; the positive label is"
+          f" INDICATIVE,\n    so read this as a comparison between models, not as an"
+          f" absolute)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--split", default="test")
@@ -64,6 +111,8 @@ def main() -> None:
     ap.add_argument("--threshold", type=float, default=0.5)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--sweep", action="store_true",
+                    help="report the whole operating curve instead of one threshold")
     args = ap.parse_args()
 
     from gliner2 import AutoExtractor
@@ -75,7 +124,12 @@ def main() -> None:
     print(f"[gate-bench] model {args.gate_model}, threshold {args.threshold}\n")
 
     model = AutoExtractor.from_pretrained(args.gate_model, map_location=args.device)
-    decisions = gate(model, texts, args.threshold)
+    # with_type=False: the sweep needs only the relevance pass, and disaster_type costs a
+    # second encoder pass per message.
+    decisions = gate(model, texts, args.threshold, with_type=not args.sweep)
+    if args.sweep:
+        sweep(decisions, df)
+        return
     kept = [d["relevant"] for d in decisions]
 
     # 1. THE headline: false positives on definitively non-disaster messages.
