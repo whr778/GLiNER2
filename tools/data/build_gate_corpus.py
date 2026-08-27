@@ -56,6 +56,35 @@ TASK = "relevance"
 POSITIVE, NEGATIVE = "mass_casualty", "other"
 LABELS = [POSITIVE, NEGATIVE]
 
+# The SECOND task, and it is not decoration. Measured on the first model, the binary
+# corpus taught "does this mention a toll" (93.9% on positives) and NOT the two
+# distinctions the adjudication was bought for: exposure_only scored 0.250 and
+# historical_toll 0.471, i.e. the "220,000 served meals" and "1999 toll of 17,000"
+# failures survived training. Supervising the four-way label directly makes that
+# distinction an objective instead of hoping the binary boundary captures it.
+#
+# It also fixes a second problem for free. A model trained with exactly ONE
+# classification task per record is off-distribution as soon as a schema carries
+# another one -- relevance degrades from 0.999 to 0.862 with a second task and
+# collapses with a third. Two tasks per record, in RANDOMISED order, is the
+# augmentation that removes that brittleness.
+KIND_TASK = "toll_kind"
+KIND_LABELS = ["current_toll", "historical_toll", "exposure_only", "no_toll"]
+
+# Rows that never went to the annotator still have a sound four-way label.
+KIND_FROM_SOURCE = {
+    "duee_toll": "current_toll",
+    "duee_other": "no_toll",
+    "cue_free": "no_toll",
+}
+
+# Which negatives fill a cell's quota. exposure and historical are the ones the model
+# actually fails, and they are scarce (691 and 1,686), so they go first and cue-free
+# filler goes last. This changes the MIX without touching the per-cell balance that
+# keeps source and length uninformative.
+NEGATIVE_PRIORITY = {"exposure_only": 0, "historical_toll": 1, "duee_other": 2,
+                     "no_toll": 3, "cue_free": 4}
+
 # Cue-free filler is real and free, but if the negative class were mostly filler the
 # model could pass by keyword-matching "died". Capped as a FRACTION of negatives.
 FILLER_FRAC = 0.25
@@ -64,13 +93,14 @@ CN_NUM = re.compile(r"[0-9０-９一二两三四五六七八九十百千万余�
 DUEE_TOLL = {"死亡人数", "受伤人数", "失踪人数"}
 
 
-def _row(text: str, label: str) -> dict:
-    return {
-        "input": text,
-        "output": {"classifications": [
-            {"task": TASK, "labels": list(LABELS), "true_label": [label]}
-        ]},
-    }
+def _row(text: str, label: str, kind: str, rng: random.Random) -> dict:
+    """Both tasks, in randomised order so neither position is the trained one."""
+    tasks = [
+        {"task": TASK, "labels": list(LABELS), "true_label": [label]},
+        {"task": KIND_TASK, "labels": list(KIND_LABELS), "true_label": [kind]},
+    ]
+    rng.shuffle(tasks)
+    return {"input": text, "output": {"classifications": tasks}}
 
 
 def _source(name: str) -> str:
@@ -163,8 +193,8 @@ def balance(rows: list[dict], seed: int, deciles: int = 10) -> list[dict]:
             dropped[cell[0]] += len(sides[True]) + len(sides[False])
             continue
         rng.shuffle(sides[True])
-        # Hard, adjudicated negatives before cue-free filler: same balance, more signal.
-        sides[False].sort(key=lambda r: (r["kind"] == "cue_free", rng.random()))
+        # Scarce, hard, adjudicated negatives first; cue-free filler last.
+        sides[False].sort(key=lambda r: (NEGATIVE_PRIORITY.get(r["kind"], 9), rng.random()))
         out += sides[True][:take] + sides[False][:take]
     if dropped:
         print(f"[gate2] cells with no counterpart, dropped: {dict(dropped)}")
@@ -212,9 +242,12 @@ def main() -> None:
 
     # Grouped on the normalized LEAD, the same key the near-dup dedup uses, so a
     # syndicated retelling cannot land on the far side of the split from its twin.
+    order_rng = random.Random(args.seed)
     with SplitWriter(Path(args.out_prefix), seed=args.seed) as writer:
         for row in final:
-            writer.write(_row(row["text"], POSITIVE if row["positive"] else NEGATIVE),
+            kind = KIND_FROM_SOURCE.get(row["kind"], row["kind"])
+            writer.write(_row(row["text"], POSITIVE if row["positive"] else NEGATIVE,
+                              kind, order_rng),
                          group=normalize_group_key(row["text"])[:300])
     print(f"[gate2] {writer.summary()}")
 

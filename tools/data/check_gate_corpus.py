@@ -93,7 +93,12 @@ def load(prefix: str) -> tuple[list[str], np.ndarray]:
             continue
         for line in path.open(encoding="utf-8"):
             rec = json.loads(line)
-            cls = ((rec.get("output") or {}).get("classifications") or [{}])[0]
+            # Find the binary task BY NAME. Records carry a second, four-way task and
+            # the order is randomised, so indexing [0] silently drops half the corpus.
+            groups = (rec.get("output") or {}).get("classifications") or []
+            cls = next((c for c in groups if c.get("task") == "relevance"), None)
+            if cls is None:
+                continue
             true = (cls.get("true_label") or [None])[0]
             pool = cls.get("labels") or []
             if true is None or len(pool) != 2:
