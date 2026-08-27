@@ -107,6 +107,11 @@ CAPS: dict[str, int] = {}
 
 def _stratum(rec: dict, text: str, source: str, casualty: set) -> str:
     toll = "toll" if TOLLNUM.search(text) else "notoll"
+    # TOLLNUM is an ENGLISH pattern, so a non-English corpus lands entirely in `notoll`.
+    # That is cosmetic here (strata drive quotas and reporting, not labels) but it would
+    # be a lie to file those documents under `ccnews`.
+    if source not in ("docee", "cc_news") and not source.startswith("docee"):
+        return f"{source}_{toll}"
     if not source.startswith("docee"):
         return f"ccnews_{toll}"
     cls = ((rec.get("output") or {}).get("classifications") or [{}])[0]
@@ -114,7 +119,8 @@ def _stratum(rec: dict, text: str, source: str, casualty: set) -> str:
     return f"docee_{topic}_{toll}"
 
 
-def load_candidates(paths: list[Path], limit: int, seed: int = 42) -> list[dict]:
+def load_candidates(paths: list[Path], limit: int, seed: int = 42,
+                    cue: re.Pattern = CUE) -> list[dict]:
     """Cue-bearing real documents, deduped, sampled to the per-stratum QUOTAS."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ekf_showcase"))
     from run_pipeline import DOCEE_CASUALTY_TYPES  # noqa: E402
@@ -130,7 +136,7 @@ def load_candidates(paths: list[Path], limit: int, seed: int = 42) -> list[dict]
         for line in path.open(encoding="utf-8"):
             rec = json.loads(line)
             text = (rec.get("input") or "").strip()[:MAX_CHARS]
-            if not text or not CUE.search(text):
+            if not text or not cue.search(text):
                 continue
             # Syndication republishes the same wire story with a different tail, so exact
             # dedup misses it -- the smoke bought the same Christchurch article twice.
@@ -139,13 +145,17 @@ def load_candidates(paths: list[Path], limit: int, seed: int = 42) -> list[dict]
             if key in seen:
                 continue
             seen.add(key)
-            stratum = _stratum(rec, text, source, casualty)
+            origin = rec.get("source") or source
+            stratum = _stratum(rec, text, origin, casualty)
             pools.setdefault(stratum, []).append(
-                {"text": text, "source": source, "stratum": stratum})
+                {"text": text, "source": origin, "stratum": stratum})
 
     rng = random.Random(seed)
     out = []
-    for stratum in STRATA:
+    # STRATA plus whatever else turned up. Iterating the hardcoded list alone silently
+    # DROPPED every document from a corpus it did not anticipate -- the pool was built,
+    # counted, and then never taken, with nothing in the output to say so.
+    for stratum in STRATA + sorted(set(pools) - set(STRATA)):
         pool = pools.get(stratum, [])
         rng.shuffle(pool)
         # A smoke run takes a few from EVERY stratum -- the labels only mean anything
@@ -219,9 +229,11 @@ def main() -> int:
     ap.add_argument("--batch", action="store_true", help="Batch API, -50%% pricing")
     ap.add_argument("--fetch-batch", help="recover an already-submitted batch id")
     ap.add_argument("--model", default="claude-haiku-4-5-20251001")
+    ap.add_argument("--cue", help="override the casualty-cue regex (non-English corpora)")
     args = ap.parse_args()
 
-    cands = load_candidates([Path(p) for p in args.corpora], args.limit)
+    cue = re.compile(args.cue, re.I) if args.cue else CUE
+    cands = load_candidates([Path(p) for p in args.corpora], args.limit, cue=cue)
     print(f"[gate-ann] {len(cands)} cue-bearing candidates from {len(args.corpora)} corpora")
 
     provider = AnthropicProvider(ProviderConfig(
