@@ -79,16 +79,22 @@ def main():
     ap.add_argument("--max-chars", type=int, default=1800)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--seed", type=int, default=20260825)
+    # The two defaults are the shipped fastino pair. Any candidate gate has to be
+    # measurable here too -- this is the only non-English test we have, and it is the
+    # gap the multilingual work exists to close.
+    ap.add_argument("--models", nargs="+", default=list(MODELS),
+                    help="models to score (default: the shipped fastino pair)")
     a = ap.parse_args()
 
     neg, pos = sample(a.n_neg, a.n_pos, a.seed, a.max_chars)
     print(f"sampled {len(neg)} negatives, {len(pos)} heuristic positives "
           f"(threshold {a.threshold}, {a.max_chars} chars max)\n")
     print(f"  {'model':30}{'FP on negatives':>18}{'admitted positives':>21}{'sec':>8}")
-    for m in MODELS:
+    for m in a.models:
         fp, _, t1 = run(m, neg, a.threshold, a.device)
         tp, _, t2 = run(m, pos, a.threshold, a.device)
-        tag = "  <- shipped default, ENGLISH-only" if "base" in m else "  <- multilingual"
+        tag = ("  <- shipped default, ENGLISH-only" if m == MODELS[0]
+               else "  <- multilingual" if m == MODELS[1] else "  <- candidate")
         print(f"  {m:30}{fp:>8}/{len(neg):<9}{tp:>11}/{len(pos):<9}{t1 + t2:>8.0f}{tag}")
     print("\n  The FP column is the number that matters. v1's failure was 58.5%.")
 
