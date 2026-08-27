@@ -157,16 +157,34 @@ def load_candidates(paths: list[Path], limit: int, seed: int = 42) -> list[dict]
     return out[:limit] if limit else out
 
 
+_LABEL_FIELD = re.compile(r'"label"\s*:\s*"([a-z_]+)"')
+_EVIDENCE_FIELD = re.compile(r'"evidence"\s*:\s*"(.*?)"\s*\}?\s*$', re.S)
+
+
 def parse(raw: str) -> tuple[str, str] | None:
-    """(label, evidence), or None when the reply is a refusal or unusable."""
+    """(label, evidence), or None when the reply is a refusal or unusable.
+
+    The evidence field is a VERBATIM quote from a news article, so it regularly contains
+    a double quote the model does not escape, and `json.loads` rejects the whole reply.
+    The label is the part that matters and it is a bare enum, so read it directly rather
+    than lose a paid annotation to a broken quote in a field we only keep for auditing.
+    """
     if not raw or raw.startswith(REFUSAL_MARK):
         return None
     match = re.search(r"\{.*\}", raw, re.S)
     if not match:
         return None
-    obj = json.loads(match.group(0))
-    label = obj.get("label")
-    return (label, str(obj.get("evidence") or "")) if label in LABELS else None
+    try:
+        obj = json.loads(match.group(0))
+        label, evidence = obj.get("label"), str(obj.get("evidence") or "")
+    except json.JSONDecodeError:
+        found = _LABEL_FIELD.search(match.group(0))
+        if not found:
+            return None
+        label = found.group(1)
+        quoted = _EVIDENCE_FIELD.search(match.group(0))
+        evidence = quoted.group(1) if quoted else ""
+    return (label, evidence) if label in LABELS else None
 
 
 def write(rows: list[dict], out_prefix: str) -> None:
