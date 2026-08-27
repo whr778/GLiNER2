@@ -70,6 +70,35 @@ def run(model_id, texts, threshold, device):
     return admitted, labels, time.time() - t0
 
 
+def sweep(model_id, neg, pos, device):
+    """The whole operating curve from ONE inference pass, plus the number that decides it.
+
+    A single threshold cannot tell "wrongly calibrated" from "cannot read Turkish": at 0.5
+    gate2-mmbert-v2 admits 17/100 positives and 44/200 negatives, and at 0.998 it admits 0
+    and 1 -- a perfect FP rate belonging to a gate that never fires. AUC settles it, because
+    it is threshold-free. Measured 2026-08-27: **0.4733**, below chance, with the negatives'
+    median (0.1023) ABOVE the positives' (0.0918). No calibration rescues that.
+
+    `relevance` is single-label, so runtime.py softmaxes over the two labels and
+    1 - confidence is P(mass_casualty) exactly on rows answered `other`.
+    """
+    scores = {}
+    for tag, texts in (("neg", neg), ("pos", pos)):
+        _, labels, _ = run(model_id, texts, 0.0, device)
+        scores[tag] = [c if lab == "mass_casualty" else 1.0 - c for lab, c in labels]
+    wins = sum((sp > sn) + 0.5 * (sp == sn) for sp in scores["pos"] for sn in scores["neg"])
+    auc = wins / (len(pos) * len(neg))
+    print(f"\n  {model_id}")
+    print(f"    {'threshold':>10s}{'admits pos':>13s}{'FP neg':>11s}{'TPR - FPR':>12s}")
+    for t in (0.5, 0.9, 0.95, 0.99, 0.998, 0.9999):
+        tp = sum(1 for x in scores["pos"] if x >= t)
+        fp = sum(1 for x in scores["neg"] if x >= t)
+        print(f"    {t:>10.4f}{tp:>9d}/{len(pos):<3d}{fp:>7d}/{len(neg):<3d}"
+              f"{tp/len(pos) - fp/len(neg):>12.3f}")
+    print(f"    AUC = {auc:.4f}   (0.5 = the gate cannot separate them at ANY threshold)")
+    return auc
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -84,11 +113,17 @@ def main():
     # gap the multilingual work exists to close.
     ap.add_argument("--models", nargs="+", default=list(MODELS),
                     help="models to score (default: the shipped fastino pair)")
+    ap.add_argument("--sweep", action="store_true",
+                    help="report the whole operating curve and AUC instead of one threshold")
     a = ap.parse_args()
 
     neg, pos = sample(a.n_neg, a.n_pos, a.seed, a.max_chars)
     print(f"sampled {len(neg)} negatives, {len(pos)} heuristic positives "
           f"(threshold {a.threshold}, {a.max_chars} chars max)\n")
+    if a.sweep:
+        for m in a.models:
+            sweep(m, neg, pos, a.device)
+        return
     print(f"  {'model':30}{'FP on negatives':>18}{'admitted positives':>21}{'sec':>8}")
     for m in a.models:
         fp, _, t1 = run(m, neg, a.threshold, a.device)

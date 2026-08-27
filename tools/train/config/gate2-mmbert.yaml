@@ -4,17 +4,29 @@
 # related=0 vs the span casualty-docee's 0.002) but learn in-mix label sets very well
 # (chfinann 5-label 100%, docfee 9-label 97.5%). So the gate is trained EXPLICITLY.
 #
-# Corpus: tools/data/build_gate_corpus.py. Positives are casualty_events records that
-# carry a numeric dead/injured/missing argument -- an actual toll. Negatives are
-# LENGTH-MATCHED non-casualty news (docee non-casualty, chfinann, cmnee), 52% CJK.
-# The length matching is load-bearing: a first version drew negatives from Haiti-era
-# SMS and a LENGTH-ONLY classifier scored 98.5% on it, which would have taught
-# 'long text = casualty report' -- the exact failure being fixed (the English-only
-# gate admits 199 of 200 clean Turkish articles). Now length-only scores 52.8%.
+# Corpus: tools/data/build_gate_corpus.py, rebuilt from REAL text in 6d02e43. Both
+# classes come from the same Haiku-adjudicated pool (docee 11,879 + cc_news 5,751),
+# plus duee for Chinese. Provenance is shared by construction, because a first version
+# had synthetic positives against real negatives and the model learned the template.
+# Length matching is also load-bearing: an earlier version drew negatives from Haiti-era
+# SMS and a LENGTH-ONLY classifier scored 98.5%. Now length-only scores 52.8%.
+#
+# LANGUAGE, MEASURED on the shipped corpus (an earlier version of this comment claimed
+# "52% CJK", which described the corpus this one replaced):
+#
+#     English (docee + cc_news)   11,302 rows   95.9%
+#     Chinese (duee)                 479 rows    4.1%
+#     Turkish                         ~21 rows   0.19%  incidental, in English text
+#
+# So THIS MODEL IS NOT MULTILINGUAL BEYOND CHINESE, whatever the encoder can do.
+# Measured 2026-08-27 on gate_turkish_fp.py --sweep: AUC 0.4733 separating Turkish
+# casualty reports from Turkish articles containing no disaster or casualty word --
+# below chance, at every threshold. Fixing that needs Turkish TEXT, not another
+# objective, another epoch or another threshold.
 #
 # Success bar: match casualty-docee's false-positive rate on related=0 (1/410 = 0.002)
-# on benchmark_gate.py while holding recall near 0.676, AND cut the Turkish FP rate
-# from gate_turkish_fp.py.
+# on benchmark_gate.py while holding recall near 0.676. The Turkish half of this bar is
+# NOT reachable from this corpus.
 model:
   encoder: jhu-clsp/mmBERT-base
   architecture: boundary
