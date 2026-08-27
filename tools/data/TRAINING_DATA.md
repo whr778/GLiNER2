@@ -44,6 +44,161 @@ benchmarks — keep their canonical splits (noted per corpus below).
 > `tools/train/train.py` also runs this before every training run and repairs it;
 > `training.split_hygiene: warn` reproduces a pre-gate run unchanged.
 
+## Where the data lives
+
+`data/` and `datasets/` are **both gitignored**, so nothing below is in the repository.
+Every corpus is mirrored to a **private** Hub dataset repo; the table gives the local
+path and the mirror for each.
+
+Only a `hf_jsonl` entry in [`dataset_registry.yaml`](../train/dataset_registry.yaml) makes
+the trainer fetch a corpus automatically — `_fetch_if_missing` looks the corpus up by
+`Path(path).name`, so files must keep their exact local basename at the repo root. Rows
+marked *archive only* are backed up but have no registry entry, so a fresh box will not
+pull them until one is added.
+
+Non-corpus artifacts are mirrored too, and matter more than their size suggests:
+
+| local | Hub repo | why it cannot be regenerated |
+|---|---|---|
+| `datasets/{aegean2020,helene2024,turkey2023}` | [`whr778/ekf-feed-caches`](https://huggingface.co/datasets/whr778/ekf-feed-caches) | harvested publisher article text — news URLs rot, so a re-harvest returns a different corpus, and the frozen `tracked_*.json` baselines could not be reproduced at all |
+| `data/guide_scores.*` | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | 21.2 hours of precompute |
+| `data/cc_news_parts/*_raw.jsonl` | [`whr778/cc-news-raw-pulls`](https://huggingface.co/datasets/whr778/cc-news-raw-pulls) | the raw pulls behind a $53 annotation run; re-pulling needs `--exclude` and the yield degrades |
+| `data/turkish_translation_cache.json`, `data/*.pool.json` | [`whr778/ekf-feed-caches`](https://huggingface.co/datasets/whr778/ekf-feed-caches) (`caches/`) | cached API output and sampling pools |
+
+Deliberately **not** mirrored: `data/_prerepair_backup_20260818/` (3.4 GB, superseded by
+the repaired splits) and the raw upstream archives (`RAMS_1.0c.tar.gz`, the CMNEE zip),
+which are public downloads.
+
+Push with [`push_corpus_hf.py`](push_corpus_hf.py) for split files and
+[`push_dir_hf.py`](push_dir_hf.py) for everything else. Verify with
+`HfApi().repo_info(repo, repo_type="dataset", files_metadata=True)` and check both
+`private=True` and the real file count — the uploader's own summary is not proof.
+
+| local | splits | private Hub mirror | fetched by trainer? |
+|---|---|---|---|
+| `data/anatem.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/bc2gm.*.jsonl` | test/train/val | [`whr778/bc2gm`](https://huggingface.co/datasets/whr778/bc2gm) | registry `hf_jsonl` |
+| `data/bc4chemd.*.jsonl` | test/train/val | [`whr778/bc4chemd`](https://huggingface.co/datasets/whr778/bc4chemd) | registry `hf_jsonl` |
+| `data/bc5cdr.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/bio_ner_relations.*.jsonl` | single/test/train/val | [`whr778/bio_ner_relations`](https://huggingface.co/datasets/whr778/bio_ner_relations) | registry `hf_jsonl` |
+| `data/biomed_ner.*.jsonl` | single/test/train/val | [`whr778/biomed_ner`](https://huggingface.co/datasets/whr778/biomed_ner) | registry `hf_jsonl` |
+| `data/bionlp09.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/bionlp11epi.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/bionlp11id.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/bionlp13cg.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/bionlp13ge.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/bionlp13pc.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/biored.*.jsonl` | test/train/val | [`whr778/biored`](https://huggingface.co/datasets/whr778/biored) | registry `hf_jsonl` |
+| `data/casie.*.jsonl` | test/train/val | [`whr778/casie`](https://huggingface.co/datasets/whr778/casie) | registry `hf_jsonl` |
+| `data/casualty_anchorless.*.jsonl` | train | [`whr778/casualty_anchorless`](https://huggingface.co/datasets/whr778/casualty_anchorless) | registry `hf_jsonl` |
+| `data/casualty_docee.*.jsonl` | test/train/val | [`whr778/casualty_docee`](https://huggingface.co/datasets/whr778/casualty_docee) | registry `hf_jsonl` |
+| `data/casualty_events.*.jsonl` | test/train/val | [`whr778/casualty_events`](https://huggingface.co/datasets/whr778/casualty_events) | registry `hf_jsonl` |
+| `data/casualty_ft.*.jsonl` | test/train/val | [`whr778/casualty_ft`](https://huggingface.co/datasets/whr778/casualty_ft) | registry `hf_jsonl` |
+| `data/casualty_loc_muted.*.jsonl` | test/train/val | [`whr778/casualty_loc_muted`](https://huggingface.co/datasets/whr778/casualty_loc_muted) | registry `hf_jsonl` |
+| `data/casualty_loc_probe_focal_last.*.jsonl` | test | [`whr778/casualty_loc_probe_focal_last`](https://huggingface.co/datasets/whr778/casualty_loc_probe_focal_last) | registry `hf_jsonl` |
+| `data/casualty_loc_split.*.jsonl` | test/train/val | [`whr778/casualty_loc_split`](https://huggingface.co/datasets/whr778/casualty_loc_split) | registry `hf_jsonl` |
+| `data/casualty_multi.*.jsonl` | test/train/val | [`whr778/casualty_multi`](https://huggingface.co/datasets/whr778/casualty_multi) | registry `hf_jsonl` |
+| `data/casualty_multi_loc.*.jsonl` | train | [`whr778/casualty_multi_loc`](https://huggingface.co/datasets/whr778/casualty_multi_loc) | registry `hf_jsonl` |
+| `data/casualty_natural.*.jsonl` | train | [`whr778/casualty_natural`](https://huggingface.co/datasets/whr778/casualty_natural) | registry `hf_jsonl` |
+| `data/cc_news_haiku45.*.jsonl` | test/train/val | [`whr778/cc_news_haiku45`](https://huggingface.co/datasets/whr778/cc_news_haiku45) | registry `hf_jsonl` |
+| `data/chfinann.*.jsonl` | test/train/val | [`whr778/chfinann`](https://huggingface.co/datasets/whr778/chfinann) | registry `hf_jsonl` |
+| `data/cmnee.*.jsonl` | test/train/val | [`whr778/cmnee`](https://huggingface.co/datasets/whr778/cmnee) | registry `hf_jsonl` |
+| `data/craft.*.jsonl` | test/train/val | [`whr778/craft`](https://huggingface.co/datasets/whr778/craft) | registry `hf_jsonl` |
+| `data/docee.*.jsonl` | test/train/val | [`whr778/docee`](https://huggingface.co/datasets/whr778/docee) | registry `hf_jsonl` |
+| `data/docfee.*.jsonl` | test/train/val | [`whr778/docfee`](https://huggingface.co/datasets/whr778/docfee) | registry `hf_jsonl` |
+| `data/docred.*.jsonl` | test/train/val | [`whr778/docred`](https://huggingface.co/datasets/whr778/docred) | registry `hf_jsonl` |
+| `data/duee.*.jsonl` | train/val | [`whr778/duee`](https://huggingface.co/datasets/whr778/duee) | registry `hf_jsonl` |
+| `data/events_biotech.*.jsonl` | single/test/train/val | [`whr778/events_biotech`](https://huggingface.co/datasets/whr778/events_biotech) | registry `hf_jsonl` |
+| `data/ex_ptm.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/finer_ord.*.jsonl` | test/train/val | [`whr778/finer_ord`](https://huggingface.co/datasets/whr778/finer_ord) | registry `hf_jsonl` |
+| `data/gate2.*.jsonl` | test/train/val | [`whr778/gate2-casualty-relevance`](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) | registry `hf_jsonl` |
+| `data/gate_ann.*.jsonl` | single | [`whr778/gate2-casualty-relevance`](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) | raw adjudication |
+| `data/gliclass_logic.*.jsonl` | single/test/train/val | [`whr778/gliclass_logic`](https://huggingface.co/datasets/whr778/gliclass_logic) | registry `hf_jsonl` |
+| `data/gliclass_rac.*.jsonl` | test/train/val | [`whr778/gliclass_rac`](https://huggingface.co/datasets/whr778/gliclass_rac) | registry `hf_jsonl` |
+| `data/gliner_multilingual.*.jsonl` | single/test/train/val | [`whr778/gliner_multilingual`](https://huggingface.co/datasets/whr778/gliner_multilingual) | registry `hf_jsonl` |
+| `data/guide_scores.mix_natural.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.mix_natural.dedup.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.mix_natural.shard0.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.mix_natural.shard1.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.mix_natural.shard2.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.mix_natural.shard3.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.rams_baseword.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.rams_baseword.dedup.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.rams_baseword.shard0.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.rams_baseword.shard1.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.rams_baseword.shard2.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/guide_scores.rams_baseword.shard3.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
+| `data/jnlpba.*.jsonl` | test/train/val | [`whr778/jnlpba`](https://huggingface.co/datasets/whr778/jnlpba) | registry `hf_jsonl` |
+| `data/kaznerd.*.jsonl` | test/train/val | [`whr778/kaznerd`](https://huggingface.co/datasets/whr778/kaznerd) | registry `hf_jsonl` |
+| `data/klue_ner.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/klue_re.*.jsonl` | test/train/val | [`whr778/klue_re`](https://huggingface.co/datasets/whr778/klue_re) | registry `hf_jsonl` |
+| `data/knowledgator_gliner.*.jsonl` | single/test/train/val | [`whr778/knowledgator_gliner`](https://huggingface.co/datasets/whr778/knowledgator_gliner) | registry `hf_jsonl` |
+| `data/linnaeus.*.jsonl` | test/train/val | [`whr778/linnaeus`](https://huggingface.co/datasets/whr778/linnaeus) | registry `hf_jsonl` |
+| `data/masakhaner.*.jsonl` | test/train/val | [`whr778/masakhaner`](https://huggingface.co/datasets/whr778/masakhaner) | registry `hf_jsonl` |
+| `data/masakhaner_bam.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_bbj.*.jsonl` | test/train/val | [`whr778/masakhaner_bbj`](https://huggingface.co/datasets/whr778/masakhaner_bbj) | registry `hf_jsonl` |
+| `data/masakhaner_ewe.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_fon.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_hau.*.jsonl` | test/train/val | [`whr778/masakhaner_hau`](https://huggingface.co/datasets/whr778/masakhaner_hau) | registry `hf_jsonl` |
+| `data/masakhaner_ibo.*.jsonl` | test/train/val | [`whr778/masakhaner_ibo`](https://huggingface.co/datasets/whr778/masakhaner_ibo) | registry `hf_jsonl` |
+| `data/masakhaner_kin.*.jsonl` | test/train/val | [`whr778/masakhaner_kin`](https://huggingface.co/datasets/whr778/masakhaner_kin) | registry `hf_jsonl` |
+| `data/masakhaner_lug.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_luo.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_mos.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_nya.*.jsonl` | test/train/val | [`whr778/masakhaner_nya`](https://huggingface.co/datasets/whr778/masakhaner_nya) | registry `hf_jsonl` |
+| `data/masakhaner_pcm.*.jsonl` | test/train/val | [`whr778/masakhaner_pcm`](https://huggingface.co/datasets/whr778/masakhaner_pcm) | registry `hf_jsonl` |
+| `data/masakhaner_sna.*.jsonl` | test/train/val | [`whr778/masakhaner_sna`](https://huggingface.co/datasets/whr778/masakhaner_sna) | registry `hf_jsonl` |
+| `data/masakhaner_swa.*.jsonl` | test/train/val | [`whr778/masakhaner_swa`](https://huggingface.co/datasets/whr778/masakhaner_swa) | registry `hf_jsonl` |
+| `data/masakhaner_tsn.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_twi.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_wol.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhaner_xho.*.jsonl` | test/train/val | [`whr778/masakhaner_xho`](https://huggingface.co/datasets/whr778/masakhaner_xho) | registry `hf_jsonl` |
+| `data/masakhaner_yor.*.jsonl` | test/train/val | [`whr778/masakhaner_yor`](https://huggingface.co/datasets/whr778/masakhaner_yor) | registry `hf_jsonl` |
+| `data/masakhaner_zul.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews.*.jsonl` | test/train/val | [`whr778/masakhanews`](https://huggingface.co/datasets/whr778/masakhanews) | registry `hf_jsonl` |
+| `data/masakhanews_amh.*.jsonl` | test/train/val | [`whr778/masakhanews_amh`](https://huggingface.co/datasets/whr778/masakhanews_amh) | registry `hf_jsonl` |
+| `data/masakhanews_eng.*.jsonl` | test/train/val | [`whr778/masakhanews_eng`](https://huggingface.co/datasets/whr778/masakhanews_eng) | registry `hf_jsonl` |
+| `data/masakhanews_fra.*.jsonl` | test/train/val | [`whr778/masakhanews_fra`](https://huggingface.co/datasets/whr778/masakhanews_fra) | registry `hf_jsonl` |
+| `data/masakhanews_hau.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_ibo.*.jsonl` | test/train/val | [`whr778/masakhanews_ibo`](https://huggingface.co/datasets/whr778/masakhanews_ibo) | registry `hf_jsonl` |
+| `data/masakhanews_lin.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_lug.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_orm.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_pcm.*.jsonl` | test/train/val | [`whr778/masakhanews_pcm`](https://huggingface.co/datasets/whr778/masakhanews_pcm) | registry `hf_jsonl` |
+| `data/masakhanews_run.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_sna.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_som.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_swa.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_tir.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_xho.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/masakhanews_yor.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/maven.*.jsonl` | test/train/val | [`whr778/maven`](https://huggingface.co/datasets/whr778/maven) | registry `hf_jsonl` |
+| `data/maven_ner.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/mendeley_ed.*.jsonl` | test/train/val | [`whr778/mendeley_ed`](https://huggingface.co/datasets/whr778/mendeley_ed) | registry `hf_jsonl` |
+| `data/mendeley_ner.*.jsonl` | test/train/val | [`whr778/mendeley_ner`](https://huggingface.co/datasets/whr778/mendeley_ner) | registry `hf_jsonl` |
+| `data/mix_anchorless.*.jsonl` | test/train/val | [`whr778/mix_anchorless`](https://huggingface.co/datasets/whr778/mix_anchorless) | registry `hf_jsonl` |
+| `data/mix_natural.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/ncbi_disease.*.jsonl` | test/train/val | [`whr778/ncbi_disease`](https://huggingface.co/datasets/whr778/ncbi_disease) | registry `hf_jsonl` |
+| `data/nuner_full.*.jsonl` | single/test/train/val | [`whr778/nuner_full`](https://huggingface.co/datasets/whr778/nuner_full) | registry `hf_jsonl` |
+| `data/paraloq_json.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/pile_ner_def.*.jsonl` | single/test/train/val | [`whr778/pile_ner_def`](https://huggingface.co/datasets/whr778/pile_ner_def) | registry `hf_jsonl` |
+| `data/professorbob_re.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/pubmed_abstracts_ner.*.jsonl` | test/train/val | [`whr778/pubmed_abstracts_ner`](https://huggingface.co/datasets/whr778/pubmed_abstracts_ner) | registry `hf_jsonl` |
+| `data/rams.*.jsonl` | dev/test/train/val | [`whr778/rams`](https://huggingface.co/datasets/whr778/rams) | registry `hf_jsonl` |
+| `data/redocred.*.jsonl` | test/train/val | [`whr778/redocred`](https://huggingface.co/datasets/whr778/redocred) | registry `hf_jsonl` |
+| `data/replay_137k30.*.jsonl` | test/train/val | [`whr778/replay_137k30`](https://huggingface.co/datasets/whr778/replay_137k30) | registry `hf_jsonl` |
+| `data/replay_pile30.*.jsonl` | test/train/val | [`whr778/replay_pile30`](https://huggingface.co/datasets/whr778/replay_pile30) | registry `hf_jsonl` |
+| `data/scientific_text.*.jsonl` | single/test/train/val | [`whr778/scientific_text`](https://huggingface.co/datasets/whr778/scientific_text) | registry `hf_jsonl` |
+| `data/scierc.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/sentence_rex.*.jsonl` | single/test/train/val | [`whr778/sentence_rex`](https://huggingface.co/datasets/whr778/sentence_rex) | registry `hf_jsonl` |
+| `data/stockmark_jpn.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
+| `data/synthetic_haiku45_5k.*.jsonl` | test/train/val | [`whr778/synthetic_haiku45_5k`](https://huggingface.co/datasets/whr778/synthetic_haiku45_5k) | registry `hf_jsonl` |
+| `data/synthetic_haiku45_5k_coerced.*.jsonl` | test/train/val | [`whr778/synthetic_haiku45_5k-coerced`](https://huggingface.co/datasets/whr778/synthetic_haiku45_5k-coerced) | registry `hf_jsonl` |
+| `data/synthetic_sonnet5_1k.*.jsonl` | test/train/val | [`whr778/synthetic_sonnet5_1k`](https://huggingface.co/datasets/whr778/synthetic_sonnet5_1k) | registry `hf_jsonl` |
+| `data/text2json.*.jsonl` | test/train/val | [`whr778/text2json`](https://huggingface.co/datasets/whr778/text2json) | registry `hf_jsonl` |
+| `data/warmstart_mix.*.jsonl` | train/val | [`whr778/warmstart_mix`](https://huggingface.co/datasets/whr778/warmstart_mix) | registry `hf_jsonl` |
+| `data/wikievents.*.jsonl` | dev/test/train | [`whr778/wikievents`](https://huggingface.co/datasets/whr778/wikievents) | registry `hf_jsonl` |
+
 ## Summary
 
 | Dataset | Task(s) | Train | Val† | Test | License‡ | Source |
@@ -92,6 +247,7 @@ benchmarks — keep their canonical splits (noted per corpus below).
 | Scientific-text-classification | Classification (single-label) | 40,047 | 4,997 | 4,956 | see card | [HF](https://huggingface.co/datasets/knowledgator/Scientific-text-classification) |
 | events_classification_biotech | Classification (multi-label) | 2,217 | 279 | 263 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
 | MasakhaNEWS | Classification (16 African langs, 7 topics) | 21,499 | 3,094 | 6,236 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhanews) |
+| gate2 (casualty relevance gate) | Classification (2-label relevance) | 11,781 | 1,419 | 1,446 | none declared (derived; not redistributable) | local — [Hub](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) |
 | **Structured extraction** | | | | | | |
 | text2json-training-data | **Structured extraction (json_structures)** | 7,976 | 891 | 872 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
 | json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) |
@@ -337,6 +493,61 @@ sports, technology). Input is `headline + text` by default (`--text-field` to ch
 Kept on the official per-language splits; `--langs` selects a subset (default all 16),
 with per-language corpora in `data/masakhanews_<lang>.*`.
 *Stats: 1 task, 7 labels (fixed vocabulary), single-label, 100% classification (21.7k train articles, 16 languages combined).*
+
+### gate2 — casualty-report relevance gate — local
+
+The stage-0 filter for the EKF casualty-tracking pipeline, answering one question:
+**does this document report a CURRENT toll for a group of people?** Labels are
+`mass_casualty` / `other` under a single `relevance` task. Built by
+[`build_gate_corpus.py`](build_gate_corpus.py) from DocEE, CC-News and DuEE; **all text
+is real**, and both classes are drawn from all three sources.
+
+**This corpus replaces one that failed, and the failure is the reason it is built the way
+it is.** The previous version drew positives from `casualty_events`, which is SYNTHETIC —
+99.9% of those documents are dated 2026 and 86.5% carry generation templates ("A major
+news outlet reported…") — while every negative was real. The classes were separable on
+*provenance*, so a gate trained on it scored **F1 1.0000 on its own test split and then
+admitted 0 of 590 expert-annotated messages and 0 of 71 real news articles**. Length,
+sentence-ending punctuation and CJK script were all downstream symptoms of that one split.
+
+Labels are adjudicated by `claude-haiku-4-5` four ways via
+[`annotate_gate.py`](annotate_gate.py), because a pattern cannot do this job — all three
+of these match "N dead/injured" and all three must be rejected:
+
+- "220,000 earthquake victims have been **served meals**" — exposure, not a toll
+- "**in 1999** … deaths of over 17,000" — a different event, cited as background
+- "cholera symptoms … **can lead to** death if untreated" — no toll at all
+
+`current_toll` is the positive class; `historical_toll` (1,686), `exposure_only` (691)
+and `no_toll` become hard negatives. Cue-free documents are free negatives, never sent to
+the API, and capped at 25% of the negative class so "contains a casualty word" cannot be
+the rule. Scoring a numeric-toll regex against the resulting labels gives **precision
+0.824 but recall 0.317** — it misses 5,005 of 7,323 real tolls.
+
+Balance is by CONSTRUCTION: within every (source, length-decile) cell the two classes are
+equalised, so P(positive | source, length band) = 0.5. Aggregate matching is not enough —
+the previous corpus had 52.8% length-only accuracy and was still 99.3% separable overall.
+Verify with [`check_gate_corpus.py`](check_gate_corpus.py), which scores surface,
+lexical and provenance shortcuts separately:
+
+| check | gate2 | the version it replaces |
+|---|---|---|
+| non-lexical surface features, held out | **57.8%** | 99.3% |
+| best single geometric feature | 54.9% | 83.3% (`ends_on_punct`) |
+| numeric-toll pattern alone | 62.5% | 94.3% |
+| generated-text marker gap across classes | **0.0 pts** | 91.2 pts |
+
+**Caveats.** `gate2.test` is 69.7% contained in `docee.train` because the corpus is built
+from DocEE — train/val/test have zero overlap with each other (on exact text and on the
+normalized 300-char lead, which is also the split routing key, so syndicated retellings
+stay together), but fine-tune from a stock encoder and treat any DocEE-trained model's
+score here as inflated. Chinese is thin (602 rows) and Turkish, the deployment target
+language, is absent entirely. Labels are model-written, not human gold; a 24-document
+hand audit across all six sampling strata found all 24 defensible.
+
+*Stats: 1 task, 2 labels (fixed vocabulary), single-label, 100% classification;
+14,646 records, balanced 7,323 positive / 7,323 negative. Sources: DocEE 11,938,
+CC-News 2,106, DuEE 602.*
 
 ## Structured extraction
 
