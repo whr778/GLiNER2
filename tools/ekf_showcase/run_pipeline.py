@@ -127,32 +127,52 @@ from scope_gate import (  # noqa: E402
 )
 
 
+DISASTER_TYPE_LABELS = {
+    "earthquake": "an earthquake or its aftermath",
+    "flood": "flooding or storm surge",
+    "fire": "a fire or explosion",
+    "attack": "a deliberate attack",
+    "other": "any other or unclear cause",
+}
+
+
 def build_gate_schema(model):
-    """Multiple classification tasks in one pass (tutorial 1, 'Multiple Tasks').
+    """Relevance ONLY. `disaster_type` is asked separately -- see build_type_schema.
 
-    Relevance is the load-bearing one; disaster_type rides along free because
-    classification tasks share the encoder pass.
+    These used to share one schema, because classification tasks share the encoder pass
+    and disaster_type therefore rode along free. On a BOUNDARY model that is not free:
+    a second classification task collapses `relevance` to `other` at confidence 1.0 for
+    every input. Measured on gliner2-gate2-mmbert-real -- "At least 39 people were killed
+    and nearly 70 injured" scores mass_casualty 0.999 alone and other 1.0 with
+    disaster_type attached. Span models are unaffected, which is why this survived: every
+    model the gate had ever run was a span model.
+
+    It cost two runs' verdicts. A gate that admits NOTHING has a perfect false-positive
+    rate, so the collapse reads as 0/410 FP -- indistinguishable from success on the
+    headline metric.
     """
-    return (model.create_schema()
-            .classification("relevance", GATE_LABELS_V2)
-            .classification("disaster_type", {
-                "earthquake": "an earthquake or its aftermath",
-                "flood": "flooding or storm surge",
-                "fire": "a fire or explosion",
-                "attack": "a deliberate attack",
-                "other": "any other or unclear cause",
-            }))
+    return model.create_schema().classification("relevance", GATE_LABELS_V2)
 
 
-def gate(model, texts: List[str], threshold: float) -> List[Dict[str, Any]]:
+def build_type_schema(model):
+    """disaster_type, asked on its own so it cannot perturb the relevance decision."""
+    return model.create_schema().classification("disaster_type", DISASTER_TYPE_LABELS)
+
+
+def gate(model, texts: List[str], threshold: float,
+         with_type: bool = True) -> List[Dict[str, Any]]:
     schema = build_gate_schema(model)
+    type_schema = build_type_schema(model) if with_type else None
     out = []
     for text in texts:
         r = model.extract(text, schema, include_confidence=True)
         rel = r.get("relevance")
         label = rel.get("label") if isinstance(rel, dict) else rel
         conf = float(rel.get("confidence", 1.0)) if isinstance(rel, dict) else 1.0
-        dis = r.get("disaster_type")
+        # A second encoder pass, deliberately. Sharing one made disaster_type free and
+        # the relevance decision wrong on boundary models.
+        dis = (model.extract(text, type_schema, include_confidence=True).get("disaster_type")
+               if type_schema else None)
         out.append({
             "relevant": bool(label == "mass_casualty" and conf >= threshold),
             "relevance": label, "relevance_confidence": conf,
