@@ -121,6 +121,7 @@ GATE_LABELS_V2 = {
 }
 
 
+from language_gate import is_supported  # noqa: E402
 from scope_gate import (  # noqa: E402
     apply_extracted_scope, gate as scope_gate, scope_agreement,
     viterbi_gate, hmm_gate,
@@ -161,10 +162,26 @@ def build_type_schema(model):
 
 def gate(model, texts: List[str], threshold: float,
          with_type: bool = True) -> List[Dict[str, Any]]:
+    """Stage 0. Unsupported languages are rejected BEFORE the model sees them.
+
+    The gate reads English and Chinese, which is what it was trained on. Asked for a
+    verdict on Turkish it returns one anyway -- admitting 22% of clean articles at
+    threshold 0.5, with AUC 0.4733 separating reports from non-reports. That is noise
+    presented as a decision. `language_gate` makes the boundary explicit, and the
+    articles it drops are counted rather than silently mixed into the kept set.
+    """
     schema = build_gate_schema(model)
     type_schema = build_type_schema(model) if with_type else None
     out = []
     for text in texts:
+        supported, language, language_confidence = is_supported(text)
+        if not supported:
+            out.append({
+                "relevant": False, "relevance": "unsupported_language",
+                "relevance_confidence": 0.0, "disaster_type": None,
+                "language": language, "language_confidence": language_confidence,
+            })
+            continue
         r = model.extract(text, schema, include_confidence=True)
         rel = r.get("relevance")
         label = rel.get("label") if isinstance(rel, dict) else rel
@@ -177,6 +194,7 @@ def gate(model, texts: List[str], threshold: float,
             "relevant": bool(label == "mass_casualty" and conf >= threshold),
             "relevance": label, "relevance_confidence": conf,
             "disaster_type": dis.get("label") if isinstance(dis, dict) else dis,
+            "language": language, "language_confidence": language_confidence,
         })
     return out
 
@@ -955,6 +973,12 @@ def main() -> None:
     gate_model = AutoExtractor.from_pretrained(args.gate_model, map_location=args.device)
     gates = gate(gate_model, texts, args.gate_threshold)
     kept = [i for i, g in enumerate(gates) if g["relevant"]]
+    unsupported = [g for g in gates if g["relevance"] == "unsupported_language"]
+    if unsupported:
+        from collections import Counter
+        by_language = Counter(g["language"] for g in unsupported)
+        print(f"           {len(unsupported)}/{len(feed)} dropped, language not supported "
+              f"(gate reads en/zh): {dict(by_language)}")
     print(f"           kept {len(kept)}/{len(feed)} articles as mass-casualty")
 
     events: List[Dict[str, Any]] = [{} for _ in feed]
