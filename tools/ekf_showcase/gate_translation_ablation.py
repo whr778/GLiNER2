@@ -28,7 +28,8 @@ Sampling is `gate_turkish_fp.sample`, same seed and definitions, so the Turkish 
 here line up with the ones recorded there rather than being a fresh draw.
 
 Translation is by Claude Haiku 4.5 -- cheap, and the fidelity bar is low because we only
-need the topic to survive, not the prose. ~300 articles is roughly $1.
+need the topic to survive, not the prose. Sent through the BATCH API at half the
+per-token price -- ~300 articles is roughly $0.50, and nothing here needs a fast turnaround.
 """
 from __future__ import annotations
 
@@ -36,35 +37,98 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gate_turkish_fp import sample, sweep                        # noqa: E402
+
+POLL_SECONDS = 20
 
 SYSTEM = ("Translate the Turkish news article into natural English. Preserve every number, "
           "place name and factual claim exactly. Do not summarise, editorialise or add "
           "anything. Return only the translation.")
 
 
+def _pending_path(cache: Path) -> Path:
+    """Where an in-flight batch id is parked so a killed run resumes instead of re-paying."""
+    return cache.with_name(cache.stem + ".pending.json")
+
+
+def _collect(client, batch_id: str, have: dict, cache: Path) -> int:
+    """Wait for a batch, fold its results into the cache, return the error count.
+
+    Results arrive in ANY order, so they are keyed by custom_id -- which is the same sha1
+    used for the cache, so the mapping needs no bookkeeping of its own.
+    """
+    while True:
+        batch = client.messages.batches.retrieve(batch_id)
+        if batch.processing_status == "ended":
+            break
+        print(f"  batch {batch_id}: {batch.processing_status}, "
+              f"{batch.request_counts.processing} in flight", flush=True)
+        time.sleep(POLL_SECONDS)
+
+    errors = 0
+    for result in client.messages.batches.results(batch_id):
+        if result.result.type == "succeeded":
+            message = result.result.message
+            have[result.custom_id] = next(
+                (b.text for b in message.content if b.type == "text"), "")
+        else:
+            errors += 1
+            print(f"  {result.custom_id[:8]}: {result.result.type}", flush=True)
+    cache.write_text(json.dumps(have, ensure_ascii=False), encoding="utf-8")
+    _pending_path(cache).unlink(missing_ok=True)
+    return errors
+
+
 def translate(texts, cache: Path):
+    """Translate via the Batch API -- half the per-token price, and nothing here is
+    latency-sensitive.
+
+    Batches usually finish well inside an hour (24h is the ceiling), which is fine for an
+    offline ablation and is why this is not the ingest path: a live feed would pay latency
+    for the discount.
+
+    Two re-payment guards, because paying twice for the same translation is the bug this
+    file already had once: results are keyed by sha1 of the source text, so a rerun submits
+    only what is missing; and an in-flight batch id is parked on disk, so a killed run
+    collects the batch it already paid for instead of submitting a second one.
+    """
     import anthropic
+    from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
+    from anthropic.types.messages.batch_create_params import Request
+
     cache.parent.mkdir(parents=True, exist_ok=True)
     have = json.loads(cache.read_text(encoding="utf-8")) if cache.is_file() else {}
     client = anthropic.Anthropic()
-    out = []
-    for t in texts:
-        # sha1, not hash(): Python randomizes string hashing per process, so the old
-        # key never hit across runs and every invocation re-paid for every translation
-        # (120 cached entries for a 60-article experiment).
-        k = hashlib.sha1(t.encode("utf-8")).hexdigest()
-        if k not in have:
-            r = client.messages.create(
+
+    pending = _pending_path(cache)
+    if pending.is_file():
+        batch_id = json.loads(pending.read_text(encoding="utf-8"))["batch_id"]
+        print(f"  resuming batch {batch_id} from a previous run", flush=True)
+        _collect(client, batch_id, have, cache)
+
+    keys = [hashlib.sha1(t.encode("utf-8")).hexdigest() for t in texts]
+    missing = {k: t for k, t in zip(keys, texts) if k not in have}   # dedupes by key
+    if missing:
+        batch = client.messages.batches.create(requests=[
+            Request(custom_id=k, params=MessageCreateParamsNonStreaming(
                 model="claude-haiku-4-5", max_tokens=2048, system=SYSTEM,
-                messages=[{"role": "user", "content": t}])
-            have[k] = next((b.text for b in r.content if b.type == "text"), "")
-            cache.write_text(json.dumps(have, ensure_ascii=False), encoding="utf-8")
-        out.append(have[k])
-    return out
+                messages=[{"role": "user", "content": t}]))
+            for k, t in missing.items()
+        ])
+        pending.write_text(json.dumps({"batch_id": batch.id}), encoding="utf-8")
+        print(f"  submitted {len(missing)} translations as batch {batch.id}", flush=True)
+        errors = _collect(client, batch.id, have, cache)
+        if errors:
+            print(f"  {errors} translation(s) failed and are missing from the cache")
+
+    # KeyError rather than a silently shorter list: a dropped article shrinks a class and
+    # quietly changes what the AUC was computed over. Successes stay cached, so a rerun
+    # resubmits only what failed.
+    return [have[k] for k in keys]
 
 
 def main():
