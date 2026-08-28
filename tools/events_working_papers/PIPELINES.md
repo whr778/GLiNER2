@@ -380,6 +380,17 @@ that addresses cause (1) directly: hard assignment commits early and poisons its
 reference, which is exactly what keeping rival hypotheses alive exists to prevent. Before
 this run that was a design preference; it is now the mechanism a measurement implicates.
 
+> **Superseded 2026-08-25.** The paragraph above is the conclusion as it stood on 2026-08-19
+> and is kept because its diagnosis holds — only its remedy is out of date. Six days later the
+> global decode over {own, aggregate, reject} (**M4′**, `scope_gate.hmm_gate`) was built and
+> shipped, and it takes most of the +0.111 **without a hypothesis tree** (Helene −29.4%,
+> Türkiye −7.6%, Aegean −78.8% pooled RMSE in deaths). The headroom splits almost evenly —
+> 0.591 → 0.537 reassignment (+0.055) and 0.537 → 0.480 the reject option (+0.057) — and a
+> tree buys the reassignment half, the one §4 calls the half worth nothing. Cause (1) is
+> still real; deferring the decision is simply no longer the cheapest way to stop it. See the
+> status table in §3 for the current position: *M4 — not built as MHT, taken by the global
+> decode above.*
+
 ### 4.2 The data-side route: built, and beaten by a threshold
 
 The other route to cross-event contamination is negative supervision — withhold an

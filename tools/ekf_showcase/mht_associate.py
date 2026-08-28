@@ -74,6 +74,19 @@ early and poisons its own reference, which is exactly what keeping rival hypothe
 exists to prevent. That was previously a design preference. It is now the specific mechanism
 implicated by a measurement.
 
+**SUPERSEDED 2026-08-25 -- the paragraph above is the conclusion as it stood on 2026-08-19,
+kept because the diagnosis is still right and only the remedy changed.** The global decode
+over {own, aggregate, reject} (M4', `scope_gate.hmm_gate`) was built six days later and
+SHIPS: pooled RMSE in deaths Helene -29.4%, Turkiye -7.6%, Aegean -78.8%. It takes most of
+the +0.111 without a hypothesis tree, because that headroom splits almost evenly and the
+halves are not equally hard -- 0.591 -> 0.537 is reassignment (+0.055, mostly Tennessee) and
+0.537 -> 0.480 is the reject option (+0.057). A tree buys the reassignment half;
+PIPELINES.md's verdict on it is "Hungarian assignment solves the half worth nothing."
+
+So cause (1) is unchanged and still real: hard assignment does poison its own reference. What
+changed is that deferring the decision is no longer the cheapest way to stop it. Read this
+docstring as the record of an argument, not as a live recommendation to build M4.
+
     uv run python tools/ekf_showcase/mht_associate.py
     uv run python tools/ekf_showcase/mht_associate.py --birth one-sided --q-rel 2.0
     uv run python tools/ekf_showcase/mht_associate.py --candidates aggregate-only
