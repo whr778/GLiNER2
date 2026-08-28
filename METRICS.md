@@ -144,6 +144,22 @@ intersection.
 
 ### Worked example: 4 gold arguments, 3 matched
 
+> **"I matched 3 arguments but gold had 4 — what is the score, strict and
+> relaxed?"**
+>
+> **TP 3, FP 0, FN 1 → precision 1.000, recall 0.750, F1 0.857 — and strict and
+> relaxed are identical.**
+>
+> The fourth argument is a single false negative, not a failed event. Precision
+> stays at 1.000 because the model predicted nothing wrong; it simply stopped
+> early, and the metric charges that to recall alone. Strict and relaxed agree
+> because relaxed only differs when a prediction is *nearly* right — here there
+> is no fourth prediction for it to rescue.
+>
+> Had the model instead predicted a fourth argument and got it wrong, that is
+> TP 3 / FP 1 / FN 1 → F1 0.750: **guessing wrong scores lower than staying
+> silent**, on the same three correct arguments.
+
 One event mention, four gold arguments. Every row below is the **contribution of
 this one document** — micro F1 pools TP/FP/FN across the whole eval set before
 computing P/R/F1, so a single event never has a score of its own. Numbers
