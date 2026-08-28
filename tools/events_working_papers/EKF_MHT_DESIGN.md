@@ -1,9 +1,19 @@
 # Tracking Events Through a News Stream: A Filter, and the Association Layer It Needed
 
-*Working paper. Rewritten for length 2026-08-25 — the previous 1,033-line chronological
-version is at git `1e27878`. Every measured result and every negative below is carried over;
-what was cut is narration, not findings. The build record with contemporaneous detail is
-`EKF_MHT_BUILD_RECORD.md`.*
+**William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
+
+¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design,
+implementation, and drafting
+
+**Paper 1 of the research programme stated in `RESEARCH_PROGRAM.md`.** Revision of
+2026-08-28.
+
+*Provenance. Condensed 2026-08-25 from a 1,033-line chronological draft (git `1e27878`);
+every measured result and every negative is carried forward, and what was removed is
+narration rather than findings. Contemporaneous engineering detail remains in
+`EKF_MHT_BUILD_RECORD.md`. Under the programme's graduation rule this paper carries only
+verified, reproducible claims, including the negatives that scope them; work still in
+progress is cited to the working paper that holds it.*
 
 ## Abstract
 
@@ -66,6 +76,26 @@ on the event it was designed against split held-out; a corpus built to teach cro
 suppression was beaten by a one-line threshold; and four separate instrument defects
 produced confident wrong answers that survived because the instrument returned the expected
 result. §6 is that list, and it is the more transferable half.
+
+### Contributions
+
+1. **A global decode replaces the specified association layer.** Diarization over
+   {own place, aggregate, reject}, decoded globally by Viterbi rather than committed per
+   observation, improves every event available at a single setting (pooled RMSE in deaths:
+   −29.4%, −7.6%, −78.8%). It requires no hypothesis tree, no cost matrix and no track
+   management (§4).
+2. **The prize for assignment is priced at zero, and the whole residual is the null
+   hypothesis.** A two-way oracle with ground-truth assignment scores what the shipped gate
+   already scores; adding a reject option doubles the measured headroom. Hungarian
+   assignment optimises the half worth nothing (§4.1).
+3. **Track birth by innovation gating was built and lost to the fixed ratio it was meant to
+   replace**, for two measured reasons: judging a stream against its own track is circular,
+   and the innovation is uninformative about scope on a rising toll (§4.3).
+4. **Declared knowledge beat every learned signal tried at cross-event rejection**, at a
+   quarter of the false positives and zero model calls (§6).
+5. **Four instrument defects produced confident wrong answers**, each surviving because the
+   instrument returned the result its author expected. §6 catalogues them; that section is
+   the more transferable half of this paper.
 
 ---
 
@@ -256,10 +286,69 @@ that two same-type events in one passage stay separable — fails for both model
 property of the decode, not the corpus: the record head pools same-type instances into one.
 That remains open.
 
+### 5.1 The relevance gate was measured at one arbitrary operating point for its whole life
+
+*(Added 2026-08-28. Primary record: `GATES.md`.)*
+
+Stage 0 admits or drops each article before anything downstream sees it, and every number
+recorded for it — in this paper and in the build record — was taken at `--gate-threshold
+0.5`. Sweeping the threshold instead of assuming it changes three conclusions.
+
+**The default operating point is wrong.** The trained gate's softmax is saturated: it needs
+**0.998** to sit at the stated recall bar of ~0.676. Selecting the threshold on the
+validation split and scoring the blind test once moves overall accuracy 0.719 → 0.847 and
+`exposure_only` accuracy 0.444 → 0.903, fixing 108 rows against 39 broken (exact McNemar
+*p* = 1.1×10⁻⁸). `exposure_only` — the failure mode §5's corpus work and two fine-tuning
+runs were bought to address — was never a capability gap.
+
+**Two models we believed differed do not.** Scored at each model's own validation-chosen
+threshold, the four-way-supervised gate and its predecessor are indistinguishable: 18 rows
+to 18, *p* = 1.0000. The apparent gain was a calibration difference between two operating
+points that a shared argmax happened to place differently.
+
+**The gate-model switch does not survive a sweep.** On 1,000 annotated disaster messages
+(397 usable negatives), pooled over the whole curve rather than one cut:
+
+*Threshold-free discrimination (AUC) and one operating point. Lower FP is better, higher
+recall is better.*
+
+| gate model | AUC | FP on `related=0` @0.5 | recall `death|missing` @0.5 |
+|---|---|---|---|
+| `casualty-docee` (span, shipped) | 0.9241 | 0/397 | 20/36 |
+| `gate2-mmbert-v2` (boundary) | 0.9472 | 2/397 | 14/36 |
+| `fastino/gliner2-base-v1` (span) | **0.9635** | 8/397 | **28/36** |
+
+The model this project replaced leads on a threshold-free measure and on recall at every
+operating point; at 0.998 it holds 27/36 recall at 1/397 false positives. The switch away
+from it was decided on false positives at a single threshold with no recall column. The
+false-positive half reproduces and the conclusion does not. (`recall death|missing` is
+indicative — the label means "mentions death", not "reports a toll" — so this table compares
+identically-scored models rather than stating absolutes.)
+
+**The same gate is not multilingual, and its corpus says why.** On Turkish news its AUC is
+**0.4733**, below chance, with the negatives' median score above the positives'. The
+training corpus is 95.9% English and 4.1% Chinese, with 0.19% incidental Turkish: mmBERT's
+encoder is multilingual and the fine-tuning signal never was. Two consequences, both
+measured. Translating the articles to English recovers discrimination (AUC 0.8359 on the
+same 300 articles), which reverses a stored verdict obtained on a different model with the
+opposite failure — a stored result is valid only for the model it was measured on. And a
+stage-0 language gate now rejects what the gate cannot read, converting a silent 22%
+false-admit rate into a counted exclusion.
+
+**For this paper's results the consequence is bounded but real.** The events tracked here
+are English-language feeds, so the multilingual finding does not disturb them; the operating
+point does, because every stage-0 admission decision behind §3 and §4 was taken at 0.5. The
+association results are measured downstream of the gate on articles it admitted, so they are
+conditional on that admission set, not invalidated by it.
+
 ## 6. Negatives, and what each one closed
 
-- **Our strongest prior claim does not reproduce.** Recorded in the build record; it did not
-  survive re-measurement on a clean run.
+- **The filter's edge does not widen under noise and censoring, as we had claimed.** The
+  harder-regime ablation (build record §14) concluded that it did. It fails to reproduce on
+  real trajectories, and the reason is that the ablation measured synthetic streams
+  generated by the same random-walk dynamics the filter assumes: the regime got harder, and
+  the model stayed exactly correct. An ablation over data generated by one's own model
+  measures the generator, not the method.
 - **Aggregates constrain the sum, and our metric only scored the split.** §6.2's original
   verdict — an aggregate row "does not pay off" — was decided by a scorer that measures only
   the split. Re-scored in absolute deaths, **the aggregate improves the national total at

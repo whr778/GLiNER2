@@ -4,10 +4,15 @@
 
 ¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
-*Revision of 2026-08-19. Companion to `PAPER_0_FOUNDATION.md` (the substrate) and
-`EKF_MHT_DESIGN.md` (the temporal instantiation of the same thesis). The build record —
-decision log, wiring map, increment status, cost model, deferred Phase B plan — is kept
-verbatim in `JOINT_IE_DESIGN_RECORD.md`.*
+**Paper 2 of the research programme stated in `RESEARCH_PROGRAM.md`.** Revision of
+2026-08-28.
+
+*Companion to `PAPER_0_FOUNDATION.md` (the substrate) and `EKF_MHT_DESIGN.md` (the temporal
+instantiation of the same thesis: the two papers are the combinatorial and temporal scopes
+of one top-K inference over a shared `candidate_scores → JointProblem` contract). The build
+record — decision log, wiring map, increment status, cost model, deferred Phase B plan — is
+kept verbatim in `JOINT_IE_DESIGN_RECORD.md`. Under the programme's graduation rule this
+paper carries only verified, reproducible claims, including the negatives that scope them.*
 
 ---
 
@@ -30,6 +35,24 @@ per-row split randomiser, and an uncalibrated decode threshold — each produced
 that looked like clean scientific findings and were not. We report the corrected numbers,
 the wrong conclusions we drew before correcting them, and the standing rules adopted so
 they do not recur.
+
+### Contributions
+
+1. **Constrained joint selection beats greedy per-query decoding on document-level
+   relations** by +0.052 strict F1 (+18% relative) on the Re-DocRED 500-document blind
+   test, with both arms read at their own swept threshold (§4).
+2. **The gain is formulation, not search.** Beam width 1 is optimal and monotonically beats
+   every wider beam, so the improvement comes from decoding under typed constraints rather
+   than from exploring more hypotheses (§4c).
+3. **30% exact replay reverses catastrophic forgetting into a net gain**, holding the
+   original structure capability while nearly tripling performance on the new distribution —
+   and the new corpora supplied no record-head supervision at all, so the gain is transfer
+   through the span representations (§0b–0c).
+4. **Three silent defects each produced a clean-looking finding that was wrong**: a decode
+   path that dropped one schema key, a per-row split randomiser that scattered duplicate
+   documents across train/validation/test, and an uncalibrated decode threshold that read a
+   working head as exactly zero. We report the corrected numbers, the conclusions drawn
+   before correction, and the standing rules adopted so they do not recur (§3).
 
 ---
 
