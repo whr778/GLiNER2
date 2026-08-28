@@ -473,6 +473,48 @@ All returned floats are eligible; `_classification_report` (a string) is not.
 
 ---
 
+---
+
+## References
+
+The metric definitions on this page are conventional; where a choice follows a
+specific source, it is cited here.
+
+**Span matching and fine-grained error analysis**
+
+- Ortmann, K. (2022). *Fine-Grained Error Analysis and Fair Evaluation of
+  Labeled Spans.* LREC 2022, 1400–1407.
+  <https://aclanthology.org/2022.lrec-1.150/> — the source of the error
+  categories (`COR`, `SPU`, `MIS`, `BE*`, `LE`, `LBE`) used in the span error
+  analysis, and of the **`fair` scoring regime**: this implementation uses the
+  reference tool's default weights, which are the paper's Eq. 6/7 rather than
+  the plainer Eq. 5, so a boundary error earns partial TP credit and therefore
+  moves F1 rather than only P and R.
+- FairEval, the reference implementation of the above:
+  <https://github.com/katrinortmann/FairEval>
+- Chinchor, N. (1992). *MUC-4 Evaluation Metrics.* Proceedings of the Fourth
+  Message Understanding Conference, 22–29.
+  <https://aclanthology.org/M92-1002/> — the origin of strict versus partial
+  matching for information extraction, which is what this page calls strict
+  versus relaxed.
+
+**Precision, recall, F-measure and averaging**
+
+- van Rijsbergen, C. J. (1979). *Information Retrieval*, 2nd ed.
+  Butterworth-Heinemann — the F-measure.
+- Manning, C. D., Raghavan, P., & Schütze, H. (2008). *Introduction to
+  Information Retrieval*, Cambridge University Press, §8.3 — micro- versus
+  macro-averaging, and why micro is dominated by frequent labels while macro
+  weights every label equally.
+- Opitz, J., & Burst, S. (2019). *Macro F1 and Macro F1.* arXiv:1911.03347.
+  <https://arxiv.org/abs/1911.03347> — the two incompatible definitions of
+  "macro F1" (mean of per-label F1 versus F1 of the mean P/R). This page uses
+  the **mean of per-label F1**.
+- Sokolova, M., & Lapalme, G. (2009). *A systematic analysis of performance
+  measures for classification tasks.* Information Processing & Management,
+  45(4), 427–437. <https://doi.org/10.1016/j.ipm.2009.03.002>
+
+
 ## Notes and edge cases
 
 - **Closed-set evaluation.** The schema is rebuilt from each gold record, so the
