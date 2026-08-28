@@ -120,13 +120,16 @@ def _stratum(rec: dict, text: str, source: str, casualty: set) -> str:
 
 
 def load_candidates(paths: list[Path], limit: int, seed: int = 42,
-                    cue: re.Pattern = CUE) -> list[dict]:
+                    cue: re.Pattern = CUE, exclude: set | None = None) -> list[dict]:
     """Cue-bearing real documents, deduped, sampled to the per-stratum QUOTAS."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ekf_showcase"))
     from run_pipeline import DOCEE_CASUALTY_TYPES  # noqa: E402
     casualty = set(DOCEE_CASUALTY_TYPES)
 
-    seen: set[str] = set()
+    # Already-adjudicated documents go into the same dedup set the syndication check uses,
+    # so extending a corpus re-buys nothing. Annotation is the expensive step and it is not
+    # idempotent -- there is no cache below this line.
+    seen: set[str] = set(exclude or ())
     pools: dict[str, list[dict]] = {}
     for path in paths:
         if not path.exists():
@@ -230,10 +233,19 @@ def main() -> int:
     ap.add_argument("--fetch-batch", help="recover an already-submitted batch id")
     ap.add_argument("--model", default="claude-haiku-4-5-20251001")
     ap.add_argument("--cue", help="override the casualty-cue regex (non-English corpora)")
+    ap.add_argument("--exclude", nargs="+", default=[],
+                    help="already-annotated jsonl(s); those documents are not re-bought")
     args = ap.parse_args()
 
     cue = re.compile(args.cue, re.I) if args.cue else CUE
-    cands = load_candidates([Path(p) for p in args.corpora], args.limit, cue=cue)
+    done: set[str] = set()
+    for path in args.exclude:
+        for line in Path(path).open(encoding="utf-8"):
+            done.add(normalize_group_key(json.loads(line)["input"])[:300])
+    if done:
+        print(f"[gate-ann] {len(done)} already annotated, not re-buying")
+    cands = load_candidates([Path(p) for p in args.corpora], args.limit, cue=cue,
+                            exclude=done)
     print(f"[gate-ann] {len(cands)} cue-bearing candidates from {len(args.corpora)} corpora")
 
     provider = AnthropicProvider(ProviderConfig(
