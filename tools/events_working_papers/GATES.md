@@ -92,6 +92,49 @@ news, aid-logistics inventories carrying huge numbers, single-casualty medical i
 and names two traps verbatim: a lone death is not a mass-casualty event, and disaster
 words used metaphorically ("explosion in crowdfunding").
 
+**The shipped operating point is wrong, and that mattered more than any training change**
+*(measured 2026-08-27)*. `--gate-threshold` defaults to 0.5. The trained gate's softmax is
+saturated, so 0.5 sits deep inside its positive region: it needs **0.998** to sit at this
+project's stated recall bar of ~0.676. Choosing the threshold on the validation split and
+scoring the blind test once:
+
+| class | accuracy @0.5 | accuracy @0.998 | n |
+|---|---|---|---|
+| exposure_only | 0.444 | **0.903** | 72 |
+| historical_toll | 0.528 | **0.874** | 159 |
+| no_toll | 0.792 | 0.942 | 120 |
+| current_toll | 0.933 | 0.673 | 150 |
+| **all** | **0.719** | **0.847** | 541 |
+| recall on true tolls | 0.938 | 0.696 | 161 |
+
+Paired on the same model, moving the threshold fixes 108 rows and breaks 39
+(exact McNemar p = 1.1e-08). `exposure_only` — the open failure two GPU runs and a
+four-way auxiliary label were bought to fix — went 0.444 → 0.903 by moving a number. It was
+never a capability gap.
+
+**A corollary that retires a model comparison.** Scored at each model's own validation
+threshold, `gate2-mmbert-v2` and its predecessor are indistinguishable: 18 rows to 18,
+p = 1.0000. The apparent gain from the four-way rebuild was a calibration difference.
+
+**And the gate-model switch does not survive a sweep.** `benchmark_gate.py --sweep` reports
+the whole curve from one inference pass, on 1,000 real annotated messages (397 usable
+negatives after language-gate drops):
+
+| model | AUC | FP on related=0 @0.5 | recall death\|missing @0.5 | best point |
+|---|---|---|---|---|
+| `casualty-docee` (span, SHIPPED) | 0.9241 | 0/397 | 20/36 | 0 FP, recall 20 |
+| `gate2-mmbert-v2` (boundary) | 0.9472 | 2/397 | 14/36 | 0 FP @0.9, recall 8 |
+| **`fastino/gliner2-base-v1`** (span) | **0.9635** | 8/397 | **28/36** | **1/397 @0.998, recall 27** |
+
+The switch to `casualty-docee` (b607fae) was decided on false positives at a single
+threshold, 34/410 → 1/410, with no recall column. The false-positive half reproduces; the
+conclusion does not. `recall death|missing` is INDICATIVE — the label means "mentions
+death", not "reports a toll" — so read the table as a comparison between identically-scored
+models, not as absolutes.
+
+**Every external gate number recorded before 2026-08-27 was taken at threshold 0.5** and
+means only what one arbitrary operating point means.
+
 **It does not filter non-English at all, and the failure is silent.** Measured on 200 clean
 Turkish news articles, English label descriptions against Turkish text:
 
@@ -101,9 +144,39 @@ Turkish news articles, English label descriptions against Turkish text:
 The default is DeBERTa-v3, vocab 128,011, English-only. It cannot read the text, so it
 answers `mass_casualty` to nearly everything — worse than the 58.5% that forced the v1→v2
 rewrite, and nothing in the pipeline reports that the gate has stopped discriminating.
-Translating the articles into English does NOT fix it (17/60 still admitted by the English
-model on English text), so the remaining fault is the label descriptions, not the language.
-Check the encoder before pointing this gate at any non-English feed.
+
+**Superseded 2026-08-27 — a stage-0 language gate now makes that failure loud.**
+`tools/ekf_showcase/language_gate.py` (shipped a5fc6a0) detects the language before the
+model runs and rejects what the gate cannot read, counted by language in the run log.
+Supported set is `{en, zh}`, which is what the corpus contains, plus a Han-script override:
+all 18 rows of `data/gate2.test.jsonl` that `lumi_language_id` calls neither `en` nor `zh`
+are short Chinese headlines falling to `und` at probability 0.36–0.50. Detection is clean —
+1,441/1,441 gate2 test rows supported, 0/300 Turkish articles admitted.
+
+**Also superseded: "translation does not fix it".** That was measured on `multi-v1`, which
+reads Turkish and over-admits, so its residual fault genuinely was the label descriptions.
+The trained gate `gliner2-gate2-mmbert-v2` has the opposite failure — it cannot read the
+language at all — and for that failure translation is decisive. Same 300 articles, both
+classes, scored in each language (`gate_translation_ablation.py`):
+
+| condition | AUC | admits pos @0.9 | FP neg @0.9 |
+|---|---|---|---|
+| Turkish (original) | **0.4733** | 7/100 | 12/200 |
+| English (Haiku 4.5 translation) | **0.8359** | 59/100 | 17/200 |
+
+AUC here is the probability a random positive outscores a random negative on the heuristic
+Turkish labels; 0.5 is chance, and 0.4733 is below it. **A stored verdict is only valid for
+the model it was measured on** — the same experiment gave opposite diagnoses for two models
+with opposite failures.
+
+The root cause is the corpus, measured on `data/gate2.train.jsonl` (n=11,781): English
+95.9%, Chinese 4.1%, Turkish 0.19% and incidental. mmBERT's *encoder* is multilingual; the
+fine-tuning signal never was. A 989-article Turkish adjudication pilot ($0.72, Haiku 4.5
+batched) found 428 `current_toll` positives — 43.3% — so a Turkish corpus is not
+positive-limited, and the full cue-bearing region is ~2,100 positives for ~$2.84 more.
+
+Check the encoder *and the training corpus* before pointing this gate at any non-English
+feed.
 
 ### [2] Extraction thresholds — THRESHOLD, on
 `extract(threshold=)` is the single global cut the boundary greedy path gates on.

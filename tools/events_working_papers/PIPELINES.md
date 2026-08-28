@@ -223,6 +223,7 @@ The design's claim is *diarization*: track AND assign, jointly, with decisions d
 | design element | status | evidence |
 |---|---|---|
 | **global decode, 3 states (M4′)** | ✅ **built 2026-08-25, SHIPS** | pooled RMSE in deaths: Helene −29.4%, Türkiye −7.6%, Aegean −78.8% at one setting — `scope_gate.hmm_gate` |
+| cost matrix (M2) | ⛔ **not built, never measured** | −log likelihood of observation *i* under track *j*, plus a track-birth and a missed-detection cost. `mht_associate.py` computes the innovation ingredient per observation in time order but never assembles a matrix, and the two costs it omits are the λ / P_D machinery M5 replaced with a hand-swept σ |
 | deferred assignment (M4) | ⛔ not built as MHT | headroom **+0.111 nRMSE** once the null hypothesis is priced — see §4. Taken by the global decode above, which needs no hypothesis tree |
 | track birth/death (M5) | ✅ built, ⛔ **measured negative** | nRMSE 0.608 best against the magnitude gate's 0.591 — see §4.1 |
 | aggregate as sum row | ⛔ **do not build** | loses at every density except 80%, worst where predicted to win (§23) |
