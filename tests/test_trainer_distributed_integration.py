@@ -1,16 +1,31 @@
-"""End-to-end DDP smoke test on CPU (gloo) -- portable, no GPU required.
+"""End-to-end DDP smoke test on CPU (gloo). No GPU required -- but LINUX ONLY.
 
 Exercises this branch's real DDP path: a ``LOCAL_RANK``-driven process group,
 the ``_fwd_model`` DDP wrap (with ``find_unused_parameters``), ``DistributedSampler``
-sharding across ranks, and the rank-0 ``final`` checkpoint. The trainer supports
-gloo/CPU, so each worker hides CUDA to keep the test hardware-independent (it
-runs the same on a laptop and in CI). The stub model + processor mirror the
-minimal surface the trainer's dataloader/collator needs.
+sharding across ranks, and the rank-0 ``final`` checkpoint. Each worker hides CUDA so
+the test needs no GPU. The stub model + processor mirror the minimal surface the
+trainer's dataloader/collator needs.
+
+**It does not run on macOS, and an earlier version of this docstring wrongly claimed it
+"runs the same on a laptop and in CI".** ``torch.multiprocessing.spawn`` with a gloo
+process group does not work on Darwin: it either fails outright or, more often,
+DEADLOCKS -- hanging until the suite timeout rather than erroring, which is how it first
+cost a debugging session. Measured 2026-08-28: 2/2 passed in 9.23s on Linux x86_64, and
+the same file hung past 7 minutes on Darwin/arm64.
+
+The usual ``dist.is_gloo_available()`` guard cannot catch this. On macOS that returns
+**True** -- gloo is compiled into PyTorch there, it simply cannot carry an ``mp.spawn``
+process group -- so the guard passes and the test proceeds to hang. Hence the explicit
+platform skip below.
+
+A red or a hang here on a Mac means nothing about the DDP code. Run it on Linux before
+believing a DDP regression; the coverage is real and full there.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +37,14 @@ import torch.nn as nn
 from gliner2.models.boundary.model import BoundaryExtractorModel
 from gliner2.training.data import InputExample
 from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
+
+# Platform skip, not a quarantine: both tests below spawn processes and open a gloo
+# process group, which deadlocks on macOS (see module docstring). The DDP path they
+# cover is exercised in full on Linux and in CI.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="mp.spawn + gloo deadlocks on macOS; DDP is covered on Linux",
+)
 
 
 class _TestProcessor:
