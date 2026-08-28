@@ -51,9 +51,49 @@ kernels>=0.12,<0.13        # core
 ```
 
 `uv pip install -e .` (without `[local]`) resolves transformers 5.13 against the core
-`kernels` pin. FlashAttention 2 then never hooks, mmBERT runs ~11× slower, and bf16 goes
-non-finite around step 50. Set `GLINER2_STRICT_ATTN=1` so the fallback raises instead of
-silently degrading, and confirm the encoder reports `kernels-community/flash-attn2`.
+`kernels` pin, which breaks FlashAttention 2 — see below for what that costs and how to
+catch it.
+
+### `kernels-community/flash-attn2`: two failures with the same name
+
+That string appears in both, and they need opposite fixes. **Check which one you have
+before changing anything.**
+
+**On CUDA — FA2 silently never hooks.** transformers reads `flash_attention_2` as the
+*pip* package, whose prebuilt wheels stop at cp313/torch2.9, so on this stack it is always
+rejected; the kernel that actually loads is served from the Hub registry under the repo id
+`kernels-community/flash-attn2`, which needs `kernels` at a version compatible with the
+installed transformers. When that pin slips the loader degrades to sdpa with one warning in
+a log full of them, and on a bf16 ModernBERT encoder **sdpa is a correctness failure, not a
+slowdown**: ~11× slower and non-finite losses around step 50. Fix by installing the extra
+that pins both together, and by making the degrade loud:
+
+```bash
+uv sync --extra local          # NOT `uv pip install -e .`, which resolves transformers 5.13
+export GLINER2_STRICT_ATTN=1   # turn the silent fallback into a load-time error
+```
+
+**Off CUDA (Mac, CPU box) — `KeyError: 'kernels-community/flash-attn2'` on the first
+forward.** Loading a checkpoint that was *trained* with FA2 — every mmBERT checkpoint here
+stores `attn_implementation: flash_attention_2`. Off CUDA transformers accepts the plain
+name at load, normalizes it to the hub repo id, and nothing raises until the first forward
+looks the kernel up and does not find it. Construction alone looks healthy. Fixed in
+`8af9c5f`: off CUDA both spellings now degrade to sdpa *at load*. On an older checkout,
+pass a config whose `attn_implementation` is `sdpa`.
+
+**Verify what you actually got — the model config reports the REQUEST, not the result:**
+
+```python
+m = AutoExtractor.from_pretrained(ckpt, map_location="cpu")
+m.config.attn_implementation           # 'flash_attention_2'  <- what the checkpoint asked for
+m.encoder.config._attn_implementation  # 'sdpa'               <- what actually loaded
+```
+
+Reading only the first is how a run gets recorded as "FA2" while training on sdpa.
+
+On **MPS**, sdpa is swapped for Metal FlashAttention automatically whenever the device
+resolves to mps (`mps-flash-attn`, a darwin-only dependency). Nothing to configure; if the
+package is missing you get a warning and stock sdpa.
 
 On a fresh GPU box: system Python is often 3.10 and this project needs >=3.12
 (`uv venv --python 3.12`), and current drivers reject the default cu130 wheel — pin
