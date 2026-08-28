@@ -4,7 +4,7 @@
 
 ¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
-*Programme map, revision of 2026-08-19. States the unifying thesis, the three papers it
+*Programme map, revision of 2026-08-28. States the unifying thesis, the three papers it
 decomposes into, what is established, and what is still open. Numbers quoted here are
 summaries; each one's primary record is the working paper cited beside it.*
 
@@ -67,6 +67,17 @@ test set) while nearly tripling on the new distribution (0.0755 → 0.2179). The
 corpora supplied *no* record-head supervision at all, so the gain is transfer from the
 span representations the record head reads its field fillers out of.
 *(`JOINT_IE_SCALING.md` §0b–0c.)*
+
+**An uncalibrated operating point cost more than any training intervention.**
+*(2026-08-27.)* The stage-0 relevance gate ran its whole life at threshold 0.5. Its softmax
+is saturated and it needs 0.998 to sit at the stated recall bar; choosing the threshold on
+validation and scoring the blind test once moves overall accuracy 0.719 → 0.847 and the
+worst class 0.444 → 0.903, fixing 108 rows against 39 broken (exact McNemar
+*p* = 1.1×10⁻⁸). Two GPU fine-tuning runs and a four-way auxiliary label had been spent on
+that class; at each model's own validation threshold the rebuilt gate and its predecessor are
+indistinguishable (18/18, *p* = 1.0000). This is the §5 rule "quote a curve only with the
+operating point it was read at" recurring as a several-hundred-dollar lesson rather than a
+misdiagnosis. *(`GATES.md`; `EKF_MHT_DESIGN.md` §5.1.)*
 
 **Single-run variance on these metrics is ±0.02 or worse.** A control re-run of a
 published RAMS recipe scored +0.023 above it from the re-run alone. Any curve claim
@@ -145,7 +156,18 @@ mid-range; `est_last_value` alongside it would have caught this immediately.
 
 **Quote a curve only with the operating point it was read at.** A head whose decode
 threshold is never calibrated can read exactly zero while working correctly — which is
-how one head in this programme was misdiagnosed as broken across five measurements.
+how one head in this programme was misdiagnosed as broken across five measurements. It
+recurred in 2026-08-27 on the stage-0 gate, where the default threshold cost more accuracy
+than two fine-tuning runs recovered, and where a model comparison reported as significant
+(*p* = 0.0091) vanished entirely (18/18, *p* = 1.0000) once each model was read at its own
+threshold. **A comparison between two models at a shared arbitrary threshold measures the
+gap between two operating points, not between two models.**
+
+**A stored verdict is valid only for the model it was measured on.** An ablation concluding
+that translation does not repair a multilingual gate was correct for the model it ran on —
+which reads the language and over-admits — and exactly wrong for a later model that cannot
+read the language at all, where translation moved AUC 0.4733 → 0.8359. Re-run a cited
+verdict before applying it to a model that was not in it.
 
 **Graduation rule.** A finding lives in its working paper until verified held-out, then
 graduates into the target paper. The working papers stay as the design and decision
@@ -171,3 +193,4 @@ The working papers are the primary record; this map is a summary of them.
 | `KALMAN_BEAM_SEARCH_EXPLORATION.md` | the beam ↔ filter origin analysis |
 | `PROJECT_JOURNAL.md` | chronological record of decisions, including those later overturned |
 | `TODO.md` | open defects and next tests, with the evidence for each |
+| `PIPELINES.md` | as-built vs as-designed maps, and the divergence table with M1–M5 status |

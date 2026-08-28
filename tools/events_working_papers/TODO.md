@@ -4,10 +4,35 @@ Completed work is removed rather than struck through; history lives in
 `PROJECT_JOURNAL.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.
 
-State at 2026-08-15 close. **One 2xH100 live** (`clean-rebaseline-2`): the 137k
-re-baseline on decontaminated data is done, and four warm-start arms are running (two
-control seeds for a fresh noise floor, then `evwide2`/`evwide4`). Items 11 and 12 are
-closed; the phase-3 loss work has a result and a redirect.
+**State at 2026-08-28 close. No GPU running, nothing billing.** The phase that just closed
+produced no new model: every result came from measuring shipped components at more than one
+operating point. See `PROJECT_JOURNAL.md` Phase 25.
+
+### Open after 2026-08-28
+
+- **Which gate ships is now an open decision, and the current default is not the leader.**
+  Swept on 1,000 annotated messages, `fastino/gliner2-base-v1` leads on AUC (0.9635) and on
+  recall at every operating point; the shipped `casualty-docee` is 0.9241 and the trained
+  `gate2-mmbert-v2` is 0.9472. The switch away from fastino (b607fae) was decided on false
+  positives at one threshold with no recall column. **Next test:** re-run the pipeline's
+  end-to-end event metrics under each gate at its own swept threshold, rather than choosing
+  on the gate benchmark alone — the benchmark's recall label is indicative, and what matters
+  is pooled RMSE in deaths on the three events.
+- **`--gate-threshold` still defaults to 0.5 in `run_pipeline.py`.** Every recorded gate
+  number predates the sweep. The trained gate needs ~0.998 on its own distribution; the
+  right per-model default is whatever its validation split chooses, and no default has been
+  changed yet. **Next test:** the same end-to-end run as above decides it.
+- **Turkish is affordable but not bought.** The pilot ($0.72) found 43.3% positives in 989
+  articles; the remaining cue-bearing region is ~2,100 more positives for ~$2.84, plus one
+  ~$2 training run. Two caveats stand: the source is one outlet in one year, and its
+  positives skew to conflict rather than natural disasters. **Decision, not a test:**
+  buy the region and retrain, or ship translation-at-ingest (measured, AUC 0.4733 → 0.8359)
+  and spend nothing.
+- **M2 — the cost matrix — remains unbuilt and unmeasured**, and with M4 superseded by the
+  global decode there is currently no reason to build it. Recorded so its absence stays
+  visible in the divergence table rather than being inferred.
+- **`exposure_only` is closed as a training problem.** 0.444 → 0.903 by moving a threshold.
+  Do not spend another run on it.
 
 **Read this before quoting any historical number.** The blind test leaked.
 `SplitWriter` drew one random per ROW, so a document emitted more than once scattered

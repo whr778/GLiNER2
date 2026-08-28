@@ -1308,3 +1308,66 @@ dozens of vehicles, 1,400 landslides. The root cause is the schema — `casualty
 `location`, `injured`, `missing`, `dead` and no role for exposure, while the prose is full
 of it. **A number with no correct home lands in a wrong one.** That is a data-modelling fix,
 not another gate, and it is the same diagnosis as item 10a reached for `scope`.
+
+---
+
+## Phase 25 — the operating point was the finding (27–28 Aug)
+
+The phase began by finishing a measurement a reboot had killed: a per-class comparison of
+the two gate models on identical rows. It ended with three published conclusions overturned,
+none of them by a new model.
+
+**The four-way rebuild bought nothing.** Its GPU run had already come back plateaued at
+epoch 3 with the binary task flat (relevance 0.8341 against 0.8368), and the per-class
+comparison at first looked like a rescue: stratified toward the hard classes, v2 won 37 rows
+to 17, exact McNemar *p* = 0.0091. That result did not survive its own follow-up. Read at
+each model's own validation-chosen threshold the two models are **18 to 18, *p* = 1.0000**.
+The significant-looking win was the distance between two operating points that a shared
+argmax placed differently — the programme's own §5 rule, broken while writing a new rule
+into TRAINING.md about paired testing.
+
+**The threshold was worth more than either training run.** The gate's softmax is saturated;
+it needs 0.998 to sit at the stated recall bar, and 0.5 sits deep inside its positive
+region. Choosing on validation and scoring the blind test once: overall 0.719 → 0.847,
+`exposure_only` 0.444 → 0.903, 108 rows fixed against 39 broken. `exposure_only` was the
+open failure two GPU runs and a bought four-way label had been aimed at. It was never a
+capability gap.
+
+**The gate switch does not survive a sweep.** `fastino/gliner2-base-v1`, replaced in b607fae
+on the strength of false positives at one threshold, leads on AUC (0.9635 against the
+incumbent's 0.9241) and on recall at every operating point. The FP half of the original
+comparison reproduces; the conclusion does not, because there was no recall column.
+
+**Turkish: not multilingual, and the corpus says why.** AUC 0.4733 — below chance, with the
+negatives' median above the positives'. The corpus is 95.9% English, 4.1% Chinese, 0.19%
+incidental Turkish; the encoder is multilingual and the training signal never was. Two
+things followed. A stage-0 language gate now rejects what the gate cannot read (1,441/1,441
+in-corpus rows supported, 0/300 Turkish admitted). And translation, which a stored ablation
+said would not help, moved AUC to **0.8359** — that ablation was right about the model it
+ran on, which reads Turkish and over-admits, and wrong about ours, which cannot read it.
+**A stored verdict is valid only for the model it was measured on.** A $0.72 adjudication
+pilot then found 43.3% positives in Turkish news, so a corpus is not positive-limited.
+
+**Two instruments failed, one of them mine, on the same day.** `benchmark_gate.py --sweep`
+derived P(mass_casualty) as `1 − confidence`, which turned every message the new language
+gate had dropped at confidence 0.0 into a maximum-confidence false positive. It put an
+identical 13-message floor under three different architectures — the tell, because three
+models do not agree to that precision — and briefly produced a table showing a model
+winning for the wrong reason. The lesson generalises past this bug: **when you add a
+sentinel value to a decision path, audit every consumer that does arithmetic on the score.**
+The language gate and the sweep were written the same day, by the same author.
+`annotate_gate.py` had the other one: it iterated a hardcoded six-stratum list, so a corpus
+whose stratum was not in it would be read, counted, and silently dropped — Turkish would
+have annotated zero documents and printed a plausible log.
+
+**M4 was closed, and two documents still argued for it.** `PIPELINES.md` §4.1 and the
+`mht_associate.py` docstring both end with "this strengthens rather than kills the case for
+M4", written 2026-08-19. The global decode (M4′) shipped six days later and takes most of
+the +0.111 without a hypothesis tree. Both now carry dated supersession notes; neither
+paragraph was deleted, because the diagnosis in them is still right and only the remedy
+changed. M2 — the cost matrix — was found to have no row in the divergence table at all, so
+"never built" was inferable only from absence.
+
+The through-line of the phase is that nothing here required a new model, a new corpus, or a
+GPU. Every result came from measuring something already shipped at more than one operating
+point.
