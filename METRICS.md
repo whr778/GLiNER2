@@ -108,6 +108,74 @@ matches — `"the president"` and `"the bombing"` do **not** overlap.
 Examples that overlap: `New York City` ↔ `New York` (substring); `Bank of
 America` ↔ `America` (shared content token); `USA` ↔ `usa` (normalized-equal).
 
+### What the matcher is not
+
+Four properties that are easy to assume and are not true here. They matter most
+for events, where a mention carries several arguments.
+
+**There is no IoU, Jaccard, or any overlap *ratio*.** `_overlap` is a boolean
+predicate: equal, or substring either way, or **at least one** shared
+non-stopword token of length ≥ 2. One token is enough, however long the two
+surfaces are — `North Carolina` overlaps `Carolina Panthers stadium` on
+`carolina`. There is no threshold to tune and no partial credit: a pair either
+matches or it does not.
+
+**Matching is on surface strings, not character offsets.** Nothing compares
+span boundaries, so "span IoU" has no analogue in this implementation. Two
+distinct mentions of the same string are identical to the matcher; for
+arguments, the `trigger_key` in the strict key is what separates them.
+
+**Scoring is per argument, never per event.** Each argument is one element of a
+set, and TP/FP/FN accumulate over arguments. **An event is not required to have
+all its arguments correct to earn credit** — a mention with four gold arguments
+of which two are predicted correctly contributes 2 TP and 2 FN, not one failed
+event. There is no event-level conjunction anywhere in the metric. The one
+place a mention-level effect appears is strict scoring's `trigger_key`: get the
+trigger set wrong and *every* argument of that mention misses under strict,
+because the key no longer matches — but that is the key's doing, not an
+all-or-nothing rule over arguments.
+
+**Relaxed matching is greedy one-to-one, not optimal assignment.** Predictions
+are walked in sorted order and each takes the first eligible unused gold item.
+This is deterministic, but it is not a maximum matching: an early prediction can
+consume a gold item that a later prediction would have matched better, leaving
+the later one a false positive. Strict scoring is unaffected — it is plain set
+intersection.
+
+### Worked example: 4 gold arguments, 3 matched
+
+One event mention, four gold arguments. Every row below is the **contribution of
+this one document** — micro F1 pools TP/FP/FN across the whole eval set before
+computing P/R/F1, so a single event never has a score of its own. Numbers
+produced by running the matchers, not by hand.
+
+| what the model predicted | strict | relaxed |
+|---|---|---|
+| 3 of the 4, all exact, nothing extra | TP 3 / FP 0 / FN 1 → P 1.000, R 0.750, **F1 0.857** | identical |
+| 4: three exact + one **wrong** entity | TP 3 / FP 1 / FN 1 → **F1 0.750** | identical |
+| 4: three exact + one **near-miss** entity (`Carolina` for `North Carolina`) | **F1 0.750** | TP 4 → **F1 1.000** |
+| all 4 arguments exact, but the **trigger** is wrong | TP 0 / FP 4 / FN 4 → **F1 0.000** | TP 4 → **F1 1.000** |
+
+Three things to read off it:
+
+- **Missing an argument costs recall only.** Predicting three of four and
+  stopping gives precision 1.000 — silence is not punished, only the miss is.
+- **Wrong and nearly-right are the same under strict and differ under relaxed.**
+  That is the entire strict/relaxed distinction on a single row.
+- **A wrong trigger zeroes every argument of that mention under strict**, because
+  `trigger_key` is part of the strict key, while relaxed drops the trigger link
+  and is untouched. A large strict-vs-relaxed gap on `event_argument` is usually
+  a trigger problem, not an argument problem.
+
+### Duplicates collapse
+
+Both strict and relaxed operate on **sets**. Two gold arguments identical in
+every scored component — same `(event_type, role, entity, trigger_key)` for
+strict, same `(event_type, role, entity)` for relaxed — collapse to one element
+and are scored once. A model that emits the same argument twice is not
+penalised for the repeat, and gold that lists it twice does not get double
+credit.
+
 ---
 
 ## Micro, macro, support

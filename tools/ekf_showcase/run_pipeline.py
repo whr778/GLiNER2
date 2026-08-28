@@ -846,22 +846,40 @@ def main() -> None:
     ap.add_argument("--feed", required=True)
     ap.add_argument("--truth", default=None)
     ap.add_argument("--out", default="datasets/ekf_showcase/tracked.json")
-    ap.add_argument("--gate-model", default="whr778/gliner2-base-v1-casualty-docee",
-                    help="relevance gate + normalizer classification. Measured against "
-                         "fastino/gliner2-base-v1 on 1,000 expert-annotated messages "
-                         "(community-datasets/disaster_response_messages): false-positive "
-                         "rate on related=0 is 1/410 vs fastino's 34/410, and fastino "
-                         "cannot reach it at ANY threshold -- at 0.99 it still admits "
-                         "15/410 while losing recall. This model's keeps are a strict "
-                         "SUBSET of fastino's (0 kept here that fastino drops), and the "
-                         "172 extra fastino keeps are overwhelmingly what GATE_LABELS_V2 "
-                         "calls `other`: aid logistics, condolences, one individual's "
-                         "death, and EXPOSURE counts (\'1.8 million displaced\') -- the "
-                         "same class that contaminated the EKF streams. Pass "
-                         "fastino/gliner2-base-v1 to reproduce older runs.")
+    ap.add_argument("--gate-model", default="whr778/gliner2-gate2-mmbert-v2",
+                    help="relevance gate. Chosen 2026-08-28 by sweeping the gate END TO "
+                         "END on the three real events -- pooled RMSE in deaths against "
+                         "trajectory truth, shipped association decode, only the gate "
+                         "varying (gate_threshold_sweep.py). At matched stream coverage on "
+                         "Helene it scores 17.5 deaths over 4/6 streams against "
+                         "casualty-docee's 28.1 over 5/6, and on Aegean 77.0 against "
+                         "247.9. It also has a mechanism: casualty-docee is trained on "
+                         "SYNTHETIC casualty prose (data/casualty_docee, claude-sonnet-5 "
+                         "realizations on DocEE contexts) and under-fires on real wire "
+                         "copy -- 11 of 70 Helene articles admitted against this model's "
+                         "36 -- which is the same synthetic-corpus failure recorded for "
+                         "the v1 gate. This model trains on REAL adjudicated text. "
+                         "SUPERSEDED JUSTIFICATION: the previous default was chosen on "
+                         "false positives on 1,000 SMS messages at ONE threshold "
+                         "(1/410 vs fastino's 34/410) with no recall column, and 13 of "
+                         "those false positives were non-English messages neither model "
+                         "can read. Swept, fastino leads that benchmark on AUC. The SMS "
+                         "benchmark is a proxy; the events are the task. Pass "
+                         "whr778/gliner2-base-v1-casualty-docee to reproduce older runs.")
     ap.add_argument("--casualty-model", default="whr778/gliner2-base-v1-casualty-docee",
                     help="best on all three showcase gates: multi-event correct 0.450, "
-                         "wrong-event 0.181, single-event 1.000")
+                         "wrong-event 0.181, single-event 1.000. DO NOT swap in the "
+                         "-clean checkpoint. It scores higher on its own blind test "
+                         "(structure strict F1 0.9822 vs 0.9784, casualty-docee.yaml) and "
+                         "is WORSE on real wire copy: measured 2026-08-28 on the Helene "
+                         "feed, identical flags, only the model changed, its `location` "
+                         "field fills with quantity phrases instead of places -- 63 of 70 "
+                         "observations key to `unknown` against this checkpoint's 37, and "
+                         "the keys it does emit are `more than 150`, `nine`, `bosnia`. "
+                         "That destroys --associate record and leaves 0 of 6 Helene "
+                         "streams scoreable. Same lesson as the gate: selection on an "
+                         "in-distribution blind test does not transfer to the deployment "
+                         "distribution.")
     ap.add_argument("--event-model", default=None,
                     help="checkpoint for stage 1; omit to skip event extraction. Use "
                          "whr778/gliner2-base-v1-casualty-docee, NOT a fastino model and "
@@ -873,7 +891,13 @@ def main() -> None:
                          "location falls back to the bare event type, which the scope "
                          "filter then rejects as out of scope.")
     ap.add_argument("--normalizer", choices=("heuristic", "classify", "hybrid", "both"), default="heuristic")
-    ap.add_argument("--gate-threshold", type=float, default=0.5)
+    ap.add_argument("--gate-threshold", type=float, default=0.9,
+                    help="0.9 chosen 2026-08-28 by gate_threshold_sweep.py: on Helene the "
+                         "mmBERT gate scores 17.5 pooled RMSE in deaths over 4 of 6 "
+                         "streams at both 0.5 and 0.9, and going higher only appears to "
+                         "improve because coverage collapses (9.6 at 0.998 scores 2 of 6 "
+                         "streams). 0.9 is the tightest cut that holds full coverage. The "
+                         "old 0.5 default was never measured on the events at all.")
     ap.add_argument("--event-threshold", type=float, default=0.3)
     ap.add_argument("--grid-step", type=float, default=6.0, help="hours between grid points")
     # Event models are 3-4x SLOWER on MPS than CPU (per-op sync overhead), so cpu is the
