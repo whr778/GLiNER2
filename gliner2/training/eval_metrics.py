@@ -62,6 +62,7 @@ Example::
 from __future__ import annotations
 
 from collections import Counter
+from math import log2
 from typing import Any, Callable, Dict, Iterable, List, Set, Tuple
 
 _DEFAULT_STOPWORDS: frozenset = frozenset({
@@ -1139,6 +1140,55 @@ def sweep_global_decode(
     return best_cfg, best_metrics, scored
 
 
+# Class-weighting schemes from Harbecke, Chen, Hennig and Alt (2022), "Why only
+# Micro-F1? Class Weighting of Measures for Relation Classification", NLP Power!
+# https://aclanthology.org/2022.nlppower-1.4/ -- Table 2.
+#
+# Micro and macro are the two ends of a spectrum, not a choice of two: micro pools
+# instances and ignores class membership, macro weights every class equally however
+# rare. Between them sit weightings that are monotonic in class size but degressive
+# (a class twice as large gets more weight, but less than twice as much). Reporting
+# the spectrum shows whether a model is good everywhere or only where the mass is --
+# which a single averaged number cannot.
+_WEIGHT_SCHEMES = {
+    # w_i = n_i. The instance-proportional extreme; tracks micro closely.
+    "weighted": lambda n, total: float(n),
+    # w_i = n_i ** (3/4), from Cao et al. (2019)'s n^(-1/4) margin term carried into
+    # weighting as n^(-1/4) * n. "Dodrans" is Latin for three-quarters.
+    "dodrans": lambda n, total: float(n) ** 0.75,
+    # w_i proportional to that class's term in the Shannon entropy of the label
+    # distribution, which lifts classes that are hard to predict from frequency alone.
+    "entropy": lambda n, total: -n * log2(n / total),
+}
+
+
+def _class_weighted_averages(per_label):
+    """{scheme: (precision, recall, f1)} for each weighting in _WEIGHT_SCHEMES.
+
+    Weights are computed over classes with POSITIVE GOLD SUPPORT (n_i > 0) and
+    normalised to sum to 1, so the reported figure is the paper's sum(w_i * s_i).
+    A label present only as false positives has n_i = 0 and no weight -- it is
+    still charged against micro, and against macro, which counts every label.
+    """
+    rows = [(p, r, f, s) for _lbl, p, r, f, s in per_label if s > 0]
+    total = sum(s for *_m, s in rows)
+    out: Dict[str, Tuple[float, float, float]] = {}
+    if not rows or total <= 0:
+        return out
+    for name, weight_of in _WEIGHT_SCHEMES.items():
+        weights = [weight_of(s, total) for *_m, s in rows]
+        z = sum(weights)
+        # Entropy degenerates to all-zero when one class holds every instance
+        # (log2(1) = 0). There is nothing to average across; leave it unreported
+        # rather than emit a fabricated number.
+        if z <= 0:
+            continue
+        out[name] = tuple(
+            sum(w * row[i] for w, row in zip(weights, rows)) / z for i in range(3)
+        )
+    return out
+
+
 def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -> Dict[str, Any]:
     labels = sorted(set(tp) | set(fp) | set(fn))
     if not labels:
@@ -1172,6 +1222,12 @@ def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -
     lines.append("-" * 82)
     overall_support = total_tp + total_fn
     lines.append(f"{'micro avg':<40} {micro_p:>10.4f} {micro_r:>10.4f} {micro_f:>10.4f} {overall_support:>10d}")
+    weighted_schemes = _class_weighted_averages(per_label)
+    for name in ("weighted", "dodrans", "entropy"):
+        if name in weighted_schemes:
+            wp, wr, wf = weighted_schemes[name]
+            lines.append(f"{name + ' avg':<40} {wp:>10.4f} {wr:>10.4f} {wf:>10.4f} "
+                         f"{overall_support:>10d}")
     lines.append(f"{'macro avg':<40} {macro_p:>10.4f} {macro_r:>10.4f} {macro_f:>10.4f} {overall_support:>10d}")
     report = "\n".join(lines)
 
@@ -1183,6 +1239,9 @@ def _finalize(prefix: str, regime: str, tp: Counter, fp: Counter, fn: Counter) -
         f"eval_{prefix}_{regime}_macro_recall": macro_r,
         f"eval_{prefix}_{regime}_macro_f1": macro_f,
         f"eval_{prefix}_{regime}_support": overall_support,
+        **{f"eval_{prefix}_{regime}_{name}_{metric}": value
+           for name, scores in weighted_schemes.items()
+           for metric, value in zip(("precision", "recall", "f1"), scores)},
         f"eval_{prefix}_{regime}_classification_report": report,
     }
 

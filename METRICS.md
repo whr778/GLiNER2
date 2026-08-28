@@ -393,6 +393,73 @@ Example: `eval_event_strict_micro_f1`, `eval_entity_relaxed_macro_precision`,
 
 ---
 
+## Class weighting: micro and macro are two points on a spectrum
+
+Micro and macro are not a binary choice. Micro pools instances and lets frequent
+classes dominate; macro weights every class equally however rare. Three
+intermediate schemes are reported alongside them, following Harbecke et al.
+(2022) — reporting the spectrum shows whether a model is good everywhere or only
+where the data mass is, which no single averaged number can.
+
+Each class *i* with gold support *nᵢ* > 0 gets a weight, the weights are
+normalised to sum to 1, and the reported figure is Σᵢ wᵢsᵢ over the per-class
+scores *sᵢ*:
+
+| scheme | weight before normalisation | what it emphasises |
+|---|---|---|
+| `micro` | — (pooled TP/FP/FN, not a weighted mean) | instances; frequent classes dominate |
+| `weighted` | `nᵢ` | instances, per class; tracks micro closely |
+| `dodrans` | `nᵢ^(3/4)` | between the two — Latin *dodrans*, "three quarters" |
+| `entropy` | `−nᵢ · log₂(nᵢ / Σⱼnⱼ)` | classes that are hard to predict from frequency alone |
+| `macro` | `1` | class membership; every class counts the same |
+
+Emitted as `eval_<category>_<regime>_{weighted,dodrans,entropy}_{precision,recall,f1}`
+for every category, in both the strict and relaxed regimes, and shown as extra
+rows in the classification report.
+
+**Two properties worth knowing before reading these numbers.**
+
+`entropy` is **not monotonic in class size**, unlike every other scheme here.
+The weight `−n·log₂(n/N)` peaks at `n/N = 1/e ≈ 0.368` and falls away on both
+sides, so a class holding 90% of instances receives *less* weight than one
+holding 10%. A consequence is that entropy is not bracketed by weighted and
+macro: on two classes with supports 90/10 and per-class F1 of 1.0/0.0, the
+scores are micro 0.947, weighted 0.900, dodrans 0.839, **entropy 0.292**, macro
+0.500 — entropy sits below macro, not between it and weighted.
+
+Weights are computed over classes with **positive gold support** only. A label
+that appears purely as false positives has *nᵢ* = 0, so it carries no weight in
+these three schemes, while still being charged in full against micro and counted
+as a zero-scoring class by macro. Where a single class holds every instance, the
+entropy weight is identically zero and the scheme is **omitted rather than
+reported as zero or NaN**.
+
+---
+
+## Which categories get which regimes
+
+Not every category is scored every way, and the gaps are structural rather than
+oversights.
+
+| category | strict | relaxed | `fair` | micro + macro | weighted / dodrans / entropy |
+|---|---|---|---|---|---|
+| `entity` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `relation` | ✅ | ✅ | ❌ | ✅ | ✅ |
+| `event_type` | ✅ | (≡ strict) | ❌ | ✅ | ✅ |
+| `event_trigger` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `event_argument` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `classification`, `structure` | ✅ | ✅ | ❌ | ✅ | ✅ |
+
+**The `fair` regime covers labeled spans only — entities, event triggers and
+event arguments — and deliberately not relations.** FairEval's error categories
+are about span boundaries (`BES`/`BEL`/`BEO`: system span smaller, larger, or
+overlapping), and a relation is a typed edge between two arguments with no
+boundary of its own, so there is nothing for those categories to describe. If
+you want a relation's *arguments* scored for boundary error, that is the
+`entity` row.
+
+---
+
 ## The classification report
 
 Each `eval_<category>_<regime>_classification_report` is a ready-to-print table:
