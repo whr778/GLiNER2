@@ -52,6 +52,16 @@ DATASETS = {
     },
     # Turkiye-Syria has NO aggregate stream, and its contaminant is the larger sibling
     # (Syria's stream carries Turkey's tolls), so it needs the global-max reference.
+    # DO NOT pass --rollup when producing a run to score against this entry. key_of below
+    # expects the event type still attached ("Earthquakes|turkey"), and
+    # datasets/turkey2023/rollup.json sets collapse_type: true, which strips it and leaves
+    # bare places. The mismatch does not raise -- no key matches, every stream drops out,
+    # and pooled_rmse returns nan, which reads as "no observations" rather than "wrong
+    # keys". Cost two pipeline runs on 2026-08-28 before it was spotted. The rollup was
+    # written 2026-08-10 in response to a held-out failure, after the frozen artifact
+    # below was produced, and nothing updated key_of to match: the frozen file still
+    # carries an unfolded "Earthquakes|hatay" stream that the rollup's aliases would have
+    # folded into turkey.
     "turkey": {
         "onset": datetime(2023, 2, 6, 1, 17, tzinfo=timezone.utc),
         "tracked": "datasets/turkey2023/_cache/tracked_perenvelope.json",

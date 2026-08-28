@@ -25,7 +25,12 @@ with a different pipeline configuration (see DATASETS in scope_gate_test.py). Co
 BETWEEN gates within one run of this script are valid -- same feed, same config, only the
 gate varies. Comparisons against the published numbers are not.
 
-    uv run python tools/ekf_showcase/gate_threshold_sweep.py <dir-of-run-files>
+    uv run python tools/ekf_showcase/gate_threshold_sweep.py <dir-of-run-files> [prefix]
+
+PRODUCING THE RUN FILES. Helene and Aegean want --rollup (their key_of is a bare lowercased
+place, which is what a collapse_type rollup emits). Turkiye wants --event-model and NO
+--rollup, because its key_of expects "Earthquakes|<place>" and its rollup would strip the
+type. Get that wrong and every stream drops out silently as nan.
 """
 import json, sys
 from math import isnan
@@ -36,6 +41,11 @@ from scope_gate import hmm_gate
 from scope_gate_test import DATASETS, pooled_rmse, score, truth
 
 SP = Path(sys.argv[1])
+# Run files are <prefix><event>_<gate>.jsonl. The prefix is an argument because a
+# comparison is only valid within ONE pipeline configuration -- swapping the extractor or
+# enabling stage 1 makes a different set of runs, which belongs under its own prefix rather
+# than silently mixing with the last one.
+PREFIX = sys.argv[2] if len(sys.argv) > 2 else "sweep_"
 THRESHOLDS = (0.5, 0.9, 0.99, 0.998, 0.9999)
 GATES = {"casualty-docee": "casualty-docee", "gate2-mmbert-v2": "gate2-mmbert-v2"}
 EVENTS = {"helene": "helene", "turkey": "turkey", "aegean": "aegean"}
@@ -50,7 +60,7 @@ for ev_tag, ds in EVENTS.items():
     series = truth(Path(cfg["truth"]), cfg["onset"])
     states = {cfg["key_of"](p): p for p in cfg["places"]}
     for gate_tag in GATES:
-        path = SP / f"sweep_{ev_tag}_{gate_tag}.jsonl"
+        path = SP / f"{PREFIX}{ev_tag}_{gate_tag}.jsonl"
         if not path.is_file():
             print(f"{ev_tag:9s}{gate_tag:18s}  (no run file)")
             continue
