@@ -879,7 +879,18 @@ def main() -> None:
                          "That destroys --associate record and leaves 0 of 6 Helene "
                          "streams scoreable. Same lesson as the gate: selection on an "
                          "in-distribution blind test does not transfer to the deployment "
-                         "distribution.")
+                         "distribution. WHAT IS AND IS NOT ESTABLISHED: both checkpoints "
+                         "trained 8 epochs (both model cards). This one was selected by "
+                         "eval_loss, and out/casualty-docee/train_results.json shows that "
+                         "picked EPOCH 5 of 8 (eval_loss 8.94, the minimum of a "
+                         "non-monotone curve: 15.2, 11.7, 9.6, 12.5, 13.1, 8.9, 9.7, 9.5) "
+                         "over a 23-minute run. The -clean arm selected on structure "
+                         "strict F1 instead. So the two differ by which epoch was kept, "
+                         "not by how long they trained, and the mechanism behind the "
+                         "location collapse is NOT established -- only the effect is. "
+                         "Note casualty-docee.yaml\'s comment that eval_loss \"latched at "
+                         "epoch 1 and picked a 6-minute model\" does not describe this "
+                         "run.")
     ap.add_argument("--event-model", default=None,
                     help="checkpoint for stage 1; omit to skip event extraction. Use "
                          "whr778/gliner2-base-v1-casualty-docee, NOT a fastino model and "

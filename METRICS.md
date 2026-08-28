@@ -510,6 +510,15 @@ specific source, it is cited here.
   <https://arxiv.org/abs/1911.03347> — the two incompatible definitions of
   "macro F1" (mean of per-label F1 versus F1 of the mean P/R). This page uses
   the **mean of per-label F1**.
+- Harbecke, D., Chen, Y., Hennig, L., & Alt, C. (2022). *Why only Micro-F1?
+  Class Weighting of Measures for Relation Classification.* Proceedings of NLP
+  Power! The First Workshop on Efficient Benchmarking in NLP, 32–41.
+  <https://aclanthology.org/2022.nlppower-1.4/> — argues that reporting a single
+  averaged measure hides where a model is strong and weak, and places micro and
+  macro at the two ends of a class-weighting spectrum with intermediate schemes
+  between them. Relevant here because this page reports micro **and** macro for
+  every category rather than choosing one, and because the per-label breakdown
+  is what makes the weighting choice inspectable.
 - Sokolova, M., & Lapalme, G. (2009). *A systematic analysis of performance
   measures for classification tasks.* Information Processing & Management,
   45(4), 427–437. <https://doi.org/10.1016/j.ipm.2009.03.002>
