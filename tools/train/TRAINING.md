@@ -73,6 +73,14 @@ uv sync --extra local          # NOT `uv pip install -e .`, which resolves trans
 export GLINER2_STRICT_ATTN=1   # turn the silent fallback into a load-time error
 ```
 
+**Do not `uv add flash-attn`.** The pip package is not the path this stack uses and is
+not in the lockfile: its prebuilt wheels stop at cp313/torch2.9, so on Python 3.12 +
+torch 2.11 there is no wheel to match and the install falls back to a source build that
+needs `nvcc` (and cannot work on a Mac at all). FA2 comes from the Hub registry via
+`kernels`. The confusion is that both are called the same thing — transformers reads the
+string `flash_attention_2` as *the pip package*, fails to find it, and only then retries
+under the Hub repo id, which is the attempt that succeeds.
+
 **Off CUDA (Mac, CPU box) — `KeyError: 'kernels-community/flash-attn2'` on the first
 forward.** Loading a checkpoint that was *trained* with FA2 — every mmBERT checkpoint here
 stores `attn_implementation: flash_attention_2`. Off CUDA transformers accepts the plain
@@ -530,7 +538,7 @@ model.extract_entities("Marie Curie discovered radium in Paris.", ["scientist", 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `ModuleNotFoundError: torch`/`transformers` | `local` extra not installed | `uv sync --extra local` |
-| bf16 loss goes non-finite ~step 50, and training is ~11× slow | FA2 never hooked; transformers resolved outside the pinned range | `uv pip install -e ".[local]"`, verify `kernels-community/flash-attn2`, set `GLINER2_STRICT_ATTN=1` |
+| bf16 loss goes non-finite ~step 50, and training is ~11× slow | FA2 never hooked; transformers resolved outside the pinned range | `uv sync --extra local`, then check `m.encoder.config._attn_implementation` (§2) and set `GLINER2_STRICT_ATTN=1` |
 | `KeyError: 'kernels-community/flash-attn2'` on the first extract, off CUDA | The checkpoint config stores `attn_implementation: flash_attention_2`; transformers accepts it there, normalizes it to the hub repo id, and only the forward discovers no kernel is registered | Fixed in `8af9c5f`: off CUDA both spellings degrade to sdpa at load. On an older checkout, pass a config with `attn_implementation: sdpa` |
 | `config.max_width` error loading a checkpoint | Loaded a boundary checkpoint with `GLiNER2` | Use `AutoExtractor.from_pretrained` |
 | A treatment arm scores identically to its control | A `boundary_head` override was dropped | Confirm the value on `model.boundary_head.settings`, not just `model.config` |
