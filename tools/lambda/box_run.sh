@@ -32,10 +32,16 @@ terminate() {
 # PRE-FLIGHT: prove we can kill ourselves BEFORE starting anything expensive. An
 # unkillable box bills until someone notices, which is the failure this whole script
 # exists to prevent -- so refuse to start rather than run un-terminable.
+# Lambda has NO AWS-style metadata service: that endpoint returns a 404 HTML page, which
+# is non-empty, so an emptiness check silently accepts "<html>..." as the instance id.
+# Require the shape of a real id (32 hex chars) before believing anything.
 INSTANCE_ID=$(curl -s --max-time 5 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
-[ -z "$INSTANCE_ID" ] && INSTANCE_ID=$(cat ~/.instance_id 2>/dev/null)
-if [ -z "$INSTANCE_ID" ]; then
-  echo "[box] FATAL: cannot determine instance id; refusing to start" >&2; exit 3
+if ! printf '%s' "$INSTANCE_ID" | grep -qE '^[0-9a-f]{32}$'; then
+  INSTANCE_ID=$(cat ~/.instance_id 2>/dev/null)
+fi
+if ! printf '%s' "$INSTANCE_ID" | grep -qE '^[0-9a-f]{32}$'; then
+  echo "[box] FATAL: no valid instance id (got: ${INSTANCE_ID:0:40}); refusing to start" >&2
+  exit 3
 fi
 if ! curl -sf -u "$(cat ~/.lambda_key):" https://cloud.lambda.ai/api/v1/instances \
      | grep -q "$INSTANCE_ID"; then
