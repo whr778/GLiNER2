@@ -216,13 +216,23 @@ def _bucket(length: int, edges: list[int]) -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--annotated", default="data/gate_ann.jsonl")
+    # Several adjudicated pools can be combined. Each keeps its own `source`, which is
+    # what makes adding a language safe: `balance` equalises the classes inside every
+    # (source, length-decile) cell, so Turkish rows form their own cells and
+    # P(positive | source=turkish_news, length band) is 0.5 by construction. The model
+    # therefore cannot learn "Turkish => positive", which is the failure that would
+    # otherwise make a monolingual-source corpus worse than useless.
+    ap.add_argument("--annotated", nargs="+", default=["data/gate_ann.jsonl"])
     ap.add_argument("--out-prefix", default="data/gate2")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
-    rows = load_annotated(Path(args.annotated))
-    print(f"[gate2] adjudicated {len(rows)}: {dict(Counter(r['kind'] for r in rows))}")
+    rows = []
+    for path in args.annotated:
+        pool = load_annotated(Path(path))
+        print(f"[gate2] adjudicated {len(pool):6d} from {path}: "
+              f"{dict(Counter(r['kind'] for r in pool))}")
+        rows += pool
 
     rows += load_duee()
     n_pos = sum(r["positive"] for r in rows)
