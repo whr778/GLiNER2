@@ -1,0 +1,54 @@
+# Turkish dose curve, arm: 0 Turkish casualty rows.
+#
+# FIXED across arms: 12,691 English casualty rows + 30% EXACT replay from the base's own
+# 137k pool. VARIED: Turkish rows only. The 0=0 arm is the CONTROL -- every dose arm adds
+# replay and Turkish at once, so without it an improvement over the shipped extractor
+# cannot be attributed to either. The shipped extractor is not a matched baseline: it is a
+# fastino DeBERTa-v3 fine-tune with no replay.
+#
+# Base is mmBERT: the fastino vocabulary is English-only (128,011) and cannot represent
+# Turkish at the tokenizer, so supervision would not be the operative variable there.
+#
+# SUCCESS BARS, pre-registered:
+#   Turkish  location-contains-digit falls from 78.2% toward the English 5.8%,
+#            measured GOLD-FREE by extractor_language_probe.py on the reserved
+#            dw.com + t24.com.tr outlets, which no arm trains on.
+#   English  Helene pooled RMSE holds at 17.5 on the four streams the incumbent covers.
+model:
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k
+  architecture: boundary
+training:
+  checkpoint_restart: None
+  output_dir: ./out/tr-dose0
+  experiment_name: tr_dose0
+  data_parallel: false
+  num_epochs: 6
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true                 # fp16 crashed this workload at 79% on 2026-08-17
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_structure_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  sliding_window: true
+  max_len: 384
+  window_stride: 256
+  gradient_checkpointing: false
+  pin_memory: true
+  early_stopping: false
+eval:
+  metric_sweep: true
+data:
+  corpora:
+    - data/tr_dose0
+  event_files: {}
