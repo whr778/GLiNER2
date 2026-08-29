@@ -183,6 +183,8 @@ def compute_metrics(
     ea_s, ea_r = _counters(), _counters()
     has_entities = has_relations = has_classifications = has_structures = False
     has_event_types = has_event_triggers = has_event_arguments = False
+    evt_jaccard = evt_exact = 0.0
+    evt_count = 0
 
     for gold, pred in zip(golds, preds):
         g, p = _gold_entity_set(gold), _pred_entity_set(pred)
@@ -243,6 +245,10 @@ def compute_metrics(
             e, c = _classify_span_errors(g_ae, p_ae, stopwords=stopwords)
             arg_err += e
             arg_conf += c
+            j, x, n = _per_event_scores(g_arg, p_arg)
+            evt_jaccard += j
+            evt_exact += x
+            evt_count += n
 
     # Overall event score: sum the type, trigger, and argument counters
     # (namespaced so the per-label report keeps distinct rows; micro is the
@@ -272,6 +278,12 @@ def compute_metrics(
     ):
         if present:
             metrics.update(_finalize_span_errors(prefix, err, conf))
+    if has_event_arguments and evt_count:
+        # Per-EVENT completeness. A different aggregation UNIT from every key above:
+        # those pool arguments corpus-wide, these weight every event equally.
+        metrics["eval_event_argument_per_event_mean_jaccard"] = evt_jaccard / evt_count
+        metrics["eval_event_argument_per_event_exact_set_rate"] = evt_exact / evt_count
+        metrics["eval_event_argument_per_event_support"] = evt_count
     if report:
         _print_micro_report(metrics)
     return metrics
@@ -877,6 +889,51 @@ def _items_event_type(s):
 def _items_trigger(s):
     # relaxed trigger = event_type exact + trigger surface overlap
     return sorted(((et,), (trigger,), et) for et, trigger in s)
+
+
+def _events_by_key(
+    args: Set[Tuple[str, str, str, Tuple[str, ...]]],
+) -> Dict[Tuple[str, Tuple[str, ...]], Set[Tuple[str, str]]]:
+    """Group an argument set into events, keyed by ``(event_type, trigger_key)``.
+
+    That pair is already the mention's identity inside the strict key, so it aligns
+    predicted events to gold ones WITHOUT introducing a greedy matching step -- which
+    would otherwise add exactly the kind of arbitrary tie-breaking that the relaxed
+    matcher is already criticised for. The value is the mention's ``(role, entity)`` set.
+    """
+    events: Dict[Tuple[str, Tuple[str, ...]], Set[Tuple[str, str]]] = {}
+    for etype, role, entity, trigger_key in args:
+        events.setdefault((etype, trigger_key), set()).add((role, entity))
+    return events
+
+
+def _per_event_scores(
+    gold: Set[Tuple[str, str, str, Tuple[str, ...]]],
+    pred: Set[Tuple[str, str, str, Tuple[str, ...]]],
+) -> Tuple[float, float, int]:
+    """(summed Jaccard, summed exact-set hits, event count) over one document.
+
+    Answers a question micro-F1 structurally cannot: how completely is a TYPICAL event
+    recovered? Micro pools every argument corpus-wide, so an 8-argument mention counts
+    eight times a 1-argument one; here every event counts once.
+
+    The denominator is the UNION of gold and predicted event keys, so a hallucinated
+    event scores 0 rather than being invisible -- averaging over gold events alone would
+    make inventing events free.
+
+    Jaccard rather than F1 per event is presentational only: for a single event the two
+    are monotone transforms, F1 = 2J/(1+J), so nothing is ranked differently by it.
+    """
+    g_events, p_events = _events_by_key(gold), _events_by_key(pred)
+    keys = set(g_events) | set(p_events)
+    jaccard = exact = 0.0
+    for key in keys:
+        g, p = g_events.get(key, set()), p_events.get(key, set())
+        union = g | p
+        if union:
+            jaccard += len(g & p) / len(union)
+        exact += float(g == p and bool(g))
+    return jaccard, exact, len(keys)
 
 
 def _items_argument(s):

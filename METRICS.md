@@ -135,6 +135,11 @@ trigger set wrong and *every* argument of that mention misses under strict,
 because the key no longer matches — but that is the key's doing, not an
 all-or-nothing rule over arguments.
 
+**Since 2026-08-29 there is one deliberate exception**, reported alongside rather
+than replacing the above: the `per_event` keys in **Per-event completeness**
+score each event as a unit. Every key described in the rest of this section
+remains argument-pooled.
+
 **Relaxed matching is greedy one-to-one, not optimal assignment.** Predictions
 are walked in sorted order and each takes the first eligible unused gold item.
 This is deterministic, but it is not a maximum matching: an early prediction can
@@ -391,6 +396,18 @@ event_argument, event`. `<regime>` ∈ `strict, relaxed`.
 Example: `eval_event_strict_micro_f1`, `eval_entity_relaxed_macro_precision`,
 `eval_event_argument_strict_support`.
 
+Outside that scheme, when `event_argument` is present and at least one event was
+scored (see **Per-event completeness** below):
+
+```
+eval_event_argument_per_event_mean_jaccard
+eval_event_argument_per_event_exact_set_rate
+eval_event_argument_per_event_support
+```
+
+These carry no `<regime>`: they are built from the strict argument set, whose
+`trigger_key` is what supplies event identity.
+
 ---
 
 ## Class weighting: micro and macro are two points on a spectrum
@@ -433,6 +450,120 @@ these three schemes, while still being charged in full against micro and counted
 as a zero-scoring class by macro. Where a single class holds every instance, the
 entropy weight is identically zero and the scheme is **omitted rather than
 reported as zero or NaN**.
+
+---
+
+## Per-event completeness: a second axis, and why it is not IoU
+
+The schemes above vary how much each **label** counts. This section varies what
+**unit** is scored. The two are orthogonal: weighted/dodrans/entropy answer
+"how should a rare role count against a common one?", while the keys here answer
+"how completely is a typical *event* recovered?". Neither substitutes for the
+other.
+
+### Why a corpus-level IoU would add nothing
+
+The natural request is "score events by intersection-over-union of predicted
+against gold arguments". For a fixed TP/FP/FN, Jaccard and Dice are **monotone
+transforms of each other**:
+
+```
+IoU = TP / (TP + FP + FN)          F1 = 2·TP / (2·TP + FP + FN)
+
+  =>  F1 = 2·IoU / (1 + IoU)        IoU = F1 / (2 − F1)
+```
+
+So an IoU of 0.750 *is* an F1 of 0.857 — the same fact in different units. Any
+corpus-level IoU would rank every model exactly as the corpus-level F1 already
+does, and would add **no information whatsoever**. This is also why strict
+argument F1 can feel as though it is already doing overlap scoring: on the
+overlap question, it is.
+
+The strict matcher itself has no ratio anywhere in it — `_overlap` is a boolean
+predicate, as **What the matcher is not** sets out. The relationship above is
+about the *aggregate*, not the matcher.
+
+### What genuinely differs: the aggregation unit
+
+Everything else in this document pools TP/FP/FN across arguments corpus-wide,
+so **an 8-argument mention counts eight times a 1-argument one**. Weighting
+every event equally is a different question, and micro cannot answer it:
+
+| | gold | predicted |
+|---|---|---|
+| event A (`Attack`) | 8 arguments | all 8 correct |
+| event B (`Flood`) | 1 argument, `x` | 1 argument, `y` — wrong |
+
+Micro pools these: TP 8, FP 1, FN 1 → **F1 0.889**. Read plainly that sounds
+like near-perfect extraction. Per event it is **0.500** — one of the two events
+is right. Both numbers are correct; they answer different questions, and 0.889
+is the one that hides the failure. Downstream this matters concretely: the EKF
+consumes records, and a record whose *toll* field is wrong is worse than absent,
+however many of its sibling fields are right.
+
+### The two keys
+
+| key | meaning |
+|---|---|
+| `eval_event_argument_per_event_mean_jaccard` | mean over events of \|gold ∩ pred\| / \|gold ∪ pred\| on `(role, entity)` |
+| `eval_event_argument_per_event_exact_set_rate` | fraction of events whose argument set is recovered **exactly** |
+| `eval_event_argument_per_event_support` | number of events scored |
+
+Jaccard rather than per-event F1 is a presentational choice only — by the
+identity above nothing is ranked differently. The **exact-set rate** is the
+harsher and more decision-relevant of the two: it is the fraction of events a
+downstream consumer could use without further repair.
+
+### How events are aligned, and why that is not arbitrary
+
+A per-event metric needs to know which predicted event corresponds to which gold
+event. Introducing a greedy alignment would add exactly the arbitrary
+tie-breaking the relaxed matcher is already criticised for above — an early
+prediction consuming a gold item a later one would have matched better.
+
+No such step is needed. `(event_type, trigger_key)` is **already** the mention's
+identity inside the strict key, so grouping arguments by that pair aligns
+predictions to gold with no choices to make. The denominator is the **union** of
+gold and predicted event keys, so a hallucinated event scores 0 rather than
+being invisible — averaging over gold events alone would make inventing events
+free.
+
+The inherited consequence is that a **wrong trigger zeroes the event**: gold and
+prediction land under different keys, both unmatched, both scoring 0. That is
+the same behaviour strict scoring already has, for the same reason, and it is
+why a large gap between these keys and relaxed argument F1 points at triggers
+rather than arguments.
+
+### Worked examples
+
+Every row is one document; values are the ones pinned in
+`tests/test_per_event_metrics.py`.
+
+| gold | predicted | mean Jaccard | exact-set rate | micro F1 |
+|---|---|---|---|---|
+| 1 event, 4 args | all 4 | **1.000** | **1.000** | 1.000 |
+| 1 event, 4 args | 3 of 4, nothing extra | **0.750** | **0.000** | 0.857 |
+| 1 event, 4 args | same 4 args, **wrong trigger** | **0.000** | **0.000** | 0.000 |
+| 1 event, 1 arg | that event **+ an invented event** | **0.500** | **0.500** | 1.000 |
+| A: 8 args, B: 1 arg | A all correct, B wrong | **0.500** | **0.500** | 0.889 |
+
+Three things to read off it:
+
+- **Row 2 is the monotone identity in practice.** J 0.750 and F1 0.857 satisfy
+  F1 = 2J/(1+J); they are one measurement, not two.
+- **Row 4 shows why the union denominator matters.** Micro F1 is a perfect 1.000
+  because the invented event contributes no gold to miss — under an
+  average-over-gold-events rule it would also have been free. It is not.
+- **Row 5 is the reason these keys exist.** 0.889 versus 0.500 on the same
+  document, and the gap is entirely the aggregation unit.
+
+### When not to use them
+
+These keys are reported only where `event_argument` is present and at least one
+event was scored. They are **not** a replacement for micro: a corpus of mostly
+single-argument events makes per-event and micro nearly coincide, and the extra
+keys then carry no signal. They earn their place when the argument count per
+event varies widely — which is exactly when micro is most misleading.
 
 ---
 
