@@ -346,6 +346,38 @@ opposite failure — a stored result is valid only for the model it was measured
 stage-0 language gate now rejects what the gate cannot read, converting a silent 22%
 false-admit rate into a counted exclusion.
 
+**The gate is not the whole of it: stage 2 cannot read Turkish either, and fails loudly
+in the one way the filter cannot catch.** The casualty extractor's training rows are 121 of
+152,578 Turkish (0.079%). On Turkish it is not silent -- it emits confident, wrong figures,
+and the EKF consumes any arriving number as a measurement. Measured on 60 adjudicated
+Turkish `current_toll` articles against 60 real English Helene feed articles, same model and
+production parameters, using two gold-free signals:
+
+| signal | Turkish | English | OR | p |
+|---|---|---|---|---|
+| `location` contains a digit | **78.2%** | 5.8% | 58.5 | 1.5e-39 |
+| one value smeared across >=3 fields | **11.8%** | 3.0% | 4.3 | 1.5e-04 |
+
+"1 kisi hayatini kaybetti, 3 kisi yaralandi" (1 dead, 3 injured) returns
+`{'location': '644 bin 439', 'dead': '644 bin 439'}`. The English control carries the claim:
+digit-in-location is independently the collapse signature of narrow no-replay fine-tuning,
+so the mode pre-exists and Turkish drives the model into it 13x more often. Two consequences
+for this paper. Multilingual coverage is a *pipeline* property, not a gate property -- a
+gate win scored on gate metrics alone can be net-negative end-to-end, since its reward is
+admitting documents stage 2 then fabricates figures for. And the remedy is Turkish
+supervision with 30% exact replay, not Turkish data alone.
+
+**Why a third language is worth the spend.** The argument is typological, not orthographic:
+Turkish is Latin script, so this is two scripts and three language families -- English
+(Germanic, fusional-analytic), Chinese (Sinitic, analytic, logographic), Turkish (Turkic,
+agglutinative). More usefully, Turkish is a *controlled* test of the recipe. mmBERT
+tokenizes it cleanly (`kisi`, `kisinin`, `bin` are single tokens; `22'ye` splits as
+`['2','2',"'",'ye']`; digits split per character in both languages), so there is no
+fragmentation penalty and the only variable is supervision -- a claim checked at the
+tokenizer after a first pass asserted the opposite. A third language therefore tests
+whether the recipe replicates rather than whether the backbone happened to know the
+language, which is the question a two-language result cannot settle.
+
 **For this paper's results the consequence is bounded but real.** The events tracked here
 are English-language feeds, so the multilingual finding does not disturb them; the operating
 point does, because every stage-0 admission decision behind §3 and §4 was taken at 0.5. The

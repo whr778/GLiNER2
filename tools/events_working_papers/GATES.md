@@ -175,6 +175,70 @@ fine-tuning signal never was. A 989-article Turkish adjudication pilot ($0.72, H
 batched) found 428 `current_toll` positives — 43.3% — so a Turkish corpus is not
 positive-limited, and the full cue-bearing region is ~2,100 positives for ~$2.84 more.
 
+**A multilingual gate is necessary but not sufficient: stage 2 cannot read Turkish either.**
+Fixing stage 0 admits documents into a casualty extractor whose training rows are 121 of
+152,578 Turkish (0.079%). It is not silent on them -- it emits confident, wrong figures,
+which is the worse failure, because the EKF consumes any arriving number as a measurement
+and has no way to reject it. Measured on 60 adjudicated Turkish `current_toll` articles
+against 60 real English Helene feed articles, same model, production parameters (threshold
+0.3, chunk 200/50), with two gold-free signals so no annotation error enters
+(`extractor_language_probe.py`):
+
+| signal | Turkish | English | odds ratio | p (exact Fisher) |
+|---|---|---|---|---|
+| `location` contains a digit | **78.2%** | 5.8% | 58.5 | 1.5e-39 |
+| one value smeared across >=3 fields | **11.8%** | 3.0% | 4.3 | 1.5e-04 |
+
+Evidence "1 kisi hayatini kaybetti, 3 kisi yaralandi" (1 dead, 3 injured) returns
+`{'location': '644 bin 439', 'dead': '644 bin 439'}`. Locations are place names; a digit
+there means numerals are being bound to whatever field is open. **The English control is
+what makes this a language result** rather than a general defect -- and it must stay
+attached to the claim, because digit-in-location is independently the known collapse
+signature of narrow no-replay fine-tuning (see the replay dosing rule). The collapse mode
+pre-exists; Turkish drives the model into it 13x more often than English. So the remedy is
+Turkish supervision *plus* 30% exact replay, not Turkish data alone.
+
+A corollary for how gate work is scored: a gate win measured on gate metrics alone can be
+net-negative end-to-end, because its reward is admitting documents that stage 2 then
+fabricates figures for. This is the same shape as the finding that a form gate scored
+best-over-range rewards indiscriminate firing.
+
+**Why a third language, and why Turkish specifically.** The case is typological, not
+orthographic. Turkish is Latin script, so three languages here is **two scripts, not
+three**; the claim that survives scrutiny is that English (Germanic, fusional-analytic),
+Chinese (Sinitic, analytic, logographic) and Turkish (Turkic, agglutinative) span three
+families and three morphological types. A recipe that transfers across that is a stronger
+generalisation claim than one that adds a second SVO Latin-script language.
+
+The sharper reason is that Turkish is a *controlled* test of the recipe rather than a
+confound, and this was checked rather than assumed. A first pass at this argument claimed
+agglutinative morphology fragments tolls at the tokenizer, since Turkish declines the
+numeral itself (`22'ye yuk` + `seldi`, "rose to 22"). **That is wrong.** mmBERT tokenizes
+Turkish cleanly -- `kisi`, `kisinin` and `bin` are single tokens, `22'ye` splits as
+`['2','2',"'",'ye']` with the suffix intact, and digits split per character in English
+exactly as in Turkish. There is no fragmentation penalty. Tokenizer and encoder already
+handle the language; the *only* variable left is supervision. That is what makes Turkish a
+clean replication test: a success isolates "the recipe transfers" from "the backbone
+happened to know the language", which a language the encoder handled less evenly could not.
+
+**Translation is a diagnostic here, not a shipping path.** The AUC 0.4733 -> 0.8359 result
+above proves the signal is present in the text and that the fault is the fine-tuning
+corpus. It is not a proposal: document translation is excluded from this pipeline, on the
+grounds that a mistranslated toll is indistinguishable downstream from a misread one.
+Multilingual capability has to come from the models. What ships is the language gate, which
+drops what it cannot read rather than rewriting it.
+
+**Sizing, and the trap in it.** The requirement is positive *extraction examples*, not
+documents: at the 42.3% positive rate of the cue-bearing region, 18K documents yields ~7.6K
+positives, which lands below the knee of every scaling curve measured here. The relevant
+evidence is the RAMS curve, where 10K already delivers ~88% of the 137K result and
+single-run variance of +/-0.02 makes nothing past 10K interpretable -- so the knee is at or
+below 10K, and the clean tokenizer above predicts transfer should be data-efficient rather
+than expensive. Annotation is a one-time cost and subsets are free, whereas each training
+run costs GPU; buying enough to train several doses turns the spend into a *curve*, and a
+curve -- how much data language N+1 needs -- is what answers whether the second language
+was a fluke. A single point only says it worked once.
+
 Check the encoder *and the training corpus* before pointing this gate at any non-English
 feed.
 
