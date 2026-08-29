@@ -61,6 +61,11 @@ def main() -> int:
                              "data/turkish_gate/gate_ann_turkish.jsonl"],
                     help="documents already bought or reserved; not re-collected")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--exclude-keys", default="",
+                    help="file of pre-hashed group keys, one per line. Lets a remote box "
+                         "honour the exclusions without shipping it the documents: the "
+                         "keys are ~200 KB where the corpora are ~33 MB, and an unexcluded "
+                         "rebuild would re-collect held-out eval documents into training")
     args = ap.parse_args()
 
     done: set[str] = set()
@@ -70,6 +75,10 @@ def main() -> int:
             continue
         for line in p.open(encoding="utf-8"):
             done.add(normalize_group_key(json.loads(line)["input"])[:300])
+    if args.exclude_keys:
+        for line in Path(args.exclude_keys).open(encoding="utf-8"):
+            if line.strip():
+                done.add(line.strip())
     print(f"[pool] {len(done)} documents excluded (already bought or held out)")
 
     train_path, hold_path = Path(args.out), Path(args.holdout_out)
