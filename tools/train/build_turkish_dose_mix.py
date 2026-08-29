@@ -60,6 +60,44 @@ def main() -> int:
 
     rng = random.Random(a.seed)
     en, tr, replay_pool = load(a.english), load(a.turkish), load(a.replay)
+
+    # casualty_docee was built for the SPAN architecture and carries no record_metadata on
+    # any of its 13,358 rows. On the BOUNDARY path that is a SILENT failure: the record
+    # head cannot decode the structure, so those rows train nothing and report no error --
+    # which would have made the English half of every arm dead weight and the
+    # English-regression bar meaningless. Stamped with the same declaration the Turkish
+    # data and casualty_loc_split use.
+    # The anchor must be a field the document ACTUALLY HAS, or the record head raises
+    # "declares anchor 'dead' but no matching field query was found in the layout". A
+    # hardcoded 'dead' fails on the 33% of Turkish and 46% of English documents that
+    # report only injured, missing, or a place. casualty_loc_split -- which trains fine --
+    # picks per document, and this reproduces that.
+    ANCHOR_ORDER = ("dead", "injured", "missing", "location")
+
+    def stamp(rows: list[dict]) -> tuple[int, int]:
+        fixed = repaired = 0
+        for row in rows:
+            structs = row["output"].get("json_structures") or []
+            if not structs:
+                continue
+            present = {f for s in structs for f in (s.get("casualty_report") or {})}
+            anchor = next((f for f in ANCHOR_ORDER if f in present), None)
+            if anchor is None:
+                continue
+            meta = row["output"].get("record_metadata")
+            if not meta:
+                row["output"]["record_metadata"] = {
+                    "casualty_report": {"mode": "natural", "anchor": anchor}}
+                fixed += 1
+            elif meta.get("casualty_report", {}).get("anchor") not in present:
+                meta["casualty_report"]["anchor"] = anchor
+                repaired += 1
+        return fixed, repaired
+
+    en_f, en_r = stamp(en)
+    tr_f, tr_r = stamp(tr)
+    print(f"english: stamped {en_f:,} missing record_metadata, re-anchored {en_r:,}")
+    print(f"turkish: stamped {tr_f:,} missing record_metadata, re-anchored {tr_r:,}")
     for row in tr:
         row.pop("sources", None)   # audit-only field; not part of the training row
     rng.shuffle(tr)

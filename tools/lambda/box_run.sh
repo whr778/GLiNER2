@@ -66,8 +66,11 @@ export PATH="$HOME/.local/bin:$PATH"
 cd ~/gliner2
 echo "[box] starting $(date -u)"
 # STOP 1: bounded job. rc=124 means it hit the cap; the log and checkpoints still exist.
-timeout "$JOB_TIMEOUT" ./.venv/bin/python -u tools/lambda/score_pool.py \
-  --pool "$POOL" --out "$OUT" --repo "$REPO" 2>&1 | tee ~/score.log
+# JOB is a command, so one watchdog serves any long job (pool scoring, dose curve, ...)
+# rather than each growing its own copy of the four stops.
+JOB=${JOB:-"./.venv/bin/python -u tools/lambda/score_pool.py --pool $POOL --out $OUT --repo $REPO"}
+echo "[box] job: $JOB"
+timeout "$JOB_TIMEOUT" bash -c "$JOB" 2>&1 | tee ~/job.log
 rc=${PIPESTATUS[0]}
 echo "[box] job rc=$rc"
 

@@ -17,14 +17,23 @@
 model:
   pretrained: whr778/gliner2-joint-boundary-mmbert-137k
   architecture: boundary
+  boundary_head:
+    enable_relations: true   # the base trained these; dropping them would forget them
+    enable_records: true
+    # Defaults are 32 / 160. The replay pool carries documents with 121 gold spans for a
+    # single query -- entity-dense Chinese rows from the base's own training pool -- and
+    # the trainer raises TargetCapacityError rather than truncating silently. Raised to
+    # clear the observed maximum with headroom.
+    max_gold_per_query: 256
+    training_candidate_budget: 1024
 training:
   checkpoint_restart: None
   output_dir: ./out/tr-dose31263
   experiment_name: tr_dose31263
   data_parallel: false
   num_epochs: 6
-  batch_size: 16
-  gradient_accumulation_steps: 2
+  batch_size: 2
+  gradient_accumulation_steps: 16
   encoder_lr: 2.0e-5
   task_lr: 5.0e-4
   warmup_ratio: 0.05
@@ -40,10 +49,16 @@ training:
   logging_steps: 50
   num_workers: 2
   validate_data: false
+  # The replay pool is the base's own 137k mixture and includes Chinese and biomedical
+  # corpora whose surfaces do not always word-align on the boundary path. The processor
+  # has a purpose-built policy for this -- its own comment says aborting a multi-hour run
+  # over one unlocatable mention is worse than losing that mention -- and this is the flag
+  # that reaches it. It drops the single mention, not the record's other gold.
+  allow_invalid_samples: true
   sliding_window: true
-  max_len: 384
-  window_stride: 256
-  gradient_checkpointing: false
+  max_len: 8192
+  window_stride: 6144
+  gradient_checkpointing: true
   pin_memory: true
   early_stopping: false
 eval:
