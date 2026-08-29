@@ -48,6 +48,15 @@ echo "[box] pre-flight OK: can terminate $INSTANCE_ID"
 ( sleep "$HARD_DEADLINE"; echo "[box] HARD DEADLINE"; terminate ) >> ~/watchdog.log 2>&1 &
 disown
 
+# The publish step is the only thing standing between a finished job and a destroyed
+# disk, so fail loudly here rather than after 45 minutes of GPU time.
+if [ ! -s ~/.hf_token ]; then
+  echo "[box] FATAL: no ~/.hf_token; results could not be published" >&2
+  terminate; exit 4
+fi
+export HF_TOKEN=$(cat ~/.hf_token)
+export PATH="$HOME/.local/bin:$PATH"
+
 cd ~/gliner2
 echo "[box] starting $(date -u)"
 # STOP 1: bounded job. rc=124 means it hit the cap; the log and checkpoints still exist.

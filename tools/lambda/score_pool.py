@@ -23,7 +23,31 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ekf_showcase"))
+# The gate schema is inlined rather than imported from run_pipeline, which pulls in
+# datasets/disaster_streams/extract.py and a long chain this job does not need. Copied
+# verbatim from run_pipeline.GATE_LABELS_V2 / build_gate_schema.
+#
+# ONE classification task ONLY. On a BOUNDARY model a second task collapses `relevance`
+# to `other` at confidence 1.0 for every input -- and a gate that admits nothing has a
+# perfect false-positive rate, so the collapse reads as success. Do not add to this.
+GATE_LABELS_V2 = {
+    "mass_casualty": (
+        "a report of how many people were killed, injured, or are missing in a specific "
+        "disaster, accident or attack -- it states or estimates a TOLL for a group of people"
+    ),
+    "other": (
+        "anything else, including: personal messages, greetings, thanks and requests for "
+        "help, money, jobs or travel; notes from a translator about the message itself; "
+        "politics, elections, government policy, diplomacy and development or NGO reports; "
+        "aid logistics and supply inventories, even with very large quantities; business, "
+        "finance, science and environment writing; one individual's illness, injury or "
+        "death; and metaphorical use of disaster words such as an 'explosion' in an industry"
+    ),
+}
+
+
+def build_gate_schema(model):
+    return model.create_schema().classification("relevance", GATE_LABELS_V2)
 
 
 def main() -> int:
@@ -41,7 +65,6 @@ def main() -> int:
     print(f"[score] CUDA {torch.version.cuda}, {torch.cuda.get_device_name(0)}", flush=True)
 
     from gliner2 import AutoExtractor
-    from run_pipeline import build_gate_schema
 
     rows = [json.loads(l) for l in Path(a.pool).open(encoding="utf-8")]
     print(f"[score] {len(rows)} documents", flush=True)
