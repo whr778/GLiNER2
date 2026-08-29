@@ -45,6 +45,17 @@ setting:
 cannot ship; it prices the ceiling. On Aegean the decode beats it because that oracle applies
 a fixed drop rule rather than optimising the estimate — see §7.)*
 
+> **These figures predate the stage-0 gate this pipeline now ships, and have not been
+> re-measured under it.** Every number above was produced with the relevance gate set to
+> `casualty-docee` at threshold **0.5**, on frozen observation sets. On 2026-08-28 the
+> defaults changed to `gate2-mmbert-v2` at threshold **0.9**, chosen by sweeping the gate
+> end to end on these same three events (§5.1) — a different gate admits a different set of
+> articles, so it produces a different observation set and these rows do not describe what
+> the pipeline outputs today. The association result they support is unaffected: the decode
+> is compared against the ratio gate on one fixed observation set per event, and that
+> comparison is internally valid whatever produced the set. What is not yet known is how
+> much of the −29.4% / −7.6% / −78.8% survives re-measurement.
+
 ### Metrics used in this paper
 
 Two scales appear, and they are not comparable. **Anything quoted below states which.**
