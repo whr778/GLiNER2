@@ -41,16 +41,29 @@ def auc(pos: list[float], neg: list[float]) -> float:
     return wins / (len(pos) * len(neg))
 
 
-def score(model_id: str, rows: list[dict], device: str) -> list[float]:
+def score(model_id: str, rows: list[dict], device: str, every: int = 250) -> list[float]:
+    """Gate scores for every row. Progress goes to stderr so stdout stays parseable.
+
+    A full pass is thousands of documents and several minutes with no output otherwise,
+    which is indistinguishable from a hang.
+    """
+    import time
+
     from gliner2 import AutoExtractor
     model = AutoExtractor.from_pretrained(model_id, map_location=device)
     schema = build_gate_schema(model)
     out = []
-    for row in rows:
+    start = time.time()
+    for i, row in enumerate(rows, 1):
         r = model.extract(row["input"], schema, include_confidence=True).get("relevance")
         label = r.get("label") if isinstance(r, dict) else r
         conf = float(r.get("confidence", 1.0)) if isinstance(r, dict) else 1.0
         out.append(conf if label == "mass_casualty" else 1.0 - conf)
+        if every and (i % every == 0 or i == len(rows)):
+            rate = i / (time.time() - start)
+            eta = (len(rows) - i) / rate
+            print(f"    {i}/{len(rows)} ({i / len(rows):.0%})  {rate:.1f} doc/s  "
+                  f"eta {eta / 60:.1f} min", file=sys.stderr, flush=True)
     return out
 
 
@@ -60,6 +73,8 @@ def main() -> int:
     ap.add_argument("--models", nargs="+", required=True)
     ap.add_argument("--heldout", default=HELDOUT)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--progress-every", type=int, default=250,
+                    help="documents between progress lines on stderr; 0 to silence")
     a = ap.parse_args()
 
     rows = [json.loads(l) for l in Path(a.heldout).open(encoding="utf-8")]
@@ -68,7 +83,8 @@ def main() -> int:
           f"({sum(gold)/len(rows):.1%}), {len({r['source'] for r in rows})} outlets\n")
 
     for model_id in a.models:
-        s = score(model_id, rows, a.device)
+        print(f"{model_id} ...", file=sys.stderr, flush=True)
+        s = score(model_id, rows, a.device, a.progress_every)
         overall = auc([x for x, g in zip(s, gold) if g], [x for x, g in zip(s, gold) if not g])
         print(f"{model_id}")
         print(f"    OVERALL AUC {overall:.4f}   (0.5 = cannot separate them at any threshold)")
