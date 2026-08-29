@@ -1,0 +1,79 @@
+# Multilingual gate, ACTUALLY multilingual this time: the corpus now contains Turkish.
+#
+# The previous arm was called multilingual because mmBERT is. Its corpus was 95.9% English
+# and 4.1% Chinese, and on Turkish news it scored AUC 0.4733 -- below chance, with the
+# negatives' median above the positives'. This one adds 4,220 rows of adjudicated Turkish
+# (TRT Haber 2024, Haiku 4.5 four-way labels, ~$4.12), 22% of the corpus.
+#
+# WHAT THIS CANNOT ESTABLISH. One outlet, one year, and the Turkish positives skew to Gaza
+# and Ukraine rather than natural disasters. A win here is evidence that Turkish is
+# learnable from adjudicated text, NOT that the gate is ready for a multilingual feed.
+#
+# Language is balanced by construction: build_gate_corpus.balance equalises classes inside
+# every (source, length-decile) cell and Turkish is its own source, so
+# P(positive | turkish) = 0.501 in train (measured). Without that the model could score by
+# detecting the language instead of reading the toll.
+#
+# Success bar: beat AUC 0.4733 on gate_turkish_fp.py --sweep -- the threshold-free measure,
+# because a single operating point cannot tell discrimination from a gate that stopped
+# firing. Hold the English numbers: the swept end-to-end event result (17.5 pooled RMSE in
+# deaths on Helene at 4/6 streams) must not regress.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary
+  max_len: 2048
+  attn_implementation: flash_attention_2
+  boundary_head:
+    enable_relations: false
+    enable_records: false
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+  sampling: {}
+training:
+  output_dir: ./out/gate2-mmbert-tr
+  experiment_name: gate2_mmbert_turkish
+  data_parallel: false
+  num_epochs: 8
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-05
+  task_lr: 0.0005
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_classification_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: false
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+eval:
+  threshold: 0.5
+labels:
+  entities:
+    rollup: false
+    separator: .
+    map: {}
+  relations:
+    rollup: false
+    separator: .
+    map: {}
+  events:
+    rollup: false
+    separator: .
+    map: {}
+data:
+  corpora:
+  - data/gate2_tr
+  event_files: {}
