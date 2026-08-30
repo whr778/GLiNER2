@@ -106,17 +106,32 @@ def main() -> int:
 
     # One val split, shared by every arm, so the arms are comparable. Turkish val comes
     # from the largest dose so the smaller arms are not evaluated on their own training rows.
+    #
+    # THE VAL SET MUST CARRY REPLAY TOO. Built from casualty rows alone it contains only
+    # json_structures, so the run reports structure metrics and nothing else -- and the
+    # replay's whole purpose, keeping the entity/relation/event heads alive, goes
+    # UNMEASURED. A forgetting experiment whose eval cannot see forgetting is not one.
     n_val_tr = int(len(tr) * VAL_SHARE)
     tr_val, tr_train = tr[:n_val_tr], tr[n_val_tr:]
     n_val_en = int(len(en) * VAL_SHARE)
     en_val, en_train = en[:n_val_en], en[n_val_en:]
-    val = en_val + tr_val
+    # Hold out a replay slice for eval, taken from the END of the shuffled pool so it does
+    # not collide with the head that each arm draws its training replay from.
+    n_replay_val = min(600, len(replay_pool) // 4)
+    replay_val = replay_pool[-n_replay_val:] if n_replay_val else []
+    replay_pool = replay_pool[:len(replay_pool) - n_replay_val]
+
+    val = en_val + tr_val + replay_val
     rng.shuffle(val)
 
     val_keys = {normalize_group_key(r["input"])[:300] for r in val}
     Path(f"{a.out_prefix}.val.jsonl").write_text(
         "".join(dumps_record(r) + "\n" for r in val), encoding="utf-8")
-    print(f"val: {len(val):,} rows ({len(en_val):,} en + {len(tr_val):,} tr)")
+    from collections import Counter
+    tasks = Counter(k for r in val for k in r["output"])
+    print(f"val: {len(val):,} rows ({len(en_val):,} en + {len(tr_val):,} tr "
+          f"+ {len(replay_val):,} replay)")
+    print(f"     tasks evaluated: {dict(tasks)}")
 
     for dose in DOSES:
         take = tr_train[:dose]
