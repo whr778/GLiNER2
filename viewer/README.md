@@ -281,6 +281,17 @@ finds `ground_truth.json` as well as `<stem>.truth.jsonl`, and lists truth-beari
 first. Feeds are labelled by event directory, since all three real ones are named
 `feed.jsonl` and would otherwise render as three identical entries.
 
+**Device is selectable**, matching the Extract tab. It defaults to `cpu`, which is both
+the previous behaviour and usually the right choice here: this pipeline runs many-label
+event decode, where MPS is **3–4× slower** than CPU on per-op overhead. MPS wins on
+few-label classification, so the best device depends on the stage rather than being a
+fixed preference.
+
+The runner previously passed the device string straight into `map_location`, so `auto` —
+not a torch device — would have raised, and `cuda` on a box without CUDA would have raised
+instead of falling back. It now resolves through the same `_map_location` helper the
+single-document path already used.
+
 **Ground truth overlays, with a checkbox in the Runs card.** It was already drawn when
 available — but only for the showcase feeds, because the runner resolved truth as
 `<stem>.truth.jsonl` and knew nothing about the `ground_truth.json` the three real events

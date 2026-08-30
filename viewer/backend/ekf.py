@@ -250,7 +250,13 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
             feed = feed[:limit]
         texts = [r["text"] for r in feed]
         job.total = len(feed)
-        device = params.get("device") or "cpu"
+        # Resolve through app._map_location, NOT straight into map_location: "auto" is not
+        # a torch device and would raise, and "cuda" on a box without CUDA would raise
+        # rather than falling back. The single-document path already resolved it this way;
+        # this path did not, so exposing a device control here without this makes the
+        # "auto" option an error. Imported lazily -- app imports this module.
+        from app import _map_location
+        device = _map_location(params.get("device") or "cpu")
 
         # Administrative rollup: folds city/county keys up to their state and multi-state
         # phrases to __aggregate__. Resolved beside the feed by convention when not given,

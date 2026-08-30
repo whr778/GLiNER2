@@ -344,6 +344,9 @@ export default function EkfPanel() {
   const [gateThreshold, setGateThreshold] = useState(0.9);
   const [maxPlausible, setMaxPlausible] = useState(0);
   const [limit, setLimit] = useState(0);
+  // Defaults to "cpu" because EkfRequest already defaulted to it: exposing the control
+  // must not silently change what an existing run does.
+  const [device, setDevice] = useState("cpu");
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -396,7 +399,9 @@ export default function EkfPanel() {
   }
 
   function label() {
-    const parts = [feed.split("/").pop()!.replace(".jsonl", ""), windowMode, normalizer, associate];
+    // feedLabel, not the basename: the three real feeds are all named feed.jsonl, so
+    // overlaying Helene and Turkiye would produce two runs both labelled "feed".
+    const parts = [feedLabel(feed), windowMode, normalizer, associate];
     if (eventModel) parts.push("stage1");
     parts.push(casualtyModel.split("/").pop()!);
     return parts.join(" · ");
@@ -415,7 +420,7 @@ export default function EkfPanel() {
         feed, casualty_model: casualtyModel, window: windowMode,
         normalizer, associate, limit: Number(limit) || 0,
         max_plausible: Number(maxPlausible) || 0,
-        gate_threshold: Number(gateThreshold),
+        gate_threshold: Number(gateThreshold), device,
         ...(eventYear ? { event_year: eventYear } : {}),
         // null lets the backend resolve a rollup beside the feed; "" disables it, which
         // Turkiye needs and which is NOT the same as omitting the field.
@@ -543,6 +548,21 @@ export default function EkfPanel() {
               </label>
               <input type="number" min={0} value={maxPlausible}
                      onChange={(e) => setMaxPlausible(Number(e.target.value))} />
+            </div>
+            <div className="field">
+              <label>Device</label>
+              <select value={device} onChange={(e) => setDevice(e.target.value)}>
+                <option value="cpu">cpu</option>
+                <option value="auto">auto (CUDA → MPS → CPU)</option>
+                <option value="mps">mps (Apple Silicon GPU)</option>
+                <option value="cuda">cuda (NVIDIA GPU)</option>
+              </select>
+              <div className="hint">
+                cpu is the default and often the fastest here: this pipeline runs
+                many-label event decode, where mps is 3-4x SLOWER than cpu on per-op
+                overhead. mps wins on few-label classification, so the right choice
+                depends on the stage. An unavailable device falls back to auto.
+              </div>
             </div>
             <div className="field">
               <label>Gate threshold</label>
