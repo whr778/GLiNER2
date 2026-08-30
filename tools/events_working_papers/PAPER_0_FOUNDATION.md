@@ -862,8 +862,16 @@ is net-new.
 
 ## Appendix C: Running the models — Hub download and the viewer
 
-The fine-tuned checkpoints are published as public Hub repos `whr778/<config>`
-(e.g. `whr778/gliner2-large-v1-docee`). Two steps to obtain and run them.
+The fine-tuned checkpoints are published as Hub repos `whr778/<config>`
+(e.g. `whr778/gliner2-large-v1-docee`). **Most are PRIVATE — 28 of the 53
+`whr778/*` entries in the viewer registry — so a Hugging Face token is required or
+they fail with a 401.** Read scope is enough:
+
+```bash
+export HF_TOKEN=hf_...        # or: huggingface-cli login
+```
+
+Two steps to obtain and run them.
 
 **Download from the Hub.** `scripts/pull_from_hf.sh` fetches each model into
 `out/fastino/<config>/best/` (where the viewer auto-discovers it) via `hf
@@ -887,7 +895,15 @@ bash viewer/viewer.sh start           # backend :8000 + frontend :3000 (waits un
 
 In the browser, pick a model in the **Model** box (downloaded checkpoints are
 listed automatically) — its training-time schema loads to match — then enter
-text and click **Extract**. Set a default model at launch with
+text and click **Extract**. Presets include the EKF pipeline's own two schemas,
+**Casualty report (stage 2)** and **Relevance gate (stage 0)**, so the viewer can
+reproduce what each stage actually asks of a model.
+
+**A structure schema needs `mode` and `anchor` on boundary models.** Without them
+the record head cannot decode and extraction returns `{}` with no error — which
+reads as "the model found nothing" rather than "this schema was undecodable". The
+viewer backend fills them in when omitted; a schema copied elsewhere must declare
+them itself. Span models ignore the metadata, so declaring it costs nothing. Set a default model at launch with
 `GLINER2_MODEL=out/fastino/gliner2-large-v1-docee/best bash viewer/viewer.sh start`.
 
 **Or run headless** at the document level from the CLI:

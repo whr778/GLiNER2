@@ -1,7 +1,51 @@
 [
   {
+    "path": "fastino/gliner2-large-v1",
+    "label": "fastino: large-v1 (span)"
+  },
+  {
+    "path": "fastino/gliner2-multi-v1",
+    "label": "fastino: multi-v1 (span, multilingual)"
+  },
+  {
+    "path": "whr778/deberta-base-fromenc-synthetic",
+    "label": "deberta: fromenc-synthetic"
+  },
+  {
     "path": "whr778/gliner2-base-v1-casie",
     "label": "base-v1: casie"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty",
+    "label": "casualty: base"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-docee",
+    "label": "casualty: docee"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-docee-clean",
+    "label": "base-v1: casualty-docee (clean)"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-loc-muted",
+    "label": "base-v1: casualty-loc-muted (negative supervision)"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-loc-split",
+    "label": "base-v1: casualty-loc-split (fp16 e6)"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-loc-split-4ep",
+    "label": "base-v1: casualty-loc-split (4ep control)"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-loc-split-clean",
+    "label": "base-v1: casualty-loc-split (clean)"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-casualty-multievent",
+    "label": "casualty: multievent"
   },
   {
     "path": "whr778/gliner2-base-v1-docee",
@@ -18,6 +62,18 @@
   {
     "path": "whr778/gliner2-base-v1-synthetic",
     "label": "base-v1: synthetic"
+  },
+  {
+    "path": "whr778/gliner2-casualty-events-boundary",
+    "label": "boundary: casualty events"
+  },
+  {
+    "path": "whr778/gliner2-gate2-mmbert-tr",
+    "label": "gate2: mmbert TR (stage-0, multilingual +turkish)"
+  },
+  {
+    "path": "whr778/gliner2-gate2-mmbert-v2",
+    "label": "gate2: mmbert v2 (stage-0 relevance, en+zh)"
   },
   {
     "path": "whr778/gliner2-joint-boundary-mmbert-100k",
@@ -72,30 +128,6 @@
     "label": "boundary: warmstart-natural"
   },
   {
-    "path": "whr778/gliner2-base-v1-casualty",
-    "label": "casualty: base"
-  },
-  {
-    "path": "whr778/gliner2-base-v1-casualty-docee",
-    "label": "casualty: docee"
-  },
-  {
-    "path": "whr778/gliner2-base-v1-casualty-multievent",
-    "label": "casualty: multievent"
-  },
-  {
-    "path": "whr778/deberta-base-fromenc-synthetic",
-    "label": "deberta: fromenc-synthetic"
-  },
-  {
-    "path": "fastino/gliner2-large-v1",
-    "label": "fastino: large-v1 (span)"
-  },
-  {
-    "path": "fastino/gliner2-multi-v1",
-    "label": "fastino: multi-v1 (span, multilingual)"
-  },
-  {
     "path": "whr778/gliner2-large-v1-casie",
     "label": "large-v1: casie"
   },
@@ -116,6 +148,62 @@
     "label": "large-v1: wikievents"
   },
   {
+    "path": "whr778/gliner2-maven-tier2-control",
+    "label": "tier2: maven control"
+  },
+  {
+    "path": "whr778/gliner2-maven-tier2-eventrecords",
+    "label": "tier2: maven eventrecords"
+  },
+  {
+    "path": "whr778/gliner2-multi-v1-cmnee",
+    "label": "multi-v1: cmnee"
+  },
+  {
+    "path": "whr778/gliner2-multi-v1-wikiann",
+    "label": "multi-v1: wikiann"
+  },
+  {
+    "path": "whr778/gliner2-rams-clean-a-base137k",
+    "label": "warmstart: rams-clean-a-base137k"
+  },
+  {
+    "path": "whr778/gliner2-rams-clean-b-warmstart",
+    "label": "warmstart: rams-clean-b-warmstart"
+  },
+  {
+    "path": "whr778/gliner2-rams-clean-c-evwide2",
+    "label": "warmstart: rams-clean-c-evwide2"
+  },
+  {
+    "path": "whr778/gliner2-tr-dose-0",
+    "label": "tr-dose: 0 (control, no turkish)"
+  },
+  {
+    "path": "whr778/gliner2-tr-dose-15000",
+    "label": "tr-dose: 15k turkish"
+  },
+  {
+    "path": "whr778/gliner2-tr-dose-5000",
+    "label": "tr-dose: 5k turkish"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-clean",
+    "label": "warmstart: warmstart-natural-clean"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-evwide2-clean",
+    "label": "warmstart: warmstart-natural-evwide2-clean"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-evwide4-clean",
+    "label": "warmstart: warmstart-natural-evwide4-clean"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-natural-seed43-clean",
+    "label": "warmstart: warmstart-natural-seed43-clean"
+  },
+  {
     "path": "whr778/mmbert-base-combined",
     "label": "mmbert: combined"
   },
@@ -126,14 +214,6 @@
   {
     "path": "whr778/mmbert-base-rams",
     "label": "mmbert: rams"
-  },
-  {
-    "path": "whr778/gliner2-multi-v1-cmnee",
-    "label": "multi-v1: cmnee"
-  },
-  {
-    "path": "whr778/gliner2-multi-v1-wikiann",
-    "label": "multi-v1: wikiann"
   },
   {
     "path": "whr778/scaling-mmbert-100k",
@@ -158,41 +238,5 @@
   {
     "path": "whr778/scaling-mmbert-40k-rams",
     "label": "scaling: 40k-rams"
-  },
-  {
-    "path": "whr778/gliner2-maven-tier2-control",
-    "label": "tier2: maven control"
-  },
-  {
-    "path": "whr778/gliner2-maven-tier2-eventrecords",
-    "label": "tier2: maven eventrecords"
-  },
-  {
-    "path": "whr778/gliner2-rams-clean-a-base137k",
-    "label": "warmstart: rams-clean-a-base137k"
-  },
-  {
-    "path": "whr778/gliner2-rams-clean-b-warmstart",
-    "label": "warmstart: rams-clean-b-warmstart"
-  },
-  {
-    "path": "whr778/gliner2-rams-clean-c-evwide2",
-    "label": "warmstart: rams-clean-c-evwide2"
-  },
-  {
-    "path": "whr778/gliner2-warmstart-natural-clean",
-    "label": "warmstart: warmstart-natural-clean"
-  },
-  {
-    "path": "whr778/gliner2-warmstart-natural-evwide2-clean",
-    "label": "warmstart: warmstart-natural-evwide2-clean"
-  },
-  {
-    "path": "whr778/gliner2-warmstart-natural-evwide4-clean",
-    "label": "warmstart: warmstart-natural-evwide4-clean"
-  },
-  {
-    "path": "whr778/gliner2-warmstart-natural-seed43-clean",
-    "label": "warmstart: warmstart-natural-seed43-clean"
   }
 ]

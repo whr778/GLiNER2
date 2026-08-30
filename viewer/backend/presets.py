@@ -35,6 +35,14 @@ BUILTIN: Dict[str, Dict[str, Any]] = {
     "Contact (structure)": {
         "structures": {
             "contact": {
+                # mode/anchor are declared, not omitted. Without them a structure cannot
+                # be decoded on the BOUNDARY architecture and extraction returns {} with
+                # no error -- which reads in the UI as "the model found nothing". Span
+                # models ignore the metadata, so declaring it is free. The backend also
+                # defaults it (`_declare_records`); this keeps the preset honest as an
+                # example someone might copy.
+                "mode": "natural",
+                "anchor": "name",
                 "fields": [
                     {"name": "name", "dtype": "str"},
                     {"name": "email", "dtype": "str"},
@@ -43,6 +51,36 @@ BUILTIN: Dict[str, Dict[str, Any]] = {
                 ],
             },
         },
+    },
+    # The EKF pipeline's own two schemas, so the viewer can reproduce what stages 0 and 2
+    # actually ask of a model. See tools/ekf_showcase/run_pipeline.py.
+    "Casualty report (EKF stage 2)": {
+        "structures": {
+            "casualty_report": {
+                "mode": "natural",
+                "anchor": "dead",
+                "fields": [
+                    {"name": "location", "dtype": "str",
+                     "description": "the country or place these deaths occurred in"},
+                    {"name": "dead", "dtype": "str",
+                     "description": "number of people killed or confirmed dead, not injured/missing/displaced"},
+                    {"name": "injured", "dtype": "str",
+                     "description": "number of people injured or hurt, not killed/missing/displaced/homeless"},
+                    {"name": "missing", "dtype": "str",
+                     "description": "number of people missing or unaccounted for, not killed/injured"},
+                ],
+            },
+        },
+    },
+    "Relevance gate (EKF stage 0)": {
+        # ONE classification task deliberately. A second task collapses `relevance` to
+        # `other` at confidence 1.0 on boundary models, and a gate that admits nothing has
+        # a perfect false-positive rate -- so the collapse reads as success.
+        "classifications": [
+            {"task": "relevance",
+             "labels": ["mass_casualty", "other"],
+             "multi_label": False},
+        ],
     },
 }
 

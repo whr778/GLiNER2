@@ -185,12 +185,21 @@ under `models_root` (`**/best`), and a saved registry at
 `viewer/backend/models.json` (git-ignored, written by the Model Manager UI and
 by `POST /models`).
 
-`viewer/backend/models.example.json` holds the **49 published checkpoints** —
+`viewer/backend/models.example.json` holds the **60 published checkpoints** —
 every `whr778/*` model on the Hub plus the Fastino bases. Copy it to seed the
 registry:
 
 ```bash
 cp viewer/backend/models.example.json viewer/backend/models.json
+```
+
+**Most of these are PRIVATE — 28 of the 53 `whr778/*` entries — so the backend
+needs a Hugging Face token or they fail to load with a 401.** Export one before
+starting; read scope is enough:
+
+```bash
+export HF_TOKEN=hf_...        # or: huggingface-cli login
+bash viewer/viewer.sh start
 ```
 
 Without this you only get the default plus local checkpoints, which means the
@@ -221,7 +230,8 @@ GLiNER2 is schema-driven, so you tell it *what* to look for. The Schema panel
 offers:
 
 - **Presets** — built-ins (General entities, Sentiment, ACE-style events,
-  Contact structure) **plus one auto-derived from every `data/<name>.train.jsonl`
+  Contact structure, plus the EKF pipeline's own two: **Casualty report
+  (stage 2)** and **Relevance gate (stage 0)**) **plus one auto-derived from every `data/<name>.train.jsonl`
   in the repo** (e.g. `corpus: wikievents`, `corpus: casie`, `corpus: duee`), so
   you can one-click the exact ontology a trained model expects.
 - **Schema JSON** editor — the `SchemaInput` form:
@@ -232,9 +242,25 @@ offers:
   "events": {"Attack": ["Attacker", "Target", "Place", "Time"]},
   "relations": ["works_for", "located_in"],
   "classifications": [{"task": "sentiment", "labels": ["positive", "negative", "neutral"]}],
-  "structures": {"product": {"fields": [{"name": "name", "dtype": "str"}, {"name": "price", "dtype": "str"}]}}
+  "structures": {"product": {"mode": "natural", "anchor": "name",
+                             "fields": [{"name": "name", "dtype": "str"},
+                                        {"name": "price", "dtype": "str"}]}}
 }
 ```
+
+**`mode` and `anchor` matter on boundary models.** A structure declared without
+them cannot be decoded on the BOUNDARY architecture, and the failure is *silent* —
+extraction returns `{}` with no error, which reads in the UI as "the model found
+nothing". Measured on `whr778/gliner2-tr-dose-15000`, same text and threshold:
+
+| schema | result |
+|---|---|
+| no `mode`/`anchor` | `{}` |
+| `mode: natural, anchor: dead` | `{"casualty_report": [{"dead": "22", "injured": "40", ...}]}` |
+
+The backend fills them in when omitted (`_declare_records` in `app.py`), so the
+editor is forgiving — but declare them anyway in schemas you copy elsewhere.
+Span models ignore the metadata, so declaring it is free.
 
 ## EKF tracking panel
 

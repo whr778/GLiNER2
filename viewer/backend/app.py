@@ -116,6 +116,41 @@ def health() -> Dict[str, Any]:
     }
 
 
+def _declare_records(input_schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Give every structure an explicit ``mode``/``anchor`` when it has none.
+
+    On the BOUNDARY architecture a structure without record metadata cannot be decoded,
+    and the failure is SILENT -- the extraction returns ``{}`` with no error, which in the
+    viewer reads as "this model found nothing" rather than "this schema was undecodable".
+    Measured on `whr778/gliner2-tr-dose-15000`, same text and threshold:
+
+        without mode/anchor -> {}
+        with mode/anchor    -> {'casualty_report': [{'dead': '22', 'injured': '40', ...}]}
+
+    Declaring it is safe on span models, whose legacy structure path ignores the metadata
+    -- `build_casualty_schema` records that plain and declared schemas give byte-identical
+    output there. So this defaults rather than asking the user to know which architecture
+    they loaded. An explicit mode in the request is always left alone.
+    """
+    structures = input_schema.get("structures")
+    if not isinstance(structures, dict):
+        return input_schema
+    out = dict(input_schema)
+    out["structures"] = {}
+    for name, spec in structures.items():
+        if not isinstance(spec, dict) or spec.get("mode"):
+            out["structures"][name] = spec
+            continue
+        fields = spec.get("fields") or []
+        first = next((f.get("name") for f in fields if isinstance(f, dict) and f.get("name")), None)
+        spec = dict(spec, mode="natural")
+        if first and not spec.get("anchor"):
+            spec["anchor"] = first
+        out["structures"][name] = spec
+    return out
+
+
+
 @app.post("/extract")
 def extract(req: ExtractRequest) -> Dict[str, Any]:
     from gliner2.inference.global_decode import GlobalDecodeConfig
@@ -124,7 +159,7 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text is empty")
     try:
-        schema = Schema.from_dict(req.input_schema)
+        schema = Schema.from_dict(_declare_records(req.input_schema))
     except Exception as e:  # noqa: BLE001 - surface schema errors to the client
         raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
 
