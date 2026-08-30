@@ -77,25 +77,53 @@ def resolve_model(name: str) -> str:
 
 
 def list_feeds() -> List[Dict[str, Any]]:
-    """JSONL files that look like a feed: objects carrying `t_hours` and `text`."""
+    """JSONL files that look like a feed: objects carrying `t_hours` and `text`.
+
+    Searched RECURSIVELY, and every directory is searched. The previous version used a
+    non-recursive glob and stopped at the first directory that matched, so it only ever
+    saw ``datasets/ekf_showcase/*.jsonl`` -- three synthetic feeds -- while the three REAL
+    events this project is about sit one level deeper in ``datasets/<event>/_cache/`` and
+    were invisible: Helene (70 articles), Aegean (71), Turkiye (16).
+
+    Truth is looked up two ways because the two families name it differently: the showcase
+    feeds use ``<stem>.truth.jsonl`` beside the feed, the real events use
+    ``ground_truth.json`` at the event root (the path ``scope_gate_test.DATASETS`` points
+    at). Reporting truth as absent when it exists would hide the tracking error column.
+    """
     import json
     out: List[Dict[str, Any]] = []
+    seen: set = set()
     for d in (REPO / "datasets" / "ekf_showcase", REPO / "datasets"):
         if not d.is_dir():
             continue
-        for p in sorted(d.glob("*.jsonl")):
+        for p in sorted(d.rglob("*.jsonl")):
+            if p in seen or p.name.endswith(".truth.jsonl"):
+                continue
+            # Skip training corpora. Recursion also reaches datasets/disaster_streams_*/
+            # {train,val,test}/, whose observation files carry t_hours and text and so
+            # look exactly like feeds -- but at 10k-45k rows they are training data, not
+            # events, and would bury the three real feeds in the dropdown.
+            if {"train", "val", "test"} & {q.name for q in p.parents}:
+                continue
             try:
                 with p.open(encoding="utf-8") as fh:
                     first = json.loads(fh.readline() or "{}")
             except Exception:
                 continue
-            if "t_hours" in first and "text" in first:
-                n = sum(1 for _ in p.open(encoding="utf-8"))
-                truth = p.with_name(p.stem + ".truth.jsonl")
-                out.append({"path": str(p.relative_to(REPO)), "articles": n,
-                            "truth": str(truth.relative_to(REPO)) if truth.is_file() else None})
-        if out:
-            break
+            if not ("t_hours" in first and "text" in first):
+                continue
+            seen.add(p)
+            n = sum(1 for _ in p.open(encoding="utf-8"))
+            truth = p.with_name(p.stem + ".truth.jsonl")
+            if not truth.is_file():
+                # datasets/<event>/_cache/feed.jsonl -> datasets/<event>/ground_truth.json
+                alt = p.parent.parent / "ground_truth.json"
+                truth = alt if alt.is_file() else truth
+            out.append({"path": str(p.relative_to(REPO)), "articles": n,
+                        "truth": str(truth.relative_to(REPO)) if truth.is_file() else None})
+    # Feeds WITH ground truth first: those are the ones that can report tracking error,
+    # which is the whole point of the panel.
+    out.sort(key=lambda f: (f["truth"] is None, f["path"]))
     return out
 
 

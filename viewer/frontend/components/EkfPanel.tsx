@@ -22,7 +22,8 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { getEkfFeeds, getEkfJob, startEkfTrack, type EkfFeed, type EkfJob } from "@/lib/api";
+import { getEkfFeeds, getEkfJob, getModels, startEkfTrack, type EkfFeed, type EkfJob } from "@/lib/api";
+import type { ModelEntry } from "@/lib/types";
 
 const ROLES = ["dead", "injured", "missing"] as const;
 type Role = (typeof ROLES)[number];
@@ -170,9 +171,22 @@ function ArticleDetail({ run, index, onClose }: { run: Run; index: number; onClo
   );
 }
 
+
+// The real event feeds are all named `feed.jsonl` and differ only by directory
+// (datasets/helene2024/_cache/feed.jsonl), so the basename alone renders three
+// indistinguishable "feed.jsonl" entries. Name them by their event directory instead.
+function feedLabel(path: string): string {
+  const parts = path.split("/");
+  const base = parts[parts.length - 1].replace(/\.jsonl$/, "");
+  if (base !== "feed") return base;
+  const event = parts[parts.length - 2] === "_cache" ? parts[parts.length - 3] : parts[parts.length - 2];
+  return event || base;
+}
+
 export default function EkfPanel() {
   const [feeds, setFeeds] = useState<EkfFeed[]>([]);
   const [feed, setFeed] = useState("");
+  const [models, setModels] = useState<ModelEntry[]>([]);
   const [casualtyModel, setCasualtyModel] = useState("whr778/gliner2-base-v1-casualty-docee");
   const [eventModel, setEventModel] = useState("");
   const [windowMode, setWindowMode] = useState("article");
@@ -198,6 +212,10 @@ export default function EkfPanel() {
 
   useEffect(() => {
     getEkfFeeds().then((f) => { setFeeds(f); if (f[0]) setFeed(f[0].path); }).catch((e) => setError(String(e)));
+    // The model dropdowns are fed by the same registry the main panel uses. A failure
+    // here must not blank the panel: the configured default stays selectable because the
+    // selects keep an option for a value the registry does not contain.
+    getModels().then(setModels).catch(() => {});
     return () => timer.current && clearInterval(timer.current);
   }, []);
 
@@ -260,20 +278,42 @@ export default function EkfPanel() {
           <select value={feed} onChange={(e) => setFeed(e.target.value)}>
             {feeds.map((f) => (
               <option key={f.path} value={f.path}>
-                {f.path.split("/").pop()} ({f.articles}{f.truth ? ", truth" : ""})
+                {feedLabel(f.path)} ({f.articles}{f.truth ? ", truth" : ""})
               </option>
             ))}
           </select>
 
-          <label>Casualty model</label>
-          <input value={casualtyModel} onChange={(e) => setCasualtyModel(e.target.value)} />
+          <div className="ekf-models">
+            <div className="field">
+              <label>Casualty model (stage 2)</label>
+              <select value={casualtyModel} onChange={(e) => setCasualtyModel(e.target.value)}>
+                {/* The configured model may not be in the registry (a local path, or a
+                    checkpoint added since load); keep it selectable rather than silently
+                    switching the run to a different model. */}
+                {!models.some((m) => m.path === casualtyModel) && (
+                  <option value={casualtyModel}>{casualtyModel}</option>
+                )}
+                {models.map((m) => (
+                  <option key={m.path} value={m.path}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Event model (stage 1, optional)</label>
+              <select value={eventModel} onChange={(e) => setEventModel(e.target.value)}>
+                <option value="">none — skip stage 1</option>
+                {!!eventModel && !models.some((m) => m.path === eventModel) && (
+                  <option value={eventModel}>{eventModel}</option>
+                )}
+                {models.map((m) => (
+                  <option key={m.path} value={m.path}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-          <label>Event model (stage 1, optional)</label>
-          <input value={eventModel} onChange={(e) => setEventModel(e.target.value)}
-                 placeholder="out/fastino/gliner2-large-v1-docee/best" />
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ flex: 1 }}>
+          <div className="ekf-controls">
+            <div className="field">
               <label>Window</label>
               <select value={windowMode} onChange={(e) => setWindowMode(e.target.value)}>
                 <option value="long">whole doc, chunked (research default)</option>
@@ -282,7 +322,7 @@ export default function EkfPanel() {
                 <option value="lead">article lead</option>
               </select>
             </div>
-            <div style={{ flex: 1 }}>
+            <div className="field">
               <label>Associate</label>
               <select value={associate} onChange={(e) => setAssociate(e.target.value)}>
                 <option value="record">record location</option>
@@ -292,7 +332,7 @@ export default function EkfPanel() {
                 <option value="none">none (pool all)</option>
               </select>
             </div>
-            <div style={{ flex: 1 }}>
+            <div className="field">
               <label>Normalizer</label>
               <select value={normalizer} onChange={(e) => setNormalizer(e.target.value)}>
                 <option value="hybrid">hybrid</option>
@@ -300,14 +340,14 @@ export default function EkfPanel() {
                 <option value="classify">classify</option>
               </select>
             </div>
-            <div style={{ width: 112 }}>
+            <div className="field">
               <label title="Drop observations above the largest credible toll for this event, before tracking. 0 = off. On Helene a ceiling of 2000 removes a 94,000 that is Asheville's population.">
                 Max plausible
               </label>
               <input type="number" min={0} value={maxPlausible}
                      onChange={(e) => setMaxPlausible(Number(e.target.value))} />
             </div>
-            <div style={{ width: 84 }}>
+            <div className="field">
               <label>Limit</label>
               <input type="number" min={0} value={limit}
                      onChange={(e) => setLimit(Number(e.target.value))} />

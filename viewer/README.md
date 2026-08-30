@@ -269,6 +269,23 @@ extraction: a time-ordered news feed in, a tracked casualty timeline out. The
 backend imports `tools/ekf_showcase/run_pipeline.py` directly, so the panel and
 the CLI run the *same* code — see `tools/ekf_showcase/README.md`.
 
+**Fixed 2026-08-30 — the three real event feeds were not selectable.** Feed discovery
+used a non-recursive glob and stopped at the first directory that matched, so it only
+ever offered `datasets/ekf_showcase/*.jsonl`. The events this project is actually about
+sit one level deeper and were invisible: **Helene (70 articles), Aegean (71), Türkiye
+(16)**. The rollup logic below already resolved paths like
+`datasets/helene2024/_cache/feed.jsonl`, so the backend was ready for feeds the dropdown
+could never offer. Discovery is now recursive over every directory, skips `train/val/test`
+splits (whose observation files look like feeds but are 10k–45k-row training corpora),
+finds `ground_truth.json` as well as `<stem>.truth.jsonl`, and lists truth-bearing feeds
+first. Feeds are labelled by event directory, since all three real ones are named
+`feed.jsonl` and would otherwise render as three identical entries.
+
+**Model selection is a dropdown**, fed by the same registry as the main panel, rather than
+two free-text boxes that had to be typed exactly. A value not in the registry (a local
+path, or a checkpoint added since load) stays selectable, so switching model never happens
+silently. The stage-1 event model has an explicit `none — skip stage 1` option.
+
 **Realigned with the research pipeline 2026-08-20**, after it had drifted for the
 second time. Four gaps are closed, each of which made the panel unable to reproduce a
 published number:
