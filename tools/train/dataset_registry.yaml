@@ -897,3 +897,52 @@ datasets:
     hf_jsonl: whr778/replay_137k30
     language: [en, zh]
     description: "9,151-record proportional slice of the 137k joint_ie training pool (seed 42, tools/train/build_137k_replay.py), sized to be exactly 30% of a real+synthetic warm-start mixture. UNLIKE replay_pile30 this is LITERAL replay: we own the 137k base and its pool, so the slice is drawn from exactly what that base trained on, making 'did the original capability survive' directly measurable against the same eval the base was scored on. Proportional across all 13 pool corpora rather than a flat draw, so the composition stays exact at small slice sizes. TRAIN splits only -- the base never saw val or test. Verified 0 overlap with all 23 val/test files of the 137k config and both preservation eval sets."
+  professorbob_re:
+    name: professorbob_re
+    tasks: Relation extraction
+    # The upstream Hub card declares NO license (queried 2026-08-30: license, language and
+    # tags are all null). Recorded as "see card", the same convention the other unlicensed
+    # entries use, so classify_license returns `unverified` and the model card reports
+    # commercial use as UNVERIFIED rather than claiming permission. Per this file's own
+    # rules: never upgrade an unverified license to a named SPDX id.
+    license: see card
+    hf_id: ProfessorBob/relation_extraction
+    hf_jsonl: whr778/gliner2-corpora-archive
+    source_url: https://huggingface.co/datasets/ProfessorBob/relation_extraction
+    language: [en]
+    description: "Single-triplet relation examples over Wikidata-style properties, regrouped BY PASSAGE by convert_professorbob_re.py so each record carries all of a passage's validated relations rather than repeating the text once per triplet. A triplet is kept only when both surfaces occur verbatim in the whitespace-normalized passage -- a span the model cannot point at is not trainable. Source ships a single train split; SplitWriter carves train/val/test."
+  gate2_tr:
+    name: gate2_tr (multilingual stage-0 gate corpus)
+    tasks: Classification (relevance, toll_kind)
+    license: mixed -- inherits docee, cc_news, duee and the Turkish news source
+    source_url: built by tools/data/build_gate_corpus.py from adjudicated news
+    language: [en, tr, zh]
+    description: "19,156 rows (9,578 pos / 9,578 neg) for the stage-0 relevance gate: docee 12,228 + Turkish news 4,220 (22%) + cc_news 2,106 + duee 602. Turkish labels are Haiku 4.5 adjudications of REAL articles, not synthetic text -- the earlier multilingual attempt scored F1 1.0000 in-distribution and admitted 0 of 71 real articles because its positives were 99.9% synthetic while its negatives were all real, so the model learned register rather than toll. P(positive|language) is balanced across en/tr/zh (0.499/0.501/0.505) so language cannot proxy for the label."
+  tr_dose0:
+    name: tr_dose0 (Turkish dose curve, control)
+    tasks: Structure extraction (casualty records)
+    license: mixed -- inherits casualty_docee and the 137k replay pool
+    source_url: built by tools/train/build_turkish_dose_mix.py
+    language: [en, zh]
+    description: "CONTROL arm of the Turkish dose curve: 12,691 English casualty rows + 30% exact replay from the base's own 137k pool, and ZERO Turkish. Not optional -- every dose arm adds replay AND Turkish at once, so without this arm an improvement over the shipped extractor cannot be attributed to either."
+  tr_dose5000:
+    name: tr_dose5000 (Turkish dose curve, 5k)
+    tasks: Structure extraction (casualty records)
+    license: mixed -- inherits casualty_docee, the 137k replay pool and the Turkish news source
+    source_url: built by tools/train/build_turkish_dose_mix.py
+    language: [en, tr, zh]
+    description: "Dose arm: the control mixture plus 5,000 Turkish field-level casualty records annotated by tools/data/annotate_casualty.py. Values are verbatim spans (the boundary head locates fields as spans) and counts are bare numerals keeping Turkish scale words, e.g. '29 bin 313'."
+  tr_dose15000:
+    name: tr_dose15000 (Turkish dose curve, 15k)
+    tasks: Structure extraction (casualty records)
+    license: mixed -- inherits casualty_docee, the 137k replay pool and the Turkish news source
+    source_url: built by tools/train/build_turkish_dose_mix.py
+    language: [en, tr, zh]
+    description: "Dose arm: the control mixture plus 15,000 Turkish field-level casualty records. See tr_dose5000 for the annotation contract."
+  tr_dose31263:
+    name: tr_dose31263 (Turkish dose curve, full)
+    tasks: Structure extraction (casualty records)
+    license: mixed -- inherits casualty_docee, the 137k replay pool and the Turkish news source
+    source_url: built by tools/train/build_turkish_dose_mix.py
+    language: [en, tr, zh]
+    description: "Largest dose arm: the control mixture plus 29,700 Turkish field-level casualty records (of 31,263 annotated; 5% held out for val/test). At this dose Turkish is 70% of the casualty task against 12,691 English rows, which is what the curve exists to measure. See tr_dose5000 for the annotation contract."
