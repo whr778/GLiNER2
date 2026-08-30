@@ -17,12 +17,18 @@ The config has four sections:
   span width cap is the point of the boundary architecture. On the ``pretrained``
   path a declared ``architecture`` is checked against the checkpoint, so warm
   starting the wrong architecture fails loudly instead of silently.
-* ``training`` - fields forwarded verbatim to :class:`TrainingConfig`. Multi-GPU:
-  preferred is DistributedDataParallel via ``uv run torchrun --nproc_per_node=N
-  tools/train/train.py --config ...`` (auto-detected from ``LOCAL_RANK``; here
-  ``batch_size`` is per-GPU). Alternatively set ``data_parallel: true`` for
-  single-process ``nn.DataParallel`` (``batch_size`` is the total split across
-  GPUs). See TRAINING.md section 4c.
+* ``training`` - fields forwarded verbatim to :class:`TrainingConfig`. Multi-GPU is
+  DistributedDataParallel and there is NO config flag for it -- it is enabled by how
+  you launch::
+
+      uv run torchrun --standalone --nproc_per_node=N tools/train/train.py --config ...
+
+  ``LOCAL_RANK`` is read from the environment into ``config.local_rank``, and the
+  trainer's distributed path engages on ``local_rank >= 0``. ``batch_size`` is then
+  PER GPU, so halve ``gradient_accumulation_steps`` to keep the effective batch --
+  moving such a config back to one GPU without restoring accumulation silently halves
+  it. ``data_parallel`` is a DEPRECATED NO-OP: the single-process ``nn.DataParallel``
+  path is gone, and setting it true does nothing at all. See TRAINING.md section 4.
 * ``eval``     - ``batch_size`` / ``threshold`` for the metrics hook and the
   blind test pass. Optional ``stopword_languages`` (list of ISO 639-2 codes)
   enables multilingual stopword filtering in relaxed metrics; defaults to the
