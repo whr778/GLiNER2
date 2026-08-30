@@ -176,6 +176,66 @@ def list_feeds() -> List[Dict[str, Any]]:
     return out
 
 
+def _ground_truth_series(path: Path, grid: List[float]) -> Optional[Dict[str, Any]]:
+    """Read a real event's ``ground_truth.json`` onto the chart grid.
+
+    A DIFFERENT format from the showcase feeds' ``<stem>.truth.jsonl``, which is why the
+    three real events showed no gold overlay at all: the runner only ever looked for the
+    JSONL form, so Helene, Aegean and Turkiye silently had no truth to draw.
+
+    Snapshots are absolute timestamps, so they are converted to hours from ``onset_utc``
+    -- the same conversion ``scope_gate_test.truth`` does. Helene and Aegean carry a
+    ``Total`` inside ``deaths``; Turkiye ships flat ``turkey``/``syria`` keys and no total,
+    so the combined series is their sum.
+
+    Only DEATHS exist in these files. `injured` and `missing` return None rather than
+    zero: a flat zero line would read as "ground truth says nobody was injured" instead
+    of "this event's truth table does not record injuries".
+    """
+    import json
+    from datetime import datetime
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    onset_raw = raw.get("onset_utc")
+    if not onset_raw or not raw.get("points"):
+        return None
+    onset = datetime.fromisoformat(onset_raw.replace("Z", "+00:00"))
+
+    points: List[tuple] = []
+    for pt in raw["points"]:
+        snap = pt.get("snapshot")
+        if not snap:
+            continue
+        hours = (datetime.fromisoformat(snap.replace("Z", "+00:00")) - onset).total_seconds() / 3600.0
+        if "deaths" in pt:
+            deaths = pt["deaths"]
+            if "Total" in deaths:
+                total = float(deaths["Total"])
+            else:  # no Total row: sum the places, skipping private keys
+                total = sum(float(v) for k, v in deaths.items() if not k.startswith("_"))
+        else:
+            total = sum(float(pt[k]) for k in ("turkey", "syria") if k in pt)
+        points.append((hours, total))
+    if not points:
+        return None
+    points.sort()
+
+    # Step interpolation, not linear: a cumulative toll holds its last reported value
+    # until the next report. Linear would invent a smooth rise nobody reported.
+    def at(t: float) -> Optional[float]:
+        last = None
+        for h, v in points:
+            if h <= t:
+                last = v
+            else:
+                break
+        return last
+
+    return {"dead": [at(t) for t in grid],
+            "injured": [None] * len(grid),
+            "missing": [None] * len(grid)}
+
+
 def _run(job: Job, params: Dict[str, Any]) -> None:
     import json
     import run_pipeline as rp
@@ -334,10 +394,20 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
                            "plausibility_dropped": culled,
                            "git_commit": rp._git_commit()},
         }
-        truth_path = params.get("truth") or str(
-            feed_path.with_name(feed_path.stem + ".truth.jsonl").relative_to(REPO))
+        # Two truth formats, and only the JSONL one was ever resolved -- so the three real
+        # events had no gold overlay despite shipping ground truth.
+        truth_path = params.get("truth")
+        if not truth_path:
+            jsonl = feed_path.with_name(feed_path.stem + ".truth.jsonl")
+            gt = feed_path.parent.parent / "ground_truth.json"
+            truth_path = str((jsonl if jsonl.is_file() else gt).relative_to(REPO))
         tp = REPO / truth_path
-        if tp.is_file():
+        if tp.is_file() and tp.suffix == ".json":
+            series = _ground_truth_series(tp, grid)
+            if series:
+                result["truth"] = series
+                result["truth_note"] = "deaths only; this event's truth table records no injured/missing"
+        elif tp.is_file():
             truth = [json.loads(l) for l in tp.open(encoding="utf-8") if l.strip()]
             result["truth"] = {role: [rp._truth_at(truth, role, t) for t in grid]
                                for role in rp.ROLES}

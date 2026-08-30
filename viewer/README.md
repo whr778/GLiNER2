@@ -281,6 +281,24 @@ finds `ground_truth.json` as well as `<stem>.truth.jsonl`, and lists truth-beari
 first. Feeds are labelled by event directory, since all three real ones are named
 `feed.jsonl` and would otherwise render as three identical entries.
 
+**Ground truth overlays, with a checkbox in the Runs card.** It was already drawn when
+available — but only for the showcase feeds, because the runner resolved truth as
+`<stem>.truth.jsonl` and knew nothing about the `ground_truth.json` the three real events
+ship. So Helene, Aegean and Türkiye had ground truth on disk, reported it in the feed list,
+and still drew no gold line. Both formats now load:
+
+| | format | on the grid |
+|---|---|---|
+| showcase feeds | `<stem>.truth.jsonl`, per-`t_hours` rows | dead / injured / missing |
+| real events | `ground_truth.json`, timestamped snapshots + per-place `deaths` | **deaths only** |
+
+Snapshots convert to hours from `onset_utc`, the same way `scope_gate_test.truth` does.
+Helene and Aegean carry a `Total`; Türkiye ships flat `turkey`/`syria` keys and no total,
+so the series is their sum. Interpolation is **step, not linear** — a cumulative toll holds
+its last reported value until the next report, and linear would invent a smooth rise nobody
+reported. `injured` and `missing` come back as null rather than zero, so the chart says
+"not recorded" instead of "nobody was injured".
+
 **Selecting a feed applies its documented configuration.** Each real event carries a
 recommended preset, shown in a banner with the reason, and every control stays editable
 afterwards. These are applied rather than offered because the failure mode is *silent*:

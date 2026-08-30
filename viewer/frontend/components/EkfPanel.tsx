@@ -50,17 +50,18 @@ function markersFor(result: any, role: Role): Marker[] {
   return out;
 }
 
-function Chart({ role, runs, showBaseline, onPick }: {
+function Chart({ role, runs, showBaseline, showTruth, onPick }: {
   role: Role;
   runs: Run[];
   showBaseline: boolean;
+  showTruth: boolean;
   onPick: (runId: string, m: Marker) => void;
 }) {
   const W = 620, H = 190, PAD = { l: 48, r: 12, t: 12, b: 28 };
   const base = runs[0]?.result;
   if (!base) return null;
   const grid: number[] = base.grid;
-  const truth: (number | null)[] | undefined = base.truth?.[role];
+  const truth: (number | null)[] | undefined = showTruth ? base.truth?.[role] : undefined;
 
   const values: number[] = [];
   runs.forEach((r) => {
@@ -347,6 +348,7 @@ export default function EkfPanel() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [showBaseline, setShowBaseline] = useState(true);
+  const [showTruth, setShowTruth] = useState(true);
   const [detail, setDetail] = useState<{ runId: string; index: number } | null>(null);
   const [job, setJob] = useState<EkfJob | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -604,6 +606,11 @@ export default function EkfPanel() {
                      onChange={(e) => setShowBaseline(e.target.checked)} />
               show <span className="mono">last_value</span> baseline
             </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 6 }}>
+              <input type="checkbox" checked={showTruth}
+                     onChange={(e) => setShowTruth(e.target.checked)} />
+              overlay <span style={{ color: TRUTH }}>ground truth</span>
+            </label>
           </div>
         )}
       </div>
@@ -614,16 +621,20 @@ export default function EkfPanel() {
             <div className="hint" style={{ marginBottom: 8 }}>
               {shown[0].result.n_articles} articles · {shown[0].result.n_relevant} passed the gate
               {shown[0].result.truth && " · truth available"} · click a marker to inspect the article
+              {shown[0].result.truth_note && (
+                <div style={{ marginTop: 4 }}>Ground truth: {shown[0].result.truth_note}.</div>
+              )}
             </div>
             <div style={{ display: "flex", gap: 14, fontSize: 12, marginBottom: 10, flexWrap: "wrap" }}>
               {shown.map((r, i) => (
                 <span key={r.id} style={{ color: RUN_COLORS[i % RUN_COLORS.length] }}>■ {r.label}</span>
               ))}
               {showBaseline && <span style={{ color: BASELINE }}>■ last_value</span>}
-              {shown[0].result.truth && <span style={{ color: TRUTH }}>■ ground truth</span>}
+              {showTruth && shown[0].result.truth && <span style={{ color: TRUTH }}>■ ground truth</span>}
             </div>
             {ROLES.map((role) => (
               <Chart key={role} role={role} runs={shown} showBaseline={showBaseline}
+                     showTruth={showTruth}
                      onPick={(runId, m) => setDetail({ runId, index: m.article })} />
             ))}
             {detailRun && detail && (
