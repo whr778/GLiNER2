@@ -322,6 +322,9 @@ export default function EkfPanel() {
   const [feeds, setFeeds] = useState<EkfFeed[]>([]);
   const [feed, setFeed] = useState("");
   const [models, setModels] = useState<ModelEntry[]>([]);
+  const [applied, setApplied] = useState<string | null>(null);
+  const [rollup, setRollup] = useState<string | null>(null);
+  const [eventYear, setEventYear] = useState(0);
   const [casualtyModel, setCasualtyModel] = useState("whr778/gliner2-base-v1-casualty-docee");
   const [eventModel, setEventModel] = useState("");
   const [windowMode, setWindowMode] = useState("article");
@@ -334,6 +337,10 @@ export default function EkfPanel() {
   // 0 = off. A per-event plausibility ceiling: anything above the largest credible toll
   // for this event is not a casualty figure. Measured on Helene -- dropping one 94,000
   // (Asheville's population, read as a death toll) is worth 20x on ungated per-place error.
+  // 0.9 chosen 2026-08-28 by gate_threshold_sweep.py. The panel had no control for it
+  // and the backend default is 0.5, so every viewer run used a different operating point
+  // from the research runs it was being compared against.
+  const [gateThreshold, setGateThreshold] = useState(0.9);
   const [maxPlausible, setMaxPlausible] = useState(0);
   const [limit, setLimit] = useState(0);
 
@@ -346,13 +353,45 @@ export default function EkfPanel() {
   const timer = useRef<any>(null);
 
   useEffect(() => {
-    getEkfFeeds().then((f) => { setFeeds(f); if (f[0]) setFeed(f[0].path); }).catch((e) => setError(String(e)));
+    getEkfFeeds().then((f) => {
+      setFeeds(f);
+      if (!f[0]) return;
+      setFeed(f[0].path);
+      // Apply the first feed's configuration too, not only later changes -- otherwise the
+      // default selection is the one case that silently runs misconfigured.
+      const rec = f[0].recommended;
+      if (!rec) return;
+      if (rec.window) setWindowMode(rec.window);
+      if (rec.associate) setAssociate(rec.associate);
+      if (rec.gate_threshold != null) setGateThreshold(rec.gate_threshold);
+      setMaxPlausible(rec.max_plausible ?? 0);
+      setRollup(rec.rollup ?? null);
+      setEventYear(rec.event_year ?? 0);
+      setApplied(rec.why);
+    }).catch((e) => setError(String(e)));
     // The model dropdowns are fed by the same registry the main panel uses. A failure
     // here must not blank the panel: the configured default stays selectable because the
     // selects keep an option for a value the registry does not contain.
     getModels().then(setModels).catch(() => {});
     return () => timer.current && clearInterval(timer.current);
   }, []);
+
+  // Selecting a feed applies its documented configuration. Auto-applied rather than
+  // offered behind a button because the failure mode is silent: Turkiye with the wrong
+  // rollup drops every stream as nan, which looks like "the model found nothing". Every
+  // control stays editable afterwards.
+  function applyFeed(path: string) {
+    setFeed(path);
+    const rec = feeds.find((f) => f.path === path)?.recommended;
+    if (!rec) { setApplied(null); setRollup(null); setEventYear(0); return; }
+    if (rec.window) setWindowMode(rec.window);
+    if (rec.associate) setAssociate(rec.associate);
+    if (rec.gate_threshold != null) setGateThreshold(rec.gate_threshold);
+    setMaxPlausible(rec.max_plausible ?? 0);
+    setRollup(rec.rollup ?? null);
+    setEventYear(rec.event_year ?? 0);
+    setApplied(rec.why);
+  }
 
   function label() {
     const parts = [feed.split("/").pop()!.replace(".jsonl", ""), windowMode, normalizer, associate];
@@ -374,6 +413,11 @@ export default function EkfPanel() {
         feed, casualty_model: casualtyModel, window: windowMode,
         normalizer, associate, limit: Number(limit) || 0,
         max_plausible: Number(maxPlausible) || 0,
+        gate_threshold: Number(gateThreshold),
+        ...(eventYear ? { event_year: eventYear } : {}),
+        // null lets the backend resolve a rollup beside the feed; "" disables it, which
+        // Turkiye needs and which is NOT the same as omitting the field.
+        ...(rollup !== null ? { rollup } : {}),
         ...(eventModel ? { event_model: eventModel } : {}),
       });
       setJob(started);
@@ -410,13 +454,21 @@ export default function EkfPanel() {
           </div>
 
           <label>Feed</label>
-          <select value={feed} onChange={(e) => setFeed(e.target.value)}>
+          <select value={feed} onChange={(e) => applyFeed(e.target.value)}>
             {feeds.map((f) => (
               <option key={f.path} value={f.path}>
                 {feedLabel(f.path)} ({f.articles}{f.truth ? ", truth" : ""})
               </option>
             ))}
           </select>
+
+          {applied && (
+            <div className="hint" style={{ marginTop: 6, padding: "6px 8px",
+                                           background: "#f0fdf4", borderLeft: "3px solid #16a34a",
+                                           borderRadius: 4 }}>
+              <strong>Recommended settings applied.</strong> {applied}
+            </div>
+          )}
 
           <div className="ekf-models">
             <div className="field">
@@ -489,6 +541,16 @@ export default function EkfPanel() {
               </label>
               <input type="number" min={0} value={maxPlausible}
                      onChange={(e) => setMaxPlausible(Number(e.target.value))} />
+            </div>
+            <div className="field">
+              <label>Gate threshold</label>
+              <input type="number" min={0} max={1} step={0.01} value={gateThreshold}
+                     onChange={(e) => setGateThreshold(Number(e.target.value))} />
+              <div className="hint">
+                Stage-0 cut. 0.9 was chosen by gate_threshold_sweep.py; the backend default
+                is 0.5, so runs below this were at a different operating point from the
+                research figures they get compared against.
+              </div>
             </div>
             <div className="field">
               <label>Limit</label>

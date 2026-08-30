@@ -93,7 +93,25 @@ export async function removeModel(path: string): Promise<ModelEntry[]> {
 // a job id immediately and we poll it. Polling, not streaming, because the run is
 // coarse-grained: one progress tick per article is plenty.
 
-export type EkfFeed = { path: string; articles: number; truth: string | null };
+export type EkfRecommendation = {
+  window?: string;
+  associate?: string;
+  gate_threshold?: number;
+  max_plausible?: number;
+  rollup?: string;
+  event_year?: number;
+  why: string;
+};
+
+export type EkfFeed = {
+  path: string;
+  articles: number;
+  truth: string | null;
+  // Documented per-event configuration. Getting these wrong does not degrade a result,
+  // it produces a silently empty one -- Turkiye's rollup strips the event type and every
+  // stream drops out as nan -- so the panel applies them on selection.
+  recommended?: EkfRecommendation | null;
+};
 
 export type EkfJob = {
   job_id: string;

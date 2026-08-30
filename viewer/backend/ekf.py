@@ -76,6 +76,54 @@ def resolve_model(name: str) -> str:
     return name
 
 
+# Per-feed recommended settings, and WHY each one is there. Every entry is a documented
+# configuration from the research runs, not a preference: getting these wrong does not
+# degrade a result, it produces a silently empty or wrong one.
+#
+#   window/associate  `long` + `record` is the research default. `long` takes Helene
+#                     `dead` observations 25 -> 106; `record` binds the number to the
+#                     place the same decode step produced.
+#   rollup            Helene and Aegean key streams on a bare lowercased place, which is
+#                     what a collapse_type rollup emits. Turkiye keys on
+#                     "Earthquakes|<place>" and its rollup would STRIP the type -- get it
+#                     wrong and every stream drops out silently as nan.
+#   event_year        Turkiye only. Without it the 1999 Izmit toll is tracked as a 2023
+#                     figure.
+#   max_plausible     Helene only, and event-specific by nature. 2,000 removes a 94,000
+#                     that is Asheville's POPULATION read as a death toll, taking ungated
+#                     per-place error 378.809 -> 18.190.
+#   gate_threshold    0.9 chosen 2026-08-28 by gate_threshold_sweep.py.
+FEED_RECOMMENDATIONS: Dict[str, Dict[str, Any]] = {
+    "helene2024": {
+        "window": "long", "associate": "record", "gate_threshold": 0.9,
+        "max_plausible": 2000,
+        "why": "Research configuration. max_plausible 2000 removes a 94,000 that is "
+               "Asheville's population read as a death toll (per-place error 378.8 -> 18.2).",
+    },
+    "aegean2020": {
+        "window": "long", "associate": "record", "gate_threshold": 0.9,
+        "why": "Research configuration. Keys streams on a bare place, so the rollup "
+               "beside the feed applies.",
+    },
+    "turkey2023": {
+        "window": "long", "associate": "record", "gate_threshold": 0.9,
+        "rollup": "", "event_year": 2023,
+        "why": "Rollup DISABLED: this event keys on 'Earthquakes|<place>' and its rollup "
+               "would strip the type, dropping every stream as nan. event_year 2023 keeps "
+               "the 1999 Izmit toll from being tracked as a 2023 figure.",
+    },
+}
+
+
+def recommend_for(feed_path: str) -> Optional[Dict[str, Any]]:
+    """Recommended settings for a feed, keyed by its event directory."""
+    parts = Path(feed_path).parts
+    for token in parts:
+        if token in FEED_RECOMMENDATIONS:
+            return FEED_RECOMMENDATIONS[token]
+    return None
+
+
 def list_feeds() -> List[Dict[str, Any]]:
     """JSONL files that look like a feed: objects carrying `t_hours` and `text`.
 
@@ -120,7 +168,8 @@ def list_feeds() -> List[Dict[str, Any]]:
                 alt = p.parent.parent / "ground_truth.json"
                 truth = alt if alt.is_file() else truth
             out.append({"path": str(p.relative_to(REPO)), "articles": n,
-                        "truth": str(truth.relative_to(REPO)) if truth.is_file() else None})
+                        "truth": str(truth.relative_to(REPO)) if truth.is_file() else None,
+                        "recommended": recommend_for(str(p.relative_to(REPO)))})
     # Feeds WITH ground truth first: those are the ones that can report tracking error,
     # which is the whole point of the panel.
     out.sort(key=lambda f: (f["truth"] is None, f["path"]))
@@ -212,7 +261,8 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
                         key = (rp.record_key(events[i], rec) if associate == "record"
                                else rp.association_key(events[i], associate, {}))
                         rp._emit(rec, row["text"], row, entry, modes, per_mode,
-                                 gate_model, cls_schema, event_key=key)
+                                 gate_model, cls_schema, event_key=key,
+                                 event_year=int(params.get("event_year", 0) or 0))
                 else:
                     if window == "lead":
                         envelopes = [{"text": row["text"][: int(params.get("lead_chars", 1100))]}]
@@ -230,7 +280,8 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
                             key = (rp.record_key(events[i], rec) if associate == "record"
                                    else rp.association_key(events[i], associate, env))
                             rp._emit(rec, read_text, row, entry, modes, per_mode,
-                                     gate_model, cls_schema, event_key=key)
+                                     gate_model, cls_schema, event_key=key,
+                                     event_year=int(params.get("event_year", 0) or 0))
             articles.append(entry)
             job.done = i + 1
 

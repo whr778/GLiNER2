@@ -293,6 +293,10 @@ class EkfRequest(BaseModel):
     # 0 disables. On Helene a ceiling of 2,000 removes a 94,000 that is Asheville's
     # POPULATION and takes ungated per-place error 378.809 -> 18.190.
     max_plausible: float = 0.0
+    # Reject casualty figures whose nearest date predates this year. 0 disables. Needed by
+    # Turkiye: without it the 1999 Izmit toll was tracked as a 2023 figure in every
+    # configuration. Read but never declared until 2026-08-30, so it silently did nothing.
+    event_year: int = 0
 
 
 @app.get("/ekf-feeds")

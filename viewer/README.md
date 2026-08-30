@@ -281,6 +281,21 @@ finds `ground_truth.json` as well as `<stem>.truth.jsonl`, and lists truth-beari
 first. Feeds are labelled by event directory, since all three real ones are named
 `feed.jsonl` and would otherwise render as three identical entries.
 
+**Selecting a feed applies its documented configuration.** Each real event carries a
+recommended preset, shown in a banner with the reason, and every control stays editable
+afterwards. These are applied rather than offered because the failure mode is *silent*:
+
+| feed | applied | why |
+|---|---|---|
+| helene2024 | `long`, `record`, gate 0.9, ceiling 2000 | the ceiling removes a 94,000 that is Asheville's **population** read as a death toll (per-place error 378.8 → 18.2) |
+| aegean2020 | `long`, `record`, gate 0.9 | keys streams on a bare place, so the rollup beside the feed applies |
+| turkey2023 | `long`, `record`, gate 0.9, **rollup disabled**, `event_year` 2023 | this event keys on `Earthquakes|<place>` and its rollup would strip the type, dropping every stream as `nan`; `event_year` stops the 1999 İzmit toll being tracked as a 2023 figure |
+
+Two fields existed only in the CLI before this: `event_year` was never declared on the
+request, so Türkiye could not exclude the 1999 toll at all, and there was no
+`gate_threshold` control — the backend default of 0.5 meant every viewer run used a
+different operating point from the research figures it was compared against.
+
 **Document flow — where each document stopped.** A table under the charts, one row per
 document and one column per stage (language → gate → event → extract → tracked), with a
 "only documents that stopped" filter. The charts only ever showed articles that produced a
