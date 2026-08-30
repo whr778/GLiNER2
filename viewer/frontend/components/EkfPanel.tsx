@@ -543,11 +543,38 @@ export default function EkfPanel() {
               <div className="hint">{NORMALIZER_HINTS[normalizer]}</div>
             </div>
             <div className="field">
-              <label title="Drop observations above the largest credible toll for this event, before tracking. 0 = off. On Helene a ceiling of 2000 removes a 94,000 that is Asheville's population.">
-                Max plausible
-              </label>
+              <label>Max plausible</label>
               <input type="number" min={0} value={maxPlausible}
                      onChange={(e) => setMaxPlausible(Number(e.target.value))} />
+              <div className="hint">
+                {maxPlausible > 0 ? (
+                  <>
+                    Drops observations above {maxPlausible.toLocaleString()} before
+                    tracking; they stay visible in the document flow, struck through.
+                    On Helene a ceiling of 2,000 removes a 94,000 that is Asheville&rsquo;s
+                    <em> population</em> read as a death toll, taking ungated per-place
+                    error 378.8 → 18.2. This is prior knowledge about ONE event, not a
+                    general rule — a ceiling below the real toll silently truncates it.
+                  </>
+                ) : (
+                  <>
+                    Off. Every extracted figure reaches the tracker, including a
+                    population or a magnitude misread as a toll. Set it to the largest
+                    credible toll for <em>this</em> event — the value is event-specific,
+                    which is why it is off by default.
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="field">
+              <label>Limit</label>
+              <input type="number" min={0} value={limit}
+                     onChange={(e) => setLimit(Number(e.target.value))} />
+              <div className="hint">
+                {limit > 0
+                  ? `First ${limit} articles only — a smoke test. Tracking error from a truncated feed is not comparable with a full run.`
+                  : "0 = the whole feed. Set a small number to check a configuration before paying for the full run."}
+              </div>
             </div>
             <div className="field">
               <label>Device</label>
@@ -573,11 +600,6 @@ export default function EkfPanel() {
                 is 0.5, so runs below this were at a different operating point from the
                 research figures they get compared against.
               </div>
-            </div>
-            <div className="field">
-              <label>Limit</label>
-              <input type="number" min={0} value={limit}
-                     onChange={(e) => setLimit(Number(e.target.value))} />
             </div>
           </div>
 
