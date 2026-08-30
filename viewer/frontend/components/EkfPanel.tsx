@@ -172,6 +172,28 @@ function ArticleDetail({ run, index, onClose }: { run: Run; index: number; onClo
 }
 
 
+// What each choice actually does, with the numbers that justify it. These are the
+// measured claims from tools/ekf_showcase/run_pipeline.py, not restatements of the
+// option label -- a hint that only expands the name teaches nothing.
+const WINDOW_HINTS: Record<string, string> = {
+  long: "Chunks the whole document with overlap and merges. The research default: on Helene it takes `dead` observations 25 → 106.",
+  article: "One pass over the whole article. The CLI default, and what every figure before the long path was measured on.",
+  event: "Only the event's own 'Casualties and Losses' envelope, so per-reading attributes are judged on per-event text. Needs a stage-1 event model.",
+  lead: "Only the article head. Fastest, and blind to tolls that appear further down.",
+};
+const ASSOCIATE_HINTS: Record<string, string> = {
+  record: "The record's OWN location field — the strongest signal, because the same decode step produced the place and the number together.",
+  "type+location": "Event type plus the first place name specific enough to identify a place. Generic spans ('the region') are skipped: splitting one event into several streams is worse than pooling it.",
+  envelope: "Event type plus the nearest location by character offset. A proximity heuristic — on the Türkiye standfirst both countries sit within 26 characters of both numbers, so it is close to a coin flip.",
+  type: "Event type alone. Two earthquakes in one feed collapse into one stream.",
+  none: "Pool every observation into one stream. Violates the tracker's single-event assumption: on the multi-event feed this drove normalized RMSE to 102 against 0.313 on clean observations.",
+};
+const NORMALIZER_HINTS: Record<string, string> = {
+  hybrid: "Qualifier from the keyword window, source from the classifier — each taken from whichever measured better (qualifier 0.654 vs 0.395; source 0.605 vs 0.494).",
+  heuristic: "Keyword windows for both qualifier and source. No second model pass, so it is the fastest.",
+  classify: "Zero-shot classification for both. Better on source (semantic), worse on qualifier (a hedge is a literal lexical cue).",
+};
+
 // The real event feeds are all named `feed.jsonl` and differ only by directory
 // (datasets/helene2024/_cache/feed.jsonl), so the basename alone renders three
 // indistinguishable "feed.jsonl" entries. Name them by their event directory instead.
@@ -309,6 +331,11 @@ export default function EkfPanel() {
                   <option key={m.path} value={m.path}>{m.label}</option>
                 ))}
               </select>
+              <div className="hint">
+                {eventModel
+                  ? "Types each article before extraction, so observations can be keyed by event type. Required by the 'event envelope' window."
+                  : "Off: every article goes straight to casualty extraction. Association then falls back to whatever the record itself names."}
+              </div>
             </div>
           </div>
 
@@ -321,6 +348,7 @@ export default function EkfPanel() {
                 <option value="event">event envelope</option>
                 <option value="lead">article lead</option>
               </select>
+              <div className="hint">{WINDOW_HINTS[windowMode]}</div>
             </div>
             <div className="field">
               <label>Associate</label>
@@ -331,6 +359,7 @@ export default function EkfPanel() {
                 <option value="type">event type</option>
                 <option value="none">none (pool all)</option>
               </select>
+              <div className="hint">{ASSOCIATE_HINTS[associate]}</div>
             </div>
             <div className="field">
               <label>Normalizer</label>
@@ -339,6 +368,7 @@ export default function EkfPanel() {
                 <option value="heuristic">heuristic</option>
                 <option value="classify">classify</option>
               </select>
+              <div className="hint">{NORMALIZER_HINTS[normalizer]}</div>
             </div>
             <div className="field">
               <label title="Drop observations above the largest credible toll for this event, before tracking. 0 = off. On Helene a ceiling of 2000 removes a 94,000 that is Asheville's population.">

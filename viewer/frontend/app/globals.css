@@ -248,10 +248,13 @@ details.raw pre { background: var(--panel-2); padding: 12px; border-radius: 8px;
    columns as actually fit instead. */
 .ekf-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 10px 12px;
+  /* 240px so a control and its hint have room to read. Below this the hint wraps to
+     three or four words a line and is worse than no hint. */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 14px;
   margin-top: 12px;
 }
+.ekf-controls .hint { margin-top: 4px; font-size: 11px; line-height: 1.45; }
 .ekf-controls .field { margin-top: 0; }
 .ekf-controls select,
 .ekf-controls input { width: 100%; }

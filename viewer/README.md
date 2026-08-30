@@ -281,6 +281,13 @@ finds `ground_truth.json` as well as `<stem>.truth.jsonl`, and lists truth-beari
 first. Feeds are labelled by event directory, since all three real ones are named
 `feed.jsonl` and would otherwise render as three identical entries.
 
+**Every option carries a hint.** Window, Associate, Normalizer and the optional stage-1
+model each show what the current choice actually does, with the measured claim that
+justifies it — `associate: none` says it drove normalized RMSE to 102 on the multi-event
+feed, `normalizer: hybrid` says qualifier scored 0.654 against 0.395 and source 0.605
+against 0.494. A hint that only expands the option's name teaches nothing, so these state
+the consequence instead.
+
 **Model selection is a dropdown**, fed by the same registry as the main panel, rather than
 two free-text boxes that had to be typed exactly. A value not in the registry (a local
 path, or a checkpoint added since load) stays selectable, so switching model never happens
