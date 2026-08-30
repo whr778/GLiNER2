@@ -259,3 +259,14 @@ details.raw pre { background: var(--panel-2); padding: 12px; border-radius: 8px;
 .ekf-controls select,
 .ekf-controls input { width: 100%; }
 .ekf-models { display: grid; gap: 10px; margin-top: 12px; }
+
+/* Document-flow table: one row per document, one column per pipeline stage, so a
+   document rejected at the gate is visible instead of simply absent from the chart. */
+.flow { width: 100%; border-collapse: collapse; font-size: 12px; }
+.flow th { position: sticky; top: 0; background: var(--card, #fff); z-index: 1;
+           font-weight: 600; color: var(--muted); padding: 4px 6px;
+           border-bottom: 1px solid #e5e7eb; }
+.flow td { padding: 3px 6px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+.flow tbody tr:hover { background: #f8fafc; }
+.flow-ok { color: #15803d; }
+.flow-stop { color: var(--muted); opacity: 0.75; }

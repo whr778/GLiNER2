@@ -281,6 +281,19 @@ finds `ground_truth.json` as well as `<stem>.truth.jsonl`, and lists truth-beari
 first. Feeds are labelled by event directory, since all three real ones are named
 `feed.jsonl` and would otherwise render as three identical entries.
 
+**Document flow — where each document stopped.** A table under the charts, one row per
+document and one column per stage (language → gate → event → extract → tracked), with a
+"only documents that stopped" filter. The charts only ever showed articles that produced a
+plotted observation, so everything rejected upstream — usually most of a real feed — was
+invisible, and a document dropped by the language gate, one the relevance gate scored
+below threshold, and one that passed both but yielded no figure all looked identical:
+absent. Click any row to open the document.
+
+Observations rejected by the plausibility ceiling are now **kept and marked** rather than
+deleted, and appear struck through with the reason. Previously only an aggregate count
+survived, so a document that produced a 94,000 and a document that produced nothing were
+indistinguishable.
+
 **Every option carries a hint.** Window, Associate, Normalizer and the optional stage-1
 model each show what the current choice actually does, with the measured claim that
 justifies it — `associate: none` says it drove normalized RMSE to 102 on the multi-event

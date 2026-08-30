@@ -248,9 +248,15 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
                 before = len(per_mode[m])
                 per_mode[m] = [o for o in per_mode[m] if float(o["value"]) <= ceiling]
                 culled += before - len(per_mode[m])
+            # TAG rather than delete. The tracker must not see these, but deleting them
+            # from the article makes "why did this document contribute nothing" an
+            # unanswerable question -- only an aggregate count survived, so a document
+            # that produced a 94,000 and a document that produced nothing looked
+            # identical. The per-document trace needs the difference.
             for entry in articles:
-                entry["observations"] = [o for o in entry["observations"]
-                                         if float(o["value"]) <= ceiling]
+                for o in entry["observations"]:
+                    if float(o["value"]) > ceiling:
+                        o["dropped"] = f"above plausibility ceiling {ceiling:.0f}"
             job.log.append(f"plausibility ceiling {ceiling:.0f}: dropped {culled}")
 
         t0, t1 = feed[0]["t_hours"], feed[-1]["t_hours"]

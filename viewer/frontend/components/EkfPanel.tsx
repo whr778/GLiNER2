@@ -40,7 +40,9 @@ function markersFor(result: any, role: Role): Marker[] {
   const out: Marker[] = [];
   (result.articles ?? []).forEach((a: any, i: number) => {
     (a.observations ?? []).forEach((o: any) => {
-      if (o.role === role && o.mode === result.mode) {
+      // `dropped` observations are kept on the article for the per-document trace but
+      // never reached the tracker, so they must not be plotted as if they had.
+      if (o.role === role && o.mode === result.mode && !o.dropped) {
         out.push({ t: o.t_hours, value: o.value, article: i, obs: o });
       }
     });
@@ -76,7 +78,11 @@ function Chart({ role, runs, showBaseline, onPick }: {
     vals.map((v, i) => (v == null ? null : `${i && vals[i - 1] != null ? "L" : "M"}${px(xs[i])},${py(v)}`))
         .filter(Boolean).join(" ");
 
-  const ticks = [0, 0.5, 1].map((f) => Math.round(yMax * f));
+  // Deduplicated. yMax has a floor of 1.12 (Math.max(1, ...) * 1.12), so a role whose
+  // largest value is <= 1 -- routinely `missing` -- gives [0, round(0.56), round(1.12)]
+  // = [0, 1, 1]: two <g> children keyed 1, which React warns about and which also draws
+  // two gridlines and two labels on top of each other.
+  const ticks = [...new Set([0, 0.5, 1].map((f) => Math.round(yMax * f)))];
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -120,6 +126,105 @@ function Chart({ role, runs, showBaseline, onPick }: {
   );
 }
 
+// Where each document STOPPED. The chart only ever shows articles that produced a
+// plotted observation, so everything rejected upstream -- the majority on a real feed --
+// was invisible: a document dropped by the language gate, one the relevance gate scored
+// below threshold, and one that passed both but yielded no figure all looked the same,
+// which is to say they looked like nothing at all.
+type Stage = { name: string; ok: boolean; detail: string };
+
+function stagesFor(a: any, mode: string): Stage[] {
+  const unsupported = a.relevance === "unsupported_language";
+  const obs = (a.observations ?? []).filter((o: any) => o.mode === mode);
+  const kept = obs.filter((o: any) => !o.dropped);
+  const stages: Stage[] = [
+    {
+      name: "language",
+      ok: !unsupported,
+      detail: unsupported
+        ? `${a.language ?? "?"} not supported`
+        : `${a.language ?? "?"}${a.language_confidence != null ? ` ${a.language_confidence.toFixed(2)}` : ""}`,
+    },
+    {
+      name: "gate",
+      ok: !!a.relevant,
+      detail: unsupported
+        ? "not reached"
+        : `${a.relevance}${a.relevance_confidence != null ? ` ${a.relevance_confidence.toFixed(2)}` : ""}`,
+    },
+    {
+      name: "event",
+      ok: !!a.events?.event_type,
+      detail: a.events?.event_type ?? (a.relevant ? "untyped" : "not reached"),
+    },
+    {
+      name: "extract",
+      ok: obs.length > 0,
+      detail: a.relevant ? `${obs.length} observation(s)` : "not reached",
+    },
+    {
+      name: "tracked",
+      ok: kept.length > 0,
+      detail:
+        obs.length === 0
+          ? "nothing to track"
+          : `${kept.length} kept${obs.length - kept.length ? `, ${obs.length - kept.length} dropped` : ""}`,
+    },
+  ];
+  return stages;
+}
+
+function DocumentFlow({ run, onPick }: { run: Run; onPick: (i: number) => void }) {
+  const [onlyStopped, setOnlyStopped] = useState(false);
+  const articles = run.result.articles ?? [];
+  const rows = articles.map((a: any, i: number) => ({ a, i, stages: stagesFor(a, run.result.mode) }));
+  const shown = onlyStopped ? rows.filter((r: any) => r.stages.some((s: Stage) => !s.ok)) : rows;
+  const reached = (n: string) => rows.filter((r: any) => r.stages.find((s: Stage) => s.name === n)?.ok).length;
+
+  return (
+    <div className="card" style={{ marginTop: 12 }}>
+      <div className="row between">
+        <h2 style={{ margin: 0 }}>Document flow · {run.label}</h2>
+        <label className="hint" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={onlyStopped} onChange={(e) => setOnlyStopped(e.target.checked)} />
+          only documents that stopped
+        </label>
+      </div>
+
+      <div className="hint" style={{ margin: "8px 0" }}>
+        {articles.length} documents · language {reached("language")} · gate {reached("gate")} ·
+        typed {reached("event")} · extracted {reached("extract")} · tracked {reached("tracked")}
+      </div>
+
+      <div style={{ maxHeight: 320, overflow: "auto" }}>
+        <table className="flow">
+          <thead>
+            <tr>
+              <th align="right">t</th>
+              <th align="left">language</th><th align="left">gate</th>
+              <th align="left">event</th><th align="left">extract</th><th align="left">tracked</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map(({ a, i, stages }: any) => (
+              <tr key={i} onClick={() => onPick(i)} style={{ cursor: "pointer" }}
+                  title={String(a.text ?? "").slice(0, 180)}>
+                <td align="right" className="mono">{a.t_hours}h</td>
+                {stages.map((s: Stage) => (
+                  <td key={s.name} className={s.ok ? "flow-ok" : "flow-stop"}>{s.detail}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="hint" style={{ marginTop: 6 }}>
+        Click a row to open the document. Green cells passed that stage; grey ones did not.
+      </div>
+    </div>
+  );
+}
+
 function ArticleDetail({ run, index, onClose }: { run: Run; index: number; onClose: () => void }) {
   const a = run.result.articles?.[index];
   if (!a) return null;
@@ -153,11 +258,19 @@ function ArticleDetail({ run, index, onClose }: { run: Run; index: number; onClo
           </thead>
           <tbody>
             {obs.map((o: any, i: number) => (
-              <tr key={i}>
+              // A dropped observation is shown, struck through, with the reason. It was
+              // extracted and then rejected before tracking; hiding it makes an
+              // over-ceiling figure indistinguishable from never having been found.
+              <tr key={i} className={o.dropped ? "flow-stop" : undefined}
+                  title={o.dropped || undefined}>
                 <td>{o.role}</td>
-                <td align="right"><strong>{o.value}</strong></td>
+                <td align="right">
+                  <strong style={o.dropped ? { textDecoration: "line-through" } : undefined}>
+                    {o.value}
+                  </strong>
+                </td>
                 <td className="mono">{o.span}</td>
-                <td>{o.qualifier}</td>
+                <td>{o.dropped ? o.dropped : o.qualifier}</td>
                 <td>{o.source}</td>
                 <td align="right">{(o.confidence ?? 1).toFixed(2)}</td>
               </tr>
@@ -453,6 +566,10 @@ export default function EkfPanel() {
             ))}
             {detailRun && detail && (
               <ArticleDetail run={detailRun} index={detail.index} onClose={() => setDetail(null)} />
+            )}
+            {shown[0] && (
+              <DocumentFlow run={shown[0]}
+                            onPick={(i) => setDetail({ runId: shown[0].id, index: i })} />
             )}
           </div>
         ) : (
