@@ -167,7 +167,20 @@ def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[st
     one that still cannot be resolved is named rather than dropped in silence.
     """
     paths: List[str] = []
-    for by_split in event_files.values():
+    for name, by_split in event_files.items():
+        # A malformed entry is not the same as an absent split, and YAML makes the two
+        # look identical. `{train:data/x.jsonl}` -- one missing space -- parses as the
+        # single key "train:data/x.jsonl" with value None, so .get("train") is None and
+        # the corpus is skipped as though the config never asked for it. That is how a
+        # run ends up reporting entity and relation metrics with no event metrics at all,
+        # while the data sits on disk. Name the keys we actually saw.
+        if not isinstance(by_split, dict) or not (
+            {"train", "val", "test"} & set(by_split)
+        ):
+            print(f"[data] event_files.{name} declares no train/val/test key "
+                  f"(got {sorted(by_split) if isinstance(by_split, dict) else type(by_split).__name__}); "
+                  f"check for a missing space after a colon. NOT scored")
+            continue
         p = by_split.get(suffix)
         if not p:
             continue
