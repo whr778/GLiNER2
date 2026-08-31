@@ -960,6 +960,14 @@ datasets:
     source_url: built from casualty_natural + data/turkish_gate/cas_ann_tr
     language: [en, tr, zh]
     description: "Unsampled English + Turkish casualty at near-parity: casualty_natural (29,324 docs, 72,733 records, location 93.5%) and cas_ann_tr (31,263 docs, 40,109 records, location 90.9%), English 48.4% of casualty documents against Turkish 51.6%. Deliberately EXCLUDES casualty_docee, casualty_loc_split, casualty_multi and casualty_multi_loc: 97.9-100% of their documents are already in casualty_natural at an older annotation generation, so adding them trains contradictory labels on identical text. No Chinese -- 4 of 818,776 casualty_report structures across every corpus on disk are Chinese."
+  zh_multitask_noreplay:
+    name: zh_multitask_noreplay (Simplified Chinese, all five tasks, no replay)
+    tasks: NER, relation extraction, event extraction, classification, structure extraction
+    license: mixed -- inherits shaowenchen/news_zh
+    source_url: shaowenchen/news_zh, annotated by tools/data/annotate_multitask.py
+    hf_jsonl: whr778/zh-multitask-noreplay
+    language: [zh]
+    description: "zh_multitask with ALL 137k replay removed -- 5,872 Simplified Chinese articles (5,286/296/290), keeping the parent corpus's partition so no split boundary moves. Replay was stripped by matching inputs against the base pool, not by language: the parent mixes 30% replay into train and ~50% into val/test, and a language filter leaves the Chinese replay corpora (duee, docfee, chfinann, cmnee) behind. The surviving count matches the documented 5,872 annotated articles exactly. Built for a smoke test measuring what the model learns on this task, NOT for preserving the base's zero-shot labels, so nothing is mixed in and val/test are Chinese only. Verified 0 duplicates within each split and 0 intersection across train/val/test. The 16-label zh_topic MENU was still Chinese after the earlier key translation and is now English, matching annotate_multitask.py's TOPIC_LABELS; spans stay Chinese. Label vocabulary is OPEN, not a taxonomy: 70.4% of labels are used twice or fewer because the annotator invented labels per document, so read micro F1 and treat per-label tail scores as noise."
   zh_multitask:
     name: zh_multitask (Simplified Chinese, all five tasks)
     tasks: NER, relation extraction, event extraction, classification, structure extraction

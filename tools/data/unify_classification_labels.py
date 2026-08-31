@@ -13,6 +13,7 @@ instead of giving one taxonomy two vocabularies.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -40,28 +41,41 @@ MAP = {
 }
 
 
-def convert(node):
-    """Rewrite label-valued strings in place, leaving every span untouched."""
+STRUCTURE_PARENTS = ("json_structures", "structures")
+
+
+def convert(node, mapping, parent=None):
+    """Rewrite label-valued strings in place, leaving every span untouched.
+
+    Structure NAMES and field names are dict keys, not values, so they need rekeying
+    rather than substitution -- the docfee pass did not have to do this because docfee
+    carries no structures.
+    """
     if isinstance(node, dict):
-        for key, value in node.items():
-            if key in ("labels", "true_label", "type", "event_type"):
-                node[key] = ([MAP.get(v, v) for v in value]
-                             if isinstance(value, list) else MAP.get(value, value))
+        for key in list(node):
+            value = node[key]
+            if parent in STRUCTURE_PARENTS and key in mapping:
+                node[mapping[key]] = node.pop(key)
+                key = mapping[key]
+                value = node[key]
+            if key in ("labels", "true_label", "type", "event_type", "task"):
+                node[key] = ([mapping.get(v, v) for v in value]
+                             if isinstance(value, list) else mapping.get(value, value))
             else:
-                convert(value)
+                convert(value, mapping, key)
     elif isinstance(node, list):
         for item in node:
-            convert(item)
+            convert(item, mapping, parent)
 
 
-def main(paths):
+def main(paths, mapping=MAP):
     for path in paths:
         src = Path(path)
         rows, changed = [], 0
         for line in src.open(encoding="utf-8"):
             record = json.loads(line)
             before = json.dumps(record, ensure_ascii=False, sort_keys=True)
-            convert(record)
+            convert(record, mapping)
             after = json.dumps(record, ensure_ascii=False, sort_keys=True)
             changed += before != after
             rows.append(record)
@@ -72,4 +86,10 @@ def main(paths):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("paths", nargs="+")
+    parser.add_argument("--map", help="JSON file of {label: replacement}; default is the "
+                                      "built-in DocFEE/ChFinAnn map")
+    args = parser.parse_args()
+    table = json.loads(Path(args.map).read_text(encoding="utf-8")) if args.map else MAP
+    main(args.paths, table)
