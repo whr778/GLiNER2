@@ -2321,7 +2321,12 @@ class ExtractorTrainer:
         metrics.update(self._proposal_metric_ratios(proposal_counts, "eval"))
 
         if self.compute_metrics:
-            metrics.update(self.compute_metrics(self.model, eval_dataset))
+            # `model` is the DDP-UNWRAPPED module bound above. compute_metrics calls
+            # batch_extract, which lives on the GLiNER2 model and not on the
+            # DistributedDataParallel wrapper, so passing self.model raises
+            # AttributeError at the first epoch-end eval -- after a full epoch of
+            # training, under torchrun only.
+            metrics.update(self.compute_metrics(model, eval_dataset))
 
         self._log_metrics(metrics, prefix="eval")
         self.eval_metrics_history.append(metrics)

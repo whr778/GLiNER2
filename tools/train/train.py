@@ -445,8 +445,15 @@ def load_labels_cfg(cfg: Dict, config_path: str = "") -> Dict:
     if ref:
         path = Path(ref)
         if not path.is_absolute() and config_path:
-            here = Path(config_path).resolve().parent / path
-            path = here if here.exists() else path
+            beside = Path(config_path).resolve().parent / path
+            # Resolve relative to the CONFIG, not the working directory. Falling back to
+            # a cwd-relative path silently loads whatever `labels/unified.yaml` happens to
+            # sit next to wherever the run was started -- or, more often, throws naming
+            # only the relative path and not where it actually looked.
+            if not beside.exists() and not path.exists():
+                raise FileNotFoundError(
+                    f"labels_file {ref!r} not found; looked in {beside} and {path.resolve()}")
+            path = beside if beside.exists() else path
         shared = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         shared = shared.get("labels", shared)
     merged = dict(shared)
