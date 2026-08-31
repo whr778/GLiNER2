@@ -132,10 +132,9 @@ eval:
   # baseline -- the curve already showed Re-DocRED's points alternating 0.1/0.3/0.1/0.3
   # and looking non-monotonic purely because of it.
 
-labels:
-  entities: {rollup: false, separator: ".", map: {}}
-  relations: {rollup: false, separator: ".", map: {}}
-  events: {rollup: false, separator: ".", map: {}}
+# Same unified label space as the base this warm-starts from -- a warm start against
+# a different vocabulary is a warm start the base never learned.
+labels_file: labels/unified.yaml
 
 data:
   # TRAIN is the single pre-shuffled mixture. The relation corpora are NOT listed here:

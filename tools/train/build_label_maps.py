@@ -128,10 +128,30 @@ def config_files(config_path: str) -> list[str]:
     return [f for f in sorted(set(files)) if Path(f).exists()]
 
 
-def build(inputs):
+def scan(paths):
+    """Count label uses per category over a set of files."""
+    import json
+    uses = {c: Counter() for c in CATEGORIES}
+    for path in paths:
+        for line in Path(path).open(encoding="utf-8"):
+            for category, label in labels_by_category(json.loads(line)):
+                uses[category][label] += 1
+    return uses
+
+
+def build(inputs, canonical=None):
+    """Return {category: {variant: winner}}.
+
+    ``canonical`` names the corpora whose spellings WIN. The base's label space is the
+    one every warm-started model has to present, so a downstream corpus maps onto the
+    base's form and never the reverse -- without this, cc_news_haiku45's 427k lowercase
+    `location` outvotes the base and flips the winner to a spelling the base never learned.
+    """
     import json
     if isinstance(inputs, str):
         inputs = [inputs]
+    canon = (scan(inputs_to_files(canonical)) if canonical
+             else {c: Counter() for c in CATEGORIES})
     uses = {c: Counter() for c in CATEGORIES}
     for path in inputs_to_files(inputs):
         for line in Path(path).open(encoding="utf-8"):
@@ -156,24 +176,44 @@ def build(inputs):
                 continue
             # If any variant is pinned by SYNONYMS, that target wins the whole cluster.
             pinned = {SYNONYMS[v] for v in variants if v in SYNONYMS}
-            winner = (pinned.pop() if len(pinned) == 1
-                      else min(variants, key=lambda v: style_rank(v, uses[category][v],
-                                                   category == "structures")))
+            in_base = [v for v in variants if v in canon[category]]
+            if len(pinned) == 1:
+                winner = pinned.pop()
+            elif in_base:
+                # The base's spelling wins, so warm-started models present its vocabulary.
+                # Ranked on the BASE's own counts: using the global ones lets a downstream
+                # corpus outvote the base among its own labels and flip the winner.
+                winner = min(in_base, key=lambda v: style_rank(v, canon[category][v],
+                                                               category == "structures"))
+            else:
+                winner = min(variants, key=lambda v: style_rank(v, uses[category][v],
+                                                                category == "structures"))
             for variant in variants:
                 if variant != winner:
                     mapping[variant] = winner
+        # The map is applied ONCE, so a target that is itself a key leaves two spellings
+        # alive: `LOC -> Location` beside `Location -> location` unifies nothing.
+        unresolved = {k: v for k, v in mapping.items() if v in mapping}
+        if unresolved:
+            raise ValueError(
+                f"{category}: {len(unresolved)} entries whose target is itself remapped, "
+                f"e.g. {dict(list(unresolved.items())[:3])} -- the map is not closed")
         maps[category] = dict(sorted(mapping.items(), key=lambda kv: -uses[category][kv[0]]))
     return maps, uses
 
 
 def main():
     argv = list(sys.argv[1:])
-    out_path = None
+    out_path = canonical = None
     if "--out" in argv:
         i = argv.index("--out")
         out_path = argv[i + 1]
         del argv[i:i + 2]
-    maps, uses = build(argv)
+    if "--canonical" in argv:
+        i = argv.index("--canonical")
+        canonical = [argv[i + 1]]
+        del argv[i:i + 2]
+    maps, uses = build(argv, canonical)
     for category, mapping in maps.items():
         moved = sum(uses[category][v] for v in mapping)
         print(f"\n# {category}: {len(uses[category])} distinct labels, "

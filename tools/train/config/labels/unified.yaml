@@ -15,42 +15,84 @@ labels:
     rollup: false
     separator: .
     map:
+      person: Person
+      location: Location
+      date: Date
+      organization: Organization
+      money: Money
+      facility: Facility
+      duration: Duration
       Company Name: CompanyName
+      age: Age
+      time: Time
+      product: Product
+      quantity: Quantity
+      occupation: Occupation
+      educational institution: educational_institution
+      nationality: Nationality
+      event: Event
+      measurement: Measurement
+      region: Region
+      disease: Disease
+      LOC: Location
+      TIME: Time
+      law: Law
+      regulatory body: Regulatory Body
+      award: Award
+      ORG: Organization
+      publication: Publication
+      ethnic group: Ethnic Group
+      military unit: Military Unit
+      PER: Person
+      medication: Medication
+      regulation: Regulation
+      vehicle: Vehicle
+      software: Software
+      film: Film
+      symptom: Symptom
+      language: Language
+      organism: Organism
+      book: Book
+      gene: Gene
+      operating system: Operating System
+      currency: Currency
+      weapon: Weapon
+      anatomical structure: Anatomical Structure
+      hardware component: Hardware Component
+      witness: Witness
+      financial instrument: Financial Instrument
+      medical procedure: Medical Procedure
+      programming language: programming_language
+      natural disaster: Natural Disaster
+      vaccine: Vaccine
+      database: Database
+      mineral: Mineral
+      pathogen: Pathogen
       Start Date: StartDate
       End Date: EndDate
       Economic loss: Economic Loss
       Areas Affected: Areas affected
       Start_Date: StartDate
-      organization: Organization
-      gene: Gene
       Species: species
       End_Date: EndDate
       group: Group
       process: Process
-      location: Location
       Protein_complex: protein-complex
-      person: Person
       method: Method
       Cell Type: CellType
       Chemical: chemical
-      publication: Publication
       Metric: metric
-      software: Software
       Protein: protein
-      concept: Concept
       Programming Language: programming_language
+      concept: Concept
       Model: model
       component: Component
       Drug: drug
       project: Project
-      disease: Disease
       website: Website
-      award: Award
       Scientific Instrument: scientific_instrument
-      programming language: programming_language
       Error Type: error_type
       technique: Technique
-      book: Book
       output: Output
       statistical measure: Statistical Measure
       Dataset: dataset
@@ -64,7 +106,6 @@ labels:
       Mathematical Concept: mathematical_concept
       Mathematical Result: mathematical_result
       Scientific Concept: scientific_concept
-      organism: Organism
       tissue: Tissue
       spacecraft: Spacecraft
       Chemical Compound: chemical_compound
@@ -72,13 +113,45 @@ labels:
     rollup: false
     separator: .
     map:
+      member_of: member of
+      part_of: part of
+      produced_by: produced by
+      regulated_by: regulated by
+      designed_by: designed by
+      named_after: named after
       Bind: bind
+      capital_of: capital of
+      convicted_of: convicted of
   events:
     rollup: false
     separator: .
     map:
+      location: Location
+      place: Place
+      Recipient: recipient
+      participant: Participant
+      Defendant: defendant
+      communicator: Communicator
+      artifact: Artifact
+      victim: Victim
       death: Death
+      Giver: giver
       attacker: Attacker
+      Destination: destination
+      crime: Crime
+      Origin: origin
+      money: Money
+      Instrument: instrument
+      vehicle: Vehicle
+      prosecutor: Prosecutor
+      Proposal: proposal
+      deceased: Deceased
+      Voter: voter
+      Law: law
+      demonstrator: Demonstrator
+      Beneficiary: beneficiary
+      result: Result
+      Employee: employee
   classifications:
     rollup: false
     separator: .

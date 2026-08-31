@@ -61,19 +61,9 @@ eval:
   metric_sweep: true         # select the checkpoint at its own best threshold
   eval_by_language: false
 
-labels:
-  entities:
-    rollup: false
-    separator: "."
-    map: {}
-  relations:
-    rollup: false
-    separator: "."
-    map: {}
-  events:
-    rollup: false
-    separator: "."
-    map: {}
+# Same unified label space as the base this warm-starts from -- a warm start against
+# a different vocabulary is a warm start the base never learned.
+labels_file: labels/unified.yaml
 
 data:
   corpora: []

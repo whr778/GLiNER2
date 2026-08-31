@@ -70,6 +70,10 @@ eval:
   # Chinese has no whitespace, so relaxed matching needs its stopword set or CJK text is
   # tokenised per character and the overlap rule degenerates.
   stopword_languages: [zho, eng]
+# Same unified label space as the base this warm-starts from -- a warm start against
+# a different vocabulary is a warm start the base never learned.
+labels_file: labels/unified.yaml
+
 data:
   corpora:
     - data/zh_multitask

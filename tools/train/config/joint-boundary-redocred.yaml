@@ -60,22 +60,10 @@ eval:
   metric_sweep: true
   eval_by_language: false
 
-labels:
-  entities:
-    rollup: false
-    separator: "."
-    map: {}
-  relations:
-    rollup: false
-    separator: "."
-    map: {}
-  events:
-    rollup: false
-    separator: "."
-    map: {}
+# Same unified label space as the base this warm-starts from -- a warm start against
+# a different vocabulary is a warm start the base never learned.
+labels_file: labels/unified.yaml
 
-# Re-DocRED is a NER + relation corpus (no events), so it goes under `corpora`,
-# which auto-derives data/redocred.{train,val,test}.jsonl.
 data:
   corpora:
     - data/redocred

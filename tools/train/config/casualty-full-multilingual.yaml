@@ -79,6 +79,10 @@ training:
   early_stopping: false
 eval:
   metric_sweep: true
+# Same unified label space as the base this warm-starts from -- a warm start against
+# a different vocabulary is a warm start the base never learned.
+labels_file: labels/unified.yaml
+
 data:
   corpora:
     - data/casualty_full_ml

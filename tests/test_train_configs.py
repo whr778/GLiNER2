@@ -91,16 +91,17 @@ def test_config_builds(path):
     assert isinstance(tc.task_lr, float), f"{path.name}: task_lr is not a float"
 
 
-def _label_categories():
-    """Read the categories from train.py so this test cannot drift from the trainer."""
+def _load_train_module():
+    """Load train.py by path; it is a script, not an installed module."""
     spec = importlib.util.spec_from_file_location(
         "train_cli", Path(__file__).resolve().parents[1] / "tools" / "train" / "train.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return set(mod.LABEL_CATEGORIES)
+    return mod
 
 
-LABEL_CATEGORIES = _label_categories()
+# Read from train.py so this test cannot drift from the trainer.
+LABEL_CATEGORIES = set(_load_train_module().LABEL_CATEGORIES)
 
 
 @pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)
@@ -158,4 +159,36 @@ def test_rollup_does_not_orphan_map_keys(path):
         assert not orphans, (
             f"{path.name}: labels.{cat} has rollup on, so these map keys can never "
             f"fire (roll-up consumes the separator first): {orphans[:5]}"
+        )
+
+
+def test_configs_warmstarted_from_our_base_share_one_label_map():
+    """A warm start against a different vocabulary is one the base never learned.
+
+    Every config that warm-starts from the 137k boundary base must resolve the SAME
+    label maps as the base itself. An empty inline `labels:` block silently overrides
+    the shared file, which is the failure this pins.
+    """
+    train_mod = _load_train_module()
+    base = CONFIG_DIR / "joint-boundary-mmbert-137k.yaml"
+    if not base.exists():
+        pytest.skip("base config absent")
+    ours = ("gliner2-joint-boundary-mmbert-137k", "out/joint-boundary-mmbert-137k")
+
+    def sizes(path):
+        cfg = yaml.safe_load(path.read_text())
+        merged = train_mod.load_labels_cfg(cfg, str(path))
+        return {c: len((merged.get(c) or {}).get("map") or {})
+                for c in train_mod.LABEL_CATEGORIES}
+
+    expected = sizes(base)
+    assert any(expected.values()), "base resolves an empty map; the shared file is not loading"
+    for path in CONFIG_FILES:
+        text = path.read_text()
+        if "pretrained:" not in text or not any(o in text for o in ours):
+            continue
+        assert sizes(path) == expected, (
+            f"{path.name} warm-starts from the 137k base but resolves different label "
+            f"maps ({sizes(path)} vs {expected}); an empty inline labels block overrides "
+            f"labels_file"
         )
