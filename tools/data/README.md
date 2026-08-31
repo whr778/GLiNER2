@@ -12,6 +12,30 @@ the dataset in RAM. Converters install their own deps on first run as needed
 (`huggingface_hub`, `pandas`, `gdown`, `pyyaml`); `datasets` is already a core
 dependency (`uv sync`).
 
+## Converted vs BOUGHT corpora
+
+The `convert_*.py` scripts transform a dataset that already carries labels. Some corpora
+here have no upstream labels and are **annotated by an LLM instead** — the Turkish and
+Simplified Chinese casualty data, and the stage-0 gate corpora. Those follow a different
+path with its own failure modes (you are spending money, and a bad prompt spends all of
+it):
+
+| step | tool |
+|---|---|
+| build a cue-filtered candidate pool | `build_turkish_pool.py`, `build_chinese_candidates.py`, `build_turkish_candidates.py` |
+| price purity on a labelled sample of that pool | `gate_purity_curve.py` |
+| submit as a batch (50% cheaper) | `annotate_gate.py` (stage 0), `annotate_casualty.py` (stage 2) |
+| record the batch id | [`notes/TURKISH_BATCHES.md`](notes/TURKISH_BATCHES.md) |
+
+Full workflow: [TRAINING.md §3a-2](../train/TRAINING.md). Costing method and the measured
+purity table: [`notes/ANNOTATION_ECONOMICS.md`](notes/ANNOTATION_ECONOMICS.md).
+
+**The two contracts an annotated record must satisfy**, both enforced by
+`annotate_casualty.py` with the drop rate printed: field values are VERBATIM substrings of
+the source (the boundary head locates fields as spans, so a paraphrase trains nothing and
+raises no error), and counts are bare numerals keeping the source's own scale words, so
+Turkish `29 bin 313` survives rather than being normalised to `29313`.
+
 ## Splits are grouped by document
 
 `SplitWriter` routes each record on a **normalized hash of `record["input"]`**, so a

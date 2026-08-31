@@ -8,6 +8,9 @@ Reproduce with:
 
     uv run python tools/data/gate_purity_curve.py --model whr778/gliner2-gate2-mmbert-tr
 
+This is the PRICING half. The end-to-end workflow — build the pool, price it, submit,
+verify — is [TRAINING.md §3a-2](../../train/TRAINING.md).
+
 ## The method
 
 1. **Get a labelled sample OF THE POOL.** Not of a similar corpus -- of the pool itself.

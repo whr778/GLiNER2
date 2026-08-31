@@ -1,4 +1,7 @@
-# Turkish annotation batches
+# Annotation batch ids (Turkish, Simplified Chinese)
+
+Submitting is [TRAINING.md §3a-2](../../train/TRAINING.md); pricing is
+[ANNOTATION_ECONOMICS.md](ANNOTATION_ECONOMICS.md).
 
 A killed poller does NOT lose money -- the batch completes server-side. Recover with
 `--fetch-batch <id>`; resubmitting pays twice for identical output.
