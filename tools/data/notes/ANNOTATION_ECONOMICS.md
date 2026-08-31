@@ -107,6 +107,21 @@ rejections were only visible on inspection, not from the dataset card.
 and the budget buys ~25,000 annotations. Adding a second corpus for 6,000 more documents
 changes nothing about what can be afforded; the money is the limit, not the data.
 
+**Editorial regime is a caveat on the Chinese arm as a whole, not on one corpus.**
+CommonCrawl reaches Chinese sites from outside, so CC-News captures the outward-facing
+subset by construction -- a narrower and differently-selected slice than domestic
+coverage. news_zh is not neutral either: its named publishers are state media
+(新华网, 中国新闻网).
+
+For the EXTRACTOR this is close to harmless -- it learns to bind a number to a place from
+whatever the text says, and editorially constrained text is still ordinary Chinese
+casualty prose. For the EKF it is not. The filter models a toll as a quantity revised
+upward as information arrives, and it is tuned on the shape of that revision. Figures that
+are delayed, floored, or revised late describe a REPORTING REGIME rather than an event,
+and a filter fitted to them is fitting the regime. Do not pool Chinese streams with
+Helene-style streams without checking that assumption; per-language tracking error is the
+measurement that would expose it.
+
 **Known limitation, to be stated in the model card:** news_zh is 2014-2016 and its `time`
 field carries NO year (`MM-DD HH:MM` only), so articles cannot be individually dated and no
 held-out-by-year split is possible. The Turkish arm spans 2016-2023 by comparison.
