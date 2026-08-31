@@ -133,6 +133,83 @@ That default is recent, and the corpora predating it leaked badly: text2json's v
 **99.0%** contained in its train, gliclass_logic 38.3%, knowledgator_gliner 27.1%,
 events_biotech 21.6%, klue_re 17.3%. **Regenerate a corpus before trusting its eval.**
 
+### 3a-2. Buying annotation: select candidates, then submit
+
+Adding a language means buying labels. The cost is per DOCUMENT and the value is per
+POSITIVE, so **the filter's precision is the price** — see
+[`tools/data/notes/ANNOTATION_ECONOMICS.md`](../data/notes/ANNOTATION_ECONOMICS.md) for
+the full method and the measured table.
+
+**Step 1 — build the candidate pool.** Never submit a raw corpus. Only the *ambiguous*
+region is worth paying for: text with no casualty cue is a free negative and must never
+reach the API.
+
+```bash
+# Turkish: 18 of 31 parquet shards, chosen for outlet spread
+uv run python tools/data/build_turkish_pool.py \
+  --out /Volumes/Development/data/turkish_pool.jsonl \
+  --exclude data/turkish_gate/gate_ann_tr_heldout_full.jsonl   # never re-buy what you own
+
+# Simplified Chinese: streams shaowenchen/news_zh, filters cue + script
+uv run python tools/data/build_chinese_candidates.py --limit 5000
+```
+
+Three things every candidate builder must do, each of which has cost real money here:
+
+- **Cue-filter.** The cue selects what gets *adjudicated*; the adjudication, not the
+  regex, assigns the label. Keep it broad — a narrow cue pre-judges the cases you are
+  paying to resolve.
+- **Exclude what you already own**, by normalised group key. An eval document that
+  re-enters the training pool is the cross-set contamination the split rule forbids.
+- **Filter script/language explicitly**, rather than assuming. `news_zh` is 93.93%
+  Simplified and 0.03% Traditional; that 0.03% would still train characters the
+  deployment never sees.
+
+**Step 2 — price it before you buy.** Measure purity on a labelled sample of the POOL,
+not of a similar corpus:
+
+```bash
+uv run python tools/data/gate_purity_curve.py --model whr778/gliner2-gate2-mmbert-tr
+```
+
+This exists because the first Turkish estimate was wrong by 3x: it used a base rate from a
+different source (42.3% vs the real 25.1%) and an *assumed* gate purity of 75% that
+measured 37.3%. Composing a free regex with the model gate reached 78.8% purity — better
+than either alone, and it halves what the model must score.
+
+**Step 3 — submit as a batch.** Always `--batch` (50% cheaper). Two annotators:
+
+```bash
+# stage-0 gate labels: current_toll / historical_toll / exposure_only / no_toll
+uv run python tools/data/annotate_gate.py --batch \
+  --corpora data/chinese_gate/zh_candidates.jsonl \
+  --cue "$(uv run python -c 'import sys;sys.path.insert(0,"tools/data");from build_chinese_candidates import CUE;print(CUE.pattern)')" \
+  --out data/chinese_gate/zh_gate_sample
+
+# stage-2 field-level records: location / dead / injured / missing
+uv run python tools/data/annotate_casualty.py --batch \
+  --corpora data/turkish_gate/cas_candidates_top38k.jsonl \
+  --out data/turkish_gate/cas_ann_tr
+```
+
+**RECORD THE BATCH ID IMMEDIATELY**, in
+[`tools/data/notes/TURKISH_BATCHES.md`](../data/notes/TURKISH_BATCHES.md). A killed poller
+does not lose the money — the batch completes server-side — but only if the id survives:
+
+```bash
+uv run python tools/data/annotate_casualty.py --fetch-batch msgbatch_... --out <same-out>
+```
+
+Resubmitting pays twice for identical output. `data/` is gitignored, so an id written
+there is not durable; commit it under `tools/`.
+
+**Step 4 — verify before training.** `annotate_casualty.py` enforces the two contracts
+that make a record trainable and prints the drop rate: values must be VERBATIM substrings
+(the boundary head locates fields as spans, so a paraphrase trains nothing and reports no
+error) and counts must be bare numerals keeping the source's own scale words, so Turkish
+`29 bin 313` survives. Then check split hygiene against everything you already own —
+0 overlap, 0 duplicates — before the data reaches a config.
+
 ### 3b. Prove it
 
 ```bash
