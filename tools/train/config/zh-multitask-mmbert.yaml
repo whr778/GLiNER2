@@ -1,0 +1,76 @@
+# Simplified Chinese multi-task model, warm-started from the 137k boundary base.
+#
+# Trains all five GLiNER2 tasks on 5,872 Chinese news articles annotated in ONE pass per
+# document (entities, relations, events, classification, structures), at 97.8% verbatim.
+#
+# BASE IS mmBERT. The fastino DeBERTa-v3 vocabulary is English-only (128,011) and cannot
+# represent Chinese at the tokenizer, so supervision would not be the operative variable
+# there. mmBERT already reads Chinese; what it has never had is this task supervision in
+# Chinese.
+#
+# 30% EXACT replay from the base's own 137k pool. Training a warm start on the new task
+# alone destroys what it is not training on -- measured twice in this repo: the casualty
+# fine-tune returned a digit when asked for a `location`, and the base-v1 arms lost 23-39%
+# of general-domain entity F1 with label-space collapse.
+#
+# val/test CARRY REPLAY, so preservation is measured rather than assumed. The Turkish dose
+# curve evaluated structures alone and therefore could not observe forgetting at all --
+# every arm reported one metric and the replay's whole purpose went unmeasured.
+#
+# PRE-REGISTERED EXPECTATIONS:
+#   Chinese  all five task categories score above zero on the blind test. The base scores
+#            ZERO on Chinese structures today (verified: it returns {} for a casualty
+#            schema), so any non-trivial structure F1 is new capability.
+#   Replay   entity/relation/event metrics on the replay half of val do not collapse.
+#            A model that gains Chinese and loses English is not a multilingual model.
+model:
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k
+  architecture: boundary
+  boundary_head:
+    enable_relations: true   # the base trained these; dropping them would forget them
+    enable_records: true
+    # Defaults 32/160. The replay pool holds documents with 121 gold spans for one query,
+    # and the trainer raises TargetCapacityError rather than truncating silently.
+    max_gold_per_query: 256
+    training_candidate_budget: 1024
+training:
+  checkpoint_restart: None
+  output_dir: ./out/zh-multitask-mmbert
+  experiment_name: zh_multitask_mmbert
+  data_parallel: false          # DEPRECATED no-op; DDP comes from torchrun, not config
+  num_epochs: 6
+  batch_size: 2
+  gradient_accumulation_steps: 16     # effective 32
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true                    # fp16 crashed this workload at 79% on 2026-08-17
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_entity_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  # The replay pool carries Chinese and biomedical corpora whose surfaces do not always
+  # word-align on the boundary path. Drops the single mention, not the record's other gold.
+  allow_invalid_samples: true
+  sliding_window: true
+  max_len: 8192                 # matches the base; 4096 windowed replay entities out of reach
+  window_stride: 6144
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+eval:
+  metric_sweep: true
+  # Chinese has no whitespace, so relaxed matching needs its stopword set or CJK text is
+  # tokenised per character and the overlap rule degenerates.
+  stopword_languages: [zho, eng]
+data:
+  corpora:
+    - data/zh_multitask
+  event_files: {}

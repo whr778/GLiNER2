@@ -960,3 +960,11 @@ datasets:
     source_url: built from casualty_natural + data/turkish_gate/cas_ann_tr
     language: [en, tr, zh]
     description: "Unsampled English + Turkish casualty at near-parity: casualty_natural (29,324 docs, 72,733 records, location 93.5%) and cas_ann_tr (31,263 docs, 40,109 records, location 90.9%), English 48.4% of casualty documents against Turkish 51.6%. Deliberately EXCLUDES casualty_docee, casualty_loc_split, casualty_multi and casualty_multi_loc: 97.9-100% of their documents are already in casualty_natural at an older annotation generation, so adding them trains contradictory labels on identical text. No Chinese -- 4 of 818,776 casualty_report structures across every corpus on disk are Chinese."
+  zh_multitask:
+    name: zh_multitask (Simplified Chinese, all five tasks)
+    tasks: NER, relation extraction, event extraction, classification, structure extraction
+    license: mixed -- inherits shaowenchen/news_zh and the 137k replay pool
+    source_url: shaowenchen/news_zh, annotated by tools/data/annotate_multitask.py
+    hf_jsonl: whr778/chinese-casualty-corpus
+    language: [zh, en]
+    description: "5,872 Simplified Chinese news articles annotated for entities, relations, events, classification (zh_topic, 16 labels) and structures in ONE pass per document -- the article is read once rather than five times, which is why 6,000 documents cost $30.22 rather than $48.34 on Haiku batch. 97.8% of spans verbatim; non-verbatim ones are dropped, not repaired, because the boundary head locates fields as spans and a paraphrase trains nothing while reporting no error. Deliberately NOT cue-filtered: a corpus selected on casualty words would teach that entities and relations occur only in disaster reporting. Disjoint from all 58,556 casualty-annotated documents. Sampled with a stride across news_zh, which is ordered by source in blocks, so a contiguous read would be single-publisher; 3,218 distinct sources. Mixed with 30% exact replay from the 137k pool, and the val/test splits carry replay too so preservation is measurable rather than assumed."
