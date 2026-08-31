@@ -37,10 +37,19 @@ MAX_CHARS = 4000
 # One fixed task for classification. A SECOND classification task collapses the first to
 # a single label at confidence 1.0 on boundary models -- measured on the gate, where it
 # cost two runs' verdicts -- so the schema this data trains carries exactly one.
+#
+# LABELS ARE ENGLISH, SPANS ARE CHINESE. GLiNER2 takes the label set as an INPUT at
+# inference, so labels must live in ONE language whatever the content language is. The
+# 137k base learned English labels even on its Chinese corpora -- DuEE rows carry
+# event_type "Exhibit" with the trigger 演示. A first run of this annotator asked for
+# Chinese labels and produced a DISJOINT label space, where `人物` and `person` are
+# unrelated queries and asking the model for `person` on a Chinese document returns
+# nothing. Recovering it cost a translation pass over 24,826 labels.
 # Broadened after a smoke run returned 教育, which was not in the list and was silently
 # dropped -- a label set narrower than the corpus discards valid annotations.
-TOPIC_LABELS = ["政治", "经济", "社会", "国际", "科技", "体育", "文化", "健康",
-                "法律", "灾难", "教育", "军事", "环境", "娱乐", "交通", "其他"]
+TOPIC_LABELS = ["Politics", "Economy", "Society", "International", "Technology",
+                "Sports", "Culture", "Health", "Law", "Disaster", "Education",
+                "Military", "Environment", "Entertainment", "Transport", "Other"]
 
 SYSTEM = (
     "You annotate Chinese news articles for an information-extraction dataset. "
@@ -50,18 +59,22 @@ SYSTEM = (
 
 USER = """Annotate this Chinese news article for five tasks at once.
 
-CRITICAL RULE — copy verbatim. Every entity, trigger, argument, head, tail and field value must appear in the article EXACTLY as you write it. Do not translate, normalise, reformat, or add words. Copy Chinese text in Chinese. If you cannot find an exact span, omit that item.
+TWO LANGUAGES, DELIBERATELY. Every LABEL you invent — entity types, relation names, event types, roles, structure and field names — must be in ENGLISH. Every SPAN you copy out of the article — entity surfaces, triggers, argument entities, relation heads and tails, field values — must stay in the article's own Chinese, character for character. The labels are the schema; the spans are the text.
 
-1. "entities" — a map of entity type to the list of surfaces of that type. Use these types: 人物 (person), 组织 (organization), 地点 (location), 时间 (time/date), 数量 (quantity), 事件 (named event), 产品 (product). Omit a type with no instances.
+CRITICAL RULE — copy spans verbatim. Every entity, trigger, argument, head, tail and field value must appear in the article EXACTLY as you write it. Do not translate, normalise, reformat, or add words. If you cannot find an exact span, omit that item.
 
-2. "relations" — a list of objects, each with exactly three keys: "relation", "head", "tail". Use a short Chinese relation name such as 任职于, 位于, 隶属于, 参与, 发生于, 拥有. Both head and tail must be verbatim spans.
-   Example: [{{"relation": "位于", "head": "飞来峡水利枢纽", "tail": "清远"}}]
+1. "entities" — a map of ENGLISH entity type to the list of Chinese surfaces of that type. Use these types: Person, Organization, Location, Date, Quantity, Event, Product. Omit a type with no instances.
 
-3. "events" — a list of {{"event_type": "...", "triggers": ["..."], "arguments": [{{"role": "...", "entity": "..."}}]}}. The trigger is the verbatim word signalling the event. Roles are short Chinese labels such as 主体, 客体, 时间, 地点, 数量.
+2. "relations" — a list of objects, each with exactly three keys: "relation", "head", "tail". "relation" is an ENGLISH snake_case name such as works_for, located_in, part_of, participated_in, occurred_at, owns. Head and tail are verbatim Chinese spans.
+   Example: [{{"relation": "located_in", "head": "飞来峡水利枢纽", "tail": "清远"}}]
+
+3. "events" — a list of {{"event_type": "...", "triggers": ["..."], "arguments": [{{"role": "...", "entity": "..."}}]}}. "event_type" and "role" are ENGLISH (e.g. "Earthquake", and roles Subject, Object, Date, Location, Quantity). The trigger and entity are verbatim Chinese spans.
+   Example: {{"event_type": "Marital Status", "triggers": ["结婚"], "arguments": [{{"role": "Subject", "entity": "司马相如"}}]}}
 
 4. "topic" — exactly one label from this list, choosing the CLOSEST if none is exact: {labels}
 
-5. "structures" — a list of records, each {{"record_name": {{"field": "value"}}}}. Emit a record ONLY when the article states a compact set of facts that belong together (a company report, a person profile, an incident). Field values must be verbatim spans. If nothing fits, use an empty list.
+5. "structures" — a list of records, each {{"record_name": {{"field": "value"}}}}. The record name and every field name are ENGLISH; the values are verbatim Chinese spans. Emit a record ONLY when the article states a compact set of facts that belong together (a company report, a person profile, an incident). If nothing fits, use an empty list.
+   Example: [{{"Dam": {{"name": "飞来峡水利枢纽", "location": "清远"}}}}]
 
 Reply as:
 {{"entities": {{"人物": ["..."]}}, "relations": [{{"relation": "...", "head": "...", "tail": "..."}}], "events": [], "topic": "...", "structures": []}}
