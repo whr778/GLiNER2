@@ -48,6 +48,9 @@ SP = Path(sys.argv[1])
 PREFIX = sys.argv[2] if len(sys.argv) > 2 else "sweep_"
 THRESHOLDS = (0.5, 0.9, 0.99, 0.998, 0.9999)
 GATES = {"casualty-docee": "casualty-docee", "gate2-mmbert-v2": "gate2-mmbert-v2",
+         # Bar 2 of the Turkish dose curve: the same sweep with the CASUALTY model
+         # varying instead of the gate. Only that model differs between these two runs.
+         "tr-dose-31263": "tr-dose-31263",
          # The multilingual arm. Included so the English no-regression check is a
          # like-for-like comparison in the same run rather than across runs.
          "gate2-mmbert-tr": "gate2-mmbert-tr"}
