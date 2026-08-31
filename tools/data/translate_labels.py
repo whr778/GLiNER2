@@ -122,15 +122,19 @@ def apply_map(rows: list[dict], m: dict) -> tuple[list[dict], int, int]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--in", dest="inp", required=True)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--in", dest="inp", nargs="+", required=True,
+                    help="one or more corpora. ALL are translated with ONE shared map -- "
+                         "a per-file map would give train and val different labels for "
+                         "the same thing, which is worse than leaving them in Chinese")
+    ap.add_argument("--out-suffix", default="",
+                    help="write <stem><suffix>.jsonl; empty means overwrite in place")
     ap.add_argument("--map-out", default="data/chinese_gate/label_map_zh_en.json")
     ap.add_argument("--batch", action="store_true")
     ap.add_argument("--model", default="claude-haiku-4-5")
     a = ap.parse_args()
 
-    rows = [json.loads(l) for l in Path(a.inp).open(encoding="utf-8")]
-    labels = sorted(collect(rows))
+    per_file = {f: [json.loads(l) for l in Path(f).open(encoding="utf-8")] for f in a.inp}
+    labels = sorted(set().union(*(collect(r) for r in per_file.values())))
     todo = [x for x in labels if x not in FIXED]
     print(f"{len(labels):,} Chinese labels | {len(FIXED)} hand-pinned | {len(todo):,} to translate")
 
@@ -166,15 +170,19 @@ def main() -> int:
 
     Path(a.map_out).write_text(json.dumps(mapping, ensure_ascii=False, indent=1),
                                encoding="utf-8")
-    rows, hit, miss = apply_map(rows, mapping)
-    Path(a.out).write_text("".join(dumps_record(r) + "\n" for r in rows), encoding="utf-8")
-
-    left = collect(rows)
-    print(f"label keys rewritten {hit:,} | untranslated left {miss:,}")
-    print(f"Chinese labels REMAINING in output: {len(left):,}")
-    if left:
-        print(f"  examples: {sorted(left)[:8]}")
-    print(f"map -> {a.map_out}\ncorpus -> {a.out}")
+    total_hit = total_miss = 0
+    for f, rows in per_file.items():
+        rows, hit, miss = apply_map(rows, mapping)
+        total_hit += hit
+        total_miss += miss
+        src = Path(f)
+        out = src if not a.out_suffix else src.with_name(
+            src.name.replace(".jsonl", f"{a.out_suffix}.jsonl"))
+        out.write_text("".join(dumps_record(r) + "\n" for r in rows), encoding="utf-8")
+        left = collect(rows)
+        print(f"  {out.name:34s} rewritten {hit:6,} | zh left {len(left):3,}")
+    print(f"label keys rewritten {total_hit:,} | untranslated {total_miss:,}")
+    print(f"map -> {a.map_out}")
     return 0
 
 
