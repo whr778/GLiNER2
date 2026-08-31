@@ -973,6 +973,6 @@ datasets:
     tasks: NER, relation extraction, event extraction, classification, structure extraction
     license: mixed -- inherits shaowenchen/news_zh and the 137k replay pool
     source_url: shaowenchen/news_zh, annotated by tools/data/annotate_multitask.py
-    hf_jsonl: whr778/chinese-casualty-corpus
+    hf_jsonl: whr778/zh-multitask
     language: [zh, en]
     description: "5,872 Simplified Chinese news articles annotated for entities, relations, events, classification (zh_topic, 16 labels) and structures in ONE pass per document -- the article is read once rather than five times, which is why 6,000 documents cost $30.22 rather than $48.34 on Haiku batch. 97.8% of spans verbatim; non-verbatim ones are dropped, not repaired, because the boundary head locates fields as spans and a paraphrase trains nothing while reporting no error. Deliberately NOT cue-filtered: a corpus selected on casualty words would teach that entities and relations occur only in disaster reporting. Disjoint from all 58,556 casualty-annotated documents. Sampled with a stride across news_zh, which is ordered by source in blocks, so a contiguous read would be single-publisher; 3,218 distinct sources. Mixed with 30% exact replay from the 137k pool, and the val/test splits carry replay too so preservation is measurable rather than assumed."
