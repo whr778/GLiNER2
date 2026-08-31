@@ -42,6 +42,16 @@ _DEATH = (r"(?:öl[düü]|ölü|ölüm|can kayb|hayat[ıi]n[ıi] kaybet|hayat[ı
 _NUM = r"\d[\d.,]*(?:\s*(?:bin|milyon))?"
 TOLL_NEAR = re.compile(_NUM + r".{0,60}?" + _DEATH + r"|" + _DEATH + r".{0,60}?" + _NUM,
                        re.I | re.S)
+
+# The prefilter is LANGUAGE-SPECIFIC and applying the wrong one reports 0.0% purity at
+# 0.0% recall -- which reads as "the regex is useless" rather than "you ran the Turkish
+# pattern over Chinese text". Chinese needs its own; a pool that was already cue-filtered
+# at build time needs none.
+_ZH_DEATH = r"(?:死亡|遇难|丧生|身亡|死者|伤亡|受伤|失踪|罹难|遇害|重伤|轻伤)"
+_ZH_NUM = r"(?:[0-9０-９]+|[一二三四五六七八九十百千万]+)"
+TOLL_NEAR_ZH = re.compile(_ZH_NUM + r"(?:人|名|余人|多人)?.{0,15}?" + _ZH_DEATH
+                          + r"|" + _ZH_DEATH + r".{0,15}?" + _ZH_NUM + r"(?:人|名)")
+PREFILTERS = {"tr": TOLL_NEAR, "zh": TOLL_NEAR_ZH, "none": None}
 CUTS = (0.0, 0.5, 0.9, 0.99, 0.999, 0.9999, 0.99999)
 INPUT_TOKENS, OUTPUT_TOKENS = 1023 + 350, 260
 IN_RATE, OUT_RATE = 0.50, 2.50  # Haiku 4.5 batch, per million
@@ -82,6 +92,11 @@ def main() -> int:
     ap.add_argument("--device", default="mps")
     ap.add_argument("--target", type=int, default=30000, help="positives wanted")
     ap.add_argument("--cache", default="out/gate_purity_scores.json")
+    ap.add_argument("--prefilter", choices=sorted(PREFILTERS), default="tr",
+                    help="which language's coarse regex to compose with the gate. "
+                         "'none' for a pool already cue-filtered at build time -- running "
+                         "the wrong language's pattern reports 0.0%% purity and reads as a "
+                         "useless regex rather than a mismatched one")
     a = ap.parse_args()
 
     rows = [json.loads(l) for l in Path(a.heldout).open(encoding="utf-8")]
@@ -94,11 +109,15 @@ def main() -> int:
     cache.parent.mkdir(parents=True, exist_ok=True)
     scores = gate_scores(a.model, rows, a.device, cache)
 
-    prefilter = [bool(TOLL_NEAR.search(r["input"])) for r in rows]
+    rx = PREFILTERS[a.prefilter]
+    prefilter = [True] * len(rows) if rx is None else [bool(rx.search(r["input"])) for r in rows]
     pre_keep = sum(prefilter) / len(rows)
     pre_pur = sum(g for pre, g in zip(prefilter, gold) if pre) / max(sum(prefilter), 1)
-    print(f"regex prefilter alone: keeps {pre_keep:.1%} of the pool, purity {pre_pur:.1%}, "
-          f"recall {sum(g for pre, g in zip(prefilter, gold) if pre) / sum(gold):.1%} -- free\n")
+    if rx is None:
+        print("prefilter: none -- the pool was already cue-filtered when it was built\n")
+    else:
+        print(f"regex prefilter ({a.prefilter}) alone: keeps {pre_keep:.1%} of the pool, purity {pre_pur:.1%}, "
+              f"recall {sum(g for pre, g in zip(prefilter, gold) if pre) / sum(gold):.1%} -- free\n")
 
     for label, mask in (("gate only (scores the FULL pool)", [True] * len(rows)),
                         ("regex THEN gate (scores HALF the pool)", prefilter)):
