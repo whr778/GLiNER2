@@ -1,0 +1,70 @@
+# LOCATION-SUPERVISION CONTROL. Identical documents, different annotation generation.
+#
+# The tr-dose curve trained its English half on `casualty_docee`, which carries ZERO
+# location supervision -- 25,154 records, not one `location` field. Every arm including
+# the zero-Turkish control then bound almost nothing on Helene (1 of 96 dead observations,
+# against the shipped extractor's 24 of 69). That was read first as Turkish diluting
+# English and then as an mmBERT/boundary regression. It was neither.
+#
+# This arm is the SAME 13,080 documents and the SAME 30% replay as tr-dose0. The only
+# change is the labels: `casualty_natural` covers 93.0% of records with a location where
+# `casualty_docee` covers 0%.
+#
+# PRE-REGISTERED BAR: Helene location binding returns toward the incumbent's 24 of 69.
+# tr-dose0, same text and same replay without location labels, scored 1 of 96.
+#
+# If it does not return, the diagnosis is wrong and casualty-full-multilingual.yaml is
+# built on a false premise -- which is the whole reason this ~$4 run precedes the $17 one.
+model:
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k
+  architecture: boundary
+  boundary_head:
+    enable_relations: true   # the base trained these; dropping them would forget them
+    enable_records: true
+    # Defaults are 32 / 160. The replay pool carries documents with 121 gold spans for a
+    # single query -- entity-dense Chinese rows from the base's own training pool -- and
+    # the trainer raises TargetCapacityError rather than truncating silently. Raised to
+    # clear the observed maximum with headroom.
+    max_gold_per_query: 256
+    training_candidate_budget: 1024
+training:
+  checkpoint_restart: None
+  output_dir: ./out/loc-control
+  experiment_name: loc_control
+  data_parallel: false
+  num_epochs: 6
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true                 # fp16 crashed this workload at 79% on 2026-08-17
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_structure_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  # The replay pool is the base's own 137k mixture and includes Chinese and biomedical
+  # corpora whose surfaces do not always word-align on the boundary path. The processor
+  # has a purpose-built policy for this -- its own comment says aborting a multi-hour run
+  # over one unlocatable mention is worse than losing that mention -- and this is the flag
+  # that reaches it. It drops the single mention, not the record's other gold.
+  allow_invalid_samples: true
+  sliding_window: true
+  max_len: 8192
+  window_stride: 6144
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+eval:
+  metric_sweep: true
+data:
+  corpora:
+    - data/loc_control
+  event_files: {}

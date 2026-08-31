@@ -1,0 +1,85 @@
+# Full casualty retrain: English + Turkish, unsampled, with location supervision on both.
+#
+# WHY THIS EXISTS. The tr-dose curve trained its English half on `casualty_docee`, which
+# carries ZERO location supervision -- 25,154 records, not one `location` field. Every arm
+# including the zero-Turkish CONTROL therefore failed to bind English locations on Helene
+# (1 of 96 observations, against 24 of 69 for the shipped extractor). That was read first
+# as Turkish diluting English and then as an mmBERT/boundary regression; it was neither.
+# The models were never taught English locations.
+#
+# `casualty_natural` is the same synthetic corpus at a later annotation generation:
+# location on 93.5% of records, and record_metadata already declared (mode natural), which
+# the BOUNDARY record head requires and whose absence fails silently.
+#
+# UNSAMPLED, and near-parity by construction rather than by capping:
+#   casualty_natural   29,324 docs / 72,733 records / location 93.5%   EN
+#   cas_ann_tr         31,263 docs / 40,109 records / location 90.9%   TR
+# English is 48.4% of the casualty documents and Turkish 51.6%, so neither is diluted the
+# way the dose arms were (12,691 EN against 29,700 TR).
+#
+# NOT INCLUDED, deliberately:
+#   casualty_loc_split, casualty_docee, casualty_multi, casualty_multi_loc -- 97.9-100%
+#     of their documents are already in casualty_natural at an OLDER annotation
+#     generation. Adding them trains contradictory labels on identical text.
+#   Chinese -- there is none. 4 of 818,776 casualty_report structures across every corpus
+#     on disk are Chinese.
+#
+# REPLAY stays 30% exact from the base's own 137k pool. Note what it does and does not
+# buy: the pool is only 5.7% structures, so it guards the entity/relation/event heads and
+# gives the casualty task almost nothing. Casualty capability comes from the two corpora
+# above, which is why their location coverage is the thing that mattered.
+#
+# PRE-REGISTERED BARS:
+#   English  Helene location binding returns to the incumbent's range (24/69 dead
+#            observations bound to a Helene state). The dose arms scored 0-4.
+#   Turkish  digit-in-location stays at 0.0% on the reserved dw.com + t24.com.tr outlets
+#            (tr-dose-31263 achieved 0.0% against the shipped model's 77.1%).
+#   Neither bar alone is sufficient -- the dose curve passed the Turkish bar while failing
+#   the English one, which is why both are declared here before the run.
+model:
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k
+  architecture: boundary
+  boundary_head:
+    enable_relations: true
+    enable_records: true
+    # Defaults 32/160. The replay pool holds documents with 121 gold spans for one query.
+    max_gold_per_query: 256
+    training_candidate_budget: 1024
+training:
+  checkpoint_restart: None
+  output_dir: ./out/casualty-full-multilingual
+  experiment_name: casualty_full_multilingual
+  data_parallel: false          # DEPRECATED no-op; DDP comes from torchrun, not config
+  num_epochs: 6
+  batch_size: 2
+  gradient_accumulation_steps: 16     # effective 32
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true                    # fp16 crashed this workload at 79% on 2026-08-17
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_structure_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  # The replay pool carries Chinese and biomedical corpora whose surfaces do not always
+  # word-align on the boundary path. Drops the single mention, not the record's other gold.
+  allow_invalid_samples: true
+  sliding_window: true
+  max_len: 8192                 # matches the base; 4096 windowed replay entities out of reach
+  window_stride: 6144
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+eval:
+  metric_sweep: true
+data:
+  corpora:
+    - data/casualty_full_ml
+  event_files: {}
