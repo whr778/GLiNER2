@@ -47,7 +47,8 @@ The config has four sections:
   present. See ``tools/train/config/`` for examples.
 * ``labels``   - optional per-category label transforms, applied identically to
   train, val, and test. Each category (``entities``, ``relations``, ``events``,
-  ``classifications``) has its own ``rollup`` / ``separator`` / ``map``::
+  ``classifications``, ``structures``) has its own ``rollup`` / ``separator`` /
+  ``map``::
 
       labels:
         entities:
@@ -61,7 +62,9 @@ The config has four sections:
           map: {}
 
   Per category, roll-up runs first then ``map``. ``entities`` also covers
-  ``entity_descriptions`` keys; ``events`` covers both event types and argument
+  ``entity_descriptions`` keys; ``structures`` covers ``json_structures`` names
+  AND their field names, carrying ``record_metadata`` keys and ``anchor`` with
+  the rename; ``events`` covers both event types and argument
   roles. Labels colliding after transform are merged, not dropped. Omit a
   category (or the whole section) to leave it untouched.
 
@@ -369,6 +372,40 @@ def _transform_events(events: List, fn) -> List:
     return out
 
 
+def _transform_structures(structures: List, meta: Dict, fn):
+    """Re-key json_structures names AND their field names, carrying record_metadata.
+
+    ``record_metadata`` is keyed by structure name and its ``anchor`` names a field, so a
+    rename that misses either leaves a structure the boundary head cannot decode -- it
+    returns {} with no error (gliner2/processor.py). Both move with the rename.
+    """
+    out = []
+    for entry in structures:
+        if not isinstance(entry, dict):
+            out.append(entry)
+            continue
+        renamed = {}
+        for name, body in entry.items():
+            new_name = fn(name)
+            if isinstance(body, dict):
+                fields = renamed.setdefault(new_name, {})
+                for field, value in body.items():
+                    new_field = fn(field)
+                    if not fields.get(new_field):
+                        fields[new_field] = value
+            elif new_name not in renamed:
+                renamed[new_name] = body
+        out.append(renamed)
+
+    new_meta = {}
+    for name, block in (meta or {}).items():
+        new_block = dict(block) if isinstance(block, dict) else block
+        if isinstance(new_block, dict) and isinstance(new_block.get("anchor"), str):
+            new_block["anchor"] = fn(new_block["anchor"])
+        new_meta.setdefault(fn(name), new_block)
+    return out, new_meta
+
+
 def _transform_classifications(cls_list: List, fn) -> List:
     out = []
     for c in cls_list:
@@ -387,7 +424,29 @@ def _transform_classifications(cls_list: List, fn) -> List:
     return out
 
 
-LABEL_CATEGORIES = ("entities", "relations", "events", "classifications")
+LABEL_CATEGORIES = ("entities", "relations", "events", "classifications", "structures")
+
+
+def load_labels_cfg(cfg: Dict, config_path: str = "") -> Dict:
+    """Return the ``labels`` section, merging a shared ``labels_file`` underneath it.
+
+    Every model warm-started from one base has to present that base's label space, so the
+    unified maps live in ONE file that each config references rather than 25 copies that
+    drift. A category given inline in the config wins over the shared file, which is how a
+    run opts out of one category without forking the whole map.
+    """
+    shared: Dict = {}
+    ref = cfg.get("labels_file")
+    if ref:
+        path = Path(ref)
+        if not path.is_absolute() and config_path:
+            here = Path(config_path).resolve().parent / path
+            path = here if here.exists() else path
+        shared = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        shared = shared.get("labels", shared)
+    merged = dict(shared)
+    merged.update(cfg.get("labels") or {})
+    return merged
 
 
 def _category_fns(labels_cfg: Dict) -> Dict:
@@ -432,6 +491,12 @@ def _transform_container(container: Dict, fns: Dict) -> Dict:
     cls = fns.get("classifications")
     if cls and isinstance(container.get("classifications"), list):
         out["classifications"] = _transform_classifications(container["classifications"], cls)
+    st = fns.get("structures")
+    if st and isinstance(container.get("json_structures"), list):
+        out["json_structures"], meta = _transform_structures(
+            container["json_structures"], container.get("record_metadata") or {}, st)
+        if meta:
+            out["record_metadata"] = meta
     return out
 
 
@@ -834,7 +899,7 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     suffix = "val" if split == "val" else "test"
     split_data = (_split_files(data.get("corpora") or [], suffix)
                   + _event_split(data.get("event_files") or {}, suffix))
-    fns = _category_fns(cfg.get("labels") or {})
+    fns = _category_fns(load_labels_cfg(cfg, config_path))
     if fns:
         split_data = [transform_record(r, fns) for r in _read_records(split_data)]
     if not split_data:
@@ -1000,7 +1065,7 @@ def main(config_path: str) -> None:
     test_data = _split_files(corpora, "test") + _event_split(event_files, "test")
 
     # Optional per-category label transforms, applied identically to train/val/test.
-    fns = _category_fns(cfg.get("labels") or {})
+    fns = _category_fns(load_labels_cfg(cfg, config_path))
     if fns:
         train_data = [transform_record(r, fns) for r in _read_records(train_data)]
         eval_data = [transform_record(r, fns) for r in _read_records(eval_data)]

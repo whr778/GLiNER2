@@ -92,19 +92,9 @@ eval:
   threshold_sweep: true
   eval_by_language: false
 
-labels:
-  entities:
-    rollup: false
-    separator: "."
-    map: {}
-  relations:
-    rollup: false
-    separator: "."
-    map: {}
-  events:
-    rollup: false
-    separator: "."
-    map: {}
+# Unified label space, shared with every model warm-started from this base so they
+# all present the same labels. Generated -- see the file header to regenerate.
+labels_file: labels/unified.yaml
 
 data:
   # Relation corpora warm the relation head; the event corpora cannot.

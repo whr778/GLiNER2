@@ -162,3 +162,81 @@ def test_per_category_separator_and_map_are_independent():
     out = train.transform_record(rec, fns)["output"]
     assert out["entities"] == {"ORGANIZATION": ["BBC"]}
     assert out["relations"] == [{"PHYS": {"head": "a", "tail": "b"}}]
+
+
+# --- structures: the EKF surface -------------------------------------------
+
+def _casualty_record():
+    return {"input": "66 missing in Orleans", "output": {
+        "json_structures": [{"casualty_report": {"missing": "66", "location": "Orleans"}}],
+        "record_metadata": {"casualty_report": {"mode": "natural", "anchor": "missing"}}}}
+
+
+def test_structures_renames_name_fields_metadata_and_anchor():
+    """record_metadata is keyed by structure name and its anchor names a field.
+
+    A rename that misses either leaves a structure the boundary head decodes to {}
+    with no error, so all four sites have to move together.
+    """
+    fns = train._category_fns({"structures": {"map": {
+        "casualty_report": "casualty", "missing": "unaccounted", "location": "place"}}})
+    out = train.transform_record(_casualty_record(), fns)["output"]
+    assert out["json_structures"] == [{"casualty": {"unaccounted": "66", "place": "Orleans"}}]
+    assert out["record_metadata"] == {"casualty": {"mode": "natural", "anchor": "unaccounted"}}
+
+
+def test_structures_merge_on_collision_keeps_first_nonempty():
+    fns = train._category_fns({"structures": {"map": {"dead": "casualties", "killed": "casualties"}}})
+    record = {"output": {"json_structures": [{"r": {"dead": "5", "killed": "7"}}]}}
+    assert train.transform_record(record, fns)["output"]["json_structures"] == [
+        {"r": {"casualties": "5"}}]
+
+
+def test_structures_rollup_applies_to_names_and_fields():
+    fns = train._category_fns({"structures": {"rollup": True, "separator": "."}})
+    record = {"output": {"json_structures": [{"report.casualty": {"count.dead": "3"}}]}}
+    assert train.transform_record(record, fns)["output"]["json_structures"] == [
+        {"report": {"count": "3"}}]
+
+
+def test_structures_inactive_leaves_record_untouched():
+    record = _casualty_record()
+    fns = train._category_fns({"entities": {"map": {"a": "b"}}})
+    assert train.transform_record(record, fns) == record
+
+
+def test_structures_is_a_recognised_category():
+    assert "structures" in train.LABEL_CATEGORIES
+
+
+# --- shared labels_file ----------------------------------------------------
+
+def test_labels_file_is_loaded_and_inline_config_wins(tmp_path):
+    """Warm-started models share one map file; an inline category overrides it."""
+    shared = tmp_path / "unified.yaml"
+    shared.write_text(
+        "labels:\n"
+        "  entities:\n    rollup: false\n    map:\n      'Company Name': CompanyName\n"
+        "  events:\n    rollup: false\n    map:\n      death: Death\n",
+        encoding="utf-8")
+    cfg = {"labels_file": str(shared), "labels": {"events": {"map": {"death": "Fatality"}}}}
+    merged = train.load_labels_cfg(cfg, "")
+    fns = train._category_fns(merged)
+    assert fns["entities"]("Company Name") == "CompanyName"   # from the shared file
+    assert fns["events"]("death") == "Fatality"               # inline wins
+
+
+def test_labels_file_resolves_relative_to_the_config(tmp_path):
+    (tmp_path / "labels").mkdir()
+    (tmp_path / "labels" / "u.yaml").write_text(
+        "labels:\n  entities:\n    map:\n      a: b\n", encoding="utf-8")
+    cfg_path = tmp_path / "run.yaml"
+    cfg_path.write_text("labels_file: labels/u.yaml\n", encoding="utf-8")
+    fns = train._category_fns(train.load_labels_cfg({"labels_file": "labels/u.yaml"}, str(cfg_path)))
+    assert fns["entities"]("a") == "b"
+
+
+def test_no_labels_file_is_unchanged():
+    assert train.load_labels_cfg({"labels": {"entities": {"map": {"a": "b"}}}}, "") == {
+        "entities": {"map": {"a": "b"}}}
+    assert train.load_labels_cfg({}, "") == {}

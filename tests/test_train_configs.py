@@ -10,6 +10,7 @@ encoder. Guards against:
 * the YAML scalar trap where ``1e-5`` (no dot) parses as a string, not a float.
 """
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -90,7 +91,16 @@ def test_config_builds(path):
     assert isinstance(tc.task_lr, float), f"{path.name}: task_lr is not a float"
 
 
-LABEL_CATEGORIES = {"entities", "relations", "events", "classifications"}
+def _label_categories():
+    """Read the categories from train.py so this test cannot drift from the trainer."""
+    spec = importlib.util.spec_from_file_location(
+        "train_cli", Path(__file__).resolve().parents[1] / "tools" / "train" / "train.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return set(mod.LABEL_CATEGORIES)
+
+
+LABEL_CATEGORIES = _label_categories()
 
 
 @pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)
