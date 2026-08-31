@@ -850,6 +850,12 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         chunk_size=ev["chunk_size"], chunk_overlap=ev["chunk_overlap"],
         global_decode=ev["global_decode"], global_decode_config=ev["global_decode_config"],
     )
+    # Log what is being scored, for the same reason training does: a <split>_metrics.json
+    # records the numbers and nothing about the corpus behind them. Per-field coverage is
+    # the part that matters -- a metric computed over a split with no `location` gold says
+    # nothing about location, and reads identically to one that does.
+    _log_composition(None, split_data if split == "val" else None,
+                     split_data if split != "val" else None, streaming=False)
     metrics = _run_blind_test(best, split_data, ev["batch_size"], ev["threshold"], ev["by_language"], gd_kwargs)
     if metrics:
         fname = f"{split}_metrics.json"
@@ -930,7 +936,8 @@ def _log_composition(train_data, eval_data, test_data, streaming: bool) -> None:
                       f"BOUNDARY model cannot decode this and returns {{}} silently")
 
     for name, data in (("train", train_data), ("val", eval_data), ("test", test_data)):
-        summarise(name, data)
+        if data is not None:
+            summarise(name, data)
 
 
 def _enforce_split_hygiene(train_data, eval_data, test_data, policy, is_main,

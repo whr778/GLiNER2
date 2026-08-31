@@ -14,6 +14,17 @@ Examples:
   uv run python tools/train/eval.py --config <cfg> --chunk-size 0                     # whole-doc
   uv run python tools/train/eval.py --config <cfg> --chunk-size 384 --no-global-decode  # chunk + simple merge
   uv run python tools/train/eval.py --config <cfg> --chunk-size 384 --global-decode     # chunk + beam
+
+Every run prints the COMPOSITION of the split it scored before scoring it -- record
+counts, per-task totals, and per-field coverage for each structure type. A
+``<split>_metrics.json`` otherwise records the numbers and nothing about the corpus
+behind them, and a metric computed over a split with no ``location`` gold says nothing
+about location while reading identically to one that does.
+
+Standalone corpus stats, without a checkpoint or a config:
+
+  uv run python scripts/dataset_metrics.py casualty_natural
+  uv run python scripts/dataset_metrics.py --json metrics.json     # machine-readable
 """
 
 import argparse
