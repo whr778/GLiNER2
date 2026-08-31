@@ -33,7 +33,7 @@ REPLAY_SHARE = 0.30
 def main() -> int:
     rng = random.Random(42)
     rows = [json.loads(l) for l in
-            Path("data/chinese_gate/zh_multitask_6k.jsonl").open(encoding="utf-8")]
+            Path("data/chinese_gate/zh_multitask_6k_en.jsonl").open(encoding="utf-8")]
     replay = [json.loads(l) for l in
               Path("data/replay_137k30.train.jsonl").open(encoding="utf-8")]
     rng.shuffle(rows)
