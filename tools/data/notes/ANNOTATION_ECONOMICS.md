@@ -81,3 +81,32 @@ high-precision, and should only ever see what survived the cheap one.
 `tools/data/annotate_casualty.py` (what the purchase buys), `tools/data/build_turkish_pool.py`
 (where the pool comes from), `tools/data/notes/TURKISH_BATCHES.md` (batch ids -- a killed
 poller does not lose money, but only if the id survives).
+
+## Choosing a source corpus (Simplified Chinese, 2026-08-31)
+
+Four candidates evaluated before buying. The winner was not the first, and two of the
+rejections were only visible on inspection, not from the dataset card.
+
+| dataset | verdict | why |
+|---|---|---|
+| **`shaowenchen/news_zh`** | **CHOSEN** | 2.43M native full articles, median 794 chars, 7,409 publishers incl. Xinhua and China News Service, 93.9% Simplified / 0.03% Traditional, 3.57% cue-bearing (~68,000 articles) |
+| `wuzimo2025/ChineseNewsSummaryDaily` | rejected | LLM **summaries**, median 284 chars, 15% English, 3.6% Traditional. Too short to carry a figure bound to a place, and LLM-summarised text annotated by an LLM compounds one model's errors into another's training data |
+| `christykoh/ag_news_zh` | rejected | machine-translated 2004 AG News headlines, median 73 chars, visibly degraded (`路透社路透社(路透社)`, `AP(AP AP)`, hallucinated `USDODA.com`) with **mangled numerals** — fatal for a task about numbers |
+| `CloverSearch/cc-news-mutlilingual` (zh) | rejected | real CC-News with per-article `date_publish` and 2016-2021 year partitions, but only **6-8% Simplified** on a representative stride — the Chinese CC-News crawl is dominated by Traditional outlets. Adds ~6,000 cue-bearing Simplified articles against news_zh's 68,000 |
+
+**Two sampling traps, both of which gave the wrong answer first:**
+
+- **Classify per DOCUMENT, not per character.** Counting simplified-only against
+  traditional-only characters over a corpus reported "MIXED 5:1" for a corpus that is
+  77% Simplified by document: a few Traditional documents outweighed many Simplified ones.
+- **Stride the whole file, never the head.** CC-News year files are ordered with empty
+  `maintext` records first, so reading the first 15,000 lines reported 4.7% Traditional
+  for 2019 and 26% for 2021. Strided across the file, Simplified is the MINORITY at 6-8%.
+
+**What the pool is not the constraint on.** news_zh offers ~68,000 cue-bearing candidates
+and the budget buys ~25,000 annotations. Adding a second corpus for 6,000 more documents
+changes nothing about what can be afforded; the money is the limit, not the data.
+
+**Known limitation, to be stated in the model card:** news_zh is 2014-2016 and its `time`
+field carries NO year (`MM-DD HH:MM` only), so articles cannot be individually dated and no
+held-out-by-year split is possible. The Turkish arm spans 2016-2023 by comparison.
