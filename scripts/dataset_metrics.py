@@ -55,6 +55,14 @@ def scan_file(path: Path) -> Dict[str, Any]:
     ev_roles: Dict[str, Counter] = defaultdict(Counter)
     rel: Counter = Counter()
     cls: Dict[str, Counter] = defaultdict(Counter)
+    # Structures were not counted at all until 2026-08-31, which is how a corpus with
+    # ZERO location supervision (casualty_docee: 25,154 records, not one `location`
+    # field) was trained on four times without anyone seeing it. Per-FIELD coverage is
+    # the number that matters: a record type present in every row still teaches nothing
+    # about a field it never carries.
+    struct: Dict[str, Counter] = defaultdict(Counter)
+    struct_records: Counter = Counter()
+    struct_anchors: Dict[str, Counter] = defaultdict(Counter)
 
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -79,6 +87,15 @@ def scan_file(path: Path) -> Dict[str, Any]:
             for rel_d in out.get("relations") or []:
                 for name in rel_d or {}:
                     rel[name] += 1
+            for s in out.get("json_structures") or []:
+                for name, fields in (s or {}).items():
+                    struct_records[name] += 1
+                    for field, value in (fields or {}).items():
+                        if value not in (None, ""):
+                            struct[name][field] += 1
+            for name, meta in (out.get("record_metadata") or {}).items():
+                struct_anchors[name][f"{meta.get('mode')}/{meta.get('anchor')}"] += 1
+
             for c in out.get("classifications") or []:
                 task = c.get("task")
                 if not task:
@@ -97,6 +114,9 @@ def scan_file(path: Path) -> Dict[str, Any]:
         "event_roles": ev_roles,
         "relations": rel,
         "classifications": cls,
+        "structures": struct,
+        "structure_records": struct_records,
+        "structure_anchors": struct_anchors,
     }
 
 
@@ -175,6 +195,26 @@ def report_dataset(dataset: str, splits: Dict[str, Dict[str, Any]], top: int) ->
             lines.append(f"    classifications ({len(m['classifications'])} tasks):")
             for task, labels in sorted(m["classifications"].items()):
                 lines += _dist_lines(f"task '{task}'", labels, top, indent="      ")
+        if m.get("structure_records"):
+            lines.append(f"    structures ({len(m['structure_records'])} record types):")
+            for name, n in sorted(m["structure_records"].items()):
+                lines.append(f"      {name}: {n:,} records")
+                # Per-field COVERAGE, not just presence. A field at 0% is a field the
+                # model cannot learn, and it is invisible in a record-level count.
+                for field, c in sorted(m["structures"].get(name, {}).items(),
+                                       key=lambda kv: -kv[1]):
+                    lines.append(f"        {field:<14} {c:>8,}  {c / n:6.1%}")
+                missing = [f for f in ("location", "dead", "injured", "missing")
+                           if name == "casualty_report" and f not in m["structures"].get(name, {})]
+                for f in missing:
+                    lines.append(f"        {f:<14} {0:>8,}  {0.0:6.1%}   <-- NO SUPERVISION")
+                anchors = m.get("structure_anchors", {}).get(name)
+                if anchors:
+                    shown = ", ".join(f"{k} x{v:,}" for k, v in anchors.most_common(4))
+                    lines.append(f"        record_metadata: {shown}")
+                else:
+                    lines.append("        record_metadata: NONE  <-- boundary models "
+                                 "cannot decode this; extraction returns {} silently")
     return lines
 
 

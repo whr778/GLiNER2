@@ -946,3 +946,17 @@ datasets:
     source_url: built by tools/train/build_turkish_dose_mix.py
     language: [en, tr, zh]
     description: "Largest dose arm: the control mixture plus 29,700 Turkish field-level casualty records (of 31,263 annotated; 5% held out for val/test). At this dose Turkish is 70% of the casualty task against 12,691 English rows, which is what the curve exists to measure. See tr_dose5000 for the annotation contract."
+  loc_control:
+    name: loc_control (location-supervision control)
+    tasks: Structure extraction (casualty records)
+    license: mixed -- inherits casualty_natural and the 137k replay pool
+    source_url: built by tools/train/build_loc_control.py
+    language: [en, zh]
+    description: "The SAME 13,080 documents as tr_dose0 with the SAME 30% exact replay, relabelled from casualty_natural (93.0% location coverage) instead of casualty_docee (0%). Isolates location supervision as the single variable behind the dose curve's failure to bind English locations on Helene -- 1 of 96 dead observations against the shipped extractor's 24 of 69, which was misread first as Turkish diluting English and then as an architecture regression. Its val/test carry replay tasks, so unlike the dose curve this run can observe forgetting rather than reporting structures alone."
+  casualty_full_ml:
+    name: casualty_full_ml (full multilingual casualty retrain)
+    tasks: Structure extraction (casualty records)
+    license: mixed -- inherits casualty_natural, the Turkish news source and the 137k replay pool
+    source_url: built from casualty_natural + data/turkish_gate/cas_ann_tr
+    language: [en, tr, zh]
+    description: "Unsampled English + Turkish casualty at near-parity: casualty_natural (29,324 docs, 72,733 records, location 93.5%) and cas_ann_tr (31,263 docs, 40,109 records, location 90.9%), English 48.4% of casualty documents against Turkish 51.6%. Deliberately EXCLUDES casualty_docee, casualty_loc_split, casualty_multi and casualty_multi_loc: 97.9-100% of their documents are already in casualty_natural at an older annotation generation, so adding them trains contradictory labels on identical text. No Chinese -- 4 of 818,776 casualty_report structures across every corpus on disk are Chinese."

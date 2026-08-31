@@ -863,6 +863,76 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     return metrics
 
 
+def _log_composition(train_data, eval_data, test_data, streaming: bool) -> None:
+    """Print the FINAL composition of each split, just before train() is called.
+
+    The log is the only durable record of what a run actually trained on: configs get
+    edited, corpora get regenerated, and a model card weeks later shows metrics without
+    the mixture behind them. Two failures this exists to make visible, both of which cost
+    real GPU time here:
+
+      * `casualty_docee` carries ZERO location supervision -- 25,154 records, not one
+        `location` field. Four dose arms trained on it before anyone noticed, and the
+        resulting inability to bind English locations was misread first as Turkish
+        diluting English and then as an architecture regression.
+      * A structure with no `record_metadata` cannot be decoded on the BOUNDARY path and
+        fails SILENTLY -- extraction returns {} with no error.
+
+    Per-FIELD coverage is what surfaces the first; the metadata line surfaces the second.
+    Neither is visible in a record count.
+    """
+    import json as _json
+    from collections import Counter, defaultdict
+
+    if streaming:
+        print("[composition] streaming train set -- no bounded record list to summarise")
+
+    def summarise(name, data):
+        if data and isinstance(data[0], str):
+            records = _read_records(data)
+        else:
+            records = data or []
+        if not records:
+            print(f"[composition] {name}: empty")
+            return
+        tasks = Counter()
+        struct_n = Counter()
+        struct_f = defaultdict(Counter)
+        anchors = defaultdict(Counter)
+        for r in records:
+            out = r.get("output") or {}
+            for k in out:
+                tasks[k] += 1
+            for s in out.get("json_structures") or []:
+                for rec_name, fields in (s or {}).items():
+                    struct_n[rec_name] += 1
+                    for f, v in (fields or {}).items():
+                        if v not in (None, ""):
+                            struct_f[rec_name][f] += 1
+            for rec_name, meta in (out.get("record_metadata") or {}).items():
+                anchors[rec_name][f"{meta.get('mode')}/{meta.get('anchor')}"] += 1
+        print(f"[composition] {name}: {len(records):,} records | "
+              + "  ".join(f"{k}={v:,}" for k, v in tasks.most_common()))
+        for rec_name, n in sorted(struct_n.items()):
+            fields = struct_f.get(rec_name, {})
+            ranked = sorted(fields.items(), key=lambda kv: -kv[1])
+            cov = "  ".join(f"{f}={c/n:.0%}" for f, c in ranked[:8])
+            if len(ranked) > 8:
+                cov += f"  (+{len(ranked) - 8} more)"
+            print(f"[composition]   structure {rec_name}: {n:,} records  {cov}")
+            zero = [f for f in ("location", "dead", "injured", "missing") if f not in fields]
+            if zero and rec_name == "casualty_report":
+                print(f"[composition]   WARNING {rec_name}: NO SUPERVISION for "
+                      f"{', '.join(zero)} -- the model cannot learn "
+                      f"{'them' if len(zero) > 1 else 'it'}")
+            if not anchors.get(rec_name):
+                print(f"[composition]   WARNING {rec_name}: no record_metadata -- a "
+                      f"BOUNDARY model cannot decode this and returns {{}} silently")
+
+    for name, data in (("train", train_data), ("val", eval_data), ("test", test_data)):
+        summarise(name, data)
+
+
 def _enforce_split_hygiene(train_data, eval_data, test_data, policy, is_main,
                            *, streaming: bool = False):
     """Drop cross-split contamination and exact duplicates before training.
@@ -1017,6 +1087,9 @@ def main(config_path: str) -> None:
     if is_main and not streaming:
         # ETA counts records up front; a streaming source has no length.
         estimate_eta(model, train_data, config)
+    if is_main:
+        _log_composition(train_data, eval_data, test_data, streaming)
+
     results = trainer.train(train_data=train_data)
     # pprint(results)
 
