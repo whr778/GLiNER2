@@ -155,9 +155,14 @@ def _fetch_if_missing(path: str) -> None:
     if p.is_file():
         return
     from model_card import canonical_dataset_key, load_registry
-    key = canonical_dataset_key(p.name.rsplit(".", 2)[0])
-    entry = load_registry().get("datasets", {}).get(key) or {}
-    repo = entry.get("hf_jsonl")
+    registry = load_registry()
+    # A directory that holds its own JSONL wins over the per-corpus repo. Resolving by
+    # basename alone is ambiguous across directories: scaling_joint/chfinann.val.jsonl is
+    # a 150-record slice, and whr778/chfinann would answer with the 3,204-record val.
+    repo = (registry.get("jsonl_dirs") or {}).get(p.parent.name)
+    if not repo:
+        key = canonical_dataset_key(p.name.rsplit(".", 2)[0])
+        repo = (registry.get("datasets", {}).get(key) or {}).get("hf_jsonl")
     if not repo:
         return
     from huggingface_hub import hf_hub_download

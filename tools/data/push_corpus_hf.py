@@ -47,6 +47,25 @@ def push(base: Path, repo_id: str, card: Path | None, private: bool) -> None:
     print(f"done: https://huggingface.co/datasets/{repo_id}")
 
 
+def push_dir(directory: Path, repo_id: str, private: bool) -> None:
+    """Upload every .jsonl in a directory, basenames at the repo root.
+
+    A data SUBDIRECTORY needs its own repo, because `_fetch_if_missing` resolves a repo
+    from the file basename and two directories can share one. Registered under
+    `jsonl_dirs` in dataset_registry.yaml, which wins over the per-corpus `hf_jsonl`.
+    """
+    from huggingface_hub import HfApi
+
+    api = HfApi()
+    api.create_repo(repo_id=repo_id, repo_type="dataset", private=private, exist_ok=True)
+    files = sorted(directory.glob("*.jsonl"))
+    total = sum(f.stat().st_size for f in files) / 1e6
+    print(f"repo {repo_id} (private={private}): {len(files)} files, {total:,.1f} MB")
+    api.upload_folder(folder_path=str(directory), repo_id=repo_id, repo_type="dataset",
+                      allow_patterns=["*.jsonl"])
+    print(f"done: https://huggingface.co/datasets/{repo_id}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -56,9 +75,14 @@ def main() -> int:
     ap.add_argument("--card", type=Path, help="README.md to upload as the dataset card")
     ap.add_argument("--public", action="store_true",
                     help="create a PUBLIC repo; check the corpus license first")
+    ap.add_argument("--dir", action="store_true",
+                    help="treat `base` as a DIRECTORY and upload every .jsonl in it")
     args = ap.parse_args()
 
-    push(args.base, args.repo_id, args.card, private=not args.public)
+    if args.dir:
+        push_dir(args.base, args.repo_id, private=not args.public)
+    else:
+        push(args.base, args.repo_id, args.card, private=not args.public)
     return 0
 
 

@@ -192,3 +192,35 @@ def test_configs_warmstarted_from_our_base_share_one_label_map():
             f"maps ({sizes(path)} vs {expected}); an empty inline labels block overrides "
             f"labels_file"
         )
+
+
+def test_scaling_joint_paths_do_not_resolve_to_the_parent_corpus_repo():
+    """A slice must not be fetched from its parent's repo.
+
+    `_fetch_if_missing` derives a repo from the file BASENAME, which is ambiguous across
+    directories: `data/scaling_joint/chfinann.val.jsonl` is a 150-record slice, while
+    `whr778/chfinann` holds the 3,204-record val under that same basename. Resolving by
+    basename returns the wrong file with no error and a 21x larger eval set.
+    """
+    train_mod = _load_train_module()
+    registry = train_mod.yaml.safe_load(
+        (Path(train_mod.__file__).parent / "dataset_registry.yaml").read_text())
+    dirs = registry.get("jsonl_dirs") or {}
+    assert "scaling_joint" in dirs, "scaling_joint needs its own repo, not the parents'"
+
+    for name in ("chfinann.val.jsonl", "docfee.j100k.train.jsonl", "duee.j40k.val.jsonl"):
+        path = Path("data/scaling_joint") / name
+        # The directory rule must win over any per-corpus hf_jsonl.
+        assert dirs.get(path.parent.name), f"{name} would fall through to the parent repo"
+
+
+def test_registry_dir_repos_are_distinct_from_corpus_repos():
+    """A directory repo sharing a corpus repo id would reintroduce the collision."""
+    train_mod = _load_train_module()
+    registry = train_mod.yaml.safe_load(
+        (Path(train_mod.__file__).parent / "dataset_registry.yaml").read_text())
+    dir_repos = set((registry.get("jsonl_dirs") or {}).values())
+    corpus_repos = {(e or {}).get("hf_jsonl")
+                    for e in (registry.get("datasets") or {}).values()}
+    overlap = dir_repos & corpus_repos
+    assert not overlap, f"directory repo also used by a corpus: {overlap}"

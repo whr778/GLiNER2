@@ -91,6 +91,20 @@ base_models:
     license: see model card
     source_url: https://huggingface.co/whr778/mmbert-base-rams
 
+# Data SUBDIRECTORIES that hold their own JSONL, keyed by directory name.
+#
+# _fetch_if_missing derives a corpus key from the FILE BASENAME, which is ambiguous the
+# moment two directories hold the same basename. `data/scaling_joint/chfinann.val.jsonl`
+# is a 150-record slice; `data/chfinann.val.jsonl` is the 3,204-record val. Resolving by
+# basename alone sends the slice's fetch to whr778/chfinann and returns the FULL val --
+# a 21x larger eval set, silently, with metrics no longer comparable to the curve. The
+# sliced .j10k/.j40k/.j100k files have the opposite problem: their basenames exist in no
+# parent repo at all, so the fetch just fails.
+#
+# A directory listed here wins over the per-corpus hf_jsonl for files inside it.
+jsonl_dirs:
+  scaling_joint: whr778/scaling-joint
+
 datasets:
   # --- NER ---
   nuner_full:
