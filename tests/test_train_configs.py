@@ -140,3 +140,22 @@ def test_config_data_section_shape(path):
             assert isinstance(fpath, str) and fpath.endswith(".jsonl"), (
                 f"{path.name}: event_files[{name}][{split}] is not a .jsonl path"
             )
+
+
+@pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)
+def test_rollup_does_not_orphan_map_keys(path):
+    """A map key containing the separator is DEAD when rollup is on for that category.
+
+    Roll-up runs first, so `product.name` is already `product` by the time the map is
+    consulted and the entry never fires -- silently. Either the key is wrong or rollup is.
+    """
+    labels = yaml.safe_load(path.read_text()).get("labels")
+    for cat, block in (labels or {}).items():
+        if not (block or {}).get("rollup"):
+            continue
+        separator = block.get("separator", ".")
+        orphans = [k for k in (block.get("map") or {}) if separator in k]
+        assert not orphans, (
+            f"{path.name}: labels.{cat} has rollup on, so these map keys can never "
+            f"fire (roll-up consumes the separator first): {orphans[:5]}"
+        )
