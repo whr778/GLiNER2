@@ -111,7 +111,68 @@ On a fresh GPU box: system Python is often 3.10 and this project needs >=3.12
 
 ## 3. Data: convert, then prove the splits are clean
 
-### 3a. Convert
+### 3a. Rebuilding `data/` from scratch
+
+`data/` is gitignored and holds ~12 GB that converters, bought annotation and several
+label-unification passes produced. Restore it from the private Hub mirrors; only convert
+what is not mirrored.
+
+```bash
+# what would be pulled, and what CANNOT be
+uv run python tools/data/restore_from_hf.py --all --dry-run
+
+# just one run's data, or everything
+uv run python tools/data/restore_from_hf.py --config tools/train/config/joint-boundary-mmbert-137k.yaml
+uv run python tools/data/restore_from_hf.py --all
+```
+
+516 files are mirrored and the 137k config restores 36/36. Every `--all` run prints an
+UNRECOVERABLE list; that is a backup gap to close, not noise. Files already present are
+skipped, so this is safe to re-run — `--force` re-downloads.
+
+**What the Hub cannot give you, and what rebuilds it:**
+
+| corpus | rebuild with |
+| --- | --- |
+| `bc5cdr`, `anatem`, `bionlp09/11epi/11id/13cg/13ge/13pc`, `ex_ptm` | `convert_hf_token_ner.py --repo <tner/...>` |
+| `ace2005` | `convert_ace2005.py` — LDC licence, source not redistributable |
+| `klue_ner` / `scierc` / `paraloq_json` / `stockmark_jpn` | `convert_klue.py` / `convert_scierc.py` / `convert_paraloq_json.py` / `convert_stockmark_ner.py` |
+| `maven_ner` | `events_to_entities.py`, derived from `maven` |
+| `wikiann` | never stored — streamed at train time |
+
+**A fresh conversion re-emits the ORIGINAL labels, and that is the trap.**
+`convert_duee.py` and `convert_docfee.py` produce Chinese entity keys, event types, roles
+and classification MENUS — exactly the state the unification removed. A corpus rebuilt
+from source and dropped into a config trains a label space the base never learned:
+
+```bash
+uv run python tools/data/apply_label_map.py --map tools/data/label_map_zh_all.json \
+  data/duee.*.jsonl data/docfee.*.jsonl data/text2json.*.jsonl
+```
+
+Then verify the three ways CLAUDE.md requires: zero variant clusters, zero label uses
+lost, and the map CLOSED (no target is itself a key).
+
+**Order matters — every derived corpus is built FROM the base ones, so a stale base
+propagates silently:**
+
+1. base corpora — restore, or the converters in 3b
+2. label map applied (above)
+3. slices — `build_scaling_mix.py` → `data/scaling/`, `build_joint_scaling_mix.py` → `data/scaling_joint/`
+4. mixes and replay — `build_warmstart_mix.py`, `build_137k_replay.py`,
+   `build_turkish_dose_mix.py` (`mix_natural`, `tr_dose*`), `build_loc_control.py`,
+   `build_zh_multitask_mix.py`
+5. `check_leakage.py --config <yaml>` before any of it reaches a run
+
+**Restoring by basename alone is unsafe and the tool refuses to.**
+`data/scaling_joint/chfinann.val.jsonl` is a 150-record slice while `whr778/chfinann`
+holds the 3,204-record val under that same name. Subdirectories resolve through
+`jsonl_dirs` in `dataset_registry.yaml`; an unregistered one refuses rather than fetching
+the parent's file. Parent repos also still carry stale copies of the slices at their root
+— `whr778/docfee` serves a `docfee.j100k.test.jsonl` with 1,983 Chinese labels — so slice
+files are only ever taken from the directory mirror.
+
+### 3b. Convert
 
 Converters live in `tools/data/` and all share the same split flags. See
 [`tools/data/README.md`](../data/README.md) for the full corpus list and licences.
@@ -133,7 +194,7 @@ That default is recent, and the corpora predating it leaked badly: text2json's v
 **99.0%** contained in its train, gliclass_logic 38.3%, knowledgator_gliner 27.1%,
 events_biotech 21.6%, klue_re 17.3%. **Regenerate a corpus before trusting its eval.**
 
-### 3a-2. Buying annotation: select candidates, then submit
+### 3b-2. Buying annotation: select candidates, then submit
 
 Adding a language means buying labels. The cost is per DOCUMENT and the value is per
 POSITIVE, so **the filter's precision is the price** — see
@@ -210,7 +271,7 @@ error) and counts must be bare numerals keeping the source's own scale words, so
 `29 bin 313` survives. Then check split hygiene against everything you already own —
 0 overlap, 0 duplicates — before the data reaches a config.
 
-### 3b. Prove it
+### 3c. Prove it
 
 ```bash
 # every corpus: within-split duplicates, cross-corpus overlap
@@ -225,7 +286,7 @@ corpora one at a time is not sufficient: a training mix pools many corpora, and 
 train can hold a document sitting in corpus B's test — neither file overlaps itself, yet the
 blind test is contaminated. The report attributes every overlap to the file pair responsible.
 
-### 3c. The trainer gates it anyway
+### 3d. The trainer gates it anyway
 
 `tools/train/train.py` runs the same check before a single step and repairs it:
 
