@@ -214,6 +214,27 @@ class EncodedBatch:
 # Base model
 # =============================================================================
 
+def rewrite_config_as_utf8(save_directory) -> None:
+    """Re-emit config.json with real characters instead of \\uXXXX escapes.
+
+    transformers' PretrainedConfig.to_json_string calls json.dumps WITHOUT
+    ensure_ascii=False, so every non-ASCII label is escaped: a DocFEE checkpoint ships
+    1,054 escapes and its label list reads as "\\u80a1\\u4e1c\\u51cf\\u6301" rather than
+    股东减持. The two parse identically -- this is readability, not correctness -- but the
+    label set is an INPUT to this model, and a vocabulary nobody can read is a vocabulary
+    nobody checks. Chinese labels hid in exactly that way for two runs.
+    """
+    import json
+    from pathlib import Path as _Path
+
+    path = _Path(save_directory) / "config.json"
+    if not path.is_file():
+        return
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+
+
 class BaseExtractorModel(PreTrainedModel):
     """Shared base for extractor architectures.
 
@@ -398,7 +419,12 @@ class BaseExtractorModel(PreTrainedModel):
     def save_pretrained(self, *args, **kwargs):
         self.config.architecture = getattr(self, "architecture", self.config.architecture)
         self.config.architectures = [type(self).__name__]
-        return super().save_pretrained(*args, **kwargs)
+        result = super().save_pretrained(*args, **kwargs)
+        if args:
+            rewrite_config_as_utf8(args[0])
+        elif "save_directory" in kwargs:
+            rewrite_config_as_utf8(kwargs["save_directory"])
+        return result
 
     def set_word_splitter(self, word_splitter):
         """Replace the word splitter used at inference and training collation.

@@ -1064,6 +1064,8 @@ class SpanExtractorModel(BaseExtractorModel):
         self.config.architecture = getattr(self, "architecture", "span")
         self.config.architectures = [type(self).__name__]
         self.config.save_pretrained(save_directory)
+        from gliner2.models.base import rewrite_config_as_utf8
+        rewrite_config_as_utf8(save_directory)
 
         encoder_config_path = os.path.join(save_directory, "encoder_config")
         os.makedirs(encoder_config_path, exist_ok=True)

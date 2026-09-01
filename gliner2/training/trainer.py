@@ -366,7 +366,7 @@ class TrainingConfig:
 
     def save(self, path: str):
         with open(path, 'w') as f:
-            json.dump(asdict(self), f, indent=2)
+            json.dump(asdict(self), f, indent=2, ensure_ascii=False)
 
     @classmethod
     def load(cls, path: str) -> 'TrainingConfig':
@@ -1614,7 +1614,7 @@ class ExtractorTrainer:
         """Persist eval metrics as JSON: ``eval_metrics.json`` in ``output_dir``
         (always) and, when the ``best/`` checkpoint folder exists, into it too, so
         the metrics travel with the saved model. Caller guards on is_main_process."""
-        payload = json.dumps(metrics, indent=2, default=str)
+        payload = json.dumps(metrics, indent=2, default=str, ensure_ascii=False)
         (self.output_dir / "eval_metrics.json").write_text(payload, encoding="utf-8")
         best_dir = self.output_dir / "best"
         if best_dir.is_dir():
@@ -2489,7 +2489,7 @@ class ExtractorTrainer:
                 }
                 import json
                 with open(checkpoint_dir / "lora_config.json", "w") as f:
-                    json.dump(lora_config_dict, f, indent=2)
+                    json.dump(lora_config_dict, f, indent=2, ensure_ascii=False)
             
             checkpoint_type = "full"
             trainable_params = sum(p.numel() for p in self.model.parameters())

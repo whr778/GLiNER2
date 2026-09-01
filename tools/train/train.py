@@ -948,8 +948,8 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         fname = f"{split}_metrics.json"
         out_dir = Path(cfg["training"]["output_dir"])
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / fname).write_text(json.dumps(metrics, indent=2))
-        (best / fname).write_text(json.dumps(metrics, indent=2))
+        (out_dir / fname).write_text(json.dumps(metrics, indent=2, ensure_ascii=False))
+        (best / fname).write_text(json.dumps(metrics, indent=2, ensure_ascii=False))
         print(f"[eval] wrote {out_dir / fname} and {best / fname}")
     else:
         print("[eval] no metrics produced (empty split?).")
@@ -1193,7 +1193,8 @@ def main(config_path: str) -> None:
 
     results_path = Path(config.output_dir) / "train_results.json"
     results_path.write_text(
-        json.dumps(results, indent=2, default=lambda o: o.to_dict() if hasattr(o, "to_dict") else str(o))
+        json.dumps(results, indent=2, ensure_ascii=False,
+                   default=lambda o: o.to_dict() if hasattr(o, "to_dict") else str(o))
     )
     print(f"[train] Wrote results to {results_path}")
 
@@ -1223,7 +1224,7 @@ def main(config_path: str) -> None:
         sweep_path = best / "threshold_sweep.json"
         sweep_path.write_text(json.dumps(
             {"chosen_threshold": eval_thr, "by_threshold": {str(t): m for t, m in sweep_all.items()}},
-            indent=2,
+            indent=2, ensure_ascii=False,
         ))
         print(f"[threshold sweep] Wrote {sweep_path}")
         del sweep_model
@@ -1236,9 +1237,9 @@ def main(config_path: str) -> None:
 
     if test_metrics:
         metrics_path = Path(config.output_dir) / "test_metrics.json"
-        metrics_path.write_text(json.dumps(test_metrics, indent=2))
+        metrics_path.write_text(json.dumps(test_metrics, indent=2, ensure_ascii=False))
         best_metrics_path = best / "test_metrics.json"
-        best_metrics_path.write_text(json.dumps(test_metrics, indent=2))
+        best_metrics_path.write_text(json.dumps(test_metrics, indent=2, ensure_ascii=False))
         print(f"\n[blind test] Wrote metrics to {metrics_path} and {best_metrics_path}")
     else:
         print("[blind test] No metrics produced (empty test set?).")
