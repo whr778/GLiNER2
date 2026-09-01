@@ -130,11 +130,25 @@ uv run python tools/data/restore_from_hf.py --all
 UNRECOVERABLE list; that is a backup gap to close, not noise. Files already present are
 skipped, so this is safe to re-run — `--force` re-downloads.
 
+**To rebuild from source instead of the Hub, do not hand-run 36 converters.**
+`tools/data/run_all_converters.sh` runs every one of them in the right order, logs each
+step, applies the zh→en label map, and refuses to finish if Chinese labels or contaminated
+splits survive:
+
+```bash
+tools/data/run_all_converters.sh          # log: /Volumes/Development/tmp/converters.log
+```
+
+It builds BASE corpora only — it does not build the derived corpora and never runs the
+`annotate_*` scripts, which cost money. Its exact invocations and build order are the
+reference for the per-corpus commands below.
+
 **What the Hub cannot give you, and what rebuilds it:**
 
 | corpus | rebuild with |
 | --- | --- |
-| `bc5cdr`, `anatem`, `bionlp09/11epi/11id/13cg/13ge/13pc`, `ex_ptm` | `convert_hf_token_ner.py --repo <tner/...>` |
+| `anatem`, `bionlp09/11epi/11id/13cg/13ge/13pc`, `ex_ptm` | `convert_mtl_bio.py --dataset <AnatEM\|BioNLP09\|Ex-PTM\|…>` |
+| `bc5cdr` | `convert_hf_token_ner.py --repo tner/bc5cdr --revision refs/convert/parquet` |
 | `ace2005` | `convert_ace2005.py` — LDC licence, source not redistributable |
 | `klue_ner` / `scierc` / `paraloq_json` / `stockmark_jpn` | `convert_klue.py` / `convert_scierc.py` / `convert_paraloq_json.py` / `convert_stockmark_ner.py` |
 | `maven_ner` | `events_to_entities.py`, derived from `maven` |
