@@ -238,7 +238,7 @@ offers:
 
 ```json
 {
-  "entities": ["person", "organization", "location"],
+  "entities": ["Person", "Organization", "Location"],
   "events": {"Attack": ["Attacker", "Target", "Place", "Time"]},
   "relations": ["works_for", "located_in"],
   "classifications": [{"task": "sentiment", "labels": ["positive", "negative", "neutral"]}],
@@ -247,6 +247,12 @@ offers:
                                         {"name": "price", "dtype": "str"}]}}
 }
 ```
+
+Entity labels are **capitalised on purpose**. A label is an INPUT to the model, so one
+concept must have one spelling: `person` and `Person` are two different queries, and the
+unified label space (`tools/train/config/labels/unified.yaml`) folds the lowercase forms
+into the capitalised ones. Asking a unified model for `person` still returns something,
+just not what it was trained on.
 
 **`mode` and `anchor` matter on boundary models.** A structure declared without
 them cannot be decoded on the BOUNDARY architecture, and the failure is *silent* —
