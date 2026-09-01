@@ -11,6 +11,12 @@
 #   - HuggingFace cache is reachable (most converters stream directly).
 #   - data/maven/train.jsonl       — manual MAVEN download (skipped if absent).
 #   - data/RAMS_1.0c/data/         — manual RAMS download (skipped if absent).
+#
+# SCOPE: base corpora only. This does NOT build the derived corpora (scaling slices,
+# warmstart/replay mixes, the Turkish dose arms, loc_control, zh_multitask) and does NOT
+# buy annotation — annotate_casualty.py / annotate_gate.py / annotate_multitask.py cost
+# real money and are never run automatically. Build order and the commands are in
+# tools/train/TRAINING.md section 3a.
 
 set -u
 
@@ -18,7 +24,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 mkdir -p data
-LOG="${CONVERTERS_LOG:-/tmp/converters.log}"
+# /tmp does not survive a reboot and has eaten a run's log before now.
+DEFAULT_LOG=/tmp/converters.log
+[ -d /Volumes/Development/tmp ] && DEFAULT_LOG=/Volumes/Development/tmp/converters.log
+LOG="${CONVERTERS_LOG:-$DEFAULT_LOG}"
 : > "$LOG"
 echo "Log: $LOG"
 
@@ -177,6 +186,42 @@ run_optional rams_test  "data/RAMS_1.0c/data/test.jsonlines"     uv run python t
 
 # ACE 2005 is not run here — it lives behind an LDC license; convert it
 # separately with `tools/data/convert_ace2005.py --input <your-ace-root> ...`.
+
+# Labels, not text. The Chinese converters emit the SOURCE's labels: convert_duee.py
+# passes DuEE's own `label` through, and convert_docfee.py emits Chinese entity keys and a
+# Chinese classification MENU. That is the exact state the label unification removed, so a
+# converter run without this step silently rebuilds a label space the 137k base never
+# learned -- and nothing downstream errors, it just scores badly.
+#
+# Spans stay Chinese; only labels are rewritten. See CLAUDE.md -> TRAINING DATA LABELS.
+run_step labels_zh_to_en  uv run python tools/data/apply_label_map.py \
+                            --map tools/data/label_map_zh_all.json \
+                            data/duee.train.jsonl data/duee.val.jsonl \
+                            data/docfee.train.jsonl data/docfee.val.jsonl data/docfee.test.jsonl \
+                            data/text2json.train.jsonl data/text2json.val.jsonl data/text2json.test.jsonl
+
+# Prove it, rather than trusting the step above returned 0.
+echo "===== START: labels_verify =====" | tee -a "$LOG"
+if uv run python -c "
+import sys, json, re, glob
+sys.path.insert(0, 'tools/train')
+from build_label_maps import labels_by_category
+han = re.compile(r'[\u4e00-\u9fff]')
+bad = 0
+for f in glob.glob('data/duee.*.jsonl') + glob.glob('data/docfee.*.jsonl') + glob.glob('data/text2json.*.jsonl'):
+    for line in open(f, encoding='utf-8'):
+        for _, label in labels_by_category(json.loads(line)):
+            if han.search(label):
+                bad += 1
+print(f'Chinese labels remaining: {bad}')
+sys.exit(1 if bad else 0)
+" 2>&1 | tee -a "$LOG"; then
+  echo "===== OK:    labels_verify =====" | tee -a "$LOG"
+else
+  echo "===== FAIL:  labels_verify -- CHINESE LABELS PRESENT =====" | tee -a "$LOG"
+  echo "Do not train on this build. See $LOG."
+  exit 1
+fi
 
 # Gate, not a report. Aggregated train/val/test must be mutually disjoint before any
 # of this is trained on -- cross-set contamination invalidates every number downstream,
