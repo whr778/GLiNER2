@@ -47,9 +47,20 @@ training:
   data_parallel: false
   num_epochs: 5              # held equal across the curve (only total volume varies)
   batch_size: 4
-  # NOTE: tuned for 2-GPU DDP (torchrun --nproc_per_node=2), where batch_size is
-  # PER-GPU. Accumulation is halved so the EFFECTIVE batch stays 32, matching the
-  # single-GPU recipe the throughput anchor and the rest of the curve use.
+  # WARNING, measured not assumed: batch_size is PER-GPU, so this file is a DIFFERENT
+  # recipe depending on how it is launched, and the note that used to sit here claimed
+  # otherwise.
+  #
+  #   1 GPU : 4 x 4         = effective 16, 42,730 steps  <- what the 137k v1 base and
+  #                                                          the rest of the curve ran
+  #   2 GPUs: 4 x 4 x 2     = effective 32, 21,365 steps  <- HALF the optimizer updates
+  #
+  # v1's model card records "4 (x 4 grad-accum)" on one GPU, and 42,730 steps over
+  # 135,635 records x 5 epochs is effective 16 exactly. So a 2-GPU launch doubles the
+  # batch and halves the updates rather than matching the curve. Set
+  # gradient_accumulation_steps: 2 under torchrun --nproc_per_node=2 to reproduce the
+  # curve's optimization, or accept an off-curve base and re-baseline everything
+  # downstream of it.
   gradient_accumulation_steps: 4
   encoder_lr: 2.0e-5
   task_lr: 5.0e-4
