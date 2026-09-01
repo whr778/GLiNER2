@@ -4,6 +4,7 @@
 - Work incrementally ALWAYS. Small simple steps. Validate and check each increment before moving on.
 - Use LATEST apis as of NOW.
 - metrics and table metrics should define the metric: nrmse, mse, f1, etc
+- Instead of using /private/tmp use /Volumes/Development/tmp which will persist across reboots.
 
 ## MANDATORY CODE STYLE
 
