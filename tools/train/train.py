@@ -161,6 +161,16 @@ def _fetch_if_missing(path: str) -> None:
     # a 150-record slice, and whr778/chfinann would answer with the 3,204-record val.
     repo = (registry.get("jsonl_dirs") or {}).get(p.parent.name)
     if not repo:
+        if p.parent.name != "data":
+            # A file in a SUBDIRECTORY is a slice, and its basename is shared with the
+            # parent corpus: data/scaling/casie.val.jsonl and data/casie.val.jsonl are
+            # different files. Falling back to the corpus repo returns the parent's full
+            # split with no error. Refuse instead, and say what would fix it.
+            print(f"[data] {path} is under data/{p.parent.name}/ with no 'jsonl_dirs' "
+                  f"entry; NOT fetching by basename, which would return the parent "
+                  f"corpus's file. Add {p.parent.name} to jsonl_dirs in "
+                  f"dataset_registry.yaml.")
+            return
         key = canonical_dataset_key(p.name.rsplit(".", 2)[0])
         repo = (registry.get("datasets", {}).get(key) or {}).get("hf_jsonl")
     if not repo:

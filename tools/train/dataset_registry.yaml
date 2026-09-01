@@ -109,6 +109,7 @@ base_models:
 # A directory listed here wins over the per-corpus hf_jsonl for files inside it.
 jsonl_dirs:
   scaling_joint: whr778/scaling-joint
+  scaling: whr778/scaling
 
 datasets:
   # --- NER ---
@@ -680,6 +681,7 @@ datasets:
     description: "Derived mixture, not a source corpus: built by tools/train/build_warmstart_mix.py to add STRUCTURE and NER to a trained joint-boundary checkpoint without losing what it already does. 70% new (casualty_multi_loc structure + pile_ner_def/nuner_full NER, split evenly rather than by pool size so definition-bearing NER is not buried 20:1) and 30% replay sampled from the 137K pool at its own 73/27 event/relation ratio. Documents are capped at 2,000 chars: step cost is superlinear in sequence length and text2json alone is 30.6% over 4,000 chars (max 102,068), which cost 1.87x throughput for records the pools can replace with shorter ones. Pre-shuffled at the example level so every batch is a mixture rather than a task block. Licensing is that of the constituent corpora."
 
   mix_natural:
+    hf_jsonl: whr778/mix_natural
     name: Warm-start mixture, record mode = natural
     tasks: mixed -- json_structures (mode=natural), NER, events, relations
     license: see constituent corpora
@@ -931,6 +933,7 @@ datasets:
     language: [en]
     description: "Single-triplet relation examples over Wikidata-style properties, regrouped BY PASSAGE by convert_professorbob_re.py so each record carries all of a passage's validated relations rather than repeating the text once per triplet. A triplet is kept only when both surfaces occur verbatim in the whitespace-normalized passage -- a span the model cannot point at is not trainable. Source ships a single train split; SplitWriter carves train/val/test."
   gate2_tr:
+    hf_jsonl: whr778/gate2_tr
     name: gate2_tr (multilingual stage-0 gate corpus)
     tasks: Classification (relevance, toll_kind)
     license: mixed -- inherits docee, cc_news, duee and the Turkish news source
@@ -938,6 +941,7 @@ datasets:
     language: [en, tr, zh]
     description: "19,156 rows (9,578 pos / 9,578 neg) for the stage-0 relevance gate: docee 12,228 + Turkish news 4,220 (22%) + cc_news 2,106 + duee 602. Turkish labels are Haiku 4.5 adjudications of REAL articles, not synthetic text -- the earlier multilingual attempt scored F1 1.0000 in-distribution and admitted 0 of 71 real articles because its positives were 99.9% synthetic while its negatives were all real, so the model learned register rather than toll. P(positive|language) is balanced across en/tr/zh (0.499/0.501/0.505) so language cannot proxy for the label."
   tr_dose0:
+    hf_jsonl: whr778/tr_dose0
     name: tr_dose0 (Turkish dose curve, control)
     tasks: Structure extraction (casualty records)
     license: mixed -- inherits casualty_docee and the 137k replay pool
@@ -945,6 +949,7 @@ datasets:
     language: [en, zh]
     description: "CONTROL arm of the Turkish dose curve: 12,691 English casualty rows + 30% exact replay from the base's own 137k pool, and ZERO Turkish. Not optional -- every dose arm adds replay AND Turkish at once, so without this arm an improvement over the shipped extractor cannot be attributed to either."
   tr_dose5000:
+    hf_jsonl: whr778/tr_dose5000
     name: tr_dose5000 (Turkish dose curve, 5k)
     tasks: Structure extraction (casualty records)
     license: mixed -- inherits casualty_docee, the 137k replay pool and the Turkish news source
@@ -952,6 +957,7 @@ datasets:
     language: [en, tr, zh]
     description: "Dose arm: the control mixture plus 5,000 Turkish field-level casualty records annotated by tools/data/annotate_casualty.py. Values are verbatim spans (the boundary head locates fields as spans) and counts are bare numerals keeping Turkish scale words, e.g. '29 bin 313'."
   tr_dose15000:
+    hf_jsonl: whr778/tr_dose15000
     name: tr_dose15000 (Turkish dose curve, 15k)
     tasks: Structure extraction (casualty records)
     license: mixed -- inherits casualty_docee, the 137k replay pool and the Turkish news source
@@ -959,6 +965,7 @@ datasets:
     language: [en, tr, zh]
     description: "Dose arm: the control mixture plus 15,000 Turkish field-level casualty records. See tr_dose5000 for the annotation contract."
   tr_dose31263:
+    hf_jsonl: whr778/tr_dose31263
     name: tr_dose31263 (Turkish dose curve, full)
     tasks: Structure extraction (casualty records)
     license: mixed -- inherits casualty_docee, the 137k replay pool and the Turkish news source
@@ -966,6 +973,7 @@ datasets:
     language: [en, tr, zh]
     description: "Largest dose arm: the control mixture plus 29,700 Turkish field-level casualty records (of 31,263 annotated; 5% held out for val/test). At this dose Turkish is 70% of the casualty task against 12,691 English rows, which is what the curve exists to measure. See tr_dose5000 for the annotation contract."
   loc_control:
+    hf_jsonl: whr778/loc_control
     name: loc_control (location-supervision control)
     tasks: Structure extraction (casualty records)
     license: mixed -- inherits casualty_natural and the 137k replay pool
