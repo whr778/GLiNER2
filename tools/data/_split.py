@@ -57,9 +57,34 @@ _WHITESPACE = re.compile(r"\s+")
 _LINE_SEPARATORS = str.maketrans({"\x85": " ", " ": " ", " ": " "})
 
 
+# Invisible characters NFKC does NOT touch. NFKC already folds every space variant
+# (NBSP, narrow NBSP, figure/hair space) to a plain space, but leaves the zero-width and
+# bidi FORMAT characters intact -- and those break span matching: an LLM annotator copies
+# the visible characters and drops the invisible ones, so its surface is no longer a
+# substring of the text it came from and the mention is skipped.
+#
+# ZWNJ (U+200C) and ZWJ (U+200D) are DELIBERATELY KEPT. They are not decoration: ZWNJ
+# separates words in Persian and Arabic, ZWJ forms conjuncts in Indic scripts and joins
+# emoji sequences. Removing them changes the text.
+_INVISIBLES = str.maketrans({
+    "\u00ad": None,  # soft hyphen -- a discretionary line break, never rendered
+    "\u180e": None,  # Mongolian vowel separator
+    "\u200b": None,  # zero-width space
+    "\u2060": None,  # word joiner
+    "\ufeff": None,  # BOM / zero-width no-break space
+    "\u061c": None,  # Arabic letter mark
+    "\u200e": None, "\u200f": None,                    # LRM, RLM
+    "\u202a": None, "\u202b": None, "\u202c": None,    # LRE, RLE, PDF
+    "\u202d": None, "\u202e": None,                    # LRO, RLO
+    "\u2066": None, "\u2067": None, "\u2068": None, "\u2069": None,  # isolates
+})
+
+
 def clean_text(s: str) -> str:
-    """NFKC-normalize a string and strip stray Unicode line separators."""
-    return unicodedata.normalize("NFKC", s).translate(_LINE_SEPARATORS)
+    """NFKC-normalize, strip stray line separators, and drop invisible formatting."""
+    return (unicodedata.normalize("NFKC", s)
+            .translate(_LINE_SEPARATORS)
+            .translate(_INVISIBLES))
 
 
 def normalize_group_key(s: str) -> str:
