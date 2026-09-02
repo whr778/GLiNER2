@@ -31,10 +31,12 @@ def push(base: Path, repo_id: str, card: Path | None, private: bool) -> None:
                     private=private, exist_ok=True)
     print(f"repo {repo_id} (private={private})")
 
+    uploaded = 0
     for split, path in derive_split_paths(base).items():
         if not path.exists():
             print(f"  skip {split}: {path} absent")
             continue
+        uploaded += 1
         size = path.stat().st_size / 1e6
         print(f"  uploading {path.name} ({size:,.1f} MB)...", flush=True)
         api.upload_file(path_or_fileobj=str(path), path_in_repo=path.name,
@@ -44,7 +46,15 @@ def push(base: Path, repo_id: str, card: Path | None, private: bool) -> None:
         api.upload_file(path_or_fileobj=str(card), path_in_repo="README.md",
                         repo_id=repo_id, repo_type="dataset")
         print(f"  uploaded README.md from {card}")
-    print(f"done: https://huggingface.co/datasets/{repo_id}")
+    if not uploaded:
+        # Printing "done" after uploading nothing is how a backup silently fails to
+        # exist. `data/x.jsonl` has no split suffix, so derive_split_paths finds
+        # x.train/x.val/x.test and skips all three -- and the repo stays empty.
+        raise SystemExit(
+            f"push_corpus_hf: NOTHING was uploaded -- no {base}.train/.val/.test.jsonl "
+            f"exists. For a single unsplit file use --dir on its directory, or split it "
+            f"first.")
+    print(f"done: {uploaded} file(s) -> https://huggingface.co/datasets/{repo_id}")
 
 
 def push_dir(directory: Path, repo_id: str, private: bool) -> None:
