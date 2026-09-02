@@ -705,6 +705,14 @@ datasets:
     language: [en, zh]
     description: "warmstart_mix whose casualty records declare mode=anchorless -- instances formed with no anchor mention. The losing arm of the record-mode A/B: 1/9 instances and 0/9 location fills, versus 7/9 and 6/9 for mix_natural, on identical data. Retained for provenance because the result is informative rather than a failed build: a casualty record appears to genuinely HAVE a natural anchor (the figure itself), so removing it leaves nothing to key instances on."
 
+  casualty_ml:
+    name: casualty_ml (language-balanced casualty structures)
+    tasks: structure extraction (casualty_report)
+    license: mixed -- inherits casualty_natural, the Turkish news pool and shaowenchen/news_zh
+    source_url: built by tools/train/build_casualty_multilingual.py
+    hf_jsonl: whr778/casualty_ml
+    language: [en, tr, zh]
+    description: "62,703 casualty_report records balanced at 20,901 per language: synthetic English (casualty_natural), REAL Turkish news (turkish_gate/cas_ann_tr, 31,263 available) and REAL Chinese news (chinese_gate/cas_ann_zh*, 20,901). Downsampled to the smallest language so no arm wins on volume. Field fills across the corpus: location 99,094, dead 60,060, injured 45,281, missing 22,210; 100% carry record_metadata, which the BOUNDARY record head requires and whose absence fails silently. Verified 0 duplicates within each split, 0 overlap across splits, 0 overlap across languages, and 33.3% per language in train, val AND test -- an unbalanced test set would let a monolingual model score well. The ENGLISH arm is still synthetic text: no real-news English casualty corpus exists, cc_news_haiku45 carries only 95 casualty records in a different schema, and CC-News is the wrong pool to buy from at a 0.47% base rate. DocEE is the candidate pool."
   casualty_multi:
     name: Multi-event casualty-report corpus
     tasks: structured extraction (json_structures, multi-instance)

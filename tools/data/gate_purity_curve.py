@@ -51,7 +51,28 @@ _ZH_DEATH = r"(?:死亡|遇难|丧生|身亡|死者|伤亡|受伤|失踪|罹难|
 _ZH_NUM = r"(?:[0-9０-９]+|[一二三四五六七八九十百千万]+)"
 TOLL_NEAR_ZH = re.compile(_ZH_NUM + r"(?:人|名|余人|多人)?.{0,15}?" + _ZH_DEATH
                           + r"|" + _ZH_DEATH + r".{0,15}?" + _ZH_NUM + r"(?:人|名)")
-PREFILTERS = {"tr": TOLL_NEAR, "zh": TOLL_NEAR_ZH, "none": None}
+# English. Same shape as the Turkish pattern and for the same reason -- the coarse pass is
+# free and halves what the model has to score. Written scale words are included because
+# "at least 40" and "a dozen" carry the toll as often as a bare numeral does.
+_EN_DEATH = (r"(?:killed|kill|dead|died|dies|death toll|deaths?|fatalit|casualt|"
+             r"injur|wounded|hurt|missing|perished|victims?|bodies|corpses?|"
+             r"lost their lives|pronounced dead|declared dead)")
+_EN_NUM = (r"(?:\d[\d,.]*(?:\s*(?:thousand|million|hundred))?|"
+           r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozens?|"
+           r"scores?|hundreds|thousands|millions))")
+TOLL_NEAR_EN = re.compile(_EN_NUM + r".{0,60}?" + _EN_DEATH + r"|"
+                          + _EN_DEATH + r".{0,60}?" + _EN_NUM, re.I | re.S)
+
+# DIGITS ONLY. The EKF tracks a numeric series, so "dozens killed" is a relevance positive
+# and a useless observation -- there is no number to feed the filter. This variant buys
+# only documents that can yield a trackable figure, at the cost of the written-number tail.
+TOLL_NUMERIC_EN = re.compile(
+    r"\d[\d,.]*(?:\s*(?:thousand|million|hundred))?" + r".{0,60}?" + _EN_DEATH + r"|"
+    + _EN_DEATH + r".{0,60}?" + r"\d[\d,.]*(?:\s*(?:thousand|million|hundred))?",
+    re.I | re.S)
+
+PREFILTERS = {"tr": TOLL_NEAR, "zh": TOLL_NEAR_ZH, "en": TOLL_NEAR_EN,
+              "en_numeric": TOLL_NUMERIC_EN, "none": None}
 CUTS = (0.0, 0.5, 0.9, 0.99, 0.999, 0.9999, 0.99999)
 INPUT_TOKENS, OUTPUT_TOKENS = 1023 + 350, 260
 IN_RATE, OUT_RATE = 0.50, 2.50  # Haiku 4.5 batch, per million

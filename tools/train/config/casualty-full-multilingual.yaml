@@ -1,43 +1,38 @@
-# Full casualty retrain: English + Turkish, unsampled, with location supervision on both.
+# Language-BALANCED casualty structure model: English, Turkish, Simplified Chinese.
 #
-# WHY THIS EXISTS. The tr-dose curve trained its English half on `casualty_docee`, which
-# carries ZERO location supervision -- 25,154 records, not one `location` field. Every arm
-# including the zero-Turkish CONTROL therefore failed to bind English locations on Helene
-# (1 of 96 observations, against 24 of 69 for the shipped extractor). That was read first
-# as Turkish diluting English and then as an mmBERT/boundary regression; it was neither.
-# The models were never taught English locations.
+# WHY THIS EXISTS. Every casualty corpus in this repo is 100% English and 100% LLM-written
+# text, so the extractor learns the register of synthetic disaster copy and does poorly on
+# real wire copy -- this line's standing in-domain-good / real-news-poor failure. Measured
+# on the EKF front end's own mix: 71.4% of English trigger+argument records are synthetic,
+# and one corpus (casualty_events) supplies 62% of them.
 #
-# `casualty_natural` is the same synthetic corpus at a later annotation generation:
-# location on 93.5% of records, and record_metadata already declared (mode natural), which
-# the BOUNDARY record head requires and whose absence fails silently.
+# What was sitting unused, already annotated and already paid for, in exactly the schema
+# the EKF consumes (`casualty_report`, mode/anchor):
 #
-# UNSAMPLED, and near-parity by construction rather than by capping:
-#   casualty_natural   29,324 docs / 72,733 records / location 93.5%   EN
-#   cas_ann_tr         31,263 docs / 40,109 records / location 90.9%   TR
-# English is 48.4% of the casualty documents and Turkish 51.6%, so neither is diluted the
-# way the dose arms were (12,691 EN against 29,700 TR).
+#   turkish_gate/cas_ann_tr    31,263 docs / 40,109 instances  REAL Turkish news
+#   chinese_gate/cas_ann_zh*   20,901 docs / 28,722 instances  REAL Chinese news
+#   casualty_natural           29,324 docs / 72,733 instances  synthetic English
 #
-# NOT INCLUDED, deliberately:
-#   casualty_loc_split, casualty_docee, casualty_multi, casualty_multi_loc -- 97.9-100%
-#     of their documents are already in casualty_natural at an OLDER annotation
-#     generation. Adding them trains contradictory labels on identical text.
-#   Chinese -- there is none. 4 of 818,776 casualty_report structures across every corpus
-#     on disk are Chinese.
+# CORRECTION, dated 2026-09-02. An earlier version of this file stated "Chinese -- there is
+# none. 4 of 818,776 casualty_report structures across every corpus on disk are Chinese."
+# That was wrong. The 20,901 Chinese records live in data/chinese_gate/, a subdirectory the
+# scan treated as scratch rather than as a corpus, so it looked at data/*.jsonl and found
+# nothing. They are real news, field-level, and location-rich (26,163 fills).
 #
-# REPLAY stays 30% exact from the base's own 137k pool. Note what it does and does not
-# buy: the pool is only 5.7% structures, so it guards the entity/relation/event heads and
-# gives the casualty task almost nothing. Casualty capability comes from the two corpora
-# above, which is why their location coverage is the thing that mattered.
+# BALANCED BY DOWNSAMPLING to the smallest language (20,901 each, 62,703 total), so no arm
+# wins on volume. Built by tools/train/build_casualty_multilingual.py; verified 0 duplicates
+# within each split, 0 overlap across splits, 0 overlap across languages, and 33.3% per
+# language in train, val AND test -- an unbalanced test set would hide a monolingual model.
 #
-# PRE-REGISTERED BARS:
-#   English  Helene location binding returns to the incumbent's range (24/69 dead
-#            observations bound to a Helene state). The dose arms scored 0-4.
-#   Turkish  digit-in-location stays at 0.0% on the reserved dw.com + t24.com.tr outlets
-#            (tr-dose-31263 achieved 0.0% against the shipped model's 77.1%).
-#   Neither bar alone is sufficient -- the dose curve passed the Turkish bar while failing
-#   the English one, which is why both are declared here before the run.
+# THE REMAINING GAP IS ENGLISH. Its arm is still synthetic because no real-news English
+# casualty corpus exists: cc_news_haiku45 is real news but carries 95 casualty records in a
+# different schema (incident_report.casualties, one merged count, not dead/injured/missing).
+# CC-News is the wrong pool to buy from -- 0.47% base rate, 1.38% after the free regex, so
+# 21,000 positives would cost ~$2,036. DocEE is the right pool: real English disaster news,
+# the toll regex fires on 54.9% of its 21,842 documents. Swap the English arm here when it
+# is annotated; the balance holds by construction.
 model:
-  pretrained: whr778/gliner2-joint-boundary-mmbert-137k
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16
   architecture: boundary
   boundary_head:
     enable_relations: true
@@ -68,11 +63,11 @@ training:
   logging_steps: 50
   num_workers: 2
   validate_data: false
-  # The replay pool carries Chinese and biomedical corpora whose surfaces do not always
-  # word-align on the boundary path. Drops the single mention, not the record's other gold.
+  # Chinese and Turkish surfaces do not always word-align on the boundary path (no
+  # whitespace delimiters in Chinese). Drops the single mention, not the record's other gold.
   allow_invalid_samples: true
   sliding_window: true
-  max_len: 8192                 # matches the base; 4096 windowed replay entities out of reach
+  max_len: 8192                 # matches the base
   window_stride: 6144
   gradient_checkpointing: true
   pin_memory: true
@@ -85,5 +80,5 @@ labels_file: labels/unified.yaml
 
 data:
   corpora:
-    - data/casualty_full_ml
+    - data/casualty_ml
   event_files: {}
