@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -35,6 +36,7 @@ def main():
     parser.add_argument("--eval-only", action="store_true",
                         help="only docee val/test, which the base never trained on")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     rx = PREFILTERS["en"]
@@ -55,6 +57,12 @@ def main():
             by_source[tag] = by_source.get(tag, 0) + 1
             if args.limit and len(kept) >= args.limit:
                 break
+
+    # SHUFFLE, deterministically. DocEE is ordered by event type, so file order is not a
+    # sample: annotating the first 60 candidates drew 0/60 casualty-positive documents
+    # where a random 400 drew 49.5%. Any --limit run, and any head-of-file inspection,
+    # silently selects one event type unless the pool is shuffled first.
+    random.Random(args.seed).shuffle(kept)
 
     out = Path(args.out)
     with out.open("w", encoding="utf-8") as fh:
