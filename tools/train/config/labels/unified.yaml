@@ -22,8 +22,8 @@ labels:
       money: Money
       facility: Facility
       duration: Duration
-      Company Name: CompanyName
       age: Age
+      Company Name: CompanyName
       time: Time
       product: Product
       quantity: Quantity
@@ -34,42 +34,43 @@ labels:
       measurement: Measurement
       region: Region
       disease: Disease
-      LOC: Location
-      TIME: Time
       law: Law
+      LOC: Location
       regulatory body: Regulatory Body
       award: Award
-      ORG: Organization
-      publication: Publication
-      ethnic group: Ethnic Group
+      TIME: Time
       military unit: Military Unit
-      PER: Person
+      ethnic group: Ethnic Group
+      publication: Publication
       medication: Medication
       regulation: Regulation
       vehicle: Vehicle
       software: Software
       film: Film
+      ORG: Organization
       symptom: Symptom
-      language: Language
       organism: Organism
-      book: Book
-      gene: Gene
-      operating system: Operating System
-      currency: Currency
-      weapon: Weapon
-      anatomical structure: Anatomical Structure
+      language: Language
       hardware component: Hardware Component
-      witness: Witness
+      operating system: Operating System
+      PER: Person
+      gene: Gene
+      weapon: Weapon
+      book: Book
+      anatomical structure: Anatomical Structure
+      currency: Currency
       financial instrument: Financial Instrument
+      witness: Witness
       medical procedure: Medical Procedure
       programming language: programming_language
-      natural disaster: Natural Disaster
       vaccine: Vaccine
+      natural disaster: Natural Disaster
       database: Database
       mineral: Mineral
       pathogen: Pathogen
       Start Date: StartDate
       End Date: EndDate
+      FAC: Facility
       Economic loss: Economic Loss
       Areas Affected: Areas affected
       Start_Date: StartDate
@@ -128,30 +129,48 @@ labels:
     map:
       location: Location
       place: Place
-      Recipient: recipient
-      participant: Participant
+      recipient: Recipient
       Defendant: defendant
+      participant: Participant
       communicator: Communicator
       artifact: Artifact
       victim: Victim
-      death: Death
       Giver: giver
+      death: Death
       attacker: Attacker
-      Destination: destination
+      destination: Destination
       crime: Crime
       Origin: origin
-      money: Money
       Instrument: instrument
+      money: Money
+      detainee: Detainee
       vehicle: Vehicle
       prosecutor: Prosecutor
+      Killer: killer
+      investigator: Investigator
       Proposal: proposal
-      deceased: Deceased
-      Voter: voter
       Law: law
+      Voter: voter
+      deceased: Deceased
+      Jailer: jailer
+      JudgeCourt: judgecourt
+      Transporter: transporter
       demonstrator: Demonstrator
+      Injurer: injurer
+      ObservedEntity: observedentity
+      Observer: observer
+      Employee: employee
       Beneficiary: beneficiary
       result: Result
-      Employee: employee
+      Destroyer: destroyer
+      Preventer: preventer
+      Contact.ThreatenCoerce.Broadcast: contact.threatencoerce.broadcast
+      PlaceOfEmployment: placeofemployment
+      Contact.ThreatenCoerce.Correspondence: contact.threatencoerce.correspondence
+      CrashObject: crashobject
+      DamagerDestroyer: damagerdestroyer
+      Damager: damager
+      ArtifactMoney: artifactmoney
   classifications:
     rollup: false
     separator: .

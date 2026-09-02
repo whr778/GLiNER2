@@ -91,7 +91,10 @@
 # rows (2,187 against 1,519).
 
 model:
-  encoder: jhu-clsp/mmBERT-base
+  # WARM START, where the 2026-08-21 run was a cold start from the raw encoder.
+  # The rebuilt base is +0.049 structure and +0.040 event_trigger over the v1 base
+  # on a matched blind test, and structures are the EKF decode surface.
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16
   architecture: boundary
   max_len: 8192
   # Required for CORRECTNESS, not speed: sdpa+bf16 on this encoder goes non-finite
@@ -154,10 +157,10 @@ eval:
   threshold_sweep: true
   eval_by_language: false
 
-labels:
-  entities:  {rollup: false, separator: ".", map: {}}
-  relations: {rollup: false, separator: ".", map: {}}
-  events:    {rollup: false, separator: ".", map: {}}
+# Same unified label space as the base this now warm-starts from. The block that used to
+# sit here was EMPTY, and an empty inline block silently OVERRIDES labels_file -- wiring
+# one without deleting the other is a no-op that looks done.
+labels_file: labels/unified.yaml
 
 data:
   # Relations + NER, so the front end carries the whole complement rather than events alone.

@@ -58,7 +58,7 @@ model:
   # real head-init here. This is NOT the CASIE Tier 2 setup that collapsed: that used
   # `event_records` to push events through the RECORD head, which had never seen an event
   # (0.0036 vs 0.2998). This arm uses the native event path the base was actually trained on.
-  pretrained: whr778/gliner2-joint-boundary-mmbert-137k
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16
   # attn_implementation deliberately unset: on the pretrained path it is applied after the
   # encoder is built, so it would be a silent no-op. FA2 is inherited from the checkpoint,
   # and on mmBERT that is a CORRECTNESS matter -- sdpa+bf16 produces non-finite losses.

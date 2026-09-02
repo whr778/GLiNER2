@@ -115,7 +115,18 @@ def inputs_to_files(args: list[str]) -> list[str]:
     files = []
     for arg in args:
         files += config_files(arg) if arg.endswith((".yaml", ".yml")) else [arg]
-    return [f for f in sorted(set(files)) if Path(f).exists()]
+    files = sorted(set(files))
+    # A missing input must never be skipped in silence. Twice now this map has been built
+    # from fewer corpora than intended -- once because zsh does not word-split an unquoted
+    # $VAR so the whole list arrived as one unreadable path, once because a file list did
+    # not survive a reboot -- and both times the result looked like a clean run while
+    # quietly dropping a corpus (losing redocred silently removed the TIME -> Time entry).
+    missing = [f for f in files if not Path(f).exists()]
+    if missing:
+        raise SystemExit(
+            f"build_label_maps: {len(missing)} input(s) do not exist, refusing to build a "
+            f"map from a partial corpus set: {missing[:5]}")
+    return files
 
 
 def config_files(config_path: str) -> list[str]:
