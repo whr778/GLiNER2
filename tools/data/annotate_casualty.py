@@ -59,7 +59,9 @@ MAX_CHARS = 6000
 # three fields (0 of 72,454 values non-numeric), so admitting "onlarcasi" ("dozens") here
 # would teach one convention for Turkish and another for English and Chinese, and the EKF
 # needs a figure it can parse either way.
-NUMERAL = re.compile(r"^\d[\d.,]*(?:\s+(?:bin|milyon|milyar)(?:\s+\d[\d.,]*)?)*$", re.I)
+NUMERAL = re.compile(
+    r"^\d[\d.,]*(?:\s+(?:bin|milyon|milyar|thousand|million|billion)(?:\s+\d[\d.,]*)?)*$",
+    re.I)
 
 SYSTEM = (
     "You extract casualty figures from news articles for a disaster-monitoring system. "
@@ -83,7 +85,8 @@ Each record may contain these fields, all optional -- omit a field entirely if t
 
 - "olu sayisi 130'u asti" -> write "130", not "130'u asti" and not "130'u".
 - "29 bin 313 kisi" -> write "29 bin 313", which is how the article writes 29,313.
-- Vague quantities are NOT numbers. If the article says only "onlarcasi", "cok sayida" or "yuzlerce" with no figure, OMIT that field.
+- "2 million displaced" -> write "2 million", which is how the article writes 2,000,000.
+- Vague quantities are NOT numbers. If the article says only "onlarcasi", "cok sayida", "yuzlerce", "dozens", "scores", "several" or "hundreds of" with no figure, OMIT that field.
 
 CRITICAL RULE -- copy verbatim. Every value must appear in the article EXACTLY as you write it, character for character. Do not translate it, do not convert it, do not reformat it, do not add or remove words.
 
@@ -219,7 +222,7 @@ def main() -> int:
     if args.fetch_batch:
         replies = provider.fetch_batch(args.fetch_batch)
     elif args.batch:
-        replies = provider.complete_batch(items)
+        replies = provider.complete_batch(items, id_path=f"{args.out}.batch_id")
     else:
         replies = {cid: provider.complete(sys_, usr) for cid, sys_, usr in items}
 

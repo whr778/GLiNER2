@@ -13,6 +13,7 @@ imported lazily so the module loads (and dry runs work) without them installed.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from dataclasses import dataclass
 
 
@@ -181,7 +182,12 @@ class AnthropicProvider(LLMProvider):
             from anthropic import Anthropic
         except ImportError as e:
             raise RuntimeError("anthropic SDK missing -- run: uv add anthropic") from e
-        self._client = Anthropic()
+        # An identity-linked API key must name the workspace the request acts in, or the
+        # API answers 400 "anthropic-workspace-id is required". A plain workspace key does
+        # not need the header, so it is sent only when configured.
+        workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+        headers = {"anthropic-workspace-id": workspace} if workspace else None
+        self._client = Anthropic(default_headers=headers)
 
     def _params(self, system: str, user: str) -> dict:
         # Current Claude models (Sonnet 5, Opus 4.7/4.8) reject temperature/top_p
@@ -199,12 +205,14 @@ class AnthropicProvider(LLMProvider):
         resp = self._client.messages.create(**self._params(system, user))
         return _text_or_refusal(resp)
 
-    def complete_batch(self, items):
+    def complete_batch(self, items, id_path=None):
         """Submit all requests to the Message Batches API (-50% pricing), poll
         until the batch ends, then return {custom_id: raw_text} for successes.
 
         Runs asynchronously on Anthropic's side (usually < 1h). The batch id is
-        printed up front so a killed run can be recovered via ``fetch_batch``.
+        printed up front AND written to ``id_path`` when given, because printing is
+        not enough: a poller killed before its stdout is read leaves a paid batch
+        whose id survives only in the API's batch list, and resubmitting pays twice.
         """
         from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
         from anthropic.types.messages.batch_create_params import Request
@@ -215,8 +223,12 @@ class AnthropicProvider(LLMProvider):
             for cid, system, user in items
         ]
         batch = self._client.messages.batches.create(requests=requests)
+        if id_path:
+            path = Path(id_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(batch.id + "\n", encoding="utf-8")
         print(f"[batch] submitted {len(requests)} requests as {batch.id} "
-              f"(-50% pricing); polling every 30s...")
+              f"(-50% pricing){' -> ' + str(id_path) if id_path else ''}; polling every 30s...")
         return self.fetch_batch(batch.id)
 
     def fetch_batch(self, batch_id):
