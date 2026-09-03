@@ -6,9 +6,10 @@ extractor learns the register of synthetic disaster copy. Meanwhile 31,263 Turki
 paid for -- sit unused in turkish_gate/ and chinese_gate/, in exactly the schema the EKF
 consumes (`casualty_report` with mode/anchor).
 
-Balanced by DOWNSAMPLING to the smallest language, so no arm can dominate by volume. The
-English arm is still synthetic; that is the remaining gap, not a property of the design.
-Swap in a real English corpus here when one exists and the balance holds.
+Balanced by DOWNSAMPLING to the smallest language, so no arm can dominate by volume. All
+three arms are REAL news: the English arm was synthetic until cas_ann_en (DocEE) and
+cas_ann_ccnews (CC-News) were annotated, and the balance held by construction when it was
+swapped in.
 
     uv run python tools/train/build_casualty_multilingual.py --out data/casualty_ml
 """
@@ -61,6 +62,33 @@ def base_seen_keys():
     return seen
 
 
+def check_anchors(splits):
+    """Refuse to write a row whose declared anchor is not one of its own fields.
+
+    In ``natural`` mode the anchor field's mentions delimit record instances, so a row
+    declaring an anchor it does not carry makes the record head raise "no matching field
+    query was found in the layout" on the first batch that contains one. The annotator
+    stamped a fixed ``dead`` on every purchased row, which is wrong for the 20-33% of real
+    news reporting only injured, only missing, or only a place -- 14,068 of 54,303 train
+    rows here, and it killed a paid run at step 0. Fixed at the source by
+    tools/data/repair_casualty_anchors.py; this is the gate that keeps it fixed.
+    """
+    bad = 0
+    for rows in splits.values():
+        for row in rows:
+            body = row.get("output") or {}
+            meta = (body.get("record_metadata") or {}).get("casualty_report") or {}
+            if meta.get("mode") != "natural":
+                continue
+            present = {f for s in (body.get("json_structures") or [])
+                       for f in (s.get("casualty_report") or {})}
+            bad += meta.get("anchor") not in present
+    if bad:
+        raise SystemExit(f"{bad} rows declare an anchor they do not carry; run "
+                         f"tools/data/repair_casualty_anchors.py on the sources first")
+    print("  anchors: every row anchors on a field it carries")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", default="data/casualty_ml", help="split base path")
@@ -102,6 +130,8 @@ def main():
                                                    and normalize_group_key(r.get("input") or "") in seen]
         note = f"   ({pinned} base-seen -> train)" if pinned else ""
         print(f"  {lang}: {len(chosen)} chosen, {len(safe)} base-unseen{note}")
+
+    check_anchors(splits)
 
     counts = {}
     for name, rows in splits.items():

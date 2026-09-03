@@ -17,7 +17,8 @@ Output matches data/casualty_loc_split.train.jsonl exactly:
 
     {"input": ..., "output": {"json_structures": [{"casualty_report": {...}}],
                               "record_metadata": {"casualty_report": {"mode": "natural",
-                                                                      "anchor": "dead"}}}}
+                                                                      "anchor": <a field
+                                                                      the row HAS>}}}}
 
     smoke  : uv run python tools/data/annotate_casualty.py --limit 10 --out data/cas_ann_smoke
     batch  : uv run python tools/data/annotate_casualty.py --batch --out data/cas_ann_tr
@@ -193,6 +194,23 @@ def write(rows: list[dict], out_prefix: str) -> None:
     print(f"[cas-ann]   records per doc: {sorted(per_doc.items())}")
 
 
+ANCHOR_ORDER = ("dead", "injured", "missing", "location")
+
+
+def pick_anchor(structs: list) -> str:
+    """Return the anchor field for a row: the first ANCHOR_ORDER field the row actually has.
+
+    In ``natural`` mode the anchor field's mentions delimit record instances, so declaring
+    one the row does not carry makes the record head raise "declares anchor 'dead' but no
+    matching field query was found in the layout" on the first batch that contains such a
+    row. A fixed ``dead`` is wrong for the 20-33%% of real news that reports only injured,
+    only missing, or only a place -- and it shipped that way in cas_ann_en, cas_ann_ccnews,
+    cas_ann_tr and cas_ann_zh, which repair_casualty_anchors.py fixes on disk.
+    """
+    present = {f for s in structs for f in (s.get("casualty_report") or {})}
+    return next((f for f in ANCHOR_ORDER if f in present), ANCHOR_ORDER[0])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--corpora", nargs="+", required=True)
@@ -240,7 +258,8 @@ def main() -> int:
             continue
         rows.append({"input": text, "output": {
             "json_structures": structs,
-            "record_metadata": {"casualty_report": {"mode": "natural", "anchor": "dead"}},
+            "record_metadata": {"casualty_report": {"mode": "natural",
+                                                    "anchor": pick_anchor(structs)}},
         }, "sources": sources})
 
     total = kept + dropped

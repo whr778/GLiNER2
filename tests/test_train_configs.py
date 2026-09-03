@@ -104,6 +104,35 @@ def _load_train_module():
 LABEL_CATEGORIES = set(_load_train_module().LABEL_CATEGORIES)
 
 
+class _NoDuplicateKeys(yaml.SafeLoader):
+    """SafeLoader that refuses a duplicate mapping key instead of taking the last one."""
+
+
+def _no_duplicates(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise AssertionError(f"duplicate key {key!r} at line {key_node.start_mark.line + 1}")
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep=deep)
+
+
+_NoDuplicateKeys.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_duplicates)
+
+
+@pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)
+def test_config_has_no_duplicate_keys(path):
+    """PyYAML silently keeps the LAST of two identical keys, so a botched edit survives.
+
+    An edit to this file's header once left `model: English, Turkish, Simplified Chinese.`
+    as a real top-level key 33 lines above the real `model:` block. The config parsed, the
+    shape checks passed, and the wrong `model` would have won on any reordering.
+    """
+    yaml.load(path.read_text(encoding="utf-8"), Loader=_NoDuplicateKeys)
+
+
 @pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)
 def test_config_labels_section_shape(path):
     labels = yaml.safe_load(path.read_text()).get("labels")

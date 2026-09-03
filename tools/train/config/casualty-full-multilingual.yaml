@@ -31,7 +31,7 @@
 # 22,139 English against Turkish 31,263 and Chinese 20,901, so the balance holds at 20,901.
 #
 # THE BLIND TEST IS BLIND, and this needed forcing. The 137k base TRAINED on docee.train,
-# so 6,379 English rows are text it has already read: fine to train on, not fine to score.
+# so 6,247 English rows are text it has already read: fine to train on, not fine to score.
 # Pinning them to train shrinks the English eval pool, and letting 80/10/10 absorb that
 # gave a test set of 25.1% English against 37.5% Turkish -- the exact failure this corpus
 # exists to avoid. val and test are therefore sized EQUALLY per language by construction
@@ -41,39 +41,6 @@
 # 0 cross-split overlap, 0 base-trained rows in val or test, 100% record_metadata,
 # 0 Chinese labels, check_leakage --config CLEAN.
 
-model: English, Turkish, Simplified Chinese.
-#
-# WHY THIS EXISTS. Every casualty corpus in this repo is 100% English and 100% LLM-written
-# text, so the extractor learns the register of synthetic disaster copy and does poorly on
-# real wire copy -- this line's standing in-domain-good / real-news-poor failure. Measured
-# on the EKF front end's own mix: 71.4% of English trigger+argument records are synthetic,
-# and one corpus (casualty_events) supplies 62% of them.
-#
-# What was sitting unused, already annotated and already paid for, in exactly the schema
-# the EKF consumes (`casualty_report`, mode/anchor):
-#
-#   turkish_gate/cas_ann_tr    31,263 docs / 40,109 instances  REAL Turkish news
-#   chinese_gate/cas_ann_zh*   20,901 docs / 28,722 instances  REAL Chinese news
-#   casualty_natural           29,324 docs / 72,733 instances  synthetic English
-#
-# CORRECTION, dated 2026-09-02. An earlier version of this file stated "Chinese -- there is
-# none. 4 of 818,776 casualty_report structures across every corpus on disk are Chinese."
-# That was wrong. The 20,901 Chinese records live in data/chinese_gate/, a subdirectory the
-# scan treated as scratch rather than as a corpus, so it looked at data/*.jsonl and found
-# nothing. They are real news, field-level, and location-rich (26,163 fills).
-#
-# BALANCED BY DOWNSAMPLING to the smallest language (20,901 each, 62,703 total), so no arm
-# wins on volume. Built by tools/train/build_casualty_multilingual.py; verified 0 duplicates
-# within each split, 0 overlap across splits, 0 overlap across languages, and 33.3% per
-# language in train, val AND test -- an unbalanced test set would hide a monolingual model.
-#
-# THE REMAINING GAP IS ENGLISH. Its arm is still synthetic because no real-news English
-# casualty corpus exists: cc_news_haiku45 is real news but carries 95 casualty records in a
-# different schema (incident_report.casualties, one merged count, not dead/injured/missing).
-# CC-News is the wrong pool to buy from -- 0.47% base rate, 1.38% after the free regex, so
-# 21,000 positives would cost ~$2,036. DocEE is the right pool: real English disaster news,
-# the toll regex fires on 54.9% of its 21,842 documents. Swap the English arm here when it
-# is annotated; the balance holds by construction.
 model:
   pretrained: whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16
   architecture: boundary
