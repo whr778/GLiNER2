@@ -56,6 +56,57 @@ report the in-distribution score as uninterpretable.
   replay to pay it back. Synthetic text does not buy transfer at any volume.
 - Never mix them and expect the average: the mix arm preserved WORST of all three.
 
+
+## It is domain adaptation tangled with forgetting, not "synthetic is bad"
+
+The two axes above are the same mechanism seen twice: distance between distributions.
+Preservation measures distance from what the base ALREADY KNEW; transfer measures distance
+from where the model will be DEPLOYED. Synthetic text is broad and close to a general
+pretraining distribution, so it forgets less and generalises zero-shot. Real text carries
+a domain's own bias -- news, email, tweets -- which is precisely the signal that transfers,
+and precisely what makes it look far from a general eval set.
+
+### Domain-prompted synthetic captures the REGISTER, not the DISTRIBUTION
+
+`casualty_natural` is already domain-prompted -- it generates disaster news with datelines
+and attribution ("A major news outlet reported that dozens of residents remain missing
+following the June 24, 2026 crash of Flight MH370 into Villa St. Louis"). It is not a
+missing experiment; it is the corpus the EKF line has trained on all along, and the line
+is still real-news-poor.
+
+Measured against `cas_ann_en` (real DocEE news), same task, same schema, same language,
+9,000 documents each:
+
+| | synthetic "news" | real news | ratio |
+|---|--:|--:|--:|
+| distinct tokens (first 400/doc) | 10,538 | **155,251** | **14.7x** |
+| median length | 1,025 ch | 2,785 ch | 2.7x |
+| casualty records per doc | 2.48 | 1.56 | -- |
+| median position of the first toll | 29.4% | **15.9%** | -- |
+
+Prompting fixes the surface: datelines, wire phrasing, "officials confirmed". It does not
+fix the lexical tail, the document length, or the inverted pyramid -- real wire copy leads
+with the number, synthetic buries it mid-document, and most of a real article is about
+something other than the toll. **You can prompt for register. You cannot prompt for the
+145,000 tokens the generator never uses.**
+
+### The result is a property of a TRIPLE, not of synthetic data
+
+The preservation table was measured on `base-v1` (fastino DeBERTa) against
+`pile_ner_def`. "Real text forgets more" is a statement about distance from what THAT base
+knew, on THAT eval set, at THAT replay dose. The 137k/eb16 base already contains real news
+(docee, cc_news_haiku45), so the same fine-tune is no longer novel to it and the ordering
+may not hold. Do not carry the ordering across a base change without re-measuring; carry
+the mechanism.
+
+### The A/B that is now possible for the first time
+
+`cas_ann_en` (real English news) and `casualty_natural` (domain-prompted synthetic
+English) share a schema, a task and a language. Same base, same replay, one variable:
+text provenance. That isolates domain adaptation from forgetting and from the label space,
+and it is the experiment the EKF line has needed since the front-end rebuild scored well
+in-domain and formed events on fewer real wire-copy windows than the model it replaced.
+
 ## Sources
 
 `tools/train/preservation_results/`, [[lambda-real-vs-synth-run]],
