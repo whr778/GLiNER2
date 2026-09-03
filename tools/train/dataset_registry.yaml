@@ -713,6 +713,14 @@ datasets:
     hf_jsonl: whr778/cas_ann_en
     language: [en]
     description: "9,648 casualty_report records over REAL English news, the first real-text English casualty corpus in this repo -- every other English casualty corpus is LLM-generated. Bought 2026-09-03 for ~$20 from 14,850 DocEE documents screened by the free toll regex (53.0% of DocEE carries a casualty label; the regex lifts purity to 53.0% at 95.5% recall). Yield 65.0%, 0 errored, 78.5% verbatim retention, 0 duplicate documents. Field fills: location 13,777, dead 10,101, injured 3,414, missing 534. Candidates carry a source tag (docee-train/val/test) because the 137k base TRAINED on docee.train -- a casualty test split must be carved from the val/test rows or the blind test is not blind. Feeds casualty_ml."
+  short_form_probe:
+    name: short_form_probe (register probe for pseudo-perplexity)
+    tasks: none -- unlabelled text, measurement only
+    license: inherits community-datasets/disaster_response_messages
+    source_url: community-datasets/disaster_response_messages (HF), train split
+    hf_jsonl: whr778/short_form_probe
+    language: [en]
+    description: "400 unedited short-form disaster messages over 60 characters. Not training data: it is the held-out register cell in tools/train/base_model_perplexity.py, and the only one that is not edited prose. mmBERT-base scores 29.52 pseudo-perplexity here against 4.67 on real news, which is the measurement behind the claim that the stage-0 SMS gate failure is partly REPRESENTATIONAL and not only a provenance confound. Mirrored because it lived on a temp volume until 2026-09-03, which would have made a published number unrepeatable."
   casualty_ml:
     name: casualty_ml (language-balanced casualty structures)
     tasks: structure extraction (casualty_report)
@@ -720,7 +728,7 @@ datasets:
     source_url: built by tools/train/build_casualty_multilingual.py
     hf_jsonl: whr778/casualty_ml
     language: [en, tr, zh]
-    description: "62,703 casualty_report records balanced at 20,901 per language: synthetic English (casualty_natural), REAL Turkish news (turkish_gate/cas_ann_tr, 31,263 available) and REAL Chinese news (chinese_gate/cas_ann_zh*, 20,901). Downsampled to the smallest language so no arm wins on volume. Field fills across the corpus: location 99,094, dead 60,060, injured 45,281, missing 22,210; 100% carry record_metadata, which the BOUNDARY record head requires and whose absence fails silently. Verified 0 duplicates within each split, 0 overlap across splits, 0 overlap across languages, and 33.3% per language in train, val AND test -- an unbalanced test set would let a monolingual model score well. The ENGLISH arm is still synthetic text: no real-news English casualty corpus exists, cc_news_haiku45 carries only 95 casualty records in a different schema, and CC-News is the wrong pool to buy from at a 0.47% base rate. DocEE is the candidate pool."
+    description: "62,703 casualty_report records balanced at 20,901 per language, ALL REAL NEWS: English (cas_ann_en from DocEE plus cas_ann_ccnews from CC-News, 22,139 available), Turkish (turkish_gate/cas_ann_tr, 31,263) and Simplified Chinese (chinese_gate/cas_ann_zh*, 20,901). Downsampled to the smallest language so no arm wins on volume. The English arm was synthetic (casualty_natural) until the two English purchases landed on 2026-09-03; the balance held by construction when it was swapped in. 100% carry record_metadata, which the BOUNDARY record head requires and whose absence fails silently -- and whose ANCHOR must name a field the row actually carries: the annotator stamped a fixed 'dead' on every purchased row, 14,068 of 54,303 train rows did not carry it, and training died at step 0 until tools/data/repair_casualty_anchors.py fixed the sources and the builder gained a gate. Verified on the shipped build: 54,303 / 4,200 / 4,200, 0 duplicates within each split, 0 overlap across splits, 33.0/33.5/33.5 per language in train, val AND test (an unbalanced test set would let a monolingual model score well), 0 broken anchors, and 0 of the 6,247 base-seen English rows in val or test."
   casualty_multi:
     name: Multi-event casualty-report corpus
     tasks: structured extraction (json_structures, multi-instance)

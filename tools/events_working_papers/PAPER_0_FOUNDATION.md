@@ -346,14 +346,14 @@ have helped.
 English, Turkish and Simplified Chinese, all REAL news. Building it surfaced a tension
 worth stating because the obvious construction satisfies only one side.
 
-The base trained on `docee.train`, and 6,379 of the English casualty rows are derived from
+The base trained on `docee.train`, and 6,247 of the English casualty rows are derived from
 that text. They are legitimate training data — the labels are new — but scoring them is not
 a blind test. Pinning them to train shrinks the English evaluation pool, and letting a
 fixed 80/10/10 ratio absorb the loss yields a test set of **25.1% English against 37.5%
 Turkish**, which lets a model strong in two languages post a good aggregate. Sizing val and
 test *equally per language by construction* (1,400 each, drawn only from base-unseen rows)
 and letting train take the remainder satisfies both: 0 base-trained rows in val or test,
-and 33.2/33.4/33.4 in every split.
+and 33.0/33.5/33.5 in every split.
 
 **Blind-test integrity and evaluation balance are separate properties, and enforcing one
 by ratio silently trades away the other.**

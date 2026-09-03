@@ -48,7 +48,11 @@ DOMAINS = {
     "synthetic registers": ("data/synthetic_haiku45_5k.train.jsonl", "input"),
     # Short-form, unedited. Every domain above is edited prose, which does not test the
     # register question at all -- a model can carry a language and still not model tweets.
-    "short-form messages": ("/Volumes/Development/tmp/gliner2-session/short_form.jsonl", "input"),
+    # 400 messages over 60 characters from the train split of the public HF dataset
+    # `community-datasets/disaster_response_messages`. Committed rather than fetched so the
+    # published 29.52 is reproducible from this repo; it lived only on a temp volume until
+    # 2026-09-03, which would have made that number unrepeatable.
+    "short-form messages": ("data/short_form_probe.jsonl", "input"),
 }
 
 
