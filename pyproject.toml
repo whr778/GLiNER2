@@ -76,6 +76,8 @@ local = [
     # range REQUIRES moving the kernels range in the same commit.
     "transformers>=5.6,<5.7",
     "peft",
+    "stopwordsiso",
+    "langcodes",
 ]
 
 [tool.pytest.ini_options]

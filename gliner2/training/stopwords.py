@@ -42,7 +42,7 @@ def build_stopwords(
     except ImportError as exc:
         raise ImportError(
             "stopwordsiso and langcodes are required. "
-            "Install with: uv add 'gliner2[train]'"
+            "Install with: uv add 'gliner2[local]'"
         ) from exc
 
     yaml_data: dict = {}

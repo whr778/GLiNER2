@@ -1266,9 +1266,15 @@ class SchemaTransformer:
             ))
             types.append("classifications")
 
-            # Update schema
+            # Update schema. `true_label` is a bare string for a single-label task and a
+            # list for multi-label (same duality `include_true_label_prob` above already
+            # handles) -- normalize to a list here too, since line ~1376 does `l in
+            # cls_item["true_label"]`, which is a SUBSTRING check against a bare string
+            # rather than a membership check, and silently scores every label whose text
+            # happens to appear inside the true label as a match.
             schema["classifications"][idx]["labels"] = cls_labels
-            true_label = schema["classifications"][idx]["true_label"].copy()
+            true_label = schema["classifications"][idx]["true_label"]
+            true_label = true_label.copy() if isinstance(true_label, list) else [true_label]
             schema["classifications"][idx]["true_label"] = [real2syn.get(i, i) for i in true_label]
             labels.append([])
 
