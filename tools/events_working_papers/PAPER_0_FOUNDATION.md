@@ -300,6 +300,64 @@ in-distribution score).
 provenance, an in-distribution metric measures provenance, not the task. Balance the
 provenance across classes, or report the score as uninterpretable.
 
+### 7.3 Measure what the base already models, before buying supervision
+
+Supervised data does not rescue a language or a register the encoder cannot model, and
+forcing it distorts the representation for the ones it modelled well. We therefore measure
+masked-LM pseudo-perplexity per language and per domain on held-out text drawn from the
+corpora we intend to train on, and treat it as a gate on the purchase rather than a
+post-hoc diagnostic (`tools/train/base_model_perplexity.py`).
+
+mmBERT-base, 120 held-out documents per cell:
+
+| language | pseudo-PPL | tokens/char | | English domain | pseudo-PPL |
+|---|--:|--:|---|---|--:|
+| Kazakh | 2.26 | 0.465 | | financial filings | 3.13 |
+| Turkish | **2.46** | 0.269 | | biomedical | 4.15 |
+| English | 4.93 | 0.254 | | **news (real)** | **4.67** |
+| Chinese | **5.90** | 0.318 | | news (synthetic) | 5.42 |
+| Japanese | 10.36 | 0.603 | | scientific | 8.56 |
+| African langs (MasakhaNER) | **114.11** | 0.366 | | **short-form messages** | **29.52** |
+
+Perplexity is per-token, so `tokens/char` is reported beside it: cross-encoder comparison
+is only meaningful when the tokenizer is shared, and a language can look cheap per token
+while costing three times the tokens.
+
+**Two decisions came out of this table.** Turkish at 2.46 and Chinese at 5.90 are firmly
+modelled, so the multilingual casualty purchase was sound — the labels would take. The
+MasakhaNER row at 114.11 is the opposite case: adding supervision there would be the wrong
+lever, and continued unsupervised pretraining the right one.
+
+**The domain axis re-explained a failure we had already misdiagnosed.** Our stage-0
+relevance gate admitted 0 of 590 disaster-related SMS messages. We attributed that entirely
+to a provenance confound in its training set — a synthetic positive class against a real
+negative class — which was real but not complete: the encoder itself sits at 29.52 on that
+register against 4.67 on news. Part of that failure is representational, and no quantity
+of supervised SMS labels closes it without continued pretraining.
+
+The converse is equally useful and points the other way for our main line: mmBERT models
+real news as well as anything we measured, so the EKF front end's real-news weakness is
+**not** representational. It is supervised signal, and continued pretraining would not
+have helped.
+
+### 7.4 A language-balanced corpus, and two constraints that pull against each other
+
+`casualty_ml` is 62,703 `casualty_report` records balanced at 20,901 per language across
+English, Turkish and Simplified Chinese, all REAL news. Building it surfaced a tension
+worth stating because the obvious construction satisfies only one side.
+
+The base trained on `docee.train`, and 6,379 of the English casualty rows are derived from
+that text. They are legitimate training data — the labels are new — but scoring them is not
+a blind test. Pinning them to train shrinks the English evaluation pool, and letting a
+fixed 80/10/10 ratio absorb the loss yields a test set of **25.1% English against 37.5%
+Turkish**, which lets a model strong in two languages post a good aggregate. Sizing val and
+test *equally per language by construction* (1,400 each, drawn only from base-unseen rows)
+and letting train take the remainder satisfies both: 0 base-trained rows in val or test,
+and 33.2/33.4/33.4 in every split.
+
+**Blind-test integrity and evaluation balance are separate properties, and enforcing one
+by ratio silently trades away the other.**
+
 ## 8. Evaluation methodology
 
 **Strict and relaxed regimes.** Every category (entity, relation, classification,
