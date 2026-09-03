@@ -68,26 +68,45 @@ class PooledCandidates:
 
 
 def _deduplicate_pool(
-    keys: torch.LongTensor,
+    starts: torch.LongTensor,
+    ends: torch.LongTensor,
     scores: torch.Tensor,
     valid: torch.BoolTensor,
     capacity: int,
     n_boundaries: int,
-) -> tuple[torch.LongTensor, torch.BoolTensor]:
-    """Deduplicate document keys, retaining the highest-priority occurrence."""
-    invalid_key = n_boundaries * n_boundaries
-    keys = torch.where(valid, keys, torch.full_like(keys, invalid_key))
+) -> tuple[torch.LongTensor, torch.LongTensor, torch.BoolTensor]:
+    """Deduplicate document spans, retaining the highest-priority occurrence.
+
+    Spans are carried as (start, end) rather than as the packed ``start * n + end`` key
+    they used to be. ``torch.gather`` on int64 rounds through float32 on MPS above 2^24,
+    and n^2 crosses that for any document over ~4,096 boundaries -- every Chinese article,
+    since the splitter yields about one word per character -- so a gathered key unpacked to
+    a DIFFERENT span. Components stay below n, where gather is exact everywhere. Ordering
+    is unchanged: a stable sort by ``end`` then by ``start`` is lexicographic ascending,
+    which is what sorting the packed key gave. An invalid entry is (n, 0), the pair the
+    retired ``invalid_key = n * n`` decoded to.
+    """
+    invalid_start, invalid_end = n_boundaries, 0
+    starts = torch.where(valid, starts, torch.full_like(starts, invalid_start))
+    ends = torch.where(valid, ends, torch.full_like(ends, invalid_end))
     scores = torch.where(valid, scores, torch.full_like(scores, MASK_LOGIT))
     by_score = torch.argsort(scores, dim=-1, descending=True, stable=True)
-    keys = keys.gather(-1, by_score)
+    starts = starts.gather(-1, by_score)
+    ends = ends.gather(-1, by_score)
     scores = scores.gather(-1, by_score)
     valid = valid.gather(-1, by_score)
-    by_key = torch.argsort(keys, dim=-1, stable=True)
-    keys = keys.gather(-1, by_key)
-    scores = scores.gather(-1, by_key)
-    valid = valid.gather(-1, by_key)
+    by_end = torch.argsort(ends, dim=-1, stable=True)
+    starts = starts.gather(-1, by_end)
+    ends = ends.gather(-1, by_end)
+    scores = scores.gather(-1, by_end)
+    valid = valid.gather(-1, by_end)
+    by_start = torch.argsort(starts, dim=-1, stable=True)
+    starts = starts.gather(-1, by_start)
+    ends = ends.gather(-1, by_start)
+    scores = scores.gather(-1, by_start)
+    valid = valid.gather(-1, by_start)
     first = torch.ones_like(valid)
-    first[..., 1:] = keys[..., 1:] != keys[..., :-1]
+    first[..., 1:] = (starts[..., 1:] != starts[..., :-1]) | (ends[..., 1:] != ends[..., :-1])
     keep = valid & first
     order = torch.argsort(
         torch.where(keep, scores, torch.full_like(scores, MASK_LOGIT)),
@@ -95,13 +114,15 @@ def _deduplicate_pool(
         descending=True,
         stable=True,
     )[..., :capacity]
-    selected_keys = keys.gather(-1, order)
+    selected_starts = starts.gather(-1, order)
+    selected_ends = ends.gather(-1, order)
     selected_valid = keep.gather(-1, order)
-    if selected_keys.shape[-1] < capacity:
-        pad = capacity - selected_keys.shape[-1]
-        selected_keys = F.pad(selected_keys, (0, pad))
+    if selected_starts.shape[-1] < capacity:
+        pad = capacity - selected_starts.shape[-1]
+        selected_starts = F.pad(selected_starts, (0, pad))
+        selected_ends = F.pad(selected_ends, (0, pad))
         selected_valid = F.pad(selected_valid, (0, pad), value=False)
-    return selected_keys, selected_valid
+    return selected_starts, selected_ends, selected_valid
 
 
 class DocumentCandidatePool(nn.Module):
@@ -181,7 +202,8 @@ class DocumentCandidatePool(nn.Module):
         # Reserve each active query's strongest pairs before global fill. The
         # priority band is above ordinary global scores but below injected gold.
         quota = min(self.min_pool_per_query, pair_s.shape[-1])
-        quota_keys = pair_s.new_zeros((b, 0))
+        quota_starts = pair_s.new_zeros((b, 0))
+        quota_ends = pair_s.new_zeros((b, 0))
         quota_scores = union_pair_score.new_zeros((b, 0))
         quota_valid = pair_valid.new_zeros((b, 0))
         if quota:
@@ -202,7 +224,8 @@ class DocumentCandidatePool(nn.Module):
             quota_s = s_idx.gather(-1, ranked)
             quota_e = e_idx.gather(-1, ranked)
             quota_valid = per_query_valid.gather(-1, ranked).reshape(b, -1)
-            quota_keys = (quota_s * n + quota_e).reshape(b, -1)
+            quota_starts = quota_s.reshape(b, -1)
+            quota_ends = quota_e.reshape(b, -1)
             rank_bonus = torch.arange(
                 quota, 0, -1, device=boundary_states.device,
                 dtype=union_pair_score.dtype,
@@ -212,8 +235,8 @@ class DocumentCandidatePool(nn.Module):
                 + rank_bonus.view(1, 1, quota)
             ).reshape(b, -1)
 
-        global_keys = pair_s * n + pair_e
-        all_keys = torch.cat((quota_keys, global_keys), -1)
+        all_starts = torch.cat((quota_starts, pair_s), -1)
+        all_ends = torch.cat((quota_ends, pair_e), -1)
         all_scores = torch.cat((quota_scores, union_pair_score.detach()), -1)
         all_valid = torch.cat((quota_valid, pair_valid), -1)
         diagnostic_keys = diagnostic_valid = None
@@ -221,9 +244,12 @@ class DocumentCandidatePool(nn.Module):
             # Oracle recall is a property of the actual bounded pool, not the
             # untruncated Cartesian pairing universe.
             with torch.no_grad():
-                diagnostic_keys, diagnostic_valid = _deduplicate_pool(
-                    all_keys, all_scores, all_valid, self.pool_size, n
+                diag_s, diag_e, diagnostic_valid = _deduplicate_pool(
+                    all_starts, all_ends, all_scores, all_valid, self.pool_size, n
                 )
+                # Packed only for the equality check below; arithmetic and comparison are
+                # exact on every backend, it is gather that is not.
+                diagnostic_keys = diag_s * n + diag_e
 
         if gold_pairs is not None and gold_mask is not None:
             gvalid = gold_mask & query_mask.unsqueeze(-1)
@@ -237,23 +263,20 @@ class DocumentCandidatePool(nn.Module):
                 )
                 gvalid = gvalid & (sampled < gold_injection_prob)
             safe_gold = gold_pairs.clamp(0, n - 1)
-            gkeys = safe_gold[..., 0] * n + safe_gold[..., 1]
-            all_keys = torch.cat((all_keys, gkeys.reshape(b, -1)), -1)
+            all_starts = torch.cat((all_starts, safe_gold[..., 0].reshape(b, -1)), -1)
+            all_ends = torch.cat((all_ends, safe_gold[..., 1].reshape(b, -1)), -1)
             all_valid = torch.cat((all_valid, gvalid.reshape(b, -1)), -1)
             gold_priority = union_pair_score.new_full(
-                (b, gkeys.shape[1] * gkeys.shape[2]), -MASK_LOGIT
+                (b, safe_gold.shape[1] * safe_gold.shape[2]), -MASK_LOGIT
             )
             all_scores = torch.cat((all_scores, gold_priority), -1)
 
         with torch.no_grad():
-            selected_keys, selected_valid = _deduplicate_pool(
-                all_keys, all_scores, all_valid, self.pool_size, n
+            selected_s, selected_e, selected_valid = _deduplicate_pool(
+                all_starts, all_ends, all_scores, all_valid, self.pool_size, n
             )
-        selected_keys = torch.where(
-            selected_valid, selected_keys, torch.zeros_like(selected_keys)
-        )
-        selected_s = torch.div(selected_keys, n, rounding_mode="floor")
-        selected_e = selected_keys - selected_s * n
+        selected_s = torch.where(selected_valid, selected_s, torch.zeros_like(selected_s))
+        selected_e = torch.where(selected_valid, selected_e, torch.zeros_like(selected_e))
         indices = torch.stack((selected_s, selected_e), -1)
         indices = torch.where(
             selected_valid.unsqueeze(-1), indices, torch.zeros_like(indices)

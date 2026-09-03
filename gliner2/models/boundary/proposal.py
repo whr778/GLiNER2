@@ -350,14 +350,15 @@ def assemble_candidates(
     dtype = pair_scores.dtype
     floor = MASK_LOGIT
     ceiling = -floor
-    invalid_key = n_boundaries * n_boundaries
+    # An invalid entry is (n, 0), which is the pair the retired `invalid_key = n * n`
+    # decoded to. Kept identical so ordering and dedup are unchanged.
+    invalid_start, invalid_end = n_boundaries, 0
 
     pre_valid = pair_valid & query_mask.unsqueeze(-1)
-    pre_keys = pair_starts * n_boundaries + pair_ends
-    pre_keys = torch.where(
-        pre_valid, pre_keys, torch.full_like(pre_keys, invalid_key)
-    )
-    keys = pre_keys
+    starts = torch.where(pre_valid, pair_starts, torch.full_like(pair_starts, invalid_start))
+    ends = torch.where(pre_valid, pair_ends, torch.full_like(pair_ends, invalid_end))
+    # Reported for diagnostics only. Computed, never gathered -- see the note below.
+    pre_keys = starts * n_boundaries + ends
     scores = torch.where(
         pre_valid, pair_scores, torch.full_like(pair_scores, floor)
     )
@@ -376,48 +377,69 @@ def assemble_candidates(
             )
             gvalid = gvalid & (sampled < gold_injection_prob)
         safe_gold = gold_pairs.clamp(0, n_boundaries - 1)
-        gkeys = safe_gold[..., 0] * n_boundaries + safe_gold[..., 1]
-        gkeys = torch.where(
-            gvalid, gkeys, torch.full_like(gkeys, invalid_key)
+        gstarts = torch.where(
+            gvalid, safe_gold[..., 0], torch.full_like(safe_gold[..., 0], invalid_start)
+        )
+        gends = torch.where(
+            gvalid, safe_gold[..., 1], torch.full_like(safe_gold[..., 1], invalid_end)
         )
         gscores = torch.where(
             gvalid,
             torch.full(gvalid.shape, ceiling, dtype=dtype, device=pair_scores.device),
             torch.full(gvalid.shape, floor, dtype=dtype, device=pair_scores.device),
         )
-        keys = torch.cat((keys, gkeys), dim=-1)
+        starts = torch.cat((starts, gstarts), dim=-1)
+        ends = torch.cat((ends, gends), dim=-1)
         scores = torch.cat((scores, gscores), dim=-1)
         valid = torch.cat((valid, gvalid), dim=-1)
         is_gold = torch.cat((is_gold, gvalid), dim=-1)
 
-    # Group equal keys while keeping the highest-scoring occurrence first.
+    # Group equal spans while keeping the highest-scoring occurrence first.
     # Unlike merge_running_topk, assemble keeps the historical score-desc /
-    # key-ascending order; PR-10 permits a tie-order change only in the merge.
+    # span-ascending order; PR-10 permits a tie-order change only in the merge.
+    #
+    # A span's identity used to be packed into one int64, `start * n + end`, and that
+    # packed value was gathered. `torch.gather` on int64 rounds through float32 on MPS
+    # above 2^24, and n^2 crosses that for any document over ~4,096 boundaries -- which
+    # every Chinese article is, the splitter yielding about one word per character. The
+    # rounded key unpacks to a DIFFERENT span, sometimes zero-width. Only gather is
+    # affected (arithmetic, comparison and argsort are exact), so the components are
+    # carried through the permutations instead: both stay below n, where gather is exact
+    # on every backend. Ordering is unchanged -- a stable sort by `end` followed by a
+    # stable sort by `start` is lexicographic (start, end) ascending, which is what
+    # sorting the packed key produced.
     by_score = torch.argsort(scores, dim=-1, descending=True, stable=True)
-    keys = torch.gather(keys, -1, by_score)
+    starts = torch.gather(starts, -1, by_score)
+    ends = torch.gather(ends, -1, by_score)
     scores = torch.gather(scores, -1, by_score)
     valid = torch.gather(valid, -1, by_score)
     is_gold = torch.gather(is_gold, -1, by_score)
-    by_key = torch.argsort(keys, dim=-1, stable=True)
-    keys = torch.gather(keys, -1, by_key)
-    scores = torch.gather(scores, -1, by_key)
-    valid = torch.gather(valid, -1, by_key)
-    is_gold = torch.gather(is_gold, -1, by_key)
+    by_end = torch.argsort(ends, dim=-1, stable=True)
+    starts = torch.gather(starts, -1, by_end)
+    ends = torch.gather(ends, -1, by_end)
+    scores = torch.gather(scores, -1, by_end)
+    valid = torch.gather(valid, -1, by_end)
+    is_gold = torch.gather(is_gold, -1, by_end)
+    by_start = torch.argsort(starts, dim=-1, stable=True)
+    starts = torch.gather(starts, -1, by_start)
+    ends = torch.gather(ends, -1, by_start)
+    scores = torch.gather(scores, -1, by_start)
+    valid = torch.gather(valid, -1, by_start)
+    is_gold = torch.gather(is_gold, -1, by_start)
 
     first = torch.ones_like(valid)
-    first[..., 1:] = keys[..., 1:] != keys[..., :-1]
+    first[..., 1:] = (starts[..., 1:] != starts[..., :-1]) | (ends[..., 1:] != ends[..., :-1])
     keep = valid & first
     scores = torch.where(keep, scores, torch.full_like(scores, floor))
     order = torch.argsort(scores, dim=-1, descending=True, stable=True)
     take = min(capacity, order.shape[-1])
     order = order[..., :take]
-    selected_keys = torch.gather(keys, -1, order)
     selected_valid = torch.gather(keep, -1, order)
     selected_gold = torch.gather(is_gold, -1, order) & selected_valid
 
-    starts = torch.div(selected_keys, n_boundaries, rounding_mode="floor")
-    ends = selected_keys - starts * n_boundaries
-    indices = torch.stack((starts, ends), dim=-1)
+    indices = torch.stack(
+        (torch.gather(starts, -1, order), torch.gather(ends, -1, order)), dim=-1
+    )
     indices = torch.where(selected_valid.unsqueeze(-1), indices, torch.zeros_like(indices))
 
     if take < capacity:
