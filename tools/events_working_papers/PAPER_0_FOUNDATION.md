@@ -251,6 +251,55 @@ deduplicator handles `dev`-named and missing splits, and each hosted corpus carr
 own pre-repair overlap counts on its dataset card so the contamination history travels
 with the data.
 
+### 7.2 Real text with synthetic labels vs synthetic text with synthetic labels
+
+Both halves of a training corpus can be synthetic — the TEXT, and the ANNOTATION over it.
+They are separable, and we measured the difference. **The two axes disagree, and treating
+"synthetic data" as one variable produces the wrong decision.**
+
+**Axis 1 — preservation of prior capability.** A 2×2 fine-tuning study over `base-v1`,
+scored on a common held-out set (`pile_ner_def` + `knowledgator_gliner` val, stride-6
+slice, best-vs-best, entity strict micro F1):
+
+| arm | text | annotation | entity strict F1 | Δ vs base |
+|---|---|---|--:|--:|
+| base-v1 | — | — | 0.5322 | — |
+| `synthetic_haiku45_5k` | **synthetic** | synthetic | **0.4099** | −0.1223 (−23.0%) |
+| `cc_news_haiku45` | **real** | synthetic | 0.3596 | −0.1726 (−32.4%) |
+| real + synthetic mix | both | synthetic | 0.3267 | −0.2055 (**−38.6%**) |
+
+**Real text forgot MORE, not less** — the opposite of the pre-registered prediction, and
+the mix was worst of all. Partly confounded by volume (10,960 optimizer steps against
+~5,080), but the confound does not explain it away: step-matched at epoch 5 (~5,480
+steps) real text still preserves 0.3653 against synthetic's 0.4099.
+
+**Axis 2 — transfer to real deployment text.** Here the ordering reverses, and far more
+sharply:
+
+| system | training positives | in-distribution | on real news |
+|---|---|--:|--:|
+| stage-0 relevance gate | **99.9% synthetic** | F1 **1.0000** | admits **0 of 71** articles; 0 of 590 SMS |
+| EKF front end | **71.4% synthetic** English trigger+argument | right trigger, right bound argument on its own corpus | forms events on FEWER real wire-copy windows than the model it replaced |
+| casualty extractor | 100% synthetic English | strong on its own corpus | `location` holds a digit **78.2%** of the time on Turkish news vs 5.8% on English (p = 1.5e-39) |
+
+A gate scoring F1 = 1.0000 that admits nothing real is not a good gate; it has a
+trivially perfect false-positive rate because it never fires. That failure was originally
+attributed to truncation and CJK handling, and the corrected root cause is the provenance
+split: **the positive class was synthetic and the negative class was real**, so the model
+learned to separate registers rather than relevance.
+
+**The synthesis.** Synthetic text is the safer regulariser and the worse teacher of the
+deployment distribution. Real text with synthetic labels costs more preservation and buys
+transfer that synthetic text does not provide at any volume. Which matters depends on
+whether the model must keep prior capability (use replay — 5–10% is the minimum that
+prevents catastrophic forgetting, ~30% is better) or must work on real input (use real
+text, and check the class balance for a provenance confound before believing any
+in-distribution score).
+
+**A corollary we now design around.** When positives and negatives come from different
+provenance, an in-distribution metric measures provenance, not the task. Balance the
+provenance across classes, or report the score as uninterpretable.
+
 ## 8. Evaluation methodology
 
 **Strict and relaxed regimes.** Every category (entity, relation, classification,
