@@ -1,0 +1,36 @@
+{
+  "encoder": "jhu-clsp/mmBERT-base",
+  "samples": 120,
+  "languages": {
+    "en": {
+      "pseudo_ppl": 4.93,
+      "tokens_per_char": 0.2539,
+      "docs": 120
+    },
+    "tr": {
+      "pseudo_ppl": 2.46,
+      "tokens_per_char": 0.2694,
+      "docs": 120
+    },
+    "zh": {
+      "pseudo_ppl": 5.9,
+      "tokens_per_char": 0.3176,
+      "docs": 120
+    },
+    "ja": {
+      "pseudo_ppl": 10.36,
+      "tokens_per_char": 0.6027,
+      "docs": 13
+    },
+    "kk": {
+      "pseudo_ppl": 2.26,
+      "tokens_per_char": 0.465,
+      "docs": 114
+    },
+    "afr": {
+      "pseudo_ppl": 114.11,
+      "tokens_per_char": 0.3665,
+      "docs": 120
+    }
+  }
+}

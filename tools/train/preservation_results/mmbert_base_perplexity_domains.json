@@ -1,0 +1,51 @@
+{
+  "encoder": "jhu-clsp/mmBERT-base",
+  "samples": 120,
+  "languages": {
+    "news (real)": {
+      "pseudo_ppl": 4.67,
+      "tokens_per_char": 0.2532,
+      "docs": 120
+    },
+    "news (synthetic)": {
+      "pseudo_ppl": 5.42,
+      "tokens_per_char": 0.2462,
+      "docs": 120
+    },
+    "news (CC-News)": {
+      "pseudo_ppl": 5.55,
+      "tokens_per_char": 0.2492,
+      "docs": 120
+    },
+    "biomedical": {
+      "pseudo_ppl": 4.15,
+      "tokens_per_char": 0.2481,
+      "docs": 120
+    },
+    "financial filings": {
+      "pseudo_ppl": 3.13,
+      "tokens_per_char": 0.3516,
+      "docs": 120
+    },
+    "scientific": {
+      "pseudo_ppl": 8.56,
+      "tokens_per_char": 0.1918,
+      "docs": 120
+    },
+    "encyclopedic": {
+      "pseudo_ppl": 4.51,
+      "tokens_per_char": 0.2406,
+      "docs": 120
+    },
+    "synthetic registers": {
+      "pseudo_ppl": 4.22,
+      "tokens_per_char": 0.2547,
+      "docs": 120
+    },
+    "short-form messages": {
+      "pseudo_ppl": 29.52,
+      "tokens_per_char": 0.2616,
+      "docs": 120
+    }
+  }
+}
