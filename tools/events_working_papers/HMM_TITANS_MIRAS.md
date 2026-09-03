@@ -159,32 +159,68 @@ financial amounts revised down as well as up (ChFinAnn), displacement and evacua
 that fall as people return, active cases as distinct from cumulative cases, containment
 percentage, outage counts, territory control (CMNEE), breach scope revised downward (CASIE).
 
-**So the negative result is about monotone cumulative counts, not about gates.**
+**So the negative result is about monotone cumulative counts, not about gates.** This is
+the theoretical structure of the innovation; §4 checks it against what real reporting
+actually contains, and narrows it further.
 
-## 4. The regime test is free — we already have a non-monotone quantity with truth
+## 4. The regime test was not free to design — it was already built, and already run
 
-The pipeline tracks `ROLES = ("dead", "injured", "missing")`, and measured over
-`datasets/ekf_showcase/feed.truth.jsonl` (179 rows):
+Before designing a new experiment, checked whether one already existed. It did.
+`scope_gate.py::hmm_gate4` is a fourth Viterbi state, `REV`, for exactly the case §3
+describes — a toll that legitimately falls. `revision_state_test.py` tests it on REAL
+Helene data, on North Carolina's `dead` stream specifically, because that is documented
+ground truth: the official toll really does fall four times as deaths are reclassified.
+Reproduced live, 2026-09-03:
 
-| role | steps that DECREASE | trajectory |
-|---|--:|---|
-| dead | 0 / 178 (0.0%) | 0 -> 33, monotone |
-| injured | 0 / 178 (0.0%) | 0 -> 214, monotone |
-| **missing** | **131 / 178 (73.6%)** | 101 -> 0, strongly non-monotone |
+```
+helene: shipped gate 29.3 | 3-state HMM 20.7 | oracle 17.6
+        North Carolina nRMSE: gate 0.518  3-state 0.313
 
-`missing` falls as people are located or reclassified. It is the non-monotone regime,
-**already tracked, already carrying ground truth, in the same feed**. Testing one-sided
-against two-sided emissions on `missing` versus `dead` is a within-corpus control: same
-documents, same extractor, same pipeline, same stream, only the role changes. No new data,
-no GPU.
+  revise_cost  REV fires   kept  drop ||   POOLED  NC nRMSE
+          5.0          0     45    12 ||     20.4     0.313
+          6.0          0     45    12 ||     20.4     0.313
+          8.0          0     45    12 ||     20.4     0.313
+         12.0          0     45    12 ||     20.4     0.313
+         20.0          0     45    12 ||     20.4     0.313
+```
 
-**Caveat, stated up front:** `feed.jsonl` is the SYNTHETIC showcase feed — 102 documents
-with `_gt` embedded per document. A result there is a *mechanism* test, not an efficacy
-claim, and this project has repeatedly measured that in-domain synthetic results do not
-transfer to real news ([[PAPER_0_FOUNDATION]] §7.2, and the Track B arm that scored 0.532
-in-domain and zero on real news). Real-data confirmation needs `missing` observations from
-the frozen Helene/Türkiye streams, and whether authoritative `missing` truth exists for
-those is unverified.
+**`REV` fires zero times at every cost tested, and every score is identical to the 3-state
+model.** [[EKF_MHT_DESIGN]] §4.5 already recorded why: "the reports never follow it down.
+After each revision the later readings are 230, 230, 230, 1400, 98, 250 while the official
+toll falls to 84-123." Outlets do not publish the correction; they repeat the old number or
+move on. A correctly-specified state finds nothing, because the text never states the thing
+it is looking for. Verdict: **correct, and inert.**
+
+**That result reframes what to test on `missing`, and checking what actually exists there
+kills the plan as first stated — before any new emissions code was written.**
+
+1. **No ground truth for `missing` exists on real data.** `datasets/helene2024/ground_truth.json`
+   carries exactly one field, `deaths`, sourced from Wikipedia's casualty table. No RMSE
+   comparison is possible for this role on Helene, full stop.
+
+2. **The real reported `missing` stream is not a clean decline — it is noise.** North
+   Carolina's real extracted observations, in time order:
+   `1, 11, 13, 13, 57, 32, 32, 10, 11, 1, 90, 1, 2000`. Across all three roles on the same
+   real corpus, consecutive-step decreases are `dead` 20/85 (23.5%), `injured` 19/43
+   (44.2%), `missing` 11/28 (39.3%) — comparable NOISE levels, not a role that behaves
+   qualitatively differently. The trailing 2000 is almost certainly a different scope
+   entirely, which is exactly what the existing reject/scope machinery targets, not a
+   two-sidedness question.
+
+3. **The synthetic showcase feed's clean 73.6%-declining `missing` truth series
+   (`datasets/ekf_showcase/feed.truth.jsonl`) is an artefact of how that corpus was
+   generated**, not evidence real disaster reporting behaves that way. Given (1) and (2),
+   testing emissions on synthetic `missing` would measure the corpus generator's prose
+   style, and this project has already paid to learn that lesson once (Track B: 0.532
+   in-domain, zero on real news, "the corpus is the bottleneck not the formulation").
+
+**So the correction is narrower than "monotone counts break surprise gating, non-monotone
+counts do not."** The evidence in hand says: **a correctly-specified state for a real
+phenomenon is inert when the reporting itself never surfaces that phenomenon** — a
+sourcing problem, not a decode problem, matching §4.5's own conclusion exactly. There is
+no equivalent case that `missing` gives the decoder anything real reporting would let it
+use; if anything, its real behaviour looks like a scope/contamination problem the existing
+gate already addresses, not an argument for a new state.
 
 ## 5. Separate the two claims the document bundles
 
@@ -225,18 +261,25 @@ the worst part of the stack worse, not better.
 
 Both are serviceable analogies and neither is an implementation path.
 
-## 9. Ordered next steps, if pursued
+## 9. Where this leaves the state layer
 
-1. Run one-sided vs two-sided emissions in `hmm_gate` on the `missing` role, against `dead`
-   as the monotone control. Free, today, and it directly tests whether §2's negative was a
-   general result or a monotonicity artefact.
-2. If two-sided wins on `missing`, confirm on a real stream before believing it — the
-   synthetic caveat in §4 is load-bearing.
-3. Only if the residual then looks like a context or association failure rather than a scope
-   failure does a memory layer become worth pricing, and §6 is where it would go.
+§4 closes the loop this document opened rather than queuing more work on it: the two-sided
+emissions idea has a real implementation (`hmm_gate4`), a real test
+(`revision_state_test.py`), and a real, already-published result (inert, on real data, for
+a documented reason). There is no untested regime left to check on the roles this pipeline
+currently tracks and scores — `dead` has truth and was tested; `injured` and `missing` have
+no truth on real data to test against at all.
+
+The one genuinely open item this document surfaced is §6: data association, where the
+oracle-repriced ceiling (+0.111, 18.8%) says real headroom exists and nothing here has
+tested a memory-backed approach against it. That is a different problem from the gate, and
+it is the only place left where "give it more context" is an untested claim rather than a
+re-run of a measured one.
 
 **The standing caution:** this project's measured pattern is that data changes move the
 number and formulation changes do not (Track B: 0.532 in-domain, zero on real news, "the
-corpus is the bottleneck not the formulation"). Step 1 is worth running because it is free
-and it resolves a real ambiguity in an existing result. Nothing beyond step 2 should be
-budgeted on the strength of the document above.
+corpus is the bottleneck not the formulation"; and now revision-state, inert for the same
+class of reason — the text does not carry the signal). Nothing in this document should be
+budgeted against the state layer. If the Titans line is worth spending on at all, §6 is
+where, and even there the first question is whether a real cross-document stream with
+ground truth exists to test against — the same question that closed off §4.
