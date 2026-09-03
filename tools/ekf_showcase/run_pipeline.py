@@ -387,12 +387,23 @@ def build_casualty_schema(with_location: bool = False, record_mode: str = "natur
                                 "only, for a whole country or nation, or for a smaller "
                                 "area such as a single county or town: one of "
                                 "'place', 'national', 'sub-place', 'unclear'")
+    # exclusive=True: a candidate span bound to one casualty_report instance cannot ALSO
+    # be bound to another. Ignored unless record_mode is set (the field builder's own
+    # contract), so this is a no-op on the legacy/span path and only engages on the
+    # BOUNDARY architecture's instance formation, where it is resolved by an optimal
+    # (Hungarian) assignment across a document's instances rather than scored per
+    # (instance, candidate) pair independently. Measured on the balanced multilingual
+    # casualty model's own blind test (338 documents where two instances compete for the
+    # same figure): attribution-sensitive F1 0.2525 -> 0.2921, false positives -25.6%,
+    # same true positives -- it stops the model copying one figure onto every instance
+    # in a multi-incident document rather than finding anything new. Decode-time only;
+    # no retraining required to turn this on or off.
     return (s
-            .field("dead", dtype="str",
+            .field("dead", dtype="str", exclusive=True,
                    description="number of people killed or confirmed dead, not injured/missing/displaced")
-            .field("injured", dtype="str",
+            .field("injured", dtype="str", exclusive=True,
                    description="number of people injured or hurt, not killed/missing/displaced/homeless")
-            .field("missing", dtype="str",
+            .field("missing", dtype="str", exclusive=True,
                    description="number of people missing or unaccounted for, not killed/injured/displaced")
             .field("source", dtype="str", description="who reported these figures"))
 
