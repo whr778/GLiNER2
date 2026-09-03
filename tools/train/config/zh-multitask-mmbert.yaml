@@ -29,7 +29,11 @@
 #   Chinese structures today (verified: it returns {} for a casualty schema), so any
 #   non-trivial structure F1 is new capability.
 model:
-  pretrained: whr778/gliner2-joint-boundary-mmbert-137k-v2
+  # v2-eb16, not plain v2: this file was written 2026-08-31, before eb16 existed. Plain
+  # v2's batch_size was per-GPU, so it did not actually reproduce v1's recipe -- eb16 was
+  # built specifically to fix that (labels the only variable) and is what every other
+  # current config warm-starts from.
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16
   architecture: boundary
   boundary_head:
     enable_relations: true   # the base trained these; dropping them would forget them

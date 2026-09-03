@@ -164,6 +164,60 @@ def test_compile_specs_uses_dtype_for_implicit_scalar_cardinality():
     assert spec.field_for_query(2).cardinality == FieldCardinality.ZERO_OR_MORE
 
 
+def test_events_exclusive_roles_emit_record_metadata():
+    """`.events(..., exclusive_roles=[...])` reaches decode the same way a structure's
+    `.field(..., exclusive=True)` does -- record_metadata keyed by event NAME, anchored
+    on the trigger, so `compile_record_specs` picks it up ahead of the bare-defaults
+    `_event_record_cfg` fallback it would otherwise synthesize.
+    """
+    s = Schema()
+    s.events({
+        "Attack": {"roles": ["attacker", "victim", "instrument"],
+                   "exclusive_roles": ["victim"]},
+        "Movement": ["agent", "destination"],   # no exclusive_roles: untouched path
+    })
+    built = s.build()
+    assert built["record_metadata"]["Attack"] == {
+        "mode": "natural", "anchor": "trigger",
+        "fields": {"victim": {"exclusive": True}},
+    }
+    # An event that never asked for exclusivity gets no explicit entry at all --
+    # `_event_record_cfg` keeps synthesizing bare defaults for it, unchanged.
+    assert "Movement" not in built.get("record_metadata", {})
+
+
+def test_events_exclusive_roles_rejects_unknown_role():
+    with pytest.raises(ValueError, match="exclusive_roles"):
+        Schema().events({
+            "Attack": {"roles": ["attacker"], "exclusive_roles": ["not_a_role"]},
+        })
+
+
+def test_compile_specs_marks_event_role_exclusive():
+    """End-to-end: the layout an events task actually produces (`trigger` at role_index
+    0, per `_process_events`), through `compile_record_specs`, lands `exclusive` on the
+    right field and leaves the others at their normal defaults.
+    """
+    s = Schema()
+    s.events({"Attack": {"roles": ["attacker", "victim"], "exclusive_roles": ["victim"]}})
+    built = s.build()
+
+    layout = QueryLayout(queries=(
+        QuerySpec(query_id=0, task_index=0, task_type="events",
+                  task_name="Attack", role_index=0, role_name="trigger"),
+        QuerySpec(query_id=1, task_index=0, task_type="events",
+                  task_name="Attack", role_index=1, role_name="attacker"),
+        QuerySpec(query_id=2, task_index=0, task_type="events",
+                  task_name="Attack", role_index=2, role_name="victim"),
+    ))
+    spec = compile_record_specs(
+        query_layout=layout, record_metadata=built["record_metadata"], event_records=True,
+    )[0]
+    assert spec.field_for_query(0).is_anchor
+    assert spec.field_for_query(1).exclusive is False
+    assert spec.field_for_query(2).exclusive is True
+
+
 def test_compile_specs_excludes_deferred_relation_groups():
     layout = QueryLayout(queries=(
         QuerySpec(query_id=0, task_index=0, task_type="relations",

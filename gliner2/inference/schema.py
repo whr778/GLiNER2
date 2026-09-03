@@ -570,10 +570,22 @@ class Schema:
             event_types: Either a dict ``{event_type: [role1, role2, ...]}`` or a
                 richer ``{event_type: {"roles": [...], "description": ...,
                 "role_descriptions": {role: desc}, "trigger_threshold": float,
-                "argument_threshold": float}}``. A list of ``{"name": ...,
-                "roles": [...], ...}`` dicts is also accepted.
+                "argument_threshold": float, "exclusive_roles": [role, ...]}}``.
+                A list of ``{"name": ..., "roles": [...], ...}`` dicts is also
+                accepted.
             trigger_threshold: Default trigger-detection threshold (0-1).
             argument_threshold: Default argument-role threshold (0-1).
+
+        ``exclusive_roles`` marks roles where a candidate span bound to one event
+        instance cannot ALSO be bound to another (e.g. a victim cannot belong to two
+        separate attack instances at once). Decode then resolves those roles with a
+        global optimal assignment (Hungarian algorithm) across instances of this event
+        type in the document, instead of scoring each (instance, candidate) pair
+        independently -- the same mechanism ``.structure(..., mode="natural")``
+        already exposes via ``.field(..., exclusive=True)``. Only meaningful when the
+        model was trained with ``boundary_head.event_records: true``; requires no
+        retraining to turn on or off, since it is a decode-time reconciliation rule,
+        not a model change.
 
         Returns:
             self, for chaining.
@@ -618,12 +630,23 @@ class Schema:
                 raise ValueError(f"Event '{name}' role names cannot be empty strings")
             if len(set(roles)) != len(roles):
                 raise ValueError(f"Event '{name}' has duplicate roles")
+            exclusive_roles = config.get("exclusive_roles") or []
+            if not isinstance(exclusive_roles, list) or not all(
+                isinstance(r, str) for r in exclusive_roles
+            ):
+                raise ValueError(f"Event '{name}' exclusive_roles must be a list of strings")
+            unknown = set(exclusive_roles) - set(roles)
+            if unknown:
+                raise ValueError(
+                    f"Event '{name}' exclusive_roles {sorted(unknown)} not in its roles"
+                )
             normalised[name] = {
                 "roles": list(roles),
                 "description": config.get("description"),
                 "role_descriptions": config.get("role_descriptions") or {},
                 "trigger_threshold": config.get("trigger_threshold", trigger_threshold),
                 "argument_threshold": config.get("argument_threshold", argument_threshold),
+                "exclusive_roles": list(exclusive_roles),
             }
 
         for name, cfg in normalised.items():
@@ -644,6 +667,17 @@ class Schema:
             for role, desc in (cfg["role_descriptions"] or {}).items():
                 if isinstance(desc, str) and desc.strip():
                     self._event_role_descriptions[(name, role)] = desc
+
+            if cfg["exclusive_roles"]:
+                # `_store_record_metadata` validates the anchor against a per-name
+                # field-order registry that only `.structure()`/`.field()` populate.
+                # Register it here so an event name passes the same check a
+                # structure would, instead of duplicating that validation.
+                self._store_field_order(name, ["trigger"] + cfg["roles"])
+                self._store_record_metadata(
+                    name, mode="natural", anchor="trigger", occurrence_policy=None,
+                    fields={role: {"exclusive": True} for role in cfg["exclusive_roles"]},
+                )
 
         return self
 
