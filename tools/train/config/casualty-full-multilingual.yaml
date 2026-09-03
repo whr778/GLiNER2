@@ -55,7 +55,14 @@ training:
   output_dir: ./out/casualty-full-multilingual
   experiment_name: casualty_full_multilingual
   data_parallel: false          # DEPRECATED no-op; DDP comes from torchrun, not config
-  num_epochs: 6
+  # 4, not 6, on measured cost rather than a guess: 54,303 records at effective batch 32
+  # is 1,697 steps per epoch, and the A100 runs 3.46 s/it, so 6 epochs is 9.5h of training
+  # -- past the 8h cap, which would kill the process before the blind test and the
+  # threshold sweep ever run and leave the one number this corpus exists to produce
+  # unmeasured. 4 epochs is 6.2h, and the whole job including the sweep fits in 7h.
+  # Cheap insurance either way: metric_for_best selects on val, and this line's earlier
+  # loc-split arm saturated at epoch 1.
+  num_epochs: 4
   batch_size: 2
   gradient_accumulation_steps: 16     # effective 32
   encoder_lr: 2.0e-5
