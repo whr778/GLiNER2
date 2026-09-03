@@ -705,6 +705,14 @@ datasets:
     language: [en, zh]
     description: "warmstart_mix whose casualty records declare mode=anchorless -- instances formed with no anchor mention. The losing arm of the record-mode A/B: 1/9 instances and 0/9 location fills, versus 7/9 and 6/9 for mix_natural, on identical data. Retained for provenance because the result is informative rather than a failed build: a casualty record appears to genuinely HAVE a natural anchor (the figure itself), so removing it leaves nothing to key instances on."
 
+  cas_ann_en:
+    name: cas_ann_en (real English news casualty structures)
+    tasks: structure extraction (casualty_report)
+    license: inherits DocEE
+    source_url: DocEE, annotated by tools/data/annotate_casualty.py
+    hf_jsonl: whr778/cas_ann_en
+    language: [en]
+    description: "9,648 casualty_report records over REAL English news, the first real-text English casualty corpus in this repo -- every other English casualty corpus is LLM-generated. Bought 2026-09-03 for ~$20 from 14,850 DocEE documents screened by the free toll regex (53.0% of DocEE carries a casualty label; the regex lifts purity to 53.0% at 95.5% recall). Yield 65.0%, 0 errored, 78.5% verbatim retention, 0 duplicate documents. Field fills: location 13,777, dead 10,101, injured 3,414, missing 534. Candidates carry a source tag (docee-train/val/test) because the 137k base TRAINED on docee.train -- a casualty test split must be carved from the val/test rows or the blind test is not blind. Feeds casualty_ml."
   casualty_ml:
     name: casualty_ml (language-balanced casualty structures)
     tasks: structure extraction (casualty_report)

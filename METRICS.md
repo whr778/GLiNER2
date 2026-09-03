@@ -673,6 +673,30 @@ All returned floats are eligible; `_classification_report` (a string) is not.
 
 ---
 
+## Comparing two checkpoints: four things must be held fixed
+
+A model-vs-model table is only about the models if everything else matches. A v1-vs-v2
+comparison in this repo was confounded FOUR ways at once, and each one moved a number:
+
+| held fixed? | what happens if not |
+|---|---|
+| **the scoring code** | v1's published relation strict F1 was **0.2071**; re-scored with current `eval_metrics.py` the SAME checkpoint on the SAME data scores **0.3232**. Its `test_metrics.json` carries 175 keys against today's 314 -- it predates the `dodrans`/`entropy`/`weighted` variants. |
+| **the test data** | the label unification changed the test split too: structure gold support moved 4,245 -> 4,167, and docfee's classification MENU went from Chinese to English, so that head is scoring a different task. |
+| **the threshold** | `metric_sweep: true` selects each checkpoint at ITS own best threshold -- right for shipping one model, wrong for a comparison. Pass `--threshold` explicitly. |
+| **the optimizer schedule** | `batch_size` is PER-GPU. The same config on 2 GPUs trains at effective batch 32 / 21,365 steps against 16 / 42,730 on one. See TRAINING.md section 9. |
+
+**The re-scoring is the cheap half.** `tools/train/eval.py --config <cfg> --checkpoint
+<ckpt> --split test --threshold 0.1` applies the config's label map, scores every
+category, and takes a matched threshold; running it over each checkpoint costs ~14 min on
+an A100 for a 15,456-record split. Do that before believing any delta against a number
+that was published by an older tree.
+
+**What this looked like in practice.** Comparing a new checkpoint against v1's PUBLISHED
+figure suggested relations were fully recovered (+0.0003). Re-scored properly, the same
+checkpoint was **-0.115** against v1 -- because v1's own number rose by 0.116 under the
+current scorer. The provisional read was reported before the matched run finished, and it
+was wrong. Wait for the matched table.
+
 ## References
 
 The metric definitions on this page are conventional; where a choice follows a

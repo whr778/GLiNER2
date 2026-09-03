@@ -328,6 +328,64 @@ reproduce a pre-gate run unchanged.
 
 ---
 
+## 3e. One label space, shared by a base and everything warm-started from it
+
+A label is an INPUT to GLiNER2 at inference, so two spellings of one concept are two
+different queries. `CompanyName` (chfinann) and `Company Name` (docfee) are one field of
+one taxonomy written twice, and a model warm-started from a base that learned the first
+will be asked for the second.
+
+Unify in the CONFIG, never by rewriting corpora:
+
+```yaml
+labels_file: labels/unified.yaml     # resolved relative to the config
+```
+
+`tools/train/config/labels/unified.yaml` is GENERATED. Regenerate after any data change:
+
+```bash
+uv run python tools/train/build_label_maps.py <configs and/or jsonl...> \
+    --canonical tools/train/config/joint-boundary-mmbert-137k.yaml \
+    --out tools/train/config/labels/unified.yaml
+```
+
+`--canonical` names the corpora whose spellings WIN, and it is not optional for a base
+with downstream models: without it, cc_news_haiku45's 427,160 lowercase `location`
+outvoted the base and flipped the canonical spelling to one the base never learned.
+
+**Five categories**, each with `rollup` / `separator` / `map`: `entities`, `relations`,
+`events` (types AND argument roles), `classifications` (menu AND answers), and
+`structures` -- json_structures names AND field names, carrying `record_metadata` keys and
+`anchor` with the rename. Without the last one the EKF surface was the only label surface
+with no lever, and a missed `anchor` decodes to `{}` in silence.
+
+### Four ways this goes wrong quietly
+
+- **An EMPTY inline `labels:` block OVERRIDES `labels_file`.** 21 of the 27 warm-started
+  configs carried `{rollup: false, map: {}}`; wiring the file without deleting the block
+  is a no-op that looks done. `tests/test_train_configs.py` pins that every config
+  warm-started from the base resolves the SAME maps.
+- **The map must be CLOSED.** It is applied ONCE, so `LOC: Location` beside
+  `Location: location` leaves both spellings alive. `build_label_maps` refuses to emit a
+  map whose target is itself a key.
+- **Roll-up runs BEFORE the map**, so a map key containing the separator can never fire.
+  Pinned by a test.
+- **A missing input is refused, not skipped.** The map has twice been built from fewer
+  corpora than intended -- once because zsh does not word-split an unquoted `$VAR`, once
+  because a file list did not survive a reboot -- and both times it looked like a clean
+  run while silently dropping a corpus.
+
+### What must NOT be merged
+
+Prove two labels mean the same thing by reading the surfaces they tag. Known keeps:
+`GPE` != `Location` (Thailand vs the Indian Ocean), `NORP` != `Organization`
+(nationalities), `FAC` != `Location` (buildings), redocred's `TIME` holds dates, and
+docee's `Target` (who an attack hit) != bio_ner_relations' `target` (a kinase substrate).
+Only TAXONOMY corpora may drive the map: `mix_natural` is 58% placeholder labels
+(`e_0` x30,034) and `zh_multitask` is 70% singletons.
+
+---
+
 ## 4. The boundary recipe
 
 Two stages. Train a base on a large mixed corpus, then warm-start the downstream from it.
@@ -624,6 +682,22 @@ Sanity-check with `AutoExtractor`, not `GLiNER2`, for boundary checkpoints.
 ---
 
 ## 9. Hardware
+
+**`batch_size` is PER-GPU, so one config is two different recipes.** This is the single
+most expensive gotcha in this file: the same YAML launched two ways trains two different
+models, and only the launch command differs.
+
+    1 GPU : batch 4 x accum 4       = effective 16, 42,730 steps
+    2 GPUs: batch 4 x accum 4 x 2   = effective 32, 21,365 steps  <- HALF the updates
+
+Measured on joint-boundary-mmbert-137k. The 2-GPU launch was read as a label-space
+regression for a day: relation strict F1 fell 0.098, with precision nearly doubling
+(0.202 -> 0.383) while recall collapsed (0.212 -> 0.064) -- the signature of an
+under-trained head, since relations are the minority task at 26.98% of the mix. Rebuilding
+at the 1-GPU recipe recovered +0.098 of it.
+
+Under `torchrun --nproc_per_node=N`, divide `gradient_accumulation_steps` by N to keep the
+effective batch, or accept an off-curve model and re-baseline everything downstream.
 
 The base configs train at `max_len=4096` with `sliding_window: true`; mmBERT's positional cap
 is 8192. Local-global attention keeps memory near-linear in sequence length, but activations

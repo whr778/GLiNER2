@@ -61,6 +61,75 @@ words, so "29 bin 313" counts). It is in `gate_purity_curve.py` as `TOLL_NEAR`.
 The coarse filter should be cheap and high-recall; the model should be expensive and
 high-precision, and should only ever see what survived the cheap one.
 
+
+## English (2026-09-02/03): the POOL is the cost driver, not the filter
+
+The Turkish numbers above describe a pool built for the task. English had none, and the
+first estimate was wrong by 38x because it priced the wrong corpus.
+
+| pool | casualty base rate | after the free regex | $ for 21,000 positives |
+|---|--:|--:|--:|
+| CC-News, first estimate | 0.47% | 1.38% | **$2,034** |
+| CC-News, MEASURED | ~7% | 6.95% composed | $404 |
+| DocEE | **30.4%** | **53.0%** | **$53** |
+
+**The 0.47% was a LOWER BOUND, not a measurement**, and treating it as one nearly killed
+the English arm. It counted documents where an UN-TARGETED multi-task prompt happened to
+emit `incident_report.casualties`. Nobody had asked that annotator for death tolls. A
+model scoring pass over 20,000 documents put the real composed rate at **6.95%** -- 15x
+higher -- and turned CC-News from "the wrong pool" into a viable one.
+
+**Read a base rate that came from a different question as a floor.**
+
+### Feasibility bites before price does
+
+DocEE is the cheapest pool per positive AND cannot supply the target: it holds **8,298**
+casualty documents in total, so 21,000 is unreachable there at any spend. The method's
+step 3 is about the CUT; this is the same failure one level up, about the POOL. Check both.
+
+### The model as a pre-filter: measure the YIELD, not just the screen rate
+
+Screening with an extractor before paying is the single biggest lever found so far,
+because scoring is nearly free and annotation is not:
+
+    score 488,710 CC-News docs   MPS 18h free / A100 1.1h $2.28
+    free regex first             -> 120,792 survivors, so the model scores a QUARTER
+    model keeps 28.0%            -> 33,516 candidates
+    annotate only those          -> $44.79
+
+But the screen rate is NOT the yield. Measured on 60 documents each:
+
+| pool | screened | annotator YIELD | verbatim kept |
+|---|--:|--:|--:|
+| DocEE | 53.0% | 73.3% predicted / **65.0% actual** | 78.5% |
+| CC-News, model-screened | 6.95% | **33.3%** | 73.8% |
+
+The shipped extractor over-fires, so a third of what it flags a careful annotator
+declines. Budget on yield, not on the screen rate, or the estimate is 2-3x optimistic.
+
+**A 60-document validation has a wide interval.** DocEE's predicted 73.3% came in at
+65.0%. Validate, but do not quote the result as precise.
+
+### Sample the pool, never a prefix of it
+
+A 60-document validation batch on DocEE returned 7 rows and read as a broken prompt. The
+pool was ordered by event type, so the first 60 candidates were 0/60 casualty-positive
+where a random 400 were 49.5%. The same prompt on a random 60 returned 44 rows.
+`build_english_casualty_candidates.py` now shuffles deterministically. This is the second
+time head-of-file reading produced a wrong answer here; if the file has an order, a prefix
+is not a sample.
+
+### The English toll regex
+
+`gate_purity_curve.PREFILTERS["en"]` -- death/injury words within 60 characters of a
+numeral, written numbers included. Validated against ground truth already owned (95
+`cc_news_haiku45` `incident_report.casualties` rows): **81.7% recall, 3.0x lift**.
+
+A digits-only variant was built on the theory that the EKF needs a trackable number, and
+REJECTED on measurement: it scores **57.1%** recall on the numeric positives it was
+designed for against the broader pattern's **77.6%**, because a document whose toll is
+numeric often puts the nearest cue in words.
+
 ## Traps
 
 - **Read purity beside recall, always.** A cut with excellent purity that discards 62% of

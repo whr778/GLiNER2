@@ -99,6 +99,8 @@ Push with [`push_corpus_hf.py`](push_corpus_hf.py) for split files and
 | `data/casualty_loc_split.*.jsonl` | test/train/val | [`whr778/casualty_loc_split`](https://huggingface.co/datasets/whr778/casualty_loc_split) | registry `hf_jsonl` |
 | `data/casualty_multi.*.jsonl` | test/train/val | [`whr778/casualty_multi`](https://huggingface.co/datasets/whr778/casualty_multi) | registry `hf_jsonl` |
 | `data/casualty_multi_loc.*.jsonl` | train | [`whr778/casualty_multi_loc`](https://huggingface.co/datasets/whr778/casualty_multi_loc) | registry `hf_jsonl` |
+| `data/casualty_ml.*.jsonl` | test/train/val | [`whr778/casualty_ml`](https://huggingface.co/datasets/whr778/casualty_ml) | registry `hf_jsonl` |
+| `data/cas_ann_en.jsonl` | (unsplit) | [`whr778/cas_ann_en`](https://huggingface.co/datasets/whr778/cas_ann_en) | direct upload |
 | `data/casualty_natural.*.jsonl` | train | [`whr778/casualty_natural`](https://huggingface.co/datasets/whr778/casualty_natural) | registry `hf_jsonl` |
 | `data/cc_news_haiku45.*.jsonl` | test/train/val | [`whr778/cc_news_haiku45`](https://huggingface.co/datasets/whr778/cc_news_haiku45) | registry `hf_jsonl` |
 | `data/chfinann.*.jsonl` | test/train/val | [`whr778/chfinann`](https://huggingface.co/datasets/whr778/chfinann) | registry `hf_jsonl` |
@@ -198,6 +200,35 @@ Push with [`push_corpus_hf.py`](push_corpus_hf.py) for split files and
 | `data/text2json.*.jsonl` | test/train/val | [`whr778/text2json`](https://huggingface.co/datasets/whr778/text2json) | registry `hf_jsonl` |
 | `data/warmstart_mix.*.jsonl` | train/val | [`whr778/warmstart_mix`](https://huggingface.co/datasets/whr778/warmstart_mix) | registry `hf_jsonl` |
 | `data/wikievents.*.jsonl` | dev/test/train | [`whr778/wikievents`](https://huggingface.co/datasets/whr778/wikievents) | registry `hf_jsonl` |
+
+## Language balance in the casualty line (2026-09-03)
+
+Every casualty corpus in this repo was 100% English and 100% LLM-written text, so the
+extractor learned the register of synthetic disaster copy rather than real wire copy.
+Measured on the EKF front end's own mix: **71.4% of English trigger+argument records are
+synthetic**, and `casualty_events` alone supplies 62% of them.
+
+`casualty_ml` balances three languages by DOWNSAMPLING to the smallest, so no arm wins on
+volume:
+
+| language | source | text | field fills |
+|---|---|---|---|
+| Turkish | `turkish_gate/cas_ann_tr` (31,263 available) | **real news** | location 36,461 · dead 26,919 · injured 20,234 |
+| Chinese | `chinese_gate/cas_ann_zh*` | **real news** | location 26,163 · dead 21,830 · injured 8,242 |
+| English | `cas_ann_en` (DocEE) + CC-News top-up | **real news** | location 13,777 · dead 10,101 · injured 3,414 |
+
+Built by `tools/train/build_casualty_multilingual.py`. Verified 0 duplicates within each
+split, 0 overlap across splits, 0 overlap across languages, 100% carrying
+`record_metadata` (its absence fails silently on the boundary path), and **33.3% per
+language in train, val AND test** -- an unbalanced test set lets a monolingual model score
+well.
+
+**A correction worth keeping.** An earlier version of `casualty-full-multilingual.yaml`
+stated "Chinese -- there is none. 4 of 818,776 casualty_report structures across every
+corpus on disk are Chinese." That was wrong: 20,901 real Chinese casualty records were in
+`data/chinese_gate/`, a subdirectory the scan treated as scratch rather than as a corpus.
+The English arm was synthetic for the same reason in reverse -- nobody had asked for real
+English casualty annotation until `cas_ann_en`.
 
 ## Summary
 
