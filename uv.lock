@@ -625,7 +625,9 @@ dependencies = [
 
 [package.optional-dependencies]
 local = [
+    { name = "langcodes" },
     { name = "peft" },
+    { name = "stopwordsiso" },
     { name = "torch" },
     { name = "transformers" },
 ]
@@ -644,6 +646,7 @@ requires-dist = [
     { name = "gliner" },
     { name = "huggingface-hub" },
     { name = "kernels", specifier = ">=0.12,<0.13" },
+    { name = "langcodes", marker = "extra == 'local'" },
     { name = "langcodes", extras = ["data"] },
     { name = "lumi-language-id-2" },
     { name = "mps-flash-attn", marker = "sys_platform == 'darwin'", specifier = ">=0.6.1" },
@@ -656,6 +659,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.28" },
     { name = "safetensors" },
     { name = "stopwordsiso", specifier = ">=0.7.0" },
+    { name = "stopwordsiso", marker = "extra == 'local'" },
     { name = "torch", marker = "extra == 'local'" },
     { name = "tqdm" },
     { name = "transformers", marker = "extra == 'local'", specifier = ">=5.6,<5.7" },
