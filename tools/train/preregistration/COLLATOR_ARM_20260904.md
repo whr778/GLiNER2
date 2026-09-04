@@ -55,3 +55,56 @@ samples/s against the control's 16.4, i.e. **~20%**, ETA 3.2h against 2h25m. Pad
 does not translate linearly to wall-clock -- `max_len: 2048` caps it and the GPU is not
 purely FLOP-bound. If mixed batching wins, adopting it elsewhere is ~5x cheaper than the
 waste figure implies.
+
+---
+
+# RESULT, scored 2026-09-04 against the falsifiers above
+
+## The prediction is FALSIFIED on the mechanism, CONFIRMED on the direction
+
+Full validation curve, `eval_classification_strict_micro_f1`:
+
+| epoch | control (grouped) | mixed |
+|---|---|---|
+| 1 | 0.7508 | 0.7203 |
+| 2 | 0.7792 | 0.7847 |
+| 3 | 0.7811 | 0.8012 |
+| 4 | **0.7964** peak | (no best) |
+| 5 | - | **0.8095** peak |
+| 6 | - | (no best) |
+| 7 | - | (no best) |
+| 8 | - | (no best) |
+
+**FALSIFIED.** The prediction was a peak at EPOCH 7. The peak is epoch 5, and the
+pre-registered falsifier is "peaks at epoch <= 5". Epochs 6, 7 and 8 all failed to beat
+it while training loss kept falling to 0.0569 -- overfitting, not a late ascent. The
+proposed mechanism, noisier gradients producing a LATER and higher peak, is not what
+happened: mixed peaked one epoch after the control, not three, and the gain came from a
+higher ceiling rather than a delayed one.
+
+**CONFIRMED on direction, and on the better of the two instruments.** Mixed wins the
+validation number it was selected on (+0.0131) AND the blind test set it was not:
+
+| | relevance | toll_kind | micro (n=4,312) |
+|---|---|---|---|
+| gate3 (grouped) | 0.8084 | 0.7393 | 0.7739 |
+| gate3-mixed | **0.8159** | **0.7398** | **0.7778** |
+
+A validation win alone would have been worth little at +0.0131 against this project's
+documented +/-0.02 run-to-run floor. The test set moving the same way, on an instrument
+neither model was selected against, is the result that carries.
+
+## Cost of the variable, measured
+
+12.8 samples/s against the control's 16.4 -- **~22%**, not the ~2x predicted from padding
+waste going 2.5% -> 50.9%. Waste does not translate linearly to wall-clock: `max_len:
+2048` caps it and the GPU is not purely FLOP-bound. If mixed batching survives the
+downstream bars, adopting it on `casualty-multilingual` and the 137k bases costs about a
+fifth of what the waste figure implies.
+
+## Not yet decided
+
+Per this file's own falsifier list, a validation win that loses the downstream bars is a
+LOSS. Turkish/Chinese admission and pooled RMSE on Helene, Aegean and Turkiye-EN are
+running; nothing ships until they report. gate3 itself passed two admission bars and still
+looked like an English regression until that failed to replicate.
