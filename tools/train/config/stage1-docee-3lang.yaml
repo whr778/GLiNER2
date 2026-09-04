@@ -1,0 +1,90 @@
+# Stage 1 for the EKF pipeline, in THREE languages -- the replacement for
+# whr778/gliner2-base-v1-casualty-docee, which is an English-only span model.
+#
+# WHY. Stage 1 is the pipeline's only monolingual stage. Gate (0) and casualty extraction
+# (2) are both multilingual; stage 1 supplies the event TYPE (the association key) plus
+# Location, Date and Casualties and Losses. Date is the ONLY field that can reject a
+# historical toll -- the Turkish feed quotes Haiti 2010's 316,000 and Antakya 115 AD's
+# 260,000 as figures the extractor binds CORRECTLY as `dead` -- and Location drives
+# association, which RESULTS.md names as the bottleneck: "not the filter and not the
+# extractor -- it is attribution".
+#
+# Measured 2026-09-04 on 48 real Turkish documents with hand-adjudicated gold, the shipped
+# span model types Turkish at 2/20 on genuine earthquake reporting; both mmBERT candidates
+# score 0/20 ZERO-SHOT. That last word matters: the probe tested zero-shot, and boundary
+# models collapse to a single label there. This config TRAINS the task instead.
+#
+# CORPUS, ~91K rows in ONE 60-label menu, no translation step:
+#   docee          27,307  en   DocEE, 59 types
+#   docee_zh       33,910  zh   226 MB that sat unconverted; 26 of 58 spellings unified
+#                               into en's canonical forms, covering 54% of the corpus
+#   turkish_event  30,134  tr   bought 2026-09-04, type + per-type argument roles
+# Menus unified to the union (60 = 59 DocEE + `none`) by unify_docee_menus.py, because a
+# model whose English menu lacks `none` cannot answer it at inference and whose Chinese
+# menu lacked `Armed Conflict` was never asked to consider it.
+#
+# BASE. casualty-multilingual, not the eb16 base it warm-started from. Measured on this
+# exact schema: Location 1.00/0.86/1.00 en/tr/zh and Casualties 1.00/0.31/0.86, against
+# eb16's 0.06/0.00/0.29 and 0.00. Half of stage 1 is the entity head and that base already
+# has it in three languages.
+#
+# TRAINED WITH THE FIXED LENGTH PROXY. Before 2026-09-04 `lengths` was
+# len(text.split()), which returns ~1 for Chinese and put every Chinese document in one
+# bucket -- 39.2% of gate3's batches were 100% monolingual against a 3.7% random floor.
+# This is the first multilingual model here trained without that defect.
+#
+# `none` is 16.9% of the Turkish arm and absent from en/zh. Kept: it is a real negative for
+# a 60-way classifier and dropping it leaves a model that has never seen one. Watch for
+# over-prediction of `none` on en/zh in the per-language eval.
+model:
+  pretrained: whr778/gliner2-casualty-multilingual
+  architecture: boundary
+  max_len: 2048
+  attn_implementation: flash_attention_2
+  boundary_head:
+    enable_relations: false
+    enable_records: false
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+  sampling: {}
+training:
+  output_dir: ./out/stage1-docee-3lang
+  experiment_name: stage1_docee_3lang
+  data_parallel: false
+  num_epochs: 4
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-05
+  task_lr: 5.0e-04
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_classification_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 50
+  num_workers: 0
+  validate_data: false
+  sliding_window: false
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+eval:
+  threshold: 0.5
+  eval_by_language: true
+labels:
+  entities: {rollup: false, separator: ., map: {}}
+  relations: {rollup: false, separator: ., map: {}}
+  events: {rollup: false, separator: ., map: {}}
+data:
+  corpora:
+  - data/docee
+  - data/docee_zh
+  - data/turkish_event
+  event_files: {}

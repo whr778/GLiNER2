@@ -1,0 +1,99 @@
+# Three-way gate: English, Turkish AND Chinese balanced by construction, not one
+# language bolted onto an English-heavy base.
+#
+# gate2-mmbert-tr fixed Turkish (AUC 0.4980 -> 0.8105) by adding 4,220 adjudicated
+# Turkish rows to the v2 corpus -- but never re-balanced Chinese alongside it. Measured
+# 2026-09-04 on 60 real held-out Chinese casualty documents: admission fell 58/60 (97%,
+# v2) -> 50/60 (83%, tr). Adding a language without proportionally growing every other
+# language's share is exactly the failure `build_gate_corpus.balance` exists to prevent
+# WITHIN a source; it does not protect the relative WEIGHT across sources, which is what
+# happened here.
+#
+# This corpus adds a genuinely new, previously-unused resource rather than reusing duee:
+# data/chinese_gate/zh_gate_sample.jsonl, 4,994 rows already adjudicated by
+# tools/data/annotate_gate.py's same four-way schema (current_toll/historical_toll/
+# exposure_only/no_toll) -- paid for and sitting unused since an earlier phase of this
+# project, not a new purchase. Its `source` field was 1,909 distinct per-outlet names;
+# balance() equalises classes WITHIN each (source, length-decile) cell, so left as-is
+# nearly every Chinese row would land in a singleton cell with no counterpart and be
+# silently dropped. Normalized to one value, "zh_news", mirroring turkish_news's own
+# single-source convention exactly (data/chinese_gate/gate_ann_chinese.jsonl,
+# tools/data/build_gate_corpus.py's own --annotated flag already supports combining
+# pools -- no code change needed there).
+#
+# duee (v2's original Chinese source, 602 toll-positive rows) was dropped ENTIRELY by
+# balance() this build -- 13,056 duee-derived rows found no same-decile counterpart,
+# because the decile edges are computed globally across ALL positives and shifted once
+# three languages' length distributions mixed. Not a regression: duee's toll/no-toll
+# split was a heuristic derived from event-role arguments, not adjudicated; zh_news is
+# the higher-quality replacement, not a downgrade.
+#
+# Final balance (train): docee 12,410 + cc_news 2,106 (en, 65.5%), turkish_news 4,278
+# (19.3%), zh_news 3,370 (15.2%). 22,164 rows total, 11,082/11,082 positive/negative by
+# construction. Verified: 0 duplicates, 0 cross-split overlap.
+#
+# SUCCESS BARS, pre-registered:
+#   Turkish AUC must not regress below gate2-mmbert-tr's 0.8105 (gate_turkish_fp.py).
+#   Chinese admission on the same 60 real held-out documents must recover toward v2's
+#   97% (58/60) -- the whole reason this corpus exists.
+#   English end-to-end must not regress: Helene pooled RMSE in deaths, matched stream
+#   coverage against both prior gates.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary
+  max_len: 2048
+  attn_implementation: flash_attention_2
+  boundary_head:
+    enable_relations: false
+    enable_records: false
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+  sampling: {}
+training:
+  seed: 7
+  output_dir: ./out/gate3-fixed-s7
+  experiment_name: gate3_fixed_seed7
+  data_parallel: false
+  num_epochs: 8
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-05
+  task_lr: 0.0005
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_classification_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  sliding_window: false
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+eval:
+  threshold: 0.5
+labels:
+  entities:
+    rollup: false
+    separator: .
+    map: {}
+  relations:
+    rollup: false
+    separator: .
+    map: {}
+  events:
+    rollup: false
+    separator: .
+    map: {}
+data:
+  corpora:
+  - data/gate3
+  event_files: {}
