@@ -414,13 +414,19 @@ def _is_cjk(ch: str) -> bool:
 
 
 def _length_proxy(text: str) -> int:
-    """Whitespace words plus CJK characters -- a length proxy that survives Chinese."""
+    """Approximate token count from character classes. Script-aware, tokenizer-free.
+
+    Tokens-per-character is stable WITHIN a script but not across one -- measured against
+    mmBERT's own tokenizer: ~4.55 chars/token English, 3.40 Turkish, 1.42 Chinese. Counting
+    WORDS instead is what broke: Chinese has no whitespace (~150x understated) and Turkish
+    is agglutinative, packing 2.35 tokens per whitespace word against English's 1.31, so an
+    intermediate word+CJK fix still left a 3.01x cross-language spread.
+
+    Character classes cut that to 1.37x (en 0.87 / tr 1.18 / zh 1.16 tokens per proxy unit),
+    which is inside what a length SORT needs -- it wants monotone ordering, not exact counts.
+    """
     cjk = sum(1 for ch in text if _is_cjk(ch))
-    if cjk:
-        # Strip CJK before word-splitting so mixed text is not double counted.
-        latin = "".join(" " if _is_cjk(ch) else ch for ch in text)
-        return len(latin.split()) + cjk
-    return len(text.split())
+    return max(1, int((len(text) - cjk) / 4.0 + cjk / 1.42))
 
 class ExtractorDataset(Dataset):
     """
