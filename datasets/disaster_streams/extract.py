@@ -77,6 +77,51 @@ _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
          "seventy": 70, "eighty": 80, "ninety": 90}
 _SCALES = {"hundred": 100, "thousand": 1000, "million": 1_000_000}
 
+# Turkish writes EVERY number >= 1000 as digits around a scale WORD -- "3 bin 549" is
+# 3,549, not 3 -- so `\d[\d,]*` reads the leading group and stops. Measured on the
+# Turkish Turkiye-2023 feed: the whole extracted trajectory topped out at 1,602 against
+# a ground truth reaching 41,000, because "3 bin 549" -> 3, "22 bin 168" -> 22,
+# "41 bin 20" -> 41. The extractor was often binding the CORRECT full span; this layer
+# destroyed it afterwards, which is why it read as a model failure.
+#
+# Handled here rather than in word_number(): that path is only reached when a span has
+# NO digits, and these spans are digit-bearing.
+_TR_SCALES = {"bin": 1_000, "milyon": 1_000_000, "milyar": 1_000_000_000}
+# Turkish agglutinates onto the scale word ("20 bini geçti" = passed 20,000), so match a
+# prefix and allow a suffix rather than requiring a bare word.
+_TR_NUM = re.compile(
+    r"(?:(\d[\d.]*)\s*)?\b(bin|milyon|milyar)\w*(?:\s*(\d[\d.]*))?", re.I)
+
+
+def _plain_int(tok: str) -> Optional[int]:
+    """Digits with Turkish/German '.' thousands separators, or English ','.
+
+    A dot is a thousands separator only when it splits into 3-digit groups; "1.5"
+    stays a decimal so English "1.5 million" is untouched.
+    """
+    tok = tok.strip().rstrip(".")
+    if not tok:
+        return None
+    if "." in tok:
+        head, *rest = tok.split(".")
+        if rest and all(len(g) == 3 and g.isdigit() for g in rest) and head.isdigit():
+            return int(head + "".join(rest))
+        return None
+    return int(tok.replace(",", "")) if tok.replace(",", "").isdigit() else None
+
+
+def turkish_number(text: str) -> Optional[int]:
+    """`3 bin 549` -> 3549, `20 bini` -> 20000, `1.014` -> 1014. None if no match."""
+    m = _TR_NUM.search(text)
+    if m:
+        head, scale, tail = m.group(1), m.group(2).lower(), m.group(3)
+        mult = _TR_SCALES[scale]
+        n = (_plain_int(head) if head else None) or 1      # bare "bin kisi" = 1000
+        rest = _plain_int(tail) if tail else 0
+        return n * mult + (rest or 0)
+    m = re.search(r"\d[\d.]*\d|\d", text)                  # dot-separated, no scale word
+    return _plain_int(m.group(0)) if m else None
+
 
 def word_number(text: str) -> Optional[int]:
     """Spelled-out cardinal in `text`, or None. Handles 'twenty-three', 'two hundred'.
@@ -122,9 +167,17 @@ def value_qualifier(text: str):
         tl = text.lower()
         bucket = next((b for b in _BUCKET_VALUE if b in tl), "few")
         return _BUCKET_VALUE[bucket], qual
-    m = re.search(r"\d[\d,]*", text)
+    # Turkish scale words FIRST: they are digit-bearing, so the plain digit branch below
+    # would match their leading group and stop ("3 bin 549" -> 3).
+    if re.search(r"\b(bin|milyon|milyar)\w*", text, re.I):
+        tr = turkish_number(text)
+        if tr is not None:
+            return tr, qual
+    m = re.search(r"\d[\d,]*(?:\.\d{3})*", text)
     if m:
-        return int(m.group(0).replace(",", "")), qual
+        got = _plain_int(m.group(0))
+        if got is not None:
+            return got, qual
     return word_number(text), qual
 
 
