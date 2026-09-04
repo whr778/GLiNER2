@@ -324,8 +324,49 @@ Selected at epoch 4 of 8 (val 0.7964); epochs 5-8 never beat it while train loss
 falling 0.1423 -> 0.0613. The 8-epoch schedule is longer than this corpus needs, and
 `save_best` is what made that harmless.
 
-**The third bar, Helene English end-to-end, is NOT yet run** -- recorded as outstanding
-rather than quietly dropped.
+**THE THIRD BAR FAILS, and gate3 is therefore NOT shipped as the default.** Helene, real
+wire copy, same feed and truth, only the gate model varying:
+
+| gate | admitted | dead obs | pooled RMSE | final estimate (truth 233) |
+|---|---|---|---|---|
+| `gate2-mmbert-tr` | 59/70 | 40 | **132.59** | 97.8 |
+| `gate3-mmbert` | 53/70 | 37 | **175.66** | **1.1** |
+
+RMSE 32% worse and the track effectively dies -- the final estimate collapses to 1.1
+because gate3 drops the LAST observation and is left standing on a run of spurious 1s.
+
+The dropped documents were read, not assumed. Of the 8 gate3 rejects, at least two carry a
+GENUINE current toll:
+
+    t=185.4h  "The death toll has topped 200 after the Category 4 storm rolled through
+               the southeast last week"                                       -> 200
+    t=726.9h  "There have been 98 reported deaths in North Carolina from the storm,
+               according to state officials"                                  -> 98
+
+Both are recovery-framed pieces (a sports relief drive; a $600m funding approval) that
+nonetheless report a current toll, which `GATE_LABELS_V2`'s own `current_toll` definition
+explicitly covers -- "includes coverage of the ongoing aftermath, rescue or investigation
+of that event". So these are recall MISSES, not correct rejections of aid filler. It would
+have been easy, and wrong, to read them as the gate improving.
+
+**The cause is the same defect that gate3 was built to fix, one language over.**
+
+| corpus | EN share | TR | ZH |
+|---|---|---|---|
+| `gate2_tr` | **74.8%** | 22.0% | 3.1% |
+| `gate3` | **65.5%** | 19.3% | 15.2% |
+
+gate2_tr diluted Chinese to 3.1% and Chinese admission fell 97% -> 83%. gate3 repaired
+Chinese by diluting ENGLISH 74.8% -> 65.5%, and English recall fell. `balance()` equalises
+classes WITHIN a source and has no term for relative weight ACROSS sources, so **every
+language added silently taxes the others**, and a three-way corpus does not escape this by
+being three-way. The fix is a corpus whose per-language shares are fixed by construction
+against a target, not whatever the pools happen to contain -- and a fourth language would
+hit it again.
+
+**Standing consequence: a gate must be scored on ALL of its languages before shipping.**
+gate3 passes both admission bars and still regresses the pipeline. Two of three bars is not
+a pass.
 
 ### [2] Extraction thresholds — THRESHOLD, on
 `extract(threshold=)` is the single global cut the boundary greedy path gates on.
