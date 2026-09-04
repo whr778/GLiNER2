@@ -185,7 +185,7 @@ under `models_root` (`**/best`), and a saved registry at
 `viewer/backend/models.json` (git-ignored, written by the Model Manager UI and
 by `POST /models`).
 
-`viewer/backend/models.example.json` holds the **60 published checkpoints** —
+`viewer/backend/models.example.json` holds the **76 published checkpoints** —
 every `whr778/*` model on the Hub plus the Fastino bases. Copy it to seed the
 registry:
 
@@ -193,7 +193,7 @@ registry:
 cp viewer/backend/models.example.json viewer/backend/models.json
 ```
 
-**Most of these are PRIVATE — 28 of the 53 `whr778/*` entries — so the backend
+**Most of these are PRIVATE — 49 of the 74 `whr778/*` entries — so the backend
 needs a Hugging Face token or they fail to load with a 401.** Export one before
 starting; read scope is enough:
 

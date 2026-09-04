@@ -48,12 +48,20 @@
     "label": "casualty: multievent"
   },
   {
+    "path": "whr778/gliner2-base-v1-ccnews-real",
+    "label": "base-v1: ccnews-real"
+  },
+  {
     "path": "whr778/gliner2-base-v1-docee",
     "label": "base-v1: docee"
   },
   {
     "path": "whr778/gliner2-base-v1-rams",
     "label": "base-v1: rams"
+  },
+  {
+    "path": "whr778/gliner2-base-v1-real-synth-mix",
+    "label": "base-v1: real-synth-mix"
   },
   {
     "path": "whr778/gliner2-base-v1-redocred",
@@ -64,8 +72,24 @@
     "label": "base-v1: synthetic"
   },
   {
+    "path": "whr778/gliner2-base-v1-synthetic-haiku5k",
+    "label": "base-v1: synthetic-haiku5k"
+  },
+  {
     "path": "whr778/gliner2-casualty-events-boundary",
     "label": "boundary: casualty events"
+  },
+  {
+    "path": "whr778/gliner2-casualty-multilingual",
+    "label": "casualty: multilingual (en/tr/zh, real news) -- CURRENT DEFAULT, run_pipeline.py"
+  },
+  {
+    "path": "whr778/gliner2-ekf-frontend-mmbert",
+    "label": "boundary: ekf-frontend (mmbert)"
+  },
+  {
+    "path": "whr778/gliner2-gate2-mmbert-real",
+    "label": "gate2: mmbert-real"
   },
   {
     "path": "whr778/gliner2-gate2-mmbert-tr",
@@ -80,16 +104,40 @@
     "label": "boundary: mmbert-100k"
   },
   {
+    "path": "whr778/gliner2-joint-boundary-mmbert-100k-clean",
+    "label": "boundary: mmbert-100k (clean)"
+  },
+  {
     "path": "whr778/gliner2-joint-boundary-mmbert-10k",
     "label": "boundary: mmbert-10k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-10k-clean",
+    "label": "boundary: mmbert-10k (clean)"
   },
   {
     "path": "whr778/gliner2-joint-boundary-mmbert-137k",
     "label": "boundary: mmbert-137k"
   },
   {
+    "path": "whr778/gliner2-joint-boundary-mmbert-137k-clean",
+    "label": "boundary: mmbert-137k (clean)"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-137k-v2",
+    "label": "boundary: mmbert-137k-v2 (superseded by v2-eb16 -- per-GPU batch_size bug, recipe was not v1's)"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16",
+    "label": "boundary: mmbert-137k-v2-eb16 (CURRENT BASE -- unified label space, v1 recipe reproduced)"
+  },
+  {
     "path": "whr778/gliner2-joint-boundary-mmbert-40k",
     "label": "boundary: mmbert-40k"
+  },
+  {
+    "path": "whr778/gliner2-joint-boundary-mmbert-40k-clean",
+    "label": "boundary: mmbert-40k (clean)"
   },
   {
     "path": "whr778/gliner2-joint-boundary-rams-100k",
@@ -148,6 +196,10 @@
     "label": "large-v1: wikievents"
   },
   {
+    "path": "whr778/gliner2-loc-control",
+    "label": "casualty: loc-control (location-supervision control arm)"
+  },
+  {
     "path": "whr778/gliner2-maven-tier2-control",
     "label": "tier2: maven control"
   },
@@ -184,8 +236,16 @@
     "label": "tr-dose: 15k turkish"
   },
   {
+    "path": "whr778/gliner2-tr-dose-31263",
+    "label": "tr-dose: 31263 turkish (full dose)"
+  },
+  {
     "path": "whr778/gliner2-tr-dose-5000",
     "label": "tr-dose: 5k turkish"
+  },
+  {
+    "path": "whr778/gliner2-warmstart-137k-realsynth-replay30",
+    "label": "warmstart: 137k-realsynth-replay30"
   },
   {
     "path": "whr778/gliner2-warmstart-natural-clean",
@@ -202,6 +262,10 @@
   {
     "path": "whr778/gliner2-warmstart-natural-seed43-clean",
     "label": "warmstart: warmstart-natural-seed43-clean"
+  },
+  {
+    "path": "whr778/gliner2-zh-multitask-mmbert",
+    "label": "zh: multitask smoke test (entities 0.366, classification 0.500, relations 0.0 -- open-vocab, no replay)"
   },
   {
     "path": "whr778/mmbert-base-combined",
