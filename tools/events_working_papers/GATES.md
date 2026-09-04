@@ -390,6 +390,69 @@ been chasing a signal that does not replicate.
 gate3 passes both admission bars and still regresses the pipeline. Two of three bars is not
 a pass.
 
+### Does language-MIXED batching train a better multilingual gate? Measured: NO.
+
+**A pre-registered A/B, and the pre-registration is what stopped a bad ship.** Single
+variable: `gate3-mmbert-mixed.yaml` is `gate3-mmbert.yaml` with `group_by_length: false`,
+verified by diff and by a runtime assertion that the flag reaches `TrainingConfig`. Same
+corpus bytes, same seed, same A10. The control was already trained, so this cost one run.
+
+`group_by_length` defaults TRUE and, for a boundary model, replaces shuffle entirely with
+`LengthGroupedSampler`. Length tracks language here, so length-grouped batches are
+de-facto language-grouped: **14.6% of batches are 100% one language against 3.7% under
+random shuffling.**
+
+**Mixed wins BOTH F1 instruments and loses the job.**
+
+| instrument | grouped (control) | mixed | winner |
+|---|---|---|---|
+| validation micro F1 (selection) | 0.7964 | **0.8095** | mixed +0.0131 |
+| blind TEST micro F1, n=4,312 | 0.7739 | **0.7778** | mixed +0.0039 |
+| Turkish admission, 60 held-out | **58/60** | 57/60 | grouped |
+| **Chinese admission, 60 held-out** | **59/60** | **50/60** | **grouped, decisively** |
+| Helene pooled RMSE | 175.66 (n=37) | **138.17** (n=28) | mixed |
+| **Aegean pooled RMSE** | **518.13** (n=62) | **1094.71** (n=54) | **grouped, 2.1x** |
+| Turkiye-EN pooled RMSE | 7444.67 | 7444.67 | identical |
+
+Mixed drops Chinese admission to **exactly where `gate2-mmbert-tr` sat (50/60)** -- it
+reopens the regression gate3 was built to close -- and doubles Aegean RMSE. It admits
+fewer documents everywhere (Helene 53->30, Aegean 38->30), so its Helene RMSE gain is a
+smaller, luckier sample rather than better tracking.
+
+**gate3-mmbert-mixed does NOT ship.** The pre-registration named this failure mode in
+advance -- "a validation win that loses the downstream bars is a LOSS" -- and it fired.
+Without those bars a model that beat the control on every F1 number would have shipped.
+
+**The epoch-7 prediction was FALSIFIED.** Peak was epoch 5 (0.8095), with 6-8 all failing
+to beat it while training loss fell to 0.0569. The proposed mechanism -- noisier gradients
+producing a later, higher peak -- is not what happened.
+
+**And a mechanism offered here was WRONG, retracted rather than defended.** It was claimed
+that Chinese suffers because English holds 77.5% of the gradient. That used CHARACTER
+share as a proxy for token share. Measured with mmBERT's own tokenizer:
+
+| | rows | chars | TOKENS | chars/token |
+|---|---|---|---|---|
+| en | 65.0% | 77.6% | **63.7%** | 4.55 |
+| tr | 19.4% | 14.7% | **16.2%** | 3.40 |
+| zh | 15.6% | **7.6%** | **20.1%** | **1.42** |
+
+Chinese packs 3.2x more tokens per character, so by TOKENS it is 20.1% -- *higher* than
+its row share, not starved. **There is currently no validated explanation for the 59->50
+drop**, and with n=1 per arm and no seed replication the admission difference cannot be
+separated from run-to-run variance either. Recorded as unexplained rather than given a
+story the data does not support.
+
+**Consequences for anyone tuning this knob.** Leave `group_by_length` ON. Its measured
+cost is ~22% throughput (12.8 vs 16.4 samples/s), NOT the ~2x predicted from padding waste
+going 2.5% -> 50.9% -- waste does not translate linearly to wall-clock because `max_len`
+caps it and the GPU is not purely FLOP-bound. And balancing batches by CODEPOINTS would
+over-correct: it hands Chinese more documents to reach equal character count, pushing its
+token share above 20.1%. The principled unit is TOKENS. A sampler that stratifies by
+language, length-groups WITHIN each language, then composes batches to a per-language
+token budget would get both properties -- that is real work, not a config flag, and it is
+unbuilt.
+
 ### [2] Extraction thresholds — THRESHOLD, on
 `extract(threshold=)` is the single global cut the boundary greedy path gates on.
 **Trap:** `Schema().events(trigger_threshold=, argument_threshold=)` is read only by the
