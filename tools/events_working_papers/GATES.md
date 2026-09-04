@@ -242,6 +242,67 @@ was a fluke. A single point only says it worked once.
 Check the encoder *and the training corpus* before pointing this gate at any non-English
 feed.
 
+**A trained, bar-passing model does not make it into the pipeline by itself (2026-09-01).**
+`gliner2-gate2-mmbert-tr` was trained on the Turkish-augmented corpus above and passed its
+pre-registered bars 2026-08-29 (Turkish AUC 0.4980 → 0.8105, English pooled-RMSE unchanged
+at 17.5, like-for-like). It then sat unwired for three days, because `language_gate.py`'s
+`SUPPORTED = frozenset({"en", "zh"})` runs *before* any gate model and hard-rejects Turkish
+regardless of which model is behind it — a trained model and a stage-0 allowlist are two
+independent things, and fixing one does not touch the other. `--gate-model` also still
+defaulted to `gate2-mmbert-v2`, which was never trained to read Turkish at all. Both had to
+move together (`2d048ba`): `SUPPORTED` gained `"tr"`, and the default flipped to
+`gate2-mmbert-tr`. Neither change alone would have produced a working Turkish feed —
+un-blocking the allowlist in front of `v2` would have admitted Turkish text into a model
+that cannot read it, reproducing the silent-wrong-figure failure documented above for
+stage 2.
+
+**Verified on 60 real, held-out Turkish and 60 real, held-out Chinese documents from
+`casualty_ml`'s blind test** (`pipeline_language_test.py`, gate called directly, bypassing
+the allowlist so the two models are compared on identical text):
+
+| gate model | Turkish admitted | Chinese admitted |
+|---|---|---|
+| `gate2-mmbert-v2` (old default) | 21/60 (35%) | 58/60 (97%) |
+| `gate2-mmbert-tr` (new default) | **58/60 (97%)** | 50/60 (83%) |
+
+Turkish went from largely unreadable to on par with the corpus's own Turkish test-set AUC.
+**Chinese paid for it** — 97% → 83%, an 8-document regression on the same held-out set.
+`build_gate_corpus.balance()` only equalises classes *within* a source; it has no term for
+the relative weight *across* sources, so adding 4,220 Turkish rows without growing Chinese's
+share diluted it. Not a new failure mode — the exact one `balance()` exists to prevent, just
+one level up from where it currently operates.
+
+**Stage 2 also improved for both languages independent of the gate**, on the same 60+60
+documents, old vs. new casualty extractor (`3e2b357`, matched-instance F1 against gold
+`casualty_report`):
+
+| extractor | Turkish F1 | Chinese F1 |
+|---|---|---|
+| `casualty-docee` (old default) | 0.0847 | 0.1900 |
+| `casualty-multilingual` (new default) | **0.2919** | **0.3592** |
+
+Both extraction numbers are still low in absolute terms — precision sits at 0.21–0.26 on
+both languages, so this is "reads the language" evidence, not "production-ready" evidence —
+but the direction and the fact that BOTH languages move together rules out one language
+being carried at the other's expense.
+
+**Closing the Chinese regression: a genuinely three-way corpus, not a bigger Turkish one
+(`f066c0b`, 2026-09-04, training in progress).** `gate3-mmbert.yaml` adds
+`data/chinese_gate/zh_gate_sample.jsonl` — 4,994 rows, already adjudicated by the same
+four-way schema as the Turkish pool, paid for and sitting unused since an earlier phase —
+rather than reusing `duee`, whose toll/no-toll split was a heuristic over event-role
+arguments, not adjudicated, and which `balance()` drops entirely once three languages'
+length deciles shift (13,056 rows, no same-decile counterpart). Its `source` field carried
+1,909 distinct per-outlet names, which `balance()`'s per-(source, decile) stratification
+would have read as 1,909 near-singleton cells and silently dropped almost all of; collapsed
+to one value (`tools/data/normalize_gate_source.py`, mirroring `turkish_news`'s own
+convention) before it went anywhere near training. Final train balance: `docee`+`cc_news`
+65.5% (en), `turkish_news` 19.3%, `zh_news` 15.2% — 22,164 rows, 11,082/11,082
+positive/negative by construction, 0 duplicates, 0 cross-split overlap. Pre-registered
+bars: Turkish AUC must not regress below 0.8105; Chinese admission on the same 60 documents
+must recover toward 97%; Helene end-to-end must not regress. **Not yet evaluated** —
+training is running on a Lambda A10, ETA a few hours from 2026-09-04 12:51 UTC.
+
 ### [2] Extraction thresholds — THRESHOLD, on
 `extract(threshold=)` is the single global cut the boundary greedy path gates on.
 **Trap:** `Schema().events(trigger_threshold=, argument_threshold=)` is read only by the

@@ -240,12 +240,15 @@ defect that hid this once already.
 
 ## Stage 5 — Application training (the EKF extractor)
 
-Downstream of Paper 0's models, upstream of Paper 1's tracker. The `casualty-*` arms all
-init from `fastino/gliner2-base-v1`; `ekf-frontend-mmbert` is a deliberate cold start.
+Downstream of Paper 0's models, upstream of Paper 1's tracker. Most `casualty-*` arms init
+from `fastino/gliner2-base-v1`; `ekf-frontend-mmbert` is a deliberate cold start;
+`casualty-full-multilingual` is the odd one out, warm-started from the boundary line
+instead (see its own row).
 
 | config | data | working paper | role |
 |---|---|---|---|
 | `ekf-frontend-mmbert.yaml` | 189,284 records, English trigger→argument 798 → ~39,800 | [[EKF_MHT_DESIGN]] §7.5-7.6 | **cold start from `jhu-clsp/mmBERT-base`**, built to BE the pipeline's first stage. Beats `137k-clean` on all 8 held-out heads AND on wire-copy binding precision (67-100% vs 0-7.7%). **The best extractor in this line on real news.** It fails the pre-registered form gate, which counts firings rather than correct ones -- see §7.6. Still blocked for the router by the one-instance-per-type decode, not by data |
+| `casualty-full-multilingual.yaml` | `casualty_ml`: real news, downsampled to the smallest of the three languages (20,901 each) | [[GATES]] | **warm-started from `gliner2-joint-boundary-mmbert-137k-v2-eb16`**, not base-v1. Pushed as `gliner2-casualty-multilingual`, now the pipeline's `--casualty-model` default (`3e2b357`). Beats the old English-only default on real Turkish and Chinese held-out news (F1 0.0847→0.2919 tr, 0.1900→0.3592 zh) and by 92x pooled RMSE on real Helene copy (3634.7 → 39.5), catching a 19,180-vs-a-true-49 misbinding in the old model along the way |
 | `casualty-finetune.yaml` | `casualty_ft` (Sonnet-5 realized) | [[EKF_MHT_DESIGN]] §19-20 | closes the extraction gap the §19 `missing`-role probe predicted: zero-shot precision 0.63 + confidence-cut selection bias |
 | `casualty-multievent.yaml` | `casualty_multi` | [[EKF_MHT_DESIGN]] §20, [[COUNTING_LAYER]] | the §20 corpus had exactly one `casualty_report` in all 31,539 docs, so the count head only ever saw "1". This fixes that |
 | `casualty-docee.yaml` | `casualty_docee` | [[EKF_MHT_DESIGN]] §20-21 | successor to `casualty-multievent`: synthetic trajectories paired with **real** DocEE contexts |
