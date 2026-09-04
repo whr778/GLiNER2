@@ -424,6 +424,52 @@ which it gets from the answer, so it is not a method. `tail_cut` derives the cut
 the event's own observations (median + k*MAD on log10, upper tail only), which is
 scale-free and uses no ground truth.
 
+**Every magnitude prior on this page is language-specific, and the Chinese arm is
+measurably shifted (recorded 2026-08-31, surfaced here 2026-09-04).** Measured on 4,994
+adjudicated `shaowenchen/news_zh` articles -- same corpus, same outlets, same period --
+Chinese DOMESTIC casualty reports carry smaller figures than the same outlets' FOREIGN
+reporting: median toll 17 against 26, and tolls >= 100 at 15.3% against 28.4% (odds ratio
+0.46, exact Fisher p = 1.1e-04, Mann-Whitney z = -5.85). Full measurement and its
+limitations in `tools/data/notes/CHINESE_TOLL_DISTRIBUTION.md`.
+
+This does NOT establish editorial suppression -- newsworthiness selection is a sufficient
+alternative (a three-fatality crash in Sichuan is routine local news; the same crash in
+Brazil is not covered at all) and the corpus cannot separate the two. **The consequence
+holds under either explanation**, because both leave the same distribution in the data.
+
+For the EXTRACTOR it is close to harmless: it binds a number to a place from whatever the
+text says, and a distribution shifted low does not change what `dead` means. For
+everything in this section it is not. `plausibility_filter` is an explicit magnitude prior
+(2,000 on Helene, chosen because 94,000 was Asheville's population); the EKF's `R` scales
+with the reference value; `hmm_gate`'s whole magnitude channel is relative to a running
+scale. All three encode magnitude expectations, and a Chinese arm carrying a
+domestically-shifted distribution pushes them downward.
+
+**Standing rule: do not pool Chinese streams with English ones without checking.
+Per-language tracking error is the measurement that would expose it.**
+
+A second, independent provenance caveat on the same arm: CommonCrawl reaches Chinese sites
+from outside, so any CC-News-derived Chinese slice is the OUTWARD-FACING subset by
+construction -- a narrower and differently-selected sample than domestic coverage.
+`news_zh` avoids that particular selection by being native domestic text, and is not
+neutral either: its named publishers are state media (新华网, 中国新闻网). Both bear on how
+far any Chinese result generalises. The same caveat applies to the Wayback-sourced Chinese
+feed added 2026-09-04 (`build_turkey_feed_zh.py`), which is additionally a FOREIGN event --
+the 28.4% column, the favourable half of the table above.
+
+**What would settle it, and it is now unblocked.** The cross-sectional comparison cannot
+separate selection from reporting control, but a TRAJECTORY comparison can: selection
+explains *which* events get covered and has no mechanism to act on *how a covered event's
+toll evolves*, whereas reporting control does. Time-to-plateau, count of upward revisions
+and first/final ratio all discriminate where magnitude alone cannot. That test was
+deferred because it needs reliable (t, toll) extraction from Chinese text -- a regex would
+confound measurement error with the effect being measured. **That gate has lifted:**
+`gliner2-casualty-multilingual` scores 0.3592 matched-instance F1 on real held-out Chinese
+(against 0.1900 for the model it replaced). Three events with independent tolls already sit
+in the 5k sample -- Shenzhen 2015 landslide (47 articles, 77 dead), Tianjin 2015 explosions
+(19, 173), Nepal 2015 earthquake (4, ~8,964) -- so the cost is analysis time, no annotation
+spend and no GPU.
+
 ### [8] The EKF and its gates — STATISTICAL, mostly off
 Measurement noise is **relative**: `R = (sig * max(ref,1))^2`, with `sig` from
 `SRC_REL_SIGMA` (official 0.06 / major_outlet 0.12 / preliminary 0.25) scaled by
