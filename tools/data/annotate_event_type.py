@@ -7,15 +7,24 @@ Turkish documents with hand-adjudicated gold, the shipped span model types Turki
 2/20 on genuine earthquake reporting; both mmBERT candidates score 0/20. Turkish
 event-type supervision does not exist in any corpus in this repo, so it has to be bought.
 
-STRATIFIED, AND THE STRATIFICATION IS THE POINT. `turkish_pool18` is 100% cue-bearing by
-construction (20,000/20,000 measured) because it was built to feed CASUALTY annotation.
-Buying only from it would produce a Turkish arm with no `Sports Competition`,
-`Organization Fine` or `Government Job change` at all -- the model would learn the ~20
-disaster types and never learn to say "not a disaster", which is the worst possible skew
-for a stage whose job includes REJECTING non-disasters. So half comes from the cued pool
-(depth on the disaster types) and half from `turkish_pool_general`, its verified 0.00%
-cue-bearing complement (breadth on the other ~39). The two arms are disjoint by
-construction, not by deduplication.
+THREE ARMS, and both splits were forced by measurement rather than chosen up front.
+
+`turkish_pool18` is 100% cue-bearing by construction (20,000/20,000 measured) because it
+was built to feed CASUALTY annotation. Buying only from it yields a Turkish arm with no
+`Sports Competition`, `Organization Fine` or `Government Job change` at all -- the model
+learns the ~20 disaster types and never learns to say "not a disaster", the worst possible
+skew for a stage whose job includes REJECTING non-disasters. Hence `turkish_pool_general`,
+its verified 0.00% cue-bearing complement.
+
+The 500-document pilot of that 50/50 split (msgbatch_01EKrMUrHRJnZqtZE1jSrzK9) then showed
+the second problem. The stratification worked -- 29.0% casualty types in the cued arm vs
+4.5% uncued -- but the casualty CUE matches oldu/yarali/olum, i.e. DEATH, not DISASTER, so
+the cued arm came back led by `Armed Conflict` (19) and `Famous Person - Death` (12) and
+produced just SIX `Earthquakes` in 238 documents. Scaled to a 30K buy that is ~375, under
+half what DocEE-zh already gives free (849), with Tsunamis / Volcano Eruption /
+Train Collisions / Riot empty. So a third arm selects on disaster NOUNS.
+
+Arms are disjoint by construction (first match wins), not by deduplication.
 
 LABELS ARE DocEE's ENGLISH SPELLINGS, canonical from `data/docee.train.jsonl`. Turkish
 text, English label -- exactly the shape DocEE-zh already ships (Chinese text, English
@@ -38,6 +47,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -45,6 +55,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _split import dumps_record, normalize_group_key  # noqa: E402
+from build_turkish_candidates import CUE as CASUALTY_CUE  # noqa: E402
 from data.synthetic.providers import (  # noqa: E402
     REFUSAL_MARK, AnthropicProvider, ProviderConfig,
 )
@@ -98,12 +109,41 @@ ARTICLE:
 {text}"""
 
 
+# DISASTER nouns, NOT casualty words. The 2026-09-04 pilot showed why the distinction
+# matters: build_turkish_candidates.CUE matches oldu/yarali/olum, so the cue-bearing arm
+# came back dominated by `Armed Conflict` (19) and `Famous Person - Death` (12) and
+# yielded only 6 `Earthquakes` in 238 documents. Projected to a 30K buy that is ~375
+# earthquakes -- less than HALF what DocEE-zh already gives us free (849) -- and
+# Tsunamis / Volcano Eruption / Train Collisions / Riot came back EMPTY.
+# A casualty cue selects for death, not for disaster. This selects for disaster.
+DISASTER = re.compile(
+    r"(deprem|artçı|sel |sel baskın|su baskın|yangın|çığ |heyelan|göçük|patlama|"
+    r"fırtına|kasırga|hortum|tsunami|volkan|yanardağ|salgın|kuraklık|kıtlık|"
+    r"zehirlenme|maden kazası|tren kazası|uçak kazası|trafik kazası|batan tekne|"
+    r"göçtü|enkaz)", re.I)
+
+
 def load_candidates(cued: Path, uncued: Path, per_arm: int, seed: int,
-                    exclude: set[str]) -> list[dict]:
-    """Half from the cue-bearing pool, half from its complement. Disjoint by construction."""
-    out: list[dict] = []
-    for path, arm in ((cued, "tr_cued"), (uncued, "tr_uncued")):
-        pool, seen = [], set()
+                    exclude: set[str], shares: tuple[float, float, float]) -> list[dict]:
+    """THREE disjoint arms, in the order a document is tested:
+
+        tr_disaster  carries a DISASTER noun (from either pool) -- the types the tracker
+                     actually consumes, and the arm the first pilot was starving
+        tr_casualty  carries a casualty cue but NO disaster noun -- tolls, Armed Conflict,
+                     Road Crash; these were the first pilot's whole cued arm
+        tr_general   neither -- the ~39 decoy types, so the model can say "not a disaster"
+
+    Disjointness is by construction (first match wins), not by deduplication afterwards.
+    """
+    total = per_arm * 2                      # per_arm is half the total, kept for the CLI
+    want = {"tr_disaster": int(total * shares[0]),
+            "tr_casualty": int(total * shares[1]),
+            "tr_general": int(total * shares[2])}
+    pools: dict[str, list] = {k: [] for k in want}
+    seen: set[str] = set()
+    for path in (cued, uncued):
+        if not path.exists():
+            continue
         with path.open(encoding="utf-8") as fh:
             for line in fh:
                 text = (json.loads(line)["input"] or "")[:MAX_CHARS]
@@ -111,9 +151,20 @@ def load_candidates(cued: Path, uncued: Path, per_arm: int, seed: int,
                 if key in seen or key in exclude:
                     continue
                 seen.add(key)
-                pool.append({"text": text, "source": "turkish_news", "stratum": arm})
+                if DISASTER.search(text):
+                    arm = "tr_disaster"
+                elif CASUALTY_CUE.search(text):
+                    arm = "tr_casualty"
+                else:
+                    arm = "tr_general"
+                pools[arm].append({"text": text, "source": "turkish_news", "stratum": arm})
+    out: list[dict] = []
+    for arm in ("tr_disaster", "tr_casualty", "tr_general"):
+        pool = pools[arm]
         random.Random(seed).shuffle(pool)
-        take = pool[:per_arm]
+        take = pool[:want[arm]]
+        if len(take) < want[arm]:
+            print(f"[ev-ann]   WARNING {arm} short: wanted {want[arm]}, pool has {len(pool)}")
         print(f"[ev-ann]   {arm:12s} pool={len(pool):7d} take={len(take)}")
         out.extend(take)
     random.Random(seed).shuffle(out)
@@ -161,6 +212,9 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=30000,
                     help="TOTAL documents; split evenly across the two arms")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--shares", nargs=3, type=float, default=[0.40, 0.25, 0.35],
+                    metavar=("DISASTER", "CASUALTY", "GENERAL"),
+                    help="arm shares; must sum to 1.0. Default 40/25/35 lifts the disaster types the first pilot starved, keeps tolls, and preserves decoy breadth.")
     ap.add_argument("--batch", action="store_true", help="Batch API, -50%% pricing")
     ap.add_argument("--fetch-batch", help="recover an already-submitted batch id")
     ap.add_argument("--model", default="claude-haiku-4-5-20251001")
@@ -175,8 +229,10 @@ def main() -> int:
     if done:
         print(f"[ev-ann] {len(done)} already annotated, not re-buying")
 
+    if abs(sum(args.shares) - 1.0) > 1e-6:
+        raise SystemExit(f'--shares must sum to 1.0, got {sum(args.shares)}')
     cands = load_candidates(Path(args.cued), Path(args.uncued),
-                            args.limit // 2, args.seed, done)
+                            args.limit // 2, args.seed, done, tuple(args.shares))
     print(f"[ev-ann] {len(cands)} candidates total")
 
     provider = AnthropicProvider(ProviderConfig(
