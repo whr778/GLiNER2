@@ -1,0 +1,30 @@
+{
+  "_doc": "Hand-adjudicated primary event type for the 48 Turkish feed documents.",
+  "_criterion": "What is the document's PRIMARY REPORTED EVENT -- if a reader asks 'what happened here?', is the answer the earthquake or something else? Merely MENTIONING 'deprem' is not enough. The Turkish feed is deliberately unfiltered, so most of it is quake-ADJACENT commentary (elections, aid policy, diplomacy) rather than quake reporting.",
+  "_why": "stage1_transfer_probe.py's first pass used 'contains deprem' as gold and got 35/48 relevant. That inflated the denominator with articles whose real subject is an election or a bank loan, and scored the model WRONG for correctly calling them election/diplomacy. The English (16/16) and Chinese (14/14) feeds are genuinely quake-focused, so only the Turkish arm carried this bias -- which is exactly the arm the conclusion rested on.",
+  "_adjudication": "Done blind to per-document model predictions; only aggregate label counts had been seen. Single annotator, which is a real limitation -- ambiguous cases are marked rather than forced, and excluded from the strict score.",
+  "_buckets": {
+    "earthquake": "reports the quake, its casualties, rescue, damage, or the direct relief response",
+    "<other label>": "a different primary event, from the same 11-label set",
+    "ambiguous": "quake is the CONTEXT but the subject is politics/policy/other -- excluded from strict scoring, reported separately"
+  },
+  "labels": {
+    "0": "earthquake", "1": "earthquake", "2": "earthquake", "3": "earthquake",
+    "4": "earthquake", "5": "earthquake", "7": "earthquake", "9": "earthquake",
+    "10": "earthquake", "11": "earthquake", "12": "earthquake", "13": "earthquake",
+    "16": "earthquake", "20": "earthquake", "22": "earthquake", "25": "earthquake",
+    "30": "earthquake", "32": "earthquake", "41": "earthquake", "45": "earthquake",
+
+    "14": "transport accident",
+    "34": "armed conflict", "37": "armed conflict", "39": "armed conflict",
+    "24": "election", "42": "election", "46": "election",
+    "44": "diplomatic talks",
+    "27": "disease outbreak",
+
+    "6": "ambiguous", "8": "ambiguous", "15": "ambiguous", "17": "ambiguous",
+    "18": "ambiguous", "19": "ambiguous", "21": "ambiguous", "23": "ambiguous",
+    "26": "ambiguous", "28": "ambiguous", "29": "ambiguous", "31": "ambiguous",
+    "33": "ambiguous", "35": "ambiguous", "36": "ambiguous", "38": "ambiguous",
+    "40": "ambiguous", "43": "ambiguous", "47": "ambiguous"
+  }
+}
