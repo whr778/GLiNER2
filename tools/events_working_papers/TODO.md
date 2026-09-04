@@ -2022,3 +2022,45 @@ look identical to the prior, so a hard reject would discard exactly the rare eve
 tracker exists for. (3) Scored on catch rate AND false-reject rate together, per the
 standing gate-1 lesson that a form gate scored on firings alone rewards indiscriminate
 firing.
+
+#### The flag-not-veto MECHANISM already exists, twice, and both are switched off
+
+Caution (2) is not an intention to be remembered -- the plumbing is built. Nothing new has
+to be invented, and the two mechanisms fail differently, so use both.
+
+**(a) `CONF_R`, per observation, continuous.** The filter already implements
+`R /= confidence**2`, so a weight of 0.1 inflates that reading's noise **100x**
+(`imm_gate_sweep.py`). That IS flag-not-veto: a veto DROPS the observation and destroys
+the information; inflating `R` keeps it in the update while shrinking the Kalman gain
+`K = P/(P+R)`, so it moves the estimate less.
+
+The property that makes this right for outliers: **a real rare event REPEATS, an
+extraction error does not.** With `R` inflated 100x a single Haiti-shaped 316,000 barely
+nudges the filter, but a genuine Turkish tsunami reported five times applies five
+(down-weighted) pulls and the filter converges there anyway. The prior does not decide --
+it buys time for corroboration to decide. A veto forecloses that on the first sighting.
+
+`CONF_R` is OFF because the only signal available to feed it was extractor confidence,
+which was measured unreliable -- confidence "did not filter the mis-binds" on Venezuela.
+A regional prior is a better-grounded number for the SAME plumbing:
+
+    R  <-  R * exp(lambda * surprisal),   surprisal = -log P(value | event_type, region)
+
+**(b) `hmm_gate` feature, global, able to revisit.** The decode already enforces this
+structurally rather than by convention -- the measured design rule is "keep every feature
+weight BELOW `reject_cost`, so no single feature can force a reject on its own; it can
+only tip a case magnitude has already made marginal. The sweep shows a cliff exactly at
+that boundary." A regional-profile feature enters beside out-of-window dates and
+out-of-hierarchy places, weight < 4.0, and ARGUES.
+
+**Why both.** `hmm_gate` is a global decode that can revisit and routes to
+`own`/`aggregate`/`reject`; `CONF_R` is per-observation and continuous. A figure that
+belongs to a DIFFERENT STREAM is a gate problem. A figure that is right-stream but
+wrong-MAGNITUDE is an `R` problem. One does not cover the other.
+
+**The failure this avoids has been paid for here twice.** `value_qualifier` returned `0`
+for an unparsable span and manufactured 30 fabricated zeros out of 114 Helene
+observations; the fix was returning `None` so "no number here" stays distinguishable from
+"the number is zero". A hard veto on prior-implausibility is the same mistake wearing a
+Bayesian hat -- it erases the tsunami-in-Turkey the tracker exists to catch, and leaves no
+trace that it did.
