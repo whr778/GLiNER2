@@ -61,6 +61,14 @@ def main() -> int:
                              "data/turkish_gate/gate_ann_turkish.jsonl"],
                     help="documents already bought or reserved; not re-collected")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--cue", choices=("require", "exclude", "any"), default="require",
+                    help="require: cue-bearing only, the casualty-annotation default and "
+                         "what built turkish_pool18 (measured 100%% cue-bearing). "
+                         "exclude: the COMPLEMENT, for EVENT-TYPE annotation -- a pool "
+                         "filtered to casualty cues carries no Turkish `sport competition` "
+                         "or `Organization Fine`, so a stage-1 model bought from it would "
+                         "learn the ~20 disaster types and never learn to say `not a "
+                         "disaster`. any: no filter.")
     ap.add_argument("--exclude-keys", default="",
                     help="file of pre-hashed group keys, one per line. Lets a remote box "
                          "honour the exclusions without shipping it the documents: the "
@@ -97,7 +105,11 @@ def main() -> int:
             for text, url in zip(texts, urls):
                 scanned += 1
                 text = (text or "")[:MAX_CHARS]
-                if len(text) < MIN_CHARS or not CUE.search(text):
+                if len(text) < MIN_CHARS:
+                    continue
+                has_cue = bool(CUE.search(text))
+                if (args.cue == "require" and not has_cue) or \
+                   (args.cue == "exclude" and has_cue):
                     continue
                 key = normalize_group_key(text)[:300]
                 if key in done:
