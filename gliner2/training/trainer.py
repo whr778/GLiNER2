@@ -378,6 +378,50 @@ class TrainingConfig:
 # Dataset
 # =============================================================================
 
+
+# Scripts without whitespace break a word-count length proxy completely, and the failure
+# is silent: `len(text.split())` on Chinese returns ~1 regardless of the document. Measured
+# on data/gate3.train.jsonl against mmBERT's own tokenizer:
+#
+#            word count (sorted on)        true tokens
+#            p10  median   p90              median   p90
+#   en       158     454   965                 603  1281
+#   tr        77     196   497                 452  1150
+#   zh         1       3    21                 690  1776
+#
+# So Chinese documents are the LONGEST in tokens and the sampler believed they were the
+# shortest. Two consequences, both bad and both invisible: every Chinese document landed in
+# one length bucket together, which is de-facto grouping by LANGUAGE; and within that bucket
+# real lengths spanned 317-1776 tokens, so it padded to the max and delivered none of the
+# efficiency the sort exists for. It was sorting on noise.
+#
+# CJK characters are counted individually because they tokenize at roughly one token each
+# (measured 1.42 chars/token for Chinese against 4.55 for English). This stays a cheap
+# proxy rather than a real tokenizer call: it runs over every record at dataset build and
+# the result is cached, and the sampler only needs a monotone ordering, not exact counts.
+_CJK_RANGES = (
+    (0x3040, 0x30FF),    # kana
+    (0x3400, 0x4DBF),    # CJK ext A
+    (0x4E00, 0x9FFF),    # CJK unified
+    (0xF900, 0xFAFF),    # compatibility ideographs
+    (0xAC00, 0xD7AF),    # hangul syllables
+)
+
+
+def _is_cjk(ch: str) -> bool:
+    code = ord(ch)
+    return any(lo <= code <= hi for lo, hi in _CJK_RANGES)
+
+
+def _length_proxy(text: str) -> int:
+    """Whitespace words plus CJK characters -- a length proxy that survives Chinese."""
+    cjk = sum(1 for ch in text if _is_cjk(ch))
+    if cjk:
+        # Strip CJK before word-splitting so mixed text is not double counted.
+        latin = "".join(" " if _is_cjk(ch) else ch for ch in text)
+        return len(latin.split()) + cjk
+    return len(text.split())
+
 class ExtractorDataset(Dataset):
     """
     Dataset for GLiNER2 training with multi-format support.
@@ -494,7 +538,7 @@ class ExtractorDataset(Dataset):
                 pass
 
         lengths = tuple(
-            max(1, len(self._record_text(record).split()))
+            max(1, _length_proxy(self._record_text(record)))
             for record in self.data
         )
         if cache_path is not None and fingerprint_path is not None:
