@@ -200,6 +200,7 @@ def convert_row(
     rec: Dict[str, Any],
     classification_labels: List[str],
     emit_events: bool,
+    keep_classification_only: bool = False,
 ) -> Optional[Dict[str, Any]]:
     text = _get_text(rec)
     event_type = _get_event_type(rec)
@@ -247,7 +248,7 @@ def convert_row(
             "arguments": args_for_event,
         }]
 
-    if not (output.get("entities") or output.get("events")):
+    if not (output.get("entities") or output.get("events")) and not keep_classification_only:
         # Pure-classification records are still useful but we want at
         # least one extraction signal — drop docs with no usable args.
         return None
@@ -270,6 +271,13 @@ def main() -> int:
                         help="Write a single output file at --out without "
                              "splitting (use when --input is already a "
                              "canonical train/dev/test file).")
+    parser.add_argument("--keep-classification-only", action="store_true",
+                        help="keep documents whose arguments all dropped out, for their "
+                             "event-type label alone. Needed for DocEE-zh: its 344 argument "
+                             "roles are ALL Chinese and only the 4 stage-1 roles are "
+                             "surface-verified, so 17,013 of 36,729 records would otherwise "
+                             "be discarded for having no MAPPED argument -- losing 46%% of the "
+                             "Chinese event-type supervision this conversion exists to get.")
     parser.add_argument("--emit-events", action="store_true",
                         help="Additionally emit an events block per record "
                              "with a synthetic trigger (the event-type "
@@ -304,7 +312,8 @@ def main() -> int:
     for rec in raw_records:
         if 0 <= args.max_records <= len(records):
             break
-        out = convert_row(rec, event_types, emit_events=args.emit_events)
+        out = convert_row(rec, event_types, emit_events=args.emit_events,
+                          keep_classification_only=args.keep_classification_only)
         if out is None:
             skipped += 1
             continue

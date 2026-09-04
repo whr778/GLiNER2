@@ -54,6 +54,19 @@ def record_categories(record: Dict[str, Any]) -> Set[str]:
         et = ev.get("event_type") if isinstance(ev, dict) else None
         if isinstance(et, str):
             cats.add(f"evt:{et}")
+    # Classifications were MISSING, and a classification-only corpus therefore got no
+    # stratification at all: its records carry zero categories, so the greedy placer has
+    # nothing to balance and the ratios are whatever falls out. Measured on DocEE-zh with
+    # 17,013 pure-classification records, a requested 80/10/10 came out 44/28/28.
+    # DocEE also stratified on its 4 ENTITY ROLES rather than its 58 event types, which is
+    # why its coverage line read "4/4".
+    for cl in out.get("classifications") or []:
+        if not isinstance(cl, dict):
+            continue
+        task = cl.get("task") or "cls"
+        for lab in (cl.get("true_label") or []):
+            if isinstance(lab, str):
+                cats.add(f"cls:{task}:{lab}")
     return cats
 
 
