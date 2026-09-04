@@ -1976,3 +1976,49 @@ records, `scope_label_probe.py`) says:
 Next: rewrite the question to be about the COUNTING UNIT rather than the incident site,
 re-probe, and beat kappa 0.121. Separately, find a source of place-vs-national supervision;
 the 86 hand-audited Helene occurrences are the existing precedent.
+
+### Regional disaster profiles as a plausibility prior (idea, 2026-09-04)
+
+**Operator's observation, recorded because it converts a measured limitation into an
+instrument.** Every region has a disaster profile. A tsunami in Turkey, or major snowfall
+in Fiji, is an outlier -- and the outlier is informative in BOTH directions: either a
+genuinely notable event, or an extraction error. Both are things the pipeline should
+surface rather than silently pass to a filter that consumes any arriving number as a
+measurement.
+
+**This reframes a result already in hand.** The Turkish event-type pilots were reported as
+having a coverage gap -- 0 Tsunamis, 0 Volcano Eruption, ~199 Earthquakes projected at
+30K. That distribution IS Turkey's profile. Turkey has earthquakes, floods, fires, mine
+collapses and road crashes; it does not have volcanic eruptions. The pilot did not fail to
+find those types, it measured that they do not occur.
+
+**It would make a filter shippable that this page currently says is not a method.** Of
+`plausibility_filter`, GATES.md says: "a hand-set ceiling [that] has to be *told* the
+event's scale -- which it gets from the answer, so it is not a method." A learned
+`P(event_type | region)` and `P(magnitude | event_type, region)` takes the scale from the
+REGION instead of from the answer. That is the difference between an oracle and a filter.
+
+**It would catch contaminants nothing currently can.** The Turkish feed quotes Haiti 2010
+(316 bin = 316,000 dead) and Antakya 115/525 AD (260,000 / 250,000) as bare figures that
+the extractor binds CORRECTLY as `dead` -- they are death tolls. Today only `Date` can
+reject them, and Date is the weakest stage-1 field in Turkish (0.26 non-empty). A region
+prior says 316,000 deaths in a Turkish-datelined earthquake is ~3 orders of magnitude
+outside profile. Same shape as the 1999 Izmit 17,500 contaminant on the English feed.
+
+**Related measurement already recorded.** `tools/data/notes/CHINESE_TOLL_DISTRIBUTION.md`
+found Chinese DOMESTIC tolls run smaller than the same outlets' FOREIGN reporting (median
+17 vs 26; >=100 at 15.3% vs 28.4%). That is a reporting-regime profile, and treating it as
+a prior is more honest than treating it as noise -- the note already warns that the EKF and
+`max_plausible` both encode magnitude expectations and will be pushed downward by it.
+
+**The cheap version needs no new data.** DocEE-en (21,842), DocEE-zh (36,729, still
+unconverted) and the ~30K Turkish buy are all in ONE label space and all carry Location.
+Three regional profiles fall out of data already bought. Cost is analysis time.
+
+**Cautions before building it.** (1) A profile learned from news measures REPORTING, not
+occurrence -- the Chinese note's own selection-vs-suppression ambiguity applies here too.
+(2) It must flag, not veto: the whole point is that a real outlier and an extraction error
+look identical to the prior, so a hard reject would discard exactly the rare events the
+tracker exists for. (3) Scored on catch rate AND false-reject rate together, per the
+standing gate-1 lesson that a form gate scored on firings alone rewards indiscriminate
+firing.
