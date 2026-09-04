@@ -300,8 +300,32 @@ convention) before it went anywhere near training. Final train balance: `docee`+
 65.5% (en), `turkish_news` 19.3%, `zh_news` 15.2% — 22,164 rows, 11,082/11,082
 positive/negative by construction, 0 duplicates, 0 cross-split overlap. Pre-registered
 bars: Turkish AUC must not regress below 0.8105; Chinese admission on the same 60 documents
-must recover toward 97%; Helene end-to-end must not regress. **Not yet evaluated** —
-training is running on a Lambda A10, ETA a few hours from 2026-09-04 12:51 UTC.
+must recover toward 97%; Helene end-to-end must not regress. **RESULT 2026-09-04: both admission bars PASS, and gate3 strictly dominates both
+predecessors.** All three gates scored by ONE command on ONE machine over the same 60+60
+real held-out `casualty_ml` documents, so no historical number is reused:
+
+| gate | Turkish admitted | Chinese admitted |
+|---|---|---|
+| `gate2-mmbert-v2` | 21/60 (35%) | 58/60 (97%) |
+| `gate2-mmbert-tr` | 58/60 (97%) | 50/60 (83%) |
+| **`gate3-mmbert`** | **58/60 (97%)** | **59/60 (98%)** |
+
+Turkish is IDENTICAL to gate2_tr, so the gap that model closed stays closed. Chinese
+recovers to 98%, marginally past v2's own 97% -- the three-way rebalance bought Turkish
+support at NO Chinese cost, which is precisely what `balance()`'s blindness to relative
+weight ACROSS sources had made impossible.
+
+Held-out test set: relevance 0.8084, toll_kind 0.7393, micro 0.7739 (n=2,156). Do NOT read
+that against gate2_tr's 0.7920 -- the test set changed with the corpus, and that is the
+confounded cross-version comparison this project has already been burned by. The admission
+table above is the matched comparison.
+
+Selected at epoch 4 of 8 (val 0.7964); epochs 5-8 never beat it while train loss kept
+falling 0.1423 -> 0.0613. The 8-epoch schedule is longer than this corpus needs, and
+`save_best` is what made that harmless.
+
+**The third bar, Helene English end-to-end, is NOT yet run** -- recorded as outstanding
+rather than quietly dropped.
 
 ### [2] Extraction thresholds — THRESHOLD, on
 `extract(threshold=)` is the single global cut the boundary greedy path gates on.
