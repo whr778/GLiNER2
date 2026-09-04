@@ -1,8 +1,11 @@
 """The stage-0 language gate: what it admits, and that it short-circuits the model.
 
-The gate's relevance model reads English and Chinese. On Turkish it returns confident
-verdicts with AUC 0.4733 -- below chance -- so the language check exists to reject that
-input BEFORE inference rather than to score it.
+Turkish moved from rejected to supported on 2026-09-04, paired with switching
+`run_pipeline.py`'s default `--gate-model` to `gate2-mmbert-tr` (Turkish AUC 0.4980,
+chance, -> 0.8105). The two changes are coupled: this allowlist governs which languages
+reach the gate model at all, not what any given checkpoint does with them once there.
+Passing an older checkpoint (`gate2-mmbert-v2`, AUC 0.4733 on Turkish -- below chance)
+here would let Turkish back through to a model still blind to it.
 """
 import sys
 from pathlib import Path
@@ -20,17 +23,22 @@ TURKISH = ("Kars-Ardahan kara yolunda kar nedeniyle mahsur kalan 110 kisi kurtar
 # Real row from data/gate2.test.jsonl: 24 characters, which lumi_language_id calls
 # `und` at prob 0.42. Script, not the classifier, is what identifies it.
 SHORT_CHINESE = "无锡一小吃店爆炸6死9伤 附近店面员工:头被震晕"
+# Not en/zh/tr -- exercises the still-live reject path. Content mirrors ENGLISH so a
+# failure here is about language support, not about this text being irrelevant.
+FRENCH = ("Au moins 27 personnes sont mortes et 159 ont ete blessees lorsqu'un immeuble "
+         "residentiel s'est effondre tot mardi matin, ont annonce les autorites.")
 
 
-@pytest.mark.parametrize("text, expected", [(ENGLISH, "en"), (SHORT_CHINESE, "zh")])
+@pytest.mark.parametrize("text, expected",
+                         [(ENGLISH, "en"), (SHORT_CHINESE, "zh"), (TURKISH, "tr")])
 def test_supported_languages_are_admitted(text, expected):
     supported, language, _ = is_supported(text)
     assert supported and language == expected
 
 
-def test_turkish_is_rejected():
-    supported, language, _ = is_supported(TURKISH)
-    assert not supported and language == "tr"
+def test_unsupported_language_is_rejected():
+    supported, language, _ = is_supported(FRENCH)
+    assert not supported and language not in ("en", "zh", "tr")
 
 
 def test_han_override_rescues_a_short_headline_the_classifier_misses():
@@ -57,10 +65,10 @@ def test_gate_does_not_run_the_model_on_unsupported_text():
                     return self
             return Schema()
 
-    results = gate(SchemaOnlyModel(), [TURKISH], threshold=0.5, with_type=False)
+    results = gate(SchemaOnlyModel(), [FRENCH], threshold=0.5, with_type=False)
     assert results[0]["relevant"] is False
     assert results[0]["relevance"] == "unsupported_language"
-    assert results[0]["language"] == "tr"
+    assert results[0]["language"] not in ("en", "zh", "tr")
 
 
 def test_gate_still_scores_supported_text():

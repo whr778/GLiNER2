@@ -1,15 +1,25 @@
-"""The relevance gate is an English+Chinese instrument. Say so at ingest.
+"""The relevance gate reads exactly the languages ITS OWN MODEL was trained on. Say so
+at ingest, because "multilingual" is a property of a checkpoint, not of mmBERT.
 
-The gate is named multilingual because mmBERT is. Its TRAINING DATA is not: measured on
-`data/gate2.train.jsonl` (n=11,781), English 95.9% (docee + cc_news), Chinese 4.1%
-(duee), Turkish 0.19% and incidental. On Turkish news the consequence is not a degraded
-score, it is no signal at all -- AUC 0.4733, below chance, with the negatives' median
-score above the positives' (`gate_turkish_fp.py --sweep`). It still admits 22% of clean
-Turkish articles at threshold 0.5, silently, and that admission rate is indistinguishable
-from what it does to Turkish casualty reports.
+Turkish was excluded here from 2026-08-29 until 2026-09-04 because the DEFAULT gate
+checkpoint at the time, `gate2-mmbert-v2`, could not read it: trained on
+`data/gate2.train.jsonl` (n=11,781) at English 95.9%, Chinese 4.1% (duee), Turkish 0.19%
+and incidental, it scored AUC 0.4733 on Turkish -- below chance, negatives' median above
+positives' (`gate_turkish_fp.py --sweep`) -- while still admitting 22% of clean Turkish
+articles at threshold 0.5, silently, indistinguishable from what it did to genuine
+Turkish casualty reports. Detecting the language first turned that silent 22%
+false-positive rate into an explicit, countable exclusion.
 
-Detecting the language first turns a silent 22% false-positive rate into an explicit,
-countable exclusion. It does not make the gate multilingual; it stops it pretending.
+`gate2-mmbert-tr` (trained on Turkish news specifically, `data/gate2_tr`) closed the gap
+Turkish AUC 0.4980 (the SAME chance-level failure, confirmed independently on a second,
+larger held-out set) -> 0.8105 across 9 outlets, with English unregressed (Helene pooled
+RMSE identical at 17.5 on the streams both gates cover) -- and it is now
+`run_pipeline.py`'s default `--gate-model`. Turkish moved from excluded to supported
+because the MODEL changed, not because this file's language detection got smarter. Passing
+an older gate checkpoint here (e.g. `--gate-model whr778/gliner2-gate2-mmbert-v2`) would
+let Turkish text back through this allowlist to a model that still cannot read it -- the
+allowlist governs which languages CAN reach the gate, not what any given checkpoint does
+with them once there.
 
 Two measured details drive the rule:
 
@@ -25,7 +35,7 @@ from __future__ import annotations
 
 from lumi_language_id import detect_language
 
-SUPPORTED = frozenset({"en", "zh"})
+SUPPORTED = frozenset({"en", "zh", "tr"})
 MAX_CHARS = 1500          # matches fetch_cc_news.py; detection needs a sample, not the document
 HAN_FRACTION = 0.10       # of the letters, not the characters -- CJK text is punctuation-light
 
