@@ -364,6 +364,28 @@ being three-way. The fix is a corpus whose per-language shares are fixed by cons
 against a target, not whatever the pools happen to contain -- and a fourth language would
 hit it again.
 
+**REPLICATION 2026-09-04: the English regression does NOT reproduce, and the verdict above
+is withdrawn.** Helene was one feed resting on two documents, so it was run against the two
+other English feeds with committed ground truth. Pooled RMSE in deaths:
+
+| feed | gate2-mmbert-tr | gate3-mmbert | admitted | |
+|---|---|---|---|---|
+| Helene | 132.59 | 175.66 | 59 -> 53 | gate3 worse |
+| Aegean | 518.17 | **518.13** | 34 -> **38** | tie |
+| Turkiye-EN | 7444.67 | **7444.67** | 16 -> 16 | identical |
+
+Turkiye-EN is the sharpest: both gates admit all 16 articles and emit 58 IDENTICAL
+observations. On Aegean gate3 admits MORE than the incumbent and matches its RMSE to 0.04.
+So gate3 does not systematically under-admit English, and "gate3 regresses English" is not
+established -- one feed out of three, on a 2-document margin, with no seed replication and
+no variance estimate for this metric.
+
+**The lesson is about the instrument, not the model.** A single-feed end-to-end number was
+treated as a pre-registered bar; it moved 32% on two documents. Bars of that kind need
+either several feeds or a variance estimate before a verdict is read off them, and this one
+had neither. The share-rebalancing arm that this verdict was about to justify would have
+been chasing a signal that does not replicate.
+
 **Standing consequence: a gate must be scored on ALL of its languages before shipping.**
 gate3 passes both admission bars and still regresses the pipeline. Two of three bars is not
 a pass.
