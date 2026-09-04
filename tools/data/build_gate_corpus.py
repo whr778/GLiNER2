@@ -202,6 +202,56 @@ def balance(rows: list[dict], seed: int, deciles: int = 10) -> list[dict]:
     return out
 
 
+def enforce_shares(rows: list[dict], targets: dict[str, float], seed: int) -> list[dict]:
+    """Downsample sources so each hits its TARGET share of the corpus.
+
+    `balance` equalises the classes inside every (source, length-decile) cell, which fixes
+    P(positive | source, length) at 0.5 -- but it says nothing about how much of the corpus
+    each source IS. That gap has now cost two models, in opposite directions:
+
+        gate2_tr  EN 74.8%  TR 22.0%  ZH  3.1%   Chinese admission 97% -> 83%
+        gate3     EN 65.5%  TR 19.3%  ZH 15.2%   Chinese repaired, ENGLISH regressed
+                                                 (Helene pooled RMSE 132.6 -> 175.7)
+
+    Adding a language silently taxes the others, and being three-way does not escape it --
+    a fourth would hit it again. So the shares become an input, chosen and asserted, rather
+    than whatever the pools happened to contain.
+
+    The positive/negative balance `balance` established is preserved: each source is cut to
+    an equal number of positives and negatives. Sources with no target are passed through.
+    """
+    rng = random.Random(seed)
+    by_source: dict[str, dict[bool, list]] = defaultdict(lambda: {True: [], False: []})
+    for row in rows:
+        by_source[row["source"]][row["positive"]].append(row)
+
+    # The binding source is the one furthest short of its target; scale everything to it.
+    total = min(
+        (min(len(sides[True]), len(sides[False])) * 2) / targets[src]
+        for src, sides in by_source.items() if src in targets and targets[src] > 0
+    )
+    out: list[dict] = []
+    for src, sides in sorted(by_source.items()):
+        if src not in targets:
+            out += sides[True] + sides[False]
+            continue
+        per_class = int(total * targets[src] / 2)
+        for positive in (True, False):
+            pool = sides[positive]
+            rng.shuffle(pool)
+            out += pool[:per_class]
+    rng.shuffle(out)
+
+    got = Counter(r["source"] for r in out)
+    n = len(out)
+    print(f"[gate2] shares enforced -> {n} rows")
+    for src in sorted(got):
+        want = targets.get(src)
+        note = f"  (target {want:.1%})" if want else "  (untargeted)"
+        print(f"[gate2]   {src:16s} {got[src]:6d}  {got[src]/n:6.1%}{note}")
+    return out
+
+
 def _decile_edges(lengths: list[int], deciles: int) -> list[int]:
     ordered = sorted(lengths)
     return [ordered[int(len(ordered) * i / deciles)] for i in range(1, deciles)]
@@ -225,6 +275,12 @@ def main() -> None:
     ap.add_argument("--annotated", nargs="+", default=["data/gate_ann.jsonl"])
     ap.add_argument("--out-prefix", default="data/gate2")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--source-share", nargs="+", metavar="SOURCE=FRACTION",
+                    help="fix each source's share of the corpus BY CONSTRUCTION, e.g. "
+                         "'docee=0.55 turkish_news=0.22 zh_news=0.15 cc_news=0.08'. Must "
+                         "sum to 1.0. Without this the shares are whatever the pools "
+                         "contain, which has now regressed two models in opposite "
+                         "directions -- see enforce_shares().")
     args = ap.parse_args()
 
     rows = []
@@ -244,6 +300,15 @@ def main() -> None:
                         seen, filler_cap, args.seed)
 
     final = balance(rows, args.seed)
+    if args.source_share:
+        targets = {}
+        for spec in args.source_share:
+            name, _, frac = spec.partition("=")
+            targets[name] = float(frac)
+        total_share = sum(targets.values())
+        if abs(total_share - 1.0) > 1e-6:
+            raise SystemExit(f"--source-share must sum to 1.0, got {total_share}")
+        final = enforce_shares(final, targets, args.seed)
     kinds = Counter(r["kind"] for r in final)
     n_pos = sum(r["positive"] for r in final)
     print(f"[gate2] balanced {len(final)}: {n_pos} positive, {len(final) - n_pos} negative")
