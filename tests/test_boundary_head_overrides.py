@@ -156,6 +156,10 @@ def test_use_inside_evidence_reaches_BOTH_forward_readers():
     "boundary_attention_layers", "candidate_attention_layers",
     "query_attention_layers", "endpoint_difference_features",
     "query_conditioned_inside_weight",
+    # Shape-only: a state_dict KEY diff cannot see these, a shape diff can.
+    "enable_rotary_endpoints", "record_dim", "record_instance_queries",
+    # Named by from_pretrained's own load error.
+    "candidate_attention_heads", "pool_boundary_top_k", "pool_size",
 ])
 def test_parameter_changing_flags_are_refused_on_a_warm_start(key):
     """Each of these adds or removes parameter tensors (measured by diffing

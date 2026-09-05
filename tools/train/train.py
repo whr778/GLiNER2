@@ -584,6 +584,16 @@ _STRUCTURAL_BOUNDARY_KEYS = frozenset({
     "boundary_attention_layers", "candidate_attention_layers",
     "query_attention_layers", "endpoint_difference_features",
     "query_conditioned_inside_weight",
+    # A key diff cannot see a flag that RESIZES an always-built module -- the
+    # tensor names are identical and only the shapes move. Re-measured comparing
+    # shapes: these three. `record_dim` and `record_instance_queries` are named
+    # nowhere in the loader's error either, so they would have failed a warm start
+    # with a bare shape-mismatch traceback.
+    "enable_rotary_endpoints", "record_dim", "record_instance_queries",
+    # The remainder of what `from_pretrained` itself declares incompatible. The
+    # guard is now a superset of that list: whatever the loader refuses to LOAD,
+    # the trainer refuses to SAVE.
+    "candidate_attention_heads", "pool_boundary_top_k", "pool_size",
 })
 
 
