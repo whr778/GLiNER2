@@ -17,6 +17,11 @@
 # buy annotation — annotate_casualty.py / annotate_gate.py / annotate_multitask.py cost
 # real money and are never run automatically. Build order and the commands are in
 # tools/train/TRAINING.md section 3a.
+#
+# NOT HERE ON PURPOSE: tools/data/interleave_splits.py. It REPAIRS an existing corpus
+# whose splits were written in per-source blocks; build_casualty_multilingual.py now
+# shuffles before writing, so a fresh build does not need it. It is a repair tool for
+# corpora built before that fix, not a pipeline step.
 
 set -u
 
@@ -28,6 +33,8 @@ mkdir -p data
 DEFAULT_LOG=/tmp/converters.log
 [ -d /Volumes/Development/tmp ] && DEFAULT_LOG=/Volumes/Development/tmp/converters.log
 LOG="${CONVERTERS_LOG:-$DEFAULT_LOG}"
+# DocEE-zh needs a ~108 MB intermediate; park it beside the log, not in data/.
+TMPD="$(dirname "$LOG")"
 : > "$LOG"
 echo "Log: $LOG"
 
@@ -173,6 +180,34 @@ run_optional docee_test  data/docee/DocEE-en/normal_setting/test.json \
 # broken ones. Precedence is test > val > train, so the blind test keeps its documents.
 run_optional docee_dedupe data/docee.train.jsonl \
     uv run python tools/data/dedupe_splits.py data/docee
+
+# DocEE-zh -- 226 MB that sat unconverted because convert_docee.py had no Chinese path.
+# TWO STEPS, not one: prepare_docee_zh is a PREPROCESSOR that unwraps the upstream
+# one-record-per-list shape (a 1-element list fails the len(raw) >= 4 check, returning
+# None for EVERY record) and maps 26 zh event-type spellings onto DocEE-en's canonical
+# 59; the existing, tested converter then does the rest.
+# --keep-classification-only is load-bearing: without it convert_docee drops the 17,013
+# documents of 36,729 whose arguments all fall outside the 4 surface-verified roles, and
+# does so WITHOUT ERROR -- the corpus just arrives smaller than it should be.
+run_optional docee_zh_prepare data/DocEE/DocEE-zh/DocEE-zh-20230105.json \
+    uv run python tools/data/prepare_docee_zh.py \
+        --input data/DocEE/DocEE-zh/DocEE-zh-20230105.json --out "$TMPD/docee_zh_prepared.json"
+run_optional docee_zh_convert "$TMPD/docee_zh_prepared.json" \
+    uv run python tools/data/convert_docee.py --keep-classification-only \
+        --input "$TMPD/docee_zh_prepared.json" --out data/docee_zh.jsonl
+
+# Turkish event corpus: the deterministic JOIN of two annotation passes already bought
+# (type + per-type role spans). The annotation itself costs money and is never run here
+# -- see SCOPE -- but the join over the purchased files belongs in the rebuild path.
+run_optional turkish_event data/turkish_gate/ev_ann_tr.jsonl \
+    uv run python tools/data/merge_turkish_event.py --out-prefix data/turkish_event
+
+# The three DocEE arms present DIFFERENT label menus -- 59 en / 58 zh / 60 tr. Labels are
+# an INPUT at inference, so a model whose English menu lacks `none` cannot answer it, and
+# whose Chinese menu lacked `Armed Conflict` was never asked to consider it. Unify to the
+# union of 60, leaving true_label untouched. Runs LAST because it reads all three.
+run_optional docee_menus data/turkish_event.train.jsonl \
+    uv run python tools/data/unify_docee_menus.py
 
 # MAVEN, RAMS — manual local downloads required (see ../train/TRAINING.md §2).
 run_optional maven      data/maven/train.jsonl                 uv run python tools/data/convert_maven.py \

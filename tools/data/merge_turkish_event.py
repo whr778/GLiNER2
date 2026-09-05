@@ -104,8 +104,13 @@ def main() -> int:
                 menu.update(str(x) for x in (c.get("labels") or []))
             if len(menu) >= 59:
                 break
-    labels = sorted(menu) + [NONE_LABEL]
-    print(f"[merge] label menu: {len(labels)} ({len(menu)} DocEE + `{NONE_LABEL}`)")
+    # UNION, not append. `none` began as the one label outside DocEE's 59, so appending
+    # it was safe -- until unify_docee_menus.py rewrote docee.train's menu to the union
+    # of all three arms, which CONTAINS `none`. A rebuild then emitted it twice: 61
+    # entries, 60 unique. A duplicated label is a menu the model is shown twice, and
+    # nothing downstream errors on it. Order-independent this way.
+    labels = sorted(menu | {NONE_LABEL})
+    print(f"[merge] label menu: {len(labels)} ({len(menu - {NONE_LABEL})} DocEE + `{NONE_LABEL}`)")
 
     kept, dropped_none, with_ents = 0, 0, 0
     lab_counts, role_counts = Counter(), Counter()
