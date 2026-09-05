@@ -41,8 +41,26 @@
 # 0 cross-split overlap, 0 base-trained rows in val or test, 100% record_metadata,
 # 0 Chinese labels, check_leakage --config CLEAN.
 
+# REBASED 2026-09-05 onto the trilingual base. The previous base,
+# 137k-v2-eb16, had NEVER SEEN TURKISH while this model fine-tunes Turkish onto it --
+# the gap eb16-rebuild-tr was built to close (30,134 Turkish rows, 18.2% of its corpus).
+# Structurally compatible, verified against the published config rather than assumed:
+# enable_records/enable_relations both true (they are STRUCTURAL on a `pretrained:` path
+# and must match), max_len 8192, and the same labels_file -- a warm start against a
+# vocabulary the base never learned is not a warm start.
+#
+# THE ONLY VARIABLE vs the 2026-09-05 run is the base. Same config, same seed, same
+# corpus, same length proxy, so the delta is attributable. That run (old base, charclass
+# proxy) scored structure_strict 0.5958 / relaxed 0.6208 on support 10,506 -- the control.
+#
+# CAVEAT, recorded rather than buried: eb16-rebuild-tr was itself trained with the
+# charclass length proxy, and three independent observations now put that proxy at
+# net-negative (Chinese -0.028, gate3 admission down, and this model's own
+# 0.6078 -> 0.5958 structure_strict across the proxy change on an identical test set).
+# This run inherits that. It is not a confound for the base comparison -- both arms use
+# charclass -- but it means a positive result here is a floor, not a ceiling.
 model:
-  pretrained: whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16
+  pretrained: whr778/gliner2-eb16-rebuild-tr
   architecture: boundary
   boundary_head:
     enable_relations: true
@@ -52,8 +70,8 @@ model:
     training_candidate_budget: 1024
 training:
   checkpoint_restart: None
-  output_dir: ./out/casualty-full-multilingual
-  experiment_name: casualty_full_multilingual
+  output_dir: ./out/casualty-multilingual-eb16tr
+  experiment_name: casualty_multilingual_eb16tr
   data_parallel: false          # DEPRECATED no-op; DDP comes from torchrun, not config
   # 4, not 6, on measured cost rather than a guess: 54,303 records at effective batch 32
   # is 1,697 steps per epoch, and the A100 runs 3.46 s/it, so 6 epochs is 9.5h of training
