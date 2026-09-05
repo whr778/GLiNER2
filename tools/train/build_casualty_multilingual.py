@@ -135,6 +135,14 @@ def main():
 
     counts = {}
     for name, rows in splits.items():
+        # INTERLEAVE BEFORE WRITING. The loop above accumulates language by language, so
+        # without this each split lands as English block, then Turkish block, then Chinese
+        # -- measured blockiness 0.398 against gate3's 0.007. Training never saw it
+        # (LengthGroupedSampler randperms before it sorts, and the DataLoader shuffles),
+        # but ANY measurement taken on a prefix is wrong by an order of magnitude: the
+        # first 20,000 of 54,303 train rows read 89.5% English for a corpus that is 32.9%.
+        # That cost a wrong answer on 2026-09-05 before a full-file check caught it.
+        rng.shuffle(rows)
         path = Path(str(args.out) + f".{name}.jsonl")
         with path.open("w", encoding="utf-8") as fh:
             for record in rows:
