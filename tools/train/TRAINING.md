@@ -126,11 +126,21 @@ uv run python tools/data/restore_from_hf.py --config tools/train/config/joint-bo
 uv run python tools/data/restore_from_hf.py --all
 ```
 
-516 files are mirrored and the 137k config restores 36/36. Every `--all` run prints an
-UNRECOVERABLE list; that is a backup gap to close, not noise. Files already present are
+535 files are mirrored and the 137k config restores 36/36. Files already present are
 skipped, so this is safe to re-run — `--force` re-downloads.
 
-**To rebuild from source instead of the Hub, do not hand-run 36 converters.**
+The script is **registry-driven**: it restores whatever carries an `hf_jsonl` in
+`dataset_registry.yaml`, so a corpus added to the registry is covered without the script
+being touched. That is why `docee_zh`, `turkish_event`, `casualty_ml`, `gate3` and
+`gate2_tr` needed no change to it.
+
+Every `--all` run prints an UNRECOVERABLE list — 17 corpora. **Most of that list is not a
+backup gap.** `ace2005` is LDC, the eight BioNLP sets and `scierc` are "see source" /
+research-use, and `casualty_full_ml` inherits publisher news text; none of them may be
+redistributed. Read the list as "these die with the disk", then check the licence column
+before treating any one entry as something to fix.
+
+**To rebuild from source instead of the Hub, do not hand-run the converters.**
 `tools/data/run_all_converters.sh` runs every one of them in the right order, logs each
 step, applies the zh→en label map, and refuses to finish if Chinese labels or contaminated
 splits survive:
@@ -172,11 +182,38 @@ propagates silently:**
 
 1. base corpora — restore, or the converters in 3b
 2. label map applied (above)
-3. slices — `build_scaling_mix.py` → `data/scaling/`, `build_joint_scaling_mix.py` → `data/scaling_joint/`
-4. mixes and replay — `build_warmstart_mix.py`, `build_137k_replay.py`,
+3. **the trilingual DocEE arm, in this order** — `docee` (en) must exist first because the
+   other two derive their label space from it:
+   - `prepare_docee_zh.py` → `convert_docee.py --keep-classification-only` → `docee_zh`.
+     Two steps: the first is a *preprocessor* that unwraps the upstream
+     one-record-per-list shape and maps 26 zh event-type spellings onto en's canonical 59.
+     **`--keep-classification-only` is load-bearing** — without it 17,013 of 36,729
+     documents are dropped *without error*, and the corpus simply arrives smaller.
+   - `merge_turkish_event.py` → `turkish_event`, the deterministic join of the two bought
+     annotation passes (type + per-type role spans).
+   - `unify_docee_menus.py` **last**, because it reads all three: the arms present 59 en /
+     58 zh / 60 tr menus, and labels are an INPUT at inference, so a model whose English
+     menu lacks `none` cannot answer it.
+4. slices — `build_scaling_mix.py` → `data/scaling/`, `build_joint_scaling_mix.py` → `data/scaling_joint/`
+5. mixes and replay — `build_warmstart_mix.py`, `build_137k_replay.py`,
    `build_turkish_dose_mix.py` (`mix_natural`, `tr_dose*`), `build_loc_control.py`,
-   `build_zh_multitask_mix.py`
-5. `check_leakage.py --config <yaml>` before any of it reaches a run
+   `build_zh_multitask_mix.py`, `build_casualty_multilingual.py` (`casualty_ml`)
+6. `check_leakage.py --config <yaml>` before any of it reaches a run
+
+**Order dependence here has already bitten once.** `merge_turkish_event` derives its menu
+from `data/docee.train.jsonl`. Once `unify_docee_menus` rewrote that menu to the union —
+which contains `none` — re-running the merge appended `none` to a list that already had
+it: 61 entries, 60 unique. Nothing downstream errors on a duplicated label; the model is
+just shown it twice. Fixed by taking a set union, but the lesson generalises: any step that
+reads a corpus it also runs after is not idempotent until you prove it is.
+
+**`interleave_splits.py` is a REPAIR tool, not a pipeline step.** It rewrites a corpus
+whose splits were written in per-source blocks — `build_casualty_multilingual` accumulated
+per language and wrote in accumulation order, giving blockiness 0.398 against gate3's
+0.007. That builder now shuffles before writing, so a fresh build never needs it. Training
+never saw the defect (the samplers shuffle); *measurement* did, and a prefix read of a
+blocked file returned 89.5% English for a corpus that is 32.9%. **Any prefix-based
+measurement of a blocked file is meaningless.**
 
 **Restoring by basename alone is unsafe and the tool refuses to.**
 `data/scaling_joint/chfinann.val.jsonl` is a 150-record slice while `whr778/chfinann`
@@ -435,9 +472,31 @@ families, because taking only events preserves one head and starves the other.
 `boundary_settings` is rebuilt — **including the head's own reference**, which is a separate
 object built in `BoundaryHead.__init__`. Rebuilding only `model.boundary_settings` left every
 knob the head reads through `self.settings` pinned at its checkpoint value, which produced a
-treatment arm identical to its control. Structural keys (`enable_records`, `candidate_pool`,
-`boundary_dim`, …) raise instead of being applied, because the modules they size are already
-built.
+treatment arm identical to its control.
+
+**Some values are COPIED at construction and a fresh settings object does not move them.**
+Three so far: `hard_negatives_per_positive`, `minimum_hard_negatives`, and
+`use_inside_evidence` — the last of which is copied into *two* places, the head and the pair
+scorer it is passed to, and **both** are what the forward pass reads. Measured on
+`fastino/gliner2.5-multi-v1`: overriding it to `false` left config and settings at `false`
+and both readers at `true`. An arm identical to its control, reported as applied. Each is
+re-copied explicitly; if you add a knob the head caches, add it there too.
+
+**Structural keys raise instead of being applied**, because the modules they size are
+already built. There are 26, and the set is a verified **superset** of what
+`from_pretrained` itself refuses to load — whatever the loader won't load, the trainer
+won't save.
+
+Refusing is not merely conservative; unguarded is *worse than an error*. The override still
+lands on `model.config` and is **saved**, so the run trains the checkpoint's architecture
+while writing a config describing a different one, and the *next* `from_pretrained` dies on
+a state-dict mismatch. **It poisons the checkpoint, not the run.**
+
+Whether a key is structural is a measurement, not a judgement: build the model twice and
+diff the `state_dict`. Diff the **keys** to catch flags that add or remove tensors
+(`enable_records` moves 24), and diff the **shapes** to catch flags that resize an
+always-built module — `enable_rotary_endpoints`, `record_dim` and `record_instance_queries`
+are invisible to a key diff and were missed by the first audit because of it.
 
 ---
 
