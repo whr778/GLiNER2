@@ -41,9 +41,13 @@ model:
   architecture: boundary
   max_len: 2048
   attn_implementation: flash_attention_2
-  boundary_head:
-    enable_relations: false
-    enable_records: false
+  # NO boundary_head block. Those keys are STRUCTURAL and cannot be set on the
+  # `pretrained:` path -- the checkpoint's modules are already built, and the trainer
+  # refuses rather than silently ignoring them. The first attempt carried
+  # enable_relations/enable_records: false copied from gate3-mmbert.yaml, which trains
+  # from `encoder:` where they ARE settable, and died in 22 seconds. casualty-multilingual
+  # has both heads enabled; this task simply does not supply relation or record targets,
+  # so the heads stay untrained rather than needing to be removed.
   struct_loss: bce_posweight
   struct_pos_weight: 4.0
   sampling: {}
