@@ -35,14 +35,24 @@ class FakeModel:
     """Stands in for a loaded checkpoint: a config carrying the CHECKPOINT's
     boundary_head, plus the settings object built from it at construction."""
 
+    class FakePairScorer:
+        """The real SparseBoundaryPairScorer takes ``use_inside_evidence`` as a
+        constructor ARGUMENT and stores its own copy, which its forward reads."""
+
+        def __init__(self, settings):
+            self.use_inside_evidence = settings.use_inside_evidence
+
     class FakeHead:
-        """The head keeps its OWN settings reference, and copies two values out
-        of it at construction -- both true of the real BoundaryHead."""
+        """The head keeps its OWN settings reference, and copies three values out
+        of it at construction -- all true of the real BoundaryHead. It also owns
+        the pair scorer, which holds a SECOND copy of ``use_inside_evidence``."""
 
         def __init__(self, settings):
             self.settings = settings
             self.hard_negatives_per_positive = settings.hard_negatives_per_positive
             self.minimum_hard_negatives = settings.minimum_hard_negatives
+            self.use_inside_evidence = settings.use_inside_evidence
+            self.pair_scorer = FakeModel.FakePairScorer(settings)
 
     def __init__(self, boundary_head):
         self.config = FakeConfig(dict(boundary_head))
@@ -121,3 +131,44 @@ def test_overrides_reach_the_HEAD_settings_not_just_the_model():
     # Copied at construction rather than read live, so assigning settings alone
     # would not move it.
     assert model.boundary_head.minimum_hard_negatives == 9
+
+
+def test_use_inside_evidence_reaches_BOTH_forward_readers():
+    """The third copied-at-construction value, and the only one with two readers.
+
+    It adds no parameters, so it is a legitimate warm-start override -- but the
+    forward pass reads ``head.use_inside_evidence`` and
+    ``head.pair_scorer.use_inside_evidence``, never ``settings``. Measured on
+    fastino/gliner2.5-multi-v1 before the fix: config and settings went to False
+    while both readers stayed True, i.e. an arm identical to its control.
+    """
+    model = FakeModel({**CHECKPOINT, "use_inside_evidence": True})
+
+    _apply_boundary_head_overrides(model, {"use_inside_evidence": False})
+
+    assert model.boundary_settings.use_inside_evidence is False
+    assert model.boundary_head.use_inside_evidence is False
+    assert model.boundary_head.pair_scorer.use_inside_evidence is False
+
+
+@pytest.mark.parametrize("key", [
+    "enable_abstention", "enable_count_head", "enable_span_content",
+    "boundary_attention_layers", "candidate_attention_layers",
+    "query_attention_layers", "endpoint_difference_features",
+    "query_conditioned_inside_weight",
+])
+def test_parameter_changing_flags_are_refused_on_a_warm_start(key):
+    """Each of these adds or removes parameter tensors (measured by diffing
+    state_dict keys), so none can be applied to an already-built model.
+
+    Unguarded they were worse than an error: the override still landed on
+    ``model.config`` and was SAVED, so the run trained the checkpoint's
+    architecture while writing a config describing a different one -- and the
+    next ``from_pretrained`` died on a state-dict mismatch.
+    """
+    model = FakeModel(CHECKPOINT)
+    current = model.config.boundary_head.get(key)
+    flip = (not current) if isinstance(current, bool) else 7
+
+    with pytest.raises(SystemExit, match=key):
+        _apply_boundary_head_overrides(model, {key: flip})

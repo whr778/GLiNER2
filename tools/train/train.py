@@ -571,6 +571,19 @@ _STRUCTURAL_BOUNDARY_KEYS = frozenset({
     "multihead_pair_compat_heads", "relation_heads_per_type",
     "relation_tails_per_type", "directional_relation_states",
     "relation_biaffine_content",
+    # Measured 2026-09-05 by diffing state_dict keys across each flag: these eight
+    # ADD OR REMOVE parameter tensors and were unguarded. Unguarded is worse than
+    # refusing, because the override still lands on `model.config` and is SAVED --
+    # so the run trains the checkpoint's architecture while writing a config that
+    # describes a different one, and the next `from_pretrained` builds the modules
+    # the config asks for and dies on a state-dict mismatch. It poisons the
+    # checkpoint rather than the run. `from_pretrained` already names most of these
+    # in its own load error (models/boundary/model.py); that list and this set had
+    # drifted apart.
+    "enable_abstention", "enable_count_head", "enable_span_content",
+    "boundary_attention_layers", "candidate_attention_layers",
+    "query_attention_layers", "endpoint_difference_features",
+    "query_conditioned_inside_weight",
 })
 
 
@@ -620,6 +633,15 @@ def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
         # settings does not move them.
         head.hard_negatives_per_positive = settings.hard_negatives_per_positive
         head.minimum_hard_negatives = settings.minimum_hard_negatives
+        # A third, found 2026-09-05. `use_inside_evidence` adds no parameters, so it
+        # is exactly the kind of behavioural knob this function exists to support --
+        # but it is copied into TWO places at construction (the head, and the pair
+        # scorer it is passed to as a constructor argument) and BOTH are what the
+        # forward pass reads. Measured on fastino/gliner2.5-multi-v1: overriding it
+        # to False left config and settings at False and both readers at True, i.e.
+        # a treatment arm identical to its control, reported as applied.
+        head.use_inside_evidence = settings.use_inside_evidence
+        head.pair_scorer.use_inside_evidence = settings.use_inside_evidence
 
 
 def _build_model(model_cfg: Dict):
