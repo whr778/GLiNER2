@@ -280,6 +280,11 @@ class TrainingConfig:
     error_policy: str = "raise"
     group_by_length: bool = True
     length_group_window_batches: int = 50
+    # "charclass" (default) approximates tokens from character classes and works for
+    # scripts without whitespace. "words" is the pre-2026-09-05 len(text.split()),
+    # kept ONLY so the proxy can be A/B'd against the models trained under it --
+    # it reads every Chinese document as ~1 word. Do not select it for new work.
+    length_proxy: str = "charclass"
     compile_model: bool = False
     gradient_checkpointing: bool = False
     fused_optimizer: bool = True
@@ -413,6 +418,13 @@ def _is_cjk(ch: str) -> bool:
     return any(lo <= code <= hi for lo, hi in _CJK_RANGES)
 
 
+# Set from TrainingConfig at trainer init. A module global rather than a constructor
+# argument because `lengths` is computed inside ExtractorDataset.__init__, before any
+# attribute could be assigned to the instance. Safe here: only the TRAINING dataloader
+# groups by length (eval passes is_training=False), so a stale value cannot reach eval.
+_LENGTH_PROXY_MODE = "charclass"
+
+
 def _length_proxy(text: str) -> int:
     """Approximate token count from character classes. Script-aware, tokenizer-free.
 
@@ -543,8 +555,10 @@ class ExtractorDataset(Dataset):
             except (OSError, ValueError, json.JSONDecodeError):
                 pass
 
+        mode = _LENGTH_PROXY_MODE
+        fn = (lambda t: len(t.split())) if mode == "words" else _length_proxy
         lengths = tuple(
-            max(1, _length_proxy(self._record_text(record)))
+            max(1, fn(self._record_text(record)))
             for record in self.data
         )
         if cache_path is not None and fingerprint_path is not None:
@@ -880,6 +894,11 @@ class ExtractorTrainer:
         ]
 
     def _setup_seed(self):
+        global _LENGTH_PROXY_MODE
+        _LENGTH_PROXY_MODE = getattr(self.config, "length_proxy", "charclass")
+        if _LENGTH_PROXY_MODE == "words":
+            logger.warning("length_proxy='words' -- the pre-2026-09-05 proxy, which reads "
+                           "every Chinese document as ~1 unit. Selected only for A/B.")
         seed = self.config.seed
         random.seed(seed)
         np.random.seed(seed)
