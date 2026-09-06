@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-SRC = Path("tools/train/config/joint-boundary-mmbert-10k.yaml")
+SRC = Path("tools/train/config/base/joint-boundary-mmbert-10k.yaml")
 OUT = Path("tools/train/config")
 
 # Enough optimizer steps to hit the NaN with near certainty at the observed ~58%

@@ -21,11 +21,11 @@ base_models:
   whr778/gliner2-joint-boundary-mmbert-137k:
     name: gliner2-joint-boundary-mmbert-137k
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/joint-boundary-mmbert-137k.yaml), pushed to the Hub
+    source_url: local (trained by tools/train/config/base/joint-boundary-mmbert-137k.yaml), pushed to the Hub
   whr778/gliner2-joint-boundary-mmbert-137k-v2:
     name: gliner2-joint-boundary-mmbert-137k-v2
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/joint-boundary-mmbert-137k.yaml with the
+    source_url: local (trained by tools/train/config/base/joint-boundary-mmbert-137k.yaml with the
       unified label space), pushed to the Hub
   whr778/gliner2-joint-boundary-mmbert-137k-v2-eb16:
     name: gliner2-joint-boundary-mmbert-137k-v2-eb16
@@ -45,31 +45,31 @@ base_models:
   whr778/gliner2-joint-boundary-rams-137k:
     name: gliner2-joint-boundary-rams-137k
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/joint-boundary-rams-137k.yaml), pushed to the Hub
+    source_url: local (trained by tools/train/config/base/joint-boundary-rams-137k.yaml), pushed to the Hub
   whr778/gliner2-warmstart-natural-clean:
     name: gliner2-warmstart-natural-clean
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/warmstart-natural.yaml, clean-data re-run), pushed to the Hub
+    source_url: local (trained by tools/train/config/warmstart/warmstart-natural.yaml, clean-data re-run), pushed to the Hub
   whr778/gliner2-warmstart-natural-evwide2-clean:
     name: gliner2-warmstart-natural-evwide2-clean
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/warmstart-natural-evwide2.yaml, clean-data re-run), pushed to the Hub
+    source_url: local (trained by tools/train/config/warmstart/warmstart-natural-evwide2.yaml, clean-data re-run), pushed to the Hub
   ./out/joint-boundary-mmbert-10k/best:
     name: joint-boundary-mmbert-10k
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/joint-boundary-mmbert-10k.yaml)
+    source_url: local (trained by tools/train/config/base/joint-boundary-mmbert-10k.yaml)
   ./out/joint-boundary-mmbert-40k/best:
     name: joint-boundary-mmbert-40k
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/joint-boundary-mmbert-40k.yaml)
+    source_url: local (trained by tools/train/config/base/joint-boundary-mmbert-40k.yaml)
   ./out/joint-boundary-mmbert-100k/best:
     name: joint-boundary-mmbert-100k
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/joint-boundary-mmbert-100k.yaml)
+    source_url: local (trained by tools/train/config/base/joint-boundary-mmbert-100k.yaml)
   ./out/joint-boundary-mmbert-137k/best:
     name: joint-boundary-mmbert-137k
     license: derived from jhu-clsp/mmBERT-base
-    source_url: local (trained by tools/train/config/joint-boundary-mmbert-137k.yaml)
+    source_url: local (trained by tools/train/config/base/joint-boundary-mmbert-137k.yaml)
   jhu-clsp/mmBERT-base:
     name: mmBERT-base
     license: see model card        # confirm upstream and replace if known
@@ -93,15 +93,15 @@ base_models:
   whr778/gliner2-base-v1-synthetic-haiku5k:
     name: gliner2-base-v1 fine-tuned on synthetic_haiku45_5k
     license: derived from fastino/gliner2-base-v1
-    source_url: local (tools/train/config/gliner2-base-v1-synthetic-haiku5k.yaml), pushed private to the Hub
+    source_url: local (tools/train/config/span/gliner2-base-v1-synthetic-haiku5k.yaml), pushed private to the Hub
   whr778/gliner2-base-v1-ccnews-real:
     name: gliner2-base-v1 fine-tuned on cc_news_haiku45 (real text, model labels)
     license: derived from fastino/gliner2-base-v1; TRAINING TEXT IS NOT REDISTRIBUTABLE (cc_news license unknown, publisher copyright)
-    source_url: local (tools/train/config/gliner2-base-v1-ccnews-real.yaml), pushed private to the Hub
+    source_url: local (tools/train/config/span/gliner2-base-v1-ccnews-real.yaml), pushed private to the Hub
   whr778/gliner2-base-v1-real-synth-mix:
     name: gliner2-base-v1 fine-tuned on cc_news_haiku45 + synthetic (74.4/25.6, NOT Fastino's 53/47)
     license: derived from fastino/gliner2-base-v1; TRAINING TEXT IS NOT REDISTRIBUTABLE (cc_news license unknown, publisher copyright)
-    source_url: local (tools/train/config/gliner2-base-v1-real-synth-mix.yaml), pushed private to the Hub
+    source_url: local (tools/train/config/span/gliner2-base-v1-real-synth-mix.yaml), pushed private to the Hub
   microsoft/deberta-v3-base:
     name: DeBERTa-v3-base
     license: mit

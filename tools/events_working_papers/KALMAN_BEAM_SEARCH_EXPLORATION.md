@@ -48,7 +48,7 @@ Key properties:
   `min_trigger_conf`, `single_filler_roles`) — not learned, not calibrated.
 - It runs **only in the windowed path** (DeBERTa-v3 `large-v1`, 512-token cap).
   The mmBERT-8192 path fits whole documents in one pass and **skips global decode
-  entirely** (see `tools/train/config/mmbert-base-wikievents.yaml` header). This
+  entirely** (see `tools/train/config/base/mmbert-base-wikievents.yaml` header). This
   matters for the whole idea (Section 6).
 
 ---

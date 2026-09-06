@@ -4,7 +4,7 @@
 # task_lr, encoder_lr, epochs, threshold sweep -- is held fixed, so head-init
 # and learning rate cannot explain a between-arm difference.
 #
-# ARM: events = 0.5  (event span loss DOWN-dose)
+# ARM: events = 2.0  (event span loss UP-dose)
 # Warm start + structure/NER, RECORD MODE = NATURAL. One of a two-arm A/B.
 #
 # The arms differ in EXACTLY ONE variable: the record_metadata written into the casualty
@@ -60,7 +60,7 @@
 # exists in the pipeline, so tasks cannot be silently re-segregated by batching.
 #
 #   uv run python tools/train/build_warmstart_mix.py
-#   uv run python tools/train/train.py --config tools/train/config/joint-boundary-warmstart-struct.yaml
+#   uv run python tools/train/train.py --config tools/train/config/base/joint-boundary-warmstart-struct.yaml
 
 model:
   pretrained: ./out/joint-boundary-mmbert-137k/best
@@ -75,7 +75,7 @@ model:
     task_loss_weights:
       entities: 1.0
       relations: 1.0
-      events: 0.5
+      events: 2.0
       json_structures: 1.0
     enable_relations: true
     enable_records: true     # now load-bearing for STRUCTURES too, not just event edges
@@ -83,8 +83,8 @@ model:
   struct_pos_weight: 4.0
 
 training:
-  output_dir: ./out/warmstart-natural-evw05
-  experiment_name: warmstart_natural_evw05
+  output_dir: ./out/warmstart-natural-evw20
+  experiment_name: warmstart_natural_evw20
   data_parallel: false
   # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
   # learning from cold, and every extra epoch is extra forgetting pressure.

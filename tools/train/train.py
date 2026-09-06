@@ -2,7 +2,7 @@
 
 Run::
 
-    uv run python tools/train/train.py --config tools/train/config/mmbert-small-focal.yaml
+    uv run python tools/train/train.py --config tools/train/config/base/mmbert-small-focal.yaml
 
 The config has four sections:
 
@@ -442,6 +442,43 @@ def _transform_classifications(cls_list: List, fn) -> List:
 LABEL_CATEGORIES = ("entities", "relations", "events", "classifications", "structures")
 
 
+def _resolve_beside_config(ref: str, config_path, *, required: bool):
+    """Find a config-relative asset, searching the config dir then its ANCESTORS.
+
+    Shared assets -- ``labels/unified.yaml``, ``stopwords.yaml`` -- live at the ROOT of
+    ``tools/train/config/`` while the configs themselves sit in purpose subfolders
+    (base/, span/, warmstart/, casualty/, gate/, probe/, tier2/, ab/). Resolving only
+    against the config's own directory therefore fails for every nested config: measured
+    2026-09-06 after the reorganisation, 31 configs raised on ``labels_file`` and 29 more
+    lost their ``stopword_yaml`` SILENTLY -- the worse half, since a warm start against a
+    label space the base never learned is the exact failure the shared file prevents.
+
+    Walking up means a config can move between subfolders without being edited.
+    """
+    if not ref:
+        return None
+    path = Path(ref)
+    if path.is_absolute():
+        return path if path.exists() else None
+    tried = []
+    if config_path:
+        here = Path(config_path).resolve().parent
+        for parent in [here, *here.parents]:
+            cand = parent / path
+            tried.append(cand)
+            if cand.exists():
+                return cand
+            if parent.name == "config":       # stop at the config tree root
+                break
+    tried.append(path.resolve())
+    if path.exists():
+        return path
+    if required:
+        raise FileNotFoundError(
+            f"{ref!r} not found; looked in " + ", ".join(str(t) for t in tried))
+    return None
+
+
 def load_labels_cfg(cfg: Dict, config_path: str = "") -> Dict:
     """Return the ``labels`` section, merging a shared ``labels_file`` underneath it.
 
@@ -453,17 +490,7 @@ def load_labels_cfg(cfg: Dict, config_path: str = "") -> Dict:
     shared: Dict = {}
     ref = cfg.get("labels_file")
     if ref:
-        path = Path(ref)
-        if not path.is_absolute() and config_path:
-            beside = Path(config_path).resolve().parent / path
-            # Resolve relative to the CONFIG, not the working directory. Falling back to
-            # a cwd-relative path silently loads whatever `labels/unified.yaml` happens to
-            # sit next to wherever the run was started -- or, more often, throws naming
-            # only the relative path and not where it actually looked.
-            if not beside.exists() and not path.exists():
-                raise FileNotFoundError(
-                    f"labels_file {ref!r} not found; looked in {beside} and {path.resolve()}")
-            path = beside if beside.exists() else path
+        path = _resolve_beside_config(ref, config_path, required=True)
         shared = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         shared = shared.get("labels", shared)
     merged = dict(shared)
@@ -800,8 +827,7 @@ def _build_eval_stopwords(eval_cfg: Dict, config_path: str, corpus_data=None):
     from gliner2.training.stopwords import build_stopwords
 
     yaml_name = eval_cfg.get("stopword_yaml", "stopwords.yaml")
-    yaml_path = Path(config_path).parent / yaml_name
-    extra = yaml_path if yaml_path.exists() else None
+    extra = _resolve_beside_config(yaml_name, config_path, required=False)
 
     _print_stopword_report(lang_codes, extra)
 

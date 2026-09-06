@@ -27,7 +27,7 @@ Writes `data/synthetic.train.jsonl`, `.val.jsonl`, `.test.jsonl` (80/10/10 by
 default). Train with the mmBERT config or any other:
 
 ```bash
-uv run python tools/train/train.py --config tools/train/config/mmbert-base-rams.yaml
+uv run python tools/train/train.py --config tools/train/config/base/mmbert-base-rams.yaml
 ```
 
 ## Two modes

@@ -1,18 +1,4 @@
-# Warm start + structure/NER, RECORD MODE = ANCHORLESS. One of a two-arm A/B.
-#
-# The arms differ in EXACTLY ONE variable: the record_metadata written into the casualty
-# corpus. Verified by content hash -- both mixtures are byte-identical with
-# record_metadata stripped (84,280 records, same hash), so any difference in the result
-# is attributable to the mode and to nothing else.
-#
-# The question is open. natural anchors each instance on its first declared field (a
-# casualty figure); anchorless forms instances with no anchor mention. The only prior
-# evidence is that a model NEVER TRAINED on anchorless fails to decode it -- which is
-# evidence about that model, not about the mode, and is why this is being run rather
-# than assumed.
-#
-# Decided by tools/train/probe_records.py, not by the blind test: the blind test carries
-# no structure data, so both arms would score identically on it.
+# Warm start from the 137K boundary base, adding STRUCTURE + NER with 30% replay.
 #
 # Why this run exists. `mmbert-137k` cannot do `[C]` record extraction at all -- verified
 # directly on the checkpoint: None at every threshold down to 0.01, with
@@ -53,7 +39,7 @@
 # exists in the pipeline, so tasks cannot be silently re-segregated by batching.
 #
 #   uv run python tools/train/build_warmstart_mix.py
-#   uv run python tools/train/train.py --config tools/train/config/joint-boundary-warmstart-struct.yaml
+#   uv run python tools/train/train.py --config tools/train/config/base/joint-boundary-warmstart-struct.yaml
 
 model:
   pretrained: ./out/joint-boundary-mmbert-137k/best
@@ -71,8 +57,8 @@ model:
   struct_pos_weight: 4.0
 
 training:
-  output_dir: ./out/warmstart-anchorless
-  experiment_name: warmstart_anchorless
+  output_dir: ./out/joint-boundary-warmstart-struct
+  experiment_name: joint_boundary_warmstart_struct
   data_parallel: false
   # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
   # learning from cold, and every extra epoch is extra forgetting pressure.
@@ -129,7 +115,7 @@ data:
   # `corpora` expands to <name>.train.jsonl, which would re-add their full train slices
   # on top of the replay already sampled into the mixture.
   corpora:
-    - data/mix_anchorless
+    - data/warmstart_mix
   # VAL/TEST only -- the curve's own blind test, unchanged, so per-capability numbers are
   # directly comparable to the mmbert-137k baseline (entity 0.586 / relation 0.170 /
   # event_type 0.956 / event_argument 0.098). All 23 files verified present.

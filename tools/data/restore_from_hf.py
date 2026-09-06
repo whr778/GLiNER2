@@ -9,7 +9,7 @@ no `hf_jsonl` cannot be restored and is listed under UNRECOVERABLE. Treat that l
 backup gap to close, not as noise.
 
     uv run python tools/data/restore_from_hf.py --all --dry-run
-    uv run python tools/data/restore_from_hf.py --config tools/train/config/joint-boundary-mmbert-137k.yaml
+    uv run python tools/data/restore_from_hf.py --config tools/train/config/base/joint-boundary-mmbert-137k.yaml
 """
 from __future__ import annotations
 

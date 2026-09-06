@@ -5,7 +5,7 @@ windowed vs. global decode on a fixed checkpoint).
 
 Examples:
   # blind test the config's checkpoint with its own eval settings
-  uv run python tools/train/eval.py --config tools/train/config/gliner2-base-v1-wikievents.yaml
+  uv run python tools/train/eval.py --config tools/train/config/span/gliner2-base-v1-wikievents.yaml
 
   # score the val split instead
   uv run python tools/train/eval.py --config <cfg> --split val

@@ -150,7 +150,7 @@ ChFinAnn and DocFEE do *not*, they are `entities` + `classifications`:
 MAVEN and Mendeley are trigger-only. So argument F1 0.506 is very nearly a Chinese-only
 number and English trigger→argument rests on 798 examples.
 
-`tools/train/config/ekf-frontend-mmbert.yaml` — cold start, 189,284 records, 50× the English
+`tools/train/config/casualty/ekf-frontend-mmbert.yaml` — cold start, 189,284 records, 50× the English
 trigger→argument supervision, Chinese kept. Split gate CLEAN (180,660 / 11,486 / 20,571).
 `rams` gained val+test by carving its 871-row test **by document**, which found 101 duplicate
 rows in test alone — the same hazard this file records for rams train.
@@ -1490,7 +1490,7 @@ Four local shards, **21.2 hours**, each verified at exactly `21070 records read`
 (4 x 21,070 = 84,280, the whole corpus). 46,581 cached records, 0 malformed. Hit rate on
 the corpus is **54.5%**, which is right: only records with gold spans are cached
 (46,581 / 84,280 = 55.3%). Loads in 1.1s. Train with
-`tools/train/config/warmstart-natural-gist.yaml`, which differs from the
+`tools/train/config/warmstart/warmstart-natural-gist.yaml`, which differs from the
 `warmstart-natural` control in exactly four keys — `guide_scores`, `rivals_per_record`,
 `output_dir`, `experiment_name` — with the data section identical.
 

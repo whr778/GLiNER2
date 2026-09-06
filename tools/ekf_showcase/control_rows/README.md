@@ -1,7 +1,7 @@
 # Control rows for the cross-event muting arm
 
 Collected 2026-08-19 on CPU with the probe fixed in `63249ed`, before spending any GPU on
-`tools/train/config/casualty-loc-muted.yaml`. Raw output kept verbatim beside this file.
+`tools/train/config/casualty/casualty-loc-muted.yaml`. Raw output kept verbatim beside this file.
 
     uv run python tools/ekf_showcase/event_binding_probe.py --model <id> --device cpu
 

@@ -10,7 +10,7 @@ train.py's own helpers so the output is identical to what a clean run would
 have produced.
 
     uv run python tools/train/finalize_run.py \
-        --config tools/train/config/joint-boundary-mmbert-10k.yaml
+        --config tools/train/config/base/joint-boundary-mmbert-10k.yaml
 
 Reads the calibrated threshold from ``best/threshold_sweep.json`` when present,
 so the card reports the same cutoff the run chose rather than re-sweeping.

@@ -42,7 +42,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", type=Path,
-                    default=Path("tools/train/config/joint-boundary-mmbert-137k.yaml"))
+                    default=Path("tools/train/config/base/joint-boundary-mmbert-137k.yaml"))
     ap.add_argument("--new-records", type=int, required=True,
                     help="size of the NEW data the replay accompanies")
     ap.add_argument("--replay-frac", type=float, default=0.30,

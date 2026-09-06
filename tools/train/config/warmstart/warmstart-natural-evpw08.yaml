@@ -2,8 +2,8 @@
 # See EVENT_LOSS_PHASE3_PLAN.md sec 10. Generated from warmstart-natural.yaml;
 # differs ONLY in the boundary_head weight keys, output_dir and experiment_name.
 #
-# ARM: events task_pos_weights = 16.0   ->  events reach 17.8% of the training gradient
-# clearly past the tested range; the real test of the DIRECTION hypothesis.
+# ARM: events task_pos_weights = 8.0   ->  events reach 12.2% of the training gradient
+# the first pos_weight dose that clears flat w=4 (10.6%), which was tested and null.
 #
 # DOSED FROM MEASUREMENT, not guessed. tools/train/probe_task_losses.py on the
 # control (seed43/final, 100 batches, buckets reconciling with residual 0) found:
@@ -75,7 +75,7 @@
 # exists in the pipeline, so tasks cannot be silently re-segregated by batching.
 #
 #   uv run python tools/train/build_warmstart_mix.py
-#   uv run python tools/train/train.py --config tools/train/config/joint-boundary-warmstart-struct.yaml
+#   uv run python tools/train/train.py --config tools/train/config/base/joint-boundary-warmstart-struct.yaml
 
 model:
   pretrained: ./out/joint-boundary-mmbert-137k/best
@@ -92,14 +92,14 @@ model:
     task_pos_weights:
       entities: 1.0
       relations: 1.0
-      events: 16.0
+      events: 8.0
       json_structures: 1.0
   struct_loss: bce_posweight
   struct_pos_weight: 4.0
 
 training:
-  output_dir: ./out/warmstart-natural-evpw16
-  experiment_name: warmstart_natural_evpw16
+  output_dir: ./out/warmstart-natural-evpw08
+  experiment_name: warmstart_natural_evpw08
   data_parallel: false
   # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
   # learning from cold, and every extra epoch is extra forgetting pressure.

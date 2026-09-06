@@ -23,7 +23,7 @@ Runs the TRAINING path -- train mode, the training collator, the scheduled gold
 injection -- because that is the loss being characterised, not the eval loss.
 
     uv run python tools/train/probe_task_losses.py \
-        --config tools/train/config/warmstart-natural.yaml \
+        --config tools/train/config/warmstart/warmstart-natural.yaml \
         --checkpoint out/event-loss-sweep/warmstart-natural-seed43/final \
         --batches 60 --gold-injection 0.25
 """
@@ -335,7 +335,7 @@ def report(model, totals, batches, drift, args):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--config", default="tools/train/config/warmstart-natural.yaml")
+    ap.add_argument("--config", default="tools/train/config/warmstart/warmstart-natural.yaml")
     ap.add_argument("--checkpoint", default=None, help="overrides model.pretrained")
     ap.add_argument("--batches", type=int, default=40)
     ap.add_argument("--batch-size", type=int, default=8)

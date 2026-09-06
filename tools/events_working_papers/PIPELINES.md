@@ -486,7 +486,7 @@ not correct ones, and the base fires on 39 of 60 windows while getting 3 right. 
 blocks the router is not the mix but the decode: one event instance per type, all spans
 pooled. See EKF_MHT_DESIGN §7.6.
 
-`tools/train/config/ekf-frontend-mmbert.yaml` is the cold-start rebuild: 189,284 records, a
+`tools/train/config/casualty/ekf-frontend-mmbert.yaml` is the cold-start rebuild: 189,284 records, a
 50× increase in English trigger→argument, the Chinese corpora kept because they are why the
 argument head works at all. Split gate clean at 180,660 / 11,486 / 20,571.
 

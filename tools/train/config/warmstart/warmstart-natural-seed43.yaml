@@ -1,3 +1,7 @@
+# PHASE 3 NOISE FLOOR -- the control recipe at a SECOND SEED, no task weighting.
+# Exists because there is no seed-variance estimate on mix_natural, and the
+# arm deltas this experiment is reading are small. Any |delta| below the
+# seed42-vs-seed43 gap is unreadable.
 # Warm start + structure/NER, RECORD MODE = NATURAL. One of a two-arm A/B.
 #
 # The arms differ in EXACTLY ONE variable: the record_metadata written into the casualty
@@ -53,7 +57,7 @@
 # exists in the pipeline, so tasks cannot be silently re-segregated by batching.
 #
 #   uv run python tools/train/build_warmstart_mix.py
-#   uv run python tools/train/train.py --config tools/train/config/joint-boundary-warmstart-struct.yaml
+#   uv run python tools/train/train.py --config tools/train/config/base/joint-boundary-warmstart-struct.yaml
 
 model:
   pretrained: ./out/joint-boundary-mmbert-137k/best
@@ -71,21 +75,9 @@ model:
   struct_pos_weight: 4.0
 
 training:
-  output_dir: ./out/warmstart-natural-gist
-  experiment_name: warmstart_natural_gist
-  # GIST query-axis hard negatives (TODO item 11). Setting guide_scores does two things
-  # and both are needed for either to matter: each record's cached rivals are injected
-  # into its schema, and the frozen guide's scores are handed to the veto. Train only.
-  #
-  # The DEDUP cache, not the raw concatenation. 194 of 46,343 sha1 keys collide --
-  # the same text appears twice in mix_natural declaring DIFFERENT entity type sets --
-  # and GuideScores.load does a plain `entries[sha1] = ...`, so the last one silently
-  # wins and 0.42% of records would be vetoed against another record's own-types.
-  # Own-record types must never be vetoed; gold is authoritative within a record.
-  # Dropping the colliding keys leaves the veto explicitly INACTIVE for those records
-  # instead of quietly wrong.
-  guide_scores: data/guide_scores.mix_natural.dedup.jsonl
-  rivals_per_record: 3
+  output_dir: ./out/warmstart-natural-seed43
+  experiment_name: warmstart_natural_seed43
+  seed: 43
   data_parallel: false
   # 3 epochs, not the curve's 5/15: this adds tasks to a trained model rather than
   # learning from cold, and every extra epoch is extra forgetting pressure.

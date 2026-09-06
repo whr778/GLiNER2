@@ -53,7 +53,7 @@
 # exists in the pipeline, so tasks cannot be silently re-segregated by batching.
 #
 #   uv run python tools/train/build_warmstart_mix.py
-#   uv run python tools/train/train.py --config tools/train/config/joint-boundary-warmstart-struct.yaml
+#   uv run python tools/train/train.py --config tools/train/config/base/joint-boundary-warmstart-struct.yaml
 
 model:
   pretrained: ./out/joint-boundary-mmbert-137k/best

@@ -1344,7 +1344,7 @@ uv run python tools/data/convert_masakhaner.py  --out data/masakhaner.jsonl  --l
 uv run python tools/data/convert_masakhanews.py --out data/masakhanews.jsonl --langs swa,hau,yor
 ```
 
-For very large multilingual corpora there is also a **streaming** path that never writes to disk: **WikiANN / PAN-X** (176-language NER) streams lazily from HuggingFace at train time via a config `data.hf_streaming` block (select languages or `all`; val/test are bounded by label class). See [`tools/data/README.md`](tools/data/README.md) → *unimelb-nlp/wikiann* and `tools/train/config/mmbert-base-wikiann.yaml`.
+For very large multilingual corpora there is also a **streaming** path that never writes to disk: **WikiANN / PAN-X** (176-language NER) streams lazily from HuggingFace at train time via a config `data.hf_streaming` block (select languages or `all`; val/test are bounded by label class). See [`tools/data/README.md`](tools/data/README.md) → *unimelb-nlp/wikiann* and `tools/train/config/base/mmbert-base-wikiann.yaml`.
 
 ## 🚢 Release process
 

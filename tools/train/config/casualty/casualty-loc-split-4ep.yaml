@@ -1,4 +1,4 @@
-# CONTROL ARM for tools/train/config/casualty-loc-muted.yaml, at MATCHED EPOCHS.
+# CONTROL ARM for tools/train/config/casualty/casualty-loc-muted.yaml, at MATCHED EPOCHS.
 #
 # Why this exists rather than reusing whr778/gliner2-base-v1-casualty-loc-split-clean: that
 # model ran 8 epochs and the muting arm runs 4. Its `best` was epoch 1 and epochs 2-8 moved

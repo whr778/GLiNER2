@@ -122,7 +122,7 @@ what is not mirrored.
 uv run python tools/data/restore_from_hf.py --all --dry-run
 
 # just one run's data, or everything
-uv run python tools/data/restore_from_hf.py --config tools/train/config/joint-boundary-mmbert-137k.yaml
+uv run python tools/data/restore_from_hf.py --config tools/train/config/base/joint-boundary-mmbert-137k.yaml
 uv run python tools/data/restore_from_hf.py --all
 ```
 
@@ -347,7 +347,7 @@ error) and counts must be bare numerals keeping the source's own scale words, so
 uv run python tools/data/check_leakage.py --pattern 'data/*.jsonl'
 
 # the real gate: does THIS config's aggregated train/val/test overlap?
-uv run python tools/data/check_leakage.py --config tools/train/config/joint-boundary-mmbert-137k.yaml
+uv run python tools/data/check_leakage.py --config tools/train/config/base/joint-boundary-mmbert-137k.yaml
 ```
 
 The `--config` form is the one that matters and it exits non-zero on contamination. Checking
@@ -400,7 +400,7 @@ labels_file: labels/unified.yaml     # resolved relative to the config
 
 ```bash
 uv run python tools/train/build_label_maps.py <configs and/or jsonl...> \
-    --canonical tools/train/config/joint-boundary-mmbert-137k.yaml \
+    --canonical tools/train/config/base/joint-boundary-mmbert-137k.yaml \
     --out tools/train/config/labels/unified.yaml
 ```
 
@@ -449,7 +449,7 @@ Two stages. Train a base on a large mixed corpus, then warm-start the downstream
 
 ```bash
 uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
-  --config tools/train/config/joint-boundary-mmbert-137k.yaml
+  --config tools/train/config/base/joint-boundary-mmbert-137k.yaml
 ```
 
 `batch_size` is **per GPU** and accumulation is halved so the effective batch stays 32 on one
@@ -462,7 +462,7 @@ test — see [`JOINT_IE_SCALING.md`](../events_working_papers/JOINT_IE_SCALING.m
 
 ```bash
 uv run torchrun --standalone --nproc_per_node=2 tools/train/train.py \
-  --config tools/train/config/joint-boundary-rams-137k.yaml
+  --config tools/train/config/base/joint-boundary-rams-137k.yaml
 ```
 
 `model.pretrained` points at `./out/joint-boundary-mmbert-137k/best` and `architecture:
@@ -528,7 +528,7 @@ into one scalar, so "is the event signal too small?" is not answerable by readin
 
 ```bash
 uv run python tools/train/probe_task_losses.py \
-  --config tools/train/config/warmstart-natural.yaml \
+  --config tools/train/config/warmstart/warmstart-natural.yaml \
   --checkpoint out/.../final --batches 100 --gold-injection 0.25
 ```
 
@@ -635,7 +635,7 @@ readings bound to the wrong event's number.
 ### Step 4 — fine-tune the structure model
 
 ```bash
-uv run python tools/train/train.py --config tools/train/config/casualty-multievent.yaml
+uv run python tools/train/train.py --config tools/train/config/casualty/casualty-multievent.yaml
 ```
 
 `casualty-finetune.yaml` is the single-event recipe that closed ~75% of the gap to the
@@ -820,7 +820,7 @@ Still supported and still shipping models (`fastino/gliner2-base-v1` and the
 `gliner2-*-v1-*` configs). Train it the same way, minus `architecture: boundary`:
 
 ```bash
-uv run python tools/train/train.py --config tools/train/config/mmbert-small.yaml
+uv run python tools/train/train.py --config tools/train/config/base/mmbert-small.yaml
 ```
 
 ```python

@@ -4,7 +4,7 @@ Measured 2026-08-23 on one A100 (~$1.83). Both models scored by the SAME command
 the SAME 11 test files (15,456 rows), threshold PINNED to 0.5:
 
     uv run python tools/train/eval.py \
-      --config tools/train/config/joint-boundary-mmbert-137k.yaml \
+      --config tools/train/config/base/joint-boundary-mmbert-137k.yaml \
       --checkpoint <ckpt> --threshold 0.5
 
 candidate = whr778/gliner2-ekf-frontend-mmbert

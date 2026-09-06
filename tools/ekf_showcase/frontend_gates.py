@@ -1,6 +1,6 @@
 """Score a candidate EKF front-end model against the gates fixed in its config.
 
-The gates are pre-registered in `tools/train/config/ekf-frontend-mmbert.yaml` and are
+The gates are pre-registered in `tools/train/config/casualty/ekf-frontend-mmbert.yaml` and are
 deliberately on AP wire copy, not on held-out DocEE -- the incumbent scores well on DocEE
 (trigger 0.710 / argument 0.506) while emitting nonsense on Helene, so held-out corpus
 metrics do not predict what this model is for.
@@ -176,7 +176,7 @@ def main() -> None:
     print("  numbers are not comparable to the reference. Score the candidate on the 137k")
     print("  blind test at a PINNED 0.5:")
     print("    uv run python tools/train/eval.py \\")
-    print("      --config tools/train/config/joint-boundary-mmbert-137k.yaml \\")
+    print("      --config tools/train/config/base/joint-boundary-mmbert-137k.yaml \\")
     print("      --checkpoint <ckpt> --threshold 0.5")
     print()
     print("  3. event_trigger / event_argument vs the incumbent, LIKE FOR LIKE:")

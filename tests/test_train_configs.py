@@ -29,8 +29,18 @@ RECOGNIZED_STRUCT_LOSS = {"bce", "bce_posweight", "focal", "asl", "dice", "bce_d
 # stopwords.yaml is a data file (per-language stopword lists) that lives here so
 # configs can reference it via ``stopword_yaml``; it is not a training config.
 NON_CONFIG_YAML = {"stopwords.yaml"}
-CONFIG_FILES = sorted(p for p in CONFIG_DIR.glob("*.yaml") if p.name not in NON_CONFIG_YAML)
-CONFIG_IDS = [p.name for p in CONFIG_FILES]
+# labels/ holds label MAPS, not training configs.
+NON_CONFIG_DIRS = {"labels"}
+# RGLOB, not glob. Configs live in purpose subfolders (base/, span/, warmstart/,
+# casualty/, gate/, probe/, tier2/, ab/), and a non-recursive glob would validate
+# NOTHING after that move -- it already missed all 20 ab/ configs before it.
+CONFIG_FILES = sorted(
+    p for p in CONFIG_DIR.rglob("*.yaml")
+    if p.name not in NON_CONFIG_YAML and not (set(p.relative_to(CONFIG_DIR).parts[:-1]) & NON_CONFIG_DIRS)
+)
+# Names repeat across subfolders only by accident, but the id must stay unique for
+# pytest, so use the path relative to the config dir.
+CONFIG_IDS = [str(p.relative_to(CONFIG_DIR)) for p in CONFIG_FILES]
 
 
 def test_config_dir_has_yaml_files():
@@ -253,3 +263,28 @@ def test_registry_dir_repos_are_distinct_from_corpus_repos():
                     for e in (registry.get("datasets") or {}).values()}
     overlap = dir_repos & corpus_repos
     assert not overlap, f"directory repo also used by a corpus: {overlap}"
+
+
+@pytest.mark.parametrize("path", CONFIG_FILES, ids=CONFIG_IDS)
+def test_config_relative_assets_resolve(path):
+    """`labels_file` and `stopword_yaml` must resolve from wherever the config lives.
+
+    Both are resolved relative to the config FILE, while the assets they name sit at the
+    root of the config tree. When configs moved into purpose subfolders on 2026-09-06 that
+    broke 31 configs loudly on `labels_file` and 29 more SILENTLY on `stopword_yaml` --
+    the silent half is worse, because a warm start against a label space the base never
+    learned is exactly what the shared file exists to prevent.
+    """
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "train"))
+    from train import _resolve_beside_config
+
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    ref = cfg.get("labels_file")
+    if ref:
+        assert _resolve_beside_config(ref, str(path), required=False) is not None, (
+            f"{path.name}: labels_file {ref!r} does not resolve from {path.parent}")
+    sw = (cfg.get("eval") or {}).get("stopword_yaml")
+    if sw:
+        assert _resolve_beside_config(sw, str(path), required=False) is not None, (
+            f"{path.name}: stopword_yaml {sw!r} does not resolve from {path.parent}")
