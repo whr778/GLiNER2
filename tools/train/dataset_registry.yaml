@@ -22,6 +22,11 @@ base_models:
     name: gliner2-joint-boundary-mmbert-137k
     license: derived from jhu-clsp/mmBERT-base
     source_url: local (trained by tools/train/config/base/joint-boundary-mmbert-137k.yaml), pushed to the Hub
+  whr778/gliner2-joint-boundary-mmbert-137k-clean:
+    name: gliner2-joint-boundary-mmbert-137k-clean
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (joint-boundary-mmbert-137k.yaml, retrained on repaired splits --
+      the Hub copy of ./out/joint-boundary-mmbert-137k/best), pushed to the Hub
   whr778/gliner2-joint-boundary-mmbert-137k-v2:
     name: gliner2-joint-boundary-mmbert-137k-v2
     license: derived from jhu-clsp/mmBERT-base
