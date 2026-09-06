@@ -49,13 +49,28 @@ def anchor_for(structs: list, name: str) -> str | None:
     dicts = [s[name] for s in structs if isinstance(s.get(name), dict)]
     if not dicts:
         return None
-    common = set.intersection(*(set(d) for d in dicts))
-    if not common:
-        return None
-    hit = next((f for f in ANCHOR_ORDER if f in common), None)
-    if hit:
-        return hit
-    return next((f for f in dicts[0] if f in common), None)
+    inter = set.intersection(*(set(d) for d in dicts))
+    union: list = []
+    for d in dicts:
+        for f in d:
+            if f not in union:
+                union.append(f)
+
+    # PREFERENCE ORDER. Intersection first, so every instance carries a real anchor value.
+    # Union is a valid FALLBACK, not a bug: the query layout is built from the union of
+    # field names across occurrences -- `_process_json_structures` calls it `common` but
+    # builds it by union, and spans use `occ.get(f)`, so a field an occurrence lacks is
+    # None BY DESIGN. The anchor check (`records.py:312`) only requires the anchor to match
+    # a field QUERY in that layout, which a union field always does. Verified in the source
+    # before relying on it.
+    for pool in (inter, set(union)):
+        hit = next((f for f in ANCHOR_ORDER if f in pool), None)
+        if hit:
+            return hit
+        hit = next((f for f in union if f in pool), None)
+        if hit:
+            return hit
+    return None
 
 
 def main() -> int:
