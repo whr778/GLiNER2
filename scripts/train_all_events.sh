@@ -20,7 +20,7 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
-CONFIG_DIR="tools/train/config"
+CONFIG_DIR="${CONFIG_DIR:-tools/train/config/span/archive}"   # archived: the fastino-v1 span line
 LOG_DIR="out/train_logs"
 mkdir -p "$LOG_DIR"
 

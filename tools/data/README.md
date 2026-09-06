@@ -465,7 +465,7 @@ uv run python tools/data/convert_masakhaner.py --out data/masakhaner.jsonl --raw
 
 The 20 codes are `bam, bbj, ewe, fon, hau, ibo, kin, lug, luo, mos, nya, pcm, sna, swa, tsn, twi, wol, xho, yor, zul`. Each row's `tokens` + `ner_tags` fold into `{type: [surface]}` entities with the shared `bio_to_entities` helper (sentences with no entities are dropped). The upstream repo is a dataset script, so the converter loads the datasets-server parquet export (`refs/convert/parquet`) and preserves the **official** splits (no random re-split).
 
-For **every selected language** the official splits are written to `data/masakhaner_<lang>.{train,val,test}.jsonl`, and all selected languages are merged into `data/masakhaner.{train,val,test}.jsonl`. A training config can then pick one language (`data/masakhaner_hau`), a subset, or all (`data/masakhaner`) via its `data.corpora` list. Trainer configs: `tools/train/config/span/gliner2-multi-v1-masakhaner.yaml` (from_pretrained) and `mmbert-base-masakhaner.yaml` (from_encoder).
+For **every selected language** the official splits are written to `data/masakhaner_<lang>.{train,val,test}.jsonl`, and all selected languages are merged into `data/masakhaner.{train,val,test}.jsonl`. A training config can then pick one language (`data/masakhaner_hau`), a subset, or all (`data/masakhaner`) via its `data.corpora` list. Trainer configs: `tools/train/config/span/archive/gliner2-multi-v1-masakhaner.yaml` (from_pretrained) and `mmbert-base-masakhaner.yaml` (from_encoder).
 
 ## masakhane/masakhanews
 
@@ -493,7 +493,7 @@ The 16 codes are `amh, eng, fra, hau, ibo, lin, lug, orm, pcm, run, sna, som, sw
  ]}}
 ```
 
-The candidate `labels` set is the **union of categories over the selected languages**, so every record shares one consistent schema (a language whose data lacks a topic still offers it as a candidate negative). Like MasakhaNER it loads the parquet export, preserves official splits, and writes per-language (`data/masakhanews_<lang>.*`) plus combined (`data/masakhanews.*`) files. Trainer configs: `tools/train/config/span/gliner2-multi-v1-masakhanews.yaml` and `mmbert-base-masakhanews.yaml`.
+The candidate `labels` set is the **union of categories over the selected languages**, so every record shares one consistent schema (a language whose data lacks a topic still offers it as a candidate negative). Like MasakhaNER it loads the parquet export, preserves official splits, and writes per-language (`data/masakhanews_<lang>.*`) plus combined (`data/masakhanews.*`) files. Trainer configs: `tools/train/config/span/archive/gliner2-multi-v1-masakhanews.yaml` and `mmbert-base-masakhanews.yaml`.
 
 ## unimelb-nlp/wikiann (PAN-X) — streamed, NOT written to disk
 
@@ -521,7 +521,7 @@ How it works (`tools/data/hf_stream.py` + `gliner2.training.trainer.StreamingExt
 - **Lazy train stream**: records stream round-robin across the selected languages (`tokens`+`ner_tags` folded via the shared `bio_to_entities`), sharded across DDP ranks + DataLoader workers, buffer-shuffled. No length ⇒ training is bounded by `max_steps` and eval/save run step-based.
 - **Bounded val/test**: `cap_by_class` streams val/test only until **every entity type has ≥ `eval_min_per_class`** records (frequent classes overshoot), keeping eval memory small and class coverage balanced.
 
-Trainer configs: `tools/train/config/span/gliner2-multi-v1-wikiann.yaml` (from_pretrained) and `mmbert-base-wikiann.yaml` (from_encoder). Add more streaming datasets by registering a `StreamSource` in `hf_stream.SOURCES`.
+Trainer configs: `tools/train/config/span/archive/gliner2-multi-v1-wikiann.yaml` (from_pretrained) and `mmbert-base-wikiann.yaml` (from_encoder). Add more streaming datasets by registering a `StreamSource` in `hf_stream.SOURCES`.
 
 ## Other converters
 

@@ -2,7 +2,7 @@
 
 Run::
 
-    uv run python tools/train/train.py --config tools/train/config/base/mmbert-small-focal.yaml
+    uv run python tools/train/train.py --config tools/train/config/base/archive/mmbert-small-focal.yaml
 
 The config has four sections:
 

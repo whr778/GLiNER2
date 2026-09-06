@@ -93,15 +93,15 @@ base_models:
   whr778/gliner2-base-v1-synthetic-haiku5k:
     name: gliner2-base-v1 fine-tuned on synthetic_haiku45_5k
     license: derived from fastino/gliner2-base-v1
-    source_url: local (tools/train/config/span/gliner2-base-v1-synthetic-haiku5k.yaml), pushed private to the Hub
+    source_url: local (tools/train/config/span/archive/gliner2-base-v1-synthetic-haiku5k.yaml), pushed private to the Hub
   whr778/gliner2-base-v1-ccnews-real:
     name: gliner2-base-v1 fine-tuned on cc_news_haiku45 (real text, model labels)
     license: derived from fastino/gliner2-base-v1; TRAINING TEXT IS NOT REDISTRIBUTABLE (cc_news license unknown, publisher copyright)
-    source_url: local (tools/train/config/span/gliner2-base-v1-ccnews-real.yaml), pushed private to the Hub
+    source_url: local (tools/train/config/span/archive/gliner2-base-v1-ccnews-real.yaml), pushed private to the Hub
   whr778/gliner2-base-v1-real-synth-mix:
     name: gliner2-base-v1 fine-tuned on cc_news_haiku45 + synthetic (74.4/25.6, NOT Fastino's 53/47)
     license: derived from fastino/gliner2-base-v1; TRAINING TEXT IS NOT REDISTRIBUTABLE (cc_news license unknown, publisher copyright)
-    source_url: local (tools/train/config/span/gliner2-base-v1-real-synth-mix.yaml), pushed private to the Hub
+    source_url: local (tools/train/config/span/archive/gliner2-base-v1-real-synth-mix.yaml), pushed private to the Hub
   microsoft/deberta-v3-base:
     name: DeBERTa-v3-base
     license: mit

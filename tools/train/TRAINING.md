@@ -820,7 +820,7 @@ Still supported and still shipping models (`fastino/gliner2-base-v1` and the
 `gliner2-*-v1-*` configs). Train it the same way, minus `architecture: boundary`:
 
 ```bash
-uv run python tools/train/train.py --config tools/train/config/base/mmbert-small.yaml
+uv run python tools/train/train.py --config tools/train/config/base/archive/mmbert-small.yaml
 ```
 
 ```python
