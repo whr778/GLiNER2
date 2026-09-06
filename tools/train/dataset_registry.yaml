@@ -32,6 +32,11 @@ base_models:
     license: derived from jhu-clsp/mmBERT-base
     source_url: local (joint-boundary-mmbert-137k.yaml, unified label space, v1's
       recipe at effective batch 16), pushed to the Hub
+  whr778/gliner2-casualty-multilingual-eb16tr:
+    name: gliner2-casualty-multilingual-eb16tr
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (casualty-full-multilingual.yaml rebased onto gliner2-eb16-rebuild-tr,
+      the trilingual base), pushed to the Hub
   whr778/gliner2-eb16-rebuild-tr:
     name: gliner2-eb16-rebuild-tr
     license: derived from jhu-clsp/mmBERT-base
