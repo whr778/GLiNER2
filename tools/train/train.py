@@ -1018,6 +1018,19 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         print(f"[eval] config has no {split} split; nothing to score.")
         return {}
 
+    # SAME SPLIT AS TRAINING'S BLIND TEST, or the two are not comparable. Training runs
+    # every split through `check_and_clean`, which drops exact duplicates; this path did
+    # not. On eb16 that is a 36% difference in the test set -- 29,615 records here
+    # against 18,786 there -- because 9 of 13 corpora are listed in BOTH `corpora:` and
+    # `event_files:` and so resolve to the same file twice. Any comparison between an
+    # eval.py number and a training-time number was measuring two different test sets.
+    policy = str((cfg.get("training") or {}).get("split_hygiene", "drop"))
+    if policy != "off":
+        from gliner2.training.split_hygiene import check_and_clean
+        records = _read_records(split_data) if isinstance(split_data[0], str) else split_data
+        _, _, split_data, report = check_and_clean(None, None, records, policy=policy)
+        print(report.format())
+
     ev = _parse_eval_settings(cfg, config_path, corpus_data=split_data, overrides=overrides)
     best = Path(checkpoint) if checkpoint else Path(cfg["training"]["output_dir"]) / "best"
     if not best.is_dir():
