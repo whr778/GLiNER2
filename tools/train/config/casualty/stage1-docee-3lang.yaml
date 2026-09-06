@@ -93,10 +93,15 @@ training:
 eval:
   threshold: 0.5
   eval_by_language: true
-labels:
-  entities: {rollup: false, separator: ., map: {}}
-  relations: {rollup: false, separator: ., map: {}}
-  events: {rollup: false, separator: ., map: {}}
+# labels_file, NOT an inline block. This config previously carried an EMPTY inline
+# `labels:` block and no labels_file, which is the documented trap: an inline category
+# REPLACES the shared one, so empty maps silently nullified entities/relations/events from
+# the unified space. Its base chain -- casualty-multilingual-eb16tr <- eb16-rebuild-tr --
+# both train with labels/unified.yaml, and this trains on turkish_event, where the file is
+# load-bearing: `Start_Date` and `Start Date` both map to `StartDate`. Without it they
+# train as SEPARATE roles against a base that learned them as one.
+labels_file: labels/unified.yaml
+
 data:
   corpora:
   - data/docee
