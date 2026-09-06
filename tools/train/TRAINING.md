@@ -207,6 +207,24 @@ it: 61 entries, 60 unique. Nothing downstream errors on a duplicated label; the 
 just shown it twice. Fixed by taking a set union, but the lesson generalises: any step that
 reads a corpus it also runs after is not idempotent until you prove it is.
 
+**`stamp_record_metadata.py` is the other REPAIR tool, and the defect it fixes is
+invisible.** A structure schema with no `record_metadata` is VALID and silently
+undecodable on the boundary path: the record head cannot decode it, the rows train
+nothing, and nothing errors. They still appear in every composition print as structure
+supervision. Measured 2026-09-06 across `data/`: **60,948 structure records reach a
+BOUNDARY config and supply none** — `mix_natural` 28,736 (11 configs, the whole
+`warmstart-natural-*` family), `warmstart_mix` 28,718, plus the three synthetic sets that
+`warmstart-137k-realsynth-replay30` consumes.
+
+The root cause is upstream, not in the mixes: `casualty_multi_loc` carries the field on
+**0 of 29,324** rows, and `build_warmstart_mix.py` passes structures through untouched —
+so *rebuilding a mix does not fix it*. Repair the corpus in place instead; that also keeps
+composition and split membership identical, so runs before and after stay comparable on
+everything except the defect.
+
+The `casualty_*` family is span-only and NOT exposed — the span path does not need the
+field. This bites exactly when a span-era corpus is reused on the boundary path.
+
 **`interleave_splits.py` is a REPAIR tool, not a pipeline step.** It rewrites a corpus
 whose splits were written in per-source blocks — `build_casualty_multilingual` accumulated
 per language and wrote in accumulation order, giving blockiness 0.398 against gate3's
