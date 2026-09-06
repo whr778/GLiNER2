@@ -35,7 +35,11 @@
 # Verified before launch: replay has ZERO overlap with all 23 val/test files of the
 # 137k config, and zero with both preservation eval sets.
 model:
-  pretrained: ./out/joint-boundary-mmbert-137k/best   # the CLEAN base, not the contaminated one
+  # Hub copy of ./out/joint-boundary-mmbert-137k/best -- the CLEAN base, not the
+  # contaminated one. Repointed 2026-09-06 so this runs on a fresh box; verified identical
+  # to the local checkpoint (same architecture, same boundary_head, same max_len) rather
+  # than assumed from the name.
+  pretrained: whr778/gliner2-joint-boundary-mmbert-137k-clean
   architecture: boundary
   max_len: 8192
   # FA2 is a CORRECTNESS requirement on mmBERT, not a speed choice: sdpa+bf16 goes
