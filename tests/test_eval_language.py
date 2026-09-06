@@ -38,6 +38,18 @@ def _mock_lid_ctx(lang2="en", confidence=0.95, alpha3="eng"):
     return patch.dict(sys.modules, {"lumi_language_id": mock_lumi, "langcodes": mock_langcodes})
 
 
+@pytest.fixture(autouse=True)
+def _report_small_buckets(monkeypatch):
+    """These fixtures use a handful of records per language.
+
+    Production suppresses per-language reports under MIN_LANG_RECORDS, because an F1
+    computed over one record is noise (a single Chinese docee_zh record was called `kor`
+    and reported "entity F1 0.0000"). These tests exercise the bucketing mechanism
+    itself, so they opt every bucket in.
+    """
+    monkeypatch.setattr(train, "MIN_LANG_RECORDS", 1)
+
+
 def _make_records(langs):
     """Minimal records pre-annotated with _lang."""
     return [{"input": f"text in {lang}", "output": {}, "_lang": lang} for lang in langs]
@@ -442,3 +454,48 @@ def test_eval_by_language_reads_true():
 def test_eval_by_language_reads_false_explicit():
     cfg = {"eval_by_language": False, "batch_size": 8, "threshold": 0.5}
     assert cfg.get("eval_by_language", False) is False
+
+
+def test_tiny_language_bucket_is_folded_and_named(tmp_path, capsys, monkeypatch):
+    """A one-record bucket gets no per-language report, and is NAMED not dropped.
+
+    Real case: one data/docee_zh record -- 516 Han characters, zero Hangul -- was
+    detected as `kor` at confidence 0.598 and reported "entity F1 0.0000", which reads
+    as a model that fails at Korean rather than a misdetection on a corpus containing
+    no Korean at all.
+    """
+    monkeypatch.setattr(train, "MIN_LANG_RECORDS", 25)
+    records = _make_records(["eng"] * 30 + ["kor"])
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value={}) as mock_cm, \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    out = capsys.readouterr().out
+    assert "kor=1" in out, "the folded language must be named, not silently dropped"
+    assert "Processing language: kor" not in out
+    # eng only, plus the combined pass -- kor gets no pass of its own.
+    assert mock_cm.call_count == 2
+
+
+def test_tiny_bucket_records_still_scored_in_combined_pass(tmp_path, monkeypatch):
+    """Folding affects REPORTING only; the records stay in the combined evaluation."""
+    monkeypatch.setattr(train, "MIN_LANG_RECORDS", 25)
+    records = _make_records(["eng"] * 30 + ["kor"])
+    seen = []
+
+    def capture(subset, *a, **k):
+        seen.append(len(subset) if hasattr(subset, "__len__") else None)
+        return MagicMock()
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", return_value={}), \
+         patch("gliner2.training.trainer.ExtractorDataset", side_effect=capture), \
+         patch.object(train, "_print_blind_test"):
+        train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    assert 31 in seen, f"combined pass must cover all 31 records, saw {seen}"

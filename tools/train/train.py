@@ -893,6 +893,12 @@ def _print_blind_test(metrics: Dict) -> None:
     _print_micro_report(metrics)
 
 
+# Below this, a per-language bucket is a language-ID artefact rather than a language;
+# see the note in _blind_test_by_language. Module-level so a caller (or a test with
+# small fixtures) can set it.
+MIN_LANG_RECORDS = 25
+
+
 def _blind_test_by_language(
     best: Path,
     test_data,
@@ -923,6 +929,25 @@ def _blind_test_by_language(
     by_lang: Dict[str, List[Dict]] = defaultdict(list)
     for rec in test_data:
         by_lang[rec.get("_lang", "und")].append(rec)
+
+    # A tiny bucket is a language-ID artefact, not a language. Measured 2026-09-06 on
+    # stage1-docee-3lang: ONE record of docee_zh -- 516 Han characters, zero Hangul --
+    # was called `kor` at confidence 0.598, and got its own report reading
+    # "entity F1 0.0000", which looks like a model that fails at Korean rather than a
+    # misdetection on a corpus with no Korean in it. An F1 over one record is noise
+    # whatever the label says.
+    #
+    # Folded, not dropped: the records stay in the combined pass, and the languages that
+    # were folded are NAMED, so a genuinely rare language shows up as something to look
+    # at rather than vanishing.
+    tiny = {lg: len(rs) for lg, rs in by_lang.items() if len(rs) < MIN_LANG_RECORDS}
+    if tiny:
+        for lg in tiny:
+            del by_lang[lg]
+        detail = ", ".join(f"{lg}={n}" for lg, n in sorted(tiny.items()))
+        print(f"[blind test] not reporting per-language for buckets under "
+              f"{MIN_LANG_RECORDS} records: {detail} "
+              f"(still scored in the combined pass)")
 
     print(f"\n[blind test] Loading {best} for per-language evaluation...")
     model = AutoExtractor.from_pretrained(str(best))
