@@ -731,6 +731,19 @@ uv run python tools/train/push_to_hub.py \
   --private
 ```
 
+**Verify the token can WRITE before a run starts, not when it tries to push.**
+`create_repo(..., exist_ok=True)` is *not* a write check — on a repo that already exists it
+succeeds for a READ-scoped token, so the obvious pre-flight reports success and the run
+finds out hours later. Measured 2026-09-05: a 6h47m casualty run trained cleanly, then
+403'd on its model, metrics and log, after a pre-flight that had printed "write OK".
+
+```bash
+uv run python tools/train/check_hf_write.py --repo whr778/gliner2-run-logs --repo-type dataset
+```
+
+It uploads a real file and deletes it — the only check that separates read from write. Put
+it in every box runner ahead of the training call.
+
 `--private` is the default. The repo layout matches what `from_pretrained` expects
 (`config.json` + `encoder_config/config.json` + `model.safetensors` + tokenizer files). A
 `MODEL_CARD.md` is generated at the end of training with the datasets actually used, their
