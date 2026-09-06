@@ -23,7 +23,18 @@
 # model whose English menu lacks `none` cannot answer it at inference and whose Chinese
 # menu lacked `Armed Conflict` was never asked to consider it.
 #
-# BASE. casualty-multilingual, not the eb16 base it warm-started from. Measured on this
+# BASE, REPOINTED 2026-09-06 to casualty-multilingual-eb16tr -- the same recipe rebuilt on
+# the TRILINGUAL base (eb16-rebuild-tr), so the whole EKF chain sits on a base that has seen
+# Turkish. Structural compatibility verified against the published config, not assumed:
+# enable_records/enable_relations both true, matching what this config does NOT declare.
+#
+# HONEST ABOUT WHAT THAT BUYS: the rebase measured a WASH on casualty's own blind test --
+# structure_strict 0.5958 -> 0.5996 on identical support (10,506), inside the noise floor,
+# and it fires 358 more times for +139 right and +220 wrong. It is chosen for lineage
+# (Turkish grounding in the base this fine-tunes) rather than for a score gain, and the
+# earlier per-epoch curves showed the trilingual base converging faster to the same place.
+#
+# BASE (original note). casualty-multilingual, not the eb16 base it warm-started from. Measured on this
 # exact schema: Location 1.00/0.86/1.00 en/tr/zh and Casualties 1.00/0.31/0.86, against
 # eb16's 0.06/0.00/0.29 and 0.00. Half of stage 1 is the entity head and that base already
 # has it in three languages.
@@ -37,7 +48,7 @@
 # a 60-way classifier and dropping it leaves a model that has never seen one. Watch for
 # over-prediction of `none` on en/zh in the per-language eval.
 model:
-  pretrained: whr778/gliner2-casualty-multilingual
+  pretrained: whr778/gliner2-casualty-multilingual-eb16tr
   architecture: boundary
   max_len: 2048
   attn_implementation: flash_attention_2
