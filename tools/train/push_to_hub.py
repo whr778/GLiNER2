@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from huggingface_hub import HfApi
@@ -89,11 +90,31 @@ def main() -> None:
                   "Hub page will be empty")
 
         print(f"Uploading to https://huggingface.co/{args.repo_id}")
-        api.upload_folder(
-            folder_path=tmp_dir,
-            repo_id=args.repo_id,
-            commit_message=args.commit_message,
-        )
+        # RETRY, because a single transient failure here destroys a whole run. The
+        # realsynth re-run (2026-09-06) trained 3h34m, wrote its card and metrics, then
+        # lost the model to one 400 from the commit endpoint -- and the box self-
+        # terminated immediately after. Proven transient, not a card, token, or repo
+        # problem: the same card pushes fine and a small file pushed to that same repo
+        # minutes later.
+        last = None
+        for attempt in range(1, 4):
+            try:
+                api.upload_folder(
+                    folder_path=tmp_dir,
+                    repo_id=args.repo_id,
+                    commit_message=args.commit_message,
+                )
+                last = None
+                break
+            except Exception as e:  # noqa: BLE001 - any upload failure is worth retrying
+                last = e
+                print(f"[push] attempt {attempt}/3 failed: {type(e).__name__}: {e}")
+                if attempt < 3:
+                    delay = 30 * attempt
+                    print(f"[push] retrying in {delay}s")
+                    time.sleep(delay)
+        if last is not None:
+            raise last
 
     print(f"Done. View at https://huggingface.co/{args.repo_id}")
 
