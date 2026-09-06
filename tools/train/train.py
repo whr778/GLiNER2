@@ -134,14 +134,32 @@ def _dataset_counts(corpora: List[str], event_files: Dict[str, Dict[str, str]]) 
     return counts
 
 
+ABSENT_SPLIT = object()   # the Hub answered: this corpus has no such split
+
+
 def _split_files(corpora: List[str], suffix: str) -> List[str]:
-    paths = [f"{c}.{suffix}.jsonl" for c in corpora]
-    for p in paths:
-        _fetch_if_missing(p)
+    """Resolve one split for every corpus, dropping the ones that legitimately lack it.
+
+    Not every corpus has all three splits: DuEE's HF mirror ships train + validation
+    only, which ``convert_duee.py`` documents and the model card records as an em-dash.
+    Building ``data/duee.test.jsonl`` unconditionally made every ``--split test`` on any
+    duee-listing config die on a 404 from a repo that exists.
+
+    A split that is absent is NAMED and dropped, never dropped in silence -- the same
+    rule ``_event_split`` already follows, and for the same reason: a blind test that
+    quietly scores fewer corpora than it claims is worse than one that fails.
+    """
+    paths = []
+    for c in corpora:
+        p = f"{c}.{suffix}.jsonl"
+        if _fetch_if_missing(p) is ABSENT_SPLIT:
+            print(f"[data] {c} has no {suffix} split; it contributes nothing to it.")
+            continue
+        paths.append(p)
     return paths
 
 
-def _fetch_if_missing(path: str) -> None:
+def _fetch_if_missing(path: str):
     """Pull ``path`` from the Hub when it is absent locally and the registry says where.
 
     A corpus entry may carry ``hf_jsonl: <repo>``, a dataset repo holding the
@@ -176,9 +194,19 @@ def _fetch_if_missing(path: str) -> None:
     if not repo:
         return
     from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import EntryNotFoundError
     print(f"[data] {path} missing; fetching {p.name} from {repo}")
-    hf_hub_download(repo_id=repo, filename=p.name, repo_type="dataset",
-                    local_dir=str(p.parent))
+    try:
+        hf_hub_download(repo_id=repo, filename=p.name, repo_type="dataset",
+                        local_dir=str(p.parent))
+    except EntryNotFoundError:
+        # The repo resolved and holds no such file: this corpus HAS no such split.
+        # DuEE's mirror ships train + validation only. Distinct from a repo that is
+        # missing or unauthorised, which still raises -- that is a broken setup, not a
+        # corpus that ships two splits. Only this positive answer drops a corpus; a file
+        # that is merely absent keeps the old contract and reaches the reader.
+        print(f"[data] {repo} has no {p.name}; that split does not exist for this corpus.")
+        return ABSENT_SPLIT
 
 
 def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[str]:
