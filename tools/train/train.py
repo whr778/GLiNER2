@@ -971,6 +971,23 @@ def _blind_test_by_language(
         _print_micro_report(per_lang[lang], label=lang)
     _print_micro_report(all_metrics, label="all")
 
+    # KEEP the per-language numbers. eval_by_language doubles the cost of the blind test
+    # -- everything is scored once overall and again per language -- and until now the
+    # second pass bought stdout only: the per-language dicts were printed and dropped, so
+    # nothing downstream (test_metrics.json, the model card) ever saw them. Paying twice
+    # and keeping nothing is the part worth fixing, not the cost.
+    #
+    # Compact projection, not the raw dicts: each language's metrics carry a full
+    # per-class `classification_report` string, and embedding those would multiply the
+    # size of test_metrics.json for numbers nobody reads there.
+    all_metrics["by_language"] = {
+        lang: {k: v for k, v in m.items()
+               if k.startswith("eval_") and not k.endswith("classification_report")}
+        for lang, m in per_lang.items()
+    }
+    if tiny:
+        all_metrics["by_language_folded"] = tiny
+
     return all_metrics
 
 

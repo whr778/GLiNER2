@@ -499,3 +499,31 @@ def test_tiny_bucket_records_still_scored_in_combined_pass(tmp_path, monkeypatch
         train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
 
     assert 31 in seen, f"combined pass must cover all 31 records, saw {seen}"
+
+
+def test_per_language_metrics_are_returned_not_just_printed(tmp_path, monkeypatch):
+    """eval_by_language doubles blind-test cost; the numbers it buys must survive.
+
+    They used to be printed and dropped, so test_metrics.json and the model card never
+    saw them and the second pass bought stdout only.
+    """
+    monkeypatch.setattr(train, "MIN_LANG_RECORDS", 1)
+    records = _make_records(["eng", "eng", "fra"])
+
+    def metrics(*a, **k):
+        return {"eval_entity_strict_micro_f1": 0.5,
+                "eval_entity_strict_classification_report": "x" * 5000}
+
+    with patch.object(train, "_annotate_languages", side_effect=lambda r: r), \
+         patch("gliner2.AutoExtractor.from_pretrained", return_value=MagicMock()), \
+         patch("gliner2.training.metrics.compute_metrics", side_effect=metrics), \
+         patch("gliner2.training.trainer.ExtractorDataset", return_value=MagicMock()), \
+         patch.object(train, "_print_blind_test"):
+        out = train._blind_test_by_language(tmp_path, records, eval_bs=4, eval_thr=0.5)
+
+    assert set(out["by_language"]) == {"eng", "fra"}
+    assert out["by_language"]["eng"]["eval_entity_strict_micro_f1"] == 0.5
+    # the bulky per-class report is projected out, not carried into the metrics file
+    assert not any("classification_report" in k for k in out["by_language"]["eng"])
+    # the top-level combined metrics are unchanged and still primary
+    assert out["eval_entity_strict_micro_f1"] == 0.5
