@@ -194,17 +194,21 @@ def _fetch_if_missing(path: str):
     if not repo:
         return
     from huggingface_hub import hf_hub_download
-    from huggingface_hub.errors import EntryNotFoundError
+    from huggingface_hub.errors import RemoteEntryNotFoundError
     print(f"[data] {path} missing; fetching {p.name} from {repo}")
     try:
         hf_hub_download(repo_id=repo, filename=p.name, repo_type="dataset",
                         local_dir=str(p.parent))
-    except EntryNotFoundError:
+    except RemoteEntryNotFoundError:
         # The repo resolved and holds no such file: this corpus HAS no such split.
         # DuEE's mirror ships train + validation only. Distinct from a repo that is
         # missing or unauthorised, which still raises -- that is a broken setup, not a
         # corpus that ships two splits. Only this positive answer drops a corpus; a file
         # that is merely absent keeps the old contract and reaches the reader.
+        #
+        # REMOTE specifically, not its EntryNotFoundError base: LocalEntryNotFoundError
+        # is the offline-mode sibling, meaning "could not ask", and treating that as
+        # "the split does not exist" would drop corpora on a box with no network.
         print(f"[data] {repo} has no {p.name}; that split does not exist for this corpus.")
         return ABSENT_SPLIT
 

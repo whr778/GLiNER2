@@ -8,6 +8,8 @@ parquet or BIO tags.
 import sys
 from pathlib import Path
 
+import httpx
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "train"))
@@ -99,10 +101,13 @@ def test_corpus_with_no_such_split_is_dropped_and_named(monkeypatch, capsys, dat
     The corpus is dropped and NAMED. Silence is what the `_event_split` docstring
     already forbids: a blind test scoring fewer corpora than it claims.
     """
-    from huggingface_hub.errors import EntryNotFoundError
+    from huggingface_hub.errors import RemoteEntryNotFoundError
 
     def refuse(repo_id, filename, repo_type, local_dir):
-        raise EntryNotFoundError(f"no {filename} in {repo_id}")
+        # RemoteEntryNotFoundError is an HfHubHTTPError and needs the real response.
+        raise RemoteEntryNotFoundError(f"no {filename} in {repo_id}",
+                                       response=httpx.Response(
+                                           404, request=httpx.Request("GET", "https://hf.co")))
 
     import huggingface_hub
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", refuse)
