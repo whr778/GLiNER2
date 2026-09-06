@@ -973,10 +973,25 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
     if global_decode and chunk_size is None and not chunk_explicit:
         chunk_size = (cfg.get("training") or {}).get("max_len", 384)
 
+    by_language = eval_cfg.get("eval_by_language", False)
+    if by_language:
+        # FAIL NOW, NOT IN FOUR HOURS. `_detect_lang` imports lumi_language_id lazily at
+        # BLIND-TEST time, so a box without it trains to completion and then dies with
+        # ModuleNotFoundError, taking the measurement with it. That cost a 3h34m stage-1
+        # run on 2026-09-06: the model pushed, the blind test did not exist.
+        import importlib.util
+        missing = [m for m in ("lumi_language_id", "langcodes")
+                   if importlib.util.find_spec(m) is None]
+        if missing:
+            raise SystemExit(
+                f"[eval] eval_by_language needs {', '.join(missing)}, which is not "
+                f"installed. Install it or set `eval.eval_by_language: false`. Failing "
+                f"now rather than after training.")
+
     return {
         "batch_size": eval_cfg.get("batch_size", 8),
         "threshold": overrides.get("threshold", eval_cfg.get("threshold", 0.5)),
-        "by_language": eval_cfg.get("eval_by_language", False),
+        "by_language": by_language,
         "threshold_sweep": eval_cfg.get("threshold_sweep"),
         "metric_sweep": eval_cfg.get("metric_sweep", False),
         "stopwords": _build_eval_stopwords(eval_cfg, config_path, corpus_data=corpus_data),
