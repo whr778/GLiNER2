@@ -54,7 +54,12 @@ def test_every_config_corpus_has_a_registry_entry():
     reg = load_registry()
     ds, base = reg["datasets"], reg["base_models"]
     missing = set()
-    for f in glob.glob(str(CONFIG_DIR / "*.yaml")):
+    # RGLOB. Configs live in purpose subfolders; a non-recursive glob sees only
+    # stopwords.yaml at the root and this test passes VACUOUSLY -- the registry guard
+    # silently stops guarding, which is worse than failing.
+    for f in glob.glob(str(CONFIG_DIR / "**" / "*.yaml"), recursive=True):
+        if Path(f).name in ("stopwords.yaml", "unified.yaml"):
+            continue
         cfg = yaml.safe_load(Path(f).read_text()) or {}
         data = cfg.get("data") or {}
         for c in data.get("corpora") or []:
@@ -77,7 +82,11 @@ def test_every_config_corpus_has_a_registry_entry():
 # --- acceptance: the real mmbert-base mix is non-commercial + unverified ----
 
 def test_mmbert_base_verdict_is_non_commercial_and_unverified():
-    cfg = yaml.safe_load((CONFIG_DIR / "mmbert-base.yaml").read_text())
+    # Located by SEARCH, not by a hardcoded folder: configs move between purpose
+    # subfolders, and pinning the path makes this acceptance test a path assertion.
+    hits = sorted(CONFIG_DIR.rglob("mmbert-base.yaml"))
+    assert hits, "mmbert-base.yaml not found anywhere under the config tree"
+    cfg = yaml.safe_load(hits[0].read_text())
     reg = load_registry()
     corpora = [c.split("/")[-1] for c in cfg["data"]["corpora"]]
     named = [(reg["datasets"][k]["name"], reg["datasets"][k]["license"]) for k in corpora]
