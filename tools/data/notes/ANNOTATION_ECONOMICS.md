@@ -145,6 +145,69 @@ numeric often puts the nearest cue in words.
   batch 1 and 2.0 at batch 32, because documents vary from 466 to 6,000 characters and
   every batch pads to its longest member. Length-sorting recovers part of it (6.0 docs/s).
 
+## Specifying the labels you buy, not just the documents
+
+Everything above prices *which documents* get annotated. This section is about *what comes
+back per document*, which is where the 2026-09-07 audit found money already spent badly.
+Both requirements below cost nothing at annotation time and are unrecoverable afterwards.
+
+### 1. Buy an `uncertain` field, and never let it become a label
+
+**Require the annotator to return, per document, the labels it seriously considered but
+could not confidently assign** — a field, not a category, with nothing filed under it. Its
+only job is to stop the pipeline asserting absence where the annotator was undecided.
+
+Measured cost of not having it, on data already bought: `mint_entity_negatives` seeds 12
+absent types per record with `[]`, on the reasoning that a type the model saw and declined
+to use is evidence of absence. Against a 125-type ontology that is 12 of ~113 absent, so
+**roughly 1 in 9 uncertain omissions was upgraded into an explicit "this type is not
+present"** — a confident falsehood rather than a silence. An audit against the corpus's own
+usage found 2,900 such negatives in `cc_news_haiku45` and `synthetic_haiku45_5k` and removed
+them (`repair_contradicted_negatives.py`); the annotator's actual doubt is gone and cannot be
+recovered, because the output records what was chosen and never what was weighed.
+
+**This matters far more for ATTRIBUTION data than for extraction.** Attribution is
+negative by construction — a figure appearing in a stream of 100 documents belongs to one
+event and not the other 99 — so negatives are not a seeded minority there, they *are* the
+label space. An "unsure" recorded as "no" poisons the dominant class directly. If the next
+purchase is attribution, `uncertain` is the primary field, not a nicety.
+
+Three options exist for a hard case and **all three inject systematic bias**: a catch-all
+collects them into a centre-less sink, an omission becomes a false negative, and a guess is
+*not* symmetric noise — measured on surfaces seen five or more times, the annotator's median
+type purity is **100%**, so it applies the same prior every time. Recording the doubt is the
+only route that does not. See `LABEL_SPACE_COLLAPSE.md` §1d and
+`tools/data/annotation/GUIDELINES.md`.
+
+### 2. Run the consistency check on delivery — it is free
+
+The same surface annotated in two documents should get the same label. Where it does not,
+the annotator was implicitly uncertain, and that is measurable on **delivered data with no
+extra annotation**:
+
+    purity(surface) = uses of its most common label / total uses of that surface
+
+Measured on what we already own — cc_news_haiku45 **87.0%** mean, synthetic_haiku45_5k
+89.7%, zh_multitask 93.7%, all with a **median of 100%**. Two readings, and both are useful:
+a low mean localises the genuinely ambiguous surfaces (`France`: location 147 / GPE 128), and
+a median of 100% proves the annotator is self-consistent rather than guessing.
+
+**The attribution analogue is the same statistic on a different key:** does the same figure
+receive the same event/place/time attribution across the documents it appears in? Compute it
+on the first delivered batch, before paying for the rest.
+
+**Pair it with the marginal, never alone.** Chance-corrected agreement (Cohen's κ,
+Krippendorff's α) and the label histogram must be read together: MultiSoc-4D (arXiv
+2605.06940) measured frontier annotators agreeing at high *raw* rates with Fleiss'
+**κ ≈ −0.001**, because they had all defaulted to the same safe label. Raw agreement passes
+exactly the failure being tested for. And a skewed marginal alone proves nothing either —
+`cc_news_haiku45.audience` is 88% "general public", which may simply be true.
+
+### 3. Sample-check before the batch, on the delivered format
+
+Both checks above run on 500 documents as well as 50,000. Buy a pilot, run them, and only
+then buy the pool — the same discipline this note already applies to pricing.
+
 ## Related
 
 `tools/data/annotate_casualty.py` (what the purchase buys), `tools/data/build_turkish_pool.py`
