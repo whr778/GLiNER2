@@ -504,10 +504,19 @@ def _pred_structure_set(pred: Dict) -> Set[Tuple[str, str, str]]:
             for field, value in body.items():
                 if not isinstance(field, str):
                     continue
-                if isinstance(value, dict):          # {"text": ..., "score": ...}
-                    value = value.get("text")
-                if isinstance(value, str) and value.strip():
-                    out.add((name, field, value.strip()))
+                # THREE shapes reach here, and a list used to be dropped in silence.
+                # The greedy decode emits {"text": ...} per field; the JOINT decode emits
+                # [{"text": ...}] -- a list, because a field can hold several fillers. The
+                # old code had a dict branch and a str branch and no else, so every
+                # correctly-extracted field from the joint arm was discarded BEFORE it was
+                # compared to anything. Measured 2026-09-07: that alone accounted for the
+                # entire "joint decode destroys structures" result (0.1208 -> 0.0343). The
+                # decode was finding the same fields greedy found.
+                for v in (value if isinstance(value, list) else [value]):
+                    if isinstance(v, dict):          # {"text": ..., "confidence": ...}
+                        v = v.get("text")
+                    if isinstance(v, str) and v.strip():
+                        out.add((name, field, v.strip()))
     return out
 
 

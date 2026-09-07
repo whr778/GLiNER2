@@ -126,3 +126,39 @@ def test_negative_seeding_is_unchanged_without_uncertainty():
     mint_entity_negatives(a, random.Random(7), 12)
     mint_entity_negatives(b, random.Random(7), 12, uncertain=[])
     assert a == b
+
+
+# --- structure scoring shape tolerance (2026-09-07) -------------------------------------
+
+def test_scorer_reads_greedy_and_joint_field_shapes_identically():
+    """The two decode paths emit DIFFERENT shapes for the same field, and the scorer used
+    to silently drop one of them.
+
+    Greedy emits {"text": ...} per field; joint emits [{"text": ...}], because the joint
+    path compiles non-anchor fields as list-valued while greedy compiles them scalar --
+    the same schema, two cardinalities. `_pred_structure_set` had a dict branch and a str
+    branch and no else, so every correctly-extracted joint field was discarded BEFORE
+    comparison. Measured: that alone produced "joint decode destroys structures"
+    (structure F1 0.1208 -> 0.0343) on a decode that had found the same fields.
+    """
+    from gliner2.training.eval_metrics import _pred_structure_set
+    greedy = {"record": [{"ticket_id": {"text": "HD-1"}, "reporter": None}]}
+    joint = {"record": [{"ticket_id": [{"text": "HD-1"}], "reporter": []}]}
+    assert _pred_structure_set(greedy) == _pred_structure_set(joint)
+    assert _pred_structure_set(joint) == {("record", "ticket_id", "HD-1")}
+
+
+def test_scorer_keeps_every_filler_of_a_genuine_multi_value_field():
+    """Tolerating lists must not collapse a real multi-instance field to its first value."""
+    from gliner2.training.eval_metrics import _pred_structure_set
+    multi = {"record": [{"author": [{"text": "Chen"}, {"text": "Okafor"}]}]}
+    assert _pred_structure_set(multi) == {("record", "author", "Chen"),
+                                          ("record", "author", "Okafor")}
+
+
+def test_scorer_still_accepts_bare_strings():
+    """include_confidence=False emits a bare string; that path predates both of the above."""
+    from gliner2.training.eval_metrics import _pred_structure_set
+    assert _pred_structure_set({"record": [{"f": "v"}]}) == {("record", "f", "v")}
+    assert _pred_structure_set({"record": [{"f": ["a", "b"]}]}) == {("record", "f", "a"),
+                                                                   ("record", "f", "b")}

@@ -788,9 +788,24 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         self, spans, is_scalar: bool, offset: int, start_map, end_map,
         text: str, text_len: int, include_confidence: bool, include_spans: bool,
     ):
-        """Format one record field's token spans; shared by the greedy and joint paths.
+        """Format one record field's token spans. JOINT PATH ONLY.
 
         Scalar -> str/dict/None, list -> the standard span list.
+
+        This used to claim it was "shared by the greedy and joint paths". It is not:
+        there is one call site, in `_format_joint_records`. The greedy path formats
+        independently in `records.py::decode_group`, which is why the two arms emit
+        different shapes AND different confidences (this returns a hardcoded 1.0).
+
+        THE TWO PATHS ALSO DISAGREE ON CARDINALITY, which is the upstream cause. For a
+        schema field declared `dtype: str`, greedy compiles `is_scalar=True` and emits
+        {"text": ...}; the joint path compiles every NON-ANCHOR field `is_scalar=False`
+        and emits [{"text": ...}]. Measured 2026-09-07 on one document: anchor
+        `ticket_id` scalar in both, `date`/`reporter`/`issue_type`/`priority` scalar in
+        greedy and list in joint. Greedy is right -- a `dtype: str` field is scalar.
+
+        `_pred_structure_set` now tolerates both shapes, so scoring is no longer affected,
+        but the cardinality divergence itself is unfixed and is a real contract defect.
         """
         formatted: List[Tuple[str, float, int, int]] = []
         for (ts_raw, te_raw) in spans:
