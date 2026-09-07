@@ -20,7 +20,8 @@ ANNOTATORS = sorted((ROOT / "tools" / "data").glob("annotate_*.py"))
 
 
 def test_guidelines_file_defines_the_expected_rules():
-    assert set(available()) == {"json_only", "verbatim", "no_inference", "minority"}
+    assert set(available()) == {"json_only", "verbatim", "no_inference", "minority",
+                               "ambiguity"}
 
 
 def test_rules_returns_the_markdown_bytes_verbatim():
@@ -70,3 +71,24 @@ def test_gate_does_not_get_the_minority_rule():
     src = (ROOT / "tools" / "data" / "annotate_gate.py").read_text(encoding="utf-8")
     spec = re.search(r"SYSTEM = \(\n.*?\n\) \+ \" \" \+ rules\(([^)]*)\)", src, re.DOTALL)
     assert spec and "minority" not in spec.group(1)
+
+
+def test_ambiguity_rule_ranks_guessing_above_omitting():
+    """Omission is NOT neutral in this pipeline: mint_entity_negatives seeds 12 absent
+    types per record with [], so ~1 in 9 omissions becomes an explicit "not present".
+    The rule must therefore prefer a considered guess, and must still forbid the
+    catch-all -- if this text is ever softened, that reasoning went with it."""
+    text = rules("ambiguity").lower()
+    assert "emit all of them" in text, "the multi-label escape must come first"
+    assert "considered guess is more useful than an omission" in text
+    assert "never resolve an ambiguity by reaching for a catch-all" in text
+
+
+def test_gate_gets_neither_minority_nor_ambiguity():
+    """annotate_gate is a binary relevance filter whose fallback is a real class and
+    whose measured failure mode is false positives. Neither rule belongs there."""
+    import re
+    src = (ROOT / "tools" / "data" / "annotate_gate.py").read_text(encoding="utf-8")
+    spec = re.search(r"SYSTEM = \(\n.*?\n\) \+ \" \" \+ rules\(([^)]*)\)", src, re.DOTALL)
+    assert spec
+    assert "minority" not in spec.group(1) and "ambiguity" not in spec.group(1)

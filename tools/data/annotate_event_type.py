@@ -89,7 +89,7 @@ NONE_LABEL = "none"          # not in DocEE; lets the annotator decline rather t
 SYSTEM = (
     "You label Turkish news documents with a document-level event type, for an "
     "information-extraction training set."
-) + " " + rules("json_only", "no_inference", "minority")
+) + " " + rules("json_only", "no_inference", "minority", "ambiguity")
 
 USER = """What is the PRIMARY event this Turkish news article reports?
 

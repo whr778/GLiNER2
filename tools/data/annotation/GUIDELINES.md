@@ -75,6 +75,60 @@ to find.
 
 ---
 
+## Genuine ambiguity
+
+The anti-fallback rule above says where *not* to put a hard case. It does not say where to
+put it, and "don't use the catch-all" is useless advice on its own when a drone is
+plausibly an aircraft and plausibly a weapon.
+
+**The first question is whether the case is ambiguous at all, or simply plural.** Most of
+what feels ambiguous is genuinely both, and our record format carries a surface under more
+than one type at no cost — `entities` maps type to surfaces, so the same span may appear
+twice. **Annotators already do this unprompted: 5.1% of `cc_news_haiku45` records and 7.7%
+of `zh_multitask` records contain a surface filed under two types.** For a drone that is
+being flown as a weapon, both labels are correct and emitting both is not a compromise.
+
+**Only when the categories are genuinely exclusive does the hard choice arise**, and there
+the ranking below is reasoning from this pipeline's mechanics, **not measurement** — we have
+never run the experiment that would settle it, and the note in the working paper says so.
+
+<!-- rule: ambiguity -->
+When a span or document is genuinely ambiguous, prefer these in order. First, if more than
+one label is actually correct, emit all of them rather than choosing — overlapping types are
+expected and supported. Second, if the labels are mutually exclusive but you cannot tell
+which applies, choose the more specific one you believe most likely and label it; a
+considered guess is more useful than an omission. Third, omit the item only when you cannot
+support any label from the text. Never resolve an ambiguity by reaching for a catch-all
+category — that is the one option that destroys the distinction for every future reader.
+<!-- end -->
+
+**Why omission ranks below a considered guess here, specifically:**
+
+1. **Omission is not neutral in this pipeline — it can become an assertion.**
+   `mint_entity_negatives` seeds 12 absent types per record with `[]`, on the reasoning that
+   a type the model saw and declined to use is strong evidence of absence. With a 125-type
+   ontology that is **12 of ~113 absent types, so roughly a 1-in-9 chance that any given
+   omission is converted into an explicit "this type is not present"** — a confident
+   falsehood rather than a silence. (Applies to `cc_news_haiku45` and
+   `synthetic_haiku45_5k`, which carry 12.0 seeded negatives per record;
+   `synthetic_sonnet5_1k` and `zh_multitask` carry none.)
+2. **Our models' measured failure mode is under-proposing, not mis-proposing.** Label-space
+   collapse shows up as false negatives rising *while boundary errors fall*. Omission feeds
+   the error direction the architecture is already prone to.
+3. **A coin-flip's damage is symmetric; a fallback's is systematic.** Guessing wrong on a
+   two-way ambiguity is 50% label noise scattered across two real classes, which training
+   tolerates. A catch-all instead collects every hard case into one attractor with no
+   semantic centre — the shape the working paper calls a Tulula.
+
+**The honest caveat:** the right answer is none of the three. It is to record the
+uncertainty and *exclude that item from negative seeding* — an abstain that is routed rather
+than trained. That is the direction MultiSoc-4D proposes as future work, and it is not built
+here yet: the annotators currently have no way to express uncertainty, so
+`mint_entity_negatives` cannot know to skip a type the annotator was unsure about. Until it
+exists, the ranking above is the best available, and it is reasoning rather than evidence.
+
+---
+
 ## What is deliberately NOT here
 
 - **Task ontologies and label lists.** They belong with the task, in its own annotator, and
