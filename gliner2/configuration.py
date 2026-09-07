@@ -152,7 +152,7 @@ class BoundaryHeadSettings:
     # type: "entities" | "relations" | "events" | "json_structures". Absent keys
     # and an all-1.0 map are treated as unweighted and take the original code
     # path exactly. This is the boundary analogue of the phase-2 span model's
-    # event_struct_loss; see EVENT_LOSS_PHASE3_PLAN.md. Note "classifications"
+    # event_struct_loss; see PROJECT_HISTORY.md. Note "classifications"
     # emits no extractive queries, so a weight for it is a no-op here.
     task_loss_weights: Optional[Dict[str, float]] = None
     # Which terms task_loss_weights reaches. "span" (default) is start/end/pair --

@@ -190,7 +190,7 @@ The working papers are the primary record; this map is a summary of them.
 | `BOUNDARY_ARCHITECTURE.md` | how the boundary head works end to end, per task |
 | `COUNTING_LAYER.md` | why the span 19-instance cap is a dead end |
 | `BOUNDARY_DECODE_AND_EKF.md` | verified decode map and where global inference attaches |
-| `KALMAN_BEAM_SEARCH_EXPLORATION.md` | the beam ↔ filter origin analysis |
-| `PROJECT_JOURNAL.md` | chronological record of decisions, including those later overturned |
+| `RESEARCH_PROGRAM.md sec 1` | the beam ↔ filter origin analysis |
+| `PROJECT_HISTORY.md` | chronological record of decisions, including those later overturned |
 | `TODO.md` | open defects and next tests, with the evidence for each |
 | `PIPELINES.md` | as-built vs as-designed maps, and the divergence table with M1–M5 status |

@@ -501,7 +501,7 @@ superseded, not merely refined: the run is now **12 jobs, not 6**.)*
 
 - **Data + wiring: $0.** Slices are on disk (`build_joint_scaling_mix.py`), no generation.
 
-**Throughput anchor — measured, not assumed.** [[SCALING_CURVE_EXPERIMENT]] §"Memory"
+**Throughput anchor — measured, not assumed.** [[PAPER_0_FOUNDATION]] §10.7 §"Memory"
 records the combined base (~96K records × 2 epochs) at **~5 h on an A100** under this exact
 recipe (mmBERT-base, 2048 window, `batch_size 4` × `grad_accum 8`, gradient checkpointing,
 bf16) → **10.7 samples/s**. Everything below scales from that one number.
@@ -537,7 +537,7 @@ Three constraints that matter more than the arithmetic:
 1. **Lambda sells H100/A100 *SXM* only as 8-GPU nodes** — requesting "2 GPUs" bills for
    eight. The table prices **H100 PCIe @ $3.29/h**, which is available in small counts.
    Re-price at 8× if SXM is actually wanted.
-2. **1× A100 40GB will likely OOM on the Re-DocRED arm.** [[SCALING_CURVE_EXPERIMENT]]
+2. **1× A100 40GB will likely OOM on the Re-DocRED arm.** [[PAPER_0_FOUNDATION]] §10.7
    already records mmBERT-base OOM-ing 40GB at batch 8 / 2048; `joint-boundary-redocred.yaml`
    runs at **4096**. Take 80GB, or drop that arm to `batch_size 2` × `grad_accum 16`. The
    $56 gap is cheaper than discovering it three hours in.

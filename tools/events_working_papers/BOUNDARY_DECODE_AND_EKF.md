@@ -2,7 +2,7 @@
 
 Status: architecture map from a read-only audit (no code changes, no GPU). Date: 2026-08-07.
 File:line references are against the code as of this date and may drift.
-Supersedes the boundary-relevant parts of [[KALMAN_BEAM_SEARCH_EXPLORATION.md]]
+Supersedes the boundary-relevant parts of [[RESEARCH_PROGRAM.md sec 1]]
 (which was written against the span `global_decode.py` beam).
 
 ## TL;DR
@@ -115,7 +115,7 @@ association. Two levels:
   cross-chunk association step, then: MHT = Hungarian **data association across
   chunks/time** + a per-track **EKF** over those states, with top-K hypothesis pruning
   (= the beam). This is exactly the "beyond-document, state evolves" regime of
-  [[KALMAN_BEAM_SEARCH_EXPLORATION.md]] §1.
+  [[RESEARCH_PROGRAM.md sec 1]] §1.
 
 The EKF is therefore **not** a drop-in optimizer on an existing beam. It is a new
 cross-chunk/streaming association layer that (a) supersedes the result-level merge + the
@@ -137,7 +137,7 @@ seam.
    `candidate_states`) — the deep path is the research contribution but needs the state
    plumbing.
 2. What is the per-track **state vector** and its **dynamics**? (Embedding-space EKF? A
-   task-specific state — trigger position, argument set, salience?) [[KALMAN_BEAM_SEARCH_EXPLORATION.md]]
+   task-specific state — trigger position, argument set, salience?) [[RESEARCH_PROGRAM.md sec 1]]
    §1 warns the EKF only earns its keep with *real* continuous dynamics — beyond-document
    temporal tracking is where that holds.
 3. Reuse `joint_ie`'s typed constraints / `Calibrator` *ideas* at the association step

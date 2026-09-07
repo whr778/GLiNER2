@@ -1,12 +1,12 @@
 # Open items — resume list
 
 Completed work is removed rather than struck through; history lives in
-`PROJECT_JOURNAL.md` and the commit log. Everything below is a defect with evidence
+`PROJECT_HISTORY.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.
 
 **State at 2026-08-28 close. No GPU running, nothing billing.** The phase that just closed
 produced no new model: every result came from measuring shipped components at more than one
-operating point. See `PROJECT_JOURNAL.md` Phase 25.
+operating point. See `PROJECT_HISTORY.md` Phase 25.
 
 ### Open after 2026-08-28
 
@@ -121,7 +121,7 @@ which are living people and need casualty-role semantics).
 extraction; NER, relations and structures are carried along with it. That is why the losses
 were separated in the first place — lumping structures, relations and events into one loss
 made the event signal invisible, and phase 2 split them (re-implemented for the boundary head
-in [[EVENT_LOSS_PHASE3_PLAN]]). So when a defect admits both a relation-shaped and an
+in [[PROJECT_HISTORY.md]]). So when a defect admits both a relation-shaped and an
 event-shaped fix, the event-shaped one is the one that serves the programme *and* the one
 that carries the right information: only the event formulation has an `event_key`, which is
 the field an EKF observation needs. See item 1 for the worked case.
@@ -607,7 +607,7 @@ were re-examined against the code on 2026-08-17. Kept here rather than deleted b
 *question* survives; only the proposed answers do not.
 
 **The routes are genuinely unrun** — verified, not assumed. `deaths_in` appears only in this
-file, [[PROJECT_JOURNAL]], and unit tests: no training config exists. `casualty_multi_loc` is
+file, [[PROJECT_HISTORY]], and unit tests: no training config exists. `casualty_multi_loc` is
 wired into training, but as `STRUCTURE_DEFAULT` in `build_warmstart_mix.py`, i.e. as
 `json_structures` — never as a relation or an event. And `run_pipeline.py` has no
 joint/beam/decode-mode flag at all, so the `TypedEndpoints` arm has never touched this task.

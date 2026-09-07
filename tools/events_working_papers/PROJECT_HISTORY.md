@@ -1,4 +1,4 @@
-# Project Journal — Global Inference on Boundary-Head Candidates
+# Project History — Global Inference on Boundary-Head Candidates
 
 > **⚠ 2026-08-18: every joint_ie / 137k number in this document predates a data repair
 > and is superseded.** 45 corpora shipped overlapping train/val/test, and the scaling
@@ -14,7 +14,15 @@ working papers state conclusions; this one states the *path*, including the reve
 because several of the most useful results in this program are corrections to earlier
 results in this program.
 
-Dates are commit dates. Numbers are measured unless marked as an estimate.
+**This is the project's single history.** A working document whose purpose is finished is
+retired into it rather than left in the paper set: its narrative goes into the phase that
+covers it, anything still load-bearing graduates into the paper that needs it, and the file
+is removed. The full original text of every retired document remains in git — this carries
+the story, not the archive. Retired documents are listed at the end with what they concluded
+and what replaced them.
+
+The papers state what is true now; this states how it was found and what was believed
+before. Dates are commit dates. Numbers are measured unless marked as an estimate.
 
 Companion documents: [[RESEARCH_PROGRAM]] (thesis + paper map), [[EKF_MHT_DESIGN]]
 (tracker line), [[JOINT_IE_SCALING]] (curve line), [[BOUNDARY_ARCHITECTURE]] (the head),
@@ -1371,3 +1379,204 @@ changed. M2 — the cost matrix — was found to have no row in the divergence t
 The through-line of the phase is that nothing here required a new model, a new corpus, or a
 GPU. Every result came from measuring something already shipped at more than one operating
 point.
+
+---
+
+## Phase 26 — a third language, and proving the extractor could not read it (29–31 Aug)
+
+Turkish was added to the gate, and the obvious next question — can the extractor read it? —
+was answered before any money was spent on the assumption that it could. **It could not, and
+the proof needed an English control to be worth anything.** On Turkish documents the
+extractor returned a digit in the `location` field 78.2% of the time against 5.8% on
+English (p = 1.5e-39): not a lower score, a different failure. It was confidently wrong.
+That result is what made a Turkish extractor *purchase* necessary rather than optional, and
+it is also why a Turkish gate alone would have been net-negative — a gate that admits
+documents an extractor cannot read moves work downstream, not accuracy.
+
+**Annotation was priced from a labelled sample of the pool rather than from a similar
+corpus, and that method caught two errors that would have been paid for.** The first price
+used a 42.3% positive rate measured on a single-outlet pilot; the multi-outlet pool is
+25.1%, which alone moved 30,000 positives from $95 to $160. The second was feasibility
+rather than price: a high purity cut can be unreachable, because purity rises while recall
+falls and the surviving positives may be fewer than the target at any price. A free regex
+composed with the model beat the model alone (78.8% vs 65.3%) and halved the scoring cost.
+
+The same window brought a Simplified Chinese pool, `zh_multitask`, and the 137k base's
+**label-space unification** — English labels, native spans. Two traps surfaced there and
+both are now rules: a map key containing the roll-up separator is dead because roll-up runs
+first, and an empty inline `labels:` block silently overrides `labels_file`.
+
+## Phase 27 — the viewer had been showing nothing (30 Aug)
+
+**Structures silently returned nothing on every boundary model**, the three real event feeds
+were never selectable, and ground truth never loaded for any of them. None of this was a
+model defect; the pipeline behind the demo worked. It is recorded here because the failure
+mode is the one this project keeps meeting from a different direction: *a component that
+returns empty looks identical to a component that found nothing.*
+
+## Phase 28 — measure the base before buying supervision (1–3 Sep)
+
+`data/` was restored from the Hub, which exposed the backup gaps rather than closing them,
+and `run_all_converters.sh` was found to rebuild the Chinese labels it was supposed to
+remove. Two measurement disciplines were established before any purchase: **per-language and
+per-domain perplexity on the base**, and a **blind test that is actually blind** —
+`casualty_ml` became three real-news arms with the test set held out by construction rather
+than by intention.
+
+**Domain-prompted synthetic buys the register, not the distribution.** That is the phase's
+finding and it prefigures Phase 30's: a synthetic corpus can match the surface style of a
+domain while missing what makes real documents hard.
+
+## Phase 29 — gate3 passed, then failed, then had its verdict withdrawn (4 Sep)
+
+Gate3 passed both admission bars and dominated both predecessors. Then it **failed a third
+bar** — it fixed Chinese by taxing English. Then the English regression **did not replicate**
+and the verdict was withdrawn. Three states in one day for one model, and the third is the
+one that matters: a single-run regression on a metric with a ±0.02 floor is not a finding.
+
+`gate3-mixed` was rejected on a distinction worth keeping: **it wins both F1 numbers and
+loses the job.** The Turkish event corpus completed the same day — type and per-type roles,
+bought in two conditioned passes and joined into DocEE's shape. And a defect that had been
+live the whole time was found: **the length proxy was blind to scripts without whitespace**,
+so `len(text.split())` returned ~1 for Chinese and sorted nearly half a corpus into one
+length bucket.
+
+## Phase 30 — the instruments, not the experiments (5–7 Sep)
+
+The phase's through-line is that almost nothing here was a failed experiment. **The
+experiments ran; the instruments were wrong**, and every finding came from catching one.
+
+**Warm starts were silently ignoring configuration.** A stage-1 run died in 22 seconds
+because `boundary_head` keys cannot be set on a warm start — and the fix exposed that **eight
+parameter-changing flags had been unguarded**, then **six more that a key-set diff cannot
+see because they resize rather than add**. An unguarded flag is worse than a refused one: it
+lands on the saved config, so the run trains one architecture while writing a config
+describing another.
+
+**60,948 structure records had been training nothing, silently, across 13 models.** The
+record head cannot decode a structure without `record_metadata`, and its absence is valid
+and undetectable — no error, no warning, a row that simply teaches nothing. Repaired across
+12 corpora, with an auditor to keep them that way. The repair was then **priced**: re-running
+the real-vs-synthetic arm on repaired data moved structure F1 **0.2179 → 0.3999** and moved
+*nothing else* — the specificity is the evidence.
+
+Four measurement defects were found in the eval path itself, each of which had been
+producing numbers: `eval.py` **scored a different test set than training's blind test**
+(29,615 records against 18,786, because 9 of 13 corpora are listed in both `corpora:` and
+`event_files:`); a corpus with no such split was **fatal** rather than named; an optional
+dependency was imported **after** training rather than before, costing a 3h34m run its blind
+test; and a single transient 400 on the Hub push **destroyed a completed run** because
+`upload_folder` had no retry.
+
+**Catastrophic forgetting was measured directly for the first time.** Three no-replay warm
+cells lost on *all eight heads* of the base's own test set — classification −0.403 (−69%),
+entity −0.178 (−31%) — for +0.024 on the task they trained. Three seeds agreed tightly.
+The −31% lands inside the 23/32/39% band measured three weeks earlier on a different base
+and task family, and *Pioneer Agent* (arXiv 2604.09791, from the GLiNER lineage) independently
+reports naive retraining degrading by up to 43 points.
+
+**Composed supervision passed its pre-registered bar by 4.5×.** Adding four already-owned
+corpora that carry 3+ tasks per document — train-only, so the test split stayed byte-identical
+— moved structure **+0.089** against a +0.02 bar, classification **+0.261**, relation +0.064,
+event_type +0.066, at a cost of −0.034 on event arguments. The prediction that classification
+would *regress* (54.5% of the added supervision is near-constant) was wrong, and interestingly
+so.
+
+**Label-space collapse was separated into three failures that share a name**, and measuring
+our own data took three passes to get right — counting the label menu instead of the answer,
+then measuring fallback share when the real failure was majority-class concentration, then
+discovering that three of the four "annotated" corpora were **written and labelled in one
+call** and so measure a generator's preference rather than an annotator's judgement. What
+survives is one genuine annotation sample. `uncertain_types` was added so an annotator can
+record doubt instead of resolving it, because all three alternatives — catch-all, guess,
+omit — inject *systematic* bias: median type purity on repeated surfaces is 100%, so a model
+does not flip a coin, it applies the same prior every time.
+
+The phase closes on the programme's own central question, and on a fifth naming collision.
+`--global-decode` was measured and found neutral — but it is the **cross-window event merge**,
+operating on results already decoded, not the typed-constraint beam over candidate scores
+that the thesis describes. The real switch, `boundary_head.decode_mode: greedy|joint`, was
+**built and unreachable from eval**: `from_pretrained` constructs settings from the
+checkpoint's config, and `evaluate_checkpoint` never applied a config's `boundary_head` over
+it. Wired, smoke-tested, and run.
+
+---
+
+# Retired working documents
+
+Each of these had a job and finished it. What they concluded is recorded here; what is still
+load-bearing was moved into the paper that needs it; the files were removed. **Full original
+text is in git** — retrieve any of them with `git log --diff-filter=D --name-only` and
+`git show <commit>^:tools/events_working_papers/<file>`.
+
+Retired 2026-09-07.
+
+## Executed plans
+
+**`DOCUMENT_EXTRACTION_PLAN.md`** (212 lines) — spec for OneIE-style global graph decoding
+over windowed candidates. Built; reported in `PAPER_0_FOUNDATION.md` §9. Its problem
+verification (2026-07-17) and build increments are all spent.
+
+**`SCALING_CURVE_EXPERIMENT.md`** (174) — spec for the mmBERT head-init data-scaling curve.
+Ran; the measured curve is `PAPER_0_FOUNDATION.md` §10.7 (10K does nothing, 40K lifts
+arguments ~2.3×, still climbing at 100K with no plateau, knee between 10K and 40K).
+
+**`HEAD_INIT_DATA_SCALE.md`** (89) — a *reasoned bracket* for how much data warms a head,
+written before the curve existed. Entirely replaced by the measurement above. Kept in mind
+as a method note: the estimate was made explicit and then falsified by measurement, which is
+the intended lifecycle for an estimate.
+
+**`EVALUATION_PLAN.md`** (161) — four-step per-language blind-test plan, every step marked
+`[DONE]`. Executed; reported in `PAPER_0_FOUNDATION.md` §8.
+
+**`MAIN_MERGE_CONFLICT_MAP.md`** (135) — pre-merge conflict scouting across 17 overlapping
+files, for a merge that has since been executed (this branch *is* `merge/main-20260805`).
+Self-marked "regenerate before executing"; nothing left to regenerate.
+
+**`CORE_CHANGES.md`** (412) — diff analysis of `mmbert_training` against `main`, for the same
+completed merge. Its refactor recommendations (272–412) were never executed and are written
+against a branch state that no longer exists.
+
+## Abandoned or superseded plans
+
+**`EVENT_LOSS_PLAN.md`** (357) — per-task event loss on the **span** architecture. Dropped in
+the port to the boundary rewrite and never trained with. Its successor already declared it
+"kept as history".
+
+**`EVENT_LOSS_PHASE3_PLAN.md`** (302) — the boundary-architecture analogue, plus an appended
+result. The finding never graduated to a paper, and every number in it predates the split
+repair.
+
+**`RECOMMENDATIONS.md`** (118) — five options for argument↔entity linking, coref and
+doc-level events, written against the span architecture before the pivot. Option 5 became
+`DOCUMENT_EXTRACTION_PLAN.md` and then `PAPER_0` §9; the header's claim that "every option
+below is still unimplemented" stopped being true in August.
+
+**`KALMAN_BEAM_SEARCH_EXPLORATION.md`** (274) — the origin analysis that noticed beam search
+and MHT are the same top-K hypothesis inference at different scopes. **That observation is
+the programme's thesis and survives in `RESEARCH_PROGRAM.md` §1.** The document itself was
+written against the span `global_decode.py`, which the boundary pivot replaced, and
+`BOUNDARY_DECODE_AND_EKF.md` already stated it supersedes the boundary-relevant parts.
+
+## Superseded vision documents
+
+**`EKF_PIPELINE_VISION.md`** (371) and **`EKF_PIPELINE_VISION_REVIEW.md`** (208) — an
+ASCII-art vision of the full pipeline and a critique of it. Both absorbed by `PIPELINES.md`
+§3 (as-designed) and `GATES.md`, and cited by nothing else in the canon. The vision's
+"BLOCKING PREREQUISITE: no current model can produce the input" was contradicted by the
+front-end rebuild; the review's argument that the front end was mis-thresholded and used the
+wrong model was correct at the time, acted on, and is now history.
+
+## Scratch
+
+**`DEFINITIONS.md`** (19) — two unrelated pasted chatbot answers on "IoU" and "dose curve".
+Not project content; deleted outright rather than retired.
+
+**`EVALUATION.md`** (11) and **`INSTRUCTIONS.md`** (8) — the raw prompts that produced
+`EVALUATION_PLAN.md` and the project itself. Kept as seeds until now; both are wholly
+overtaken by what they produced.
+
+**`HMM_TITANS_MIRAS.md`** lines 1–113 — pasted chatbot output on HMM × Titans/MIRAS routing,
+self-labelled as such. **The document's own assessment (114–285) survives as a paper**, and
+it rebuts the premise of the pasted section: the two-sided emissions idea already exists in
+this codebase, already ran, and is inert.

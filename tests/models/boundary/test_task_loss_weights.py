@@ -1,4 +1,4 @@
-"""Per-query task loss weighting (EVENT_LOSS_PHASE3_PLAN.md, gate 1).
+"""Per-query task loss weighting (PROJECT_HISTORY.md, gate 1).
 
 The boundary loss decomposes by mechanism (start/end/pair/...), not by task, so
 rebalancing event supervision against entity/relation supervision means scaling
@@ -113,7 +113,7 @@ def test_weights_reach_the_public_loss_entry_point():
 
 
 # ---------------------------------------------------------------------------
-# Per-task loss buckets (EVENT_LOSS_PHASE3_PLAN step 4)
+# Per-task loss buckets (PROJECT_HISTORY.md step 4)
 # ---------------------------------------------------------------------------
 
 def _task_ids(rows, width, assignment):
@@ -184,7 +184,7 @@ def test_positive_mass_splits_the_same_whole(masked_batch, mode):
 
 
 # ---------------------------------------------------------------------------
-# Per-task pos_weight (EVENT_LOSS_PHASE3_PLAN step 9)
+# Per-task pos_weight (PROJECT_HISTORY.md step 9)
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
@@ -264,7 +264,7 @@ def test_the_dose_formula_predicts_the_bucket(bce_batch, k):
 
 
 # ---------------------------------------------------------------------------
-# task_loss_weight_scope (EVENT_LOSS_PHASE3_PLAN sec 10)
+# task_loss_weight_scope (PROJECT_HISTORY.md sec 10)
 # ---------------------------------------------------------------------------
 
 def test_scope_defaults_to_span_so_finished_arms_keep_their_semantics():

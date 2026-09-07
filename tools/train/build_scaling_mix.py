@@ -1,6 +1,6 @@
 """Build nested, proportional Stage-A subsamples for the mmBERT head-init scaling curve.
 
-Option B of tools/events_working_papers/SCALING_CURVE_EXPERIMENT.md: assemble the
+Option B of tools/events_working_papers/PAPER_0_FOUNDATION.md sec 10.7: assemble the
 structure/argument-dense event corpora already on disk into 10K and 40K nested
 subsets (the ~100K point uses the full train files directly). Deterministic
 (seed 42); each corpus's 10K slice is a prefix of its 40K slice, so the mixes nest.

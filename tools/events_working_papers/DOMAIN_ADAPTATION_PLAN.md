@@ -6,7 +6,7 @@ because the adapted encoder invalidates every downstream comparison until the cu
 baseline is measured. This document exists so the design is settled before the budget is.
 
 Related: [[PAPER_0_FOUNDATION]] §7.3 (the measurement that motivates this), [[GATES]],
-[[HEAD_INIT_DATA_SCALE]], [[MODEL_LINEAGE]].
+[[PAPER_0_FOUNDATION]] §10.7, [[MODEL_LINEAGE]].
 
 ---
 

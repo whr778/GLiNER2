@@ -465,7 +465,7 @@ English-language wire copy.
 Code, feeds and every sweep referenced above are in `tools/ekf_showcase/`, indexed in its
 README with the verdict attached to each probe. Gate defaults and types are in `GATES.md`.
 Contemporaneous build detail is in `EKF_MHT_BUILD_RECORD.md`; the running narrative,
-including the errors as they were made and caught, is in `PROJECT_JOURNAL.md`.
+including the errors as they were made and caught, is in `PROJECT_HISTORY.md`.
 
 ## 9. References
 

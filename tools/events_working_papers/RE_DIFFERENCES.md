@@ -106,7 +106,7 @@ distinct components — `classification_loss` / `structure_loss` /
 (`gliner2/training/trainer.py:432, 1273, 1415-1450`).
 
 This split is a deliberate enhancement in this fork, not present upstream
-(see `CORE_CHANGES.md`): events tend to have much sparser positive labels
+(see `PROJECT_HISTORY.md`): events tend to have much sparser positive labels
 than entities/relations, so giving them their own loss variant/positive
 weight lets `struct_loss` be tuned for entities/relations independently of
 events, without forcing one loss configuration on both. Relations do **not**
@@ -121,7 +121,7 @@ get this same independence from entities — only events are split out.
 | Relation-type representation | Zero-shot label embedding scored against entity pairs via 18 pluggable KGE interaction functions (TransE, ComplEx, TuckER, ...) | Relation type is just a schema/prompt token, scored against spans the same way entity-type or event-trigger prompts are |
 | Architecture surface | Dedicated config classes, dedicated adjacency + triples modules, dedicated decoder | No dedicated module -- reuses the same `compute_struct_loss` / count-and-span-select path as entities/events/structures |
 | Graph structure | Explicit, learned adjacency matrix over entity pairs (optionally refined with GCN/GAT message passing) | None -- no explicit pairwise graph is ever formed |
-| Loss tuning vs. events | N/A -- no unified structure loss to compare against | Relations share `struct_loss`/`struct_pos_weight` with entities; events get their own independently-tunable `event_struct_loss`/`event_struct_pos_weight` and a separate `event_structure_loss` total (fork-specific, see `CORE_CHANGES.md`) |
+| Loss tuning vs. events | N/A -- no unified structure loss to compare against | Relations share `struct_loss`/`struct_pos_weight` with entities; events get their own independently-tunable `event_struct_loss`/`event_struct_pos_weight` and a separate `event_structure_loss` total (fork-specific, see `PROJECT_HISTORY.md`) |
 
 In short: GLiNER v1 borrows from the knowledge-graph-embedding literature
 and models RE as **link prediction over an entity graph**; GLiNER2 folds RE

@@ -99,7 +99,7 @@ Which structure loss, decided before spending on scale. All `from_encoder` on mm
 `bce_posweight` with `pos_weight 8` is what the from-encoder configs downstream inherit.
 Note the provenance gap: adoption is documented, the *comparison* is not —
 [[PAPER_0_FOUNDATION]] §10.3's table is still `TBD` in every cell, so these seven arms are a
-sweep that was run and acted on but never written up. [[EVENT_LOSS_PLAN]] is the
+sweep that was run and acted on but never written up. [[PROJECT_HISTORY]] is the
 implementation record for separating event loss out of `structure_loss`.
 
 ## Stage 2 — Cold start (`from_encoder`, fresh heads)
@@ -115,14 +115,14 @@ take? Two architecture arms.
 | `deberta-base-fromenc-rams.yaml` | deberta-v3-base | RAMS | [[PAPER_0_FOUNDATION]] §10.6 | **encoder-isolation control** — same recipe, short context, separates encoder effect from head-init effect |
 | `mmbert-base-combined.yaml` | mmBERT-base | synthetic + GLiNER multilingual + multi-task NER + RAMS (~96K, 2 epochs) | [[PAPER_0_FOUNDATION]] §10.7 | the **treatment base** of the broad-data head-init A/B — **a negative result**; its WikiEvents fine-tune is the treatment arm in Stage 4b |
 | `deberta-base-fromenc-synthetic.yaml` | deberta-v3-base | synthetic_sonnet5_1k | [[PAPER_0_FOUNDATION]] §7, §10.6 | can synthetic data alone teach all five tasks from scratch |
-| `scaling-mmbert-10k.yaml` | mmBERT-base | 10 event corpora, 10K nested subsample | [[SCALING_CURVE_EXPERIMENT]] §3-4, [[HEAD_INIT_DATA_SCALE]] §4 | span data-scaling curve |
-| `scaling-mmbert-40k.yaml` | mmBERT-base | same pool, 40K | [[SCALING_CURVE_EXPERIMENT]] | span data-scaling curve |
-| `scaling-mmbert-100k.yaml` | mmBERT-base | same pool, ~100K (full) | [[SCALING_CURVE_EXPERIMENT]] | span data-scaling curve; arg F1 0.050 / 0.115 / 0.158 across the three points |
+| `scaling-mmbert-10k.yaml` | mmBERT-base | 10 event corpora, 10K nested subsample | [[PAPER_0_FOUNDATION]] §10.7 §3-4, [[PAPER_0_FOUNDATION]] §10.7 §4 | span data-scaling curve |
+| `scaling-mmbert-40k.yaml` | mmBERT-base | same pool, 40K | [[PAPER_0_FOUNDATION]] §10.7 | span data-scaling curve |
+| `scaling-mmbert-100k.yaml` | mmBERT-base | same pool, ~100K (full) | [[PAPER_0_FOUNDATION]] §10.7 | span data-scaling curve; arg F1 0.050 / 0.115 / 0.158 across the three points |
 | `mmbert-base-masakhaner.yaml` | mmBERT-base | MasakhaNER 2.0 (20 African langs) | [[PAPER_0_FOUNDATION]] §7 | multilingual from-encoder NER |
 | `mmbert-base-masakhanews.yaml` | mmBERT-base | MasakhaNEWS (16 langs) | [[PAPER_0_FOUNDATION]] §7 | multilingual from-encoder classification |
 | `mmbert-base-wikiann.yaml` | mmBERT-base | WikiANN, **HF-streamed** (no disk) | [[PAPER_0_FOUNDATION]] §7 | multilingual NER at 176-language scale; step-bounded because a stream has no length |
 
-The curve here is what [[HEAD_INIT_DATA_SCALE]] §2 predicted a bracket for and
+The curve here is what [[PAPER_0_FOUNDATION]] §10.7 §2 predicted a bracket for and
 [[PAPER_0_FOUNDATION]] §10.8 reports.
 
 ### 2b. Boundary architecture — the joint_ie bases
@@ -147,15 +147,15 @@ from `./out/joint-boundary-mmbert-137k/best`, all `architecture: boundary`.
 | `joint-boundary-warmstart-struct.yaml` | `warmstart_mix` + 12 event corpora (val/test only), 30% replay | [[JOINT_IE_SCALING]] §7 | adds STRUCTURE + NER; exists because mmbert-137k cannot do `[C]` record extraction at all |
 | `warmstart-natural.yaml` | `mix_natural` | [[JOINT_IE_SCALING]] §7 | **record-mode A/B, arm A** — `natural`; the control recipe for all of Phase 3 |
 | `warmstart-anchorless.yaml` | `mix_anchorless` | [[JOINT_IE_SCALING]] §7 | **arm B** — `anchorless`; byte-identical mixture bar `record_metadata`. Learns nothing |
-| `warmstart-natural-seed43.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §4 | **noise floor** — control recipe at a second seed; any \|delta\| below this gap is unreadable |
-| `warmstart-natural-evw05.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §4 | run 1 dose-response, `task_loss_weights` events=0.5 |
-| `warmstart-natural-evw20.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §4 | run 1, events=2.0 |
-| `warmstart-natural-evw40.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §4 | run 1, events=4.0 |
-| `warmstart-natural-evwide2.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §10 | run 2 extended-reach flat weight, w=2.0 → 12.5% of gradient |
-| `warmstart-natural-evwide4.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §10 | run 2, w=4.0 → 22.2% of gradient |
-| `warmstart-natural-evpw08.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §10 | run 2 per-task **pos_weight** 8.0 → 12.2% of gradient |
-| `warmstart-natural-evpw16.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §10 | run 2, pos_weight 16.0 → 17.8% |
-| `warmstart-natural-evpw32.yaml` | `mix_natural` | [[EVENT_LOSS_PHASE3_PLAN]] §10 | run 2, pos_weight 32.0 → 27.1% |
+| `warmstart-natural-seed43.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §4 | **noise floor** — control recipe at a second seed; any \|delta\| below this gap is unreadable |
+| `warmstart-natural-evw05.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §4 | run 1 dose-response, `task_loss_weights` events=0.5 |
+| `warmstart-natural-evw20.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §4 | run 1, events=2.0 |
+| `warmstart-natural-evw40.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §4 | run 1, events=4.0 |
+| `warmstart-natural-evwide2.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §10 | run 2 extended-reach flat weight, w=2.0 → 12.5% of gradient |
+| `warmstart-natural-evwide4.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §10 | run 2, w=4.0 → 22.2% of gradient |
+| `warmstart-natural-evpw08.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §10 | run 2 per-task **pos_weight** 8.0 → 12.2% of gradient |
+| `warmstart-natural-evpw16.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §10 | run 2, pos_weight 16.0 → 17.8% |
+| `warmstart-natural-evpw32.yaml` | `mix_natural` | [[PROJECT_HISTORY.md]] §10 | run 2, pos_weight 32.0 → 27.1% |
 | `warmstart-natural-gist.yaml` | `mix_natural` | [[EKF_MHT_DESIGN]] §27.4-27.9 | GIST guide-embedding arm — the query-axis hard-negative test |
 
 The `evw*` / `evpw*` arms differ from `warmstart-natural.yaml` in exactly one field group
@@ -180,8 +180,8 @@ doses rather than guessing them.
 | `joint-boundary-redocred-100k.yaml` | 100k base | Re-DocRED | [[JOINT_IE_SCALING]] §4 | relation downstream, curve point |
 | `joint-boundary-redocred-137k.yaml` | 137k base | Re-DocRED | [[JOINT_IE_SCALING]] §4 | relation downstream, curve point |
 | `rams-clean-a-base137k.yaml` | 137k base | RAMS | [[JOINT_IE_SCALING]] §4 | **CONTROL** — the published 137K recipe re-run on current code, after ~10 commits touched the loss path |
-| `rams-clean-b-warmstart.yaml` | `whr778/gliner2-warmstart-natural-clean` | RAMS | [[JOINT_IE_SCALING]] §4, [[EVENT_LOSS_PHASE3_PLAN]] | **TREATMENT** — does routing through the Stage 3 `mix_natural` stage help the event downstream |
-| `rams-clean-c-evwide2.yaml` | `whr778/gliner2-warmstart-natural-evwide2-clean` | RAMS | [[EVENT_LOSS_PHASE3_PLAN]] §10 | as B, but the Stage 3 arm carried the event-weighted loss. Read against B, not A |
+| `rams-clean-b-warmstart.yaml` | `whr778/gliner2-warmstart-natural-clean` | RAMS | [[JOINT_IE_SCALING]] §4, [[PROJECT_HISTORY.md]] | **TREATMENT** — does routing through the Stage 3 `mix_natural` stage help the event downstream |
+| `rams-clean-c-evwide2.yaml` | `whr778/gliner2-warmstart-natural-evwide2-clean` | RAMS | [[PROJECT_HISTORY.md]] §10 | as B, but the Stage 3 arm carried the event-weighted loss. Read against B, not A |
 | `maven-tier2-control.yaml` | `whr778/gliner2-joint-boundary-rams-137k` | MAVEN | [[JOINT_IE_SCALING]] Tier 2 | does the RECORD head recover instances the mention path cannot express — control arm |
 | `maven-tier2-eventrecords.yaml` | same | MAVEN | [[JOINT_IE_SCALING]] Tier 2 | treatment arm. MAVEN over CASIE: 12x the instance supervision |
 | `casie-tier2-control.yaml` | same | CASIE | [[JOINT_IE_SCALING]] Tier 2 | control arm on the multi-instance-dense corpus (94.5% of docs repeat an event type) |
@@ -317,4 +317,4 @@ number in a table is not a substitute, and re-measuring the incumbent costs one 
 - [[RESEARCH_PROGRAM]] — which working paper feeds which of the three papers
 - [[PIPELINES]] — the inference path these models are deployed into
 - [[BOUNDARY_ARCHITECTURE]] — what the boundary head actually does with these configs
-- [[PROJECT_JOURNAL]] — chronological record, including the decisions later overturned
+- [[PROJECT_HISTORY]] — chronological record, including the decisions later overturned

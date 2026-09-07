@@ -453,7 +453,7 @@ the beam uses **heuristic/config-set** weights (`GlobalDecodeConfig`). Recall is
 still bounded by within-window candidate recall — an argument more than ~one
 window from its trigger is never emitted and cannot be recovered by any
 post-hoc decode (this would require trigger-anchored windows or a two-stage
-document reader; see `RECOMMENDATIONS.md`). Trigger
+document reader; see `PAPER_0_FOUNDATION.md sec 9`). Trigger
 clustering by span overlap can, rarely, merge two adjacent same-type events. The
 value the beam adds over greedy is cross-event conflict resolution.
 Correspondingly, the mode is only beneficial when documents exceed the encoder's
@@ -770,7 +770,7 @@ blind-test argument-strict F1 vs N. The Stage-A corpus is assembled from the
 multilingual event corpora already on disk (docee, chfinann, docfee, duee, cmnee,
 maven, text2json, events_biotech, mendeley_ed, casie), nested and proportional at
 10K/40K/100K, with RAMS/WikiEvents held out (leakage). Spec:
-`events_working_papers/SCALING_CURVE_EXPERIMENT.md`.
+`events_working_papers/PAPER_0_FOUNDATION.md sec 10.7`.
 
 Two endpoints are already known on their respective encoders: **N=0 = 0.050**
 (mmBERT `from_encoder` straight to RAMS, §10.5); the DeBERTa-v3 fastino warm-start
@@ -810,8 +810,8 @@ more is better), then fine-tune. Checkpoints (private):
 - **Infer** at the document level: `tools/infer.py --model <ckpt> --input
   <doc> --events '{"Attack":["Attacker","Target","Place"]}' --global-decode`.
 - Design and verification notes:
-  `DOCUMENT_EXTRACTION_PLAN.md`,
-  `METRICS.md`, `CORE_CHANGES.md`.
+  `PAPER_0_FOUNDATION.md sec 9`,
+  `METRICS.md`, `PROJECT_HISTORY.md`.
 
 ## 12. Limitations and future work
 
@@ -858,12 +858,12 @@ more is better), then fine-tune. Checkpoints (private):
   throughout.
 - Long-range arguments beyond one window remain an upstream recall ceiling;
   trigger-anchored windows or a two-stage document-level argument reader are the
-  natural next steps (RECOMMENDATIONS Options 2–3).
+  natural next steps (retired RECOMMENDATIONS note, Options 2-3; see PROJECT_HISTORY.md).
 - Argument coreference is not resolved; document-level benchmarks score against
   any coreferential mention, so measured argument F1 is a lower bound.
 - Packaging: several training-only dependencies and the raised Python floor
   should move to a `training` extra before any of this lands in the base
-  inference package (see CORE_CHANGES §4).
+  inference package (see PROJECT_HISTORY.md (retired documents)).
 
 ## 13. References
 
@@ -964,7 +964,7 @@ provenance in `tools/data/TRAINING_DATA.md`):
 The work described here spans two architectures. §1–§10.4 describe the **span**
 architecture (DeBERTa-v3, `fastino/gliner2-base-v1`); §10.5–10.7 use the same training and
 evaluation infrastructure on the long-context mmBERT backbone. Core-package changes are
-catalogued in `CORE_CHANGES.md`; the training tooling in `tools/train/` and `tools/data/`
+catalogued in `PROJECT_HISTORY.md`; the training tooling in `tools/train/` and `tools/data/`
 is net-new.
 
 ## Appendix C: Running the models — Hub download and the viewer
