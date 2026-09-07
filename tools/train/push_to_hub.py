@@ -15,6 +15,7 @@ target repo layout matches what ``AutoExtractor.from_pretrained`` expects.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import tempfile
 import time
@@ -96,6 +97,24 @@ def main() -> None:
         # terminated immediately after. Proven transient, not a card, token, or repo
         # problem: the same card pushes fine and a small file pushed to that same repo
         # minutes later.
+        # What a successful push MUST leave behind. An upload that returns cleanly while
+        # writing nothing raises no exception, so the retry above cannot see it.
+        expected = sorted(
+            f for f in os.listdir(tmp_dir)
+            if os.path.isfile(os.path.join(tmp_dir, f))
+        )
+        required = [f for f in expected
+                    if f.endswith((".safetensors", ".bin")) or f == "config.json"]
+
+        def _missing() -> list:
+            """Files the Hub does NOT have. Empty list == the push really landed."""
+            try:
+                there = set(api.list_repo_files(repo_id=args.repo_id))
+            except Exception as e:  # noqa: BLE001 - treat an unreadable repo as empty
+                print(f"[push] could not list {args.repo_id}: {type(e).__name__}: {e}")
+                return list(required)
+            return [f for f in required if f not in there]
+
         last = None
         for attempt in range(1, 4):
             try:
@@ -105,15 +124,35 @@ def main() -> None:
                     commit_message=args.commit_message,
                 )
                 last = None
-                break
             except Exception as e:  # noqa: BLE001 - any upload failure is worth retrying
                 last = e
-                print(f"[push] attempt {attempt}/3 failed: {type(e).__name__}: {e}")
-                if attempt < 3:
-                    delay = 30 * attempt
-                    print(f"[push] retrying in {delay}s")
-                    time.sleep(delay)
+                print(f"[push] attempt {attempt}/3 raised: {type(e).__name__}: {e}")
+            # VERIFY, ALWAYS -- including after an upload that "succeeded".
+            #
+            # 2026-09-07: the Phase 0 model was lost by exactly this gap. upload_folder
+            # returned without raising, the runner printed PUSH OK, the box terminated on
+            # its trap, and whr778/gliner2-eb16-composed contains one file:
+            # .gitattributes. 15 hours of A100 for a repo with no weights in it. The
+            # retry added that morning could not help, because nothing threw.
+            gone = _missing()
+            if not gone:
+                print(f"[push] VERIFIED on the Hub: {', '.join(required)}")
+                last = None
+                break
+            print(f"[push] attempt {attempt}/3 left {len(gone)} required file(s) missing: "
+                  f"{', '.join(gone)}")
+            last = last or RuntimeError(
+                f"upload reported success but {gone} are absent from {args.repo_id}")
+            if attempt < 3:
+                delay = 30 * attempt
+                print(f"[push] retrying in {delay}s")
+                time.sleep(delay)
+
         if last is not None:
+            # LOUD, and non-zero exit, so a caller cannot mistake this for success.
+            print(f"[push] *** MODEL NOT SAVED to {args.repo_id} ***")
+            print(f"[push] local checkpoint is still at: {checkpoint}")
+            print("[push] do NOT terminate this machine until the weights are somewhere.")
             raise last
 
     print(f"Done. View at https://huggingface.co/{args.repo_id}")
