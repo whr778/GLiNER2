@@ -240,18 +240,38 @@ labels are inputs.
 
 **What the breakdown does and does not license.**
 
-*The annotator model is not the driver.* The only clean comparison — same task, same text
-origin — is `sentiment` on synthetic text: Haiku 17.6% neutral vs **Sonnet 5 22.0%**. The
-larger model is slightly *worse*. On `formality` (both synthetic) Haiku 95.2% vs Sonnet
-87.2%. Model choice moves this by single-digit points in both directions.
+**Only ONE of these corpora is an annotation measurement at all.** `synthetic/generate.py`
+has two prompt paths, and the distinction is decisive:
 
-*Text origin dominates.* Same model, same task: `sentiment` is **49.2% neutral on real news
-and 17.6% on synthetic** — a 2.8× difference from the documents alone. Synthetic documents
-were generated with clear sentiment; real news often genuinely has none.
+- `SYSTEM` — *"You write one realistic document, then annotate it."* One call, text and
+  labels together. This built `synthetic_haiku45_5k` and `synthetic_sonnet5_1k`.
+- `ANNOTATE_SYSTEM` (via `--annotate-from`) — *"You are given a document and must label it
+  — never rewrite or invent content."* This built `cc_news_haiku45`, over real CC-News.
 
-*The language column is confounded and must not be read as a language effect.* English looks
-degenerate and Chinese/Turkish look healthy, but no task is annotated in more than one
-language. The English tasks are generic document-property scales (certainty, formality,
+A generator has no ambiguous document to retreat from, because it wrote the document to fit
+the label it had already chosen. Its fallback rate measures **stylistic preference in
+generation**, not judgement under uncertainty. So the synthetic rows cannot be compared to
+the real one, and cannot be compared to each other as evidence about *annotators*:
+
+- The apparent 2.8× "text origin" effect (49.2% neutral on real vs 17.6% on synthetic) is
+  an artefact of comparing an annotation decision against a generation preference. It is
+  **not** evidence that real text drives collapse.
+- The Haiku-vs-Sonnet gap on synthetic `sentiment` (17.6% vs 22.0%) compares **two
+  generators' writing habits**. It is not a model-quality comparison for annotation.
+
+**What remains after that correction is a single measurement:** Haiku 4.5, English, real
+news — `sentiment` **49.2% neutral**, `risk_level` **47.6% none**, and 11 of 24 tasks at
+≥80% one label. That is our only genuine annotation sample, and it is the one that looks
+like MultiSoc-4D.
+
+**We therefore have N=1 annotator, N=1 language, and N=1 model for real annotation.** There
+is no model comparison and no language comparison in this project's data. Both would need to
+be run, not mined.
+
+*The language column is confounded twice over.* English looks degenerate and
+Chinese/Turkish look healthy, but no task is annotated in more than one language, and the
+Chinese and Turkish corpora were built by different scripts again (`annotate_multitask.py`,
+`annotate_event_type.py`) rather than by `generate.py`. Beyond that: The English tasks are generic document-property scales (certainty, formality,
 subjectivity, urgency) that are *intrinsically* skewed in any corpus; the Chinese and
 Turkish tasks are topic and event taxonomies that are intrinsically balanced. This is task
 design, not language. **The experiment that would separate them — one task, one annotator,
