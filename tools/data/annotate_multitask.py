@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _split import dumps_record, normalize_group_key  # noqa: E402
+from annotation import rules  # noqa: E402
 from data.synthetic.providers import (  # noqa: E402
     REFUSAL_MARK, AnthropicProvider, ProviderConfig,
 )
@@ -51,11 +52,11 @@ TOPIC_LABELS = ["Politics", "Economy", "Society", "International", "Technology",
                 "Sports", "Culture", "Health", "Law", "Disaster", "Education",
                 "Military", "Environment", "Entertainment", "Transport", "Other"]
 
+# Shared rules come from annotation/GUIDELINES.md, which is the SOURCE for them
+# -- reviewing that file is reviewing this prompt. Only task-specific text is here.
 SYSTEM = (
-    "You annotate Chinese news articles for an information-extraction dataset. "
-    "Every span you output must be copied EXACTLY from the article, character for "
-    "character. Reply with a single JSON object and nothing else."
-)
+    "You annotate Chinese news articles for an information-extraction dataset."
+) + " " + rules("json_only", "verbatim", "minority")
 
 USER = """Annotate this Chinese news article for five tasks at once.
 

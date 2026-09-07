@@ -34,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _split import dumps_record, normalize_group_key  # noqa: E402
+from annotation import rules  # noqa: E402
 from data.synthetic.providers import (  # noqa: E402
     REFUSAL_MARK, AnthropicProvider, ProviderConfig,
 )
@@ -50,10 +51,11 @@ CUE = re.compile(
 # cap is uniform across classes. Above the encoder's 2048-token window either way.
 MAX_CHARS = 6000
 
+# Shared rules come from annotation/GUIDELINES.md, which is the SOURCE for them
+# -- reviewing that file is reviewing this prompt. Only task-specific text is here.
 SYSTEM = (
-    "You label news documents for a disaster-monitoring filter. Answer only about the "
-    "text given; never infer beyond it. Reply with a single JSON object and nothing else."
-)
+    "You label news documents for a disaster-monitoring filter."
+) + " " + rules("json_only", "no_inference")
 
 USER = """Does this article report a CURRENT casualty toll -- a count of people killed, injured or missing in the event the article is reporting on?
 

@@ -38,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _split import dumps_record, normalize_group_key  # noqa: E402
+from annotation import rules  # noqa: E402
 from data.synthetic.providers import (  # noqa: E402
     REFUSAL_MARK, AnthropicProvider, ProviderConfig,
 )
@@ -64,11 +65,11 @@ NUMERAL = re.compile(
     r"^\d[\d.,]*(?:\s+(?:bin|milyon|milyar|thousand|million|billion)(?:\s+\d[\d.,]*)?)*$",
     re.I)
 
+# Shared rules come from annotation/GUIDELINES.md, which is the SOURCE for them
+# -- reviewing that file is reviewing this prompt. Only task-specific text is here.
 SYSTEM = (
-    "You extract casualty figures from news articles for a disaster-monitoring system. "
-    "Copy values EXACTLY as they appear in the article, character for character. "
-    "Reply with a single JSON object and nothing else."
-)
+    "You extract casualty figures from news articles for a disaster-monitoring system."
+) + " " + rules("json_only", "verbatim")
 
 USER = """Extract every casualty figure this article reports, as a list of records.
 

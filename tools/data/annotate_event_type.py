@@ -55,6 +55,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _split import dumps_record, normalize_group_key  # noqa: E402
+from annotation import rules  # noqa: E402
 from build_turkish_candidates import CUE as CASUALTY_CUE  # noqa: E402
 from data.synthetic.providers import (  # noqa: E402
     REFUSAL_MARK, AnthropicProvider, ProviderConfig,
@@ -83,11 +84,12 @@ LABELS = [
 ]
 NONE_LABEL = "none"          # not in DocEE; lets the annotator decline rather than guess
 
+# Shared rules come from annotation/GUIDELINES.md, which is the SOURCE for them
+# -- reviewing that file is reviewing this prompt. Only task-specific text is here.
 SYSTEM = (
     "You label Turkish news documents with a document-level event type, for an "
-    "information-extraction training set. Answer only about the text given; never infer "
-    "beyond it. Reply with a single JSON object and nothing else."
-)
+    "information-extraction training set."
+) + " " + rules("json_only", "no_inference", "minority")
 
 USER = """What is the PRIMARY event this Turkish news article reports?
 

@@ -47,6 +47,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _split import dumps_record, normalize_group_key  # noqa: E402
+from annotation import rules  # noqa: E402
 from data.synthetic.providers import (  # noqa: E402
     REFUSAL_MARK, AnthropicProvider, ProviderConfig,
 )
@@ -57,11 +58,12 @@ NONE_LABEL = "none"
 # `none` (16.9%). They still carry places, dates and casualty counts.
 GENERIC_ROLES = ["Date", "Location", "Casualties and Losses", "Cause"]
 
+# Shared rules come from annotation/GUIDELINES.md, which is the SOURCE for them
+# -- reviewing that file is reviewing this prompt. Only task-specific text is here.
 SYSTEM = (
     "You extract role-typed argument spans from Turkish news documents, for an "
-    "information-extraction training set. Every span you return must be copied VERBATIM "
-    "from the article. Reply with a single JSON object and nothing else."
-)
+    "information-extraction training set."
+) + " " + rules("json_only", "verbatim")
 
 USER = """This Turkish news article reports a {etype} event.
 
