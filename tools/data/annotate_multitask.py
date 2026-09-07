@@ -56,7 +56,7 @@ TOPIC_LABELS = ["Politics", "Economy", "Society", "International", "Technology",
 # -- reviewing that file is reviewing this prompt. Only task-specific text is here.
 SYSTEM = (
     "You annotate Chinese news articles for an information-extraction dataset."
-) + " " + rules("json_only", "verbatim", "minority", "ambiguity")
+) + " " + rules("json_only", "verbatim", "minority", "ambiguity", "uncertain_field")
 
 USER = """Annotate this Chinese news article for five tasks at once.
 

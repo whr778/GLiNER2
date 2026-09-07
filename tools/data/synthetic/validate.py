@@ -70,7 +70,8 @@ def _entities(text: str, items: Any, stats: Counter) -> Dict[str, List[str]]:
     return out
 
 
-def mint_entity_negatives(ents: Dict[str, List[str]], rng, k: int) -> Dict[str, List[str]]:
+def mint_entity_negatives(ents: Dict[str, List[str]], rng, k: int,
+                          uncertain=()) -> Dict[str, List[str]]:
     """Seed ``k`` absent types with ``[]`` so the record carries real negatives.
 
     A negative is a type the model saw in the full ontology and chose not to use on
@@ -78,8 +79,19 @@ def mint_entity_negatives(ents: Dict[str, List[str]], rng, k: int) -> Dict[str, 
     shown. Sampling AFTER annotation is also what keeps the record dense: choosing
     the subset up front discarded 91% of the annotations we paid for and left 35%
     of documents with no positives at all.
+
+    ``uncertain`` NEVER becomes a negative. That inference -- "declined to use it, so
+    it is absent" -- is exactly wrong for a type the annotator considered and could not
+    decide. Without this, an omission driven by uncertainty had a ~1-in-9 chance of
+    being upgraded into an explicit "this type is not present" (12 seeded of ~113
+    absent, against a 125-type ontology): a confident falsehood rather than a silence.
+
+    This is the difference between an abstain that is ROUTED and one that is TRAINED.
+    Note that `uncertain` is deliberately not a label: a trained `Uncertain` class would
+    rebuild the catch-all sink it exists to avoid.
     """
-    absent = [t for t in ENTITY_TYPES if t not in ents]
+    skip = {t.strip().lower() for t in uncertain or ()}
+    absent = [t for t in ENTITY_TYPES if t not in ents and t.strip().lower() not in skip]
     for t in rng.sample(absent, min(k, len(absent))):
         ents[t] = []
     return ents
@@ -243,8 +255,12 @@ def build_record(reply: Dict[str, Any], tasks: List[str], stats: Counter,
     output: Dict[str, Any] = {}
     if "entities" in tasks:
         ents = _entities(text, reply.get("entities"), stats)
+        unc = [u for u in (reply.get("uncertain_types") or []) if isinstance(u, str)]
+        if unc:
+            stats["uncertain_types"] += len(unc)
+            stats["records_with_uncertainty"] += 1
         if ents and negatives:
-            mint_entity_negatives(ents, *negatives)
+            mint_entity_negatives(ents, *negatives, uncertain=unc)
         if ents:
             output["entities"] = ents
             neg = sum(1 for v in ents.values() if not v)

@@ -21,7 +21,7 @@ ANNOTATORS = sorted((ROOT / "tools" / "data").glob("annotate_*.py"))
 
 def test_guidelines_file_defines_the_expected_rules():
     assert set(available()) == {"json_only", "verbatim", "no_inference", "minority",
-                               "ambiguity"}
+                               "ambiguity", "uncertain_field"}
 
 
 def test_rules_returns_the_markdown_bytes_verbatim():
@@ -92,3 +92,37 @@ def test_gate_gets_neither_minority_nor_ambiguity():
     spec = re.search(r"SYSTEM = \(\n.*?\n\) \+ \" \" \+ rules\(([^)]*)\)", src, re.DOTALL)
     assert spec
     assert "minority" not in spec.group(1) and "ambiguity" not in spec.group(1)
+
+
+def test_uncertain_is_a_field_and_says_so():
+    """A trained `Uncertain` CLASS rebuilds the sink it exists to avoid, so the rule must
+    keep saying that nothing is filed under it."""
+    text = rules("uncertain_field").lower()
+    assert "not a category" in text and "nothing is filed under it" in text
+    assert "never use it to avoid deciding" in text
+
+
+def test_uncertain_types_are_never_seeded_as_negatives():
+    """The whole point: 'declined to use it, therefore absent' is backwards for a type the
+    annotator considered and could not decide."""
+    import random
+    sys.path.insert(0, str(ROOT / "tools" / "data" / "synthetic"))
+    from validate import mint_entity_negatives
+
+    ents = {"person": ["a"]}
+    mint_entity_negatives(ents, random.Random(0), 12, uncertain=["weapon", "aircraft"])
+    seeded = {k for k, v in ents.items() if not v}
+    assert len(seeded) == 12, "still seeds the requested number of negatives"
+    assert not ({"weapon", "aircraft"} & seeded), "uncertain types must never be asserted absent"
+
+
+def test_negative_seeding_is_unchanged_without_uncertainty():
+    """The default path must behave exactly as before -- this is an addition, not a change."""
+    import random
+    sys.path.insert(0, str(ROOT / "tools" / "data" / "synthetic"))
+    from validate import mint_entity_negatives
+
+    a, b = {"person": ["x"]}, {"person": ["x"]}
+    mint_entity_negatives(a, random.Random(7), 12)
+    mint_entity_negatives(b, random.Random(7), 12, uncertain=[])
+    assert a == b

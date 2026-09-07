@@ -62,8 +62,11 @@ annotating against a closed label set drifts toward fallback categories — `Oth
 any agreement check — several models *agreed with each other* at high raw rates while
 Fleiss' κ ≈ −0.001, because they had all defaulted to the same safe label.
 
-Our own corpora do **not** currently show this (fallback share 0–1.8% on the 16-label topic
-tasks; see the working paper). This rule is preventive, and cheap.
+Our corpora show it unevenly. Fallback share is 0–1.8% on the large topic taxonomies, but
+our **only genuine annotation sample** — `cc_news_haiku45`, real news, separate annotation
+pass — runs `sentiment` at **49.2% neutral** and `risk_level` at **47.6% none**. (The
+synthetic corpora were written and labelled in one call, so their rates measure a
+generator's preference, not judgement under uncertainty; see the working paper.)
 
 <!-- rule: minority -->
 Do not retreat to a catch-all label. Categories such as "other", "none", "neutral",
@@ -115,17 +118,56 @@ category — that is the one option that destroys the distinction for every futu
 2. **Our models' measured failure mode is under-proposing, not mis-proposing.** Label-space
    collapse shows up as false negatives rising *while boundary errors fall*. Omission feeds
    the error direction the architecture is already prone to.
-3. **A coin-flip's damage is symmetric; a fallback's is systematic.** Guessing wrong on a
-   two-way ambiguity is 50% label noise scattered across two real classes, which training
-   tolerates. A catch-all instead collects every hard case into one attractor with no
-   semantic centre — the shape the working paper calls a Tulula.
+3. **A guess at least lands somewhere with a centre.** A catch-all collects every hard
+   case into one attractor with no semantic centre — the shape the working paper calls a
+   Tulula — whereas a wrong guess inflates a real class. This is the *only* respect in which
+   guessing is better, and it is thinner than it looks: see the next section, where
+   measurement shows a guess is systematic too, not the symmetric noise an earlier draft of
+   this file claimed.
 
-**The honest caveat:** the right answer is none of the three. It is to record the
-uncertainty and *exclude that item from negative seeding* — an abstain that is routed rather
-than trained. That is the direction MultiSoc-4D proposes as future work, and it is not built
-here yet: the annotators currently have no way to express uncertainty, so
-`mint_entity_negatives` cannot know to skip a type the annotator was unsure about. Until it
-exists, the ranking above is the best available, and it is reasoning rather than evidence.
+### `uncertain_types` — recording the doubt instead of resolving it
+
+**All three options above inject *systematic* bias, and that is why none of them is
+acceptable as the primary answer.** An earlier draft of this file argued that a considered
+guess is tolerable because its error is symmetric noise. That was wrong, and measurement
+settled it: on surfaces seen five or more times, the annotator's **median type purity is
+100%** (mean 87–94%; one type takes ≥90% of uses for 60–79% of repeated surfaces). An LLM
+does not flip a coin. Faced with the same ambiguity it applies the same prior every time, so
+a guess is a deterministic bias replicated across the whole corpus — differing from a
+catch-all mainly in landing on a class that at least has a coherent centre.
+
+So the annotator may now say it was torn:
+
+<!-- rule: uncertain_field -->
+If you seriously considered a label for something but could not confidently assign it, list
+that label in "uncertain_types". This is not a category and nothing is filed under it; it
+only records that you were undecided, so the pipeline does not go on to assert that the
+label is absent. Leave it empty when you were not torn, and never use it to avoid deciding:
+label what the text supports, and list here only what genuinely remained undecidable.
+<!-- end -->
+
+**What consumes it:** `mint_entity_negatives` now skips any type named there. Previously an
+omission driven by uncertainty had a ~1-in-9 chance of being upgraded into an explicit
+"this type is not present" (12 seeded from ~113 absent, against a 125-type ontology). That
+inference — *declined to use it, therefore absent* — is precisely backwards for a type the
+annotator considered and could not decide.
+
+**It is a FIELD, never a LABEL, and that distinction is the whole design.** MultiSoc-4D's
+own future work proposes adding `NaN`/`Uncertain` *labels* for open-set annotation; trained
+as a class, that rebuilds the sink and its Tulula geometry exactly. The uncertainty is
+recorded, used to suppress a false negative, and then dropped — an abstain that is **routed,
+not trained**.
+
+**Formally this is a partial label**, not a missing one: "the true type is one of
+{aircraft, weapon}" is strictly more information than either a guess or a silence, and
+partial-label learning is a long-established treatment for it. The gap this closes is not in
+the theory — it is that dataset construction habitually forces one hard label per item and
+discards the doubt at annotation time, which makes the theory inapplicable downstream.
+
+**Still to do:** the field is recorded and consumed on the entity path only. It does not yet
+suppress anything for relations, events or classifications, and the *rate* of uncertainty is
+not yet a gate (it should be: an annotator using it on 40% of documents is avoiding work,
+one never using it is probably not reading carefully).
 
 ---
 
