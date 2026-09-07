@@ -143,7 +143,27 @@ def _events(text: str, items: Any, stats: Counter) -> List[Dict[str, Any]]:
     return out
 
 
-def _classifications(items: Any, stats: Counter) -> List[Dict[str, Any]]:
+def _classifications(items: Any, stats: Counter,
+                     uncertain: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Build classification records, dropping labels the annotator could not decide.
+
+    CLASSIFICATION IS THE HARSHEST TASK FOR UNCERTAINTY, and the reason this function
+    takes ``uncertain`` while _relations/_events/_structures do not. Those three are
+    built only from what the record contains -- `InputExample.from_dict` derives their
+    schema per record -- so an omitted relation type is simply not part of that record's
+    problem, neither positive nor negative. An abstain there is free.
+
+    A classification carries an explicit ``labels`` menu, so EVERY label that is not the
+    true one is an asserted negative, once per record, with no way to stay silent. A
+    label the annotator was torn about is therefore actively trained as wrong.
+
+    Removing it from that record's menu is the whole fix: the label is then outside the
+    problem rather than an answer marked incorrect. This is the same "routed, not
+    trained" abstain that `mint_entity_negatives` implements for entities, expressed
+    through the mechanism classification actually uses.
+    """
+    unc = {k: {str(x).strip().lower() for x in (v or [])}
+           for k, v in (uncertain or {}).items()}
     out: List[Dict[str, Any]] = []
     for it in items or []:
         if not isinstance(it, dict):
@@ -160,9 +180,20 @@ def _classifications(items: Any, stats: Counter) -> List[Dict[str, Any]]:
         if not true:
             stats["classifications_dropped"] += 1
             continue
+        skip = unc.get(task, set())
+        # The chosen label is never dropped: naming it uncertain AND choosing it is a
+        # contradiction, and honouring the choice is the safer reading.
+        menu = [l for l in vocab if l.lower() not in skip or l in true]
+        dropped = len(vocab) - len(menu)
+        if dropped:
+            stats["classification_labels_withheld"] += dropped
+        # A menu of one asserts nothing and trains nothing; drop the task instead.
+        if len(menu) < 2:
+            stats["classifications_dropped_menu_collapsed"] += 1
+            continue
         multi = task in MULTI_LABEL_TASKS or len(true) > 1
         out.append({
-            "task": task, "labels": list(vocab),
+            "task": task, "labels": menu,
             "true_label": true, "multi_label": multi,
         })
         stats["classifications_kept"] += 1
@@ -275,7 +306,9 @@ def build_record(reply: Dict[str, Any], tasks: List[str], stats: Counter,
         if evs:
             output["events"] = evs
     if "classifications" in tasks:
-        cls = _classifications(reply.get("classifications"), stats)
+        cls = _classifications(reply.get("classifications"), stats,
+
+                               uncertain=reply.get("uncertain_labels"))
         if cls:
             output["classifications"] = cls
     if "structures" in tasks:

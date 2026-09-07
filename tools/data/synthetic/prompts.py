@@ -175,6 +175,13 @@ def build_annotate_prompt(text: str, tasks: List[str],
         "leaving a listed label unannotated is correct and expected. Return only "
         "the JSON object.",
         "",
+        "Add \"uncertain_labels\": an object mapping a classification task name to the "
+        "labels you were genuinely torn between and could not decide, e.g. "
+        "{\"sentiment\": [\"positive\", \"neutral\"]}. Those labels are then removed "
+        "from that task's menu for this document rather than being marked wrong. Still "
+        "give your best answer in \"labels\"; this only says what you could not rule out. "
+        "Omit the key when nothing was in doubt.",
+        "",
         "Add \"uncertain_types\": a list of label names you SERIOUSLY CONSIDERED for "
         "something in this document but could not confidently assign -- for example a "
         "drone that might be an aircraft or a weapon. This is NOT a label and nothing "
