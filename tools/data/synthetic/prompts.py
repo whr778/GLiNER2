@@ -139,6 +139,50 @@ def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None
     return sections
 
 
+# --- TWO-STAGE GENERATION -------------------------------------------------------------
+# The single-call path below ("write one document, then annotate it") makes the labels
+# true BY CONSTRUCTION. The writer chooses a label set and then writes text that satisfies
+# it, so the annotation is not a judgement and the document contains no case the annotator
+# had to decide. Measured consequence: synthetic `sentiment` is 17.6% neutral where real
+# news annotated by the same model is 49.2%. That gap is not quality, it is the absence of
+# difficulty -- and it is consistent with the Track B result (in-domain 0.532, ZERO on real
+# news).
+#
+# The writer here NEVER SEES THE ONTOLOGY. It is prompted from a scenario, and its output
+# is annotated in a separate call through the existing `--annotate-from` path -- the same
+# path that produced cc_news_haiku45 from real text. Two stages, no shared context.
+
+WRITE_SYSTEM = (
+    "You write realistic documents. You are NOT annotating anything and will never be "
+    "shown a label set. Write as someone in that role actually would."
+)
+
+
+def build_write_prompt(domain: str, min_words: int, max_words: int,
+                       situation: str = "") -> str:
+    """Assemble a prompt for stage 1: text only, no ontology, no annotation.
+
+    Deliberately asks for the properties that make real documents hard, because a
+    document written to be easy to annotate is the thing this path exists to avoid.
+    """
+    what = f"{domain}" + (f" about {situation}" if situation else "")
+    return "\n".join([
+        f"Write a {what} of roughly {min_words}-{max_words} words.",
+        "",
+        "Make it concrete: real-sounding names, organizations, places, dates and numbers.",
+        "",
+        "Write it the way the real thing is written, which means including what real "
+        "documents contain and constructed examples do not: figures that are revised or "
+        "contradicted later in the piece, references to OTHER events and earlier dates, "
+        "entities mentioned once in passing, quantities whose units or referents are "
+        "implied rather than stated, and at least one detail a careful reader could "
+        "reasonably interpret two ways.",
+        "",
+        "Do not add commentary, headings, labels, or any explanation of the document. "
+        "Return ONLY the document text.",
+    ])
+
+
 def build_user_prompt(domain: str, tasks: List[str], min_words: int, max_words: int,
                       labels: Optional[Dict[str, Any]] = None) -> str:
     """Assemble the per-record user prompt for one GENERATED document in ``domain``."""

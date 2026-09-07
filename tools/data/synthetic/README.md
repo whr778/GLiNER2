@@ -178,3 +178,56 @@ substring** of the document — or whose label/role/task isn't in the ontology �
 is **dropped**, never repaired. A document keeps only its clean supervision; if
 nothing survives, the document is skipped. The run prints per-task kept/dropped
 counts.
+
+## Two-stage generation: write blind, then annotate
+
+**The default path fuses two jobs that should not share a context.** `SYSTEM` says *"You
+write one realistic document, then annotate it"*, so the model picks a label set and then
+writes text that makes those labels true. The annotation is not a judgement — it is a
+restatement of a decision already taken.
+
+Three consequences, and only the first is obvious:
+
+1. **The labels are correct by construction**, so nothing is measured by them.
+2. **No hard case exists.** A generator never faces the ambiguity an annotator faces,
+   because it authored the document. Measured: synthetic `sentiment` is **17.6% neutral**
+   where real news annotated by the same model is **49.2%**. That gap is not quality, it is
+   the absence of difficulty.
+3. **It teaches an unrealistically easy task**, which is consistent with the Track B
+   result — in-domain 0.532, **zero** on real news.
+
+`--write-only` splits the two. Stage 1 writes from a scenario with **the ontology never
+shown**, and stage 2 annotates that text through the existing `--annotate-from` path — the
+same path that produced `cc_news_haiku45` from real CC-News.
+
+    # stage 1: text only, writer is ontology-blind
+    uv run python tools/data/synthetic/generate.py --config default.yaml \
+        --provider anthropic --model claude-haiku-4-5 --count 200 \
+        --write-only --out data/mycorpus_text
+
+    # stage 2: annotate it like any real corpus
+    uv run python tools/data/synthetic/generate.py --config default.yaml \
+        --provider anthropic --model claude-haiku-4-5 --count 200 \
+        --annotate-from data/mycorpus_text.train.jsonl --out data/mycorpus
+
+**Stage 1 asks for what makes real documents hard** — revised figures, references to other
+events and earlier dates, entities mentioned once in passing, implied units, and at least
+one genuinely two-way reading. A document written to be easy to annotate is the thing this
+path exists to avoid.
+
+**Use a DIFFERENT model for stage 2 where you can.** Same-model annotation still risks the
+annotator recognising its own patterns, and a second model is also the only way this project
+gets N>1 annotators — see `tools/data/notes/ANNOTATION_ECONOMICS.md`.
+
+### The cost, which is real
+
+**Label coverage.** The single-call path samples labels per document *precisely* to
+guarantee coverage; `validate.py` records that choosing the subset up front "discarded 91%
+of the annotations we paid for and left 35% of documents with no positives at all." A blind
+writer may produce 5,000 documents containing `Disaster.Outbreak` twice. Steer coverage with
+the scenario/domain mix rather than a label list, and **measure coverage after generating**
+rather than assuming it.
+
+This is a trade, not a free win, and it is worth measuring before adopting: generate a few
+hundred documents both ways, annotate both with the same annotator, and compare fallback
+rate, label distribution against real news, and how many spans fail verbatim placement.

@@ -39,7 +39,8 @@ from collections import Counter  # noqa: E402
 import json  # noqa: E402
 import cost as cost_mod  # noqa: E402
 from prompts import (  # noqa: E402
-    ANNOTATE_SYSTEM, SYSTEM, build_annotate_prompt, build_user_prompt,
+    ANNOTATE_SYSTEM, SYSTEM, WRITE_SYSTEM, build_annotate_prompt, build_user_prompt,
+    build_write_prompt,
 )
 from providers import REFUSAL_MARK, ProviderConfig, build_provider  # noqa: E402
 from schema_spec import ALL_TASKS, DOMAINS, ENTITY_TYPES, sample_labels  # noqa: E402
@@ -108,6 +109,12 @@ def main() -> int:
                          "pricing, async). Anthropic only; mock supports it for dry runs.")
     ap.add_argument("--estimate", action="store_true",
                     help="Print the cost estimate and exit (no generation).")
+    ap.add_argument("--write-only", action="store_true",
+                    help="STAGE 1 of two-stage generation: write documents ONLY, with the "
+                         "label ontology never shown to the writer, and emit text-only "
+                         "JSONL for --annotate-from to label in a separate call. Splits "
+                         "the single-call path where the model picks labels and then "
+                         "writes text that satisfies them.")
     ap.add_argument("--annotate-from", type=Path,
                     help="Annotate the real text in this existing GLiNER2 JSONL "
                          "instead of generating new documents (paper's real-text "
@@ -155,7 +162,12 @@ def main() -> int:
     )
     provider = build_provider(pcfg)
     annotate = args.annotate_from is not None
-    mode = f"annotate-from {args.annotate_from}" if annotate else "generate"
+    write_only = bool(args.write_only)
+    if annotate and write_only:
+        raise SystemExit("--write-only and --annotate-from are the two STAGES; run them "
+                         "in sequence, not together")
+    mode = ("annotate-from " + str(args.annotate_from)) if annotate else (
+        "write-only (stage 1: no ontology shown)" if write_only else "generate")
     print(f"Provider={provider_name} model={model} tasks={tasks} count={count} mode={mode}")
     _print_estimate(model, count, cost_cfg)
 
@@ -192,6 +204,13 @@ def main() -> int:
                 lab = _labels_for(i)
                 yield (ANNOTATE_SYSTEM, build_annotate_prompt(text, tasks, _asked(lab)),
                        text, base, lab, i)
+        elif write_only:
+            # STAGE 1 of the two-stage path: the writer never sees the ontology, so it
+            # cannot write text to satisfy a label set it has already chosen.
+            for i in range(count):
+                domain = domains[i % len(domains)]
+                yield (WRITE_SYSTEM, build_write_prompt(domain, min_words, max_words),
+                       None, None, None, i)
         else:
             for i in range(count):
                 domain = domains[i % len(domains)]
@@ -216,6 +235,15 @@ def main() -> int:
             if cat:
                 stats[f"refusal_{cat}"] += 1
             return None
+        if write_only:
+            # Stage 1 returns prose, not JSON. Emit the shape --annotate-from reads:
+            # an empty `output` is the point -- nothing has been annotated yet.
+            text = (raw or "").strip()
+            if len(text) < 40:
+                stats["write_too_short"] += 1
+                return None
+            stats["written_text"] += 1
+            return {"input": text, "output": {}}
         reply = parse_reply(raw)
         if reply is None:
             stats["parse_error"] += 1
