@@ -204,17 +204,63 @@ a spuriously uniform ~15% across every gate label on the first attempt.
 | synthetic_sonnet5_1k | formality | 2 | *formal 87.2%* | 0.0% |
 | gate3 | relevance | 2 | mass_casualty 50.1% | 49.9% (balanced *by construction*) |
 
-**The MultiSoc-4D failure is not present in our data.** Fallback rates of 0–1.8% on the
-16-label topic tasks are nothing like a model retreating to `Other`.
+**The MultiSoc-4D failure — retreat to an explicit `Other` — is largely not present.**
+Fallback rates are 0–1.8% on the large taxonomies. Two English tasks are exceptions:
+`sentiment` at **49.2% neutral** and `risk_level` at **47.6% none**, both on real news.
 
-**But two tasks are near-degenerate** — `cc_news_haiku45.audience` at 88% "general public"
-and `synthetic_sonnet5_1k.formality` at 87.2% "formal" — and **the marginal alone cannot
-tell us whether that is collapse or correctness.** Most news genuinely is written for a
-general audience; the synthetic documents genuinely are mostly formal. A skewed histogram
-is consistent with both a lazy annotator and an accurate one.
+**But the sink metric badly under-reports the problem, and finding that out required a
+second measurement.** A task with no catch-all in its label list cannot collapse to a sink
+— it collapses to the **majority class** instead, and scores 0.0% sink while carrying
+almost no information. Measured by top-label share:
 
-That is the whole argument for §5. You cannot resolve it by staring at the distribution.
-You need a second, independent annotator and a chance-corrected statistic.
+| model | lang | text | task | labels | answers | sink % | top label | top % |
+|---|---|---|---|--:|--:|--:|---|--:|
+| Haiku 4.5 | en | synthetic | certainty | 3 | 1,021 | 0.0% | asserted | **99.5%** |
+| Haiku 4.5 | en | real | certainty | 4 | 4,093 | 0.0% | asserted | **97.6%** |
+| Haiku 4.5 | en | synthetic | formality | 2 | 1,030 | 0.0% | formal | 95.2% |
+| Haiku 4.5 | en | real | actionability | 3 | 3,905 | 0.0% | informational | 93.2% |
+| Haiku 4.5 | en | real | subjectivity | 2 | 3,931 | 0.0% | objective | 89.9% |
+| Haiku 4.5 | en | real | audience | 4 | 4,425 | 0.0% | general public | 88.0% |
+| Sonnet 5 | en | synthetic | formality | 2 | 1,497 | 0.0% | formal | 87.2% |
+| Haiku 4.5 | en | real | sentiment | 3 | 3,788 | **49.2%** | neutral | 49.2% |
+
+**Aggregate, by annotator model and document language:**
+
+| model | lang | answers | tasks | tasks ≥80% one label | share of answers in them | median top-label |
+|---|---|--:|--:|--:|--:|--:|
+| Haiku 4.5 | en | 64,006 | 24 | **11 / 24** | **54.5%** | 77.4% |
+| Sonnet 5 | en | 5,925 | 3 | 1 / 3 | 25.3% | 64.0% |
+| Haiku 4.5 | zh | 6,117 | 4 | 0 / 4 | 0.0% | 34.9% |
+| Haiku 4.5 | tr | 24,028 | 1 | 0 / 1 | 0.0% | 16.8% |
+
+**More than half of all English classification supervision from these corpora sits in tasks
+where one label takes ≥80%.** A task at 99.5% `asserted` is scoreable at 99.5% by a constant
+predictor; it teaches nothing and consumes label-space capacity in an architecture where
+labels are inputs.
+
+**What the breakdown does and does not license.**
+
+*The annotator model is not the driver.* The only clean comparison — same task, same text
+origin — is `sentiment` on synthetic text: Haiku 17.6% neutral vs **Sonnet 5 22.0%**. The
+larger model is slightly *worse*. On `formality` (both synthetic) Haiku 95.2% vs Sonnet
+87.2%. Model choice moves this by single-digit points in both directions.
+
+*Text origin dominates.* Same model, same task: `sentiment` is **49.2% neutral on real news
+and 17.6% on synthetic** — a 2.8× difference from the documents alone. Synthetic documents
+were generated with clear sentiment; real news often genuinely has none.
+
+*The language column is confounded and must not be read as a language effect.* English looks
+degenerate and Chinese/Turkish look healthy, but no task is annotated in more than one
+language. The English tasks are generic document-property scales (certainty, formality,
+subjectivity, urgency) that are *intrinsically* skewed in any corpus; the Chinese and
+Turkish tasks are topic and event taxonomies that are intrinsically balanced. This is task
+design, not language. **The experiment that would separate them — one task, one annotator,
+three languages — has never been run.**
+
+*And correctness remains unresolved.* Most news genuinely is asserted, objective, formal and
+past-tense. A 99.5% rate may be accurate. **It is near-useless supervision either way**,
+which is the one conclusion the marginal alone does support. Distinguishing lazy from
+accurate still needs a second annotator and a chance-corrected statistic — §5.
 
 ### 3c. A third, related narrowing: task-composition collapse
 
