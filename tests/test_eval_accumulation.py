@@ -59,3 +59,70 @@ def test_window_reaches_the_decode_with_a_precomputed_forward():
     instead, the window would double the work while appearing to succeed."""
     src = (ROOT / "gliner2" / "inference" / "runtime.py").read_text(encoding="utf-8")
     assert "forward=fwd" in src
+
+
+# --- DDP / DataParallel safety --------------------------------------------------------
+
+def test_setter_unwraps_a_ddp_style_wrapper():
+    """Assigning to the wrapper binds an attribute nobody reads: eval keeps window 1 and
+    silently runs at the old speed. This is the mirror of the AttributeError the trainer
+    already documents for batch_extract under torchrun."""
+    from gliner2.inference.runtime import set_eval_accumulation
+
+    class Inner:
+        pass
+
+    class Wrapper:                      # stands in for DDP / DataParallel
+        def __init__(self, m): self.module = m
+
+    inner = Inner()
+    w = Wrapper(inner)
+    set_eval_accumulation(w, 8)
+    assert inner._eval_accumulation_steps == 8, "the window must land on the MODULE"
+    assert not hasattr(w, "_eval_accumulation_steps") or w.module is inner
+
+
+def test_setter_works_on_a_bare_model_too():
+    from gliner2.inference.runtime import set_eval_accumulation
+
+    class M:
+        pass
+
+    m = M()
+    set_eval_accumulation(m, 4)
+    assert m._eval_accumulation_steps == 4
+
+
+def test_setter_floors_at_one():
+    """0 or a negative window would disable the batch loop entirely."""
+    from gliner2.inference.runtime import set_eval_accumulation
+
+    class M:
+        pass
+
+    for bad in (0, -3):
+        m = M(); set_eval_accumulation(m, bad)
+        assert m._eval_accumulation_steps == 1
+
+
+def test_inference_path_has_no_collectives():
+    """The window drains per rank. If any collective existed in this path, ranks with
+    uneven shards could drain different numbers of windows and deadlock."""
+    import ast
+    for rel in ("gliner2/inference/runtime.py",
+                "gliner2/training/eval_metrics.py",
+                "gliner2/models/boundary/engine.py"):
+        tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+        # AST, not text: the docstring on set_eval_accumulation NAMES these collectives
+        # in order to assert their absence, and a substring search flags its own prose.
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                mod = getattr(node, "module", "") or ""
+                names = " ".join(a.name for a in node.names)
+                assert "distributed" not in f"{mod} {names}", (
+                    f"{rel} imports torch.distributed; the window is no longer rank-local")
+            if isinstance(node, ast.Call):
+                f = node.func
+                name = getattr(f, "attr", None) or getattr(f, "id", None)
+                assert name not in ("all_gather", "all_reduce", "barrier", "broadcast"), (
+                    f"{rel} calls {name}(); ranks draining uneven windows could desynchronise")

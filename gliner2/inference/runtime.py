@@ -39,6 +39,29 @@ if TYPE_CHECKING:
     from gliner2.api_client import GLiNER2API
 
 
+def set_eval_accumulation(model, steps: int):
+    """Set the eval accumulation window, unwrapping DDP/DataParallel first.
+
+    THE WRAPPER IS THE TRAP, and this codebase has already paid for it once: see
+    `trainer.py`, where `compute_metrics` calls `batch_extract` and had to be handed the
+    UNWRAPPED module because the method does not exist on DistributedDataParallel --
+    an AttributeError that only appeared under torchrun, after a full epoch of training.
+
+    Setting the window has the mirror-image failure and is quieter: assigning to the
+    wrapper binds an attribute nobody reads, so eval keeps its window of 1 and simply
+    runs at the old speed. Nothing raises. Unwrap, always.
+
+    Safe under DDP: the window is per-process and purely local. The inference path
+    (`runtime.py`, `eval_metrics.py`, `boundary/engine.py`) contains no torch.distributed
+    call of any kind -- no all_gather, no barrier -- so ranks draining uneven windows
+    cannot desynchronise, and a short final window on one rank is harmless. Memory is
+    per-rank on that rank's own device.
+    """
+    target = getattr(model, "module", model)
+    target._eval_accumulation_steps = max(1, int(steps))
+    return target
+
+
 class ExtractorRuntimeMixin:
     """Shared public extraction API for span and boundary architectures."""
 
