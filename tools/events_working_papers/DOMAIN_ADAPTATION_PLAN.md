@@ -80,6 +80,22 @@ proxy** — sampling the base's literal training pool rather than something that
 (see [[replay-dose-for-forgetting]] in the project memory, and `build_137k_replay.py`, which
 implements exact replay for the supervised stage).
 
+**External corroboration, from the GLiNER lineage itself.** *Pioneer Agent: Continual
+Improvement of Small Language Models in Production* (arXiv 2604.09791; Atreja, White, Nayak,
+Zhang, Princis, Hurn-Maloney, Lewis, and **Zaratiana** — GLiNER's author) reports that
+**naive retraining degrades performance by up to 43 points** on its AdaptFT-Bench, and that
+its agent "improves or preserves performance in all seven scenarios" by retraining **under
+regression constraints**. The magnitude matches what this project measured independently
+(23/32/39% of general entity F1 lost across three zero-replay arms; −31% entity and −69%
+classification for the gate3 warm cells), which is worth knowing because our numbers came
+from a different base and a different task family.
+
+The interesting difference is method, not magnitude: they impose an explicit **regression
+constraint** and diagnose failures from labelled errors, where we buy the same protection
+with a blunt 30% replay dose. Replay is cheaper and needs no error corpus; a regression
+constraint is the more principled instrument and is worth revisiting if the replay dose ever
+stops holding.
+
 That finding does not transfer here, because mmBERT's pretraining corpus is not available to
 us. Whatever we mix back in is a **proxy** by construction. Three consequences follow, and
 they should be stated up front rather than discovered:

@@ -194,6 +194,14 @@ Every head negative, three seeds agreeing tightly, for **+0.024 on the target ta
 −31% entity loss lands inside the 23–39% band measured three weeks earlier on a different
 base, a different corpus and a different task.
 
+**Independently corroborated outside this project.** *Pioneer Agent* (arXiv 2604.09791,
+from the GLiNER lineage — Zaratiana is a co-author) reports **naive retraining degrading by
+up to 43 points** on its AdaptFT-Bench, against an agent that retrains under explicit
+**regression constraints** and "improves or preserves performance in all seven scenarios".
+Different base, different task family, same order of magnitude as our 23/32/39% and −31%.
+Their instrument is a regression constraint; ours is a 30% replay dose. Replay is blunter
+but needs no labelled error corpus.
+
 **The dose rule that follows** (`replay-dose-for-forgetting`, and implemented in
 `build_warmstart_mix.py`): **5–10% replay is the minimum that prevents catastrophic
 forgetting; ~30% is the operating point; exact replay beats a proxy.** Note honestly that
@@ -422,6 +430,10 @@ Verified 2026-09-07 by fetching the arXiv abstract pages.
   illusion.
 - **arXiv 2407.03106** — *Anti-Collapse Loss for Deep Metric Learning Based on Coding Rate
   Metric.* Source for the geometric-collapse remedy in §1c.
+- **arXiv 2604.09791** — *Pioneer Agent: Continual Improvement of Small Language Models in
+  Production.* Atreja, White, Nayak, Zhang, Princis, Hurn-Maloney, Lewis, Zaratiana. Source
+  for the 43-point naive-retraining degradation and the regression-constraint framing in
+  §3a. Same lineage as GLiNER itself.
 
 Internal:
 
