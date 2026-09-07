@@ -254,29 +254,7 @@ paper. Nothing here was edited in the move.
   joint path or disable them in both arms **before** reading the greedy-vs-beam curve —
   otherwise the curve confounds decode strategy with thresholding.
 
-<details><summary>Original engine-read mapping (superseded by the above)</summary>
-  - **Relations ARE wired** (not a blocker): `enable_relations` in config
-    (`model.py:1006`) builds `relation_pair_generator` + `relation_scorer`; `_decode_relations`
-    runs. The public-api e2e test just never enabled relations, so a relation-enabled boundary
-    model (config + a relation schema) is the fixture.
-  - **Hooks**: `query_types` from `core["ext_specs"][qid]["field_name"]`; reuse the pairs +
-    logits `_decode_relations` already computes; format token spans → char offsets via
-    `token_boundaries_to_character_offsets` / `_format_spans`; gate behind a `decode_mode`
-    setting (default off).
-  - **QueryLayout gotcha**: `_decode_relations` passes an *empty* `QueryLayout`, so
-    `head_keys`/`tail_keys` types are `str(query_id)`. Build a real layout
-    (`QuerySpec.role_name`; `processing/layouts.py` builds one from the schema).
-  - **Key consistency (resolvable, mechanical)**: boundary types relation endpoints by the
-    head/tail query `role_name` and entity mentions by the entity query `role_name`. Build ONE
-    real `QueryLayout` and type BOTH the mention adapter's `query_types` and the pair
-    `head_keys`/`tail_keys` from it (same source) → a head candidate from query *q* keys as
-    `(role_name_q, start, end)` on both sides, so edges reference the mention nodes by
-    construction. (An earlier note here over-called this a design blocker; it is not — one
-    layout used consistently resolves it.)
-  - So the whole hook is mechanical: build the real layout, type mentions + edges from it,
-    reuse pairs/logits, `joint_decode`, char-offset format, gate the flag.
-
-</details>
+*(Superseded scoping notes retired to `PROJECT_HISTORY.md` 2026-09-07.)*
 
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
@@ -287,32 +265,7 @@ rebuild. The two adapters (the tensor→contract mapping) are the crux, and they
 > **fixed** (no empty `QueryLayout` remains in the engine). Kept only as the record of how
 > the hook was scoped. For current behaviour read the code and the ✅ entries above.
 
-<details><summary>Original scoping notes</summary>
-
-Hooks in `BoundaryExtractor._extract_from_batch` (`models/boundary/engine.py`):
-- **query_types** from `core["ext_specs"][i]` (per-query `field_name`/`roles`) → `query_id →
-  role_name`, passed to `boundary_candidates_to_candidate_score_set`.
-- **edges** reuse the pairs + logits already computed in `_decode_relations`
-  (`relation_pair_generator.generate` + `relation_scorer`) → `boundary_relation_pairs_to_edges`.
-- **⚠ GOTCHA**: `_decode_relations` calls `generate(..., [QueryLayout(queries=())], ...)` — an
-  **empty** layout — so `head_keys`/`tail_keys` types are `str(query_id)`, **not** role names.
-  Fix: build a real `QueryLayout` from `ext_specs` and pass it to `generate` so the endpoint
-  keys carry `role_name` (matching the mention keys); else `TypedEndpoints` constraints won't
-  bind. (Type mentions by the same source.)
-- **constraints** = `TypedEndpoints(rel, head_types, tail_types)` from the relation schema
-  (`rel_specs`).
-- **format**: `BeamOptimizer(...).optimize(problem)` → solution nodes/edges (typed token
-  spans) → char offsets via `start_map`/`end_map` (as greedy does) → `{entities:{type:[…]},
-  <rel>:[(head,tail)]}`.
-- **flag**: a `decode_mode`/`--joint-decode` setting gates a new `_decode_joint` beside the
-  greedy entity+relation decode (default OFF → zero risk to the shipped path).
-- **test**: build a `BoundaryExtractor` per `tests/models/boundary/test_end_to_end_real_
-  deberta.py`, run greedy vs joint on a simple + a constraint case.
-  *(Shipped as `tests/models/boundary/test_joint_decode.py` on the **tiny-encoder** fixture
-  instead — the check is structural/constraint-level on an untrained model, so the offline
-  deterministic fixture serves it better than a real-deberta download.)*
-
-</details>
+*(Superseded scoping notes retired to `PROJECT_HISTORY.md` 2026-09-07.)*
 
 ## 3b. Structures, relations and events in the beam (the Phase A blocker)
 
@@ -609,6 +562,35 @@ none (its `text2json` corpus supervises entities despite the name), so `record_d
 was never exercised during the curve, and the curve is where the 22 samples/s came from.
 `record_instance_queries: 32` per document, times multi-instance documents, is where to
 look first.
+
+**PARTLY RESOLVED 2026-09-07, from the other end.** The same signature was hit while
+profiling EVAL, diagnosed without reference to this note, and it lands on the record path
+as predicted here.
+
+Measured on an A100 mid-eval: GPU **~21% utilisation, 1,645 MiB of 40,960 used**, one core
+pegged at **100.0%** — "idle GPU, one pegged core" exactly. cProfile on MPS then named it:
+`keep.nonzero(as_tuple=True)` in `_group_scored_candidates` (`boundary/model.py:1108`) is
+**4.72s of 14.9s wall, 32%, in exactly one call per batch**. `nonzero` returns a
+data-dependent shape, so it forces a device→host sync: the CPU blocks until the GPU drains
+the queued forward. Not slow code — the point where async work is cashed in synchronously.
+
+Two things this does and does not settle:
+
+* It confirms the *shape* of the diagnosis above (Python-side work behind small kernels)
+  and confirms the record path is implicated — `_group_scored_candidates` feeds the record
+  decode.
+* It does **not** explain the 5× training gap. That was measured on TRAINING throughput
+  (4.6 samples/s against the curve's 22); this is an inference path. The two share the
+  candidate machinery but not the loop, so the training figure remains unexplained.
+
+And the fix that follows from it did **not** work where it matters. Deferring the sync
+across N batches (an accumulation window, `set_eval_accumulation`) gives **2× on MPS**
+(8.6s → 4.4s, 48 documents, byte-identical output) and **1.4% on CUDA** (488s → 481s on an
+A10, full test split). CUDA's launch queue already hides almost all of the stall. So the
+32% figure is real on MPS and does not transfer — profiling on the wrong accelerator
+produced a confident, well-evidenced, wrong conclusion about the target hardware. Raising
+`eval.batch_size` to 8 buys 14% (523s → 449s) and is the only measured eval speedup;
+beyond 8 the padding cost overtakes it (16 → 484s, 32 → 516s).
 
 Not yet distinguished, and worth separating before changing anything:
 

@@ -1500,6 +1500,57 @@ that the thesis describes. The real switch, `boundary_head.decode_mode: greedy|j
 checkpoint's config, and `evaluate_checkpoint` never applied a config's `boundary_head` over
 it. Wired, smoke-tested, and run.
 
+## Phase 31 — the programme's central question, answered, and two models lost (7 Sep)
+
+**The greedy-vs-beam comparison finally ran, and it took three attempts to aim it.** The
+first measured `--global-decode` — the cross-window event *merge*, which operates on
+results already decoded — and found it neutral. That is a real negative for the merge
+layer but it is not the thesis. The switch the thesis needs is
+`boundary_head.decode_mode`, and `gliner2/joint_ie/` turned out to be a complete stack:
+JointProblem, candidate_scores, constraints, lattice, optimizers. **The mechanism was
+built and simply unreachable from eval** — `from_pretrained` constructs settings from the
+checkpoint's config and `evaluate_checkpoint` never applied a config's `boundary_head`
+over it, so `decode_mode` could be set in a YAML and silently ignored.
+
+Wired, and the answer is **no**: six heads inside the noise floor, structure −0.0454, at
+~2.5× the wall clock. A 16× beam-width sweep moves structure by 0.0018, and narrower is
+marginally better — the opposite of a search-capacity story.
+
+**The first version of that result was wrong, and the operator's debugging method is what
+caught it.** "Watch the data at every step, not just the sections you think are critical."
+Following that literally on one document showed the joint arm returning `HD-2024-0001` and
+`2024-03-18` — the same two fields greedy found — and being scored zero for both. Three
+steps, only the last where anyone would look: the two paths compile one schema into two
+**cardinalities**; so one emits `{"text": ...}` and the other `[{"text": ...}]`; and
+`_pred_structure_set` had a dict branch, a str branch, and **no else**. Lists fell through
+in silence. That alone was 48% of the apparent collapse (0.0343 → 0.0754), and the
+confident mechanical story already written down — "the model was never trained to emit
+structures as role edges" — was wrong twice over.
+
+**Eval throughput was profiled, and the profile lied about the hardware that matters.**
+`keep.nonzero` forces a device sync, 32% of wall time on MPS, one call per batch. Deferring
+it across batches gives **2× on MPS** and **1.4% on CUDA** — the launch queue already hides
+it. The accumulation window is correct, output-neutral and DDP-safe, and buys nothing on
+the fleet. `eval.batch_size: 8` buys 14% and is the only real speedup; past 8 the padding
+cost overtakes it. Profiling on the available accelerator produced a confident,
+well-evidenced, wrong conclusion about the target one.
+
+**Two models were lost, the second after the fix for the first.** The realsynth re-run went
+to a transient 400 with no retry. Phase 0's `eb16-composed` went to something the retry
+could not see: `upload_folder` **returned without raising and wrote nothing**. The runner
+printed PUSH OK, the trap terminated the box, and the repo holds one file — `.gitattributes`
+— against ~15 hours of A100. Its *metrics* survived because they upload before the push, so
+the finding stands (structure +0.0890, classification +0.2611) while the weights do not.
+`push_to_hub.py` now verifies the files are really on the Hub instead of trusting a clean
+return, and `save_or_die.py` rescues weights into a repo that works when the model repo
+will not.
+
+**The through-line of the whole day was instruments, not experiments.** The experiments ran.
+What failed, repeatedly, was the measuring: a scorer that dropped a shape, a flag that
+measured the wrong mechanism, a profile from the wrong accelerator, a guard that asserted
+exact float equality across hardware, a verdict that reported "scores differ" when the run
+had crashed, and a push that reported success while writing nothing.
+
 ---
 
 # Retired working documents

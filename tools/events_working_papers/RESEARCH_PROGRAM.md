@@ -109,8 +109,48 @@ death toll quoted in an article's history section is tracked as a 2023 figure, a
 of the two affected countries is never recovered at all. Attribution, not filtering and
 not extraction, is the bottleneck. *(`EKF_MHT_DESIGN.md` §4.)*
 
-**The greedy-vs-beam comparison — the actual question of the combinatorial arm — has
-not been run.** Every number produced so far is the greedy arm.
+**The greedy-vs-beam comparison — the actual question of the combinatorial arm — HAS
+NOW BEEN RUN, and the thesis is not supported by it.** *(2026-09-07.)* One checkpoint
+(`eb16-rebuild-tr`), 18,786-record blind test, `boundary_head.decode_mode` as the only
+variable, strict micro F1:
+
+| head | greedy | joint | Δ |
+|---|--:|--:|--:|
+| entity | 0.5695 | 0.5708 | +0.0013 |
+| event_type | 0.7545 | 0.7545 | 0.0000 |
+| event_argument | 0.1178 | 0.1143 | −0.0035 |
+| relation | 0.1037 | 0.0994 | −0.0043 |
+| event_trigger | 0.6051 | 0.5987 | −0.0064 |
+| event | 0.4081 | 0.4004 | −0.0077 |
+| **structure** | **0.1208** | **0.0754** | **−0.0454** |
+
+Six heads inside the ±0.02 floor, structure well outside it, and the joint arm costs
+**~2.5× the wall clock** (8.5 min against 22 min). Beam width is not the lever: a 16×
+sweep (4 / 16 / 64) moves structure by 0.0018, and *narrower* is marginally better, which
+is the opposite of a search-capacity story.
+
+Three scopes on that negative, all load-bearing:
+
+1. **It tests decoding-*with* the beam, not training-*for* it.** `JOINT_IE_DESIGN_RECORD`
+   §7 (Phase B — beam in the loss) remains unrun and is the only version of the thesis
+   this does not touch.
+2. **A separate mechanism was tested first and also came back neutral.** `--global-decode`
+   is the cross-window event *merge* (`assemble_events_global` operates on results already
+   decoded), not inference over candidate scores. Neutral at the trained window, slightly
+   negative when fragmented. Two independent mechanisms aimed at the thesis, both
+   neutral-to-negative, is stronger than either alone.
+3. **The structure gap is partly a known contract defect, not decode quality.** The two
+   paths compile one schema into two cardinalities — greedy makes a `dtype: str` field
+   scalar, joint makes every non-anchor field list-valued — and the scorer silently
+   dropped the list form. Fixing the scorer recovered 0.0343 → 0.0754 of the apparent
+   collapse; the cardinality divergence itself is documented at
+   `boundary/engine.py::_format_record_field` and unfixed. The remaining −0.0454 is real
+   but rests on a path that is known to disagree with itself.
+
+**The mechanism-or-model question is still open.** Running the same pair on a second
+checkpoint would say whether the structure deficit follows the decode path or the model;
+the intended checkpoint (Phase 0's `eb16-composed`) was lost to a silent push failure
+before it could be scored.
 
 **Structure supervision is not reaching the record head from most corpora.** The
 cc_news and synthetic converters emit structures without the metadata the training path
