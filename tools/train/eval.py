@@ -38,6 +38,12 @@ def main() -> None:
     p.add_argument("--split", choices=["val", "test"], default="test", help="Which split to score.")
     p.add_argument("--checkpoint", help="Checkpoint dir (default: <output_dir>/best).")
     p.add_argument("--threshold", type=float, help="Override eval.threshold.")
+    p.add_argument("--batch-size", type=int, dest="batch_size",
+                   help="Override eval.batch_size. Scores MUST NOT change with this -- if "
+                        "they do, padding is leaking into the result. It exists because "
+                        "eval blocks on a device sync per batch (model.py:1108, "
+                        "keep.nonzero), so a larger batch amortises the same stall over "
+                        "more documents.")
     p.add_argument("--decode-mode", dest="decode_mode", choices=("greedy", "joint"),
                    help="Override boundary_head.decode_mode for this eval only. 'joint' "
                         "routes entities+relations through the joint_ie typed-constraint "
@@ -56,6 +62,8 @@ def main() -> None:
     args = p.parse_args()
 
     overrides = {}
+    if args.batch_size is not None:
+        overrides["batch_size"] = args.batch_size
     if args.threshold is not None:
         overrides["threshold"] = args.threshold
     if args.decode_mode is not None:

@@ -1031,7 +1031,7 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
                 f"now rather than after training.")
 
     return {
-        "batch_size": eval_cfg.get("batch_size", 8),
+        "batch_size": overrides.get("batch_size", eval_cfg.get("batch_size", 8)),
         "threshold": overrides.get("threshold", eval_cfg.get("threshold", 0.5)),
         "by_language": by_language,
         "threshold_sweep": eval_cfg.get("threshold_sweep"),
