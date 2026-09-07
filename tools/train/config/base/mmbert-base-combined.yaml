@@ -7,6 +7,12 @@
 # mmbert-base-rams so the argument head is warmed comparably.
 model:
   encoder: jhu-clsp/mmBERT-base
+  # EXPLICIT, and it was not before: `from_encoder` defaults to "span"
+  # (train.py `architecture or "span"`), so this config has always built a SPAN
+  # model by omission. 77 of 88 live configs now say `boundary`, so a silent
+  # default that contradicts the pivot is worth naming rather than inheriting.
+  # Unchanged behaviour -- this states what it already did.
+  architecture: span
   max_width: 20
   max_len: 8192            # encoder positional capacity (ModernBERT/RoPE)
   struct_loss: bce_posweight
