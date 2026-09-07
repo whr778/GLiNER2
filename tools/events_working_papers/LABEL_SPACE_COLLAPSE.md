@@ -19,11 +19,25 @@ every annotator prompt rather than restated here.*
 project can suffer all three by different routes. They have different causes, different
 diagnostic signatures, and different fixes; conflating them leads to applying the wrong
 remedy, which is how this note began. We separate them, state which one we have measured
-(the training-time one, twice, on two different bases), and report a new measurement:
-the **fallback-label rate in our own LLM-annotated corpora is 0–1.8%**, so the
-annotation-time failure described by MultiSoc-4D is *not* present in our data — but two
-low-cardinality tasks are near-degenerate in a way the marginal distribution alone cannot
-adjudicate. That last point is the argument for inter-annotator agreement, and it is why
+(the training-time one, twice, on two different bases), and report a new measurement of our
+own machine-annotated data.
+
+That measurement needed three passes to get right, and the wrong turns are kept here
+because each is a reusable trap. **Counting the label menu instead of the answer** gave a
+spuriously uniform distribution. **Measuring only the fallback rate** then said 0–1.8% and
+declared the data clean — but a task with no catch-all in its label list cannot collapse to
+a sink, it collapses to the **majority class**, and 11 of 24 English tasks put ≥80% of
+answers on one label, holding 54.5% of that supervision. Finally, **three of the four
+corpora turned out not to be annotations at all**: they were written and labelled in one
+call, so their fallback rate measures a generator's stylistic preference rather than
+judgement under uncertainty.
+
+What survives is a single genuine annotation sample — Haiku 4.5, English, real news —
+where `sentiment` is 49.2% `neutral` and `risk_level` 47.6% `none`. It resembles
+MultiSoc-4D. We have **N=1 annotator, N=1 language, N=1 model**, so this project currently
+holds no model comparison and no language comparison; both would have to be run rather than
+mined. And even the surviving sample cannot distinguish a lazy annotator from an accurate
+one on genuinely skewed data — which is the argument for inter-annotator agreement, and why
 a skewed histogram is not by itself evidence of anything.
 
 ---
