@@ -953,6 +953,7 @@ def evaluate_checkpoint(
     chunk_overlap: int = 128,
     global_decode: bool = False,
     global_decode_config=None,
+    boundary_overrides: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """Load a saved GLiNER2 checkpoint and run :func:`compute_metrics` on a test set.
 
@@ -982,6 +983,22 @@ def evaluate_checkpoint(
     from gliner2.training.trainer import ExtractorDataset
 
     model = AutoExtractor.from_pretrained(str(checkpoint_dir), map_location=map_location)
+    if boundary_overrides:
+        # `from_pretrained` builds boundary_settings from the CHECKPOINT's config inside
+        # __init__, so a plain setattr lands too late and is silently dropped. Rebuild the
+        # settings and sync the HEAD's own reference, exactly as the training path does.
+        # This is what makes decode_mode ("greedy" | "joint") an eval-time switch over ONE
+        # trained model, which is the only way the two arms are the same model.
+        from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
+        merged = dict(getattr(model.config, "boundary_head", None) or {})
+        merged.update(boundary_overrides)
+        model.config.boundary_head = merged
+        settings = BoundaryHeadSettings(**validate_boundary_head(merged))
+        model.boundary_settings = settings
+        head = getattr(model, "boundary_head", None)
+        if head is not None:
+            head.settings = settings
+        print(f"[eval] boundary_head overrides applied: {boundary_overrides}")
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
     return compute_metrics(
         model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,

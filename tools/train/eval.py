@@ -38,6 +38,13 @@ def main() -> None:
     p.add_argument("--split", choices=["val", "test"], default="test", help="Which split to score.")
     p.add_argument("--checkpoint", help="Checkpoint dir (default: <output_dir>/best).")
     p.add_argument("--threshold", type=float, help="Override eval.threshold.")
+    p.add_argument("--decode-mode", dest="decode_mode", choices=("greedy", "joint"),
+                   help="Override boundary_head.decode_mode for this eval only. 'joint' "
+                        "routes entities+relations through the joint_ie typed-constraint "
+                        "beam over candidate scores; 'greedy' is the shipped per-query "
+                        "decode. Same checkpoint either way -- that is the point.")
+    p.add_argument("--joint-beam-width", type=int, dest="joint_beam_width",
+                   help="Beam width for --decode-mode joint (default 16).")
     p.add_argument("--chunk-size", type=int, dest="chunk_size",
                    help="Override eval.chunk_size (word window); 0 = whole-doc (no chunking).")
     p.add_argument("--chunk-overlap", type=int, dest="chunk_overlap", help="Override eval.chunk_overlap.")
@@ -51,6 +58,10 @@ def main() -> None:
     overrides = {}
     if args.threshold is not None:
         overrides["threshold"] = args.threshold
+    if args.decode_mode is not None:
+        overrides["decode_mode"] = args.decode_mode
+    if args.joint_beam_width is not None:
+        overrides["joint_beam_width"] = args.joint_beam_width
     if args.chunk_size is not None:
         overrides["chunk_size"] = None if args.chunk_size == 0 else args.chunk_size
     if args.chunk_overlap is not None:

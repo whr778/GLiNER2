@@ -1097,6 +1097,21 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         chunk_size=ev["chunk_size"], chunk_overlap=ev["chunk_overlap"],
         global_decode=ev["global_decode"], global_decode_config=ev["global_decode_config"],
     )
+    # decode_mode is the switch the research programme's combinatorial arm turns on:
+    # "greedy" is the shipped per-query decode, "joint" routes entities and relations
+    # through the joint_ie typed-constraint beam over the CANDIDATE SCORES. It is an
+    # EVAL-time setting over one trained model on purpose -- training two arms would make
+    # them different models and void the comparison.
+    bh = dict(((cfg.get("model") or {}).get("boundary_head") or {}))
+    bh.update({k: v for k, v in (overrides or {}).items()
+               if k in ("decode_mode", "joint_beam_width")})
+    bh = {k: v for k, v in bh.items() if k in ("decode_mode", "joint_beam_width")}
+    conflicting = sorted(k for k in bh if k in _STRUCTURAL_BOUNDARY_KEYS)
+    if conflicting:
+        raise SystemExit(f"[eval] boundary_head keys {conflicting} are structural; "
+                         f"they cannot be changed after the checkpoint was built.")
+    if bh:
+        gd_kwargs["boundary_overrides"] = bh
     # Log what is being scored, for the same reason training does: a <split>_metrics.json
     # records the numbers and nothing about the corpus behind them. Per-field coverage is
     # the part that matters -- a metric computed over a split with no `location` gold says
