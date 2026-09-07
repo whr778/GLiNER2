@@ -134,6 +134,51 @@ class ExtractorRuntimeMixin:
         device = next(self.parameters()).device
         dtype = next(self.parameters()).dtype
 
+        # ACCUMULATION WINDOW. Decoding blocks on a device sync (`keep.nonzero` in
+        # _group_scored_candidates), so with a window of 1 every batch pays the full
+        # stall. Queueing N forwards first means N batches share ONE stall, and unlike
+        # raising batch_size it adds NO padding: documents here run 466-6,000 characters
+        # and every batch pads to its longest member, which is why batching alone
+        # measured SLOWER (5.1 docs/s at batch 1 vs 2.0 at batch 32).
+        #
+        # Default 1 = exactly the previous behaviour. This is opt-in until measured.
+        accum = max(1, int(getattr(self, "_eval_accumulation_steps", 1) or 1))
+        window: List[Any] = []
+
+        def _drain():
+            nonlocal sample_idx
+            for b, fwd, meta in window:
+                res = self._extract_from_batch(
+                    b, threshold, meta, include_confidence, include_spans, forward=fwd)
+                _emit(res, meta)
+            window.clear()
+
+        def _emit(batch_results, meta):
+            nonlocal sample_idx
+            if format_results:
+                for i, result in enumerate(batch_results):
+                    m = meta[i]
+                    batch_results[i] = self.format_results(
+                        result, include_confidence, m.get("relation_order", []),
+                        m.get("classification_tasks", []),
+                        requested_events=m.get("event_order", []),
+                    )
+            all_results.extend(batch_results)
+            sample_idx += len(batch_results)
+
+        if accum > 1:
+            idx = 0
+            for batch in batches:
+                batch = batch.to(device, dtype if dtype != torch.float32 else None)
+                meta = metadata_list[idx:idx + len(batch)]
+                idx += len(batch)
+                # forward only -- no sync, so the GPU keeps working while we queue more
+                window.append((batch, self._forward_batch(batch, threshold, meta), meta))
+                if len(window) >= accum:
+                    _drain()
+            _drain()
+            return all_results
+
         for batch in batches:
             batch = batch.to(device, dtype if dtype != torch.float32 else None)
             batch_results = self._extract_from_batch(

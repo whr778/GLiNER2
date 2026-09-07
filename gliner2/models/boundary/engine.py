@@ -155,22 +155,29 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
 
     architecture = "boundary"
 
-    def _extract_from_batch(
-        self,
-        batch,
-        threshold: float,
-        metadata_list: List[Dict],
-        include_confidence: bool,
-        include_spans: bool,
-    ) -> List[Dict[str, Any]]:
+    def _forward_batch(self, batch, threshold: float, metadata_list: List[Dict]):
+        """Everything up to the first device SYNC, and nothing after it.
+
+        Split out so a caller can queue several batches' forwards before any of them is
+        consumed. `_group_scored_candidates` calls `keep.nonzero(...)`, whose output shape
+        depends on the data, so it blocks the CPU until the GPU drains the whole queued
+        forward -- measured at 32% of eval wall time in one call per batch. Issuing N
+        forwards first means N batches share ONE stall.
+
+        This is HF `Trainer`'s DEFAULT eval behaviour ("the whole predictions are
+        accumulated on the device accelerator before being moved to the CPU (faster but
+        requires more memory)"); their `eval_accumulation_steps` exists to make it slower
+        under memory pressure. We had no way to do it at all.
+
+        Returns device tensors. NOTHING here may touch .cpu(), .tolist(), .item() or
+        nonzero -- one of those and the accumulation is worthless.
+        """
         core = self._encode_core(batch)
         has_queries = core["query_states"].shape[1] > 0
-        candidates = None
-        probs = None
-        grouped_candidates = None
-        null_probs = None
+        fwd = {"core": core, "has_queries": has_queries, "out": None,
+               "probs": None, "query_thresholds": None}
         if has_queries:
-            query_thresholds = self._query_thresholds(
+            fwd["query_thresholds"] = self._query_thresholds(
                 core["ext_specs"], metadata_list, threshold,
                 core["query_states"].device,
             )
@@ -179,11 +186,35 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 core["query_states"], core["query_mask"],
                 return_candidates=True,
             )
-            candidates = out.candidates
-            probs = torch.sigmoid(
-                candidates.pair_logits
+            fwd["out"] = out
+            fwd["probs"] = torch.sigmoid(
+                out.candidates.pair_logits
                 / self.boundary_settings.pair_temperature
             )
+        return fwd
+
+    def _extract_from_batch(
+        self,
+        batch,
+        threshold: float,
+        metadata_list: List[Dict],
+        include_confidence: bool,
+        include_spans: bool,
+        forward=None,
+    ) -> List[Dict[str, Any]]:
+        fwd = forward if forward is not None else self._forward_batch(
+            batch, threshold, metadata_list)
+        core = fwd["core"]
+        has_queries = fwd["has_queries"]
+        candidates = None
+        probs = None
+        grouped_candidates = None
+        null_probs = None
+        if has_queries:
+            query_thresholds = fwd["query_thresholds"]
+            out = fwd["out"]
+            candidates = out.candidates
+            probs = fwd["probs"]
             grouped_candidates = _group_scored_candidates(
                 candidates,
                 threshold=query_thresholds,
