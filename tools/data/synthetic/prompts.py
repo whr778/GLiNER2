@@ -43,6 +43,24 @@ ANNOTATE_SYSTEM = (
 )
 
 
+_UNCERTAINTY = [
+    "Add \"uncertain_labels\": an object mapping a classification task name to the "
+    "labels you were genuinely torn between and could not decide, e.g. "
+    "{\"sentiment\": [\"positive\", \"neutral\"]}. Those labels are then removed "
+    "from that task's menu for this document rather than being marked wrong. Still "
+    "give your best answer in \"labels\"; this only says what you could not rule out. "
+    "Omit the key when nothing was in doubt.",
+    "",
+    "Add \"uncertain_types\": a list of label names you SERIOUSLY CONSIDERED for "
+    "something in this document but could not confidently assign -- for example a "
+    "drone that might be an aircraft or a weapon. This is NOT a label and nothing "
+    "is filed under it; it only stops the pipeline from recording that those types "
+    "are absent when you were unsure. Leave it empty when you were not torn. Do not "
+    "use it to avoid deciding: label what you can support, and list here only what "
+    "genuinely remained undecidable.",
+]
+
+
 def _event_ontology_lines(subset: Optional[List[str]] = None) -> str:
     keys = subset or list(EVENT_ONTOLOGY)
     return "\n".join(
@@ -197,6 +215,8 @@ def build_user_prompt(domain: str, tasks: List[str], min_words: int, max_words: 
         "",
         'Also include a "text" key with the document itself. Omit any annotation '
         "whose span does not appear verbatim in the text. Return only the JSON object.",
+        "",
+        *_UNCERTAINTY,
     ]
     return "\n".join(sections)
 
@@ -219,20 +239,7 @@ def build_annotate_prompt(text: str, tasks: List[str],
         "leaving a listed label unannotated is correct and expected. Return only "
         "the JSON object.",
         "",
-        "Add \"uncertain_labels\": an object mapping a classification task name to the "
-        "labels you were genuinely torn between and could not decide, e.g. "
-        "{\"sentiment\": [\"positive\", \"neutral\"]}. Those labels are then removed "
-        "from that task's menu for this document rather than being marked wrong. Still "
-        "give your best answer in \"labels\"; this only says what you could not rule out. "
-        "Omit the key when nothing was in doubt.",
-        "",
-        "Add \"uncertain_types\": a list of label names you SERIOUSLY CONSIDERED for "
-        "something in this document but could not confidently assign -- for example a "
-        "drone that might be an aircraft or a weapon. This is NOT a label and nothing "
-        "is filed under it; it only stops the pipeline from recording that those types "
-        "are absent when you were unsure. Leave it empty when you were not torn. Do not "
-        "use it to avoid deciding: label what you can support, and list here only what "
-        "genuinely remained undecidable.",
+        *_UNCERTAINTY,
         "",
         "DOCUMENT:",
         text,

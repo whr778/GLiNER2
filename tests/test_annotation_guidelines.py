@@ -162,3 +162,24 @@ def test_scorer_still_accepts_bare_strings():
     assert _pred_structure_set({"record": [{"f": "v"}]}) == {("record", "f", "v")}
     assert _pred_structure_set({"record": [{"f": ["a", "b"]}]}) == {("record", "f", "a"),
                                                                    ("record", "f", "b")}
+
+
+def test_both_generation_paths_offer_the_uncertainty_fields():
+    """One-call and annotate must ask for doubt in the SAME words.
+
+    The block lived only in `build_annotate_prompt` for a day, so the one-call path could
+    not record doubt at all. That is not merely a missing feature: any A/B between the two
+    paths -- which is exactly what the generation experiment compares -- was then measuring
+    an annotator that may abstain against one that may not, on top of the difference it
+    meant to test.
+    """
+    sys.path.insert(0, str(ROOT / "tools" / "data" / "synthetic"))
+    from prompts import build_annotate_prompt, build_user_prompt
+
+    one = build_user_prompt("news report", ["entities", "classifications"], 180, 320)
+    ann = build_annotate_prompt("Some document text.", ["entities", "classifications"])
+    for name, prompt in (("one-call", one), ("annotate", ann)):
+        assert "uncertain_types" in prompt, f"{name} path cannot record type doubt"
+        assert "uncertain_labels" in prompt, f"{name} path cannot record label doubt"
+    assert "genuinely remained undecidable" in one and "genuinely remained undecidable" in ann, \
+        "both paths must carry the same wording, not two drifting copies"

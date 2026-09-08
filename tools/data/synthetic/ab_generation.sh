@@ -15,9 +15,11 @@
 # TOGETHER, which is what keeps the A/B internally valid -- the pilot is a prior, not a
 # baseline.
 #
-# The prompts are the ones committed today, which do NOT inject tools/data/annotation/
-# GUIDELINES.md and do not offer `uncertain_types`. Wiring those in is a separate change
-# and must be measured separately, or two treatments land in one comparison.
+# BOTH ARMS NOW ASK FOR `uncertain_labels` / `uncertain_types`, and that was a repair, not
+# a choice. The block lived only in build_annotate_prompt, so arm B's annotator could
+# abstain and arm A's could not -- a second treatment riding along inside the comparison.
+# Now shared. These prompts still do NOT inject tools/data/annotation/GUIDELINES.md;
+# wiring that in is a separate change and must be measured separately.
 #
 # Batch mode throughout: -50% pricing, ~$9 for both arms at 500 documents against ~$18
 # sync. The batch id is written next to the output, so a killed poller can resume with
