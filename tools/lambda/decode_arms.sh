@@ -29,22 +29,36 @@ CFG=tools/train/config/base/eb16-rebuild-tr.yaml
 PY=./.venv/bin/python
 OUT=$HOME/decode_arms
 LOGREPO=whr778/gliner2-run-logs
+# PAIRS selects which checkpoints run; DEST names the folder they publish into. A re-run
+# on changed code MUST NOT overwrite the numbers it is being compared against.
+PAIRS=${PAIRS:-"eb16-rebuild-tr mmbert-137k-clean casualty-multilingual-eb16tr"}
+DEST=${DEST:-decode_arms}
 mkdir -p "$OUT"
 
 publish() {   # publish after EVERY arm: Phase 31's JSONs survive nowhere because they
   local tag=$1  # were kept on a disk that died with the box.
-  $PY - "$tag" <<'PY'
+  $PY - "$tag" "$DEST" <<'PY'
 import os, sys
 from huggingface_hub import HfApi
-tag, out, repo = sys.argv[1], os.path.expanduser("~/decode_arms"), "whr778/gliner2-run-logs"
+tag, dest = sys.argv[1], sys.argv[2]
+out, repo = os.path.expanduser("~/decode_arms"), "whr778/gliner2-run-logs"
 api = HfApi(); api.create_repo(repo, repo_type="dataset", private=True, exist_ok=True)
 for f in (f"{tag}.json", f"{tag}.log"):
     p = os.path.join(out, f)
     if os.path.exists(p):
-        api.upload_file(path_or_fileobj=p, path_in_repo=f"decode_arms/{f}",
+        api.upload_file(path_or_fileobj=p, path_in_repo=f"{dest}/{f}",
                         repo_id=repo, repo_type="dataset")
         print("[arms] uploaded", f)
 PY
+}
+
+repo_for() {
+  case "$1" in
+    eb16-rebuild-tr)              echo whr778/gliner2-eb16-rebuild-tr ;;
+    mmbert-137k-clean)            echo whr778/gliner2-joint-boundary-mmbert-137k-clean ;;
+    casualty-multilingual-eb16tr) echo whr778/gliner2-casualty-multilingual-eb16tr ;;
+    *) echo "" ;;
+  esac
 }
 
 run_pair() {
@@ -72,8 +86,10 @@ snapshot_download('$repo', local_dir='$dir')" || { echo "[arms] DOWNLOAD FAILED 
   done
 }
 
-run_pair eb16-rebuild-tr              whr778/gliner2-eb16-rebuild-tr
-run_pair mmbert-137k-clean            whr778/gliner2-joint-boundary-mmbert-137k-clean
-run_pair casualty-multilingual-eb16tr whr778/gliner2-casualty-multilingual-eb16tr
+for pair in $PAIRS; do
+  repo=$(repo_for "$pair")
+  [ -n "$repo" ] || { echo "[arms] unknown checkpoint $pair -- skipping"; continue; }
+  run_pair "$pair" "$repo"
+done
 
 echo "[arms] ALL ARMS DONE $(date -u)"
