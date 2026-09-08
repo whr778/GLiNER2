@@ -275,3 +275,32 @@ def test_decode_arms_agree_on_field_shape():
     assert shapes["greedy"]["ticket_id"] == "scalar", "anchor is REQUIRED_ONE"
     assert shapes["greedy"]["date"] == "scalar", "dtype: str is OPTIONAL_ONE, not a list"
     assert shapes["greedy"]["tags"] == "list", "dtype: list stays ZERO_OR_MORE"
+
+
+def test_eval_schema_shape_carries_dtypes_all_the_way_to_cardinality():
+    """The shape `eval_metrics._schema_from_gold` builds -- the blind test's own.
+
+    This is the path the first re-baseline did NOT exercise, and the omission cost a
+    GPU run. `Schema.build()` emitted `field_dtypes`, the processor read it, and the
+    raw-dict branch of `_build_schema_dicts_and_metadata` copied `json_structures`,
+    `json_descriptions` and `record_metadata` out of the built schema while dropping
+    `field_dtypes` -- the identical defect the comment directly above it warns about for
+    `record_metadata`. So on the blind test, where EVERY structure field is declared
+    `dtype: "str"`, the cardinality fix was inert and the joint arm came back
+    byte-identical.
+    """
+    model = _model_with_mode("greedy")
+    eval_schema = {"structures": {"ticket": {
+        "fields": [{"name": "ticket_id", "dtype": "str"},
+                   {"name": "date", "dtype": "str"}],
+        "mode": "natural", "anchor": "ticket_id"}}}
+    schema_dicts, _ = model._build_schema_dicts_and_metadata([eval_schema])
+    assert schema_dicts[0].get("field_dtypes") == {
+        "ticket": {"ticket_id": "str", "date": "str"}}, \
+        "build() produced field_dtypes and the raw-dict branch dropped it"
+
+    batch = model.processor.collate_fn_inference(
+        [("ticket HD-1 opened on Monday", schema_dicts[0])], architecture="boundary")
+    fields = {f.name: f for spec in batch.record_specs[0].values() for f in spec.fields}
+    assert fields["date"].cardinality.value == "optional_one", \
+        "a dtype='str' field from a GOLD-DERIVED schema must compile scalar too"

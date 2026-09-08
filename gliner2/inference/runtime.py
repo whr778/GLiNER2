@@ -299,6 +299,16 @@ class ExtractorRuntimeMixin:
                     # correctly still lost them here.
                     if built_dict.get("record_metadata"):
                         schema_dict["record_metadata"] = built_dict["record_metadata"]
+                    # AND `field_dtypes`, for the reason directly above -- this is the
+                    # same defect one line down. `build()` produces the key, the processor
+                    # reads it to compile CARDINALITY, and copying everything except this
+                    # leaves every `dtype: str` field compiling as a list. Measured
+                    # 2026-09-08: the blind test declares every structure field
+                    # `dtype: "str"`, so a re-baseline that was meant to price the
+                    # cardinality fix measured a fix that never reached the eval path at
+                    # all, and the joint arm came back byte-identical.
+                    if built_dict.get("field_dtypes"):
+                        schema_dict["field_dtypes"] = built_dict["field_dtypes"]
                     field_metadata = built._field_metadata
                     field_orders = built._field_orders
                 # `{"relations": ["works_for"]}` -- the plain-list form the from_dict
