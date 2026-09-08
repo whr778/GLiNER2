@@ -479,6 +479,13 @@ class SchemaTransformer:
 
         record_metadata_list = [_record_meta(s) for s in batch.original_schemas]
         has_records = any(record_metadata_list)
+        # Dtypes decide CARDINALITY, and until now they never reached the compiler:
+        # `field_dtypes_list` was a parameter no caller passed, so a `dtype: str` field
+        # compiled ZERO_OR_MORE and only the greedy decoder looked right -- it re-read the
+        # dtype at format time. The joint decoder emitted lists for the same field, and
+        # its scalar beam machinery never engaged.
+        from gliner2.processing.records import structure_field_dtypes
+        field_dtypes_list = [structure_field_dtypes(s) for s in batch.original_schemas]
 
         # A structure schema with no record_metadata is VALID and silently undecodable
         # here: `Schema().structure(name)` keeps the legacy (span-era) behaviour, the
@@ -511,6 +518,7 @@ class SchemaTransformer:
             is_training=is_training,
             max_gold_per_query=max_gold_per_query,
             record_metadata_list=record_metadata_list if has_records else None,
+            field_dtypes_list=field_dtypes_list if has_records else None,
             build_targets=build_targets,
             on_capacity_exceeded=on_capacity_exceeded,
             event_records=event_records,

@@ -1,8 +1,15 @@
 """Records decoded through the joint beam (JOINT_IE_SCALING sec 3b).
 
 Role edges carry `hypothesis` = the trigger node key, so grouping solution edges by
-it reconstitutes event instances. Output must match the greedy record shape exactly,
-so the eval harness can run both decode arms unchanged.
+it reconstitutes event instances.
+
+THE SHAPES MUST MATCH GREEDY'S, and for a year this docstring ASSERTED they did while
+they did not. A `dtype: str` field came back `{"text": ...}` from greedy and
+`[{"text": ...}]` from the beam, because dtypes never reached `compile_record_specs` and
+only greedy re-derived them at format time. The eval scorer dropped the list form in
+silence, which read as "the joint decode destroys structures". The cause is fixed
+(`processor.py` passes `field_dtypes_list`); `test_decode_arms_agree_on_field_shape`
+below is what makes the claim in this docstring checkable instead of aspirational.
 """
 
 from __future__ import annotations
@@ -173,3 +180,75 @@ def test_joint_mode_does_not_double_emit_records():
     for value in results[0].values():
         if isinstance(value, list) and value and isinstance(value[0], dict):
             assert len(value) == len({str(sorted(v.items())) for v in value})
+
+
+def _shape_of(value):
+    """'scalar' or 'list' -- the CONTRACT, independent of whether anything was found."""
+    return "list" if isinstance(value, list) else "scalar"
+
+
+def _ticket_schema():
+    from gliner2.inference.schema import Schema
+    return (Schema().structure("ticket", mode="natural", anchor="ticket_id")
+            .field("ticket_id", dtype="str")
+            .field("date", dtype="str")
+            .field("tags", dtype="list"))
+
+
+def _model_with_mode(mode: str):
+    import torch
+    from gliner2 import ExtractorConfig
+    from gliner2.inference.engine import BoundaryExtractor
+    from tests.fixtures.tiny_boundary_checkpoint import TINY_BOUNDARY_HEAD
+    from tests.fixtures.tiny_encoder import build_tiny_encoder_config
+    from tests.fixtures.tiny_tokenizer import build_tiny_tokenizer
+
+    tokenizer = build_tiny_tokenizer()
+    head = dict(TINY_BOUNDARY_HEAD)
+    head.update(enable_records=True, record_dim=24, record_instance_queries=8,
+                decode_mode=mode)
+    torch.manual_seed(11)
+    model = BoundaryExtractor(
+        ExtractorConfig(model_name="tiny-bert-fixture", architecture="boundary",
+                        boundary_head=head, token_pooling="first"),
+        encoder_config=build_tiny_encoder_config(vocab_size=len(tokenizer)),
+        tokenizer=tokenizer,
+    )
+    return model.eval()
+
+
+def test_dtype_str_compiles_scalar_through_the_real_call_path():
+    """Not by calling compile_record_specs directly -- that always worked.
+
+    `field_dtypes_list` was a parameter no caller passed, so the dtype never reached
+    `_default_cardinality` and every non-anchor field compiled ZERO_OR_MORE. A unit test
+    on the compiler would have passed throughout. This one goes through the schema.
+    """
+    from gliner2.processing.records import structure_field_dtypes
+
+    built = _ticket_schema().build()
+    dtypes = structure_field_dtypes(built)
+    assert dtypes == {"ticket": {"ticket_id": "str", "date": "str", "tags": "list"}}, \
+        "dtypes must travel WITH the schema, not in a side table only greedy reads"
+
+
+def test_decode_arms_agree_on_field_shape():
+    """Same schema, same text, both decode modes: the SHAPE per field must match.
+
+    Values differ -- two decoders on an untrained fixture -- but a `dtype: str` field is
+    scalar in both arms or the eval harness is comparing two contracts. This is the test
+    that did not exist while the divergence was live.
+    """
+    text = "ticket HD-1 opened on Monday about billing"
+    schema = _ticket_schema()
+    shapes = {}
+    for mode in ("greedy", "joint"):
+        out = _model_with_mode(mode).extract(text, schema, threshold=0.0) or {}
+        instances = out.get("ticket")
+        assert instances, f"{mode} produced no ticket instance; the test proves nothing"
+        shapes[mode] = {k: _shape_of(v) for k, v in instances[0].items()}
+    assert shapes["greedy"] == shapes["joint"], (
+        f"decode arms disagree on field shape: {shapes}")
+    assert shapes["greedy"]["ticket_id"] == "scalar", "anchor is REQUIRED_ONE"
+    assert shapes["greedy"]["date"] == "scalar", "dtype: str is OPTIONAL_ONE, not a list"
+    assert shapes["greedy"]["tags"] == "list", "dtype: list stays ZERO_OR_MORE"

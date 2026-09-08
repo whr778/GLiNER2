@@ -1,6 +1,8 @@
 # The Boundary Architecture — How It Works, End to End
 
-Status: reference (implementation-verified 2026-08-09 against `merge/main-20260805`).
+Status: reference (implementation-verified 2026-09-08 against `merge/main-20260805`;
+counts, §6 cardinality, §11 decode result and §13 items 10-11 re-checked against the code
+that day — every number in §12 was recounted rather than carried forward).
 Companion to [[COUNTING_LAYER]] (why the span head is a dead end) and
 [[BOUNDARY_DECODE_AND_EKF]] (where global inference plugs in). Where this document
 and a code comment disagree, the code wins — every claim below was checked by
@@ -217,6 +219,24 @@ count-first decoding):
 the `threshold=` you pass to `batch_extract` does **not** move them. A threshold sweep that
 only varies the extraction threshold will not change record output at all.
 
+**A field's `dtype` declares its CARDINALITY, and cardinality reaches much further than
+output shape.** `dtype: str` compiles to `OPTIONAL_ONE` (scalar), anything else to
+`ZERO_OR_MORE` (list); an anchor is always `REQUIRED_ONE`. That one flag selects the
+training loss (`_scalar_field_nll`, a softmax over candidates plus `ABSENT`, against
+`_list_field_bce`), the occurrence policy (`_apply_occurrence_policy` returns early for
+list fields), the joint beam's utility (`logit - absent` against bare `logit`) and its
+exclusivity slot, and finally the emitted shape (`{"text": ...}` against `[{"text": ...}]`).
+
+**Until 2026-09-08 the dtype never arrived.** `compile_record_specs` has always accepted
+`field_dtypes`, and `build_boundary_batch_metadata` has always declared
+`field_dtypes_list` — which **no caller ever passed**. So every non-anchor field compiled
+`ZERO_OR_MORE` whatever its schema said. Only the greedy decoder looked correct, because it
+re-read the dtype at format time (`is_scalar = fspec.cardinality.is_scalar or
+dtype == "str"`) and patched the shape back. Dtypes now travel *with* the schema
+(`Schema.build()` emits `field_dtypes`; `structure_field_dtypes` also reads the raw
+`[{"name": ..., "dtype": ...}]` form), the processor passes them, and that rescue is gone
+because it is now provably redundant. See §11 for what it cost.
+
 ## 7. Relations
 
 **Schema** `{"relations": [{"works_for": {"head": "", "tail": ""}}]}`
@@ -359,9 +379,27 @@ hard-wired 0.5 does not merely miscalibrate — it makes the whole decode ignore
 role's utility is the ABSENT-relative `logit_c - logit_ABSENT`, which has no probability
 cutoff to be centered on.
 
+**The measured answer, and why it is not yet final.** One checkpoint
+(`eb16-rebuild-tr`), 18,786-record blind test, `decode_mode` the only variable: six heads
+inside the ±0.02 floor and **structure −0.0454**, at ~2.5× the wall clock. Re-measured
+2026-09-08 on a second box, it reproduces bit-for-bit on six of seven heads. A 4/16/64
+width sweep moves structure by 0.0018, and *narrower* is marginally better — the opposite
+of a search-capacity story.
+
+**That number was measured with the joint decoder's scalar machinery switched off**, and
+nobody knew. Per §6, every `dtype: str` field compiled `ZERO_OR_MORE`, so the
+ABSENT-relative utility and the exclusivity slot described just above — decision B of
+`JOINT_IE_DESIGN_RECORD` — **never engaged for any structure field**. Greedy's shapes were
+right anyway because it patched them at format time; the joint arm's were not. The scorer
+was taught to read both shapes (2026-09-07), which fixed the *measurement*; the cause was
+fixed at the source on 2026-09-08. **So the structure deficit has a third candidate
+explanation besides "the mechanism" and "that model": the plumbing.** Any re-reading of
+−0.0454 needs a fresh control pair on the fixed code — it changes *both* arms, since
+greedy's `decode_group` also took the list path for `dtype: str` fields.
+
 ## 12. What in GLiNER2 uses this today
 
-**Core (`gliner2/models/boundary/`)** — 18 modules: `model.py` (the head bundle +
+**Core (`gliner2/models/boundary/`)** — 20 modules: `model.py` (the head bundle +
 `BoundaryExtractorModel`), `encoding.py`, `heads.py`, `proposal.py`, `scoring.py`,
 `pool.py`, `records.py`, `relations.py`, `losses.py`, `content.py`, `rotary.py`,
 `engine.py` (decode/extract), plus small adapters.
@@ -371,8 +409,8 @@ cutoff to be centered on.
 | module | how |
 |---|---|
 | `gliner2/auto.py` | `AutoExtractor` dispatches `architecture="boundary"` — the only correct loader |
-| `gliner2/configuration.py` | `BoundaryHeadSettings` (85 fields), `attn_implementation`, `decode_mode`, `joint_beam_width` |
-| `gliner2/processor.py` | marker emission, `_add_boundary_metadata`, record-metadata plumbing |
+| `gliner2/configuration.py` | `BoundaryHeadSettings` (92 fields), `attn_implementation`, `decode_mode`, `joint_beam_width` |
+| `gliner2/processor.py` | marker emission, `_add_boundary_metadata`, record-metadata **and field-dtype** plumbing (§6) |
 | `gliner2/processing/boundary_preprocessing.py` | `_EXTRACTIVE_MARKERS`, layouts, targets, record specs |
 | `gliner2/processing/targets.py`, `records.py`, `layouts.py` | target/spec compilation |
 | `gliner2/training/trainer.py` | boundary defaults to bf16, per-term non-finite diagnostics |
@@ -381,8 +419,12 @@ cutoff to be centered on.
 | `gliner2/inference/engine.py`, `runtime.py` | shared extract path + output formatting |
 | `gliner2/joint_ie/candidate_scores.py` | boundary candidates → `JointProblem` |
 
-**Training configs:** 17 YAMLs set `architecture: boundary` (the joint-boundary curve).
-**Tests:** 42 files under `tests/models/boundary/`, including golden-parity, overfit,
+**Training configs:** 77 YAMLs declare `architecture: boundary` and 11 declare `span`;
+13 more inherit the architecture from a `pretrained:` checkpoint. No live config resolves
+its architecture by silent default any more — `from_encoder` defaults to `span`, so a
+config with `encoder:` and no `architecture:` built a span model without saying so, and
+eleven were in that state (commit `c394ae8`).
+**Tests:** 50 files under `tests/models/boundary/`, including golden-parity, overfit,
 invariants, and joint-decode suites.
 
 ## 13. Gotchas that have cost real money
@@ -422,8 +464,24 @@ invariants, and joint-decode suites.
    start with "Nothing to do" plus `lspci` showing zero NVSwitch and
    `GPU Fabric GUID: N/A` is the signature. A module reload and a full restart both
    changed nothing. Terminate and relaunch, ideally in another region.
-5. **Record thresholds are not the extraction threshold** (§6) — sweeping one does not move
+8. **Record thresholds are not the extraction threshold** (§6) — sweeping one does not move
    the other.
-6. **`error_policy` and `on_missing_surface` are different knobs.** The first governs
+9. **`error_policy` and `on_missing_surface` are different knobs.** The first governs
    malformed *records* in `_collate_batch`; the second governs surface *alignment*. Eval
    ignored the second until 2026-08-09 and aborted on any unalignable val mention.
+10. **A parameter that exists, is threaded, is documented — and that nothing ever passes.**
+   `build_boundary_batch_metadata(field_dtypes_list=...)` was declared, forwarded to
+   `compile_record_specs`, and consumed correctly by `_default_cardinality`. No caller
+   supplied it, so the whole chain ran on the default and every `dtype: str` field
+   compiled as a list. Nothing raised, no test failed, and the *greedy* decoder looked
+   right because it re-derived the dtype at format time and patched the shape back — which
+   is what kept the defect invisible while it changed the joint decoder's output, its beam
+   utilities, and the training loss selection. **Grep for a keyword parameter's call sites
+   before trusting that it does anything**; a default that is never overridden is
+   indistinguishable from a hard-coded constant. Fixed 2026-09-08 (§6).
+11. **A structure with no `record_metadata` trains nothing and says nothing** — valid
+   input, no error, and the rows still count as supervision in every composition print.
+   60,948 rows across 13 models sat in that state. The corpora were repaired in place, and
+   the *producer* was fixed separately a day later: `tools/data/synthetic/validate.py` had
+   gone on emitting `json_structures` with no metadata, so every newly generated corpus
+   reproduced the defect. `tools/data/audit_corpora.py` has a `STRUCT` check for it.

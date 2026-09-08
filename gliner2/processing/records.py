@@ -154,6 +154,42 @@ class RecordSpec:
 # Record metadata normalization (schema dict <-> validated form)
 # =============================================================================
 
+def structure_field_dtypes(schema: Optional[Mapping[str, Any]]) -> Dict[str, Dict[str, str]]:
+    """``{task_name: {field_name: dtype}}`` for a schema dict, from either carrier.
+
+    WHY THIS EXISTS. `compile_record_specs` has always accepted `field_dtypes` and
+    `_default_cardinality` has always mapped ``dtype == "str"`` to a SCALAR cardinality --
+    but `field_dtypes_list` was a parameter no caller ever passed. So every non-anchor
+    field compiled ZERO_OR_MORE whatever its declared dtype, and only the greedy decoder
+    looked right, because it re-read the dtype at format time
+    (`engine.py`: ``is_scalar = fspec.cardinality.is_scalar or dtype == "str"``). The joint
+    decoder had no such rescue and emitted lists where greedy emitted scalars -- and the
+    beam's scalar machinery (``logit - absent``, ``slot=role``) never engaged at all.
+
+    Two carriers because there are two ways to declare a structure, and both are supported
+    input: the fluent builder writes `field_dtypes` in `Schema.build()`, and a raw dict
+    schema may spell its fields as ``[{"name": ..., "dtype": ...}]``.
+    """
+    if not isinstance(schema, Mapping):
+        return {}
+    declared = schema.get("field_dtypes")
+    if isinstance(declared, Mapping):
+        return {str(task): {str(f): str(d) for f, d in fields.items()}
+                for task, fields in declared.items()
+                if isinstance(fields, Mapping)}
+    out: Dict[str, Dict[str, str]] = {}
+    for item in schema.get("json_structures") or []:
+        if not isinstance(item, Mapping):
+            continue
+        for task, fields in item.items():
+            if not isinstance(fields, (list, tuple)):
+                continue
+            for f in fields:
+                if isinstance(f, Mapping) and f.get("name") and f.get("dtype"):
+                    out.setdefault(str(task), {})[str(f["name"])] = str(f["dtype"])
+    return out
+
+
 def normalize_record_metadata(
     raw: Optional[Mapping[str, Any]],
     *,
@@ -335,4 +371,5 @@ __all__ = [
     "RecordSpec",
     "normalize_record_metadata",
     "compile_record_specs",
+    "structure_field_dtypes",
 ]

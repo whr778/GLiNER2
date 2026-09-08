@@ -10,28 +10,27 @@ operating point. See `PROJECT_HISTORY.md` Phase 25.
 
 ### Open after 2026-09-08 -- the joint decode path
 
-- **Two decoders compile one schema into two cardinalities, and that is still true.**
-  For a field declared `dtype: str`, greedy compiles `is_scalar=True` and emits
-  `{"text": ...}`; the joint path compiles every NON-ANCHOR field `is_scalar=False` and
-  emits `[{"text": ...}]`. Measured 2026-09-07 on one document: anchor `ticket_id` scalar
-  in both, `date`/`reporter`/`issue_type`/`priority` scalar in greedy and list in joint.
-  **Greedy is right** -- a `dtype: str` field is scalar. Scoring no longer depends on it
-  (`_pred_structure_set` reads all three shapes), so this is not currently producing a
-  wrong number, but any consumer that reads a record field WITHOUT tolerating both shapes
-  gets a different answer per decode mode. Documented at
-  `boundary/engine.py::_format_record_field`. **Next test:** compile one schema down both
-  paths and assert field-by-field equality of `is_scalar`; that test does not exist.
+Both defects recorded here this morning were FIXED the same day; what remains is the
+consequence, which is a measurement, not a patch.
 
-- **The synthetic generator emits `json_structures` with NO `record_metadata`.** Verified
-  2026-09-08 on a fresh 3-document smoke: one record carried a structure, zero carried
-  metadata. A structure with no `record_metadata` is valid and trains NOTHING on the
-  boundary path -- no error, no warning. The historical corpora were repaired in place by
-  `stamp_record_metadata.py` (cc_news_haiku45 and synthetic_haiku45_5k now sit at 1,033
-  and 996, exactly 1:1 with their structures), so this is a defect in the PRODUCER, not
-  the data. Only `convert_text2json`, `annotate_casualty` and `annotate_multitask` stamp
-  it. **Next action:** stamp in `synthetic/validate.py::build_record` at the source, and
-  until then run `stamp_record_metadata.py` + `audit_corpora.py` over every generated
-  corpus before it is trained on. The 500-document A/B generated today needs both.
+- **The greedy-vs-joint structure result must be re-measured on the fixed code.** The
+  -0.0454 was produced while the joint decoder's scalar machinery was disconnected: every
+  `dtype: str` field compiled ZERO_OR_MORE, so the ABSENT-relative utility and the
+  exclusivity slot (JOINT_IE_DESIGN_RECORD decision B) never engaged for a structure field,
+  and greedy's `decode_group` took the list path too. The fix changes BOTH arms, so the
+  control pair (0.1208 / 0.0754) will not reproduce. **Next test:** one control pair,
+  ~$1, on `eb16-rebuild-tr` -- it re-baselines the table and prices how much of the
+  deficit was plumbing rather than decode quality. Until it runs, do not cite -0.0454 as
+  a property of the joint decode.
+
+- **Cardinality is still not declared by any CORPUS, only by a schema.** The fix carries
+  `dtype` from the schema into `compile_record_specs`, which covers inference. Training
+  batches build `record_metadata` from corpora that record only mode and anchor, so a
+  `dtype: str` field is still trained with list BCE rather than the scalar softmax over
+  candidates plus ABSENT. That is a REGIME CHANGE, not a bug fix -- it moves every future
+  model's structure numbers -- so it is a decision, not a patch. The generator could emit
+  `fields: {f: {cardinality: ...}}` from `STRUCTURE_TEMPLATES` whenever that is wanted.
+  **Next test:** an A/B on one corpus before it is adopted anywhere.
 
 ### Open after 2026-08-28
 

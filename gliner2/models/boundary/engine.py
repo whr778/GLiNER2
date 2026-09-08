@@ -1744,7 +1744,13 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 {},
             )
             dtype = field_metadata.get("dtype")
-            is_scalar = fspec.cardinality.is_scalar or dtype == "str"
+            # `or dtype == "str"` stood here and was load-bearing: dtypes never reached
+            # `compile_record_specs`, so a str field compiled ZERO_OR_MORE and this line
+            # was the only thing making greedy look right. It also hid the divergence --
+            # the joint path had no equivalent rescue and emitted lists for the same
+            # field. The dtype now reaches the compiler (processor.py), so cardinality is
+            # correct at the source and both paths read the one answer.
+            is_scalar = fspec.cardinality.is_scalar
             choices = field_metadata.get("choices")
             validators = field_metadata.get("validators", ())
             formatted: List[Tuple[str, float, int, int]] = []

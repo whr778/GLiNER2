@@ -688,6 +688,20 @@ class Schema:
             self._active_builder = None
         if self._record_metadata:
             self.schema["record_metadata"] = self._record_metadata
+        # Field dtypes travel WITH the schema, not beside it. `_field_metadata` is a side
+        # table the greedy decoder happened to read at format time; the record compiler
+        # never saw it, so every non-anchor field compiled ZERO_OR_MORE regardless of
+        # `dtype: str` and only greedy's decode-time rescue hid it. One carrier, read by
+        # both paths. Keyed task -> field -> dtype, which is what compile_record_specs
+        # takes.
+        dtypes: Dict[str, Dict[str, str]] = {}
+        for key, meta in (self._field_metadata or {}).items():
+            task, _, field = key.partition(".")
+            dtype = (meta or {}).get("dtype")
+            if field and dtype:
+                dtypes.setdefault(task, {})[field] = dtype
+        if dtypes:
+            self.schema["field_dtypes"] = dtypes
         return self.schema
 
     @classmethod
