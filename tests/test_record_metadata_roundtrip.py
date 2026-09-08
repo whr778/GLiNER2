@@ -100,3 +100,69 @@ def test_record_spec_compiles_from_that_metadata():
         query_layout=type("QL", (), {"queries": []})(),
         record_metadata=None,
     ) == {}, "no-metadata path should return {} -- that is the silent failure to guard"
+
+
+def test_generator_stamps_record_metadata_on_every_structure_it_emits():
+    """The corpora were repaired; the PRODUCER was not, and that is a different bug.
+
+    `stamp_record_metadata.py` fixed the files on disk, so cc_news_haiku45 and
+    synthetic_haiku45_5k carry metadata 1:1 with their structures. But `validate.py`
+    kept emitting `json_structures` with none, so every NEW corpus reproduced the defect
+    -- silently, since an unanchored structure is valid input that simply trains nothing.
+    Measured on a 3-document smoke 2026-09-08: one structure, zero metadata.
+
+    The anchor must also be a field present in EVERY instance of its structure, and
+    template order picks it -- field 0 of a template is its natural key.
+    """
+    import sys
+    from collections import Counter
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "data" / "synthetic"))
+    from validate import build_record
+
+    reply = {
+        "text": "Acme sold a red bicycle to Dana剛 for 200 dollars on Tuesday.",
+        "structures": [{"type": "transaction",
+                        "fields": {"item": "red bicycle", "buyer": "Dana 剛",
+                                   "amount": "200 dollars"}}],
+    }
+    stats: Counter = Counter()
+    rec = build_record(reply, ["structures"], stats)
+    out = rec["output"]
+    assert out["json_structures"], "structure was dropped, so this proves nothing"
+    meta = out.get("record_metadata")
+    assert meta, "structures emitted with no record_metadata train NOTHING and say nothing"
+    assert meta["transaction"]["anchor"] == "item", "anchor must be the template's field 0"
+    assert meta["transaction"]["mode"] == "natural"
+
+
+def test_anchor_is_common_to_every_instance_not_just_the_first():
+    """An anchor absent from one instance decodes that instance to nothing."""
+    import sys
+    from collections import Counter
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "data" / "synthetic"))
+    from validate import build_record
+
+    # Two transactions; only the SECOND has `item`, so `item` is not common and the
+    # anchor must fall through template order to one that is.
+    reply = {
+        "text": "Dana paid 200 dollars. Later Dana bought a red bicycle for 30 dollars.",
+        "structures": [
+            {"type": "transaction", "fields": {"amount": "200 dollars", "buyer": "Dana"}},
+            {"type": "transaction", "fields": {"item": "red bicycle",
+                                               "amount": "30 dollars", "buyer": "Dana"}},
+        ],
+    }
+    stats: Counter = Counter()
+    rec = build_record(reply, ["structures"], stats)
+    meta = rec["output"].get("record_metadata", {})
+    if meta:
+        anchor = meta["transaction"]["anchor"]
+        for inst in rec["output"]["json_structures"]:
+            assert anchor in inst["transaction"], \
+                f"anchor {anchor!r} missing from an instance -- that instance cannot decode"
+    else:
+        assert stats["structures_no_anchor"], "no anchor found must be COUNTED, not silent"

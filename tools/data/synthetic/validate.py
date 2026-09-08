@@ -231,6 +231,48 @@ def _structures(text: str, items: Any, stats: Counter) -> List[Dict[str, Any]]:
     return out
 
 
+def _record_metadata(structs: List[Dict[str, Any]],
+                     existing: Optional[Dict[str, Any]],
+                     stats: Counter) -> Dict[str, Any]:
+    """``{name: {"mode": "natural", "anchor": field}}`` for the structures emitted.
+
+    WITHOUT THIS THE STRUCTURES TRAIN NOTHING. The record head cannot decode a structure
+    whose schema declares no anchor, and the absence is VALID: no error from the loader,
+    none from the trainer, and the rows still count as supervision in every composition
+    print. 60,948 rows across 13 models were in that state before it was found by
+    measurement rather than by anything failing.
+
+    THE ANCHOR MUST BE IN EVERY INSTANCE of that name, not merely in one. The query layout
+    is built from the union of field names, but `records.py` checks the declared anchor
+    against a field query, and an instance missing it decodes to nothing. So: intersection
+    first, then TEMPLATE ORDER to choose within it -- field 0 of each template is its
+    natural key (`product` -> name, `transaction` -> item, `job_posting` -> title).
+
+    The generator can do better here than `tools/data/stamp_record_metadata.py`, which
+    repairs corpora it did not produce and has to guess from field names. This has the
+    template.
+    """
+    by_name: Dict[str, List[set]] = {}
+    for s in structs:
+        for name, fields in (s or {}).items():
+            if isinstance(fields, dict) and fields:
+                by_name.setdefault(name, []).append(set(fields))
+    meta: Dict[str, Any] = {}
+    for name, field_sets in by_name.items():
+        common = set.intersection(*field_sets)
+        prior = ((existing or {}).get(name) or {}).get("anchor")
+        anchor = prior if prior in common else next(
+            (f for f in (STRUCTURE_TEMPLATES.get(name) or {}) if f in common), None)
+        if anchor:
+            meta[name] = {"mode": "natural", "anchor": anchor}
+        else:
+            # Counted, never hidden: a structure with no field common to all its
+            # instances cannot be anchored, and shipping it unanchored is the exact
+            # silent failure this function exists to end.
+            stats["structures_no_anchor"] += 1
+    return meta
+
+
 def _merge_output(base: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
     """Merge freshly-annotated tasks into an existing gold ``output`` (kept).
 
@@ -317,6 +359,14 @@ def build_record(reply: Dict[str, Any], tasks: List[str], stats: Counter,
             output["json_structures"] = structs
 
     merged = _merge_output(base_output, output) if base_output else output
+    # AFTER the merge, not before: _merge_output appends the base corpus's structures, so
+    # the intersection an anchor must survive is the merged one.
+    if merged.get("json_structures"):
+        meta = _record_metadata(merged["json_structures"],
+                                merged.get("record_metadata"), stats)
+        if meta:
+            merged["record_metadata"] = meta
+            stats["record_metadata_stamped"] += len(meta)
     if not merged:
         stats["empty_output"] += 1
         return None
