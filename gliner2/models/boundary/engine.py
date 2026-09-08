@@ -778,8 +778,15 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         """Rebuild record instances from the solution's role edges (§3b).
 
         Role edges carry ``hypothesis`` = the trigger node key, so grouping by it
-        reconstitutes instances. Output matches the greedy record shape exactly, so
-        the eval harness runs both arms unchanged.
+        reconstitutes instances.
+
+        THIS USED TO CLAIM "output matches the greedy record shape exactly, so the eval
+        harness runs both arms unchanged". IT DOES NOT, and believing it cost a day: the
+        two paths disagree on CARDINALITY, so greedy emits {"text": ...} for a
+        ``dtype: str`` field and this path emits [{"text": ...}]. The scorer dropped the
+        list form in silence, which read as "joint decode destroys structures"
+        (0.1208 -> 0.0343). The scorer now reads both; the divergence itself is still
+        open -- see ``_format_record_field`` for the measurement.
         """
         by_task: Dict[str, Dict[Any, Dict[str, List]]] = {}
         for edge in solution.edges:

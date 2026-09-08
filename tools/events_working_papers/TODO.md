@@ -8,6 +8,31 @@ attached, or a decision with a stated next test.
 produced no new model: every result came from measuring shipped components at more than one
 operating point. See `PROJECT_HISTORY.md` Phase 25.
 
+### Open after 2026-09-08 -- the joint decode path
+
+- **Two decoders compile one schema into two cardinalities, and that is still true.**
+  For a field declared `dtype: str`, greedy compiles `is_scalar=True` and emits
+  `{"text": ...}`; the joint path compiles every NON-ANCHOR field `is_scalar=False` and
+  emits `[{"text": ...}]`. Measured 2026-09-07 on one document: anchor `ticket_id` scalar
+  in both, `date`/`reporter`/`issue_type`/`priority` scalar in greedy and list in joint.
+  **Greedy is right** -- a `dtype: str` field is scalar. Scoring no longer depends on it
+  (`_pred_structure_set` reads all three shapes), so this is not currently producing a
+  wrong number, but any consumer that reads a record field WITHOUT tolerating both shapes
+  gets a different answer per decode mode. Documented at
+  `boundary/engine.py::_format_record_field`. **Next test:** compile one schema down both
+  paths and assert field-by-field equality of `is_scalar`; that test does not exist.
+
+- **The synthetic generator emits `json_structures` with NO `record_metadata`.** Verified
+  2026-09-08 on a fresh 3-document smoke: one record carried a structure, zero carried
+  metadata. A structure with no `record_metadata` is valid and trains NOTHING on the
+  boundary path -- no error, no warning. The historical corpora were repaired in place by
+  `stamp_record_metadata.py` (cc_news_haiku45 and synthetic_haiku45_5k now sit at 1,033
+  and 996, exactly 1:1 with their structures), so this is a defect in the PRODUCER, not
+  the data. Only `convert_text2json`, `annotate_casualty` and `annotate_multitask` stamp
+  it. **Next action:** stamp in `synthetic/validate.py::build_record` at the source, and
+  until then run `stamp_record_metadata.py` + `audit_corpora.py` over every generated
+  corpus before it is trained on. The 500-document A/B generated today needs both.
+
 ### Open after 2026-08-28
 
 - **Which gate ships is now an open decision, and the current default is not the leader.**
