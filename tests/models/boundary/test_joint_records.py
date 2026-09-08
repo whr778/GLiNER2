@@ -217,19 +217,42 @@ def _model_with_mode(mode: str):
     return model.eval()
 
 
-def test_dtype_str_compiles_scalar_through_the_real_call_path():
-    """Not by calling compile_record_specs directly -- that always worked.
-
-    `field_dtypes_list` was a parameter no caller passed, so the dtype never reached
-    `_default_cardinality` and every non-anchor field compiled ZERO_OR_MORE. A unit test
-    on the compiler would have passed throughout. This one goes through the schema.
-    """
+def test_schema_carries_field_dtypes_to_the_processor():
+    """The schema must be the carrier, not a side table only the greedy decoder reads."""
     from gliner2.processing.records import structure_field_dtypes
 
     built = _ticket_schema().build()
-    dtypes = structure_field_dtypes(built)
-    assert dtypes == {"ticket": {"ticket_id": "str", "date": "str", "tags": "list"}}, \
-        "dtypes must travel WITH the schema, not in a side table only greedy reads"
+    assert structure_field_dtypes(built) == {
+        "ticket": {"ticket_id": "str", "date": "str", "tags": "list"}}
+    raw = {"json_structures": [{"ticket": [{"name": "ticket_id", "dtype": "str"},
+                                           {"name": "tags", "dtype": "list"}]}]}
+    assert structure_field_dtypes(raw) == {
+        "ticket": {"ticket_id": "str", "tags": "list"}}, \
+        "the raw [{name, dtype}] schema form is also a supported carrier"
+
+
+def test_dtype_str_compiles_scalar_through_the_real_collate_path():
+    """Compiled cardinality, read off a batch the PROCESSOR built.
+
+    Calling `compile_record_specs` directly would have passed throughout the defect -- it
+    always honoured `field_dtypes`. What was broken is that nothing PASSED them:
+    `field_dtypes_list` was a declared parameter with no caller, so `date` below compiled
+    ZERO_OR_MORE despite `dtype="str"`. Deleting the `field_dtypes_list=` line in
+    `processor.py` must fail this test, which is the only reason it goes the long way
+    round through collate_fn_inference instead of calling the compiler.
+    """
+    model = _model_with_mode("greedy")
+    batch = model.processor.collate_fn_inference(
+        [("ticket HD-1 opened on Monday", _ticket_schema().build())],
+        architecture="boundary",
+    )
+    specs = batch.record_specs[0]
+    assert specs, "no record spec compiled; the assertions below would be vacuous"
+    fields = {f.name: f for spec in specs.values() for f in spec.fields}
+    assert fields["ticket_id"].cardinality.value == "required_one", "anchor"
+    assert fields["date"].cardinality.value == "optional_one", \
+        "dtype='str' must compile SCALAR -- the bug, and it is upstream of output shape"
+    assert fields["tags"].cardinality.value == "zero_or_more", "dtype='list'"
 
 
 def test_decode_arms_agree_on_field_shape():
