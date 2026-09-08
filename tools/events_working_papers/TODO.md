@@ -10,27 +10,26 @@ operating point. See `PROJECT_HISTORY.md` Phase 25.
 
 ### Open after 2026-09-08 -- the joint decode path
 
-Both defects recorded here this morning were FIXED the same day; what remains is the
-consequence, which is a measurement, not a patch.
+The re-measurement RAN and closed the question: 87% of the structure deficit was the
+never-connected `field_dtypes_list`. Deficit -0.0454 -> -0.0057, greedy +0.0432, joint
++0.0828, all seven heads now inside the floor. What remains:
 
-- **The greedy-vs-joint structure result must be re-measured on the fixed code.** The
-  -0.0454 was produced while the joint decoder's scalar machinery was disconnected: every
-  `dtype: str` field compiled ZERO_OR_MORE, so the ABSENT-relative utility and the
-  exclusivity slot (JOINT_IE_DESIGN_RECORD decision B) never engaged for a structure field,
-  and greedy's `decode_group` took the list path too. The fix changes BOTH arms, so the
-  control pair (0.1208 / 0.0754) will not reproduce. **Next test:** one control pair,
-  ~$1, on `eb16-rebuild-tr` -- it re-baselines the table and prices how much of the
-  deficit was plumbing rather than decode quality. Until it runs, do not cite -0.0454 as
-  a property of the joint decode.
+- **Cardinality is still not declared by any CORPUS, only by a schema.** Inference is
+  fixed. Training batches build `record_metadata` from corpora that record only mode and
+  anchor, so a `dtype: str` field is still trained with list BCE rather than the scalar
+  softmax over candidates plus ABSENT. That is a REGIME CHANGE, not a bug fix -- it moves
+  every future model's structure numbers -- so it is a decision. The synthetic generator
+  could emit `fields: {f: {cardinality: ...}}` from `STRUCTURE_TEMPLATES` whenever that is
+  wanted. **Next test:** an A/B on one corpus before adopting it anywhere.
 
-- **Cardinality is still not declared by any CORPUS, only by a schema.** The fix carries
-  `dtype` from the schema into `compile_record_specs`, which covers inference. Training
-  batches build `record_metadata` from corpora that record only mode and anchor, so a
-  `dtype: str` field is still trained with list BCE rather than the scalar softmax over
-  candidates plus ABSENT. That is a REGIME CHANGE, not a bug fix -- it moves every future
-  model's structure numbers -- so it is a decision, not a patch. The generator could emit
-  `fields: {f: {cardinality: ...}}` from `STRUCTURE_TEMPLATES` whenever that is wanted.
-  **Next test:** an A/B on one corpus before it is adopted anywhere.
+- **Phase B (beam in the loss) is now MORE interesting, not less.** Every measurement of
+  the beam to date ran with its scalar constraints disconnected. The decode-time null
+  stands, but it is a null about a beam that has never been trained for and, until today,
+  had never been decoded with its own constraint machinery live.
+
+- **The pre-fix numbers in any document dated before 2026-09-08 are superseded.** The
+  reproduced -0.0529 on `mmbert-137k-clean` was measured under the same defect; it
+  corroborates that the artefact was mechanism-wide, not that joint loses structure.
 
 ### Open after 2026-08-28
 

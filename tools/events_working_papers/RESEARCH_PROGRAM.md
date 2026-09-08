@@ -110,47 +110,69 @@ of the two affected countries is never recovered at all. Attribution, not filter
 not extraction, is the bottleneck. *(`EKF_MHT_DESIGN.md` §4.)*
 
 **The greedy-vs-beam comparison — the actual question of the combinatorial arm — HAS
-NOW BEEN RUN, and the thesis is not supported by it.** *(2026-09-07.)* One checkpoint
-(`eb16-rebuild-tr`), 18,786-record blind test, `boundary_head.decode_mode` as the only
-variable, strict micro F1:
+NOW BEEN RUN, and the thesis is not supported by it.** *(2026-09-07, corrected
+2026-09-08.)* One checkpoint (`eb16-rebuild-tr`), 18,786-record blind test,
+`boundary_head.decode_mode` as the only variable, strict micro F1:
 
 | head | greedy | joint | Δ |
 |---|--:|--:|--:|
-| entity | 0.5695 | 0.5708 | +0.0013 |
+| entity | 0.5695 | 0.5670 | −0.0026 |
 | event_type | 0.7545 | 0.7545 | 0.0000 |
-| event_argument | 0.1178 | 0.1143 | −0.0035 |
+| event_argument | 0.1178 | 0.1143 | −0.0034 |
 | relation | 0.1037 | 0.0994 | −0.0043 |
+| structure | 0.1640 | 0.1582 | −0.0057 |
 | event_trigger | 0.6051 | 0.5987 | −0.0064 |
 | event | 0.4081 | 0.4004 | −0.0077 |
-| **structure** | **0.1208** | **0.0754** | **−0.0454** |
 
-Six heads inside the ±0.02 floor, structure well outside it, and the joint arm costs
-**~2.5× the wall clock** (8.5 min against 22 min). Beam width is not the lever: a 16×
-sweep (4 / 16 / 64) moves structure by 0.0018, and *narrower* is marginally better, which
-is the opposite of a search-capacity story.
+**Every head is inside the ±0.02 floor, and the joint arm costs ~2.5× the wall clock**
+(8.5 min against 22). Beam width is not the lever: a 16× sweep (4 / 16 / 64) moves
+structure by 0.0018, and *narrower* is marginally better, the opposite of a
+search-capacity story.
+
+**THE STRUCTURE ROW ABOVE IS A CORRECTION, and the size of it is the point.** As first
+measured, structure read **0.1208 / 0.0754, a −0.0454 deficit** that was the one result
+outside the floor and the whole of the negative verdict. It was an artefact of a
+never-connected parameter: `field_dtypes_list` was declared, threaded and consumed
+correctly, and **no caller ever passed it**, so every `dtype: str` field compiled
+`ZERO_OR_MORE`. Cardinality selects the joint beam's utility (`logit - absent` against
+bare `logit`) and its exclusivity slot, so **the beam's entire scalar machinery — decision
+B of `JOINT_IE_DESIGN_RECORD` — had never engaged for a structure field.** Greedy looked
+almost right anyway because it re-derived the dtype at format time; joint had no such
+rescue. Connected, greedy gains +0.0432 and **joint gains +0.0828**, and 87% of the
+deficit disappears. The arm that was supposedly losing was the arm running with its
+machinery switched off.
+
+**The verdict does not change; its content does.** "Joint decoding costs structure" is
+withdrawn. What stands is stronger and duller: **joint decoding matches greedy on all
+seven heads and costs 2.5× the wall clock.** A null at parity is a cleaner negative than a
+loss, because it cannot be explained away as a defect — and this one nearly was the other
+way round.
 
 Three scopes on that negative, all load-bearing:
 
 1. **It tests decoding-*with* the beam, not training-*for* it.** `JOINT_IE_DESIGN_RECORD`
    §7 (Phase B — beam in the loss) remains unrun and is the only version of the thesis
-   this does not touch.
+   this does not touch. It is also now more interesting, not less: the beam has only ever
+   been measured with its scalar constraints disconnected.
 2. **A separate mechanism was tested first and also came back neutral.** `--global-decode`
    is the cross-window event *merge* (`assemble_events_global` operates on results already
    decoded), not inference over candidate scores. Neutral at the trained window, slightly
-   negative when fragmented. Two independent mechanisms aimed at the thesis, both
-   neutral-to-negative, is stronger than either alone.
-3. **The structure gap is partly a known contract defect, not decode quality.** The two
-   paths compile one schema into two cardinalities — greedy makes a `dtype: str` field
-   scalar, joint makes every non-anchor field list-valued — and the scorer silently
-   dropped the list form. Fixing the scorer recovered 0.0343 → 0.0754 of the apparent
-   collapse; the cardinality divergence itself is documented at
-   `boundary/engine.py::_format_record_field` and unfixed. The remaining −0.0454 is real
-   but rests on a path that is known to disagree with itself.
+   negative when fragmented.
+3. **Mechanism, not model — measured, on two independent lineages.** The pre-fix deficit
+   reproduced on `joint-boundary-mmbert-137k-clean` (−0.0529) as well as on the control,
+   so it never was a property of one checkpoint. A third pair
+   (`casualty-multilingual-eb16tr`) is **unreadable** and was declared so by a rule written
+   before the numbers existed: its greedy structure is 0.0070, a sixth of the floor, and
+   its other heads sit at 0.0801 entity / 0.0209 event_type against the base's 0.5695 /
+   0.7545 — catastrophic forgetting, not a decode result.
 
-**The mechanism-or-model question is still open.** Running the same pair on a second
-checkpoint would say whether the structure deficit follows the decode path or the model;
-the intended checkpoint (Phase 0's `eb16-composed`) was lost to a silent push failure
-before it could be scored.
+**Two of this project's own instruments had to be repaired before that table could be
+read**, and each hid the next. The scorer dropped list-shaped structure output in silence
+(48% of the apparent collapse). Then the first re-baseline measured a fix that never ran,
+because the schema carrier was dropped one layer above and **nothing in the log said
+whether the fix had executed** — so execution was inferred from the numbers it was meant to
+move. Runs now print `[records] compiled N field spec(s): X scalar ...` before scoring, and
+the third box was gated on that line rather than on hope.
 
 **Structure supervision is not reaching the record head from most corpora.** The
 cc_news and synthetic converters emit structures without the metadata the training path

@@ -1553,6 +1553,60 @@ had crashed, and a push that reported success while writing nothing.
 
 ---
 
+## Phase 32 — the headline result was a parameter nobody passed (8 Sep)
+
+**Phase 31's one finding outside the noise floor is withdrawn.** "Joint decode costs
+structure, −0.0454" was 87% an artefact. `compile_record_specs` had always accepted
+`field_dtypes`, `_default_cardinality` had always mapped `dtype: "str"` to a scalar
+cardinality, and `build_boundary_batch_metadata` had always declared `field_dtypes_list` —
+**which no caller ever passed.** Every non-anchor field compiled `ZERO_OR_MORE` whatever
+its schema said.
+
+That is not a formatting flag. Cardinality selects the training loss, the occurrence
+policy, the joint beam's utility (`logit - absent` against bare `logit`) and its
+exclusivity slot — so **the beam's entire scalar machinery had never engaged for a
+structure field.** Greedy looked nearly right because it re-derived the dtype at format
+time; the joint arm had no such rescue, and the gap between them *was* the rescue.
+Connected: greedy 0.1208 → 0.1640, joint 0.0754 → **0.1582**, deficit −0.0454 → −0.0057.
+The joint arm gained nearly twice what greedy did.
+
+**The verdict survives; its content changes.** Joint decoding now matches greedy on all
+seven heads and costs ~2.5× the wall clock. A null at parity is a *better* negative than a
+loss, because a loss can be explained away as a defect — and this one was exactly that.
+
+**Three instrument failures, in series, each hiding the next.** The scorer dropped
+list-shaped output in silence (48% of the apparent collapse, caught 7 Sep by watching the
+data at every step rather than at the step that looked interesting). Then the fix's own
+first re-baseline **measured nothing**: the schema carrier was dropped one layer above, in
+a branch whose own comment warns about that exact defect for `record_metadata`, and the
+blind test declares every structure field `dtype: "str"` — so the fix was inert precisely
+where it mattered, and the joint arm returned byte-identical. Nothing in the log said
+whether the fix had run, so its execution had to be *inferred from the numbers it was
+supposed to move*. That is the wrong direction, and it cost a GPU run.
+
+**The fix for that is an instrument, not a patch.** Runs now print
+`[records] compiled N field spec(s): X scalar, Y list; Z of W schema(s) declared field
+dtypes` before scoring, and the third box was **gated on that line** — read first,
+metrics second. It printed `6 scalar, 0 list; 2 of 2` and only then was the table read.
+
+**Mechanism-or-model was also settled, and the pre-registered floor rule earned its
+keep.** The pre-fix deficit reproduced on an independent lineage
+(`joint-boundary-mmbert-137k-clean`, −0.0529), so it was never one checkpoint's property.
+The third pair, `casualty-multilingual-eb16tr`, was declared **unreadable** by a rule
+written before the numbers existed: greedy structure 0.0070, a sixth of the floor, with
+entity 0.0801 and event_type 0.0209 against the base's 0.5695 and 0.7545 — catastrophic
+forgetting, exactly the shape the gate3 warm cells measured. Running only the checkpoint
+the resume list named would have returned nothing at all.
+
+**Elsewhere the same day:** the generation A/B was regenerated from scratch after its only
+copy was lost with an unmountable disk — recovered not from memory but from committed code,
+since `--write-only`'s docstring *is* the hypothesis and `--estimate` pinned the model by
+price. Two-stage wins **8 of 12 tasks** (mean TVD 0.2661 against 0.3032), and `sentiment`
+shows the mechanism directly: one-call writes *positive 53%* to fit labels it chose, while
+two-stage lands *neutral 62%* against real news's 49%. The scorer that was lost with the
+disk is now committed, and TVD is defined in `METRICS.md`.
+
+
 # Retired working documents
 
 Each of these had a job and finished it. What they concluded is recorded here; what is still

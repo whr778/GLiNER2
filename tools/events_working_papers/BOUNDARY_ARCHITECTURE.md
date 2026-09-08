@@ -379,23 +379,22 @@ hard-wired 0.5 does not merely miscalibrate — it makes the whole decode ignore
 role's utility is the ABSENT-relative `logit_c - logit_ABSENT`, which has no probability
 cutoff to be centered on.
 
-**The measured answer, and why it is not yet final.** One checkpoint
-(`eb16-rebuild-tr`), 18,786-record blind test, `decode_mode` the only variable: six heads
-inside the ±0.02 floor and **structure −0.0454**, at ~2.5× the wall clock. Re-measured
-2026-09-08 on a second box, it reproduces bit-for-bit on six of seven heads. A 4/16/64
-width sweep moves structure by 0.0018, and *narrower* is marginally better — the opposite
-of a search-capacity story.
+**The measured answer.** One checkpoint (`eb16-rebuild-tr`), 18,786-record blind test,
+`decode_mode` the only variable: **all seven heads inside the ±0.02 floor**, at ~2.5× the
+wall clock (8.5 min against 22). A 4/16/64 width sweep moves structure by 0.0018, and
+*narrower* is marginally better — the opposite of a search-capacity story. So the beam buys
+nothing here and costs 2.5×.
 
-**That number was measured with the joint decoder's scalar machinery switched off**, and
-nobody knew. Per §6, every `dtype: str` field compiled `ZERO_OR_MORE`, so the
-ABSENT-relative utility and the exclusivity slot described just above — decision B of
-`JOINT_IE_DESIGN_RECORD` — **never engaged for any structure field**. Greedy's shapes were
-right anyway because it patched them at format time; the joint arm's were not. The scorer
-was taught to read both shapes (2026-09-07), which fixed the *measurement*; the cause was
-fixed at the source on 2026-09-08. **So the structure deficit has a third candidate
-explanation besides "the mechanism" and "that model": the plumbing.** Any re-reading of
-−0.0454 needs a fresh control pair on the fixed code — it changes *both* arms, since
-greedy's `decode_group` also took the list path for `dtype: str` fields.
+**The first version of that answer had structure at −0.0454, and it was the plumbing in
+§6.** With `dtype: str` compiling `ZERO_OR_MORE`, the ABSENT-relative utility and the
+exclusivity slot never engaged for any structure field, and greedy's format-time rescue
+masked the same defect on its own side. Connected: greedy 0.1208 → **0.1640**, joint
+0.0754 → **0.1582**, deficit −0.0454 → **−0.0057**. The joint arm gained nearly twice what
+greedy did, because greedy had the rescue and joint had nothing. **87% of the deficit was
+a parameter no caller passed.**
+
+A null at parity is a better negative than a loss: it cannot be explained away as a defect,
+and this one nearly was — in the other direction.
 
 ## 12. What in GLiNER2 uses this today
 
