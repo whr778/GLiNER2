@@ -5,6 +5,11 @@ lives in [`gliner2/training/metrics.py`](gliner2/training/metrics.py); the
 trainer calls it once per evaluation pass and merges the returned dict into its
 own metrics.
 
+The one exception is the last section: **TVD** compares two CORPORA rather than a
+prediction against its gold, so it has no gold and no place in the trainer. It lives in
+[`tools/data/compare_label_distributions.py`](tools/data/compare_label_distributions.py)
+and is documented here so every metric this project quotes has one definition.
+
 - [Quick start](#quick-start)
 - [What gets scored](#what-gets-scored)
 - [Strict vs relaxed](#strict-vs-relaxed)
@@ -16,6 +21,7 @@ own metrics.
 - [The classification report](#the-classification-report)
 - [Worked example](#worked-example)
 - [Driving best-checkpoint selection](#driving-best-checkpoint-selection)
+- [TVD — comparing two corpora](#tvd--comparing-two-corpora-not-two-predictions)
 - [Notes and edge cases](#notes-and-edge-cases)
 
 ---
@@ -696,6 +702,67 @@ figure suggested relations were fully recovered (+0.0003). Re-scored properly, t
 checkpoint was **-0.115** against v1 -- because v1's own number rose by 0.116 under the
 current scorer. The provisional read was reported before the matched run finished, and it
 was wrong. Wait for the matched table.
+
+## TVD — comparing two corpora, not two predictions
+
+Everything above scores a **prediction against its gold**. TVD answers a different
+question that has no gold at all: **does corpus A distribute its labels the way corpus B
+does?** It is used to ask whether generated text looks like real text
+(`tools/data/compare_label_distributions.py`), which no F1 can answer — a generator can be
+perfectly self-consistent and still put 53% of its documents in `positive` where real news
+puts 49% in `neutral`.
+
+**Definition.** For one classification task with label set `K`, let `p` and `q` be the two
+corpora's label marginals. **Total variation distance** is
+
+```
+TVD(p, q) = 0.5 * sum over k in K of |p(k) - q(k)|
+```
+
+**Range 0 to 1.** `0` = identical distributions. `1` = disjoint support (no label used by
+both). It reads directly as *the share of probability mass that would have to move to turn
+one distribution into the other*, which is why it is quotable without a scale note.
+
+**Why TVD and not KL or JS.** KL is unbounded and undefined when one side puts zero on a
+label the other uses — routine here, since a 500-document sample will miss rare labels a
+20,000-document reference has. Smoothing to avoid that inserts a free parameter into a
+descriptive statistic. TVD is bounded, symmetric, needs no smoothing, and its units are
+interpretable. JS is bounded and symmetric too but its units (bits, or a squared distance)
+are not.
+
+**Three counting rules, each of which has been got wrong at least once:**
+
+1. **Count `true_label`, the ANSWER — never `labels`, the MENU.** A record carries both:
+   the menu the annotator was offered and the answer given. Counting the menu reports the
+   sampler's near-uniform draw and reads as a healthy distribution no matter what the
+   annotator actually said. This was a real defect in this project, caught and retracted.
+2. **Report support beside every TVD.** A TVD over 12 records and one over 500 are not the
+   same measurement and must not be tabulated as if they were.
+3. **A task a record does not carry contributes nothing to that task's marginal.** A task
+   that was never offered is not evidence about its distribution.
+
+**TVD is a FORM metric and needs a correctness companion.** Matching a marginal is
+necessary, not sufficient: a corpus could reproduce the reference distribution exactly and
+assign every individual document wrongly. Read it beside the per-task top-label breakdown
+(what the mass actually sits on), and never as a quality score on its own. This is the
+standing lesson from a form gate that was scored best-over-range and rewarded
+indiscriminate firing.
+
+**Worked example.** Reference `sentiment` = {neutral .49, negative .26, positive .25};
+a generated arm = {positive .53, negative .31, neutral .16}.
+
+```
+0.5 * (|.49-.16| + |.26-.31| + |.25-.53|) = 0.5 * (0.33 + 0.05 + 0.28) = 0.33
+```
+
+A third of the probability mass sits on the wrong labels — and the top-label column names
+which ones, which is the part that identifies the cause.
+
+**Aggregating across tasks.** Report the per-task table, the count of tasks each arm wins,
+**and** the mean TVD. The win count alone discards magnitude: 7-of-12 by 0.001 each is not
+7-of-12 by 0.2. Count exact ties as ties; `min()` over equal values picks by dict order and
+manufactures a margin where there is none.
+
 
 ## References
 
