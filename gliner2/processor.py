@@ -26,6 +26,34 @@ logger = logging.getLogger(__name__)
 
 _TOKENIZE_CACHE_SIZE = 50_000
 
+_CARDINALITY_LOGGED = False
+
+
+def _log_record_cardinality_once(record_specs, field_dtypes_list) -> None:
+    """Say ONCE per process what cardinality the record fields actually compiled to.
+
+    This exists because of a specific failure, not for tidiness. A fix that made
+    `dtype: str` fields compile SCALAR was verified by tests, deployed, and measured on a
+    GPU -- and the joint arm came back byte-identical, because the schema carrier was
+    dropped one layer above and the fix never ran on that path. Nothing in the run's log
+    said whether it had executed, so its execution had to be INFERRED from the numbers it
+    was supposed to move. That is backwards: a run should carry its own evidence.
+
+    One line, first batch only, no cost afterwards.
+    """
+    global _CARDINALITY_LOGGED
+    if _CARDINALITY_LOGGED or not record_specs:
+        return
+    fields = [f for specs in record_specs for spec in specs.values() for f in spec.fields]
+    if not fields:
+        return
+    _CARDINALITY_LOGGED = True
+    scalar = sum(1 for f in fields if f.cardinality.is_scalar)
+    with_dtypes = sum(1 for d in (field_dtypes_list or []) if d)
+    print(f"[records] compiled {len(fields)} field spec(s): {scalar} scalar, "
+          f"{len(fields) - scalar} list; {with_dtypes} of {len(field_dtypes_list or [])} "
+          f"schema(s) declared field dtypes")
+
 
 # =============================================================================
 # Data Structures
@@ -531,6 +559,7 @@ class SchemaTransformer:
         batch.query_layouts = layouts
         batch.targets = targets
         batch.record_specs = record_specs
+        _log_record_cardinality_once(record_specs, field_dtypes_list)
         return batch
 
     def transform_and_format(
