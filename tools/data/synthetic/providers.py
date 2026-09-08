@@ -73,11 +73,14 @@ class LLMProvider:
     def complete(self, system: str, user: str) -> str:
         raise NotImplementedError
 
-    def complete_batch(self, items):
+    def complete_batch(self, items, id_path=None):
         """Batch variant: items is a list of (custom_id, system, user).
 
         Returns {custom_id: raw_text} for the requests that succeeded. Providers
-        without a batch API don't override this.
+        without a batch API don't override this. ``id_path`` is part of the
+        interface rather than one provider's extra: the caller cannot know which
+        backend it holds, so a signature that only sometimes accepts the argument
+        turns a durability guarantee into a TypeError on the mock.
         """
         raise NotImplementedError(f"{type(self).__name__} has no batch mode")
 
@@ -285,7 +288,7 @@ class MockProvider(LLMProvider):
     no API access and no spend.
     """
 
-    def complete_batch(self, items):
+    def complete_batch(self, items, id_path=None):
         """Deterministic batch stand-in for dry runs -- no API, no spend."""
         return {cid: self.complete(system, user) for cid, system, user in items}
 

@@ -261,7 +261,13 @@ def main() -> int:
             meta = {f"doc-{i}": (t, b, l, n) for i, (_, _, t, b, l, n) in enumerate(jobs)}
             items = [(f"doc-{i}", system, user)
                      for i, (system, user, _, _, _, _) in enumerate(jobs)]
-            replies = provider.complete_batch(items)
+            # Persist the batch id BEFORE polling. complete_batch has taken an
+            # id_path since it was written and nothing ever passed one, so the id
+            # of a paid batch lived only in stdout: a poller killed before its
+            # output is read orphans the batch, and resubmitting pays twice.
+            # `fetch_batch(id)` recovers it -- but only if the id survived.
+            replies = provider.complete_batch(
+                items, id_path=args.out.with_suffix(".batch_id"))
             failed = len(items) - len(replies)  # requests that errored/expired
             for cid, raw in replies.items():
                 text_override, base_output, labels, index = meta[cid]
