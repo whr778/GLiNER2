@@ -42,7 +42,11 @@ mkdir -p "$(dirname "$LOG")"
 # An identity-linked key must name the workspace it acts in or the API answers 400.
 export ANTHROPIC_WORKSPACE_ID=${ANTHROPIC_WORKSPACE_ID:-wrkspc_01LerUKAa1tvAocoerADEC7j}
 
-GEN="uv run python tools/data/synthetic/generate.py --config default.yaml
+# -u is not cosmetic here. Everything below is piped into `tee`, so Python block-buffers
+# stdout, and the batch path then prints NOTHING for the hour it spends polling -- a job
+# that is working reads as a job that is hung, and the only way to tell them apart is to
+# query the API by hand. Unbuffered, the poll line lands every 30s.
+GEN="uv run python -u tools/data/synthetic/generate.py --config default.yaml
      --provider anthropic --model $MODEL ${BATCH---batch} $EXTRA"
 # Publish the moment a stage lands, not at the end. This rerun exists because the last
 # copy of a finished corpus lived on one disk; a stage unpublished when the session ends
