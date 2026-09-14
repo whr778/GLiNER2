@@ -4,9 +4,10 @@ Completed work is removed rather than struck through; history lives in
 `PROJECT_HISTORY.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.
 
-**State at 2026-08-28 close. No GPU running, nothing billing.** The phase that just closed
-produced no new model: every result came from measuring shipped components at more than one
-operating point. See `PROJECT_HISTORY.md` Phase 25.
+**State at 2026-09-08 close. No GPU running, nothing billing.** The phase that just closed
+produced no new model either: the programme's central decode question was answered by
+repairing two instruments and re-measuring, and a 500-document generation A/B was rebuilt
+after its only copy was lost with a disk. See `PROJECT_HISTORY.md` Phase 32.
 
 ### Open after 2026-09-08 -- the joint decode path
 

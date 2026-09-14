@@ -4,7 +4,7 @@
 
 ¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
-*Programme map, revision of 2026-08-28. States the unifying thesis, the three papers it
+*Programme map, revision of 2026-09-08. States the unifying thesis, the three papers it
 decomposes into, what is established, and what is still open. Numbers quoted here are
 summaries; each one's primary record is the working paper cited beside it.*
 
@@ -174,11 +174,20 @@ whether the fix had executed** — so execution was inferred from the numbers it
 move. Runs now print `[records] compiled N field spec(s): X scalar ...` before scoring, and
 the third box was gated on that line rather than on hope.
 
-**Structure supervision is not reaching the record head from most corpora.** The
-cc_news and synthetic converters emit structures without the metadata the training path
-needs, so records that appear to supply structure supervision supply none. This is a
-data-design decision rather than a defect to patch, and it gates any future arm claiming
-structure capability from those corpora.
+**Structure supervision now reaches the record head from every corpus on disk — this
+entry is a CORRECTION of the one it replaces.** *(2026-09-08.)* A structure whose schema
+declares no `record_metadata` cannot be decoded by the record head, and the absence is
+valid and silent: no error, no warning, and the rows still count as supervision in every
+composition print. 60,948 rows across 13 models were in that state. The corpora were
+repaired in place, and the *producer* was fixed separately — `synthetic/validate.py` had
+gone on emitting structures without metadata, so every newly generated corpus reproduced
+the defect. **Audited across all of `data/`: zero corpora whose structures lack
+metadata.** `audit_corpora.py` carries a `STRUCT` check to keep it that way.
+
+What remains is one level deeper and is a *decision*, not a defect: corpora declare only
+mode and anchor, never per-field **cardinality**, so a `dtype: str` field is still trained
+with list BCE rather than the scalar softmax over candidates plus `ABSENT`. Changing that
+moves every future model's structure numbers and needs an A/B first. *(`TODO.md`.)*
 
 ## 4. The three papers
 
@@ -194,8 +203,11 @@ half, which is the honest statement of where it stands. Design and results:
 
 **Paper 2 — Traditional events (combinatorial).** Global decode wired to the boundary
 head, measured on both RAMS (events) and Re-DocRED (relations), then structured joint
-training. The base-volume × architecture curve is complete on repaired data; the
-decode arm is not. Design and results: `JOINT_IE_SCALING.md`.
+training. The base-volume × architecture curve is complete on repaired data, **and as of
+2026-09-08 so is the decode arm** — its result is a null at parity (§3), which is the
+honest negative the paper reports rather than the win it was built to find. Phase B (beam
+in the loss) remains unrun and is the only untouched version of the thesis. Design and
+results: `JOINT_IE_SCALING.md`.
 
 Papers 1 and 2 share the framing in §1 and cross-cite; a later extended version may
 merge them into the single global-inference statement.

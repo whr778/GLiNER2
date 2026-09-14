@@ -52,6 +52,11 @@ GEN="uv run python -u tools/data/synthetic/generate.py --config default.yaml
 # copy of a finished corpus lived on one disk; a stage unpublished when the session ends
 # is a stage paid for twice. push_corpus.py verifies the Hub's file list afterwards.
 PUB="uv run python tools/data/push_corpus.py --repo $HFREPO"
+# A DRY RUN MUST NEVER PUBLISH. The mock provider emits one fixed document ("Acme Corp
+# acquired Beta Inc..."), and a rehearsal of this script put nine files of it into the
+# corpus repo beside the real corpora, where nothing distinguishes them at training time.
+# Deleted 2026-09-08; this is why it cannot happen again.
+case "$EXTRA" in *--dry-run*) PUB="echo [pub] dry run -- not publishing"; esac
 
 {
 echo "=== ARM A: one call, $N docs, $(date -u) ==="
