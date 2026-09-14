@@ -383,6 +383,73 @@ reproduce a pre-gate run unchanged.
 
 ---
 
+### 3d-2. Structures: two fields decide whether they train at all
+
+A structure that looks like supervision and supplies none is this project's most expensive
+silent failure — 60,948 rows across 13 models — so both checks below run before a mix is
+trusted.
+
+**`record_metadata` is REQUIRED and its absence is silent.** The boundary record head
+decodes a structure only when `compile_record_specs` receives
+`{name: {"mode": ..., "anchor": ...}}`. Without it the call returns `{}`: no spec, nothing
+decodes, no error from the loader, none from the trainer, and the rows still count as
+supervision in every composition print. The `structure` metric then reads exactly 0.0000
+while looking like a model problem.
+
+```bash
+# the standing check -- STRUCT flags any structure with no record_metadata
+uv run python tools/data/audit_corpora.py
+
+# repair a corpus in place (anchor from the INTERSECTION of each structure's instances)
+uv run python tools/data/stamp_record_metadata.py data/<corpus> --dry-run
+```
+
+Producers must stamp at the source: `tools/data/synthetic/validate.py` does,
+`convert_text2json`, `annotate_casualty` and `annotate_multitask` do. A converter that
+emits `json_structures` without it reproduces the defect in every corpus it writes.
+
+**`dtype` decides CARDINALITY, which reaches further than output shape.** `dtype: str`
+compiles `OPTIONAL_ONE` (scalar), anything else `ZERO_OR_MORE` (list), and an anchor is
+always `REQUIRED_ONE`. That one flag selects the training loss (`_scalar_field_nll`, a
+softmax over candidates plus `ABSENT`, against `_list_field_bce`), the occurrence policy,
+the joint beam's utility and its exclusivity slot, and the emitted shape. A run prints what
+it actually compiled, once:
+
+```
+[records] compiled 6 field spec(s): 6 scalar, 0 list; 2 of 2 schema(s) declared field dtypes
+```
+
+**Read that line before reading any structure metric.** It exists because a fix to this
+exact path was tested, deployed and measured on a GPU while never executing — the schema
+carrier was dropped a layer above — and its execution had to be inferred from the numbers
+it was supposed to move. *(`BOUNDARY_ARCHITECTURE.md` §6, §13 item 10.)*
+
+**Corpora declare mode and anchor, never per-field cardinality**, so on the training path a
+`dtype: str` field is still supervised as a list. Changing that moves every model's
+structure numbers and is a decision with an A/B in front of it, not a patch. *(`TODO.md`.)*
+
+### 3d-3. The annotation contract, when a model does the labelling
+
+`tools/data/annotation/GUIDELINES.md` **is** the prompt, not a description of it —
+`annotation/rules("json_only", "verbatim", ...)` injects the bytes between its markers
+verbatim, so reviewing that file is reviewing what the annotator was sent. A rule earns its
+place there by being needed by two or more annotators, or by guarding a failure actually
+observed.
+
+**`uncertain_types` and `uncertain_labels` are FIELDS, never labels, and that distinction is
+the whole design.** An annotator that cannot record doubt must resolve it, and all three
+ways of resolving it inject *systematic* bias: a catch-all builds a sink with no semantic
+centre, a guess is deterministic (median type purity on repeated surfaces is 100% — an LLM
+applies the same prior every time, it does not flip a coin), and an omission is not neutral
+because `mint_entity_negatives` converts roughly one absent type in nine into an explicit
+"not present". Naming a type as uncertain suppresses that false negative and is then
+**dropped** — an abstain that is routed, not trained. A trained `Uncertain` class would
+rebuild the sink the field exists to avoid.
+
+Both generation paths ask for them in the same words, enforced by a test: the block lived
+only in the annotate prompt for a day, which silently made any one-call-vs-two-stage
+comparison a two-treatment experiment. *(`LABEL_SPACE_COLLAPSE.md`.)*
+
 ## 3e. One label space, shared by a base and everything warm-started from it
 
 A label is an INPUT to GLiNER2 at inference, so two spellings of one concept are two

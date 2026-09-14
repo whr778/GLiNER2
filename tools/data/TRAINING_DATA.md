@@ -368,6 +368,47 @@ structures (0.08/doc) are sparse on real news, where the synthetic corpora guara
 them by construction; entity annotations are dense (~222k per 10k documents, ~5%
 dropped by the verbatim check).*
 
+**REPAIRED 2026-09-07/08, and the Hub copy is NOT yet the repaired one.** Two passes ran
+over this corpus and one is not published:
+
+1. **Contradicted seeded negatives removed** (2,336 here, 564 in `synthetic_haiku45_5k`).
+   `mint_entity_negatives` seeds 12 absent types per record with `[]`, asserting "the
+   annotator saw this type and declined to use it". `repair_contradicted_negatives.py`
+   audits that assertion where it is checkable — a record claiming type T is absent while
+   containing a surface the corpus labels T elsewhere — and drops only those. The
+   threshold is proportional (`--min-share 0.30`), not a raw count: the corpus calls "26"
+   an ordinal twice in 164 uses, and auditing on counts alone flagged 3.8% of all
+   negatives, overwhelmingly legitimate.
+2. **`record_metadata` stamped**, so its 1,033 structures can decode at all (`STRUCT`
+   in `audit_corpora.py`; see `TRAINING.md` §3d-2).
+
+**This corpus does NOT carry `uncertain_types`** — it was annotated before the field
+existed, and the doubt cannot be recovered from an output that records only what was
+chosen. Nothing in `data/` carries it yet; the field fires on data annotated after
+2026-09-07.
+
+*Local files are the repaired ones; `.prerepair` backups sit beside them. The Hub copy is
+byte-identical to those backups — the push is blocked on private storage, not skipped.*
+
+### lg_onecall / lg_twostage — the generation A/B — `whr778/gliner2-generation-ab`
+500 documents per arm, `claude-haiku-4-5` in batch mode (~$9 for both), testing whether
+**separating writing from annotating** produces text that distributes its labels more like
+real news. Arm A writes and annotates in ONE call, so the model picks labels and then
+writes text satisfying them. Arm B writes with the ontology never shown to the writer
+(`--write-only`), then annotates that text cold (`--annotate-from`).
+
+**Two-stage wins 8 of 12 classification tasks**, mean TVD 0.2661 against 0.3032, scored by
+`tools/data/compare_label_distributions.py` against `cc_news_haiku45`. `sentiment` shows
+the mechanism directly: one-call comes back *positive 53%* — a generator writing upbeat
+text to fit labels it chose — against two-stage's *neutral 62%* and real news's *neutral
+49%* (TVD 0.3296 → 0.1319). See `METRICS.md` for TVD.
+
+*A FRESH DRAW, not a restoration: an earlier pair was lost with a disk, LLM output is not
+reproducible from a seed, and both arms were regenerated together — which is what keeps the
+A/B internally valid. Not comparable to the 160-document pilot that preceded it. Both arms
+carry `record_metadata` on every structure (137 and 100), verified; neither is trained on
+yet.*
+
 ### biomed_NER — `knowledgator/biomed_NER`
 Domain-specific biomedical NER with a fixed 33-class schema (CHEMICALS, DISORDER,
 GENE AND GENE PRODUCTS, …).
