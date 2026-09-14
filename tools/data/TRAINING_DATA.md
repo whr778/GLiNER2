@@ -368,8 +368,8 @@ structures (0.08/doc) are sparse on real news, where the synthetic corpora guara
 them by construction; entity annotations are dense (~222k per 10k documents, ~5%
 dropped by the verbatim check).*
 
-**REPAIRED 2026-09-07/08, and the Hub copy is NOT yet the repaired one.** Two passes ran
-over this corpus and one is not published:
+**REPAIRED 2026-09-07/08, and published 2026-09-08.** Two passes ran over this corpus,
+both label-level, so the record counts above are unchanged:
 
 1. **Contradicted seeded negatives removed** (2,336 here, 564 in `synthetic_haiku45_5k`).
    `mint_entity_negatives` seeds 12 absent types per record with `[]`, asserting "the
@@ -387,8 +387,10 @@ existed, and the doubt cannot be recovered from an output that records only what
 chosen. Nothing in `data/` carries it yet; the field fires on data annotated after
 2026-09-07.
 
-*Local files are the repaired ones; `.prerepair` backups sit beside them. The Hub copy is
-byte-identical to those backups — the push is blocked on private storage, not skipped.*
+*Local and Hub now agree byte-for-byte on all six files, and all six differ from the
+`.prerepair` backups sitting beside them — verified by size against both. The repair history
+is appended to each dataset card on the Hub, so it travels with the data rather than living
+only here.*
 
 ### lg_onecall / lg_twostage — the generation A/B — `whr778/gliner2-generation-ab`
 500 documents per arm, `claude-haiku-4-5` in batch mode (~$9 for both), testing whether
