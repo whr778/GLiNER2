@@ -12,10 +12,13 @@
 # `fields: {f: {cardinality}}` stamped from the corpus's OWN train usage. Same base, same
 # hyperparameters, same blind test.
 #
-# READ THE GATE FIRST. Each arm prints `[records] compiled N field spec(s): X scalar ...`
-# before scoring. The control must say 0 scalar and the treatment must say non-zero, or
-# the arms are not the arms and the run measured nothing -- which has happened once
-# already on exactly this mechanism (PROJECT_HISTORY Phase 32).
+# READ THE GATE FIRST, AND READ IT CORRECTLY. Each arm prints
+# `[records] compiled N field spec(s): X scalar, Y list ...` before scoring. The first
+# version of this note said "the control must say 0 scalar" and that is WRONG: an ANCHOR
+# is REQUIRED_ONE and therefore scalar in both arms, so the control legitimately reads
+# `6 scalar, 15 list`. The gate is the RATIO BETWEEN ARMS -- control scalar should equal
+# its anchor count, treatment should be markedly higher. A gate that fires on a healthy
+# run is worse than no gate, which is why this is written down rather than remembered.
 set -uo pipefail
 cd ~/gliner2
 export PATH="$HOME/.local/bin:$PATH"

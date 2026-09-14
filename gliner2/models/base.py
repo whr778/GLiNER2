@@ -36,6 +36,33 @@ logger = logging.getLogger(__name__)
 _HUB_FLASH_ATTN_2 = "kernels-community/flash-attn2"
 
 
+def _register_hub_flash_attn_mask() -> None:
+    """Teach the MASK registry the Hub kernel's repo id. Idempotent.
+
+    THERE ARE TWO REGISTRIES AND THE KERNEL ONLY LANDS IN ONE. Loading FA2 from the Hub
+    sets ``config._attn_implementation`` to the repo id, and transformers registers the
+    kernel in ``ALL_ATTENTION_FUNCTIONS`` under that key -- but ``masking_utils`` keys
+    ``ALL_MASK_ATTENTION_FUNCTIONS`` by the six built-in names only. Every
+    ``create_*_mask`` then does ``ALL_MASK_ATTENTION_FUNCTIONS[config._attn_implementation]``
+    and raises ``KeyError('kernels-community/flash-attn2')``.
+
+    WHY IT LOOKED LIKE A GPU PROBLEM: inference on this architecture never reaches a
+    ``create_*_mask`` call, so the identical box, kernels 0.12.3 and transformers 5.6.2
+    run eval happily and then die on the first TRAINING forward. Measured 2026-09-14 on an
+    A100: three decode-arm runs passed, the first training run aborted at step 0 with the
+    GPU at 0%. The version-drift hypothesis was ruled out by the lockfile, not assumed.
+
+    The repo id is the same FlashAttention 2, so it takes the same mask builder.
+    """
+    from transformers.masking_utils import (
+        ALL_MASK_ATTENTION_FUNCTIONS,
+        flash_attention_mask,
+    )
+
+    if _HUB_FLASH_ATTN_2 not in ALL_MASK_ATTENTION_FUNCTIONS._global_mapping:
+        ALL_MASK_ATTENTION_FUNCTIONS.register(_HUB_FLASH_ATTN_2, flash_attention_mask)
+
+
 def resolve_device(map_location: Optional[str] = None) -> str:
     """Resolve where to place a model, defaulting to the best available device.
 
@@ -333,6 +360,10 @@ class BaseExtractorModel(PreTrainedModel):
         # just a load -- checking construction alone is what missed this.
         if requested in ("flash_attention_2", _HUB_FLASH_ATTN_2) and torch.cuda.is_available():
             candidates.append(_HUB_FLASH_ATTN_2)
+            # Register the repo id in the MASK registry before anything can load under it
+            # -- otherwise the load succeeds and the first TRAINING forward raises
+            # KeyError(repo id). See _register_hub_flash_attn_mask.
+            _register_hub_flash_attn_mask()
         if requested:
             candidates += [c for c in ("sdpa", "eager") if c not in candidates]
 
