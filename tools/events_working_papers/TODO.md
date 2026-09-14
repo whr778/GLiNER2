@@ -34,18 +34,26 @@ never-connected `field_dtypes_list`. Deficit -0.0454 -> -0.0057, greedy +0.0432,
 
 ### Open after 2026-08-28
 
-- **Which gate ships is now an open decision, and the current default is not the leader.**
-  Swept on 1,000 annotated messages, `fastino/gliner2-base-v1` leads on AUC (0.9635) and on
-  recall at every operating point; the shipped `casualty-docee` is 0.9241 and the trained
-  `gate2-mmbert-v2` is 0.9472. The switch away from fastino (b607fae) was decided on false
-  positives at one threshold with no recall column. **Next test:** re-run the pipeline's
-  end-to-end event metrics under each gate at its own swept threshold, rather than choosing
-  on the gate benchmark alone — the benchmark's recall label is indicative, and what matters
-  is pooled RMSE in deaths on the three events.
-- **`--gate-threshold` still defaults to 0.5 in `run_pipeline.py`.** Every recorded gate
-  number predates the sweep. The trained gate needs ~0.998 on its own distribution; the
-  right per-model default is whatever its validation split chooses, and no default has been
-  changed yet. **Next test:** the same end-to-end run as above decides it.
+- **CLOSED 2026-09-08 — the gate questions below were answered by two commits and this
+  entry was never updated.** Verified against the code, which is the authority:
+  `run_pipeline.py --gate-model` defaults to **`whr778/gliner2-gate2-mmbert-tr`** (changed
+  2026-09-04, coupled with adding `tr` to `language_gate.SUPPORTED` — neither change alone
+  makes Turkish work), and `--gate-threshold` defaults to **0.9** (chosen 2026-08-28 by
+  `gate_threshold_sweep.py`: 0.9 is the tightest cut holding full stream coverage; 0.998
+  only *appears* better because coverage collapses to 2 of 6 streams).
+
+  **And `fastino/gliner2-base-v1` was never a candidate for the pipeline it was being
+  compared in.** Its 0.9635 AUC is English-only: it is DeBERTa-v3, vocab 128,011, and it
+  false-admits **199 of 200** Turkish negatives. The sweep that showed it leading measured
+  English, on a pipeline that has been trilingual since 2026-09-04. A model that cannot
+  read two of the three languages does not win a gate benchmark, whatever its AUC on the
+  third.
+
+  **The transferable part is the reason this entry survived two commits that killed it:**
+  a resume list is only as good as the last person who checked it against the code, and
+  nothing here forced that check. The stale entry was quoted as a live recommendation on
+  2026-09-08 before being caught.
+
 - **Turkish is affordable but not bought.** The pilot ($0.72) found 43.3% positives in 989
   articles; the remaining cue-bearing region is ~2,100 more positives for ~$2.84, plus one
   ~$2 training run. Two caveats stand: the source is one outlet in one year, and its
