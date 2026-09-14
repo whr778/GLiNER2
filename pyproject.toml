@@ -39,14 +39,30 @@ dependencies = [
     # not just speed: sdpa+bf16 on mmBERT goes non-finite (measured, 1x H100).
     # kernels is pinned to TRANSFORMERS, not to itself: the compatible range moves with
     # every transformers release. transformers 5.6 needs <0.13 (LayerRepository takes no
-    # revision); 5.13 needs >=0.15.2 and REJECTS 0.12. The two ranges are disjoint, so
-    # transformers must be pinned alongside it or the pair silently drifts apart.
+    # revision); 5.13+ needs >=0.15.2 and REJECTS 0.12. The two ranges are disjoint, so
+    # they are pinned TOGETHER, here, in the BASE dependencies -- see the note on
+    # transformers below for why the pin cannot live in an extra.
     #
     # It drifted on 2026-08-10 and cost a GPU run: a fresh box resolved transformers to
     # 5.13 while this pin still said <0.13, kernels never hooked, the encoder fell back to
     # sdpa, and bf16 ModernBERT went non-finite at ~step 50 after running 11x slow
     # (4.6 vs 51.4 samples/s). The only warning was one RuntimeWarning in the log.
-    "kernels>=0.12,<0.13",
+    #
+    # BUMPED 2026-09-14, and this one was FORCED rather than chosen. The org announced:
+    # "Starting from September 13, 2026, we will be removing the 'model' type repositories
+    # of kernels". On 0.12 every fetch of kernels-community/flash-attn2 then 404s -- and
+    # it 404s to a VALID TOKEN, under every standard repo_type, because the repo is now a
+    # new `kernel` type that only kernels>=0.15.2 understands. Measured: boundary CUDA
+    # TRAINING aborted at step 0 on 14 Sep having run fine on 8 Sep, with no code change
+    # between. On 0.17 the same repo resolves and publishes
+    # `torch211-cxx11-cu128-x86_64-linux` -- exactly the Lambda stack.
+    "kernels>=0.15.2,<0.18",
+    # PINNED HERE, IN THE BASE DEPS, NOT IN THE `local` EXTRA. It lived in the extra until
+    # 2026-09-14, and the GPU boxes install with `uv sync --no-install-project`, which does
+    # not take extras -- so the one dependency the comment above calls load-bearing was
+    # unpinned on exactly the machines it was written to protect. uv.lock held them
+    # together in practice; nothing but the lockfile did.
+    "transformers>=5.13,<5.18",
     "langcodes[data]",
     "lumi-language-id-2",
     # Mac-only: Metal FlashAttention for MPS. Marker-guarded because this package
@@ -61,6 +77,17 @@ dependencies = [
     "requests>=2.28",
     "safetensors",
     "stopwordsiso>=0.7.0",
+    # transformers >=5.16 needs these to build the DeBERTa-v2/v3 slow tokenizer, and it
+    # reports their absence as a BARE ImportError WITH AN EMPTY MESSAGE -- three real-
+    # encoder e2e tests failed saying nothing at all until the import was traced by hand.
+    # Not optional for us: every deberta-v3 checkpoint needs that tokenizer.
+    #
+    # tiktoken is named in the same backend check and is a TRAP: installing it alone makes
+    # the converter take the tiktoken path and try to parse `spm.model` as a tiktoken
+    # vocabulary ("Error parsing line b'\x0e'"), which reads like corruption rather than a
+    # missing package. sentencepiece is the one that matters.
+    "sentencepiece>=0.2",
+    "protobuf",
     "tqdm",
     "urllib3>=1.26",
 ]
@@ -70,11 +97,9 @@ dynamic = ["version"]
 [project.optional-dependencies]
 local = [
     "torch",
-    # Pinned, and pinned TOGETHER with kernels above. Leaving this open is what broke
-    # the 2026-08-10 GPU run: a fresh box resolved 5.13 while the kernels pin still
-    # matched 5.6, so FA2 never hooked and bf16 ModernBERT went non-finite. Moving this
-    # range REQUIRES moving the kernels range in the same commit.
-    "transformers>=5.6,<5.7",
+    # The transformers pin moved to the BASE dependencies on 2026-09-14 so it reaches the
+    # GPU boxes, which install without extras. Kept out of here deliberately: two pins for
+    # one package is how they drift apart.
     "peft",
     "stopwordsiso",
     "langcodes",
