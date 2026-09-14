@@ -166,3 +166,46 @@ def test_anchor_is_common_to_every_instance_not_just_the_first():
                 f"anchor {anchor!r} missing from an instance -- that instance cannot decode"
     else:
         assert stats["structures_no_anchor"], "no anchor found must be COUNTED, not silent"
+
+
+def test_corpus_declared_cardinality_reaches_the_compiled_spec():
+    """A corpus may declare per-field cardinality, and it must survive to the record spec.
+
+    Cardinality selects the record head's TRAINING LOSS -- scalar fields get
+    `_scalar_field_nll` (a softmax over candidates plus ABSENT), list fields get
+    `_list_field_bce`. Corpora declare only mode and anchor today, so every non-anchor
+    field compiles ZERO_OR_MORE while 99.8% of structure-field occurrences in `data/` hold
+    exactly one filler. `tools/data/stamp_field_cardinality.py` builds the treatment arm.
+
+    This is the pre-flight for that A/B, and it exists because of `field_dtypes_list`: a
+    parameter can be declared, threaded and consumed correctly while NOTHING PASSES IT, and
+    the resulting run measures nothing while looking plausible.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tests.models.boundary.test_joint_records import _model_with_mode
+
+    model = _model_with_mode("greedy")
+    base = {"json_structures": [{"casualty_report": {"location": "", "dead": "",
+                                                     "injured": ""}}]}
+    control = {**base, "record_metadata": {
+        "casualty_report": {"mode": "natural", "anchor": "location"}}}
+    treatment = {**base, "record_metadata": {
+        "casualty_report": {"mode": "natural", "anchor": "location",
+                            "fields": {"dead": {"cardinality": "optional_one"},
+                                       "injured": {"cardinality": "optional_one"}}}}}
+
+    def compiled(schema):
+        batch = model.processor.collate_fn_inference(
+            [("12 dead and 40 injured in Izmir", schema)], architecture="boundary")
+        return {f.name: f.cardinality.value
+                for spec in batch.record_specs[0].values() for f in spec.fields}
+
+    c, t = compiled(control), compiled(treatment)
+    assert c["dead"] == "zero_or_more", "control must keep today's default"
+    assert t["dead"] == "optional_one", "a declared cardinality must win"
+    assert t["injured"] == "optional_one"
+    assert c["location"] == t["location"] == "required_one", \
+        "the ANCHOR is structural and must never be demoted by a declaration"
