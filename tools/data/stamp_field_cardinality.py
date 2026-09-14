@@ -77,8 +77,18 @@ def stamp(path: Path, cards: dict, apply: bool) -> Counter:
                 if not isinstance(cfg, dict) or name not in cards:
                     continue
                 anchor = cfg.get("anchor")
+                # ONLY the fields THIS record uses. The corpus-wide map can be enormous --
+                # text2json carries one structure name with 7,250 distinct field names,
+                # because it invents fields per document -- and stamping all of them onto
+                # every record turned a 35MB corpus into 3.8GB, a 108x blow-up, before
+                # this line existed. A declaration for a field a record does not contain
+                # is also meaningless: no query is built for it.
+                used = {f for inst in out.get("json_structures") or []
+                        if isinstance(inst, dict)
+                        for n2, body in inst.items() if n2 == name and isinstance(body, dict)
+                        for f in body}
                 fields = {f: {"cardinality": c} for f, c in cards[name].items()
-                          if f != anchor}
+                          if f != anchor and f in used}
                 if not fields:
                     continue
                 cfg["fields"] = fields

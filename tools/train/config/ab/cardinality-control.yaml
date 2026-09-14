@@ -1,0 +1,56 @@
+# CARDINALITY A/B -- CONTROL. Today's regime: corpora declare mode and anchor only.
+#
+# THE QUESTION. Cardinality selects the record head's training loss. A SCALAR field is
+# supervised with `_scalar_field_nll` -- a softmax over candidates plus an explicit ABSENT,
+# which says "exactly one of these, or none" -- and a LIST field with `_list_field_bce`,
+# which says "each of these independently". Corpora declare no per-field cardinality, so
+# `_default_cardinality` sees no dtype and returns ZERO_OR_MORE for every non-anchor field.
+#
+# MEASURED ACROSS ALL OF data/: 99.8% of structure-field occurrences hold exactly ONE
+# filler, and only 1.9% of distinct (structure, field) pairs ever hold more than one. So
+# the current regime trains almost every structure field as multi-label while its own data
+# says it is single-valued. This arm is that regime, unchanged.
+#
+# CORPUS CHOICE IS DELIBERATE. `casualty_loc_split` carries ONE structure type with FOUR
+# clean fields, all observed single-filler, and has all three splits. text2json was tried
+# first and rejected: it carries one structure name with 7,250 field names invented per
+# document -- the exact "annotator invented labels per document" pathology CLAUDE.md warns
+# about -- so a result there would not generalise.
+#
+# The base has NOT seen this corpus: eb16-rebuild-tr trains on 13 corpora and
+# casualty_loc_split is not among them, so the blind test is genuinely blind.
+model:
+  pretrained: whr778/gliner2-eb16-rebuild-tr
+  boundary_head:
+    enable_relations: true   # the base trained these; dropping them would forget them
+    enable_records: true
+training:
+  output_dir: ./out/cardinality-control
+  experiment_name: cardinality_control
+  data_parallel: false
+  num_epochs: 3
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine
+  bf16: true                 # fp16 crashed this workload at 79% on 2026-08-17
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_structure_strict_micro_f1
+
+eval:
+  batch_size: 8
+  threshold: 0.5
+  threshold_sweep: true
+  eval_by_language: false
+
+# Same unified label space as the base, or the warm start is against a vocabulary it
+# never learned.
+labels_file: labels/unified.yaml
+
+data:
+  corpora:
+  - data/casualty_loc_split
