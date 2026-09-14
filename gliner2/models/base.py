@@ -46,11 +46,17 @@ def _register_hub_flash_attn_mask() -> None:
     ``create_*_mask`` then does ``ALL_MASK_ATTENTION_FUNCTIONS[config._attn_implementation]``
     and raises ``KeyError('kernels-community/flash-attn2')``.
 
-    WHY IT LOOKED LIKE A GPU PROBLEM: inference on this architecture never reaches a
-    ``create_*_mask`` call, so the identical box, kernels 0.12.3 and transformers 5.6.2
-    run eval happily and then die on the first TRAINING forward. Measured 2026-09-14 on an
-    A100: three decode-arm runs passed, the first training run aborted at step 0 with the
-    GPU at 0%. The version-drift hypothesis was ruled out by the lockfile, not assumed.
+    THIS IS A LATENT GAP, NOT THE CAUSE OF THE 2026-09-14 TRAINING ABORT. I registered it
+    believing it was, and I was wrong: that traceback names ``ALL_ATTENTION_FUNCTIONS`` at
+    ``modeling_modernbert.py:293``, a different registry. The real cause was external --
+    ``kernels-community/flash-attn2`` began returning 404 to a valid token, so the kernel
+    could not be fetched at all. Kept because the gap is real: if the Hub kernel ever does
+    load, every ``create_*_mask`` would raise on the repo id. Registering it costs a dict
+    insert.
+
+    The lesson is the misread, not the gap: "KeyError from a registry" matched a registry
+    I had just been reading, and I did not check which one the traceback named. That cost
+    a box launch.
 
     The repo id is the same FlashAttention 2, so it takes the same mask builder.
     """
