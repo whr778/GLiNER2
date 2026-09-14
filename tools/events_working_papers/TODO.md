@@ -4,6 +4,11 @@ Completed work is removed rather than struck through; history lives in
 `PROJECT_HISTORY.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.
 
+**Every claim below was re-checked against the code on 2026-09-08**, after two entries
+were found stale — one of them quoted back as a live recommendation. Verified still true:
+four converters split row-wise (0 `SplitWriter` in `docee`/`docfee`/`cmnee`/`mendeley_ed`).
+Corrected: the gate entry, the structures-are-never-scored entry, and one date.
+
 **State at 2026-09-08 close. No GPU running, nothing billing.** The phase that just closed
 produced no new model either: the programme's central decode question was answered by
 repairing two instruments and re-measuring, and a 500-document generation A/B was rebuilt
@@ -110,11 +115,17 @@ delta is not a contamination estimate because the test was also recomposed.
 - **Four converters still split row-wise** (`docee`, `docfee`, `cmnee`, `mendeley_ed`) —
   no `SplitWriter`. 21 residual contaminated documents, gate-removed each run, unfixed
   at source.
-- **`data/scaling_joint/` val files are frozen from 8 Aug**, pre-fix. Rebuilding also
-  rebuilds the j10k/j40k/j100k slices the scaling curve rests on — deferred.
-- **Structures are never scored by the blind test.** `_schema_from_gold` builds no schema
-  for `json_structures`; structure-only records are skipped — 35.1% of `mix_natural`'s
-  val, 97.3% of the reframed text2json's. Use `probe_records.py`.
+- **`data/scaling_joint/` val files are frozen from 18 Aug** (checked on disk; this entry
+  said 8 Aug), pre-dating later split fixes. Rebuilding also rebuilds the j10k/j40k/j100k
+  slices the scaling curve rests on — deferred. Still true: no `SplitWriter`, so they carry
+  the row-wise draw.
+- ~~**Structures are never scored by the blind test.**~~ **FALSE SINCE 2026-08-17** and
+  left standing for three weeks. `_schema_from_gold` gained a `json_structures` branch in
+  `fb456e4` ("eval: score json_structures"), so a structure-only record now builds a real
+  schema instead of an empty one and is scored rather than skipped. Today's decode-arms
+  run reports `structure` strict F1 over 797 structure records on the 18,786-record blind
+  test — the entry was refuted by the project's own headline measurement while still being
+  quoted. `probe_records.py` remains useful for per-field detail, not as a substitute.
 - **The wider contaminated corpora are unregenerated**: gliclass_logic 38%,
   knowledgator_gliner 27%, klue_re 17%, finer_ord 14%, MasakhaNER 12-14%, nuner_full,
   pubmed_abstracts_ner. Not in a live config, so not blocking.
