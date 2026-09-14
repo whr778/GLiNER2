@@ -32,7 +32,14 @@ def main() -> int:
     sent = []
     for base in args.bases:
         p = Path(base)
-        files = sorted(p.parent.glob(p.name + ".*"))
+        # ONLY the three split files. A `base.*` glob also matches `.prerepair`, `.bak`
+        # and `.batch_id` siblings -- for cc_news_haiku45 that is 190MB of PRE-REPAIR
+        # data uploaded beside the repaired corpus, where nothing at training time
+        # distinguishes them. The same shape (a rehearsal's mock output published to the
+        # corpus repo) was cleaned out of gliner2-generation-ab on 2026-09-08; this is
+        # that defect caught before it fired, at twenty times the size.
+        files = [f for f in (p.with_name(f"{p.name}.{s}.jsonl")
+                             for s in ("train", "val", "test")) if f.is_file()]
         if not files:
             raise SystemExit(f"nothing to push for {base}")
         for f in files:
