@@ -768,6 +768,16 @@ datasets:
     source_url: null
     language: [en]
     description: "Locally generated casualty_report structure corpus for the EKF/MHT streaming line. Built by datasets/disaster_streams/build_finetune_corpus.py from Claude Sonnet 5 realizations of synthetic disaster streams; each report snippet becomes one instance whose roles carry the ground-truth figure verbatim as it appears in the text (comma form preserved), training the extractor to bind numbers to roles."
+  casualty_loc_split_card:
+    name: casualty_loc_split with per-field CARDINALITY declared
+    tasks: structured extraction (json_structures, multi-instance)
+    license: see source
+    hf_id: null
+    hf_jsonl: null
+    source_url: local (casualty_loc_split, stamped by tools/data/stamp_field_cardinality.py)
+    language: [en]
+    description: "TREATMENT ARM ONLY -- do not train a shipping model on this without reading the A/B first. Byte-identical to casualty_loc_split except that each record's record_metadata carries fields: {f: {cardinality}}, derived from the corpus's OWN train-split usage: a field is scalar iff it never holds more than one filler. 27,832 of 29,321 records stamped, 60,123 scalar declarations and 0 list; the anchor is deliberately NOT declared, because its REQUIRED_ONE is structural rather than observed and a declaration would demote it. Cardinality selects the record head's LOSS -- scalar gets a softmax over candidates plus an explicit ABSENT, list gets independent BCE -- so this arm tests a regime change, not a bug fix. Motivation, measured across all of data/: 99.8% of structure-field occurrences hold exactly one filler and only 1.9% of distinct fields ever hold more than one, so the current default trains almost every structure field as multi-label against its own data. No hf_jsonl: the arm is built locally by the stamper and rsynced to the box, so it is reproducible from casualty_loc_split rather than stored twice."
+
   casualty_loc_split:
     name: Multi-event casualty corpus with location, leak-free splits
     tasks: structured extraction (json_structures, multi-instance)
