@@ -11,6 +11,8 @@ blind test, greedy decode, threshold 0.5. Every number here is from that run's
 
 Same checkpoint, same predictions, three scoring keys:
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+
 | key | what it requires | F1 | P | R |
 |---|---|--:|--:|--:|
 | **strict** | (event_type, **trigger**, role, entity) | **0.1178** | 0.149 | 0.097 |
@@ -131,6 +133,7 @@ was never detected cannot be attached to it. So *"improve arguments"* mostly mea
 wrong type while missing 39% of them is not performing well; it is sitting far above its
 optimal operating point. That is a calibration signature, not a capability one.
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 **AND NOTHING HAS EVER BEEN SWEPT.** Every number in this document — 0.1178, 0.5783,
 0.6051, 0.7545 — is a single-point reading at **threshold 0.5**. `evaluate_config` calls
 `_run_blind_test` directly and does not re-sweep, and the decode-arms run passed
@@ -166,6 +169,7 @@ not between two models."* The same applies to a model against itself.
 ### What either outcome means
 
 - **Relaxed recall moves materially** → part of the "48.8% never proposed" is calibration,
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
   not capability, and **the incumbent's honest baseline is higher than 0.1178** — which
   makes the event-records base's win *harder* to claim. That is the reason to run it before
   the base lands rather than after.
@@ -209,6 +213,8 @@ OneIE's argument criterion, verbatim:
 
 Our two metrics bracket that criterion; neither equals it:
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+
 | metric | span requirement | trigger required? | score |
 |---|---|---|--:|
 | our **strict** | exact, case-sensitive | **YES** | 0.1178 |
@@ -218,12 +224,14 @@ Our two metrics bracket that criterion; neither equals it:
 - **strict adds a requirement OneIE does not have** (trigger identity), so 0.1178 is a
   LOWER bound on an OneIE-comparable number.
 - **relaxed drops a requirement OneIE does have** (exact spans; ours accepts
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
   `New York City` ↔ `New York`), so 0.5783 is an UPPER bound.
 
 **The OneIE-comparable figure lies between them and we do not currently compute it.**
 
 ### What follows from that
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 1. **`0.1178` must never be quoted as "our event-argument F1" against published work.** It
    is a deliberately stricter criterion. Every external comparison needs the bracketed pair
    or, better, the missing metric.
@@ -378,15 +386,24 @@ strict.
 This sweep was motivated by "every event number this project quotes is a single-point
 reading at threshold 0.5". **The model card says `Decision threshold: 0.3 (calibrated
 against the validation set)`.** The 0.5 premise was wrong, and the figures §1 quotes
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 (`0.1178` / `0.5783` / trigger `0.6051` / type `0.7545`) match neither the card at 0.3 nor
 this run at 0.2. Treat them as of uncertain provenance and stop quoting them.
 
 ### Premise 2 broken: the validation pick did NOT transfer
 
-On validation, 0.2 beat 0.3 on relaxed argument F1 (0.5875 vs 0.5794, +0.008). On test it
-**loses** — 0.5884 against the card's 0.606. The val margin was inside noise, and the
-protocol did its job: because the test was scored once at the val-selected point, we know
-that rather than having fitted a number to it. **A threshold sweep is not the lever here.**
+On validation, 0.2 beat 0.3 on relaxed argument F1 by **+0.008** (0.5875 vs 0.5794) — inside
+every run-to-run noise floor this project has measured. On test it does not beat the card's
+0.3 either: 0.5884 against 0.606.
+
+**Weight those two halves differently.** The val margin being noise is clean evidence. The
+test comparison is *code-confounded* (see the caveat below), so it corroborates rather than
+proves. The known code change — the `field_dtypes` cardinality repair — touches the RECORD
+head, and the incumbent runs events through the MENTION path, so the event heads *plausibly*
+ran identical code; that has not been proven and no other event-path commit has been ruled
+out. Either way the protocol did its job: because the test was scored once at the
+val-selected point we know this, instead of having fitted a number to it. **A threshold
+sweep is not the lever here.**
 
 ### The one free thing that IS on the table
 
@@ -403,6 +420,7 @@ cannot be the threshold — the code changed (the `field_dtypes_list` cardinalit
 the known candidate). So the 0.3-vs-0.2 rows above are threshold *plus* code version, not
 threshold alone. The single unconfounded statement is the measured column: **at threshold
 0.2 on current code, the incumbent scores event_argument strict 0.0991 / relaxed 0.5884,
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 event_trigger 0.5984, event_type 0.8650** — and that, not `0.1178`, is what the
 event-records base has to beat, at a threshold chosen the same way.
 
@@ -424,6 +442,7 @@ event-records base has to beat, at a threshold chosen the same way.
    the single-key diff if that comparison is what is wanted.
 
    Read against `whr778/gliner2-eb16-rebuild-tr`, whose own `event_argument` figure is the
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
    0.1178 above. 167,752 train documents x 5 epochs = 838,760 samples, 52,423 optimizer
    steps at effective batch 16 on one GPU. Aggregate leakage gate CLEAN (167,752 / 21,138 /
    19,874 unique documents, all three intersections zero).

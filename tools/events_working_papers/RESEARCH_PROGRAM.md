@@ -114,6 +114,8 @@ NOW BEEN RUN, and the thesis is not supported by it.** *(2026-09-07, corrected
 2026-09-08.)* One checkpoint (`eb16-rebuild-tr`), 18,786-record blind test,
 `boundary_head.decode_mode` as the only variable, strict micro F1:
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+
 | head | greedy | joint | Δ |
 |---|--:|--:|--:|
 | entity | 0.5695 | 0.5670 | −0.0026 |
@@ -164,6 +166,7 @@ Three scopes on that negative, all load-bearing:
    (`casualty-multilingual-eb16tr`) is **unreadable** and was declared so by a rule written
    before the numbers existed: its greedy structure is 0.0070, a sixth of the floor, and
    its other heads sit at 0.0801 entity / 0.0209 event_type against the base's 0.5695 /
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
    0.7545 — catastrophic forgetting, not a decode result.
 
 **Two of this project's own instruments had to be repaired before that table could be

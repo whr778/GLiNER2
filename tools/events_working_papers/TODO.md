@@ -18,6 +18,7 @@ after its only copy was lost with a disk. See `PROJECT_HISTORY.md` Phase 32.
 
 - **We cannot compare event arguments to the literature, because we do not compute the
   literature's metric.** OneIE's Arg-C is *offsets + event type + role* with NO trigger
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
   requirement. Our `strict` ADDS trigger identity (lower bound, 0.1178); our `relaxed`
   DROPS exact spans for overlap (upper bound, 0.5783). The comparable number lies between
   and is not computed. **Next action, no GPU:** add an Arg-C variant — exact surface,
@@ -38,6 +39,7 @@ after its only copy was lost with a disk. See `PROJECT_HISTORY.md` Phase 32.
   uninterpretable). Throughput was measured before booking: the flag costs **9%**
   (18.4 -> 16.7 samples/s on A100), NOT the 5x the record-head defect implied, so this is a
   $28 run and not a $167 one. **Read `eval_event_argument_strict_micro_f1` against
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
   eb16-rebuild-tr's 0.1178, and report RELAXED beside STRICT** -- strict moving toward
   relaxed while relaxed HOLDS is the binding hypothesis confirmed; both moving means
   something else changed. NOT a one-variable A/B: it differs by the flag AND three added
@@ -46,6 +48,7 @@ after its only copy was lost with a disk. See `PROJECT_HISTORY.md` Phase 32.
 ### Open after 2026-09-15 -- event arguments
 
 - **`event_argument` 0.118 is a BINDING failure, not an extraction failure, and the fix is
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
   a head that was never trained.** Strict 0.1178 against relaxed 0.5783 on the same
   predictions -- dropping the trigger link multiplies the score by five -- while boundary
   and label errors together are 6.6% of gold. 64.2% of gold event instances share their

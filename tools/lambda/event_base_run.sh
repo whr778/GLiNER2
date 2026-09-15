@@ -2,6 +2,10 @@
 # THE EVENT-CAPABLE BASE: eb16's data with events on the RECORD head.
 # ~14h on one A100, ~$28. Nothing here depends on the operator's laptop.
 #
+# SUPERSEDED 2026-09-15: these figures are of uncertain provenance and are NOT at
+# threshold 0.5 -- the model card says `Decision threshold: 0.3`. Measured at the
+# val-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger
+# 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md section 4c.
 # WHAT THIS RUN IS FOR. `event_argument` reads 0.1178 STRICT against 0.5783 RELAXED on the
 # same predictions -- the model finds the arguments and cannot BIND them, because the
 # mention path compiles ONE instance per event type and 64.2% of gold event instances share

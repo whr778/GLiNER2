@@ -38,6 +38,7 @@ edges"*, which is true of **decode time** and false of **training**.
 
 Measured on eb16-rebuild-tr's own 18,786-record blind test, greedy, threshold 0.5:
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
     event_argument   strict 0.1178    relaxed 0.5783    fair 0.5737
     event_trigger    strict 0.6051
     event_type       strict 0.7545
@@ -66,6 +67,7 @@ cross-document half needs its own diagnosis before more event training is bought
 
 ### 4b. Fixing binding cannot take `event_argument` past ~0.58
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 Relaxed is 0.5783 and relaxed IS the no-binding-required ceiling. Perfect binding converges
 strict onto relaxed and no further. **The other half of the loss is recall: 9,059 of 18,557
 gold arguments (48.8%) are never proposed at all.**
@@ -134,12 +136,14 @@ Read from the OneIE paper 2026-09-15 ([[EVENT_ARGUMENT_DIAGNOSIS]] §4c). OneIE'
 requires **offsets + event type + role** and does **not** require the specific trigger to
 match. Our `strict` adds trigger identity; our `relaxed` drops exact spans for overlap. So:
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
     our strict   0.1178   LOWER bound on an OneIE-comparable number (adds trigger)
     OneIE Arg-C     ?     not currently computed
     our relaxed  0.5783   UPPER bound (accepts overlapping spans)
 
 **Consequences for this line:**
 
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 - **0.1178 must not be quoted against published work.** The "catastrophic" framing
   overstated the gap against the field; the field's own criterion puts this model nearer
   0.58 than 0.12.
@@ -242,6 +246,7 @@ never surfaced this. It fails on multi-event corpora, and our argument mass is m
 The line continues if, on an identical `event_argument` denominator:
 
 1. **strict rises materially toward relaxed while relaxed HOLDS** — the binding signature;
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 2. **the guard heads do not collapse** — `event_type` 0.7545 and `event_trigger` 0.6051 are
    the things a record-head switch could plausibly damage;
 3. **the per-role pattern is not uniform** — §4f.

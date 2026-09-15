@@ -2,6 +2,10 @@
 # EVENT THRESHOLD SWEEP on the incumbent, `whr778/gliner2-eb16-rebuild-tr`.
 #
 # WHY. Every event number this project quotes is a SINGLE-POINT reading at threshold 0.5 --
+# SUPERSEDED 2026-09-15: these figures are of uncertain provenance and are NOT at
+# threshold 0.5 -- the model card says `Decision threshold: 0.3`. Measured at the
+# val-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger
+# 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md section 4c.
 # event_argument 0.1178 strict / 0.5783 relaxed, event_trigger 0.6051, event_type 0.7545.
 # `evaluate_config` calls `_run_blind_test` directly and does not re-sweep, and
 # `sweep_record_thresholds.py` calibrates the RECORD head for structures, not these.

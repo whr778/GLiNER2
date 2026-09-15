@@ -1594,6 +1594,7 @@ keep.** The pre-fix deficit reproduced on an independent lineage
 (`joint-boundary-mmbert-137k-clean`, −0.0529), so it was never one checkpoint's property.
 The third pair, `casualty-multilingual-eb16tr`, was declared **unreadable** by a rule
 written before the numbers existed: greedy structure 0.0070, a sixth of the floor, with
+> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 entity 0.0801 and event_type 0.0209 against the base's 0.5695 and 0.7545 — catastrophic
 forgetting, exactly the shape the gate3 warm cells measured. Running only the checkpoint
 the resume list named would have returned nothing at all.
