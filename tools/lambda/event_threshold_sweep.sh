@@ -30,8 +30,13 @@ export HF_TOKEN=$(cat ~/.hf_token)
 export GLINER2_STRICT_ATTN=1
 
 PY=./.venv/bin/python
-CFG=tools/train/config/base/eb16-rebuild-tr.yaml
-CKPT=$HOME/ckpt/eb16-rebuild-tr
+# Parameterised so a SECOND model can be swept by the same script. Forking a copy is how the
+# throughput smoke ended up shipping with no publishing at all -- one definition, two callers.
+# OUTDIR must track the config's `output_dir`, or the metrics copy silently finds nothing.
+CFG=${CFG:-tools/train/config/base/eb16-rebuild-tr.yaml}
+CKPT=${CKPT:-$HOME/ckpt/eb16-rebuild-tr}
+HFCKPT=${HFCKPT:-whr778/gliner2-eb16-rebuild-tr}
+OUTDIR=${OUTDIR:-out/eb16-rebuild-tr}
 OUT=$HOME/sweep
 DEST=${DEST:-event_threshold_sweep}
 # `-` not `:-`: `:-` substitutes on unset OR EMPTY, so `GRID=""` -- the way to say "the
@@ -48,16 +53,16 @@ trap 'cp ~/box.log "$OUT/box.log" 2>/dev/null && publish "$DEST" "$OUT/box.log" 
 
 [ -f "$CKPT/model.safetensors" ] || $PY -c "
 from huggingface_hub import snapshot_download
-snapshot_download('whr778/gliner2-eb16-rebuild-tr', local_dir='$CKPT')"
+snapshot_download('$HFCKPT', local_dir='$CKPT')"
 
 # --- VALIDATION PASS: the only place the grid is allowed to run -------------------------
 for t in $GRID; do
   echo "[sweep] === VAL threshold=$t  $(date -u) ==="
   $PY -u tools/train/eval.py --config "$CFG" --checkpoint "$CKPT" \
       --split val --threshold "$t" 2>&1 | tee "$OUT/val-$t.log" | tail -2
-  cp out/eb16-rebuild-tr/val_metrics.json "$OUT/val-$t.json" 2>/dev/null \
+  cp "$OUTDIR/val_metrics.json" "$OUT/val-$t.json" 2>/dev/null \
     || echo "[sweep] NO val metrics at $t"
-  rm -f out/eb16-rebuild-tr/val_metrics.json   # every pass writes this path
+  rm -f "$OUTDIR/val_metrics.json"   # every pass writes this path
   publish "$DEST" "$OUT/val-$t.json" "$OUT/val-$t.log" || RESCUE=1
 done
 
@@ -101,7 +106,7 @@ echo "[sweep] chosen on validation: $BEST"
 echo "[sweep] === TEST threshold=$BEST (single pass)  $(date -u) ==="
 $PY -u tools/train/eval.py --config "$CFG" --checkpoint "$CKPT" \
     --split test --threshold "$BEST" 2>&1 | tee "$OUT/test-$BEST.log" | tail -2
-cp out/eb16-rebuild-tr/test_metrics.json "$OUT/test-$BEST.json" 2>/dev/null \
+cp "$OUTDIR/test_metrics.json" "$OUT/test-$BEST.json" 2>/dev/null \
   || echo "[sweep] NO test metrics"
 publish "$DEST" "$OUT/test-$BEST.json" "$OUT/test-$BEST.log" || RESCUE=1
 
