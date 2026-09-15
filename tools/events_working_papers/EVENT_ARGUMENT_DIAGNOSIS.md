@@ -207,9 +207,29 @@ and one language — so corpus, domain and language are controlled:
 | Materials | 41% | 0.177 |
 | Object | 40% | **0.328** |
 
-**Pearson r = −0.789 (n = 7, t = −2.87, df = 5, two-tailed p = 0.035).** The more a role is
-hit by same-type pooling, the worse it scores — and this is computed from data that was
-already in hand, independently of the running experiment.
+**Pearson r = −0.789 (n = 7, t = −2.87, df = 5, two-tailed p = 0.035)** — the more a role
+is hit by same-type pooling, the worse it scores.
+
+**AND THAT NUMBER DOES NOT SURVIVE THE OBVIOUS CONTROL. Stated here rather than left for a
+reader to find:**
+
+| | r | p |
+|---|--:|--:|
+| affected share vs F1 | −0.789 | 0.035 |
+| **support** vs F1 | −0.506 | — |
+| **affected share vs support** | **+0.750** | — |
+| affected share vs F1, **controlling for support** | **−0.718** | **0.108** |
+
+The two predictors are entangled at +0.750: the roles most hit by pooling are also the
+highest-support roles. Control for support and the effect shrinks and **loses
+significance**. With seven points this design simply cannot separate *"pooling hurts"* from
+*"high-support roles score worse"*, and the raw −0.789 should not be quoted on its own.
+
+A jackknife shows the raw correlation is at least stable — dropping any single role leaves
+r between −0.68 and −0.86 — but a robust confounded correlation is still confounded.
+
+**So this is a motivating observation, not evidence.** The prediction below is worth making
+because it is cheap and falsifiable, not because the correlation establishes anything.
 
 ### The prediction
 
@@ -224,8 +244,11 @@ Object improving as much as Equipment (says the gain is not about pooling).
 
 ### The honest limits
 
-- **n = 7 roles from ONE corpus.** p = 0.035 is suggestive, not established, and with seven
-  points a single role moves it materially.
+- **THE HEADLINE CORRELATION IS CONFOUNDED WITH SUPPORT** (r = +0.750 between the two
+  predictors; partial r = −0.718 at p = 0.108). This is the limit that matters and it is
+  stated in the section above rather than only here.
+- **n = 7 roles from ONE corpus.** With seven points a single role moves things materially,
+  though the jackknife range (−0.68 to −0.86) says the raw correlation is at least stable.
 - **Correlation is not the mechanism.** An intrinsically harder role could simply appear
   more often in multi-event documents. The within-corpus design controls for corpus,
   annotator and language but not for role difficulty.
