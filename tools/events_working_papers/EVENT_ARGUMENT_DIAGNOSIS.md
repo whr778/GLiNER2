@@ -262,11 +262,48 @@ accept an event type it was not trained to tag. **Adopting OneIE's trigger head 
 forfeit schema-driven extraction**, which is the thing that makes this model worth having.
 Any borrowing has to take the *graph* idea without the *closed-vocabulary tagger*.
 
-**3. IT HAS ITS OWN MULTI-INSTANCE RESIDUAL, IN THE OTHER DIRECTION.** *"Multiple events
-per trigger"* is a named category in OneIE's remaining-error distribution. One node per
-trigger span solves *many triggers of one type* — our problem — and leaves *one trigger
-belonging to several events* unsolved. The span representation is not a general answer to
-event multiplicity; it trades one failure for another.
+**3. IT HAS ITS OWN MULTI-INSTANCE RESIDUAL — BUT IT IS SMALLER THAN OURS, AND THIS
+PARAGRAPH USED TO SAY OTHERWISE.** *"Multiple events per trigger"* is a named category in
+OneIE's remaining-error distribution, and the first version of this section concluded that
+the span representation "trades one failure for another". **Measured, that is wrong.** It is
+not a trade; OneIE's key is strictly better on our own data, and still not sufficient.
+
+Any decoder addresses instances by *some* key, and two gold instances sharing a key value
+collapse into one. So the cost of a design is readable off the gold before a model runs.
+`tools/data/event_multiplicity.py` prices all three keys on the same blind test — the % is
+gold instances that share a key with another instance in the same document:
+
+| corpus | instances | key = `event_type` (ours) | key = `trigger` (OneIE) | key = both |
+|---|---:|---:|---:|---:|
+| cmnee | 6,553 | 67.5% | 44.3% | 44.3% |
+| casie | 938 | 96.3% | 16.0% | 16.0% |
+| mendeley_ed | 156 | 0.0% | 0.0% | 0.0% |
+| **ALL** | **7,647** | **69.7%** | **39.9%** | **39.9%** |
+
+Three things fall out of that table.
+
+*The trigger key is strictly better.* 69.7% → 39.9% overall, and on casie 96.3% → 16.0%, a
+six-fold reduction. The claim that OneIE merely moves the problem sideways does not survive
+contact with the numbers.
+
+*Adding the type to the trigger buys exactly nothing* — the last two columns are identical
+to the decimal. Whatever the trigger does not separate, the type does not separate either.
+
+*And 39.9% is still a plurality of the gold.* One node per trigger span is a better key, not
+a solution. Worse, **39.9% is an upper bound on the collapse that flatters OneIE's side in
+one direction and understates it in another**: our corpora store triggers as SURFACE STRINGS,
+not offsets, so two separate occurrences of the same word are one key here where OneIE would
+have two nodes. The true span-keyed residual on this data is *lower* than 39.9% and cannot be
+measured without offset annotation we do not have — which is itself the cost of adopting the
+design.
+
+**The conclusion the table actually supports is that no content-derived key is the answer.**
+`event_type` collapses 69.7%, `trigger` collapses at most 39.9%, and both fail for the same
+reason: the key is a *property* of the event rather than its *identity*. The only key with a
+structurally guaranteed 0% collapse is an index — one addressable slot per instance,
+allocated by position and carrying no semantics. That is what `event_records: true` does, and
+this table is the strongest quantitative argument on file for the line this project is
+already building.
 
 **4. IT REQUIRES ENTITY ANNOTATION WE DO NOT ALWAYS HAVE.** Argument edges connect trigger
 nodes to **entity mention nodes**, so the model needs entity gold in the same sentences.
@@ -443,6 +480,18 @@ Object improving as much as Equipment (says the gain is not about pooling).
 - **64.2% is this mixture's number**, dominated by one Chinese corpus. It is not a
   universal property of event extraction, and a differently-composed test would give a
   different ceiling.
+- **AND THE MIXTURE IS NARROWER THAN THE CONFIG LOOKS.** `eb16-rebuild-tr.yaml` names nine
+  event corpora. Counted record by record, **only three of them carry a single gold event
+  instance in the blind test** — cmnee 6,553 (85.7%), casie 938 (12.3%), mendeley_ed 156
+  (2.0%). Every event number this project quotes is therefore, to within a rounding error,
+  a cmnee number.
+- **Five of those nine train zero events too.** `docee`, `chfinann`, `docfee`,
+  `turkish_event` and `events_biotech` carry no `events` key in **train or test** — 90,103
+  training records between them, converted to `entities` + `classifications`, so the event
+  head never sees them. They are event corpora by provenance and not by content. That is
+  worth knowing before concluding anything about how much event data the model has had:
+  `data/` holds 343,115 gold event instances across 25 corpora, and this config reaches a
+  small fraction of them.
 - **The ceiling arithmetic is consistency, not a proof.** Confirming it means running the
   decoder against gold with the cap lifted and seeing strict argument F1 move toward
   relaxed — that experiment has not been run.
