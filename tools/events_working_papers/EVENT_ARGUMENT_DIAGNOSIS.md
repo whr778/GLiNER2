@@ -424,6 +424,67 @@ threshold alone. The single unconfounded statement is the measured column: **at 
 event_trigger 0.5984, event_type 0.8650** — and that, not `0.1178`, is what the
 event-records base has to beat, at a threshold chosen the same way.
 
+---
+
+## 4d. THE EVENT-RECORDS BASE AT EPOCH 1: the mechanism works, the model is 40% trained
+
+Run 2026-09-15 while the base was still training (epoch 1.9 of 4, step 21k/54.8k). Same
+protocol as the incumbent — validation grid, pick on relaxed argument F1, score the blind
+test **once**. Denominator verified identical: `scoring against 18786 records` in both logs.
+
+Two config traps had to be disarmed first, and either would have produced a confident wrong
+answer. The training config adds `professorbob_re`, `scierc`, `paraloq_json`, which carry
+**1,816 test records** — scoring through it would have measured 20,602 against the
+incumbent's 18,786. And the checkpoint's own `config.json` carries **no record keys at all**,
+so `event_records` comes from the YAML: evaluating through the incumbent's config would have
+run a model trained to use the RECORD head through the MENTION path, measuring the opposite
+of the change.
+
+### What improved: BINDING. Consistently, at every matched threshold.
+
+`event_argument` **strict precision**, validation, same grid, same val set:
+
+| threshold | incumbent P | epoch-1 P | ratio | incumbent R | epoch-1 R |
+|---:|---:|---:|---:|---:|---:|
+| 0.1 | 0.1997 | **0.3455** | 1.73× | 0.2590 | 0.0621 |
+| 0.2 | 0.2997 | **0.4501** | 1.50× | 0.2608 | 0.0462 |
+| 0.3 | 0.3749 | **0.5499** | 1.47× | 0.2553 | 0.0384 |
+| 0.4 | 0.4350 | **0.6177** | 1.42× | 0.2426 | 0.0287 |
+| 0.5 | 0.4968 | **0.6444** | 1.30× | 0.2308 | 0.0219 |
+
+Strict precision requires the argument to be bound to the **right instance**. It is higher at
+every point on the grid, by 1.3–1.7×, on a model that is 40% trained and worse at everything
+else. That is the record head doing the job it was added for, and it agrees with the
+independent mechanism probe (§4e / `probe_event_multiinstance.py`): 5/12 multi-instance and
+0/12 pooled, against the incumbent's 0/12 and 11/12.
+
+### What did NOT improve: everything else, because the model is undertrained
+
+Strict **recall** is 4–10× lower. Blind test at each model's own val-selected threshold
+(incumbent 0.2, epoch-1 0.1): event_type 0.8650 → 0.6271, event_trigger 0.5984 → 0.3124,
+event_argument relaxed 0.5884 → 0.2358, and off the event heads classification 0.5800 →
+0.1306, relation 0.2152 → 0.0068. It is behind across the board, as a 40%-trained model
+should be.
+
+### The claim NOT to make, and I nearly made it
+
+On the blind test, `event_argument` **strict F1 reads 0.0991 → 0.1588, +0.0597** — the one
+head the whole line targets, apparently improving. **Do not quote that as a win.** The two
+numbers are at *different thresholds* (0.2 against 0.1), and the matched-threshold validation
+comparison points the *other* way: the incumbent's strict F1 is higher at all five grid
+points (0.2255 vs 0.1053 at 0.1, and worse from there). Precision carries the strict F1 up on
+test only because recall is low enough to flatter the harmonic mean.
+
+**What survives is the precision signature, not an F1 win.** Binding is better; the model
+cannot yet propose enough arguments for that to become a score.
+
+### One caveat that makes the epoch-1 numbers a floor
+
+The validation pick landed on **0.1, the edge of the grid**, with every metric still climbing
+as the threshold fell. The optimum is below the grid and was never bracketed, so every
+epoch-1 figure here understates a properly calibrated epoch-1 model. When the run finishes,
+**sweep below 0.1** — the incumbent's `event_type` head has the same untested tail.
+
 ## 5. What follows, in order
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed
