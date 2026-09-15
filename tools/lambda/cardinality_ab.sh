@@ -12,13 +12,25 @@
 # `fields: {f: {cardinality}}` stamped from the corpus's OWN train usage. Same base, same
 # hyperparameters, same blind test.
 #
-# READ THE GATE FIRST, AND READ IT CORRECTLY. Each arm prints
-# `[records] compiled N field spec(s): X scalar, Y list ...` before scoring. The first
-# version of this note said "the control must say 0 scalar" and that is WRONG: an ANCHOR
-# is REQUIRED_ONE and therefore scalar in both arms, so the control legitimately reads
-# `6 scalar, 15 list`. The gate is the RATIO BETWEEN ARMS -- control scalar should equal
-# its anchor count, treatment should be markedly higher. A gate that fires on a healthy
-# run is worse than no gate, which is why this is written down rather than remembered.
+# THE GATE, and it took three tries to get an instrument that can actually fail. Each arm
+# prints ONE deterministic corpus-level line before training:
+#
+#   control    [composition]   cardinality casualty_report: NONE DECLARED -- ...
+#   treatment  [composition]   cardinality casualty_report: optional_one=<n>
+#
+# If BOTH say NONE DECLARED, or both say the same thing, THE ARMS ARE NOT THE ARMS and the
+# run measured nothing -- stop before reading a single F1.
+#
+# The two rejected versions are worth knowing, because both looked fine:
+#   1. "control must read 0 scalar" -- WRONG. An ANCHOR is REQUIRED_ONE and therefore
+#      scalar in both arms, so the control legitimately read `6 scalar, 15 list`.
+#   2. `[records] compiled N field spec(s): X scalar, Y list` -- USELESS HERE. It samples
+#      whichever batch a DataLoader worker saw first, so it is neither deterministic nor
+#      per-arm, and with eval_strategy: epoch it can fire from the EVAL collate, where
+#      `_schema_from_gold` rebuilds schemas carrying no cardinality at all. On 2026-09-14
+#      it printed identical counts for both arms and I read that as "the treatment did not
+#      apply" -- it was the instrument, not the treatment. The mechanism was fine, proven
+#      through `collate_fn_train` afterwards.
 #
 # SURVIVING A NETWORK OUTAGE IS A DESIGN REQUIREMENT HERE, not a nicety. The disk dies
 # with the instance and the box terminates on the normal path, so a publish that fails

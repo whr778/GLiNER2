@@ -56,7 +56,13 @@ dependencies = [
     # TRAINING aborted at step 0 on 14 Sep having run fine on 8 Sep, with no code change
     # between. On 0.17 the same repo resolves and publishes
     # `torch211-cxx11-cu128-x86_64-linux` -- exactly the Lambda stack.
-    "kernels>=0.15.2,<0.18",
+    # 0.16.x AND NOTHING ELSE while transformers is 5.16. A loose upper bound is not a
+    # pin: I wrote >=0.15.2,<0.18 on 2026-09-14, uv resolved 0.17.0, and transformers
+    # 5.16.1 rejected it -- "Please install a compatible version (0.16.0 <= version <
+    # 0.17.0)". The encoder fell back to sdpa and 42 minutes of training per arm ran on a
+    # backend that is a CORRECTNESS failure here, then the blind test died. Same defect
+    # this comment has warned about since 2026-08-10, committed by the person fixing it.
+    "kernels>=0.16,<0.17",
     # PINNED HERE, IN THE BASE DEPS, NOT IN THE `local` EXTRA. It lived in the extra until
     # 2026-09-14, and the GPU boxes install with `uv sync --no-install-project`, which does
     # not take extras -- so the one dependency the comment above calls load-bearing was

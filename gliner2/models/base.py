@@ -403,7 +403,23 @@ class BaseExtractorModel(PreTrainedModel):
                             implementation, _HUB_FLASH_ATTN_2,
                         )
                         continue
-                    if os.environ.get("GLINER2_STRICT_ATTN") and index == 0:
+                    # `and index == 0` stood here and made this guard UNREACHABLE on the
+                    # only path that matters. Candidates are
+                    # [flash_attention_2, <hub id>, sdpa, eager]: index 0 failing is a
+                    # REPAIR and `continue`s above, so the real downgrade always happens at
+                    # index 1 -- where `index == 0` is false and strict mode was skipped.
+                    # Measured 2026-09-14: GLINER2_STRICT_ATTN=1 was set, the hub kernel was
+                    # rejected for a version mismatch, and both arms trained 42 minutes each
+                    # on sdpa, which on bf16 ModernBERT is a correctness failure. The guard
+                    # written to prevent exactly that watched it happen.
+                    #
+                    # The condition is about WHAT WAS ASKED FOR, not where in the list we
+                    # are: refuse any fall out of FA2, at whatever index it occurs. A
+                    # request for sdpa degrading to eager is still permitted, because
+                    # deberta-v2 supports neither FA2 nor sdpa and must reach eager.
+                    if os.environ.get("GLINER2_STRICT_ATTN") and requested in (
+                        "flash_attention_2", _HUB_FLASH_ATTN_2
+                    ):
                         raise RuntimeError(
                             f"attn_implementation={implementation!r} unavailable and "
                             f"GLINER2_STRICT_ATTN is set, so the {candidates[index + 1]!r} "

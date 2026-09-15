@@ -1166,6 +1166,7 @@ def _log_composition(train_data, eval_data, test_data, streaming: bool) -> None:
         tasks = Counter()
         struct_n = Counter()
         struct_f = defaultdict(Counter)
+        cards = defaultdict(Counter)
         anchors = defaultdict(Counter)
         for r in records:
             out = r.get("output") or {}
@@ -1179,6 +1180,18 @@ def _log_composition(train_data, eval_data, test_data, streaming: bool) -> None:
                             struct_f[rec_name][f] += 1
             for rec_name, meta in (out.get("record_metadata") or {}).items():
                 anchors[rec_name][f"{meta.get('mode')}/{meta.get('anchor')}"] += 1
+                # Per-field CARDINALITY, counted over the CORPUS rather than over one
+                # batch. The first version of this check logged the compiled cardinality
+                # of whichever batch a worker happened to see first, which is neither
+                # deterministic nor per-arm -- and with eval_strategy: epoch it could fire
+                # from the EVAL collate, where `_schema_from_gold` rebuilds schemas and
+                # carries no cardinality at all. Two arms then print identical counts
+                # whether or not they differ, which is exactly what happened on
+                # 2026-09-14 and read as "the treatment did not apply".
+                for fname, fcfg in (meta.get("fields") or {}).items():
+                    card = (fcfg or {}).get("cardinality")
+                    if card:
+                        cards[rec_name][card] += 1
         print(f"[composition] {name}: {len(records):,} records | "
               + "  ".join(f"{k}={v:,}" for k, v in tasks.most_common()))
         for rec_name, n in sorted(struct_n.items()):
@@ -1196,6 +1209,15 @@ def _log_composition(train_data, eval_data, test_data, streaming: bool) -> None:
             if not anchors.get(rec_name):
                 print(f"[composition]   WARNING {rec_name}: no record_metadata -- a "
                       f"BOUNDARY model cannot decode this and returns {{}} silently")
+            declared = cards.get(rec_name)
+            # Cardinality selects the record head's LOSS (scalar softmax over candidates
+            # plus ABSENT, against independent BCE per candidate), so an A/B on it must be
+            # able to show that its arms actually differ. Printed for every run, because a
+            # line that only appears in the treatment proves nothing about the control.
+            print(f"[composition]   cardinality {rec_name}: "
+                  + ("  ".join(f"{k}={v:,}" for k, v in sorted(declared.items()))
+                     if declared else
+                     "NONE DECLARED -- every non-anchor field trains as ZERO_OR_MORE"))
 
     for name, data in (("train", train_data), ("val", eval_data), ("test", test_data)):
         if data is not None:
