@@ -209,3 +209,48 @@ def test_corpus_declared_cardinality_reaches_the_compiled_spec():
     assert t["injured"] == "optional_one"
     assert c["location"] == t["location"] == "required_one", \
         "the ANCHOR is structural and must never be demoted by a declaration"
+
+
+def test_event_records_puts_events_on_the_record_head():
+    """`event_records: true` is what lifts the one-instance-per-event-type cap.
+
+    Off (the default, and what every config under `config/base/` used until
+    2026-09-15), an events group never reaches the record head at all: the record head is
+    supervised on `json_structures` only and has never seen an event. On, each event type
+    compiles a natural-mode record spec, and the record head is multi-instance by
+    construction -- so two `Attack` events in one document can be two instances instead of
+    one pooled trigger.
+
+    That pooling is why `event_argument` reads 0.1178 strict against 0.5783 relaxed on the
+    same predictions: 64.2% of gold event instances in the blind test share their type with
+    another instance in the same document. See EVENT_ARGUMENT_DIAGNOSIS.md.
+
+    Asserted through `collate_fn_train`, the TRAINING path -- three defects in September
+    2026 were "verified on inference, assumed training matched".
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tests.models.boundary.test_joint_records import _model_with_mode
+
+    model = _model_with_mode("greedy")
+    text = "bombed the market and shelled the depot"
+    gold = {"events": [
+        {"event_type": "attack", "triggers": ["bombed"],
+         "arguments": [{"role": "target", "entity": "market"}]},
+        {"event_type": "attack", "triggers": ["shelled"],
+         "arguments": [{"role": "target", "entity": "depot"}]},
+    ]}
+
+    def specs(flag):
+        batch = model.processor.collate_fn_train(
+            [(text, gold)], architecture="boundary", event_records=flag)
+        return batch.record_specs[0] if batch.record_specs else {}
+
+    off, on = specs(False), specs(True)
+    assert not off, "with event_records off, events must NOT reach the record head"
+    assert on, "with event_records on, an events group must compile a record spec"
+    assert all(s.task_type == "events" for s in on.values())
+    assert all(s.mode == "natural" for s in on.values()), \
+        "an events group is anchored on its trigger, so it is natural mode"

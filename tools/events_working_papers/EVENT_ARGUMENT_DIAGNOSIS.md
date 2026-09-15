@@ -107,6 +107,18 @@ arms did that, and the sum was negative.
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed
    the decode path while the head was naive; warming first separates the two.
+   **BUILT 2026-09-15:** `config/base/joint-boundary-mmbert-137k-eventrecords.yaml` does
+   this at COLD START rather than as a fine-tune, so the head is warmed on events from
+   step 0 and the Tier 2 confound cannot arise. It is the 137k base config patched with
+   exactly one key (`event_records: true`) plus a new output path; the diff against the
+   control, comments excluded, is three lines. Read against
+   `whr778/gliner2-joint-boundary-mmbert-137k`. ~$20-30, 42,730 steps at effective batch
+   16 on one GPU.
+
+   The flag was verified to change the compile before the config was written, through
+   `collate_fn_train` on a real CMNEE document carrying Experiment x2 / Accident x1 /
+   Injure x2: **0 record specs with it off, 3 with it on** (one per type, natural mode,
+   5 fields each). Pinned by a test.
 2. **Re-run Tier 2 on CMNEE, not CASIE.** CMNEE dominates the affected mass here (1,606 of
    2,054 affected documents). CASIE was the previous venue and it is both smaller and
    harder.
