@@ -485,6 +485,64 @@ as the threshold fell. The optimum is below the grid and was never bracketed, so
 epoch-1 figure here understates a properly calibrated epoch-1 model. When the run finishes,
 **sweep below 0.1** — the incumbent's `event_type` head has the same untested tail.
 
+---
+
+## 4e. IS THE LOW RECALL UNDERTRAINING, OR A MISSING MECHANISM?
+
+§4d left `event_argument` relaxed recall down 4-10x against the incumbent and could not say
+whether that was a model at 40% of its schedule or a decoder that structurally cannot propose
+more. Those have opposite consequences, so the question was settled rather than argued.
+
+**The discriminator is a CURVE, not a level.** Same 150 cmnee documents, 927 gold
+(type, role, entity) triples, matched threshold 0.1, two checkpoints of the SAME run
+(`tools/train/probe_argument_recall.py`):
+
+| checkpoint | recall | precision | F1 | predicted | hits |
+|---|---:|---:|---:|---:|---:|
+| incumbent (mention path) | 0.6839 | 0.1374 | 0.2289 | 4,613 | 634 |
+| event-records **epoch 1** | 0.1165 | 0.2714 | 0.1630 | 398 | 108 |
+| event-records **epoch 2** | **0.1640** | 0.2386 | **0.1944** | 637 | 152 |
+
+### Answer: undertraining. It is climbing, and nothing structural is capping it.
+
+Recall rose **0.1165 -> 0.1640 in one epoch, +41% relative**, and raw emissions rose 398 ->
+637 (+60%). That is not a floor.
+
+Three structural candidates were checked and cleared:
+
+- **The record path has NO capacity cap.** `max_records`, `max_fields` and `max_spans` in
+  `boundary_preprocessing.py:186-204` are each `max(...)` over the batch's own data, not
+  constants. Nothing truncates record gold.
+- **Per-role cardinality is a small ceiling, not this one.** 16.0% of gold event instances
+  hold more than one filler for a single role, but that is only **7.5% of gold arguments**
+  (1,743 of 23,252) — and only the 8 of 40 compiled field specs that are scalar are exposed
+  to it at all. It cannot explain a 4-10x gap.
+- **The one real truncation is on the MENTION path, which `event_records` moves events off.**
+  `on_capacity_exceeded = "skip_sample"` drops a sample's gold **entirely** when ANY query
+  exceeds `max_gold_per_query = 32` (`processing/targets.py:429-436`) — it fired **3,520
+  times** in this run, on overflows of 34-66. It teaches the model to emit nothing on exactly
+  the richest documents, and it plausibly explains the entity regression (0.5340 -> 0.4343);
+  it should not touch event arguments under `event_records: true`. **Worth fixing on its own
+  merits, separately from this line.**
+
+### But do not read "climbing" as "will catch up"
+
+Two reasons to expect the gap to persist, and they matter more than the trend:
+
+1. **The trajectory does not reach it.** Linear extrapolation from +0.0475/epoch puts epoch 4
+   near **0.26**, against the incumbent's 0.684. Training alone, at this rate, does not close
+   it in the two epochs that remain.
+2. **The incumbent's recall is bought by carpet-bombing, and is not a target worth matching.**
+   It emits **4,613 predictions for 927 gold triples** — a 5:1 over-emission at precision
+   0.1374. Relaxed recall rewards exactly that, which is this project's standing lesson about
+   form gates scored on firings rather than hits. The record head emits 637 at precision
+   0.2386, **1.7x better**, and strict scoring is what punishes the difference.
+
+**So the honest statement is: the recall floor is training, the remaining schedule will not
+erase it, and matching the incumbent's relaxed recall would mean adopting its over-emission —
+the precise behaviour the strict metric exists to penalise.** The comparison to watch at the
+end of the run is strict F1 at each model's own calibrated point, not relaxed recall.
+
 ## 5. What follows, in order
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed

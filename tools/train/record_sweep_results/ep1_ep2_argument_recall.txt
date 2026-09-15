@@ -1,0 +1,5 @@
+[recall] 150 documents, 927 gold (type, role, entity) triples, threshold 0.1, device mps
+checkpoint                     recall  precision      F1  predicted    hits
+incumbent (mention)            0.6839     0.1374  0.2289      4,613     634
+event-records epoch 1          0.1165     0.2714  0.1630        398     108
+event-records epoch 2          0.1640     0.2386  0.1944        637     152
