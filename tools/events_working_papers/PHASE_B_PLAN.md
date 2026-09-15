@@ -196,6 +196,17 @@ buried.
   event case. Doing both doubles B3. Undecided.
 - **Margin form.** Structured hinge is proposed above as the cheapest defensible contrast,
   not as a settled choice.
-- **Whether the cardinality regime change (`TODO.md`) should land first.** If declaring
-  scalar fields changes the record head's loss materially, Phase B built on top of the old
-  regime measures a moving target. Sequencing these two is a decision, not a detail.
+- ~~**Whether the cardinality regime change should land first.**~~ **ANSWERED 2026-09-15:
+  it does not need to.** The A/B came back NULL -- structure strict 0.7388 -> 0.7326,
+  -0.0061, inside the floor, with precision up 0.020 and recall down 0.022 cancelling. So
+  the record head's loss is NOT a moving target underneath Phase B, and the sequencing
+  question dissolves. One seed on one structures-only corpus, so this closes the
+  *sequencing* worry rather than the regime question itself.
+
+- **Whether `event_records` changes what Phase B is measuring.** NEW, and more live than
+  the one it replaces. The event-capable base (`eb16-eventrecords-tr`, training 2026-09-15)
+  routes events through the RECORD head instead of the mention path. Phase B's structured
+  objective operates on role edges, and which head produces those edges is not a detail. If
+  that base lands, Phase B should be built against it rather than against a mention-path
+  base -- otherwise it optimises a decoder for a representation the shipping model no
+  longer uses.

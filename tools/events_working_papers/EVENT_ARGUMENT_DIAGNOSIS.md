@@ -135,6 +135,22 @@ arms did that, and the sum was negative.
    `collate_fn_train` on a real CMNEE document carrying Experiment x2 / Accident x1 /
    Injure x2: **0 record specs with it off, 3 with it on** (one per type, natural mode,
    5 fields each). Pinned by a test.
+   **LAUNCHED 2026-09-15** on an A100, ~14h, ~$28, `tools/lambda/event_base_run.sh`.
+
+   **THE COST QUESTION IS SETTLED AND THE ANSWER IS CHEAP.** Measured before booking, 120
+   steps per arm, same config with the flag flipped:
+
+       event_records=false   18.4 samples/s
+       event_records=true    16.7 samples/s     -> the flag costs 9%
+
+   NOT the 5x the record-head defect implied. That defect is real and unresolved -- 4.6
+   samples/s against the curve's 22, "~5x slower to train", 2026-08-10 -- but it is NOT
+   triggered by `event_records` on this mixture. Across 838,760 samples that is ~$28 on an
+   A100 rather than ~$167. **This does not clear the 4.6 figure**; it was measured on a
+   different mixture and nothing here reproduces or explains it.
+
+   The original warning is kept below because it is what justified measuring first:
+
    **AND IT MAY BE EXPENSIVE, for a reason already on file.** `event_records: true` moves
    ~100k event records ONTO the record head -- the head this project measured at
    **4.6 samples/s against the curve's 22** on the same H100, "~5x slower to train than the

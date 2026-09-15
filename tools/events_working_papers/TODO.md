@@ -14,6 +14,19 @@ produced no new model either: the programme's central decode question was answer
 repairing two instruments and re-measuring, and a 500-document generation A/B was rebuilt
 after its only copy was lost with a disk. See `PROJECT_HISTORY.md` Phase 32.
 
+### IN FLIGHT 2026-09-15 -- the event-capable base
+
+- **`eb16-eventrecords-tr` is training on an A100 (~14h, ~$28).** eb16's data with
+  `event_records: true`, so the record head is warmed on events FROM STEP 0 rather than
+  having the path flipped under a naive head (which is what made both Tier 2 arms
+  uninterpretable). Throughput was measured before booking: the flag costs **9%**
+  (18.4 -> 16.7 samples/s on A100), NOT the 5x the record-head defect implied, so this is a
+  $28 run and not a $167 one. **Read `eval_event_argument_strict_micro_f1` against
+  eb16-rebuild-tr's 0.1178, and report RELAXED beside STRICT** -- strict moving toward
+  relaxed while relaxed HOLDS is the binding hypothesis confirmed; both moving means
+  something else changed. NOT a one-variable A/B: it differs by the flag AND three added
+  corpora (professorbob_re, scierc, paraloq_json).
+
 ### Open after 2026-09-15 -- event arguments
 
 - **`event_argument` 0.118 is a BINDING failure, not an extraction failure, and the fix is
@@ -40,13 +53,20 @@ The re-measurement RAN and closed the question: 87% of the structure deficit was
 never-connected `field_dtypes_list`. Deficit -0.0454 -> -0.0057, greedy +0.0432, joint
 +0.0828, all seven heads now inside the floor. What remains:
 
-- **Cardinality is still not declared by any CORPUS, only by a schema.** Inference is
-  fixed. Training batches build `record_metadata` from corpora that record only mode and
-  anchor, so a `dtype: str` field is still trained with list BCE rather than the scalar
-  softmax over candidates plus ABSENT. That is a REGIME CHANGE, not a bug fix -- it moves
-  every future model's structure numbers -- so it is a decision. The synthetic generator
-  could emit `fields: {f: {cardinality: ...}}` from `STRUCTURE_TEMPLATES` whenever that is
-  wanted. **Next test:** an A/B on one corpus before adopting it anywhere.
+- ~~**Cardinality is not declared by any CORPUS**~~ -- **RAN 2026-09-15, and the answer is
+  NULL.** casualty_loc_split, same base, same blind test, 3 epochs, gate PASSED (control
+  `NONE DECLARED`, treatment `optional_one=48,610`, so the arms genuinely differed):
+
+      structure strict F1   control 0.7388   treatment 0.7326   delta -0.0061
+        precision           0.8228           0.8424            +0.0196
+        recall              0.6703           0.6481            -0.0222
+
+  Inside the +/-0.02 floor. The mechanism behaved exactly as designed -- the scalar softmax
+  plus ABSENT forces one choice, so precision RISES and recall FALLS -- and the two cancel.
+  **Declaring cardinality is not free money.** SCOPE: one seed, one corpus, and
+  casualty_loc_split is structures-only so no other head was measurable. It does not say
+  the regime change is worthless in a multi-task mixture. Do not spend a second run on this
+  without a reason beyond "try it on more data".
 
 - **Phase B (beam in the loss) is now MORE interesting, not less.** Every measurement of
   the beam to date ran with its scalar constraints disconnected. The decode-time null
