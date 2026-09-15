@@ -38,8 +38,17 @@ mkdir -p "$OUT"
 source tools/lambda/_publish.sh
 RESCUE=0
 
+# THE GENERATED CONFIG MUST LIVE BESIDE THE SOURCE CONFIG. `labels_file:
+# labels/unified.yaml` is resolved relative to the config file and its ANCESTORS
+# (`_resolve_beside_config`), and the shared map lives at the root of
+# tools/train/config/. Writing the generated config to $HOME put it outside that tree, so
+# BOTH ARMS died instantly with FileNotFoundError on labels/unified.yaml -- twice, because
+# the first run had no publishing and the failure was invisible.
+CFGDIR=$(dirname "$SRC")
+trap 'rm -f "$CFGDIR"/smoke-*.yaml' EXIT
+
 for flag in false true; do
-  cfg=$OUT/smoke-$flag.yaml
+  cfg=$CFGDIR/smoke-$flag.yaml
   echo "[smoke] === PHASE: writing config, event_records=$flag  $(date -u) ==="
   $PY - "$SRC" "$cfg" "$flag" "$STEPS" <<'PY'
 import sys, yaml
