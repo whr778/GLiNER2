@@ -114,7 +114,7 @@ NOW BEEN RUN, and the thesis is not supported by it.** *(2026-09-07, corrected
 2026-09-08.)* One checkpoint (`eb16-rebuild-tr`), 18,786-record blind test,
 `boundary_head.decode_mode` as the only variable, strict micro F1:
 
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+> *Retracted — not at threshold 0.5; the card says 0.3. Current at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4d.*
 
 | head | greedy | joint | Δ |
 |---|--:|--:|--:|
@@ -166,7 +166,7 @@ Three scopes on that negative, all load-bearing:
    (`casualty-multilingual-eb16tr`) is **unreadable** and was declared so by a rule written
    before the numbers existed: its greedy structure is 0.0070, a sixth of the floor, and
    its other heads sit at 0.0801 entity / 0.0209 event_type against the base's 0.5695 /
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+> *Retracted — not at threshold 0.5; the card says 0.3. Current at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4d.*
    0.7545 — catastrophic forgetting, not a decode result.
 
 **Two of this project's own instruments had to be repaired before that table could be
@@ -261,7 +261,7 @@ The working papers are the primary record; this map is a summary of them.
 | `JOINT_IE_SCALING.md` | Paper 2 — joint decoding, scaling curve, replay, the three silent defects |
 | `JOINT_IE_DESIGN_RECORD.md` | Paper 2's build record — decisions, wiring map, cost model |
 | `EVENT_LINE.md` | **line 3** — full event support: the named incumbent, what counts as proving out, and the risk register including the EKF bet |
-| `EVENT_ARGUMENT_DIAGNOSIS.md` | why `event_argument` reads 0.118 — binding, not extraction; 64.2% of gold instances share a type in-document and the mention path pools them |
+| `EVENT_ARGUMENT_DIAGNOSIS.md` | why event arguments fail — binding, not extraction. The mention path keys instances by TYPE and pools them (observed: 0/12 multi-instance, 11/12 pooled); no content-derived key fixes it (type collapses 69.7%, OneIE's trigger 39.9%), only an index. Incumbent re-baselined at threshold 0.2. |
 | `PHASE_B_PLAN.md` | the beam **in the loss** — the only untested version of the thesis, with pre-registered bars and a throughput probe that gates the spend |
 | `EKF_MHT_DESIGN.md` | Paper 1 — the filter, the real-event defeat, and the association half rebuilt as a global decode (§7.7) |
 | `EKF_MHT_BUILD_RECORD.md` | Paper 1's build record — attachment points, generator spec, blind-test protocol |

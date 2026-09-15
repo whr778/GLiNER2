@@ -1,9 +1,56 @@
-# Why `event_argument` sits at 0.118, and what would move it
+# Event arguments: why they fail, and what has been measured
 
-Status: **diagnosis, measured 2026-09-15** on `whr778/gliner2-eb16-rebuild-tr`, 18,786-record
-blind test, greedy decode, threshold 0.5. Every number here is from that run's
-`test_metrics.json` or from counting the test splits directly. Companion to
-[[JOINT_IE_SCALING]] (Tier 2) and [[PAPER_0_FOUNDATION]] §10.
+Companion to [[JOINT_IE_SCALING]] (Tier 2) and [[PAPER_0_FOUNDATION]] §10.
+
+**This document grew by accretion and is ordered by when things were learned, not by how
+confident they are.** §1-§4c are the original diagnosis; §4d onward are dated findings, some
+of which retract earlier ones. Read this summary first — it is the only part kept current.
+
+> **The title used to read "Why `event_argument` sits at 0.118".** That figure, and the whole
+> "threshold 0.5" framing of the original status block, are **retracted** — the incumbent's
+> model card says `Decision threshold: 0.3`, and `0.1178 / 0.5783 / 0.6051 / 0.7545` match
+> neither the card nor any measured pass. §4d has the provenance. Inline `> *Retracted*`
+> markers below flag every place the old figures still appear; they are left in place because
+> they are the stated motivation for runs that really happened.
+
+## WHERE THIS STANDS
+
+**The incumbent, re-baselined.** `whr778/gliner2-eb16-rebuild-tr`, 18,786-record blind test,
+validation-selected threshold 0.2: `event_argument` strict **0.0991** / relaxed **0.5884**,
+`event_trigger` **0.5984**, `event_type` **0.8650**. (§4d)
+
+**The diagnosis holds, and is now directly observed rather than inferred.** The mention path
+keys event instances by TYPE, so N events of one type in a document pool into one. On twelve
+blind-test documents each containing >=2 gold events of one type, the incumbent emitted two
+instances in **0/12** and pooled multiple triggers into a single instance in **11/12** — it
+finds 2-4 triggers per document and merges them every time, unioning their arguments. That is
+why strict argument F1 sits near 0.10 while relaxed sits near 0.59. (commit `c840425`)
+
+**No content-derived key fixes it.** `event_type` collapses 69.7% of gold instances,
+OneIE's `trigger` span 39.9%, and the two together exactly 39.9% — adding the type buys
+nothing. Only an *index* — one addressable slot per instance, which is what
+`event_records: true` allocates — has a structurally guaranteed 0% collapse. (§4c,
+`tools/data/event_multiplicity.py`)
+
+**The record head works, on a 40%-trained checkpoint.** 5/12 multi-instance, 0/12 pooled, and
+`event_argument` strict *precision* up **1.3-1.7x** over the incumbent at every matched
+threshold. Its recall is 4-10x lower and climbing (+41% in one epoch), so the floor is
+training, not structure — but the trajectory does not reach the incumbent's relaxed recall,
+and that recall is bought by emitting 4,613 predictions for 927 gold triples anyway. **Judge
+the finished model on strict F1 at its own calibrated point, not on relaxed recall.**
+(§4e, §4f)
+
+**Threshold is not the lever.** Sweeping it moves argument *recall* a lot — never-proposed
+falls from ~48.8% to ~29.4% — and no F1 at all, because precision pays for it. One free thing
+is still on the table: `event_type` precision is exactly 1.000 at threshold 0.2 and its
+operating point has never been found; it is at or below 0.1. (§4d)
+
+**Instrument defects found along the way, all fixed:** the blind test is NOT affected by the
+gold-capacity cap but in-training eval IS (§4g); the checkpoint persists 92 `boundary_head`
+keys and auto-loads them (§4g, correcting §4e); and `max_gold_per_query: 32` with
+`skip_sample` was teaching the model to abstain on its richest documents — 3,774 firings in
+the first event-records run, which was stopped and relaunched for it
+(`tests/processing/test_gold_capacity.py`).
 
 ---
 
@@ -11,7 +58,7 @@ blind test, greedy decode, threshold 0.5. Every number here is from that run's
 
 Same checkpoint, same predictions, three scoring keys:
 
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+> *Retracted — see §4d. Not at threshold 0.5; the card says 0.3.*
 
 | key | what it requires | F1 | P | R |
 |---|---|--:|--:|--:|
@@ -76,7 +123,9 @@ whether events were trained on the record path would read that line and conclude
 (RAMS is 100% single-event documents — which is exactly why the RAMS-based argument curves
 never surfaced this).
 
-## 3. Was `event_records: true` ever configured? NO — and that is the answer to the obvious objection
+## 3. Was `event_records: true` ever configured? NOT UNTIL 2026-09-15 — and that was the answer to the obvious objection
+
+> *Historical. It is configured now, trained, and measured — §4e, §4f. This section records why the question mattered.*
 
 Events *were* trained with mmBERT. The objection "so the head has seen events" is right
 about the **mention** path and wrong about the **record** path, and the distinction is the
@@ -133,7 +182,7 @@ was never detected cannot be attached to it. So *"improve arguments"* mostly mea
 wrong type while missing 39% of them is not performing well; it is sitting far above its
 optimal operating point. That is a calibration signature, not a capability one.
 
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+> *Retracted — see §4d. Not at threshold 0.5; the card says 0.3.*
 **AND NOTHING HAS EVER BEEN SWEPT.** Every number in this document — 0.1178, 0.5783,
 0.6051, 0.7545 — is a single-point reading at **threshold 0.5**. `evaluate_config` calls
 `_run_blind_test` directly and does not re-sweep, and the decode-arms run passed
@@ -169,7 +218,6 @@ not between two models."* The same applies to a model against itself.
 ### What either outcome means
 
 - **Relaxed recall moves materially** → part of the "48.8% never proposed" is calibration,
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
   not capability, and **the incumbent's honest baseline is higher than 0.1178** — which
   makes the event-records base's win *harder* to claim. That is the reason to run it before
   the base lands rather than after.
@@ -213,7 +261,7 @@ OneIE's argument criterion, verbatim:
 
 Our two metrics bracket that criterion; neither equals it:
 
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+> *Retracted — see §4d. Not at threshold 0.5; the card says 0.3.*
 
 | metric | span requirement | trigger required? | score |
 |---|---|---|--:|
@@ -224,14 +272,13 @@ Our two metrics bracket that criterion; neither equals it:
 - **strict adds a requirement OneIE does not have** (trigger identity), so 0.1178 is a
   LOWER bound on an OneIE-comparable number.
 - **relaxed drops a requirement OneIE does have** (exact spans; ours accepts
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
   `New York City` ↔ `New York`), so 0.5783 is an UPPER bound.
 
 **The OneIE-comparable figure lies between them and we do not currently compute it.**
 
 ### What follows from that
 
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
+> *Retracted — see §4d. Not at threshold 0.5; the card says 0.3.*
 1. **`0.1178` must never be quoted as "our event-argument F1" against published work.** It
    is a deliberately stricter criterion. Every external comparison needs the bracketed pair
    or, better, the missing metric.
@@ -338,7 +385,7 @@ the sentence scope, or the hand-written feature templates.
 
 ---
 
-## 4c. THE SWEEP RAN. The re-baseline, and two premises it broke
+## 4d. THE SWEEP RAN. The re-baseline, and two premises it broke
 
 Run 2026-09-15. Validation grid on `whr778/gliner2-eb16-rebuild-tr`, winner picked on
 relaxed argument F1, blind test scored **once** at that threshold — 18,786 records, supports
@@ -386,7 +433,6 @@ strict.
 This sweep was motivated by "every event number this project quotes is a single-point
 reading at threshold 0.5". **The model card says `Decision threshold: 0.3 (calibrated
 against the validation set)`.** The 0.5 premise was wrong, and the figures §1 quotes
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 (`0.1178` / `0.5783` / trigger `0.6051` / type `0.7545`) match neither the card at 0.3 nor
 this run at 0.2. Treat them as of uncertain provenance and stop quoting them.
 
@@ -420,13 +466,12 @@ cannot be the threshold — the code changed (the `field_dtypes_list` cardinalit
 the known candidate). So the 0.3-vs-0.2 rows above are threshold *plus* code version, not
 threshold alone. The single unconfounded statement is the measured column: **at threshold
 0.2 on current code, the incumbent scores event_argument strict 0.0991 / relaxed 0.5884,
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
 event_trigger 0.5984, event_type 0.8650** — and that, not `0.1178`, is what the
 event-records base has to beat, at a threshold chosen the same way.
 
 ---
 
-## 4d. THE EVENT-RECORDS BASE AT EPOCH 1: the mechanism works, the model is 40% trained
+## 4e. THE EVENT-RECORDS BASE AT EPOCH 1: the mechanism works, the model is 40% trained
 
 Run 2026-09-15 while the base was still training (epoch 1.9 of 4, step 21k/54.8k). Same
 protocol as the incumbent — validation grid, pick on relaxed argument F1, score the blind
@@ -436,7 +481,7 @@ Two config traps had to be disarmed first, and either would have produced a conf
 answer. The training config adds `professorbob_re`, `scierc`, `paraloq_json`, which carry
 **1,816 test records** — scoring through it would have measured 20,602 against the
 incumbent's 18,786. ~~And the checkpoint's own `config.json` carries no record keys at all, so
-`event_records` comes from the YAML.~~ **STRUCK — see §4f.** That was read off the top level
+`event_records` comes from the YAML.~~ **STRUCK — see §4g.** That was read off the top level
 of `config.json`, missing the nested `boundary_head` dict, which in fact holds 92 keys
 including `event_records`. The checkpoint carries its own setting and the loader honours it.
 The denominator above is the real and sufficient reason for the separate eval config.
@@ -456,7 +501,7 @@ The denominator above is the real and sufficient reason for the separate eval co
 Strict precision requires the argument to be bound to the **right instance**. It is higher at
 every point on the grid, by 1.3–1.7×, on a model that is 40% trained and worse at everything
 else. That is the record head doing the job it was added for, and it agrees with the
-independent mechanism probe (§4e / `probe_event_multiinstance.py`): 5/12 multi-instance and
+independent mechanism probe (`tools/train/probe_event_multiinstance.py`, commit c840425): 5/12 multi-instance and
 0/12 pooled, against the incumbent's 0/12 and 11/12.
 
 ### What did NOT improve: everything else, because the model is undertrained
@@ -488,9 +533,9 @@ epoch-1 figure here understates a properly calibrated epoch-1 model. When the ru
 
 ---
 
-## 4e. IS THE LOW RECALL UNDERTRAINING, OR A MISSING MECHANISM?
+## 4f. IS THE LOW RECALL UNDERTRAINING, OR A MISSING MECHANISM?
 
-§4d left `event_argument` relaxed recall down 4-10x against the incumbent and could not say
+§4e left `event_argument` relaxed recall down 4-10x against the incumbent and could not say
 whether that was a model at 40% of its schedule or a decoder that structurally cannot propose
 more. Those have opposite consequences, so the question was settled rather than argued.
 
@@ -546,7 +591,7 @@ end of the run is strict F1 at each model's own calibrated point, not relaxed re
 
 ---
 
-## 4f. DOES THE GOLD CAP ALSO CORRUPT EVALUATION, AND DOES INFERENCE NEED A CHANGE?
+## 4g. DOES THE GOLD CAP ALSO CORRUPT EVALUATION, AND DOES INFERENCE NEED A CHANGE?
 
 Three questions, answered from the code rather than assumed.
 
@@ -592,7 +637,7 @@ them, and `AutoExtractor.from_pretrained` loads them. Consequences:
 - `event_records` is `True` in the epoch-1 checkpoint and `False` in the incumbent's — which
   is why the mechanism probe could tell them apart with no YAML involved at all.
 
-**CORRECTION to §4d and to commit `ab13385`.** Both state that "the checkpoint's own
+**CORRECTION to §4e and to commit `ab13385`.** Both state that "the checkpoint's own
 config.json carries no record keys at all, so `event_records` comes from the YAML", and that
 evaluating through the incumbent's config would have run a record-trained model through the
 mention path. **That is wrong** — it came from inspecting only the TOP level of config.json
@@ -602,6 +647,10 @@ carry 1,816 test records and would have scored the model against 20,602 where th
 used 18,786. The decode-path argument should be struck.
 
 ## 5. What follows, in order
+
+> *Written before §4d-§4g. Item 1 is kept current; items 2-4 are the plan as it stood
+> and are superseded in part -- item 3 in particular is now answered: relaxed and strict
+> move in OPPOSITE directions under threshold (§4d), so reporting both is not optional.*
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed
    the decode path while the head was naive; warming first separates the two.
@@ -619,7 +668,6 @@ used 18,786. The decode-path argument should be struck.
    the single-key diff if that comparison is what is wanted.
 
    Read against `whr778/gliner2-eb16-rebuild-tr`, whose own `event_argument` figure is the
-> **SUPERSEDED 2026-09-15.** These figures are of uncertain provenance and are NOT at threshold 0.5 — the incumbent's model card says `Decision threshold: 0.3`. Measured at the validation-selected 0.2: event_argument strict 0.0991 / relaxed 0.5884, event_trigger 0.5984, event_type 0.8650. See EVENT_ARGUMENT_DIAGNOSIS.md §4c.
    0.1178 above. 167,752 train documents x 5 epochs = 838,760 samples, 52,423 optimizer
    steps at effective batch 16 on one GPU. Aggregate leakage gate CLEAN (167,752 / 21,138 /
    19,874 unique documents, all three intersections zero).
@@ -629,6 +677,17 @@ used 18,786. The decode-path argument should be struck.
    Injure x2: **0 record specs with it off, 3 with it on** (one per type, natural mode,
    5 fields each). Pinned by a test.
    **LAUNCHED 2026-09-15** on an A100, ~14h, ~$28, `tools/lambda/event_base_run.sh`.
+   **STOPPED at epoch 2.4 and RELAUNCHED the same day.** The first attempt ran under
+   `max_gold_per_query: 32`, which with `on_capacity_exceeded: skip_sample` cleared gold
+   for every query in any document where one query overflowed -- 3,774 firings, 3.65% of
+   samples, each one supervised to ABSTAIN rather than merely left unsupervised (§4g).
+   Record targets survive that, so the event heads were not corrupted, but the decision
+   was to stop-loss rather than pay twice for the same model. The relaunch runs at
+   `max_gold_per_query: 256` / `training_candidate_budget: 384` with **zero** firings,
+   at 16.4 samples/s against the old run's 15.7 -- the raised cap is free in wall clock.
+   NOTE the incumbent control is still a cap-32 model, so the comparison now carries two
+   differences; rebuild the control with the same cap when the line is next re-based.
+   Checkpoints from the aborted run are kept: `whr778/gliner2-eventrecords-ep1`.
 
    **THE COST QUESTION IS SETTLED AND THE ANSWER IS CHEAP.** Measured before booking, 120
    steps per arm, same config with the flag flipped:
