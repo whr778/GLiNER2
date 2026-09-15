@@ -30,10 +30,17 @@ CFG=tools/train/config/base/eb16-rebuild-tr.yaml
 CKPT=$HOME/ckpt/eb16-rebuild-tr
 OUT=$HOME/sweep
 DEST=${DEST:-event_threshold_sweep}
-GRID=${GRID:-"0.1 0.2 0.3 0.4 0.5"}
+# `-` not `:-`: `:-` substitutes on unset OR EMPTY, so `GRID=""` -- the way to say "the
+# validation points are already in $OUT, just do the test pass" -- would silently re-run
+# all five, ~37 min of billed GPU to recompute what was seeded.
+GRID=${GRID-"0.1 0.2 0.3 0.4 0.5"}
 mkdir -p "$OUT"
 source tools/lambda/_publish.sh
 RESCUE=0
+
+# The orchestration log on EVERY exit, not just the happy one. The last run's diagnosis
+# lived in ~/box.log, was published nowhere, and died with the instance.
+trap 'cp ~/box.log "$OUT/box.log" 2>/dev/null && publish "$DEST" "$OUT/box.log" >/dev/null 2>&1 || true' EXIT
 
 [ -f "$CKPT/model.safetensors" ] || $PY -c "
 from huggingface_hub import snapshot_download
@@ -93,11 +100,6 @@ $PY -u tools/train/eval.py --config "$CFG" --checkpoint "$CKPT" \
 cp out/eb16-rebuild-tr/test_metrics.json "$OUT/test-$BEST.json" 2>/dev/null \
   || echo "[sweep] NO test metrics"
 publish "$DEST" "$OUT/test-$BEST.json" "$OUT/test-$BEST.log" || RESCUE=1
-
-# The ORCHESTRATION log, not just the per-pass logs. When the test pass failed silently the
-# only record of why lived here, and it was never published, so the box took the diagnosis
-# with it. Best-effort: a hold must not be caused by the log about the hold.
-cp ~/box.log "$OUT/box.log" 2>/dev/null && publish "$DEST" "$OUT/box.log" || true
 
 echo "[sweep] ===== DONE $(date -u)  chosen threshold $BEST ====="
 if [ "$RESCUE" -ne 0 ]; then
