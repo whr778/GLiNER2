@@ -501,7 +501,15 @@ Three constraints that matter more than the arithmetic:
 
 ---
 
-## 7. Phase B (deferred — only if A is positive)
+## 7. Phase B (deferred — see [[PHASE_B_PLAN]] for the current plan)
+
+> **The gating condition in this heading is now WRONG and is kept only so the change is
+> visible.** "Only if A is positive" was written when a positive A was the expected route.
+> A came back NULL AT PARITY, and the reason that does not close the question is that A
+> compares two decoders over one model trained for neither — and, until 2026-09-08, over a
+> beam whose scalar constraint machinery was inert. Phase B is the only untested version of
+> the thesis, and a null from it is a stronger result than a null from a decode swap.
+> The full plan, bars and cost model are in [[PHASE_B_PLAN]].
 
 Joint training: put the joint_ie beam **in the loss** via the boundary model's existing
 **detached-association + differentiably-recomputed-scores** idiom (`records.py`,
