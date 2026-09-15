@@ -60,6 +60,10 @@ RESCUE=0
 mkdir -p "$OUT"
 
 # Retry anything, with backoff. 6 attempts, ~30 minutes total.
+# NOTE: the metrics/log publishing below predates tools/lambda/_publish.sh and is kept
+# as-is only because this script is MID-RUN on a box as of 2026-09-15. Next edit should
+# `source tools/lambda/_publish.sh` and delete the duplicate -- writing this block twice is
+# what let the throughput smoke ship with no publishing at all.
 retry() {
   local what=$1; shift
   local n
