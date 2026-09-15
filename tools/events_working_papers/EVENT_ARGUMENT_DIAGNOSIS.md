@@ -107,7 +107,7 @@ arms did that, and the sum was negative.
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed
    the decode path while the head was naive; warming first separates the two.
-   **BUILT 2026-09-15:** `config/base/joint-boundary-mmbert-137k-eventrecords.yaml` does
+   **BUILT 2026-09-15:** `config/base/eb16-eventrecords-tr.yaml` does
    this at COLD START rather than as a fine-tune, so the head is warmed on events from
    step 0 and the Tier 2 confound cannot arise. It is the 137k base config patched with
    exactly one key (`event_records: true`) plus a new output path; the diff against the
