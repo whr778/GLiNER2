@@ -171,6 +171,68 @@ arms did that, and the sum was negative.
    (10k/40k/100k → 0.050/0.115/0.158) was run on **RAMS**, which is 0.0% affected. It
    therefore says nothing about the pooling ceiling, in either direction.
 
+## 5b. A pre-registered per-role prediction, and independent support for the hypothesis
+
+Written 2026-09-15 **while `eb16-eventrecords-tr` was training and before any result was
+seen**, so the run can falsify this rather than be read to fit it.
+
+**THE ARGUMENT METRIC IS ONE CORPUS.** Every high-support argument role in the blind test
+is 100% CMNEE:
+
+| role | gold instances (test) | dominant corpus |
+|---|--:|---|
+| Subject | 6,879 | cmnee 100% |
+| Equipment | 4,517 | cmnee 100% |
+| Date | 3,522 | cmnee 100% |
+| Location | 2,354 | cmnee 100% |
+| Militaryforce | 1,862 | cmnee 100% |
+| Object | 713 | cmnee 100% |
+| Materials | 647 | cmnee 100% |
+
+25 of 42 scored roles have strict F1 of exactly 0.0000, but they carry only **1.8%** of the
+argument mass. **The long tail is not the problem — the high-support roles are.**
+
+**WITHIN CMNEE, 67.3% of argument instances belong to events that share their type with
+another event in the same document** (14,004 of 20,813), and the share varies by role. That
+variation is a natural experiment, because the roles come from one corpus, one annotator
+and one language — so corpus, domain and language are controlled:
+
+| role | affected share | current strict F1 |
+|---|--:|--:|
+| Equipment | 81% | 0.041 |
+| Date | 71% | 0.124 |
+| Location | 68% | 0.128 |
+| Subject | 67% | 0.153 |
+| Militaryforce | 51% | 0.126 |
+| Materials | 41% | 0.177 |
+| Object | 40% | **0.328** |
+
+**Pearson r = −0.789 (n = 7, t = −2.87, df = 5, two-tailed p = 0.035).** The more a role is
+hit by same-type pooling, the worse it scores — and this is computed from data that was
+already in hand, independently of the running experiment.
+
+### The prediction
+
+If the binding hypothesis is right, `eb16-eventrecords-tr` should improve these roles **in
+rough proportion to their affected share**: Equipment and Date most, Object and Materials
+least. Object is the control that makes this falsifiable — at 40% affected and already
+0.328, it has the least to gain.
+
+**What would falsify it:** uniform improvement across roles regardless of affected share
+(says something else changed — more data, longer training, the three added corpora), or
+Object improving as much as Equipment (says the gain is not about pooling).
+
+### The honest limits
+
+- **n = 7 roles from ONE corpus.** p = 0.035 is suggestive, not established, and with seven
+  points a single role moves it materially.
+- **Correlation is not the mechanism.** An intrinsically harder role could simply appear
+  more often in multi-event documents. The within-corpus design controls for corpus,
+  annotator and language but not for role difficulty.
+- **This run is not a clean test of it** — `eb16-eventrecords-tr` differs from
+  `eb16-rebuild-tr` by the flag AND three added corpora, so a per-role pattern is evidence
+  rather than proof.
+
 ## 6. Caveats, stated because the number is quotable
 
 - **64.2% is this mixture's number**, dominated by one Chinese corpus. It is not a
