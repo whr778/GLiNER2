@@ -435,10 +435,11 @@ test **once**. Denominator verified identical: `scoring against 18786 records` i
 Two config traps had to be disarmed first, and either would have produced a confident wrong
 answer. The training config adds `professorbob_re`, `scierc`, `paraloq_json`, which carry
 **1,816 test records** — scoring through it would have measured 20,602 against the
-incumbent's 18,786. And the checkpoint's own `config.json` carries **no record keys at all**,
-so `event_records` comes from the YAML: evaluating through the incumbent's config would have
-run a model trained to use the RECORD head through the MENTION path, measuring the opposite
-of the change.
+incumbent's 18,786. ~~And the checkpoint's own `config.json` carries no record keys at all, so
+`event_records` comes from the YAML.~~ **STRUCK — see §4f.** That was read off the top level
+of `config.json`, missing the nested `boundary_head` dict, which in fact holds 92 keys
+including `event_records`. The checkpoint carries its own setting and the loader honours it.
+The denominator above is the real and sufficient reason for the separate eval config.
 
 ### What improved: BINDING. Consistently, at every matched threshold.
 
@@ -542,6 +543,63 @@ Two reasons to expect the gap to persist, and they matter more than the trend:
 erase it, and matching the incumbent's relaxed recall would mean adopting its over-emission —
 the precise behaviour the strict metric exists to penalise.** The comparison to watch at the
 end of the run is strict F1 at each model's own calibrated point, not relaxed recall.
+
+---
+
+## 4f. DOES THE GOLD CAP ALSO CORRUPT EVALUATION, AND DOES INFERENCE NEED A CHANGE?
+
+Three questions, answered from the code rather than assumed.
+
+### 1. The blind test is NOT affected. In-training eval IS.
+
+`evaluate_checkpoint` -> `compute_metrics` (training/eval_metrics.py) contains no reference
+to `pad_target_graphs`, `mention_mask`, `build_targets` or `collate_fn`: it scores model
+predictions against the dataset's own gold. **Every blind-test number this document quotes is
+therefore unaffected by the cap.**
+
+In-training evaluation is a different path and it *is* affected. `trainer.py:670-681` passes
+the SAME `on_capacity_exceeded` and `max_gold_per_query` into `collate_fn_inference` as the
+training branch passes into `collate_fn_train` — the non-training branch deliberately drops
+only `error_policy`. So a val sample whose query overflows has its gold cleared during eval
+too, and the mention metrics take their denominator straight from that mask
+(`training/metrics.py:54-55`: `total = targets.mention_mask.sum()`).
+
+**The bias is optimistic and it is silent.** A skipped sample leaves both the numerator and
+the denominator, so the densest documents are not scored as failures — they are not scored at
+all. Per-epoch val numbers from any run using `skip_sample` are therefore measured on an
+easier subset than the corpus, and "best checkpoint" selection inherits that.
+
+### 2. Inference needs no `max_gold_per_query` change — but `candidate_budget` is its analogue
+
+`max_gold_per_query` is a TARGET-building parameter; pure inference builds no targets, so it
+cannot bite at decode. The inference-side ceiling is **`candidate_budget`, which defaults to
+128** — the number of candidate spans enumerated per query. A query whose gold exceeds it
+cannot have all of its spans proposed no matter how well the model scores them.
+
+Measured on these corpora, 0.037% of (doc, label) query groups exceed 128, so it is a real
+but small ceiling. Raising it costs decode compute for every consumer of the model, which is
+why it is left at the default here and why the casualty configs likewise train wider than
+they decode. `evaluate_checkpoint` accepts `boundary_overrides` if a specific eval needs it.
+
+### 3. YES, the YAML is persisted into config.json and auto-loaded — AND A CORRECTION
+
+A trained checkpoint stores **92 `boundary_head` keys**, `max_gold_per_query`,
+`candidate_budget`, `training_candidate_budget`, `enable_records` and `event_records` among
+them, and `AutoExtractor.from_pretrained` loads them. Consequences:
+
+- The incumbent and the epoch-1 checkpoint both carry **`max_gold_per_query: 32`** baked in.
+  The relaunched run will bake in 256 / 384.
+- `event_records` is `True` in the epoch-1 checkpoint and `False` in the incumbent's — which
+  is why the mechanism probe could tell them apart with no YAML involved at all.
+
+**CORRECTION to §4d and to commit `ab13385`.** Both state that "the checkpoint's own
+config.json carries no record keys at all, so `event_records` comes from the YAML", and that
+evaluating through the incumbent's config would have run a record-trained model through the
+mention path. **That is wrong** — it came from inspecting only the TOP level of config.json
+and missing the nested `boundary_head` dict. The eval-config surgery was still right, but for
+one reason rather than two: **the denominator**. The training config's three extra corpora
+carry 1,816 test records and would have scored the model against 20,602 where the incumbent
+used 18,786. The decode-path argument should be struck.
 
 ## 5. What follows, in order
 
