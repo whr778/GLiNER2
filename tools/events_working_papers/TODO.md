@@ -14,6 +14,26 @@ produced no new model either: the programme's central decode question was answer
 repairing two instruments and re-measuring, and a 500-document generation A/B was rebuilt
 after its only copy was lost with a disk. See `PROJECT_HISTORY.md` Phase 32.
 
+### Open after 2026-09-15 -- event arguments
+
+- **`event_argument` 0.118 is a BINDING failure, not an extraction failure, and the fix is
+  a head that was never trained.** Strict 0.1178 against relaxed 0.5783 on the same
+  predictions -- dropping the trigger link multiplies the score by five -- while boundary
+  and label errors together are 6.6% of gold. 64.2% of gold event instances share their
+  type with another instance in the same document (cmnee 1,606 docs, maven 346, casie 102),
+  and the mention path compiles ONE instance per event type, so two-thirds of gold events
+  are structurally inexpressible. `event_records: true` lifts that cap and is set in ZERO
+  base configs -- verified, `eb16-rebuild-tr.yaml` and every file under `config/base/` have
+  0 occurrences -- so the RECORD HEAD HAS NEVER BEEN TRAINED ON AN EVENT. The two Tier 2
+  arms that flipped the path (CASIE 0.0036 vs a 0.2998 control; MAVEN trigger -0.008)
+  changed the path and the head's competence together and measured their sum.
+  **Next test:** warm the record head on events FIRST, then re-run Tier 2 on CMNEE rather
+  than CASIE. Full evidence and caveats in `EVENT_ARGUMENT_DIAGNOSIS.md`.
+
+- **Half the arguments are missing before binding is even considered, and that is a SECOND
+  problem this does not explain.** Relaxed recall is 0.492 and 9,059 of 18,557 gold
+  arguments (48.8%) are never proposed. Pooling explains mis-binding, not absence. Unowned.
+
 ### Open after 2026-09-08 -- the joint decode path
 
 The re-measurement RAN and closed the question: 87% of the structure deficit was the
