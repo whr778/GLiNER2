@@ -109,6 +109,69 @@ effect this programme has measured — fresh → IE-pretrained heads moved RAMS 
 Switching the path and the head's competence at the same time measures their sum. The
 arms did that, and the sum was negative.
 
+## 4b. The OTHER half: argument recall is TRIGGER recall, and nothing has ever been calibrated
+
+Sections 1–4 are about binding. This section is about the ceiling binding converges onto,
+and it changes what "fixing event arguments" means.
+
+**The recall cascade, same run, strict unless noted:**
+
+| head | precision | recall |
+|---|--:|--:|
+| `event_type` | **1.000** | 0.606 |
+| `event_trigger` | 0.783 | 0.493 |
+| `event_argument` (relaxed) | 0.701 | **0.492** |
+
+**Argument recall (0.492) is trigger recall (0.493).** The argument head is not
+independently failing to find things — it inherits the cascade. An argument whose trigger
+was never detected cannot be attached to it. So *"improve arguments"* mostly means
+**improve triggers**, and triggers inherit from type detection above them.
+
+**`event_type` precision is EXACTLY 1.000 at recall 0.606.** A head that never emits a
+wrong type while missing 39% of them is not performing well; it is sitting far above its
+optimal operating point. That is a calibration signature, not a capability one.
+
+**AND NOTHING HAS EVER BEEN SWEPT.** Every number in this document — 0.1178, 0.5783,
+0.6051, 0.7545 — is a single-point reading at **threshold 0.5**. `evaluate_config` calls
+`_run_blind_test` directly and does not re-sweep, and the decode-arms run passed
+`--threshold 0.5` explicitly. `sweep_record_thresholds.py` exists but sweeps the RECORD
+head for structures, and its own docstring says `threshold_sweep` *"sweeps the general
+decision threshold; it does not touch `record_anchor_threshold` / `record_field_threshold`,
+so nothing has ever calibrated this head."*
+
+**This project's most expensive recorded lesson is exactly this shape.** The stage-0
+relevance gate ran its whole life at 0.5, needed 0.998, and moving it bought overall
+accuracy 0.719 → 0.847 and the worst class 0.444 → 0.903 — *more than any training
+intervention*, after two GPU fine-tuning runs had been spent on that class
+([[RESEARCH_PROGRAM]] §2).
+
+### Two independent levers, and the cheap one is untried
+
+| lever | attacks | cost | status |
+|---|---|--:|---|
+| `event_records: true` | **binding** — the strict/relaxed gap | ~$28 | training 2026-09-15 |
+| **threshold sweep** | **recall** — the ceiling itself | **~$2** | **never run** |
+
+They are complementary rather than competing: binding converges strict *onto* relaxed, and
+the sweep moves relaxed. **So the "~0.58 ceiling" stated in §5 is the ceiling AT THRESHOLD
+0.5 and may not be the model's ceiling at all.**
+
+### Method constraint, because this programme has retracted a finding for getting it wrong
+
+**Pick the threshold on VALIDATION; score the blind test ONCE.** Sweeping on test and
+quoting the best is fitting the test set. [[RESEARCH_PROGRAM]] §5: *"a comparison between
+two models at a shared arbitrary threshold measures the gap between two operating points,
+not between two models."* The same applies to a model against itself.
+
+### What either outcome means
+
+- **Relaxed recall moves materially** → part of the "48.8% never proposed" is calibration,
+  not capability, and **the incumbent's honest baseline is higher than 0.1178** — which
+  makes the event-records base's win *harder* to claim. That is the reason to run it before
+  the base lands rather than after.
+- **It does not move** → the ceiling is real, argument recall is a genuine training problem,
+  and §4b becomes the next target after binding.
+
 ## 5. What follows, in order
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed
