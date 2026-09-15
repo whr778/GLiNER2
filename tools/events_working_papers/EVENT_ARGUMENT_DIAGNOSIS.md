@@ -282,6 +282,9 @@ surface, and it is the opposite direction from schema-driven.
 against mmBERT with an 8192 window and broad language support. Its *numbers* are not a
 target for us; its *representation* is the transferable part, and only partly.
 
+**A side-by-side of OneIE, line 2 and line 3 — with each approach's principal issue — is
+in [[EVENT_LINE]] §4i.**
+
 **Net:** OneIE is the right thing to have read and the wrong thing to copy wholesale. What
 transfers is the insight that **trigger instances should be individuated by span rather
 than by type** — which `event_records: true` achieves within the record head, without a

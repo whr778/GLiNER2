@@ -167,6 +167,42 @@ error in its own analysis.
 individuated **by span, not by type**. `event_records: true` achieves exactly that inside
 the record head — without a closed tag set, and without giving up the document.
 
+## 4i. Three approaches, side by side
+
+| | **OneIE** (2020) | **JB / structures** (line 2) | **JB / events** (line 3) |
+|---|---|---|---|
+| **an event instance is individuated by** | trigger **span** (BIO+CRF per token) | event **TYPE** per document | trigger **span** — the record anchor is `role_index 0`, always the trigger |
+| **two `Attack` events in one document** | two nodes, natively | **pooled into ONE** | two record instances |
+| **instance capacity** | unbounded (one node per tagged span) | **1 per type** | `record_instance_queries` = **32**; worst observed doc = 16 |
+| **label vocabulary** | **CLOSED** — scores "a tag in a target tag set" fixed at training | **schema input** at inference | **schema input** at inference |
+| **scope** | **one sentence** | document (8192 capable, 4096 window) | document (8192 capable, 4096 window) |
+| **argument → trigger binding** | graph edge, trigger node → entity node | attaches to the pooled trigger | role edge to the anchoring trigger |
+| **needs entity gold** | **yes** — arguments are edges to entity mention nodes | no | no |
+| **structural constraints** | hand-authored global feature templates per ontology | none at training | cardinality / exclusivity in the record head |
+| **what its argument metric requires** | offsets + type + role, **no trigger** (Arg-C) | — | — |
+| **evidence** | published SOTA on ACE05 / ERE | **measured**: arg 0.1178 strict / 0.5783 relaxed, trigger 0.6051, type 0.7545 | **none yet** — training 2026-09-15 |
+| **principal issue** | closed tag set is incompatible with schema-driven extraction; sentence-only; *"multiple events per trigger"* is a named residual | **64.2% of gold event instances are structurally inexpressible** | unproven; the record head has an unresolved throughput defect and two failed Tier 2 precedents |
+
+### What the table is actually saying
+
+**Lines 2 and 3 differ on exactly one row that matters**, and it cascades: *individuated by
+type* against *individuated by span*. Everything downstream — pooling, the 64.2%, the
+strict/relaxed gap — follows from that single choice.
+
+**Line 3 and OneIE agree on that row and disagree on almost every other.** Both individuate
+by trigger span; OneIE pays for it with a closed tag set and a sentence boundary, line 3
+pays for it with an unproven head and a capacity cap. **The insight transfers; the
+machinery does not.**
+
+**The capacity cap is a real difference from OneIE and is currently not binding.** 32
+instance queries against a worst observed document of 16 same-type events. It would bind on
+a denser corpus, and that is a property to re-check per mixture rather than assume.
+
+**Line 2 is not a bad design; it is a design for a different task.** One instance per type
+is correct when documents describe one event of each kind — RAMS is **0.0%** affected,
+being 100% single-event documents — which is exactly why the RAMS-based argument curves
+never surfaced this. It fails on multi-event corpora, and our argument mass is multi-event.
+
 ## 5. What "proves out" means
 
 The line continues if, on an identical `event_argument` denominator:
