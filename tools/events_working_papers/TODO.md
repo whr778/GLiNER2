@@ -14,6 +14,22 @@ produced no new model either: the programme's central decode question was answer
 repairing two instruments and re-measuring, and a 500-document generation A/B was rebuilt
 after its only copy was lost with a disk. See `PROJECT_HISTORY.md` Phase 32.
 
+### Open after 2026-09-15 -- metrics, from reading OneIE
+
+- **We cannot compare event arguments to the literature, because we do not compute the
+  literature's metric.** OneIE's Arg-C is *offsets + event type + role* with NO trigger
+  requirement. Our `strict` ADDS trigger identity (lower bound, 0.1178); our `relaxed`
+  DROPS exact spans for overlap (upper bound, 0.5783). The comparable number lies between
+  and is not computed. **Next action, no GPU:** add an Arg-C variant — exact surface,
+  type + role, no trigger — to `eval_metrics.py`. Until then, quoting 0.1178 against
+  published work overstates the gap, and this has been done repeatedly today.
+
+- **OneIE is an alternative answer to the pooling problem, not just a baseline.** It tags
+  triggers token-level with BIO + CRF, so one node per trigger SPAN and multi-instance
+  falls out with no cap to lift. `event_records` is the record-head route to the same end.
+  **Hold as the fallback** if the record head disappoints — it has a published result
+  behind it. *(`EVENT_ARGUMENT_DIAGNOSIS.md` §4c.)*
+
 ### IN FLIGHT 2026-09-15 -- the event-capable base
 
 - **`eb16-eventrecords-tr` is training on an A100 (~14h, ~$28).** eb16's data with
