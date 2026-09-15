@@ -97,3 +97,41 @@ def test_raise_is_the_default_so_silent_loss_is_opt_in():
             [_sample(n_overflow=40)], query_counts=[2], text_lengths=[256],
             max_gold_per_query=32, build_dense=False,
         )
+
+
+def test_RECORD_targets_survive_skip_sample_but_dense_boundary_targets_do_not():
+    """Which heads a skipped sample actually damages -- the question behind "do we restart?".
+
+    `records` is built straight from the graphs, after and independent of the skip branch
+    (processing/targets.py:476), so a sample whose mentions are cleared still supervises the
+    RECORD head in full. Events routed through `event_records: true` therefore keep their
+    supervision.
+
+    The dense start/end/inside targets are NOT spared: they are derived from the zeroed
+    mention_pairs/mention_mask, so the shared boundary representation is still taught that
+    nothing begins or ends in that document.
+    """
+    from gliner2.processing.targets import RecordFieldTarget, RecordTarget
+
+    graph = _sample(n_overflow=40)
+    record = RecordTarget(
+        instance_id="inst-0",
+        task_index=0,
+        fields=(RecordFieldTarget(query_id=1, values=(((0, 2),),)),),
+    )
+    graph = TargetGraph(mentions=graph.mentions, records=(record,))
+
+    out = pad_target_graphs(
+        [graph], query_counts=[2], text_lengths=[256],
+        max_gold_per_query=32, on_capacity_exceeded="skip_sample", build_dense=True,
+    )
+
+    assert not out.mention_mask.any(), "mentions are cleared, as the other tests pin"
+    assert out.records and len(out.records[0]) == 1, (
+        "record supervision SURVIVES a skipped sample -- this is why an event_records run "
+        "is not invalidated by the cap, even though its entity head is damaged"
+    )
+    assert out.start_targets is not None and out.start_targets.sum().item() == 0, (
+        "dense boundary targets follow the cleared mask, so the shared span representation "
+        "IS still taught that nothing begins here"
+    )
