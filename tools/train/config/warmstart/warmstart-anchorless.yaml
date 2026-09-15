@@ -65,6 +65,14 @@ model:
                              # rather than silently training the wrong architecture.
   max_len: 8192
   boundary_head:
+    # Sized by tools/train/size_gold_capacity.py from THIS config's own corpora.
+    # 0.197% of (doc, label) query groups exceed the default 32; largest seen 157.
+    # The default matters because `on_capacity_exceeded: skip_sample` does not fail on
+    # overflow -- it clears gold for EVERY query in the document, and an empty
+    # mention_mask is the POSITIVE target for abstention, so the model is taught to emit
+    # nothing on its richest documents. See tests/processing/test_gold_capacity.py.
+    max_gold_per_query: 128
+    training_candidate_budget: 256
     enable_relations: true
     enable_records: true     # now load-bearing for STRUCTURES too, not just event edges
   struct_loss: bce_posweight

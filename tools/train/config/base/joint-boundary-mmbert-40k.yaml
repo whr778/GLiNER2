@@ -28,6 +28,14 @@ model:
   # around FA2 + unpadding (arXiv 2509.06888 Table 8). Needs the 'kernels' package.
   attn_implementation: flash_attention_2
   boundary_head:
+    # Sized by tools/train/size_gold_capacity.py from THIS config's own corpora.
+    # 0.585% of (doc, label) query groups exceed the default 32; largest seen 243.
+    # The default matters because `on_capacity_exceeded: skip_sample` does not fail on
+    # overflow -- it clears gold for EVERY query in the document, and an empty
+    # mention_mask is the POSITIVE target for abstention, so the model is taught to emit
+    # nothing on its richest documents. See tests/processing/test_gold_capacity.py.
+    max_gold_per_query: 128
+    training_candidate_budget: 256
     enable_relations: true   # load-bearing: relations decode as edges in the beam
     enable_records: true     # load-bearing: events decode as trigger + role edges
   # No decode_mode here. decode_mode is an EVAL-time switch selecting the greedy or

@@ -48,6 +48,15 @@
 # a 60-way classifier and dropping it leaves a model that has never seen one. Watch for
 # over-prediction of `none` on en/zh in the per-language eval.
 model:
+  boundary_head:
+    # Sized by tools/train/size_gold_capacity.py from THIS config's own corpora.
+    # 0.676% of (doc, label) query groups exceed the default 32; largest seen 142.
+    # The default matters because `on_capacity_exceeded: skip_sample` does not fail on
+    # overflow -- it clears gold for EVERY query in the document, and an empty
+    # mention_mask is the POSITIVE target for abstention, so the model is taught to emit
+    # nothing on its richest documents. See tests/processing/test_gold_capacity.py.
+    max_gold_per_query: 128
+    training_candidate_budget: 256
   pretrained: whr778/gliner2-casualty-multilingual-eb16tr
   architecture: boundary
   max_len: 2048

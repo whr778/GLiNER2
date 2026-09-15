@@ -101,6 +101,14 @@ model:
   # (measured, 1x H100, step 15 of this exact recipe). Needs the `kernels` package.
   attn_implementation: flash_attention_2
   boundary_head:
+    # Sized by tools/train/size_gold_capacity.py from THIS config's own corpora.
+    # 0.845% of (doc, label) query groups exceed the default 32; largest seen 3490.
+    # The default matters because `on_capacity_exceeded: skip_sample` does not fail on
+    # overflow -- it clears gold for EVERY query in the document, and an empty
+    # mention_mask is the POSITIVE target for abstention, so the model is taught to emit
+    # nothing on its richest documents. See tests/processing/test_gold_capacity.py.
+    max_gold_per_query: 384
+    training_candidate_budget: 512
     enable_relations: true
     enable_records: true
   struct_loss: bce_posweight

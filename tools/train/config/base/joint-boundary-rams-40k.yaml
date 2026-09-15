@@ -12,6 +12,15 @@
 # Both decode arms (greedy vs joint beam) are evaluated on THIS ONE trained model
 # via the eval-time decode_mode switch -- there is no separate "joint" training run.
 model:
+  boundary_head:
+    # Sized by tools/train/size_gold_capacity.py from THIS config's own corpora.
+    # 0.010% of (doc, label) query groups exceed the default 32; largest seen 37.
+    # The default matters because `on_capacity_exceeded: skip_sample` does not fail on
+    # overflow -- it clears gold for EVERY query in the document, and an empty
+    # mention_mask is the POSITIVE target for abstention, so the model is taught to emit
+    # nothing on its richest documents. See tests/processing/test_gold_capacity.py.
+    max_gold_per_query: 128
+    training_candidate_budget: 256
   pretrained: ./out/joint-boundary-mmbert-40k/best
   # attn_implementation is NOT set here on purpose: on the pretrained path it would
   # be applied to model.config AFTER the encoder is already built, so it would be a
