@@ -31,6 +31,41 @@
 # arguments 0.042 -> 0.462, elevenfold). This config changes the path AT COLD START, so the
 # head is warmed on events from step 0 and the confound does not arise.
 #
+# THIS IS NO LONGER A CURVE POINT, AND IT IS NO LONGER A ONE-VARIABLE A/B. As first
+# written this file differed from joint-boundary-mmbert-137k.yaml by three lines and the
+# flag was the only variable. Adding data (below) changes that: a difference against the
+# 137k control is now attributable to `event_records` OR to the extra corpora, and nothing
+# in the result can separate them.
+#
+# That is a deliberate trade, not an oversight. The goal here is a BETTER BASE, which is a
+# different objective from the clean flag A/B. If the A/B is what is wanted, the honest
+# options are (a) revert the data section to the 137k mix and keep the three-line diff, or
+# (b) train a matching control with the SAME added data and the flag off, at roughly double
+# the cost. Do not read this run against the existing 137k base and call it an event_records
+# result.
+#
+# WHAT WAS DELIBERATELY NOT ADDED, and why -- these are the load-bearing decisions:
+#
+#   rams        NO. It is the EVENT DOWNSTREAM. The original header excludes it for that
+#               reason and the exclusion still binds: RAMS trains joint-boundary-rams-137k,
+#               the rams-clean-* arms and PAPER_0's head-init curve (0.042 -> 0.462).
+#               Putting it in the base contaminates every one of those measurements, and
+#               the contamination would be invisible -- the downstream would simply look
+#               better. Requested 2026-09-15 and refused for this reason.
+#   redocred    NO. Relation downstream, same argument.
+#   wikievents  NO. Event downstream, same argument.
+#   docred      NO. Re-DocRED re-annotates the same documents; including it leaks into the
+#               Re-DocRED downstream.
+#   klue_re     NO, for now. 22,521 Korean RE records, but TODO records it at 17%
+#               contamination. It is currently "not in a live config, so not blocking";
+#               adding it here would make it blocking. Regenerate first.
+#   ace2005     NOT AVAILABLE. LDC2006T06, not redistributable, and not present in data/.
+#   docee_zh    HELD. 27,122 records, but it is classification + entities rather than
+#               events, and it would shift the language balance materially. A decision
+#               about what this base IS, not a free addition.
+#   turkish_event  HELD, same reason -- it would make this base trilingual, which is what
+#               eb16-rebuild-tr is for.
+#
 # READ AGAINST: whr778/gliner2-joint-boundary-mmbert-137k, the same recipe with the flag
 # off. Primary metric `eval_event_argument_strict_micro_f1` (0.1178 on eb16-rebuild-tr;
 # the 137k base's own figure is the correct control and must be read from its own run, not
@@ -164,10 +199,28 @@ labels_file: labels/unified.yaml
 data:
   # Relation corpora warm the relation head; the event corpora cannot.
   # Every point carries BOTH, at the pool's own 73/27 ratio.
+  #
+  # THREE CORPORA ADDED 2026-09-15 on top of the 137k mix, and the exclusions matter more
+  # than the additions -- see the header note "this is no longer a curve point".
   corpora:
     - data/sentence_rex
     - data/bio_ner_relations
     - data/biored
+    # +13,926 relation records, a 38% increase on the 36,707 the 137k mix carries.
+    # Wikidata-style properties like sentence_rex, but REGROUPED BY PASSAGE so each record
+    # carries all of a passage's triples -- which is the dense multi-relation shape the
+    # joint decode exists for, and the shape sentence_rex (one triple per sentence) does
+    # not supply. Leakage checked, not assumed: ZERO exact text overlap against
+    # sentence_rex, bio_ner_relations and biored.
+    - data/professorbob_re
+    # Small (265) but the only SCIENTIFIC relation domain in the mix, 7 relation types over
+    # AI2 abstracts. Included for domain spread, not volume. Research-use licence.
+    - data/scierc
+    # The only structure corpus besides text2json, and the reason it is here is
+    # event_records: turning events onto the RECORD head increases what that head must do,
+    # so giving it more genuine schema-driven structure supervision is directly on-point.
+    # Apache-2.0, 378 records -- small, clean, and not a casualty experiment corpus.
+    - data/paraloq_json
   event_files:
     chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}
     docee:           {train: data/docee.train.jsonl, val: data/scaling_joint/docee.val.jsonl, test: data/docee.test.jsonl}
