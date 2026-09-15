@@ -180,8 +180,42 @@ the record head — without a closed tag set, and without giving up the document
 | **needs entity gold** | **yes** — arguments are edges to entity mention nodes | no | no |
 | **structural constraints** | hand-authored global feature templates per ontology | none at training | cardinality / exclusivity in the record head |
 | **what its argument metric requires** | offsets + type + role, **no trigger** (Arg-C) | — | — |
-| **evidence** | published SOTA on ACE05 / ERE | **measured**: arg 0.1178 strict / 0.5783 relaxed, trigger 0.6051, type 0.7545 | **none yet** — training 2026-09-15 |
+| **evidence** | **ACE05-E** Trig-C 74.7, Arg-I 59.2, **Arg-C 56.8**; **ACE05-E+** Trig-C 72.8, **Arg-C 54.8**; **ERE-EN** Trig-C 57.0, **Arg-C 46.5** (single model, F1 %) | **measured** on the 18,786-doc blind test: argument **11.78 strict / 57.83 relaxed**, trigger **60.51**, type **75.45** | **none yet** — training 2026-09-15 |
 | **principal issue** | closed tag set is incompatible with schema-driven extraction; sentence-only; *"multiple events per trigger"* is a named residual | **64.2% of gold event instances are structurally inexpressible** | unproven; the record head has an unresolved throughput defect and two failed Tier 2 precedents |
+
+### DO NOT READ THE EVIDENCE ROW AS A COMPARISON
+
+The numbers sit in the same range and that is a coincidence of scale, not a result:
+
+| | OneIE Arg-C | ours |
+|---|--:|--:|
+| ACE05-E | 56.8 | — |
+| ACE05-E+ | 54.8 | — |
+| ERE-EN | 46.5 | — |
+| our blind test, `relaxed` | — | **57.83** |
+| our blind test, `strict` | — | 11.78 |
+
+**Three reasons this is not a like-for-like comparison, any one of which is disqualifying:**
+
+1. **Different data.** ACE05-E and ERE-EN are English sentence-level newswire with a curated
+   ontology. Ours is a 13-corpus multilingual document-level mixture whose argument mass is
+   ~100% CMNEE, a Chinese military corpus.
+2. **Different span rule.** OneIE requires **exact offsets**; our `relaxed` accepts
+   **overlap** (`New York City` ↔ `New York`). Ours is the more permissive of the two, so
+   57.83 is an upper bound on anything OneIE-comparable.
+3. **We do not compute their metric.** Arg-C is offsets + type + role with no trigger; our
+   `strict` adds the trigger and our `relaxed` loosens the span. The comparable figure lies
+   between 11.78 and 57.83 and is **not measured** (`TODO.md`).
+
+OneIE's authors make a related point about their own table — *"we hold the opinion that the
+single-model scores in Table 3 better reflect the actual performance of ONEIE and should be
+used for future comparison"* — so the single-model column is the one quoted here, not the
+four-model ensemble (which reaches Arg-C 58.6).
+
+**What the row is for** is calibration of expectation, not scoring: an Arg-C in the
+**mid-40s to high-50s is what a strong 2020 system achieves on curated English data**. It
+says a perfect system is not at 90, and that the headroom above our 57.83 relaxed is smaller
+than the headroom implied by treating 11.78 as the starting point.
 
 ### What the table is actually saying
 
