@@ -53,6 +53,33 @@ model:
   # around FA2 + unpadding (arXiv 2509.06888 Table 8). Needs the 'kernels' package.
   attn_implementation: flash_attention_2
   boundary_head:
+    # max_gold_per_query: 32 (the library DEFAULT) drops the WHOLE sample's gold, and this
+    # config's `on_capacity_exceeded: skip_sample` is what makes that silent. skip_sample
+    # fires when ANY ONE query overflows and clears gold for EVERY query in the document --
+    # and an empty mention_mask is not "no supervision", it is POSITIVE supervision to
+    # abstain: abstention_loss targets `~mention_mask.any(-1)` (boundary/losses.py:601) and
+    # count_log_rate_loss supervises a count of zero. The model is actively taught to emit
+    # nothing on the documents carrying the MOST gold. It fired 3,520 times in the
+    # eb16-eventrecords-tr run, on overflows of 34-66, and plausibly explains that run's
+    # entity regression (strict 0.5340 -> 0.4343).
+    #
+    # THE BASE CONFIGS WERE THE OUTLIER. Eleven other configs already raise this: the
+    # casualty and zh-multitask lines use 256, and tier2/archive/casie-* records why --
+    # "a single query carries up to 188 gold spans against the default cap of 32". Those hit
+    # it as a loud TargetCapacityError because they kept the default `raise`; these configs
+    # set skip_sample, which converted the same overflow into silent damage.
+    #
+    # Sized from the data AND aligned to that precedent. Across this config's own corpora,
+    # of 89,392 (doc, label) query groups: 0.789% exceed 32, 0.037% exceed 128, 0.011%
+    # exceed 256. 256 matches the established value so warm-started comparisons stay
+    # like-for-like. training_candidate_budget must be >= it; 384 is the casie pair and is
+    # sufficient -- the casualty configs' 1024 is far beyond the constraint and costs
+    # throughput (6.4x the enumeration of the 160 default) for no additional coverage here.
+    # candidate_budget is deliberately LEFT at its 128 default: that is an inference-width
+    # decision, and the casualty precedent likewise trains wider than it decodes.
+    # Pinned by tests/processing/test_gold_capacity.py.
+    max_gold_per_query: 256
+    training_candidate_budget: 384
     enable_relations: true   # load-bearing: relations decode as edges in the beam
     enable_records: true     # load-bearing: events decode as trigger + role edges
   # No decode_mode here. decode_mode is an EVAL-time switch selecting the greedy or
