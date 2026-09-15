@@ -257,6 +257,7 @@ The working papers are the primary record; this map is a summary of them.
 | `PAPER_0_FOUNDATION.md` | Paper 0 draft — substrate, head-init finding, data-integrity audit |
 | `JOINT_IE_SCALING.md` | Paper 2 — joint decoding, scaling curve, replay, the three silent defects |
 | `JOINT_IE_DESIGN_RECORD.md` | Paper 2's build record — decisions, wiring map, cost model |
+| `EVENT_LINE.md` | **line 3** — full event support: the named incumbent, what counts as proving out, and the risk register including the EKF bet |
 | `EVENT_ARGUMENT_DIAGNOSIS.md` | why `event_argument` reads 0.118 — binding, not extraction; 64.2% of gold instances share a type in-document and the mention path pools them |
 | `PHASE_B_PLAN.md` | the beam **in the loss** — the only untested version of the thesis, with pre-registered bars and a throughput probe that gates the spend |
 | `EKF_MHT_DESIGN.md` | Paper 1 — the filter, the real-event defeat, and the association half rebuilt as a global decode (§7.7) |
