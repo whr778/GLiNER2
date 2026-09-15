@@ -63,6 +63,12 @@ strict argument F1; the observed 0.118 is the same order. That is consistency, n
 but it is the only hypothesis on the table that predicts the 5× strict/relaxed gap, the
 negligible boundary error rate, and the near-zero exact-set rate simultaneously.
 
+**AND THE CONFIG COMMENT ACTIVELY MISLEADS.** `eb16-rebuild-tr.yaml` sets
+`enable_records: true` with the note *"load-bearing: events decode as trigger + role
+edges"*. That describes JOINT DECODE-TIME behaviour and is wrong about TRAINING: without
+`event_records`, an events group never reaches the record head at all. A reader checking
+whether events were trained on the record path would read that line and conclude they were.
+
 `compile_record_specs` already carries the upstream version of this number: the cap costs
 **78.8% of gold instances on CASIE, 62.5% on WikiEvents, 38.3% on MAVEN, and 0.0% on RAMS**
 (RAMS is 100% single-event documents — which is exactly why the RAMS-based argument curves
@@ -109,16 +115,36 @@ arms did that, and the sum was negative.
    the decode path while the head was naive; warming first separates the two.
    **BUILT 2026-09-15:** `config/base/eb16-eventrecords-tr.yaml` does
    this at COLD START rather than as a fine-tune, so the head is warmed on events from
-   step 0 and the Tier 2 confound cannot arise. It is the 137k base config patched with
-   exactly one key (`event_records: true`) plus a new output path; the diff against the
-   control, comments excluded, is three lines. Read against
-   `whr778/gliner2-joint-boundary-mmbert-137k`. ~$20-30, 42,730 steps at effective batch
-   16 on one GPU.
+   step 0 and the Tier 2 confound cannot arise.
+
+   It is **eb16-rebuild-tr's data** -- trilingual, repaired, label-unified -- patched with
+   `event_records: true`, because eb16 is the mix that is actually wanted and its events
+   were still going through the mention path. The diff against eb16-rebuild-tr, comments
+   excluded, is SIX lines: the flag, a new output_dir and experiment_name, and three added
+   corpora (professorbob_re, scierc, paraloq_json). **It is therefore NOT a one-variable
+   A/B** -- a difference against eb16-rebuild-tr is attributable to the flag or to the
+   corpora, and nothing in the result separates them. Dropping the three additions restores
+   the single-key diff if that comparison is what is wanted.
+
+   Read against `whr778/gliner2-eb16-rebuild-tr`, whose own `event_argument` figure is the
+   0.1178 above. 167,752 train documents x 5 epochs = 838,760 samples, 52,423 optimizer
+   steps at effective batch 16 on one GPU. Aggregate leakage gate CLEAN (167,752 / 21,138 /
+   19,874 unique documents, all three intersections zero).
 
    The flag was verified to change the compile before the config was written, through
    `collate_fn_train` on a real CMNEE document carrying Experiment x2 / Accident x1 /
    Injure x2: **0 record specs with it off, 3 with it on** (one per type, natural mode,
    5 fields each). Pinned by a test.
+   **AND IT MAY BE EXPENSIVE, for a reason already on file.** `event_records: true` moves
+   ~100k event records ONTO the record head -- the head this project measured at
+   **4.6 samples/s against the curve's 22** on the same H100, "~5x slower to train than the
+   rest", unresolved since 2026-08-10 with the idle-GPU / pegged-core signature of
+   Python-side work. Across 838,760 samples that is the difference between ~$35 and ~$167
+   for one base. A throughput smoke (`tools/lambda/throughput_smoke.sh`) measures the delta
+   on identical data with the flag flipped, and should be read BEFORE the base is booked.
+   The fix proposed here is not free, and the thing that makes it costly is the same head
+   the fix depends on.
+
 2. **Re-run Tier 2 on CMNEE, not CASIE.** CMNEE dominates the affected mass here (1,606 of
    2,054 affected documents). CASIE was the previous venue and it is both smaller and
    harder.
