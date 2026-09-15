@@ -55,7 +55,8 @@ BEST=$($PY - "$OUT" <<'PY'
 import glob, json, os, sys
 out = sys.argv[1]
 best, bt = None, None
-print("[sweep] validation grid (event_argument relaxed / strict, trigger strict):")
+print("[sweep] validation grid (event_argument relaxed / strict, trigger strict):",
+      file=sys.stderr)
 for f in sorted(glob.glob(os.path.join(out, "val-*.json"))):
     t = os.path.basename(f)[4:-5]
     m = json.load(open(f))
@@ -63,15 +64,26 @@ for f in sorted(glob.glob(os.path.join(out, "val-*.json"))):
     st  = m.get("eval_event_argument_strict_micro_f1", 0.0)
     tr  = m.get("eval_event_trigger_strict_micro_f1", 0.0)
     rr  = m.get("eval_event_argument_relaxed_micro_recall", 0.0)
-    print(f"    t={t}  arg relaxed {rel:.4f} (R {rr:.4f})  arg strict {st:.4f}  trigger {tr:.4f}")
+    print(f"    t={t}  arg relaxed {rel:.4f} (R {rr:.4f})  arg strict {st:.4f}  trigger {tr:.4f}",
+          file=sys.stderr)
     # SELECT ON RELAXED: this sweep is about RECALL / the ceiling, not about binding.
     if best is None or rel > best:
         best, bt = rel, t
 print(f"[sweep] validation winner: threshold={bt} (event_argument relaxed F1 {best:.4f})",
       file=sys.stderr)
-print(bt)
+print(bt)                      # THE ONLY STDOUT. See the guard below for what this cost.
 PY
 )
+# STDOUT IS THE RETURN VALUE. The grid above printed to stdout on 2026-09-15, so `$BEST`
+# came back as a seven-line report ending in `0.2`, `--threshold` took the lot, argparse
+# `type=float` rejected it, and the test pass died having produced no metrics. Every
+# diagnostic inside a `$(...)` belongs on stderr; this guard is what makes that non-silent.
+case "$BEST" in
+  ""|*[!0-9.]*)
+    echo "[sweep] *** BAD THRESHOLD CAPTURE -- refusing to run the test pass ***"
+    echo "[sweep] got >>>$BEST<<<"
+    exit 1;;
+esac
 echo "[sweep] chosen on validation: $BEST"
 
 # --- TEST: ONE threshold, ONE pass ------------------------------------------------------
@@ -81,6 +93,11 @@ $PY -u tools/train/eval.py --config "$CFG" --checkpoint "$CKPT" \
 cp out/eb16-rebuild-tr/test_metrics.json "$OUT/test-$BEST.json" 2>/dev/null \
   || echo "[sweep] NO test metrics"
 publish "$DEST" "$OUT/test-$BEST.json" "$OUT/test-$BEST.log" || RESCUE=1
+
+# The ORCHESTRATION log, not just the per-pass logs. When the test pass failed silently the
+# only record of why lived here, and it was never published, so the box took the diagnosis
+# with it. Best-effort: a hold must not be caused by the log about the hold.
+cp ~/box.log "$OUT/box.log" 2>/dev/null && publish "$DEST" "$OUT/box.log" || true
 
 echo "[sweep] ===== DONE $(date -u)  chosen threshold $BEST ====="
 if [ "$RESCUE" -ne 0 ]; then
