@@ -150,11 +150,22 @@ match. Our `strict` adds trigger identity; our `relaxed` drops exact spans for o
 - **ACTION, no GPU:** add an Arg-C metric (exact surface, type + role, no trigger) so this
   line is comparable to the event-extraction literature at all.
 
-**And OneIE is an ALTERNATIVE ANSWER to §1's problem, not just a benchmark.** It identifies
-triggers with token-level BIO + CRF, so one node per trigger SPAN and multi-instance falls
-out for free — no cap to lift. `event_records` is the record-head route to the same end.
-If the record head disappoints, span-tagged triggers are the other road, and it is a
-road with a published result behind it.
+**And OneIE is an ALTERNATIVE ANSWER to §1's problem, not just a benchmark** — but a
+costly one, and the costs are enumerated in [[EVENT_ARGUMENT_DIAGNOSIS]] §4c-ii. It
+identifies triggers with token-level BIO + CRF, so one node per trigger SPAN and
+multi-instance falls out with no cap to lift.
+
+**It is not, however, a drop-in fallback.** BIO tagging scores *"a tag in a target tag
+set"* fixed at training, and **GLiNER2's premise is that labels are an INPUT at inference** —
+adopting that tagger would forfeit schema-driven extraction, which is the thing that makes
+this model worth having. It is also sentence-level where our argument mass is
+document-level, it requires entity gold our corpora do not all carry, its global features
+are hand-authored per ontology, and *"multiple events per trigger"* remains a named residual
+error in its own analysis.
+
+**What transfers is the insight, not the machinery:** trigger instances should be
+individuated **by span, not by type**. `event_records: true` achieves exactly that inside
+the record head — without a closed tag set, and without giving up the document.
 
 ## 5. What "proves out" means
 

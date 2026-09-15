@@ -237,6 +237,57 @@ Our two metrics bracket that criterion; neither equals it:
    error to correct: relaxed at 0.578 is roughly where the field's own criterion already
    places this model.
 
+### 4c-ii. What OneIE would cost us — the objections, before anyone adopts it
+
+§4c calls span-tagged triggers "the other road". It is a road with tolls, and they are
+recorded here so the fallback is evaluated rather than reached for.
+
+**1. IT IS SENTENCE-LEVEL. Our problem is not.** Verbatim: *"our ONEIE framework extracts
+the information network **from a given sentence**"*. The corpora that dominate our argument
+mass — CMNEE, DocEE, ChFinAnn, DocFEE — are **document-level**, and the boundary
+architecture exists partly to reach beyond the sentence ([[COUNTING_LAYER]]). OneIE's own
+error analysis lists *"Cross-sentence reasoning"* as a **residual error category it does not
+solve**. Adopting its representation means either restricting to sentences or extending a
+design that was never document-level.
+
+**2. BIO TAGGING NEEDS A CLOSED TAG SET, AND THAT IS ARCHITECTURALLY INCOMPATIBLE WITH
+GLiNER2.** The trigger head computes *"a score vector ŷi = FFN(xi) for each word, where
+each value in ŷi represents the score for a tag in a **target tag set**"*. The tag set is
+fixed at training time.
+
+**GLiNER2's premise is the opposite: labels are an INPUT at inference** — it is why
+`CLAUDE.md` insists one concept has one spelling across every corpus, why `labels_file`
+exists, and why the query protocol emits a marker per schema field. A BIO tagger cannot
+accept an event type it was not trained to tag. **Adopting OneIE's trigger head would
+forfeit schema-driven extraction**, which is the thing that makes this model worth having.
+Any borrowing has to take the *graph* idea without the *closed-vocabulary tagger*.
+
+**3. IT HAS ITS OWN MULTI-INSTANCE RESIDUAL, IN THE OTHER DIRECTION.** *"Multiple events
+per trigger"* is a named category in OneIE's remaining-error distribution. One node per
+trigger span solves *many triggers of one type* — our problem — and leaves *one trigger
+belonging to several events* unsolved. The span representation is not a general answer to
+event multiplicity; it trades one failure for another.
+
+**4. IT REQUIRES ENTITY ANNOTATION WE DO NOT ALWAYS HAVE.** Argument edges connect trigger
+nodes to **entity mention nodes**, so the model needs entity gold in the same sentences.
+Several of our event corpora supply argument spans with roles and no entity typing; using
+OneIE's formulation would need that annotation invented or inferred.
+
+**5. THE GLOBAL FEATURES ARE HAND-DESIGNED TEMPLATES**, not learned — `DIE-VICTIM-GPE` and
+similar. They encode an ontology's regularities, so they must be rewritten per ontology.
+Across the 125-type vocabulary this project trains on, that is a substantial hand-authored
+surface, and it is the opposite direction from schema-driven.
+
+**6. THE COMPARISON IS 2020.** BERT-base/large, English/Chinese/Spanish, sentence inputs —
+against mmBERT with an 8192 window and broad language support. Its *numbers* are not a
+target for us; its *representation* is the transferable part, and only partly.
+
+**Net:** OneIE is the right thing to have read and the wrong thing to copy wholesale. What
+transfers is the insight that **trigger instances should be individuated by span rather
+than by type** — which `event_records: true` achieves within the record head, without a
+closed tag set and without giving up the document. What does not transfer is the tagger,
+the sentence scope, or the hand-written feature templates.
+
 ## 5. What follows, in order
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed
