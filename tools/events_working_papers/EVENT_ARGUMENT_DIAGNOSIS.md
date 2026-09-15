@@ -172,6 +172,71 @@ not between two models."* The same applies to a model against itself.
 - **It does not move** → the ceiling is real, argument recall is a genuine training problem,
   and §4b becomes the next target after binding.
 
+## 4c. OneIE solved this upstream — and its metric is not ours
+
+Read from the paper (Lin, Ji, Huang & Wu, ACL 2020, `2020.acl-main.713`) on 2026-09-15,
+prompted by the question "didn't OneIE solve this?". It did, and the answer has two halves,
+of which the second matters more to us.
+
+### The architectural half: OneIE never creates the pooling problem
+
+OneIE identifies triggers by **token-level BIO tagging with a CRF**:
+
+> *"We use a feed-forward network FFN to compute a score vector for each word... After that,
+> we use a conditional random fields (CRFs) layer to capture the dependencies between
+> predicted tags... We use the BIO tag scheme."*
+
+So **one node per trigger SPAN**, not one per event type. Two `Attack` events in a sentence
+are two nodes carrying two sets of argument edges, natively. There is no cap to lift because
+the representation never pools. The famous global features — cross-subtask
+(`DIE-VICTIM-GPE`) and cross-instance (*"a VICTIM of a DIE event is likely to be a VICTIM
+of an ATTACK event in the same sentence"*) — are a refinement **on top of an
+already-unpooled graph**, not the fix for pooling.
+
+**That is a second, independent answer to the same problem.** `event_records: true` gives
+the record head multiple instance queries; OneIE tags trigger spans and lets the count fall
+out. Worth holding as an alternative if the record-head route disappoints.
+
+### The metric half: our STRICT is stricter than the literature's
+
+OneIE's argument criterion, verbatim:
+
+> *"An argument is correctly identified (Arg-I) if its **offsets and event type** match a
+> reference argument mention. It is correctly classified (Arg-C) if its **role label** also
+> matches."*
+
+**Offsets + event type + role. There is no requirement that the specific TRIGGER match.**
+
+Our two metrics bracket that criterion; neither equals it:
+
+| metric | span requirement | trigger required? | score |
+|---|---|---|--:|
+| our **strict** | exact, case-sensitive | **YES** | 0.1178 |
+| **OneIE Arg-C** | **exact offsets** | no | — |
+| our **relaxed** | **overlap** (substring or shared content token) | no | 0.5783 |
+
+- **strict adds a requirement OneIE does not have** (trigger identity), so 0.1178 is a
+  LOWER bound on an OneIE-comparable number.
+- **relaxed drops a requirement OneIE does have** (exact spans; ours accepts
+  `New York City` ↔ `New York`), so 0.5783 is an UPPER bound.
+
+**The OneIE-comparable figure lies between them and we do not currently compute it.**
+
+### What follows from that
+
+1. **`0.1178` must never be quoted as "our event-argument F1" against published work.** It
+   is a deliberately stricter criterion. Every external comparison needs the bracketed pair
+   or, better, the missing metric.
+2. **Measuring trigger-level binding is still right FOR US.** The EKF needs a figure bound
+   to the right event instance, not merely to the right event type — so strict is the
+   metric this programme actually cares about, even though it is not the field's.
+3. **ACTION: add an Arg-C metric** — exact surface, type + role, no trigger requirement. It
+   is a scorer change, costs no GPU, and is the only way this line can be compared to the
+   event-extraction literature at all.
+4. **The "catastrophic 0.118" framing overstated the gap against the field**, and that is my
+   error to correct: relaxed at 0.578 is roughly where the field's own criterion already
+   places this model.
+
 ## 5. What follows, in order
 
 1. **Warm the record head on events before switching the path.** The Tier 2 arms changed

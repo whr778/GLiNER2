@@ -128,6 +128,34 @@ regardless of share says something other than pooling changed.
 - **Throughput.** `event_records` costs **9%** (18.4 → 16.7 samples/s), not the 5× the
   unresolved record-head defect implied.
 
+### 4h. Our headline metric is not the field's, and the gap was overstated
+
+Read from the OneIE paper 2026-09-15 ([[EVENT_ARGUMENT_DIAGNOSIS]] §4c). OneIE's Arg-C
+requires **offsets + event type + role** and does **not** require the specific trigger to
+match. Our `strict` adds trigger identity; our `relaxed` drops exact spans for overlap. So:
+
+    our strict   0.1178   LOWER bound on an OneIE-comparable number (adds trigger)
+    OneIE Arg-C     ?     not currently computed
+    our relaxed  0.5783   UPPER bound (accepts overlapping spans)
+
+**Consequences for this line:**
+
+- **0.1178 must not be quoted against published work.** The "catastrophic" framing
+  overstated the gap against the field; the field's own criterion puts this model nearer
+  0.58 than 0.12.
+- **Strict remains the right metric FOR US.** The EKF needs a figure bound to the right
+  event *instance*, not merely the right event type. So this line optimises something the
+  literature does not measure — which is defensible, and must be stated rather than
+  presented as beating a benchmark.
+- **ACTION, no GPU:** add an Arg-C metric (exact surface, type + role, no trigger) so this
+  line is comparable to the event-extraction literature at all.
+
+**And OneIE is an ALTERNATIVE ANSWER to §1's problem, not just a benchmark.** It identifies
+triggers with token-level BIO + CRF, so one node per trigger SPAN and multi-instance falls
+out for free — no cap to lift. `event_records` is the record-head route to the same end.
+If the record head disappoints, span-tagged triggers are the other road, and it is a
+road with a published result behind it.
+
 ## 5. What "proves out" means
 
 The line continues if, on an identical `event_argument` denominator:
@@ -139,6 +167,12 @@ The line continues if, on an identical `event_argument` denominator:
 
 It does not continue on a strict rise alone if relaxed rose with it: that is more data or
 longer training, not better binding.
+
+**And success is now bounded on both sides.** Binding can converge strict onto relaxed and
+no further (§4b), while relaxed itself is only ~0.58 at the untuned threshold 0.5 — which
+the running sweep may move. A strict score near 0.5 would mean binding is essentially
+solved and the recall ceiling is the entire remaining problem; it would NOT mean events are
+solved.
 
 ## 6. Deliberately deferred
 
