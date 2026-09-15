@@ -2,7 +2,7 @@
 
 Companion to the paper `JOINT_IE_SCALING.md`. This file holds the material that belongs
 to the build rather than to the result: the decision log, the wiring map, the increment
-status, the data survey, the cost model, and the deferred Phase B plan. It is kept
+status, the data survey, the cost model, and the wiring map. It is kept
 verbatim so the reasoning behind each choice — including the choices later overturned —
 stays available. The paper cites it for anything a reader needs to reproduce the system.
 
@@ -259,17 +259,9 @@ paper. Nothing here was edited in the move.
 Reuses the entire optimizer/constraint/calibration stack — this is the contribution, not a
 rebuild. The two adapters (the tensor→contract mapping) are the crux, and they're in.
 
-### Decode-wiring integration notes — SUPERSEDED (all implemented)
-
-> **Historical.** Every item below is done and shipped; the ⚠ GOTCHA in particular is
-> **fixed** (no empty `QueryLayout` remains in the engine). Kept only as the record of how
-> the hook was scoped. For current behaviour read the code and the ✅ entries above.
-
-*(Superseded scoping notes retired to `PROJECT_HISTORY.md` 2026-09-07.)*
-
 ## 3b. Structures, relations and events in the beam (the Phase A blocker)
 
-Status: designed 2026-08-08, building. Unblocks decision 4b.
+Status: **built and measured.** Designed 2026-08-08; every increment below is ✅; Phase A ran 2026-09-07 and was corrected 2026-09-08 (all seven heads inside the ±0.02 floor once the cardinality artefact was removed — [[RESEARCH_PROGRAM]] §3).
 
 ### The finding that shapes it: no new candidate class is needed
 

@@ -116,13 +116,25 @@ synthetic-corpus direction.
 
 ## 10. Still open (the crux)
 
-- **Finalize the state vector + dynamics models** per target domain (§3, decision #2) —
-  the "does the EKF earn its keep" crux. **Answered for mass-casualty streams in §14**
-  (yes; edge widens under unreliability/censoring, shrinks under sparsity).
-- **Domain/dataset anchor** — which evolving-quantitative events; synthetic vs a real
-  corpus (e.g. cross-doc event coref, ECB+).
-- **Normalization layer** design (numbers/dates/amounts → continuous + noise model).
-- **Router supervision** signal.
+> **Re-checked 2026-09-15.** Three of the four items below were answered and the list had
+> not been updated — a stale "still open" section is worse than none, because it sends the
+> next reader to re-solve finished work. What actually remains is one item, and it is not
+> the one this section was written about.
+
+- ~~**Finalize the state vector + dynamics models**~~ — **ANSWERED for mass-casualty
+  streams in §14**: the EKF earns its keep, the edge widens under unreliability and
+  censoring and shrinks under sparsity.
+- ~~**Domain/dataset anchor**~~ — **CHOSEN**: disaster/mass-casualty streams, with three
+  real events measured (Helene, Türkiye–Syria 2023, Aegean 2020).
+- ~~**Normalization layer**~~ — **BUILT.** Text-to-observation normalisation is listed as
+  established in [[RESEARCH_PROGRAM]] §2.
+- **Router supervision signal** — genuinely still open, and the only one.
+
+**AND THE REAL CRUX MOVED.** [[RESEARCH_PROGRAM]] §3 records it: on real news the tracker
+loses to a trivial baseline (`est_last_value` 0.208 against the EKF's 0.136 on
+Türkiye–Syria, pre-registered), and **attribution — not filtering and not extraction — is
+the bottleneck**. The diarisation half is where this line is blocked. That is what a reader
+arriving at "still open" needs to be told.
 
 ## 11. Synthetic stream generator — specification (the $0 backbone)
 
@@ -223,6 +235,10 @@ is the true test.
 
 
 ---
+
+> **Numbering gap, §15–24.** Those sections were retired to `PROJECT_HISTORY.md` during
+> the 2026-09-07 reorganisation. The numbers are left as they were so citations from other
+> papers still resolve; nothing is missing by accident.
 
 ## 25. Scope gate — the implied-maximum reference (kept here for the negative)
 

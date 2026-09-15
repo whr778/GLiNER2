@@ -155,10 +155,24 @@ delta is not a contamination estimate because the test was also recomposed.
 - **Four converters still split row-wise** (`docee`, `docfee`, `cmnee`, `mendeley_ed`) —
   no `SplitWriter`. 21 residual contaminated documents, gate-removed each run, unfixed
   at source.
-- **`data/scaling_joint/` val files are frozen from 18 Aug** (checked on disk; this entry
-  said 8 Aug), pre-dating later split fixes. Rebuilding also rebuilds the j10k/j40k/j100k
-  slices the scaling curve rests on — deferred. Still true: no `SplitWriter`, so they carry
-  the row-wise draw.
+- **`data/scaling_joint/` is IN ACTIVE USE, not an archive, and its format is CURRENT.**
+  Re-checked 2026-09-15 after it was proposed for deletion to free Hub space. Three things
+  the earlier entry did not say:
+  - **Every live config sources its `val:` splits from here** (`chfinann`, `docee`,
+    `docfee`, `duee`, `cmnee`, `text2json`, `maven`, `events_biotech`, `mendeley_ed`,
+    `casie`), including the base training right now. It is not a leftover.
+  - **The format is not the old silently-undecodable one.** `text2json.val.jsonl` — the
+    only structure corpus in there — carries `record_metadata` on 146 of 146 structures.
+    The rest are event corpora with no structures, so none is expected.
+  - **The aggregate leakage gate passes** on the assembled mixture (21,138 val documents,
+    all three intersections zero).
+
+  Still true and still deferred: the files are frozen from 18 Aug, they predate later split
+  fixes, and rebuilding them also rebuilds the j10k/j40k/j100k slices the scaling curve
+  rests on — so regeneration produces DIFFERENT files and breaks comparability with the
+  published curve. **That is precisely why the Hub copy must NOT be deleted**: it is the
+  only off-machine copy of data that cannot be regenerated identically, which is the
+  single-copy risk that cost a corpus on 2026-09-08.
 - ~~**Structures are never scored by the blind test.**~~ **FALSE SINCE 2026-08-17** and
   left standing for three weeks. `_schema_from_gold` gained a `json_structures` branch in
   `fb456e4` ("eval: score json_structures"), so a structure-only record now builds a real
