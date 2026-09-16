@@ -469,6 +469,66 @@ longer and more expensive than 810 steps — but answerable, which 810 may not b
 
 ---
 
+## 5c. THE VERDICT RUN: negatives REJECT better, at no recall cost — and the gate is not the lever
+
+Run 2026-09-16 on the two pushed A/B checkpoints, no retraining.
+
+### Q1 — does the treatment actually reject? YES, and cleanly.
+
+Absent-type firing, **cmnee, 300 documents**, full 8-type menu, threshold 0.3. (The A/B's own
+attempt at this ran on FOUR documents: it was pointed at casie, median 2,323 characters,
+against a probe filtering at 900.)
+
+| checkpoint | precision | recall | F1 | types invented | predicted |
+|---|---:|---:|---:|---:|---:|
+| base (warm-start point) | 0.4669 | 0.9669 | 0.6297 | **467** | 876 |
+| control | 0.5310 | 0.9716 | 0.6867 | 363 | 774 |
+| **treatment** | **0.5882** | 0.9622 | **0.7300** | **285** | 692 |
+
+**Precision +0.0572 over the control with recall FLAT** (0.9716 → 0.9622) and inventions down
+21% (363 → 285). Against the warm-start base it is +0.1213 precision and 39% fewer inventions.
+Fine-tuning alone bought part of it — control beats base — but the negatives bought more, and
+they bought it without paying recall.
+
+**This is the acceptance metric this feature was built for, and it passes.**
+
+### Q2 — is the argument-recall loss just calibration? NO, and not via this knob.
+
+Sweeping `abstention_threshold` on the treatment (validation, pick-on-val discipline):
+
+| abst thr | arg strict F1 | arg strict R | arg relaxed F1 | trigger F1 | entity F1 |
+|---:|---:|---:|---:|---:|---:|
+| 0.3 | 0.1651 | 0.0997 | 0.2204 | 0.3559 | 0.1408 |
+| 0.5 | 0.1651 | 0.0997 | 0.2204 | 0.3559 | 0.1471 |
+| 0.7 | 0.1651 | 0.0997 | 0.2204 | 0.3559 | 0.1498 |
+| 0.9 | 0.1651 | 0.0997 | 0.2204 | 0.3559 | 0.1530 |
+
+**Every event metric is bit-identical across the sweep.** Only `entity` moves, and only
+slightly (+0.0122 from 0.3 to 0.9, monotone — a higher threshold abstains LESS).
+
+The reason is structural: **`abstention_threshold` gates the MENTION path, and with
+`event_records: true` events decode through the RECORD head, which does not consult it.** So
+the earlier suggestion in this plan — sweep the gate to recover the lost argument recall — is
+**wrong for events** and is withdrawn. The recall change is baked into what the record head
+learned, not adjustable at decode by this knob.
+
+### What the two results mean together
+
+- **Type-level rejection: a clean win.** Precision up, recall flat, inventions down.
+- **Argument-level: a genuine trade.** Blind test, `event_argument` precision +0.0493 strict /
+  +0.0479 relaxed, recall −0.0544 / −0.0719, so F1 is down −0.0220 strict.
+
+Both are real and they are not in conflict: negatives make the model more selective. At type
+level that is pure gain because recall was already saturated (0.97); at argument level recall
+had room to lose, and did.
+
+**Open, and the cheapest next test:** whether the argument recall recovers with more steps.
+Both arms ran `eval_strategy: epoch`, so each has two validation points — the epoch-1 to
+epoch-2 trend is free to read and speaks directly to it. §5b's slow-objective framing predicts
+recovery; nothing yet confirms it.
+
+---
+
 ## 6. Sequencing
 
 The event-base blind test lands first: model report, then the comparable 18,786-record eval
