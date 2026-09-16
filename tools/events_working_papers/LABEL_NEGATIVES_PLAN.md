@@ -322,6 +322,43 @@ down rather than argued away:
 fault: a multiplication error would not spare one head. The eval path is sound; the models are
 undertrained.
 
+**THE EVENT LOSS WAS THEN CHALLENGED DIRECTLY — CHECKED, AND IT IS NOT BROKEN.** With
+`event_records: true` events are supervised through the RECORD head rather than the mention
+path, which is a genuinely different loss, and "exactly zero" is the signature of a term that
+never fires. So it was tested the classic way: can it overfit ONE example?
+
+| | record targets | loss | instances | trigger |
+|---|---:|---|---:|---|
+| `event_records=False` | 0 | 6.702 → 0.700 | 1 | `tested` ✓ |
+| `event_records=True` | **1** | 8.842 → 0.797 | 1 | `tested` ✓ |
+
+Both paths drive the loss down and recover the trigger. Pinned by
+`tests/models/boundary/test_event_loss_overfit.py`. The record loss was also confirmed not to
+be silently dropped: `Dropped record auxiliary loss` appears **0 times** in either arm's log.
+
+**A FALSE ALARM ON THE WAY, worth recording because it will recur.** A first version of that
+overfit test reported `event_records=True` loss of 0.000 → 0.000 and a decode of 36 instances
+covering every span. That was the HARNESS: `SamplingConfig.remove_events_prob` is **0.2** and
+live during training, so on a one-example batch collated once outside the loop, a single
+unlucky draw removes the only event and every step sees a zero loss. **Any test asserting on
+loss magnitude with a small batch must disable schema dropout first** — this is the third time
+sampling has produced a false reading here (the other two were query-count comparisons in
+`test_negative_labels.py`).
+
+**AND A REAL CONTRIBUTING FACTOR TO THE A/B's DEGENERACY.** That same dropout is live in real
+training: `remove_events_prob` 0.2, `remove_relations_prob` 0.2, `remove_json_structure_prob`
+0.2, `remove_classification_label_prob` 0.5. Over 172 optimizer steps on ~1,400 records, one
+fifth of events and relations are withheld from any given pass — the heads that read exactly
+0.0000 are precisely the ones being dropped. It is sensible regularisation at 174k records and
+5 epochs; it is a meaningful fraction of the total signal at this scale. **A future small A/B
+should lower or disable it, and say which.**
+
+**A LATENT HAZARD FOUND WHILE LOOKING.** `_record_loss` and `_relation_loss` are wrapped in
+`try/except (RuntimeError, IndexError, ValueError)` that logs a warning and sets the term to
+`None` (model.py:2058-2073). A loss that silently stops contributing is exactly the failure
+this investigation was looking for; it is not firing today, but it should be counted and
+surfaced rather than warned about once.
+
 **AND THE A/B IS UNDERPOWERED, SO THIS IS NOT A VERDICT ON THE MECHANISM.** Both arms are
 barely trained: 2 epochs over ~1,400 records leaves relation, trigger and argument F1 at
 exactly 0.0000 in BOTH arms, and entity F1 at 0.02. Comparing 0.0205 against 0.0119 on models
