@@ -38,6 +38,7 @@ training:
   task_lr: 0.0005
   warmup_ratio: 0.05
   bf16: true
+  fp16: false
   eval_strategy: epoch
   save_best: true
   save_total_limit: 1

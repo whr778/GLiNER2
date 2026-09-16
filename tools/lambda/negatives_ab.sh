@@ -31,7 +31,9 @@ trap 'cp ~/box.log "$OUT/box.log" 2>/dev/null && publish "$DEST" "$OUT/box.log" 
 # --- 1. RE-BASELINE the two existing models under the full-menu mode --------------------
 # This has to exist BEFORE any negatives-trained model does, or there is nothing to compare
 # the treatment against except a number produced by a menu that cannot be wrong.
-for m in eb16-rebuild-tr:base/eb16-rebuild-tr eb16-eventrecords-tr:ab/eventrecords-ep1-eval; do
+# SKIP_REBASE=1 once the re-baseline is published: it is ~75 min of A10 and the numbers do
+# not change with the model under test.
+for m in ${REBASE_MODELS:-eb16-rebuild-tr:base/eb16-rebuild-tr eb16-eventrecords-tr:ab/eventrecords-ep1-eval}; do
   name=${m%%:*}; cfgp=${m##*:}
   echo "[negab] ===== full-menu re-baseline $name  $(date -u) ====="
   CK=$HOME/ckpt/$name
@@ -65,7 +67,15 @@ done
 publish "$DEST" "$OUT/firing.txt" || RESCUE=1
 
 echo "[negab] ===== DONE $(date -u) ====="
-if [ "$RESCUE" -ne 0 ]; then
-  echo "[negab] *** A PUBLISH FAILED -- holding the box; artefacts in $OUT ***"
+# HOLD ONLY IF THERE IS SOMETHING TO RESCUE. A failed publish is worth an idle box when a
+# 16-hour checkpoint is at stake; it is not when the job died in 15 seconds on a config
+# error and produced nothing. That cost 1h45m of idle A10 on 2026-09-16 -- more than the
+# work itself -- because `RESCUE=1` did not distinguish "the Hub rejected it" from "there
+# was never anything to send".
+HAVE=$(find "$OUT" -type f \( -name '*.json' -o -name 'firing.txt' \) 2>/dev/null | wc -l)
+if [ "$RESCUE" -ne 0 ] && [ "$HAVE" -gt 0 ]; then
+  echo "[negab] *** A PUBLISH FAILED and $HAVE artefact(s) exist -- holding for rescue ***"
   sleep infinity
+elif [ "$RESCUE" -ne 0 ]; then
+  echo "[negab] a publish failed but NOTHING was produced -- terminating rather than idling"
 fi
