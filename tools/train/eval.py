@@ -38,6 +38,9 @@ def main() -> None:
     p.add_argument("--split", choices=["val", "test"], default="test", help="Which split to score.")
     p.add_argument("--checkpoint", help="Checkpoint dir (default: <output_dir>/best).")
     p.add_argument("--threshold", type=float, help="Override eval.threshold.")
+    p.add_argument("--abstention-threshold", dest="abstention_threshold", type=float,
+                   help="Override boundary_head.abstention_threshold (ships at 0.5). An "
+                        "eval-time operating point over one trained model, like --decode-mode.")
     p.add_argument("--full-menu", dest="full_menu", action="store_true",
                    help="Also score with the model's own default_schema as the menu, "
                         "emitting eval_fullmenu_* keys. Gold-menu precision is 1.0000 by "
@@ -68,6 +71,8 @@ def main() -> None:
     overrides = {}
     if args.batch_size is not None:
         overrides["batch_size"] = args.batch_size
+    if args.abstention_threshold is not None:
+        overrides["abstention_threshold"] = args.abstention_threshold
     if args.full_menu:
         overrides["full_menu"] = True
     if args.threshold is not None:

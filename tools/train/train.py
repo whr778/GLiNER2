@@ -1103,9 +1103,15 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     # EVAL-time setting over one trained model on purpose -- training two arms would make
     # them different models and void the comparison.
     bh = dict(((cfg.get("model") or {}).get("boundary_head") or {}))
+    # abstention_threshold joins the eval-time set for the same reason decode_mode is in it:
+    # it is an OPERATING POINT over one trained model, adds and removes no tensors, and is
+    # read at decode (engine.py:390, 965). Sweeping it is the cheapest way to ask whether a
+    # trained abstention gate is merely mis-calibrated -- the stage-0 gate in this programme
+    # ran its whole life at 0.5 and needed 0.998.
+    _EVAL_TIME_BOUNDARY_KEYS = ("decode_mode", "joint_beam_width", "abstention_threshold")
     bh.update({k: v for k, v in (overrides or {}).items()
-               if k in ("decode_mode", "joint_beam_width")})
-    bh = {k: v for k, v in bh.items() if k in ("decode_mode", "joint_beam_width")}
+               if k in _EVAL_TIME_BOUNDARY_KEYS})
+    bh = {k: v for k, v in bh.items() if k in _EVAL_TIME_BOUNDARY_KEYS}
     conflicting = sorted(k for k in bh if k in _STRUCTURAL_BOUNDARY_KEYS)
     if conflicting:
         raise SystemExit(f"[eval] boundary_head keys {conflicting} are structural; "
