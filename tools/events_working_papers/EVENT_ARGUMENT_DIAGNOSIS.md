@@ -789,6 +789,53 @@ class. **NOT YET VERIFIED DIRECTLY**: an attempt to measure the absent-query rat
 `collate_fn_train` returned empty batches (wrong input shape) and was abandoned rather than
 reported as zero. The claim rests on the code path and the data, not on that measurement.
 
+---
+
+## 4j. BLIND-TEST DENSITY, and why the row count is not what it looks like
+
+Items per document in the test split, so an event number can be read against how much event
+there is to find:
+
+| corpus | docs | ent/doc | rel/doc | evt/doc | arg/evt | cls/doc |
+|---|---:|---:|---:|---:|---:|---:|
+| maven | 355 | 0 | 0 | **27.17** | 0.00 | 0 |
+| casie | 107 | 19.96 | 0 | **8.77** | 2.60 | 0 |
+| cmnee | 2,724 | 0 | 0 | **2.41** | 3.18 | 0 |
+| mendeley_ed | 156 | 0 | 0 | 1.00 | 0.00 | 0 |
+| biored | 45 | 17.04 | 10.91 | 0 | 0 | 0 |
+| chfinann | 3,204 | 10.52 | 0 | 0 | 0 | 1.00 |
+| docee | 2,744 | 6.95 | 0 | 0 | 0 | 1.00 |
+| turkish_event | 3,090 | 5.98 | 0 | 0 | 0 | 1.00 |
+| sentence_rex | 4,283 | 0 | 1.00 | 0 | 0 | 0 |
+| **ALL** | **18,901** | **4.17** | **0.29** | **0.91** | **1.34** | **0.53** |
+
+`arg/evt` is the one to keep: cmnee carries **3.18 arguments per event** and casie 2.60, so
+the argument head's ceiling is set by two corpora. maven has 27 events per document and
+**zero** arguments — it is trigger-only, and it dominates raw event counts while contributing
+nothing to the argument metric.
+
+### The raw row count is inflated by the CONFIG, not by the corpora
+
+`[split hygiene] REPAIRED ... test 18786 records (dropped 10829 exact duplicate(s))` reads
+like a repetitive corpus. It is not. **Seven corpora are listed in BOTH `data.corpora` and
+`data.event_files` with the identical test path** — casie, chfinann, cmnee, docee, docfee,
+events_biotech, text2json — so every one of their rows is loaded twice: **10,714 rows**, which
+with ~115 genuine repeats gives exactly the 10,829 reported, and 18,901 + 10,714 = **29,615**,
+exactly what the loader read.
+
+Consequences:
+
+- `REPAIRED` on this config is EXPECTED and is not a data-quality signal.
+- **The protection is load-bearing.** `training.split_hygiene: warn` or `off` reproduces a
+  pre-gate run — which here means scoring the blind test with **10,714 duplicated documents**,
+  double-weighting seven corpora in every micro-averaged metric. The gate is silently holding
+  that up.
+- Do NOT "fix" it by deleting the `corpora` entries without checking: the two listings are
+  identical for TEST but differ for VAL (`event_files` points at
+  `data/scaling_joint/<corpus>.val.jsonl`, `corpora` at `data/<corpus>.val.jsonl`), so the
+  edit is not the no-op it appears to be.
+
+
 ## 5. What follows, in order
 
 > *Written before §4d-§4g. Item 1 is kept current; items 2-4 are the plan as it stood
