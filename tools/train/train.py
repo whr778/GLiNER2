@@ -1112,6 +1112,14 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
                          f"they cannot be changed after the checkpoint was built.")
     if bh:
         gd_kwargs["boundary_overrides"] = bh
+    # FULL-MENU PASS. Offers the model's own `default_schema` -- the taxonomy it was trained
+    # on -- instead of a menu built from each document's gold, and emits the result under
+    # `eval_fullmenu_*` keys BESIDE the originals. The gold menu cannot express a wrong
+    # answer, so `event_type` precision is 1.0000 by construction there; this is the pass
+    # where precision is a measurement. Never merged into the original keys: every published
+    # number is a gold-menu number.
+    if (overrides or {}).get("full_menu"):
+        gd_kwargs["full_menu"] = True
     # Log what is being scored, for the same reason training does: a <split>_metrics.json
     # records the numbers and nothing about the corpus behind them. Per-field coverage is
     # the part that matters -- a metric computed over a split with no `location` gold says

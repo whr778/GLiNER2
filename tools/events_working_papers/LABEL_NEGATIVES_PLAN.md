@@ -259,14 +259,19 @@ under a unique module name now.
       would hit it.
 
 ### Phase 4 — eval and inference
-- [ ] Full-menu eval mode in `eval_metrics.py` emitting `*_fullmenu_*` keys beside the
-      existing ones. `_schema_from_gold` keeps its current behaviour untouched.
-- [ ] Menu source at eval: the model's own `default_schema`, falling back to the corpus pool.
-- [ ] One-time re-baseline of **both** the incumbent and the event-records base under the new
-      mode, so the comparison exists before any negatives-trained model does.
-- [ ] Fixed-seed negative menu for the per-epoch eval, so rejection has a training **curve**
-      rather than only an endpoint.
-- [ ] Inference: `default_schema` already seeds the viewer — confirm nothing else is needed.
+- [x] `_widen_with_absent` + a `full_menu` parameter on `compute_metrics`, and
+      `evaluate_checkpoint` runs a SECOND pass merging `eval_fullmenu_*` keys beside the
+      originals. `_schema_from_gold` is untouched, so every published number still means what
+      it meant.
+- [x] Menu source: the model's own `default_schema` (the taxonomy it was trained on).
+- [x] `uv run python tools/train/eval.py --full-menu`.
+- [x] 5 tests + end-to-end on a tiny model: entity precision **0.25 → 0.105** when the menu
+      widens from 2 labels to 5, which is the whole point — an untrained head fires
+      indiscriminately and the gold menu cannot show it.
+- [x] Widening never invents a dimension the record did not carry (that would change WHICH
+      documents are scored for a head, not just the menu).
+- [ ] One-time re-baseline of **both** models under the new mode (needs a GPU).
+- [ ] Fixed-seed negative menu for the per-epoch eval, so rejection has a training **curve**.
 - [ ] `model_card.py`: state the menu next to every precision figure.
 
 ### Phase 5 — the run

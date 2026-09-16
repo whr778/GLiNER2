@@ -103,11 +103,39 @@ def make_compute_metrics(
     return _hook
 
 
+def _widen_with_absent(schema: Dict, menu: Dict) -> Dict:
+    """Add every menu label this record does NOT have, as an ABSENT query.
+
+    `_schema_from_gold` builds the menu from the document's own gold, so the model is asked
+    "which of these are here?" where every option is there by construction. `event_type` has
+    no span to get wrong, so its precision is pinned at 1.0000 and F1 = 2R/(1+R) exactly --
+    verified on 12 of 12 readings. This widens the menu to the real taxonomy, which is what a
+    deployment offers, so precision becomes a measurement rather than an identity.
+
+    Kept OUT of the default path on purpose: every historical number is a gold-menu number,
+    so the menu is part of a metric's identity and the widened figures get their own keys.
+    """
+    out = dict(schema)
+    ents = menu.get("entities")
+    if isinstance(ents, list) and isinstance(out.get("entities"), dict):
+        out["entities"] = {**{e: "" for e in ents}, **out["entities"]}
+    evs = menu.get("events")
+    if isinstance(evs, dict) and isinstance(out.get("events"), dict):
+        out["events"] = {**{t: list(r) for t, r in evs.items()}, **out["events"]}
+    rels = menu.get("relations")
+    if isinstance(rels, list) and isinstance(out.get("relations"), list):
+        have = {n for r in out["relations"] if isinstance(r, dict) for n in r}
+        out["relations"] = out["relations"] + [
+            {n: {"head": "", "tail": ""}} for n in rels if n not in have]
+    return out
+
+
 def compute_metrics(
     model,
     eval_dataset,
     batch_size: int = 8,
     threshold: float = 0.5,
+    full_menu: Optional[Dict] = None,
     stopwords: frozenset = _DEFAULT_STOPWORDS,
     chunk_size: int = None,
     chunk_overlap: int = 128,
@@ -150,6 +178,8 @@ def compute_metrics(
         schema = _schema_from_gold(output)
         if not schema:
             continue
+        if full_menu:
+            schema = _widen_with_absent(schema, full_menu)
         texts.append(text)
         golds.append(output)
         schemas.append(schema)
@@ -963,6 +993,7 @@ def evaluate_checkpoint(
     global_decode: bool = False,
     global_decode_config=None,
     boundary_overrides: Dict[str, Any] = None,
+    full_menu: Any = None,
 ) -> Dict[str, Any]:
     """Load a saved GLiNER2 checkpoint and run :func:`compute_metrics` on a test set.
 
@@ -1009,11 +1040,33 @@ def evaluate_checkpoint(
             head.settings = settings
         print(f"[eval] boundary_head overrides applied: {boundary_overrides}")
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
-    return compute_metrics(
+    metrics = compute_metrics(
         model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,
         chunk_size=chunk_size, chunk_overlap=chunk_overlap,
         global_decode=global_decode, global_decode_config=global_decode_config,
     )
+    if full_menu:
+        # A SECOND pass with the real taxonomy on the menu, emitted under `*_fullmenu_*`
+        # keys. Never merged into the originals: every number this project has published is
+        # a gold-menu number, and silently changing what a key means would invalidate every
+        # comparison against them.
+        menu = full_menu if isinstance(full_menu, dict) else (
+            getattr(model.config, "default_schema", None) or {})
+        if menu:
+            wide = compute_metrics(
+                model, dataset, batch_size=batch_size, threshold=threshold,
+                stopwords=stopwords, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+                global_decode=global_decode, global_decode_config=global_decode_config,
+                full_menu=menu, report=False,
+            ) or {}
+            metrics.update({k.replace("eval_", "eval_fullmenu_", 1): v
+                            for k, v in wide.items()})
+            metrics["fullmenu_sizes"] = {
+                "entities": len(menu.get("entities") or []),
+                "events": len(menu.get("events") or {}),
+                "relations": len(menu.get("relations") or []),
+            }
+    return metrics
 
 
 DEFAULT_THRESHOLD_GRID: Tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)

@@ -38,6 +38,10 @@ def main() -> None:
     p.add_argument("--split", choices=["val", "test"], default="test", help="Which split to score.")
     p.add_argument("--checkpoint", help="Checkpoint dir (default: <output_dir>/best).")
     p.add_argument("--threshold", type=float, help="Override eval.threshold.")
+    p.add_argument("--full-menu", dest="full_menu", action="store_true",
+                   help="Also score with the model's own default_schema as the menu, "
+                        "emitting eval_fullmenu_* keys. Gold-menu precision is 1.0000 by "
+                        "construction for event_type; this is the honest pass.")
     p.add_argument("--batch-size", type=int, dest="batch_size",
                    help="Override eval.batch_size. Scores MUST NOT change with this -- if "
                         "they do, padding is leaking into the result. It exists because "
@@ -64,6 +68,8 @@ def main() -> None:
     overrides = {}
     if args.batch_size is not None:
         overrides["batch_size"] = args.batch_size
+    if args.full_menu:
+        overrides["full_menu"] = True
     if args.threshold is not None:
         overrides["threshold"] = args.threshold
     if args.decode_mode is not None:
