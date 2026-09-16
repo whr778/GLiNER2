@@ -307,7 +307,22 @@ Zero predictions is the failure mode this plan pre-registered: *"an overcorrecti
 gate is the failure mode on the other side, and a gate that admits nothing has a perfect FP
 rate."* The blind test agrees — `event_type` recall 0.1405 → 0.0595, entity F1 0.0205 → 0.0119.
 
-**BUT THE A/B IS UNDERPOWERED AND THIS IS NOT A VERDICT ON THE MECHANISM.** Both arms are
+**THE 0.0000s WERE CHALLENGED AS A MULTIPLICATION ERROR. THEY ARE NOT — CHECKED.** Exactly
+zero on several heads in BOTH arms is the right thing to be suspicious of, so each was run
+down rather than argued away:
+
+| zero head | cause | evidence |
+|---|---|---|
+| `event_argument` strict | **entailed, not computed** | strict requires the trigger link and `event_trigger` is exactly 0, so strict must be exactly 0. Relaxed is **non-zero (0.0113)** — the head does emit arguments |
+| `event_trigger` | genuinely untrained | the INCUMBENT scores **0.0663** on casie through the same eval path, so the path produces non-zero triggers |
+| `relation` | genuinely untrained | the INCUMBENT scores **0.0068** on biored — this head is near-zero even fully trained |
+| supports | not vacuous | relation 815, trigger 856, argument 2,413 |
+
+`event_type` is non-zero in both arms (0.2464 / 0.1122), which rules out a global scaling
+fault: a multiplication error would not spare one head. The eval path is sound; the models are
+undertrained.
+
+**AND THE A/B IS UNDERPOWERED, SO THIS IS NOT A VERDICT ON THE MECHANISM.** Both arms are
 barely trained: 2 epochs over ~1,400 records leaves relation, trigger and argument F1 at
 exactly 0.0000 in BOTH arms, and entity F1 at 0.02. Comparing 0.0205 against 0.0119 on models
 that extract almost nothing measures which one is closer to silent, not which one discriminates
