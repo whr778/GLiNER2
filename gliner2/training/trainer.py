@@ -240,6 +240,14 @@ class TrainingConfig:
     negative_pools: Optional[str] = None
     negative_labels_per_dim: Optional[dict] = None
     negative_label_seed: int = 42
+    # SCHEMA DROPOUT. The processor's SamplingConfig randomly REMOVES gold from a training
+    # schema -- remove_events_prob and remove_relations_prob default to 0.2,
+    # remove_classification_label_prob to 0.5 -- and was previously unreachable from config
+    # (SamplingConfig is imported into this module and never used). Sensible regularisation
+    # at 174k records and 5 epochs; at A/B scale it withholds a fifth of the signal from the
+    # very heads under test, and it has produced three false readings in tests by removing
+    # the only gold item in a small batch. `schema_dropout: false` zeroes every *_prob.
+    schema_dropout: bool = True
 
     # Restored feature knobs (pre-boundary; consumed by tools/train/train.py).
     # checkpoint_restart: resume selection ('last' | 'highest' | None).
@@ -846,6 +854,17 @@ class ExtractorTrainer:
             torch.backends.cuda.matmul.allow_tf32 = config.allow_tf32
             torch.backends.cudnn.allow_tf32 = config.allow_tf32
         self.processor = processor or getattr(model, 'processor', None)
+        if not getattr(config, "schema_dropout", True) and self.processor is not None:
+            import dataclasses as _dc
+            sc = self.processor.sampling_config
+            zeroed = []
+            for f in _dc.fields(sc):
+                if f.name.endswith("_prob") and getattr(sc, f.name):
+                    setattr(sc, f.name, 0.0)
+                    zeroed.append(f.name)
+            if zeroed:
+                logger.info("schema_dropout: false -- zeroed %d probabilities (%s)",
+                            len(zeroed), ", ".join(sorted(zeroed)))
         if self.processor is None:
             raise ValueError("Processor must be provided or model must have .processor attribute")
 

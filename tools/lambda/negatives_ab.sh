@@ -47,18 +47,31 @@ snapshot_download('whr778/gliner2-$name', local_dir='$CK')" || { echo "[negab] d
 done
 
 # --- 2. THE A/B ------------------------------------------------------------------------
+ARMS_CFG=${ARMS_CFG:-negatives}
 for arm in control treatment; do
   echo "[negab] ===== $arm  $(date -u) ====="
-  $PY -u tools/train/train.py --config "tools/train/config/ab/negatives-$arm.yaml" \
+  $PY -u tools/train/train.py --config "tools/train/config/ab/$ARMS_CFG-$arm.yaml" \
       2>&1 | tee "$OUT/$arm.log" | grep -aE "composition|negative queries|Blind test|eval_" | tail -20
   echo "[negab] $arm rc=${PIPESTATUS[0]}"
-  cp "out/negatives-$arm/test_metrics.json" "$OUT/$arm.json" 2>/dev/null || echo "[negab] NO METRICS $arm"
+  cp "out/${OUTBASE:-negatives}-$arm/test_metrics.json" "$OUT/$arm.json" 2>/dev/null \
+    || echo "[negab] NO METRICS $arm"
   publish "$DEST" "$OUT/$arm.json" "$OUT/$arm.log" || RESCUE=1
 done
 
 # --- 3. THE ACCEPTANCE METRIC: does the treatment REJECT? --------------------------------
+# The BASE is the reference both arms are measured against -- a warm fine-tune can move
+# everything, so an arm's firing rate means nothing without the number it started from.
+echo "[negab] ===== absent-type firing, BASE (the warm-start point) ====="
+BASECK=$HOME/ckpt/eb16-eventrecords-tr
+[ -f "$BASECK/model.safetensors" ] || $PY -c "
+from huggingface_hub import snapshot_download
+snapshot_download('whr778/gliner2-eb16-eventrecords-tr', local_dir='$BASECK')" >/dev/null 2>&1
+$PY -u tools/train/probe_event_type_fp.py --checkpoints "base=$BASECK" \
+    --test data/casie.test.jsonl --train data/casie.train.jsonl \
+    --n 100 --threshold 0.3 --device cuda 2>&1 | tail -4 | tee -a "$OUT/firing.txt"
+
 for arm in control treatment; do
-  CK=out/negatives-$arm/best
+  CK=out/${OUTBASE:-negatives}-$arm/best
   [ -d "$CK" ] || continue
   echo "[negab] ===== absent-type firing, $arm ====="
   # --test/--train must name a corpus THIS box restored: the probe defaults to cmnee, which
@@ -68,6 +81,16 @@ for arm in control treatment; do
       --n 100 --threshold 0.3 --device cuda 2>&1 | tail -4 | tee -a "$OUT/firing.txt"
 done
 publish "$DEST" "$OUT/firing.txt" || RESCUE=1
+
+# PUSH THE TREATMENT CHECKPOINT. The last A/B's checkpoints died with the box, so the
+# abstention_threshold sweep -- the cheapest next question, and possibly the whole answer --
+# needed a retrain before it could even start.
+for arm in control treatment; do
+  CK=out/${OUTBASE:-negatives}-$arm/best
+  [ -d "$CK" ] || continue
+  $PY -u tools/train/push_to_hub.py --checkpoint "$CK" \
+      --repo-id "whr778/gliner2-negatives2-$arm" --private 2>&1 | tail -2 || RESCUE=1
+done
 
 echo "[negab] ===== DONE $(date -u) ====="
 # HOLD ONLY IF THERE IS SOMETHING TO RESCUE. A failed publish is worth an idle box when a
