@@ -1,0 +1,4 @@
+[type-fp] 150 documents, FULL menu of 8 event types (gold menus average 1.39 types/doc), threshold 0.3
+checkpoint                  precision   recall      F1  invented  predicted
+incumbent eb16-rebuild-tr      0.5521   0.8373  0.6654       142        317
+event-records epoch 2          0.3352   0.8708  0.4840       361        543
