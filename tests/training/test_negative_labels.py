@@ -270,3 +270,17 @@ def test_max_per_record_is_a_TOKEN_BUDGET_across_dimensions():
     n_capped = (len(set(capped.get("entities") or {}) - set(REL_REC["entities"]))
                 + len(capped.get("absent_relations") or []))
     assert n_capped == 2, f"budget of 2 must yield exactly 2 injected labels, got {n_capped}"
+
+
+def test_classification_is_VERIFY_ONLY_and_never_double_injected():
+    """Classification already carries a real menu -- `labels` plus a separate `true_label` --
+    which is why its precision is real where event_type's is 1.0000 by construction. Injecting
+    there would add a second, redundant mechanism and could contradict the true label."""
+    rec = {"entities": {"Chemical": ["Aspirin"]},
+           "classifications": [{"task": "topic", "labels": ["chem", "bio", "physics"],
+                                "true_label": ["chem"]}]}
+    out = NegativeLabels(REL_POOLS, {"entities": 2, "classifications": 5}).inject(dict(rec), 0)
+
+    assert out["classifications"] == rec["classifications"], "classifications untouched"
+    assert "absent_classifications" not in out
+    assert set(out["entities"]) - set(rec["entities"]), "other dimensions still injected"

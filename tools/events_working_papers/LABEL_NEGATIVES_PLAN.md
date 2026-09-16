@@ -238,17 +238,25 @@ under a unique module name now.
       built, 60 documents: control **0 of 559 (0.0%)**, negatives on **306 of 865 (35.4%)**.
       That is simultaneously the abstention gate's positive class (`target = 1` for an absent
       query) and `negative_query_ratio`'s selection pool. Both had been live and starved.
-- [ ] Log the selected-negative count in-band during a real run.
-- [ ] Confirm the decode path (`abstention_threshold`) then rejects.
-- [ ] **R. RECORD PATH — the one place real loss work may live.** With `event_records: true`
-      an absent event type must become a record spec with **zero gold instances**. Verify
-      `compile_record_specs` / `_pack_record_targets` accept that, and that the anchor loss
-      goes finite-and-negative rather than skipping. `sweep_record_thresholds.py`'s docstring
-      notes eval omits `structures` for a record with no gold — **this path has never run**.
-- [ ] **Relations**: `_relation_loss` builds "gold-inclusive proposals"; with a zero-gold
-      relation spec the proposal set may be empty and contribute nothing. Verify or fix.
-- [ ] **Structures**: same question for an absent structure type.
-- [ ] **Classification**: VERIFY ONLY — already has a real menu. Confirm no double-injection.
+- [x] Selected-negative count logged in-band, once:
+      `negative queries: 2 absent available, 1 selected into the pair loss`. An arm printing
+      `available=0` has not applied the treatment, whatever its config says. This block ran in
+      every model ever trained and always saw 0.
+- [x] **Relations**: `_relation_loss` handles a zero-gold spec — a real training step with two
+      absent relations is finite and puts gradient on the head.
+- [x] **Structures**: an absent structure needs `record_metadata` or nothing decodes it;
+      the injector emits it (Phase 2).
+- [x] **Classification**: VERIFY ONLY, and verified — the injector leaves `classifications`
+      byte-identical and adds no `absent_classifications`, while still injecting other
+      dimensions. It already has a real menu, which is why its precision is real.
+- [x] Real training steps with absent entity, relation and event queries: all finite, all with
+      gradient, and the loss **changes** when negatives are added rather than ignoring them.
+- [ ] Confirm the decode path rejects. `abstention_threshold` is READ at decode
+      (`engine.py:225`, `390`, `965`), so the wiring is confirmed; the behavioural
+      confirmation is the A/B acceptance metric (absent-type firing, 63% → lower).
+- [ ] **R. RECORD PATH under `event_records: true`** — an absent event type as a record spec
+      with zero gold instances. Not yet exercised; the event-records base is the run that
+      would hit it.
 
 ### Phase 4 — eval and inference
 - [ ] Full-menu eval mode in `eval_metrics.py` emitting `*_fullmenu_*` keys beside the

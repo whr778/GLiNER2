@@ -860,6 +860,7 @@ class BoundaryHead(nn.Module):
             )
             selected = (rank.view_as(absent_queries) < n_keep) & absent_queries
             pair_query_mask = positive_queries | selected
+            _note_negative_queries(int(absent_queries.sum()), int(selected.sum()))
         pair_loss = candidate_pair_loss(
             loss_logits,
             labels,
@@ -1194,6 +1195,26 @@ def _schema_group_name(schema_tokens: List[str]) -> str:
     if len(schema_tokens) > 2:
         return schema_tokens[2].split(" [DESCRIPTION] ")[0]
     return schema_tokens[0] if schema_tokens else ""
+
+
+_NEGATIVE_QUERY_NOTED = False
+
+
+def _note_negative_queries(available: int, selected: int) -> None:
+    """Say ONCE whether negative_query_ratio actually had anything to select.
+
+    This block has run in every model this project has trained and has always selected from
+    an empty set, because the training menu was built from the record's own gold -- so a run
+    with label negatives ON and a run without were indistinguishable from the logs. An arm
+    that prints `available=0` has not applied the treatment, whatever its config says.
+    """
+    global _NEGATIVE_QUERY_NOTED
+    if _NEGATIVE_QUERY_NOTED:
+        return
+    _NEGATIVE_QUERY_NOTED = True
+    logger.info("negative queries: %d absent available, %d selected into the pair loss "
+                "(0 available means the schema carries no absent labels)",
+                available, selected)
 
 
 class BoundaryExtractorModel(BaseExtractorModel):
