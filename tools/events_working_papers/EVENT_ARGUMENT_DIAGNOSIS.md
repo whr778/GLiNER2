@@ -13,6 +13,12 @@ of which retract earlier ones. Read this summary first — it is the only part k
 > markers below flag every place the old figures still appear; they are left in place because
 > they are the stated motivation for runs that really happened.
 
+> **§4h and §4i are now being acted on.** The cause they identify — no label negatives, for
+> any head but classification — has an implementation plan and working code:
+> [`LABEL_NEGATIVES_PLAN.md`](LABEL_NEGATIVES_PLAN.md). Absent label queries now reach the
+> model (0 → 306 of 865 queries on real data), and the numbers below are expected to be
+> superseded by a model trained with them.
+
 ## WHERE THIS STANDS
 
 **The incumbent, re-baselined.** `whr778/gliner2-eb16-rebuild-tr`, 18,786-record blind test,

@@ -26,6 +26,44 @@ and is documented here so every metric this project quotes has one definition.
 
 ---
 
+
+## The MENU is part of a metric's identity
+
+A metric here is always quoted with its type (F1, TVD, RMSE, nrmse). For any schema-driven
+task there is a second thing that must be quoted with it: **the label menu the model was
+scored against.**
+
+`_schema_from_gold` — the default eval path — builds the menu from each document's OWN gold.
+The model is asked *"which of these are here?"* where every option is there by construction, so
+it is never scored on proposing something that is not.
+
+For heads with a span to get wrong this only inflates precision. For **`event_type`, which has
+no span component, it pins precision at exactly 1.0000**, and therefore
+
+    F1 = 2R / (1 + R)
+
+exactly — verified against every `event_type` reading on file, two models x (five validation
+thresholds + one blind test): **12 of 12 match to 1e-4**. Every `event_type` F1 this project
+has published is a reparameterisation of recall and carries no independent information.
+
+Measured against a real 8-type menu instead, the same model scores precision **0.5521**, not
+1.0000, and invents a type in 142 of 317 predictions.
+
+**Rules:**
+
+- Report `event_type` as **recall**, not F1, wherever a gold-derived menu is in play.
+- State the menu beside any precision figure from a schema-driven task.
+- `eval_fullmenu_*` keys are scored against the model's own `default_schema`
+  (`tools/train/eval.py --full-menu`). They are **never** merged into the plain `eval_*` keys:
+  every published number is a gold-menu number, and silently changing what a key means would
+  invalidate every comparison against it.
+- The full menu is **capped and sampled per record** (`max_absent`, default 20) from a seed
+  derived from the record index — the taxonomy can be 858 labels, which would explode the
+  query axis. The per-record seed keeps two checkpoints comparable on the same documents.
+
+Source: [`EVENT_ARGUMENT_DIAGNOSIS.md`](tools/events_working_papers/EVENT_ARGUMENT_DIAGNOSIS.md)
+§4h, §4i.
+
 ## Quick start
 
 ```python

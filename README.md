@@ -145,6 +145,13 @@ model.set_word_splitter(CharLevelSplitter())
 
 Changing a pretrained model's word boundaries can affect quality unless the model was trained with the same splitter. The choice is runtime-only: saved checkpoints reload with `"whitespace"` unless you pass `word_splitter` again.
 
+### Events
+
+Events are the hardest task here and the one with the most ways to be quietly wrong — the menu
+you offer decides the answer, `event_type` F1 is a reparameterisation of recall under a
+gold-derived menu, and a model without `event_records: true` cannot emit two events of one
+type. See the [**events tutorial**](docs/events_tutorial.md).
+
 ### Architecture guide
 
 The boundary architecture (**GLiNER2.5**) uses sparse start/end pairing instead of a fixed span-width grid, so spans of any length that fit in the encoded window are representable. It supports entities, classification, structured record/event decoding, sparse relations, and span attributes when enabled by the checkpoint.
