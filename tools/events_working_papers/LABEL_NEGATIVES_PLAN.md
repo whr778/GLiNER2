@@ -522,10 +522,32 @@ Both are real and they are not in conflict: negatives make the model more select
 level that is pure gain because recall was already saturated (0.97); at argument level recall
 had room to lose, and did.
 
-**Open, and the cheapest next test:** whether the argument recall recovers with more steps.
-Both arms ran `eval_strategy: epoch`, so each has two validation points — the epoch-1 to
-epoch-2 trend is free to read and speaks directly to it. §5b's slow-objective framing predicts
-recovery; nothing yet confirms it.
+### The per-epoch trend: recall does NOT recover. §5b's prediction fails.
+
+Read from the arms' own per-epoch validation (epoch 1 = 630 steps, epoch 2 = 1,260):
+
+| | arg strict P | arg strict R | arg strict F1 | entity F1 |
+|---|---:|---:|---:|---:|
+| control, epoch 1 | 0.4196 | 0.1165 | 0.1824 | 0.2258 |
+| control, epoch 2 | 0.4366 | 0.1147 | 0.1817 | 0.2250 |
+| treatment, epoch 1 | 0.4811 | 0.0997 | 0.1651 | 0.1984 |
+| **treatment, epoch 2** | **0.5008** | **0.0921** | **0.1557** | **0.1832** |
+
+**The treatment's recall is still falling at 1,260 steps, ~4x faster than the control's
+(−0.0076 against −0.0018), while its precision keeps climbing.** Entity degrades in the
+treatment (0.1984 → 0.1832) and is flat in the control. On the trajectory that is visible,
+more steps make the trade WORSE.
+
+**This is evidence against §5b above, and against the intuition that a longer run fixes it.**
+It does not *rule out* a later turn — two points over 630→1,260 steps cannot — but the
+slow-objective framing predicted recovery and the curve shows monotone decline. Treat §5b as
+a hypothesis that has now failed its first test.
+
+**So the next move is not MORE of this dose, it is LESS of it, or a ramp:**
+`negative_labels_per_dim` down to `{entities: 1}`, or `abstention_loss_weight` below 0.2, or
+the negatives ramped from zero over 1,000-2,000 steps via the existing
+`set_consistency_scale` pattern. The rejection win (§5c Q1) is already banked at the current
+dose; the question is the smallest dose that keeps it.
 
 ---
 
