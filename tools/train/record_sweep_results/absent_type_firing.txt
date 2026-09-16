@@ -1,0 +1,6 @@
+Every schema contains ONLY event types the document does NOT have.
+A model that learned to say 'no' fires on approximately none of them.
+
+checkpoint                  docs    fired on ABSENT type     rate
+incumbent                    100                      63    63.0%
+event-records epoch 2        100                      54    54.0%

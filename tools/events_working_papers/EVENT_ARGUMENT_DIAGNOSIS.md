@@ -43,6 +43,12 @@ the finished model on strict F1 at its own calibrated point, not on relaxed reca
 **Threshold is not the lever.** Sweeping it moves argument *recall* a lot — never-proposed
 falls from ~48.8% to ~29.4% — and no F1 at all, because precision pays for it. (§4d)
 
+**There are no label negatives, for events or for NER** — the training menu is built from
+each document's own gold, so the model is never shown a type it must reject. Given a schema
+of only absent types it fires on **63%** of documents (incumbent) / **54%** (event-records).
+Training and eval share the blind spot, which is why no metric caught it. Probably the
+largest lever on the table, and a data-side change rather than an architectural one. (§4i)
+
 **`event_type` has never actually been scored.** Its precision is 1.0000 *by construction* —
 the eval builds the type menu from the document's own gold, so no wrong answer is on offer,
 and `F1 = 2R/(1+R)` in 12 of 12 readings. Against the corpus's real 8-type menu the incumbent
@@ -708,6 +714,74 @@ binding gain in §4e, and nothing in the standard eval would have shown it.
 - Watch the over-generation on the finished model.
 - This does **not** touch `event_argument`, which must land the entity span, so its precision
   is real.
+
+---
+
+## 4i. THERE ARE NO LABEL NEGATIVES. Not for events, and not for NER either.
+
+Asked directly: *were negatives ever implemented for events, the way they are for NER?* The
+answer is that they were never implemented for **either**, and this is the cause behind §4h
+rather than a separate issue.
+
+### What the training menu actually is
+
+`InputExample.from_dict` (training/data.py:1138) is the whole story:
+
+```python
+entities = output.get("entities")                    # gold keys ONLY
+...
+for evt_data in output.get("events", []):            # one Event per GOLD event
+    events.append(Event(event_type=evt_data.get("event_type", ""), ...))
+...
+classifications.append(Classification(
+    task=..., labels=cls_data["labels"],             # the FULL menu
+    true_label=cls_data["true_label"]))               # answer kept separate
+```
+
+**Classification is the only head that sees a label it must reject.** Entities and events are
+handed a menu built from their own gold, so every option on it is correct. Confirmed in the
+data as well as the code: across fourteen corpora, **zero entity labels map to an empty
+list** — there is not one explicit negative anywhere in `data/`.
+
+The negatives that *do* exist are on the SPAN axis — `hard_negatives_per_positive: 5`,
+`minimum_hard_negatives: 8`, selected by `select_hard_negative_candidates`. Those teach *"this
+span is not a `Person`"*. Nothing teaches *"`Person` is not here"*.
+
+### The behavioural consequence, measured
+
+100 blind-test cmnee documents, each given a schema containing **only event types the document
+does not have**. A model that learned to reject fires on approximately none:
+
+| checkpoint | documents | fired on an ABSENT type | rate |
+|---|---:|---:|---:|
+| incumbent `eb16-rebuild-tr` | 100 | 63 | **63.0%** |
+| event-records, epoch 2 | 100 | 54 | **54.0%** |
+
+**The model cannot say "no" to a type that is not there, roughly three times in five.** That
+is the same defect §4h measured from the other side (real precision 0.5521, 142 invented
+types) and it explains it completely: a model never shown a wrong type has no reason to
+reject one.
+
+### Why it stayed invisible
+
+`_schema_from_gold` builds the EVAL menu from gold too (§4h). So training never presents a
+negative and evaluation never tests for one — the blind test cannot express this failure, and
+reports `event_type` precision 1.0000 while the model fires on absent types 63% of the time.
+**Training and eval share the same blind spot, which is why no metric on file caught it.**
+
+### Why this is probably the largest lever on the table
+
+Every other intervention in this document moves a fraction of a point. This one addresses a
+precision of 0.55 where the reported number is 1.00. It is also cheap: sampling absent types
+from the corpus taxonomy into each training schema is a data/collate change, not an
+architectural one, and the same applies to entity labels.
+
+The abstention head is the mechanism that would learn it — `abstention_loss` trains a
+per-query gate whose target is 1 for an absent query (boundary/losses.py:601). With menus
+derived from gold, that target is essentially never 1, so the gate has almost no positive
+class. **NOT YET VERIFIED DIRECTLY**: an attempt to measure the absent-query rate through
+`collate_fn_train` returned empty batches (wrong input shape) and was abandoned rather than
+reported as zero. The claim rests on the code path and the data, not on that measurement.
 
 ## 5. What follows, in order
 
