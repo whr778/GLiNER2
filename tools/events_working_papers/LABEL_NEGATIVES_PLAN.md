@@ -437,6 +437,38 @@ inverted a verdict for exactly that):
 
 ---
 
+## 5b. A NEGATIVES-BASED OBJECTIVE MAY SIMPLY BE SLOW — read the A/B with this first
+
+Raised from experience with `GISTEmbedLoss` in sentence-transformers, where a guide-filtered
+contrastive objective is known to sit flat for a long warmup before it starts moving. The
+analogy is LOOSE — that is contrastive over in-batch negatives, ours is a per-query BCE gate —
+but the practical lesson transfers, and this codebase already agrees with it:
+
+```python
+consistency_scale = 1.0 if warmup <= 0 else min(self.global_step / warmup, 1.0)
+boundary_head.set_consistency_scale(consistency_scale)
+```
+
+`consistency_warmup_steps` is **2000**, alongside `soft_iou_anneal_steps` and a scheduled
+`gold_injection_prob`. Somebody already concluded that auxiliary terms here need a long ramp.
+
+**The A/B runs ~810 steps. That is below the horizon this codebase already uses for a
+different auxiliary loss**, and the scratch version ran 172.
+
+**The mechanism fits the observation.** `abstention_loss` targets 1 for an absent query.
+Injecting many absent queries shifts the gate's prior hard toward "absent": early on it
+over-fires and the model emits nothing, and only later learns WHICH absences are real. The
+scratch treatment emitted exactly zero predictions — which was pre-registered here as
+overcorrection, but is equally consistent with the early phase of a slow objective. **Nothing
+measured so far distinguishes those two.**
+
+**So if the treatment reads silent again, the response is a RAMP, not abandonment.** The
+pattern is already available in `set_consistency_scale`: ramp `abstention_loss_weight`, or
+ramp the negatives dose itself from zero, over 1,000-2,000 steps. That makes the honest test
+longer and more expensive than 810 steps — but answerable, which 810 may not be.
+
+---
+
 ## 6. Sequencing
 
 The event-base blind test lands first: model report, then the comparable 18,786-record eval
