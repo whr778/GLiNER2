@@ -835,6 +835,28 @@ Consequences:
   `data/scaling_joint/<corpus>.val.jsonl`, `corpora` at `data/<corpus>.val.jsonl`), so the
   edit is not the no-op it appears to be.
 
+### Are the duplicates the same ANNOTATION? Both kinds exist, and both are handled right
+
+Counted within each file loaded ONCE:
+
+| | count | what it is |
+|---|---:|---|
+| config double-load | **10,714** | byte-identical, same file read twice — waste |
+| exact repeats inside a corpus | **115** | same text AND same target — waste |
+| **same text, DIFFERENT target** | **728** | **schema conditioning — PRESERVED** |
+
+The 728 sit where the design expects: **text2json has 872 rows over only 186 distinct texts**
+(619 variants) — one document presented with up to eight extraction schemas, which is the
+signal that corpus exists to teach — plus sentence_rex 106 and events_biotech 3.
+
+The arithmetic closes exactly: distinct `(text, target)` across all files loaded once is
+**18,786**, which IS the scored blind test, and 115 + 10,714 = 10,829, which IS what the
+loader dropped.
+
+So **728 texts are scored more than once, each against a different schema** — intended, not
+contamination. This is why the within-split rule is text AND target rather than text alone:
+deduplicating on text would silently discard 728 supervised examples.
+
 
 ## 5. What follows, in order
 
