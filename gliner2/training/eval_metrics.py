@@ -103,7 +103,8 @@ def make_compute_metrics(
     return _hook
 
 
-def _widen_with_absent(schema: Dict, menu: Dict) -> Dict:
+def _widen_with_absent(schema: Dict, menu: Dict, max_absent: int = 20,
+                      index: int = 0) -> Dict:
     """Add every menu label this record does NOT have, as an ABSENT query.
 
     `_schema_from_gold` builds the menu from the document's own gold, so the model is asked
@@ -115,18 +116,38 @@ def _widen_with_absent(schema: Dict, menu: Dict) -> Dict:
     Kept OUT of the default path on purpose: every historical number is a gold-menu number,
     so the menu is part of a metric's identity and the widened figures get their own keys.
     """
+    import hashlib
+    import random as _random
+
+    def pick(pool, have):
+        """A DETERMINISTIC sample of absent labels, capped.
+
+        The full taxonomy is not usable as-is: this project's incumbent carries 858 entity
+        labels, and widening every document to all of them explodes the query axis. `max_absent`
+        keeps the pass tractable AND keeps the menu a realistic size; the seed is derived from
+        the record index so every model sees the SAME menu for the same document, which is what
+        makes two checkpoints comparable.
+        """
+        cand = sorted(set(pool) - set(have))
+        if max_absent is None or len(cand) <= max_absent:
+            return cand
+        seed = int.from_bytes(hashlib.sha256(str(index).encode()).digest()[:8], "little")
+        return sorted(_random.Random(seed).sample(cand, max_absent))
+
     out = dict(schema)
     ents = menu.get("entities")
     if isinstance(ents, list) and isinstance(out.get("entities"), dict):
-        out["entities"] = {**{e: "" for e in ents}, **out["entities"]}
+        chosen = pick(ents, out["entities"])
+        out["entities"] = {**{e: "" for e in chosen}, **out["entities"]}
     evs = menu.get("events")
     if isinstance(evs, dict) and isinstance(out.get("events"), dict):
-        out["events"] = {**{t: list(r) for t, r in evs.items()}, **out["events"]}
+        chosen = pick(list(evs), out["events"])
+        out["events"] = {**{t: list(evs[t]) for t in chosen}, **out["events"]}
     rels = menu.get("relations")
     if isinstance(rels, list) and isinstance(out.get("relations"), list):
         have = {n for r in out["relations"] if isinstance(r, dict) for n in r}
         out["relations"] = out["relations"] + [
-            {n: {"head": "", "tail": ""}} for n in rels if n not in have]
+            {n: {"head": "", "tail": ""}} for n in pick(rels, have)]
     return out
 
 
@@ -179,7 +200,7 @@ def compute_metrics(
         if not schema:
             continue
         if full_menu:
-            schema = _widen_with_absent(schema, full_menu)
+            schema = _widen_with_absent(schema, full_menu, index=i)
         texts.append(text)
         golds.append(output)
         schemas.append(schema)

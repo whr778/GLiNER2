@@ -1,0 +1,65 @@
+# NEGATIVES A/B -- TREATMENT arm.
+#
+# ONE VARIABLE. The two configs differ ONLY in `training.negative_labels_per_dim`: empty in
+# the control, populated in the treatment. Same encoder, same corpora, same seed, same
+# epochs, same blind test. Small on purpose -- biored + scierc + casie is a few thousand
+# records, so the arms fit an A10 and the question is whether the mechanism moves rejection,
+# not whether a small model is good.
+#
+# THE GATES, read BEFORE any metric:
+#   1. `[composition]   negatives: ...` -- control must print NONE, treatment must not.
+#   2. `negative queries: N absent available, M selected into the pair loss` -- an arm
+#      printing `available=0` has not applied the treatment, whatever this file says. That
+#      block has run in every model this project trained and always saw 0.
+#
+# ACCEPTANCE is rejection, not F1: absent-type firing (63% on the incumbent) must fall, and
+# full-menu precision (0.5521) must rise, WITHOUT gold-menu recall collapsing -- an
+# overcorrecting abstention gate is the failure mode on the other side.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary
+  max_len: 1024
+  attn_implementation: flash_attention_2
+  boundary_head:
+    enable_relations: true
+    enable_records: true
+    event_records: true
+    max_gold_per_query: 256
+    training_candidate_budget: 384
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+training:
+  output_dir: ./out/negatives-treatment
+  experiment_name: negatives_treatment
+  num_epochs: 2
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-05
+  task_lr: 0.0005
+  warmup_ratio: 0.05
+  bf16: true
+  eval_strategy: epoch
+  save_best: true
+  save_total_limit: 1
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  max_len: 1024
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+  seed: 42
+  negative_pools: tools/train/config/labels/negative_pools.json
+  negative_labels_per_dim:
+    entities: 2
+    events: 1
+    relations: 1
+  negative_label_seed: 42
+eval:
+  batch_size: 8
+  threshold: 0.3
+labels_file: labels/unified.yaml
+data:
+  corpora:
+  - data/biored
+  - data/scierc
+  - data/casie

@@ -56,3 +56,27 @@ def test_a_dimension_the_record_does_not_have_is_NOT_invented():
 def test_widening_is_a_no_op_without_a_menu():
     gold = {"entities": {"Chemical": ""}}
     assert _widen_with_absent(gold, {}) == gold
+
+
+def test_the_menu_is_CAPPED_and_deterministic():
+    """The incumbent's taxonomy is 858 entity labels; widening every document to all of them
+    explodes the query axis. The cap keeps the pass tractable and the menu realistic, and the
+    per-record seed keeps two checkpoints comparable on the same documents."""
+    big = {"entities": [f"T{i}" for i in range(200)]}
+    gold = {"entities": {"T0": ""}}
+
+    wide = _widen_with_absent(gold, big, max_absent=5, index=7)
+    assert len(wide["entities"]) == 6, "5 absent + the 1 gold label"
+    assert "T0" in wide["entities"]
+
+    again = _widen_with_absent(gold, big, max_absent=5, index=7)
+    assert wide["entities"].keys() == again["entities"].keys(), "same record, same menu"
+
+    other = _widen_with_absent(gold, big, max_absent=5, index=8)
+    assert wide["entities"].keys() != other["entities"].keys(), "different record, resampled"
+
+
+def test_a_menu_smaller_than_the_cap_is_used_whole():
+    gold = {"entities": {"Chemical": ""}}
+    wide = _widen_with_absent(gold, MENU, max_absent=100)
+    assert set(wide["entities"]) == set(MENU["entities"])
