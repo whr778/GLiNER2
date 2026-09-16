@@ -41,9 +41,13 @@ the finished model on strict F1 at its own calibrated point, not on relaxed reca
 (§4e, §4f)
 
 **Threshold is not the lever.** Sweeping it moves argument *recall* a lot — never-proposed
-falls from ~48.8% to ~29.4% — and no F1 at all, because precision pays for it. One free thing
-is still on the table: `event_type` precision is exactly 1.000 at threshold 0.2 and its
-operating point has never been found; it is at or below 0.1. (§4d)
+falls from ~48.8% to ~29.4% — and no F1 at all, because precision pays for it. (§4d)
+
+**`event_type` has never actually been scored.** Its precision is 1.0000 *by construction* —
+the eval builds the type menu from the document's own gold, so no wrong answer is on offer,
+and `F1 = 2R/(1+R)` in 12 of 12 readings. Against the corpus's real 8-type menu the incumbent
+scores precision **0.5521**, not 1.000, and the event-records model is worse at **0.3352**.
+Quote `event_type` as recall, never as F1. (§4h)
 
 **Instrument defects found along the way, all fixed:** the blind test is NOT affected by the
 gold-capacity cap but in-training eval IS (§4g); the checkpoint persists 92 `boundary_head`
@@ -451,12 +455,16 @@ out. Either way the protocol did its job: because the test was scored once at th
 val-selected point we know this, instead of having fitted a number to it. **A threshold
 sweep is not the lever here.**
 
-### The one free thing that IS on the table
+### ~~The one free thing that IS on the table~~ — RETRACTED, see §4h
 
-`event_type` precision is **exactly 1.000 at threshold 0.2**, at recall 0.7621 — the head
-still never emits a wrong type, three grid points below its calibrated setting. Validation
-reaches **0.9201** at 0.1 and is still climbing. **We have not found this head's operating
-point; it is below 0.1.** That is F1 available for no training, and nobody has looked.
+~~`event_type` precision is exactly 1.000 at threshold 0.2 ... that is F1 available for no
+training, and nobody has looked.~~
+
+**Struck.** The precision is 1.000 *by construction*, not because the head is conservative:
+the eval hands the model a menu built from the document's own gold, so no wrong type is on
+offer. Lowering the threshold raises recall toward 1.0 and F1 with it while measuring
+nothing — the same failure as scoring a gate on firings rather than hits. §4h has the proof
+and the real number (precision 0.5521, not 1.000).
 
 ### Caveat, because the comparison is card-against-now
 
@@ -645,6 +653,61 @@ and missing the nested `boundary_head` dict. The eval-config surgery was still r
 one reason rather than two: **the denominator**. The training config's three extra corpora
 carry 1,816 test records and would have scored the model against 20,602 where the incumbent
 used 18,786. The decode-path argument should be struck.
+
+---
+
+## 4h. `event_type` PRECISION IS 1.0000 BY CONSTRUCTION, and the head has never been scored
+
+Noticed because "exactly 1.0000" held while recall moved from 0.5229 to 0.7621, across two
+models, two splits and five thresholds. Real classifiers do not do that.
+
+### The cause
+
+`_schema_from_gold` (training/eval_metrics.py:367) builds the event menu from **the
+document's own gold** — `schema["events"]` holds exactly the types present in that record and
+no others. The model is asked *"which of these types are here?"* where every option is there
+by construction. **It cannot emit a wrong type because no wrong type is offered.**
+
+### The consequence, proved rather than argued
+
+With precision pinned at 1, `F1 = 2R/(1+R)` exactly — no free parameter. Checked against
+every `event_type` reading on file, two models × (five validation thresholds + one blind
+test): **12 of 12 match to 1e-4.** Every `event_type` F1 this project has quoted is a
+reparameterisation of recall and carries no independent information.
+
+Entities, relations and arguments are handed a gold-restricted menu too, but they must also
+land the **span**, so their precision stays free to be wrong — on the same blind test,
+classification 0.5862, entity 0.5314, relation 0.3168. `event_type` is the only head with
+nothing else to get wrong.
+
+### What the blind test cannot see, measured
+
+`tools/train/probe_event_type_fp.py` offers the corpus's FULL taxonomy — all 8 cmnee event
+types, which is what a deployment does — over 150 blind-test documents at threshold 0.3:
+
+| model | precision | recall | F1 | types invented |
+|---|---:|---:|---:|---:|
+| incumbent `eb16-rebuild-tr` | **0.5521** | 0.8373 | 0.6654 | 142 of 317 |
+| event-records, epoch 2 | **0.3352** | 0.8708 | 0.4840 | 361 of 543 |
+
+**The incumbent's real event-type precision is 0.55, not 1.00** — 45% of its type predictions
+are wrong once wrong answers are available — and its honest F1 against a real menu is
+**0.6654**, against the 0.8650 the blind test reports.
+
+And a finding about the new line rather than the metric: **the event-records model is
+markedly worse at type discrimination** — 0.3352 precision, 361 inventions against 142, while
+emitting 543 type predictions where gold holds roughly 209. It over-generates types at a
+threshold already *above* its calibrated point. That is a candidate cost to set against the
+binding gain in §4e, and nothing in the standard eval would have shown it.
+
+### What to do
+
+- **Report `event_type` as RECALL**, never as F1, wherever the gold-only menu is in play, and
+  state the menu whenever an event-type number is quoted.
+- Treat the full-menu figures above as the honest ones.
+- Watch the over-generation on the finished model.
+- This does **not** touch `event_argument`, which must land the entity span, so its precision
+  is real.
 
 ## 5. What follows, in order
 
