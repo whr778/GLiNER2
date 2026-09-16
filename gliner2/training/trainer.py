@@ -233,6 +233,13 @@ class TrainingConfig:
     # guide's scores are handed to the veto. Train only -- eval must not be perturbed.
     guide_scores: Optional[str] = None
     rivals_per_record: int = 3
+    # LABEL NEGATIVES. `negative_pools` is the JSON from tools/data/build_negative_pools.py;
+    # `negative_labels_per_dim` is how many ABSENT labels to offer per dimension, e.g.
+    # {"entities": 2, "events": 1}. Empty = OFF, so every existing config reproduces. Train
+    # only: eval must not be perturbed, and the full-menu eval is a separate mode.
+    negative_pools: Optional[str] = None
+    negative_labels_per_dim: Optional[dict] = None
+    negative_label_seed: int = 42
 
     # Restored feature knobs (pre-boundary; consumed by tools/train/train.py).
     # checkpoint_restart: resume selection ('last' | 'highest' | None).
@@ -471,6 +478,7 @@ class ExtractorDataset(Dataset):
             validate: bool = False,
             guide_scores=None,
             rivals_per_record: int = 3,
+            negatives=None,
     ):
         """
         Initialize dataset from various input formats.
@@ -500,6 +508,7 @@ class ExtractorDataset(Dataset):
         """
         self.guide_scores = guide_scores
         self.rivals_per_record = rivals_per_record
+        self.negatives = negatives
         self.data = DataLoader_Factory.load(
             data=data,
             max_samples=max_samples,
@@ -581,6 +590,13 @@ class ExtractorDataset(Dataset):
             text, schema = record["text"], record["schema"]
         if self.guide_scores is not None:
             schema = self.guide_scores.inject(text, schema, self.rivals_per_record)
+        if self.negatives is not None:
+            # ABSENT label queries. Here rather than in the collator because this is where
+            # GIST already injects absent entity queries, and because __getitem__ runs per
+            # item per epoch in the worker -- so negatives resample across epochs while
+            # staying deterministic in (seed, epoch, index), which is what DDP ranks and
+            # dataloader workers need to agree.
+            schema = self.negatives.inject(schema, idx)
         return text, schema
 
     # Factory methods for explicit creation
@@ -1603,6 +1619,7 @@ class ExtractorTrainer:
         max_samples = self.config.max_train_samples if is_train else self.config.max_eval_samples
 
         guide_scores = self._guide_scores() if is_train else None
+        negatives = self._negative_labels() if is_train else None
 
         if not self.config.sliding_window:
             return ExtractorDataset(
@@ -1613,6 +1630,7 @@ class ExtractorTrainer:
                 validate=self.config.validate_data if is_train else False,
                 guide_scores=guide_scores,
                 rivals_per_record=self.config.rivals_per_record,
+                negatives=negatives,
             )
 
         # Sliding window: load records, expand each into overlapping subword windows
@@ -1659,6 +1677,23 @@ class ExtractorTrainer:
             guide_scores=guide_scores,
             rivals_per_record=self.config.rivals_per_record,
         )
+
+    def _negative_labels(self):
+        """Load the negative-label injector once, or None when the feature is off."""
+        if not (self.config.negative_pools and self.config.negative_labels_per_dim):
+            return None
+        cached = getattr(self, "_negatives_cache", None)
+        if cached is None:
+            from gliner2.training.negatives import NegativeLabels
+            cached = NegativeLabels.load(
+                self.config.negative_pools,
+                self.config.negative_labels_per_dim,
+                seed=self.config.negative_label_seed,
+            )
+            self._negatives_cache = cached
+            logger.info("label negatives ON: %s from %s",
+                        self.config.negative_labels_per_dim, self.config.negative_pools)
+        return cached
 
     def _guide_scores(self):
         """Load the guide cache once and hand it to the model as well as the dataset."""
@@ -2077,6 +2112,14 @@ class ExtractorTrainer:
             set_epoch = getattr(train_loader.sampler, "set_epoch", None)
             if set_epoch is not None:
                 set_epoch(epoch)
+            # Negatives resample per epoch, and every rank and dataloader worker must pick
+            # the SAME menu -- hence an explicit epoch rather than RNG state, which workers
+            # do not share. Same contract as DistributedSampler.set_epoch above.
+            negatives = getattr(getattr(train_loader, "dataset", None), "negatives", None)
+            if negatives is not None:
+                negatives.set_epoch(epoch)
+                if epoch == start_epoch and self.is_main_process:
+                    logger.info("%s", negatives.composition_line())
 
             epoch_loss = torch.zeros((), device=self.device)
             epoch_steps = 0

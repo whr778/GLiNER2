@@ -179,18 +179,51 @@ per-corpus pool is what prevents it.** Note `docee` carries 61 entity labels and
 despite being an event corpus: its events were converted to entities + classifications
 (EVENT_ARGUMENT_DIAGNOSIS §6).
 
-### Phase 2 — the collator
-- [ ] Config knobs on `boundary_head`: `negative_labels_per_dim` (dict), `negative_label_seed`,
-      `max_negative_label_tokens`. Defaults **off**, so existing configs reproduce.
-- [ ] Inject in `ExtractorDataset.__getitem__` (`trainer.py:575-584`), beside the GIST hook.
-- [ ] Entities first — the representation (`label: []`) already works end to end.
-- [ ] Events need `_process_events` to accept menu-only types alongside training gold.
-- [ ] Deterministic seeding `f(seed, epoch, record_idx)`; assert identical menus across DDP ranks.
-- [ ] Assert at injection: no injected label equals a gold label for that record.
-- [ ] `[composition]` line that CAN FAIL: `negatives: entities k=2, events k=1, 34% of samples
-      carry >=1 absent query`. Control must print **0%**.
-- [ ] Tests: injection count, within-corpus, within-dimension, determinism, no-gold-collision,
-      off-by-default.
+### Phase 2 — the injector ✅ DONE for entities and events
+- [x] Config knobs on `TrainerConfig`, beside GIST: `negative_pools`,
+      `negative_labels_per_dim`, `negative_label_seed`. **Empty = OFF**, so every existing
+      config reproduces bit-for-bit.
+- [x] `gliner2/training/negatives.py` — `NegativeLabels`, mirroring `GuideScores`.
+- [x] Injected at `ExtractorDataset.__getitem__` beside the GIST hook.
+- [x] Entities: `{"label": []}`, the representation GIST already uses.
+- [x] Events: `_process_events` now reads an `absent_events` key and emits
+      `labels.append([0, []])` — the same menu-entry-with-empty-gold the inference path emits.
+      Needed because the training list SKIPS an event with no triggers.
+- [x] Deterministic `sha256(seed, epoch, index)` — not `hash()`, which is salted per process
+      and would give DDP ranks different menus. Trainer calls `set_epoch` in the epoch loop
+      beside `DistributedSampler.set_epoch`, so negatives resample per epoch.
+- [x] Asserted at injection: no injected label appears in that record's gold, either dimension.
+- [x] `composition_line()` that can fail an A/B gate; logged once on the first epoch.
+- [x] **CORPUS IDENTIFICATION WITHOUT PROVENANCE.** Records carry only `{"input", "output"}`.
+      Candidate corpora are those whose pool contains every gold label the record uses, and
+      the usable pool is their **intersection**; a dimension is vetoed if any candidate does
+      not annotate it; no candidate means no negatives. Every fallback is conservative.
+- [x] 13 tests: off-by-default, empty-list representation, never-injects-gold (50 draws),
+      within-dimension both ways, no-candidate, determinism, per-epoch resampling, pool
+      exhaustion, composition line, and **three end-to-end** through the real collator.
+
+**THE GATE MOVED.** 100 real documents, `{"entities": 2, "events": 1}`:
+
+| corpus | docs | queries before | after | docs with an absent query |
+|---|---:|---:|---:|---:|
+| cmnee | 51 | 340 | 585 | 42 |
+| casie | 1 | 11 | 23 | 1 |
+| docee | 2 | 7 | 11 | 2 |
+| sentence_rex | 45 | 50 | 60 | 9 |
+| **ALL** | **100** | **415** | **686** | **54** |
+
+**271 absent queries created where there were 0.** `negative_query_ratio` and
+`abstention_loss` finally have a positive class.
+
+- [ ] **Relations and structures** — still to do; their absent representation needs the same
+      establishing `_process_events` needed (Phase 3).
+- [ ] Token-budget knob (`max_num_labels` already exists in `SamplingConfig` — reuse it).
+
+**Regression caught and fixed while doing this:** `build_negative_pools.py` originally did
+`sys.path.insert(0, "tools/")` + `from train.train import ...`, which made the bare name
+`train` resolve to the PACKAGE `tools/train/` and broke two sibling test modules that do
+`from train import ...`. Only visible in a full-suite run. It loads `train.py` by file path
+under a unique module name now.
 
 ### Phase 3 — per-head verification (mostly verify, not build)
 - [ ] **Entities/events (mention path)**: confirm `negative_query_ratio` now selects > 0

@@ -76,8 +76,15 @@ fi
 
 # 2. METRICS AND LOGS, whatever happened to the model.
 cp "$OUTDIR/test_metrics.json" "$HOME/test_metrics.json" 2>/dev/null || echo "[base] no test_metrics.json"
-cp "$OUTDIR/eval_metrics.json" "$HOME/eval_metrics.json" 2>/dev/null || true
-publish "$DEST" "$HOME/test_metrics.json" "$HOME/eval_metrics.json" "$LOG" \
+# eval_metrics.json is OPTIONAL -- train.py writes test_metrics.json and val_metrics.json,
+# never this name. Copying it with `|| true` and then NAMING IT IN THE PUBLISH LIST made the
+# publish correctly report a never-written artefact and hold the box, after a 16-hour run
+# whose model and metrics had both already landed. An optional file must not appear in a
+# required list: only pass it when it exists.
+EXTRA=""
+cp "$OUTDIR/eval_metrics.json" "$HOME/eval_metrics.json" 2>/dev/null \
+  && EXTRA="$HOME/eval_metrics.json"
+publish "$DEST" "$HOME/test_metrics.json" $EXTRA "$LOG" \
         "$HOME/heartbeat.log" "$CFG" || RESCUE=1
 
 echo "[base] ===== DONE $(date -u) rc=$rc ====="

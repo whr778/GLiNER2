@@ -27,17 +27,30 @@ That copy is for inference and the viewer; training needs the real thing.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
-import sys
 from collections import Counter
 from pathlib import Path
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from train.train import _category_fns, load_labels_cfg, transform_record  # noqa: E402
-
 DIMENSIONS = ("entities", "events", "relations", "structures")
+
+
+def _train_helpers():
+    """Load `tools/train/train.py` by PATH, under a name that shadows nothing.
+
+    `sys.path.insert(0, "tools/")` plus `from train.train import ...` made the bare name
+    `train` resolve to the PACKAGE `tools/train/`, which broke every sibling test that does
+    `from train import ...` after adding `tools/train` to the path -- two collection errors,
+    and only in a full-suite run where this module is imported first. Loading by file
+    location under a unique module name has no such side effect.
+    """
+    path = Path(__file__).resolve().parents[1] / "train" / "train.py"
+    spec = importlib.util.spec_from_file_location("_gliner2_train_helpers", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod._category_fns, mod.load_labels_cfg, mod.transform_record
 
 
 def _corpus_train_paths(cfg: dict) -> dict:
@@ -52,7 +65,7 @@ def _corpus_train_paths(cfg: dict) -> dict:
     return out
 
 
-def scan(path: Path, fns: dict, limit: int) -> dict:
+def scan(path: Path, fns: dict, limit: int, transform=None) -> dict:
     """Label sets per dimension, plus which dimensions this corpus annotates at all."""
     entities: set = set()
     events: dict = {}
@@ -67,7 +80,9 @@ def scan(path: Path, fns: dict, limit: int) -> dict:
             if not line.strip():
                 continue
             n += 1
-            rec = transform_record(json.loads(line), fns) if fns else json.loads(line)
+            rec = json.loads(line)
+            if fns:
+                rec = transform(rec, fns)
             out = rec.get("output") or {}
             ents = out.get("entities")
             if isinstance(ents, dict) and ents:
@@ -122,6 +137,7 @@ def main() -> int:
 
     config_path = Path(args.config)
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    _category_fns, load_labels_cfg, transform_record = _train_helpers()
     fns = _category_fns(load_labels_cfg(cfg, config_path))
     print(f"[pools] label transforms active for: {sorted(fns) or 'NONE'}")
 
@@ -132,7 +148,7 @@ def main() -> int:
         if not p.is_file():
             print(f"{name:22s}{'ABSENT':>9}")
             continue
-        info = scan(p, fns, args.limit)
+        info = scan(p, fns, args.limit, transform_record)
         pools[name] = info
         ann = ",".join(d for d, v in info["annotates"].items() if v) or "-"
         print(f"{name:22s}{info['records_scanned']:>9,}{len(info['entities']):>7}"

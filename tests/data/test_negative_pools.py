@@ -58,12 +58,14 @@ def test_the_pool_is_built_AFTER_the_label_map(tmp_path):
     With `LOC -> Location` in force, a pool holding BOTH would let an injector offer `LOC` as
     absent to a document whose gold says `Location` -- the same entity, asserted both ways.
     """
-    from tools.train.train import _category_fns
+    from tools.data.build_negative_pools import _train_helpers
 
-    fns = _category_fns({"entities": {"map": {"LOC": "Location"}}})
+    category_fns, _, transform_record = _train_helpers()
+    fns = category_fns({"entities": {"map": {"LOC": "Location"}}})
     recs = [{"input": "he flew to Paris",
              "output": {"entities": {"LOC": ["Paris"]}}}]
-    info = scan(_write(tmp_path, "aliased", recs), fns=fns, limit=0)
+    info = scan(_write(tmp_path, "aliased", recs), fns=fns, limit=0,
+                transform=transform_record)
 
     assert info["entities"] == ["Location"], "the pool must hold canonical names only"
     assert "LOC" not in info["entities"]

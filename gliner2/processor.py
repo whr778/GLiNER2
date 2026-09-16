@@ -1243,6 +1243,29 @@ class SchemaTransformer:
             schemas.append(self._transform_schema(etype, field_names, self.V_TOKEN))
             types.append("events")
 
+        # ---- ABSENT event types: menu entries with no gold ----
+        # A training record's `events` list is both its menu and its answer key, so a type the
+        # document does NOT have cannot be expressed there -- the loop above skips any event
+        # with empty triggers (`if ... not triggers: continue`), so an empty Event yields no
+        # query at all. `absent_events` carries {type: [role, ...]} alongside the gold list and
+        # emits exactly what the inference path emits for a type with no mentions:
+        # `labels.append([0, []])`. That is an ABSENT QUERY -- the positive class of
+        # abstention_loss and the selection pool of negative_query_ratio, both of which have
+        # been live and starved in every run this project has trained.
+        absent = schema.get("absent_events")
+        if isinstance(absent, dict):
+            for etype, roles in absent.items():
+                if not isinstance(etype, str) or not etype.strip() or etype in groups:
+                    continue
+                role_list = [r for r in (roles or []) if isinstance(r, str) and r.strip()]
+                if sampling and getattr(sampling, "shuffle_event_roles", False) and len(role_list) > 1:
+                    role_list = list(role_list)
+                    random.shuffle(role_list)
+                labels.append([0, []])
+                schemas.append(self._transform_schema(
+                    etype, ["trigger"] + role_list, self.V_TOKEN))
+                types.append("events")
+
     def _process_classifications(self, schema, schemas, labels, types, sampling):
         """Process classification schemas."""
         if "classifications" not in schema:
