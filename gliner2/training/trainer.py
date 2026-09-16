@@ -854,17 +854,6 @@ class ExtractorTrainer:
             torch.backends.cuda.matmul.allow_tf32 = config.allow_tf32
             torch.backends.cudnn.allow_tf32 = config.allow_tf32
         self.processor = processor or getattr(model, 'processor', None)
-        if not getattr(config, "schema_dropout", True) and self.processor is not None:
-            import dataclasses as _dc
-            sc = self.processor.sampling_config
-            zeroed = []
-            for f in _dc.fields(sc):
-                if f.name.endswith("_prob") and getattr(sc, f.name):
-                    setattr(sc, f.name, 0.0)
-                    zeroed.append(f.name)
-            if zeroed:
-                logger.info("schema_dropout: false -- zeroed %d probabilities (%s)",
-                            len(zeroed), ", ".join(sorted(zeroed)))
         if self.processor is None:
             raise ValueError("Processor must be provided or model must have .processor attribute")
 
@@ -876,6 +865,22 @@ class ExtractorTrainer:
         self._setup_device()
         self._setup_output_dir()
         self._setup_logging()
+        # AFTER _setup_logging, deliberately. This block sat 21 lines above it, so the
+        # zeroing HAPPENED but its confirmation went to an unconfigured logger and vanished --
+        # a gate that silently cannot report is the third ordering bug of this family in this
+        # feature (a once-only flag capturing a pre-injector forward; a composition line read
+        # before __getitem__ had run). Anything that PROVES a treatment applied must be
+        # emitted after logging exists.
+        if not getattr(config, "schema_dropout", True) and self.processor is not None:
+            import dataclasses as _dc
+            sc = self.processor.sampling_config
+            zeroed = []
+            for f in _dc.fields(sc):
+                if f.name.endswith("_prob") and getattr(sc, f.name):
+                    setattr(sc, f.name, 0.0)
+                    zeroed.append(f.name)
+            logger.info("schema_dropout: false -- zeroed %d removal probabilities (%s)",
+                        len(zeroed), ", ".join(sorted(zeroed)) or "none were non-zero")
 
         self.global_step = 0
         self.epoch = 0
