@@ -1,0 +1,74 @@
+# DOSE ARM `lo`: negative_labels_per_dim={'entities': 1}
+#
+# Compared against the control and BASE already measured on this exact
+# split (LABEL_NEGATIVES_PLAN 5c/5d), so no new control is needed. Full dose
+# bought +0.0969 argument precision over base for +0.0031 recall; the control
+# bought +0.0327 / +0.0257. The question is the smallest dose holding the
+# rejection win without the F1 gap.
+#
+# WHY THIS SHAPE. The first A/B trained from scratch on ~1,400 records for 172 optimizer
+# steps, and BOTH arms ended with relation, trigger and argument F1 at exactly 0.0000 --
+# comparing which of two near-silent models is closer to silent. More steps does not fix
+# that: eb16-eventrecords-tr needed ~11,000 steps to reach event_trigger 0.31.
+#
+# So both arms START from that finished model. They begin competent (event_trigger ~0.60,
+# event_argument relaxed ~0.42) and the question becomes the one actually being asked:
+# does offering absent labels change REJECTION? That is a calibration-scale change to the
+# abstention gate and should show inside a few hundred steps.
+#
+# ONE VARIABLE: `training.negative_labels_per_dim`, empty in the control.
+#
+# schema_dropout: false on BOTH arms. The processor removes gold at
+# remove_events_prob/remove_relations_prob 0.2 by default, which withholds a fifth of the
+# signal from the very heads under test -- fine at 174k records, not at this scale.
+#
+# THE RISK, on file: no-replay warm fine-tunes cause catastrophic forgetting across all
+# heads. Both arms share it so the DELTA stays attributable, but absolute numbers must be
+# read against the base, not in isolation.
+#
+# ACCEPTANCE is rejection, not F1: absent-type firing (base ~54/100) must FALL and
+# full-menu precision must RISE, without gold-menu recall collapsing.
+model:
+  pretrained: whr778/gliner2-eb16-eventrecords-tr
+  architecture: boundary
+  boundary_head:
+    enable_relations: true
+    enable_records: true
+    event_records: true
+    max_gold_per_query: 256
+    training_candidate_budget: 384
+training:
+  output_dir: ./out/dose-lo
+  experiment_name: dose_lo
+  num_epochs: 2
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 5.0e-06
+  task_lr: 2.0e-05
+  warmup_ratio: 0.1
+  bf16: true
+  fp16: false
+  eval_strategy: epoch
+  save_best: true
+  save_total_limit: 1
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  max_len: 1024
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+  seed: 42
+  schema_dropout: false
+  negative_pools: tools/train/config/labels/negative_pools.json
+  negative_labels_per_dim:
+    entities: 1
+  negative_label_seed: 42
+  max_train_samples: 13000
+eval:
+  batch_size: 8
+  threshold: 0.3
+labels_file: labels/unified.yaml
+data:
+  corpora:
+  - data/cmnee
+  - data/casie
