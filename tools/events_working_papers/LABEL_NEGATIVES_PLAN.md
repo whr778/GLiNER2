@@ -1,0 +1,194 @@
+# Label negatives: implementation plan
+
+**Status: PLAN, nothing implemented.** Living checklist — tick items as they land and record
+the measurement that proved each one. Companion to [[EVENT_ARGUMENT_DIAGNOSIS]] §4h, §4i.
+
+---
+
+## 0. The evidence this exists to fix
+
+| measurement | value | source |
+|---|---:|---|
+| incumbent fires on a schema of **only absent** event types | **63 / 100 docs** | `record_sweep_results/absent_type_firing.txt` |
+| event-records epoch 2, same test | **54 / 100 docs** | same |
+| incumbent real `event_type` precision, full 8-type menu | **0.5521** | `probe_event_type_fp.py` |
+| ...as the blind test reports it | **1.0000** | pinned by construction |
+| event types invented, 150 docs | **142 of 317** predictions | same |
+| explicit label negatives anywhere in `data/` | **0** | 14 corpora scanned |
+| absent queries in a training batch | **0 of 574** | `probe_absent_queries.py` |
+
+`event_type` F1 = `2R/(1+R)` in **12 of 12** readings on file, because precision is pinned.
+Every `event_type` F1 this project has quoted is a reparameterisation of recall.
+
+---
+
+## 1. What ALREADY EXISTS — do not rebuild any of this
+
+The loss side is largely done. **This is a menu problem, not a loss problem**, and new loss
+code should be treated as a smell everywhere except the record path (§4, item R).
+
+- [x] **Taxonomy derivation** — `derive_schema()` (`inference/schema.py:31`) unions every
+      entity label, event type + roles, relation name and classification task from gold
+      records. Already called at `train.py:1324` and persisted as `default_schema` in
+      `config.json` (incumbent: 858 entities, 78 event types, 827 relations, 4 tasks).
+- [x] **Negative-query selection** — `negative_query_ratio` (**0.5**) and
+      `max_negative_queries_per_batch` (**64**) at `models/boundary/model.py:845-864` sample
+      `absent_queries = query_mask & ~positive_queries` into the pair loss. **Live in every
+      run ever trained, and it has always selected from an empty set.**
+- [x] **Abstention head** — `abstention_loss` (weight **0.2**), a per-query gate whose target
+      is 1 for an absent query (`losses.py:601`). **Consumed at decode**
+      (`engine.py:225-226`, `abstention_threshold` at 390 and 965), so training it reaches
+      inference rather than being a training-only ornament.
+- [x] **Count head** — `count_log_rate_loss` (weight **0.2**) supervises a count of zero.
+- [x] **Span-axis hard negatives** — `hard_negatives_per_positive: 5`,
+      `select_hard_negative_candidates`. These teach *"this span is not a `Person`"*. They are
+      a different axis and stay as they are.
+- [x] **Classification already has real negatives** — `InputExample.from_dict` carries
+      `labels=cls_data["labels"]` (the full menu) with `true_label` separate. This is why its
+      precision (0.5862) is real while `event_type`'s is 1.0000. **Classification is a
+      VERIFY-ONLY item below, not a build item.**
+
+**The gap is one line of intent:** `entities = output.get("entities")` and one `Event` per
+gold event (`training/data.py:1143-1195`). The menu is the answer key.
+
+---
+
+## 2. Design decisions, made
+
+- **Inject in the COLLATOR, not the dataset.** Negatives resample every epoch rather than
+  being frozen at load. Seed deterministically as `f(seed, epoch, record_index)` so runs
+  reproduce and DDP ranks / dataloader workers agree.
+- **Data is NEVER rewritten.** Runtime injection only. No stamping — the 108x blow-up from
+  `stamp_field_cardinality` is on file. The only data-side artifact is a derived, cached
+  per-corpus pool.
+- **Phase 1 random, phase 2 hard.** Confusable negatives are more valuable and much easier to
+  get wrong; earn them after random ones prove the plumbing.
+- **Eval gets a NEW MODE with NEW METRIC KEYS** (`*_fullmenu_*`), never a silent change to
+  `_schema_from_gold`. Every historical number is gold-menu; the menu is part of the metric's
+  identity, which extends this project's rule that a metric is quoted with its type.
+- **Token budget is a first-class config parameter.** Every injected label is schema-marker
+  tokens: it costs throughput and eats the 8192 input budget. `k_negatives` is capped per
+  dimension, not "add the taxonomy".
+
+---
+
+## 3. THE TRAPS — design for these or the run is worse than useless
+
+1. **FALSE NEGATIVES FROM INCOMPLETE ANNOTATION. This is the one that can silently sink it.**
+   The corpora annotate different things: cmnee has **zero** entity gold, biored **zero**
+   events. Sampling `Organization` as a negative into a cmnee document teaches the model that
+   a real organisation is not one, at loss weight, thousands of times. Two rules make phase 1
+   safe:
+   - **within-corpus**: sample only from labels that corpus itself annotates;
+   - **within-dimension**: inject entity negatives only into records that carry entity gold,
+     event negatives only into records with event gold, and so on.
+   `tools/data/repair_contradicted_negatives.py` existing at all is evidence this class of
+   contradiction has bitten this project before.
+2. **DERIVE THE POOL AFTER LABEL UNIFICATION.** If the pool holds a pre-map alias (`LOC`) of a
+   present canonical label (`Location`), the injected negative directly contradicts gold.
+   Derive from the same post-transform records `derive_schema` sees at `train.py:1324`, and
+   assert `negative ∉ gold labels` for that record at injection time.
+3. **DERIVE FROM RECORDS, NOT FROM `default_schema`.** `_OPEN_VOCAB_LIMIT = 1000` drops a
+   dimension past the cap — epoch-2's config carries `open_vocab: ["entities"]` with no entity
+   list at all. The persisted copy is for inference and the viewer; the training pool must
+   come from the corpus.
+4. **PROVENANCE FOR MIXED CORPORA.** `mix_natural`, `warmstart_mix` and the replay files merge
+   sources. Rule 1 needs to know which corpus a record came from — the loader knows the source
+   file at load time; if a record cannot be attributed, fall back to a co-occurrence pool
+   (labels seen alongside this record's labels) rather than the global taxonomy.
+5. **OVERCORRECTION IS THE FAILURE MODE ON THE OTHER SIDE.** An abstention gate trained too
+   hard collapses recall. Every gate below pairs the rejection metric with a recall guard.
+
+---
+
+## 4. Checklist
+
+### Phase 0 — instrument first
+- [x] `tools/train/probe_absent_queries.py` — counts absent queries in a real training batch.
+      Reads **0 of 574** today. This is the before/after gate for the whole feature.
+- [x] `tools/train/probe_event_type_fp.py` — real precision against a full menu (0.5521).
+- [x] Absent-type firing probe — 63% / 54%. Promote to a committed tool alongside the above.
+- [ ] Decide and document the acceptance targets (§5).
+
+### Phase 1 — the pool
+- [ ] `tools/data/build_negative_pools.py`: per-corpus, post-label-map pools for entities,
+      events (types **and** roles), relations, structures. Cached to `labels/negative_pools.json`.
+- [ ] Record for each corpus **which dimensions it annotates** (the within-dimension rule).
+- [ ] Reuse `derive_schema` internals rather than re-implementing the union.
+- [ ] Test: pool ∩ gold = ∅ for a sample of records; pool respects `labels/unified.yaml`.
+
+### Phase 2 — the collator
+- [ ] Config knobs on `boundary_head`: `negative_labels_per_dim` (dict), `negative_label_seed`,
+      `max_negative_label_tokens`. Defaults **off**, so existing configs reproduce.
+- [ ] Inject in `collate_fn_train` (`processor.py`), one place, all dimensions.
+- [ ] Deterministic seeding `f(seed, epoch, record_idx)`; assert identical menus across DDP ranks.
+- [ ] Assert at injection: no injected label equals a gold label for that record.
+- [ ] `[composition]` line that CAN FAIL: `negatives: entities k=2, events k=1, 34% of samples
+      carry >=1 absent query`. Control must print **0%**.
+- [ ] Tests: injection count, within-corpus, within-dimension, determinism, no-gold-collision,
+      off-by-default.
+
+### Phase 3 — per-head verification (mostly verify, not build)
+- [ ] **Entities/events (mention path)**: confirm `negative_query_ratio` now selects > 0
+      queries, and log it in-band. *It has been dead code in every model ever trained.*
+- [ ] **Abstention gate**: confirm its target is no longer always 0; confirm the decode path
+      (`abstention_threshold`) then rejects.
+- [ ] **R. RECORD PATH — the one place real loss work may live.** With `event_records: true`
+      an absent event type must become a record spec with **zero gold instances**. Verify
+      `compile_record_specs` / `_pack_record_targets` accept that, and that the anchor loss
+      goes finite-and-negative rather than skipping. `sweep_record_thresholds.py`'s docstring
+      notes eval omits `structures` for a record with no gold — **this path has never run**.
+- [ ] **Relations**: `_relation_loss` builds "gold-inclusive proposals"; with a zero-gold
+      relation spec the proposal set may be empty and contribute nothing. Verify or fix.
+- [ ] **Structures**: same question for an absent structure type.
+- [ ] **Classification**: VERIFY ONLY — already has a real menu. Confirm no double-injection.
+
+### Phase 4 — eval and inference
+- [ ] Full-menu eval mode in `eval_metrics.py` emitting `*_fullmenu_*` keys beside the
+      existing ones. `_schema_from_gold` keeps its current behaviour untouched.
+- [ ] Menu source at eval: the model's own `default_schema`, falling back to the corpus pool.
+- [ ] One-time re-baseline of **both** the incumbent and the event-records base under the new
+      mode, so the comparison exists before any negatives-trained model does.
+- [ ] Fixed-seed negative menu for the per-epoch eval, so rejection has a training **curve**
+      rather than only an endpoint.
+- [ ] Inference: `default_schema` already seeds the viewer — confirm nothing else is needed.
+- [ ] `model_card.py`: state the menu next to every precision figure.
+
+### Phase 5 — the run
+- [ ] Throughput smoke with negatives on (`tools/lambda/throughput_smoke.sh`) — token budget
+      is the risk, and this harness exists.
+- [ ] A/B: control vs negatives-on, **one recipe-level variable**, same data, same seed.
+- [ ] Gates read BEFORE any metric (§5).
+
+### Phase 6 — documentation
+- [ ] `EVENT_ARGUMENT_DIAGNOSIS.md` — supersede §4h/§4i with the measured outcome.
+- [ ] `RESEARCH_PROGRAM.md`, `EVENT_LINE.md`, `TODO.md`, `METRICS.md` (menu is part of a
+      metric's identity), `docs/boundary_baseline.md`.
+- [ ] **Events tutorial with worked examples**, matching the style of the base GLiNER docs —
+      requested 2026-09-16, tracked here so it is not lost.
+- [ ] Model cards for anything published.
+
+---
+
+## 5. Gates and acceptance
+
+**Gates, read before any metric** (a gate that cannot fail is not a gate — this project has
+inverted a verdict for exactly that):
+1. `probe_absent_queries.py` prints **0%** for control and the configured rate for treatment.
+2. The in-band log shows `negative_query_ratio` selecting **> 0** queries in treatment.
+3. The `[composition]` negatives line differs between arms.
+
+**Acceptance:**
+- Primary: absent-type firing **63% → materially lower** (target to be fixed in Phase 0).
+- Primary: full-menu `event_type` precision **0.5521 → materially higher**.
+- **Guard (the overcorrection side):** gold-menu recall must not collapse. `event_argument`
+  relaxed recall and `entity` strict F1 are the tripwires.
+- Neutral-or-better on the eight strict heads.
+
+---
+
+## 6. Sequencing
+
+The event-base blind test lands first: model report, then the comparable 18,786-record eval
+through `config/ab/eventrecords-ep1-eval.yaml`. Those results are **expected to be superseded
+by this work** and should be written up saying so. Then Phase 1 onward, in order.
