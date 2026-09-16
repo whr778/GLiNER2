@@ -522,6 +522,43 @@ Both are real and they are not in conflict: negatives make the model more select
 level that is pure gain because recall was already saturated (0.97); at argument level recall
 had room to lose, and did.
 
+### 5d. THE BASE REFERENCE — and two things above are WRONG because of it
+
+Every number in this section compared one fine-tuned model to another. Neither had been scored
+against the point they BOTH started from **on the same split**. Measured 2026-09-16
+(cmnee+casie val, the split the per-epoch numbers below use):
+
+| | arg P | arg R | arg F1 | entity F1 | trigger F1 |
+|---|---:|---:|---:|---:|---:|
+| **BASE, 0 steps** | 0.4039 | 0.0890 | 0.1458 | 0.1144 | 0.3724 |
+| control ep2 | 0.4366 | 0.1147 | 0.1817 | 0.2250 | 0.4088 |
+| treatment ep2 | **0.5008** | 0.0921 | 0.1557 | 0.1832 | 0.3959 |
+
+Deltas against base:
+
+| | arg P | arg R | arg F1 | entity | trigger |
+|---|---:|---:|---:|---:|---:|
+| control ep2 | +0.0327 | +0.0257 | +0.0359 | **+0.1106** | +0.0364 |
+| treatment ep2 | **+0.0969** | +0.0031 | +0.0099 | **+0.0688** | +0.0235 |
+
+**CORRECTION 1 — there is no catastrophic forgetting.** This plan reported "entity degrading
+in the treatment (0.1984 → 0.1832)" and blamed no-replay fine-tuning on a corpus that is 92%
+entity-free. That was epoch-to-epoch drift INSIDE an overall gain of **+0.0688 over base**.
+Both arms improved entity substantially. The observation about the data mix was true; the
+consequence inferred from it was not.
+
+**CORRECTION 2 — recall was never lost, it grew less.** "The treatment costs recall" is wrong:
+against base the treatment is **+0.0031**, still above where it started. The control gained
++0.0257. A smaller gain, not a loss.
+
+**What the negatives actually buy: 3x the precision gain for about an eighth of the recall
+gain** (+0.0969 against +0.0327). That matches the type-level result exactly — precision
++0.0572, recall flat, 21% fewer invented types.
+
+**What survives from the trend analysis:** the treatment's recall advantage over base SHRANK
+between epochs (+0.0107 → +0.0031), so it is heading toward crossing below. More steps at this
+dose still looks wrong.
+
 ### The per-epoch trend: recall does NOT recover. §5b's prediction fails.
 
 Read from the arms' own per-epoch validation (epoch 1 = 630 steps, epoch 2 = 1,260):
