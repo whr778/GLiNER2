@@ -275,11 +275,60 @@ under a unique module name now.
 - [x] `model_card.py` states the menu next to the metric table, so a published card cannot be
       read as if its `event_type` precision were a measurement.
 
-### Phase 5 — the run
-- [ ] Throughput smoke with negatives on (`tools/lambda/throughput_smoke.sh`) — token budget
-      is the risk, and this harness exists.
-- [ ] A/B: control vs negatives-on, **one recipe-level variable**, same data, same seed.
-- [ ] Gates read BEFORE any metric (§5).
+### Phase 5 — the run: RAN 2026-09-16, and the answer is NOT YET
+
+**The mechanism is confirmed. The A/B is underpowered and the treatment overcorrected.**
+
+GATE 2 PASSED and discriminates cleanly — cumulative over 601 training batches:
+
+| | absent available | selected into the pair loss |
+|---|---:|---:|
+| control | 2,683 | 2,649 |
+| treatment | **23,421** | **13,341** |
+
+8.7x more absent queries. The treatment applied. (The control is not zero because some absence
+arises naturally when a gold surface fails to align — the gate still separates the arms
+unambiguously.)
+
+**GATE 1 CANNOT WORK AS BUILT.** With `num_workers: 2`, `__getitem__` runs in FORKED WORKER
+PROCESSES, so the injector's counters increment in the worker's copy and the parent's
+`composition_line()` always reads `0/0`. Gate 2 lives in the training process, which is why it
+works. Either aggregate across workers or drop the line; do not "fix" it by moving it again.
+
+**THE RESULT: the treatment stopped emitting.** Acceptance metric (absent-type firing, casie,
+full menu):
+
+| | precision | recall | predictions |
+|---|---:|---:|---:|
+| control | 0.3333 | 0.2857 | 6 |
+| treatment | **0.0000** | **0.0000** | **0** |
+
+Zero predictions is the failure mode this plan pre-registered: *"an overcorrecting abstention
+gate is the failure mode on the other side, and a gate that admits nothing has a perfect FP
+rate."* The blind test agrees — `event_type` recall 0.1405 → 0.0595, entity F1 0.0205 → 0.0119.
+
+**BUT THE A/B IS UNDERPOWERED AND THIS IS NOT A VERDICT ON THE MECHANISM.** Both arms are
+barely trained: 2 epochs over ~1,400 records leaves relation, trigger and argument F1 at
+exactly 0.0000 in BOTH arms, and entity F1 at 0.02. Comparing 0.0205 against 0.0119 on models
+that extract almost nothing measures which one is closer to silent, not which one discriminates
+better. A treatment that suppresses an already-near-silent model is the expected result at this
+scale.
+
+**THROUGHPUT, measured, and it is the number that prices the real run:** 12.3 → 8.4 samples/s,
+**32% slower**. The 16h02m event-base rebuild becomes **~23.5h** (~$47 on an A100) at
+`{entities: 2, events: 1, relations: 1}`.
+
+- [x] A/B: control vs negatives-on, one recipe-level variable, same data, same seed.
+- [x] Gates read BEFORE any metric — and gate 1's defect is recorded above rather than papered over.
+- [ ] **DO NOT launch the A100 on this evidence.** Three cheaper things first:
+      1. **Is it calibration, not training?** The treatment now has a TRAINED abstention gate and
+         `abstention_threshold` ships at **0.5**. A gate that learned to fire may simply need a
+         different operating point — sweep it on the existing treatment checkpoint before
+         retraining anything. Cheap, and it is the same lesson as the stage-0 gate that needed
+         0.998.
+      2. **Lower the dose.** `{entities: 1}` alone, and/or `abstention_loss_weight` below 0.2.
+      3. **Re-run the A/B with enough training that both arms are non-degenerate** — more epochs
+         or a larger slice — so the comparison measures discrimination rather than silence.
 
 ### Phase 6 — documentation
 - [x] `METRICS.md` — "The MENU is part of a metric's identity", extending the existing rule
