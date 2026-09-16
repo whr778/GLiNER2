@@ -344,6 +344,12 @@ def _metrics_table(metrics: Dict[str, Any], title: str) -> str:
         return ""
     rows = [f"### {title}", "",
             "Micro precision / recall / F1, strict → relaxed.", "",
+            "> **Menu:** these are scored against a menu built from each document's own gold, "
+            "so the model is never asked to reject a label that is not there. For "
+            "`event_type`, which has no span to get wrong, that pins precision at 1.0000 and "
+            "makes `F1 = 2R/(1+R)` exactly — read it as **recall**. `eval.py --full-menu` "
+            "scores against the model's own taxonomy and emits `eval_fullmenu_*` beside these.",
+            "",
             "| Category | Precision | Recall | F1 | Support |",
             "|---|--:|--:|--:|--:|"]
     for c in present:

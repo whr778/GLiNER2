@@ -272,7 +272,8 @@ under a unique module name now.
       documents are scored for a head, not just the menu).
 - [ ] One-time re-baseline of **both** models under the new mode (needs a GPU).
 - [ ] Fixed-seed negative menu for the per-epoch eval, so rejection has a training **curve**.
-- [ ] `model_card.py`: state the menu next to every precision figure.
+- [x] `model_card.py` states the menu next to the metric table, so a published card cannot be
+      read as if its `event_type` precision were a measurement.
 
 ### Phase 5 — the run
 - [ ] Throughput smoke with negatives on (`tools/lambda/throughput_smoke.sh`) — token budget
@@ -281,11 +282,15 @@ under a unique module name now.
 - [ ] Gates read BEFORE any metric (§5).
 
 ### Phase 6 — documentation
-- [ ] `EVENT_ARGUMENT_DIAGNOSIS.md` — supersede §4h/§4i with the measured outcome.
-- [ ] `RESEARCH_PROGRAM.md`, `EVENT_LINE.md`, `TODO.md`, `METRICS.md` (menu is part of a
-      metric's identity), `docs/boundary_baseline.md`.
-- [ ] **Events tutorial with worked examples**, matching the style of the base GLiNER docs —
-      requested 2026-09-16, tracked here so it is not lost.
+- [x] `METRICS.md` — "The MENU is part of a metric's identity", extending the existing rule
+      that a metric is quoted with its type.
+- [x] **Events tutorial** — `docs/events_tutorial.md`, written around the measured traps
+      rather than the API. Linked from the README.
+- [x] `model_card.py` states the menu beside the metric table.
+- [x] `EVENT_ARGUMENT_DIAGNOSIS.md` opens by pointing at this plan and says its numbers are
+      expected to be superseded.
+- [ ] `RESEARCH_PROGRAM.md`, `EVENT_LINE.md`, `TODO.md` — after the A/B result.
+- [ ] Supersede §4h/§4i with the measured outcome — after the A/B result.
 - [ ] Model cards for anything published.
 
 ---
