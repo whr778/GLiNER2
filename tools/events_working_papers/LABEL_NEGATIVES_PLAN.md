@@ -345,6 +345,30 @@ loss magnitude with a small batch must disable schema dropout first** — this i
 sampling has produced a false reading here (the other two were query-count comparisons in
 `test_negative_labels.py`).
 
+**MEASURED: schema dropout acts on TYPE GROUPS, so its variance is far worse than its rate.**
+`remove_events_prob` (0.2) is drawn ONCE PER `event_type` GROUP in `_process_events`, not per
+instance. Train-split group counts:
+
+| corpus | recs w/ events | inst/rec | groups/rec | P(document goes fully dark) |
+|---|---:|---:|---:|---:|
+| mendeley_ed | 1,420 | 1.00 | **1.00** | **20.0%** |
+| duee | 11,603 | 1.16 | 1.09 | **18.6%** |
+| cmnee | 9,281 | 2.09 | **1.48** | **13.4%** |
+| casie | 798 | **8.41** | 1.78 | 9.6% |
+| maven | 2,913 | 26.77 | **16.51** | **0.0%** |
+| **ALL** | 26,015 | 4.57 | 2.97 | **14.4%** |
+
+Expected instance loss is 20% everywhere — that is linearity. **The CONCENTRATION is what
+differs.** With 1.00 groups per record, mendeley_ed's 20% arrives as exactly 20% of documents
+contributing *nothing at all*; cmnee is 60% single-group, so 13.4% of its event-bearing
+documents go dark per pass. casie carries 8.41 instances across only 1.78 groups, so one draw
+can remove eleven events at once. maven, at 16.51 groups, never goes dark and loses smoothly.
+
+**It is still defensible at full scale**, which is why the default stays on: the blackout is
+per PASS, not permanent, so over 5 epochs a cmnee document is dark every time with probability
+0.134^5 ≈ 0.004%. It is short runs where it bites, and A/B v2 sets `schema_dropout: false` on
+both arms so the variable is removed from the comparison rather than interacting with it.
+
 **AND A REAL CONTRIBUTING FACTOR TO THE A/B's DEGENERACY.** That same dropout is live in real
 training: `remove_events_prob` 0.2, `remove_relations_prob` 0.2, `remove_json_structure_prob`
 0.2, `remove_classification_label_prob` 0.5. Over 172 optimizer steps on ~1,400 records, one
