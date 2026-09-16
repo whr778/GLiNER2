@@ -2117,9 +2117,10 @@ class ExtractorTrainer:
             # do not share. Same contract as DistributedSampler.set_epoch above.
             negatives = getattr(getattr(train_loader, "dataset", None), "negatives", None)
             if negatives is not None:
+                # Logged at the END of the epoch below, not here: __getitem__ has not run
+                # yet at this point, so the stats are empty and the line always read
+                # "0 labels into 0/0 records" -- a gate that cannot fail.
                 negatives.set_epoch(epoch)
-                if epoch == start_epoch and self.is_main_process:
-                    logger.info("%s", negatives.composition_line())
 
             epoch_loss = torch.zeros((), device=self.device)
             epoch_steps = 0
@@ -2308,6 +2309,9 @@ class ExtractorTrainer:
                 float((epoch_loss / epoch_steps).item()) if epoch_steps else 0.0
             )
             logger.info(f"Epoch {epoch + 1}/{num_epochs} - Loss: {avg_epoch_loss:.4f}")
+            _neg = getattr(getattr(train_loader, "dataset", None), "negatives", None)
+            if _neg is not None and self.is_main_process:
+                logger.info("%s", _neg.composition_line())
 
             if self.config.eval_strategy == "epoch":
                 if eval_dataset:

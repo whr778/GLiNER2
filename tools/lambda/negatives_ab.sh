@@ -61,8 +61,11 @@ for arm in control treatment; do
   CK=out/negatives-$arm/best
   [ -d "$CK" ] || continue
   echo "[negab] ===== absent-type firing, $arm ====="
+  # --test/--train must name a corpus THIS box restored: the probe defaults to cmnee, which
+  # the A/B config never pulls, and it died on FileNotFoundError after both arms had trained.
   $PY -u tools/train/probe_event_type_fp.py --checkpoints "$arm=$CK" \
-      --n 150 --threshold 0.3 --device cuda 2>&1 | tail -4 | tee -a "$OUT/firing.txt"
+      --test data/casie.test.jsonl --train data/casie.train.jsonl \
+      --n 100 --threshold 0.3 --device cuda 2>&1 | tail -4 | tee -a "$OUT/firing.txt"
 done
 publish "$DEST" "$OUT/firing.txt" || RESCUE=1
 

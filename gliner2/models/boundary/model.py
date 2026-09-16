@@ -1197,24 +1197,32 @@ def _schema_group_name(schema_tokens: List[str]) -> str:
     return schema_tokens[0] if schema_tokens else ""
 
 
-_NEGATIVE_QUERY_NOTED = False
+_NEGATIVE_QUERY_SEEN = 0
+_NEGATIVE_QUERY_SELECTED = 0
+_NEGATIVE_QUERY_CALLS = 0
 
 
 def _note_negative_queries(available: int, selected: int) -> None:
-    """Say ONCE whether negative_query_ratio actually had anything to select.
+    """Report the RUNNING TOTAL of absent queries seen, every 200 training batches.
 
-    This block has run in every model this project has trained and has always selected from
-    an empty set, because the training menu was built from the record's own gold -- so a run
-    with label negatives ON and a run without were indistinguishable from the logs. An arm
-    that prints `available=0` has not applied the treatment, whatever its config says.
+    The first version logged once, globally, on the first forward that reached here -- which
+    on 2026-09-16 was a sanity/validation pass BEFORE the injector had even loaded (the
+    "negative queries" line is timestamped one second EARLIER than "label negatives ON").
+    Both arms of an A/B therefore printed the same number and the gate could not fail. A
+    once-only flag captures whichever forward happens first, which is not the one you want.
+
+    Periodic totals cannot be fooled that way: an arm whose cumulative `available` stays 0
+    across a whole epoch has not applied the treatment, whatever its config says.
     """
-    global _NEGATIVE_QUERY_NOTED
-    if _NEGATIVE_QUERY_NOTED:
-        return
-    _NEGATIVE_QUERY_NOTED = True
-    logger.info("negative queries: %d absent available, %d selected into the pair loss "
-                "(0 available means the schema carries no absent labels)",
-                available, selected)
+    global _NEGATIVE_QUERY_SEEN, _NEGATIVE_QUERY_SELECTED, _NEGATIVE_QUERY_CALLS
+    _NEGATIVE_QUERY_SEEN += available
+    _NEGATIVE_QUERY_SELECTED += selected
+    _NEGATIVE_QUERY_CALLS += 1
+    if _NEGATIVE_QUERY_CALLS % 200 == 1:
+        logger.info("negative queries: %d absent available, %d selected into the pair loss, "
+                    "cumulative over %d batches (0 available means the schema carries no "
+                    "absent labels)",
+                    _NEGATIVE_QUERY_SEEN, _NEGATIVE_QUERY_SELECTED, _NEGATIVE_QUERY_CALLS)
 
 
 class BoundaryExtractorModel(BaseExtractorModel):
