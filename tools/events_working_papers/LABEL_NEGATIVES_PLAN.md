@@ -51,13 +51,52 @@ code should be treated as a smell everywhere except the record path (§4, item R
 **The gap is one line of intent:** `entities = output.get("entities")` and one `Event` per
 gold event (`training/data.py:1143-1195`). The menu is the answer key.
 
+### The representation of an absent query, per dimension — established by review
+
+- **Entities: SOLVED, already supported end to end.** An absent entity query is
+  `{"label": []}` — the label mapped to an EMPTY LIST. `GuideScores.inject` emits exactly
+  that (`guide_scores.py:107`), so the collator, target builder and losses already accept it.
+  This is also why "zero empty entity labels in `data/`" was the right thing to measure.
+- **Events: NOT SUPPORTED — this is real implementation, not injection.** The training path
+  skips any event whose triggers are empty
+  (`processor.py:1183`, `if ... not triggers: continue`), so an `Event(type=X, triggers=[],
+  arguments=[])` produces **no query at all** — measured, the query count does not move. But
+  `_process_events` already accepts a second shape: the **inference schema**
+  `dict[event_type, list[role]]`, which appends `labels.append([0, []])` — a menu entry with
+  empty gold, i.e. precisely an absent query. The work is to let a training record carry
+  menu-only event types alongside its gold list.
+- **Relations / structures: to be established** the same way (Phase 3).
+- **Classification: already has it** via `labels` + `true_label`.
+
+### Two augmentations that are NOT negatives — do not confuse them
+
+`SamplingConfig` (`processor.py:271`) is live in training (`sampling = self.sampling_config
+if self.is_training else None`, line 909; `collate_fn_train` sets `is_training = True` at
+line 418). It contains:
+
+- `synthetic_entity_label_prob: 0.2` — **RENAMES** real labels to `entity 1`, `entity 2`, ...
+  (`processor.py:1049-1057`). Label ANONYMISATION, forcing reliance on descriptions. It adds
+  nothing absent.
+- `remove_entities_prob` / `remove_entity_prob` / `remove_events_prob` / `remove_relations_prob`
+  — **REMOVE positives**, shrinking the menu. The opposite direction.
+- `max_num_labels: 1000` — an existing per-schema budget knob worth reusing for the token
+  budget below rather than inventing another.
+
+Neither adds a label the model must reject. The measurement stands: **0 absent queries of
+574** in a real training batch.
+
 ---
 
 ## 2. Design decisions, made
 
-- **Inject in the COLLATOR, not the dataset.** Negatives resample every epoch rather than
-  being frozen at load. Seed deterministically as `f(seed, epoch, record_index)` so runs
-  reproduce and DDP ranks / dataloader workers agree.
+- **Inject in `ExtractorDataset.__getitem__`, beside GIST — REVISED after code review.** The
+  plan first said "the collator". The codebase already has this exact hook: `__getitem__`
+  calls `self.guide_scores.inject(text, schema, n)` to add **absent entity queries**
+  (`trainer.py:582`). Mirroring it costs three lines and inherits a proven path;
+  a parallel collator mechanism would be the duplication this review exists to avoid.
+  `__getitem__` runs per item per epoch in the worker, so seed as
+  `f(seed, epoch, record_index)` — the trainer sets the epoch on the dataset, as
+  `DistributedSampler.set_epoch` does.
 - **Data is NEVER rewritten.** Runtime injection only. No stamping — the 108x blow-up from
   `stamp_field_cardinality` is on file. The only data-side artifact is a derived, cached
   per-corpus pool.
@@ -110,17 +149,42 @@ gold event (`training/data.py:1143-1195`). The menu is the answer key.
 - [x] Absent-type firing probe — 63% / 54%. Promote to a committed tool alongside the above.
 - [ ] Decide and document the acceptance targets (§5).
 
-### Phase 1 — the pool
-- [ ] `tools/data/build_negative_pools.py`: per-corpus, post-label-map pools for entities,
-      events (types **and** roles), relations, structures. Cached to `labels/negative_pools.json`.
-- [ ] Record for each corpus **which dimensions it annotates** (the within-dimension rule).
-- [ ] Reuse `derive_schema` internals rather than re-implementing the union.
-- [ ] Test: pool ∩ gold = ∅ for a sample of records; pool respects `labels/unified.yaml`.
+### Phase 1 — the pool ✅ DONE
+- [x] `tools/data/build_negative_pools.py`: per-corpus, post-label-map pools for entities,
+      events (types **and** roles), relations, structures →
+      `tools/train/config/labels/negative_pools.json`.
+- [x] Records **which dimensions each corpus annotates**, with per-dimension record counts so
+      a thin dimension is visible rather than flipped by one stray record.
+- [x] Reuses the training pipeline's own transforms (`load_labels_cfg`, `_category_fns`,
+      `transform_record`) rather than re-implementing unification.
+- [x] `tests/data/test_negative_pools.py` — 5 passing: empty entity pool for an events-only
+      corpus, empty event pool for an entities-only corpus, post-label-map canonicalisation
+      (`LOC` never survives alongside `Location`), record counts, sampling limit.
+
+**The output validates the design empirically.** Scanned over `eb16-eventrecords-tr`:
+
+| corpus | entity labels | event types | relations | annotates |
+|---|---:|---:|---:|---|
+| cmnee | **0** | 8 | 0 | events only |
+| maven | **0** | 168 | 0 | events only |
+| duee | **0** | 38 | 0 | events only |
+| biored | 6 | **0** | 8 | entities, relations |
+| docee | 61 | **0** | 0 | entities only |
+| sentence_rex | 0 | 0 | 450 | relations only |
+| paraloq_json | 1,349 | 0 | 0 | entities only |
+
+A global taxonomy would have offered entity negatives to cmnee — which annotates no entities
+at all — and event negatives to biored. **That is the contradiction §3.1 predicted, and the
+per-corpus pool is what prevents it.** Note `docee` carries 61 entity labels and zero events
+despite being an event corpus: its events were converted to entities + classifications
+(EVENT_ARGUMENT_DIAGNOSIS §6).
 
 ### Phase 2 — the collator
 - [ ] Config knobs on `boundary_head`: `negative_labels_per_dim` (dict), `negative_label_seed`,
       `max_negative_label_tokens`. Defaults **off**, so existing configs reproduce.
-- [ ] Inject in `collate_fn_train` (`processor.py`), one place, all dimensions.
+- [ ] Inject in `ExtractorDataset.__getitem__` (`trainer.py:575-584`), beside the GIST hook.
+- [ ] Entities first — the representation (`label: []`) already works end to end.
+- [ ] Events need `_process_events` to accept menu-only types alongside training gold.
 - [ ] Deterministic seeding `f(seed, epoch, record_idx)`; assert identical menus across DDP ranks.
 - [ ] Assert at injection: no injected label equals a gold label for that record.
 - [ ] `[composition]` line that CAN FAIL: `negatives: entities k=2, events k=1, 34% of samples
