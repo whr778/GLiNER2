@@ -318,9 +318,39 @@ into the sample. `classification_loss` is a separate term.
 | `classification_loss` | classification head |
 | `record_object_loss`, `record_field_loss` | instance existence + field assignment (structures only, see §8) |
 | `relation_loss` | typed relation edges |
+| `null_loss` (`abstention_loss`, weight **0.2**) | a per-query gate whose target is **1 for an ABSENT query** |
+| `count_loss` (`count_log_rate_loss`, weight **0.2**) | how many spans a query should yield; supervises a count of **zero** for an absent one |
 
 All are **masking-aware and empty-query safe**: denominators use `clamp_min(1)`, so a query
 with no positive span still contributes finite negative supervision rather than `0/0`.
+
+### Two terms were live and starved: the ABSENT-QUERY machinery
+
+`null_loss` and `count_loss` above, plus `negative_query_ratio` (**0.5**) and
+`max_negative_queries_per_batch` (**64**) at `models/boundary/model.py:845`, all act on
+**absent queries** — a label offered in the schema with no gold in that document.
+
+**Until 2026-09-16 there were none.** `InputExample.from_dict` built the entity menu from the
+gold dict's keys and one `Event` per gold event, so every query carried gold: measured, **0
+absent queries in 574** from a real training batch. The selection block above has therefore
+run in every model this project has trained and has always selected from an empty set, and
+`abstention_loss`'s positive class was empty. Classification was the sole exception — it
+carries `labels` (the full menu) plus a separate `true_label`, which is why its precision is
+real where `event_type`'s is 1.0000 by construction.
+
+The consequence is measurable at decode: given a schema of only ABSENT event types, the
+incumbent fires on **63 of 100 documents**, and its real `event_type` precision against a
+full menu is **0.5521**, not the 1.0000 the blind test reports.
+See [[LABEL_NEGATIVES_PLAN]] and [[EVENT_ARGUMENT_DIAGNOSIS]] §4h/§4i.
+
+**An absent entity query is `{"label": []}`** — the label mapped to an empty list, the shape
+`GuideScores.inject` already emitted for GIST rivals, so the collator, target builder and
+losses accept it end to end. Events needed real work: the training list is menu and answer
+key at once and `_process_events` SKIPS an event with empty triggers, so absent types ride an
+`absent_events` key emitting `labels.append([0, []])`. Relations use `absent_relations` (a
+name list — the inference shape `{name: {"head": "", "tail": ""}}` is read as a GOLD pair of
+empty surfaces), and absent structures must carry `record_metadata` or `compile_record_specs`
+builds no spec and nothing decodes them.
 
 ### The loss has no task axis
 
@@ -371,6 +401,20 @@ void the comparison — it belongs at eval only.
 F1 decreases monotonically from W=1 to W=64, and entity metrics do not move at all, because
 `_finish_nodes` admits every positive-score node regardless of beam state — width touches
 only edges. The default is still 16; a change of default should wait for best-vs-best.
+
+> **Live discrepancy, stated so it is not rediscovered:** this section recommends **1**, the
+> shipped default is **16** (`configuration.py:118`), and **no config in the tree overrides
+> it** — so every model here trains and evaluates at 16 while the measurement says 1 is
+> marginally better. The gap is small (structure moves 0.0018 across 4/16/64) which is why it
+> has not been worth a migration, but "the default is 1" is NOT true today.
+
+**`abstention_threshold` is an eval-time override too** (added 2026-09-16). It ships at
+**0.5**, is read at decode (`engine.py:390`, `965`), adds and removes no tensors, and now sits
+in the same whitelist as `decode_mode` and `joint_beam_width` — `eval.py
+--abstention-threshold`. It is worth sweeping on any model trained WITH label negatives: the
+gate only has a positive class once absent queries exist, and a newly-trained gate at a
+shipped default is the exact shape of the stage-0 gate that ran its whole life at 0.5 and
+needed 0.998.
 
 **The threshold reaches edge selection** (fixed 2026-08-10). `decision_threshold` sets where
 utility crosses zero and the optimizers take only positive-utility candidates, so a
