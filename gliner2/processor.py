@@ -1033,6 +1033,21 @@ class SchemaTransformer:
             ))
             types.append("json_structures")
 
+        # ---- ABSENT structure types: menu entries with no gold ----
+        # Same reasoning as events and relations: a structure the document does not contain
+        # cannot be expressed in `json_structures`, which is menu and answer key at once.
+        for parent, fields in (schema.get("absent_structures") or {}).items():
+            if not isinstance(parent, str) or not parent.strip() or parent in groups:
+                continue
+            chosen = [f for f in (fields or []) if isinstance(f, str) and f.strip()]
+            if not chosen:
+                continue
+            labels.append([0, []])
+            schemas.append(self._transform_schema(
+                parent, chosen, self.C_TOKEN, example_mode="none"
+            ))
+            types.append("json_structures")
+
     def _process_entities(self, schema, schemas, labels, types, sampling):
         """Process entity schemas."""
         if "entities" not in schema:
@@ -1121,6 +1136,21 @@ class SchemaTransformer:
                 parent,
                 field_names,
                 self.R_TOKEN,
+                prompt=relation_descriptions.get(parent),
+            ))
+            types.append("relations")
+
+        # ---- ABSENT relation types: menu entries with no gold ----
+        # `{name: {"head": "", "tail": ""}}` -- the inference shape -- is NOT usable here: the
+        # loop above sees "head" and "tail" present and appends ["", ""] as a gold pair, so an
+        # absent relation would arrive as a bogus instance of empty surfaces rather than as no
+        # instance. `absent_relations` carries the names and emits `[0, []]` instead.
+        for parent in (schema.get("absent_relations") or []):
+            if not isinstance(parent, str) or not parent.strip() or parent in groups:
+                continue
+            labels.append([0, []])
+            schemas.append(self._transform_schema(
+                parent, ["head", "tail"], self.R_TOKEN,
                 prompt=relation_descriptions.get(parent),
             ))
             types.append("relations")

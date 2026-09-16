@@ -46,18 +46,25 @@ def _stable_seed(*parts: Any) -> int:
 class NegativeLabels:
     """Per-corpus negative pools plus the injection that puts them in a schema."""
 
-    def __init__(self, pools: Dict[str, dict], per_dim: Dict[str, int], seed: int = 42):
+    def __init__(self, pools: Dict[str, dict], per_dim: Dict[str, int], seed: int = 42,
+                 max_per_record: Optional[int] = None):
         self.pools = pools
         self.per_dim = {d: int(n) for d, n in (per_dim or {}).items() if int(n) > 0}
+        # TOKEN BUDGET. Every injected label is schema-marker tokens in the prompt: it costs
+        # throughput and eats the input budget the text needs. The per-dimension counts bound
+        # this already; `max_per_record` is the single number to turn when a run is
+        # length-bound, and it truncates in dimension order rather than dropping a dimension.
+        self.max_per_record = max_per_record
         self.seed = seed
         self.epoch = 0
         self.stats = {"records": 0, "injected": 0, "records_with_injection": 0,
                       "no_candidate": 0}
 
     @classmethod
-    def load(cls, path: str, per_dim: Dict[str, int], seed: int = 42) -> "NegativeLabels":
+    def load(cls, path: str, per_dim: Dict[str, int], seed: int = 42,
+             max_per_record: Optional[int] = None) -> "NegativeLabels":
         blob = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(blob.get("pools") or {}, per_dim, seed)
+        return cls(blob.get("pools") or {}, per_dim, seed, max_per_record)
 
     def set_epoch(self, epoch: int) -> None:
         """Resample every epoch. The trainer calls this, as with DistributedSampler."""
@@ -131,7 +138,13 @@ class NegativeLabels:
         out = dict(schema)
         added = 0
 
-        k = self.per_dim.get("entities", 0)
+        def budget(k: int) -> int:
+            """How many more may be injected, honouring the whole-record token budget."""
+            if self.max_per_record is None:
+                return k
+            return max(0, min(k, self.max_per_record - added))
+
+        k = budget(self.per_dim.get("entities", 0))
         if k and gold["entities"]:
             pool = sorted(self._usable_pool("entities", candidates) - gold["entities"])
             chosen = rng.sample(pool, min(k, len(pool))) if pool else []
@@ -142,7 +155,7 @@ class NegativeLabels:
                                    **{name: [] for name in chosen}}
                 added += len(chosen)
 
-        k = self.per_dim.get("events", 0)
+        k = budget(self.per_dim.get("events", 0))
         if k and gold["events"] and isinstance(schema.get("events"), list):
             pool_types = self._usable_pool("events", candidates) - gold["events"]
             chosen = rng.sample(sorted(pool_types), min(k, len(pool_types))) if pool_types else []
@@ -161,6 +174,42 @@ class NegativeLabels:
                 out["absent_events"] = {**(out.get("absent_events") or {}), **roles}
                 added += len(chosen)
 
+        k = budget(self.per_dim.get("relations", 0))
+        if k and gold["relations"] and isinstance(schema.get("relations"), list):
+            pool = sorted(self._usable_pool("relations", candidates) - gold["relations"])
+            chosen = rng.sample(pool, min(k, len(pool))) if pool else []
+            if chosen:
+                # NOT the inference shape `{name: {"head": "", "tail": ""}}`: the training
+                # loop sees head/tail present and appends ["", ""] as a GOLD pair, so an
+                # absent relation would arrive as a bogus instance of empty surfaces.
+                out["absent_relations"] = sorted(
+                    set(out.get("absent_relations") or []) | set(chosen))
+                added += len(chosen)
+
+        k = budget(self.per_dim.get("structures", 0))
+        if k and gold["structures"] and isinstance(schema.get("json_structures"), list):
+            pool_names = self._usable_pool("structures", candidates) - gold["structures"]
+            chosen = rng.sample(sorted(pool_names), min(k, len(pool_names))) if pool_names else []
+            if chosen:
+                fields, meta = {}, dict(out.get("record_metadata") or {})
+                for name in chosen:
+                    for cand in candidates:
+                        spec = (self.pools[cand].get("structures") or {}).get(name)
+                        if spec:
+                            fields[name] = list(spec)
+                            break
+                    if name in fields and fields[name]:
+                        # An absent structure needs record_metadata like a present one, or
+                        # compile_record_specs builds no spec for it and the record head
+                        # never sees the negative -- it would be a schema entry nobody
+                        # decodes. Anchor on the first field, as a real record does.
+                        meta.setdefault(name, {"mode": "natural", "anchor": fields[name][0]})
+                fields = {n: f for n, f in fields.items() if f}
+                if fields:
+                    out["absent_structures"] = {**(out.get("absent_structures") or {}), **fields}
+                    out["record_metadata"] = meta
+                    added += len(fields)
+
         if added:
             self.stats["injected"] += added
             self.stats["records_with_injection"] += 1
@@ -170,6 +219,10 @@ class NegativeLabels:
                 & gold["entities"], "injected an entity label that is in this record's gold"
             assert not set(out.get("absent_events") or {}) & gold["events"], \
                 "injected an event type that is in this record's gold"
+            assert not set(out.get("absent_relations") or []) & gold["relations"], \
+                "injected a relation that is in this record's gold"
+            assert not set(out.get("absent_structures") or {}) & gold["structures"], \
+                "injected a structure that is in this record's gold"
         return out
 
     def composition_line(self) -> str:

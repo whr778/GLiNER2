@@ -160,6 +160,7 @@ def test_absent_EVENT_types_become_queries_too(tiny_tokenizer):
                                   on_capacity_exceeded="skip_sample")
         return b.query_layouts[0].extractive_count() if b.query_layouts else 0
 
+    proc.sampling_config.remove_events_prob = 0.0    # same coin-flip hazard
     base = n_queries(dict(CMNEE_REC))
     injected = _neg({"events": 2}).inject(dict(CMNEE_REC), 0)
     assert injected.get("absent_events"), "no absent event types were injected"
@@ -174,6 +175,9 @@ def test_an_absent_event_type_never_duplicates_a_gold_one(tiny_tokenizer):
     from gliner2.processor import SchemaTransformer
 
     proc = SchemaTransformer(tokenizer=tiny_tokenizer)
+    # remove_events_prob defaults to 0.2, so without this the comparison below is a coin
+    # flip -- it passed by luck until a later change reshuffled the RNG draw.
+    proc.sampling_config.remove_events_prob = 0.0
     schema = dict(CMNEE_REC, absent_events={"Experiment": ["Subject"]})   # Experiment IS gold
     b = proc.collate_fn_train([("the army tested a missile", schema)], architecture="boundary",
                               error_policy="skip", max_gold_per_query=256,
@@ -183,3 +187,86 @@ def test_an_absent_event_type_never_duplicates_a_gold_one(tiny_tokenizer):
                                       max_gold_per_query=256,
                                       on_capacity_exceeded="skip_sample")
     assert b.query_layouts[0].extractive_count() == gold_only.query_layouts[0].extractive_count()
+
+
+# ---------------------------------------------------------------------------------------
+# Relations and structures: the two dimensions whose absent representation had to be
+# established the same way events' did.
+# ---------------------------------------------------------------------------------------
+
+REL_POOLS = {
+    "bio": {
+        "annotates": {"entities": True, "events": False, "relations": True,
+                      "structures": True},
+        "entities": ["Chemical", "Disease"],
+        "events": {},
+        "relations": ["inhibits", "activates", "binds", "treats"],
+        "structures": {"drug": ["name", "target"], "trial": ["phase", "sponsor"]},
+    }
+}
+REL_REC = {"entities": {"Chemical": ["Aspirin"]},
+           "relations": [{"inhibits": {"head": "Aspirin", "tail": "COX-1"}}]}
+STRUCT_REC = {"entities": {"Chemical": ["Aspirin"]},
+              "json_structures": [{"drug": {"name": "Aspirin", "target": "COX-1"}}],
+              "record_metadata": {"drug": {"mode": "natural", "anchor": "name"}}}
+
+
+def test_absent_relations_use_a_NAME_LIST_not_the_inference_shape():
+    """`{name: {"head": "", "tail": ""}}` would be read as a GOLD pair of empty surfaces.
+
+    The training loop checks `all(f in occ for f in field_names)` and appends `occ[f]`, so
+    head/tail present-but-empty becomes an instance, not an absence.
+    """
+    neg = NegativeLabels(REL_POOLS, {"relations": 2}, seed=1)
+    out = neg.inject(dict(REL_REC), 0)
+
+    assert isinstance(out["absent_relations"], list)
+    assert "inhibits" not in out["absent_relations"], "never the record's own gold"
+    assert set(out["absent_relations"]) <= {"activates", "binds", "treats"}
+
+
+def test_absent_structures_carry_RECORD_METADATA_or_nothing_decodes_them():
+    """Without metadata `compile_record_specs` builds no spec, so the record head never sees
+    the negative -- a schema entry nobody decodes. Measured: the query count did not move."""
+    neg = NegativeLabels(REL_POOLS, {"structures": 1}, seed=1)
+    out = neg.inject(dict(STRUCT_REC), 0)
+
+    assert out["absent_structures"] == {"trial": ["phase", "sponsor"]}
+    meta = out["record_metadata"]
+    assert meta["drug"] == {"mode": "natural", "anchor": "name"}, "gold metadata untouched"
+    assert meta["trial"]["mode"] == "natural"
+    assert meta["trial"]["anchor"] == "phase", "anchored on its first field, as a record is"
+
+
+def test_absent_relations_become_queries_through_the_collator(tiny_tokenizer):
+    from gliner2.processor import SchemaTransformer
+
+    proc = SchemaTransformer(tokenizer=tiny_tokenizer)
+    proc.sampling_config.remove_relations_prob = 0.0   # else the count is a coin flip
+    text = "Aspirin inhibits COX-1"
+
+    def n(schema):
+        b = proc.collate_fn_train([(text, schema)], architecture="boundary",
+                                  error_policy="skip", max_gold_per_query=256,
+                                  on_capacity_exceeded="skip_sample")
+        return b.query_layouts[0].extractive_count() if b.query_layouts else 0
+
+    base = n({"relations": REL_REC["relations"]})
+    after = n({"relations": REL_REC["relations"],
+               "absent_relations": ["activates", "binds"]})
+    assert after == base + 4, f"two absent relations x (head, tail) = 4 queries ({base}->{after})"
+
+
+def test_max_per_record_is_a_TOKEN_BUDGET_across_dimensions():
+    """Every injected label is schema-marker tokens: it costs throughput and eats the input
+    budget the text needs. One number to turn when a run is length-bound."""
+    asked = {"entities": 3, "relations": 3}
+    unbounded = NegativeLabels(REL_POOLS, asked, seed=5).inject(dict(REL_REC), 0)
+    n_unbounded = (len(set(unbounded.get("entities") or {}) - set(REL_REC["entities"]))
+                   + len(unbounded.get("absent_relations") or []))
+    assert n_unbounded > 2, "the unbounded case must exceed the budget for this to mean anything"
+
+    capped = NegativeLabels(REL_POOLS, asked, seed=5, max_per_record=2).inject(dict(REL_REC), 0)
+    n_capped = (len(set(capped.get("entities") or {}) - set(REL_REC["entities"]))
+                + len(capped.get("absent_relations") or []))
+    assert n_capped == 2, f"budget of 2 must yield exactly 2 injected labels, got {n_capped}"

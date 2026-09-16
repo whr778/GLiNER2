@@ -215,9 +215,17 @@ despite being an event corpus: its events were converted to entities + classific
 **271 absent queries created where there were 0.** `negative_query_ratio` and
 `abstention_loss` finally have a positive class.
 
-- [ ] **Relations and structures** — still to do; their absent representation needs the same
-      establishing `_process_events` needed (Phase 3).
-- [ ] Token-budget knob (`max_num_labels` already exists in `SamplingConfig` — reuse it).
+- [x] **Relations**: `absent_relations` as a NAME LIST. The inference shape
+      `{name: {"head": "", "tail": ""}}` is unusable — the training loop checks
+      `all(f in occ for f in field_names)` and appends `occ[f]`, so head/tail
+      present-but-empty becomes a GOLD pair of empty surfaces rather than an absence.
+      Verified: +2 absent relations = +4 queries.
+- [x] **Structures**: `absent_structures` as `{name: [field, ...]}`, **and the injector emits
+      `record_metadata` for them**. Without it `compile_record_specs` builds no spec, the
+      record head never sees the negative, and it is a schema entry nobody decodes — measured,
+      the query count did not move until the metadata was added.
+- [x] Token budget: `max_per_record`, a single number across dimensions. Every injected label
+      is schema-marker tokens, so it costs throughput and eats the input budget.
 
 **Regression caught and fixed while doing this:** `build_negative_pools.py` originally did
 `sys.path.insert(0, "tools/")` + `from train.train import ...`, which made the bare name
@@ -226,10 +234,12 @@ despite being an event corpus: its events were converted to entities + classific
 under a unique module name now.
 
 ### Phase 3 — per-head verification (mostly verify, not build)
-- [ ] **Entities/events (mention path)**: confirm `negative_query_ratio` now selects > 0
-      queries, and log it in-band. *It has been dead code in every model ever trained.*
-- [ ] **Abstention gate**: confirm its target is no longer always 0; confirm the decode path
-      (`abstention_threshold`) then rejects.
+- [x] **Absent queries reach the loss.** Measured through the real collator with targets
+      built, 60 documents: control **0 of 559 (0.0%)**, negatives on **306 of 865 (35.4%)**.
+      That is simultaneously the abstention gate's positive class (`target = 1` for an absent
+      query) and `negative_query_ratio`'s selection pool. Both had been live and starved.
+- [ ] Log the selected-negative count in-band during a real run.
+- [ ] Confirm the decode path (`abstention_threshold`) then rejects.
 - [ ] **R. RECORD PATH — the one place real loss work may live.** With `event_records: true`
       an absent event type must become a record spec with **zero gold instances**. Verify
       `compile_record_specs` / `_pack_record_targets` accept that, and that the anchor loss
