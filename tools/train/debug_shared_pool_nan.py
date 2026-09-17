@@ -81,7 +81,9 @@ def main():
     ap.add_argument("--pool", default="shared", choices=["per_query", "shared"])
     ap.add_argument("--steps", type=int, default=2)
     ap.add_argument("--batch", type=int, default=4)
-    ap.add_argument("--bf16", action="store_true", default=True)
+    # `action="store_true", default=True` is unturnoffable; bf16 autocast is the
+    # variable under test here, so it needs a real off switch.
+    ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"

@@ -1,0 +1,89 @@
+# FP32 VARIANT of pool-shared-long.yaml -- bf16 OFF.
+#
+# WHY THIS EXISTS. With bf16 on, `candidate_pool: shared` produces a finite loss at
+# step 0 and a NaN BACKWARD at step 1 (grad norm nan, 225 parameters poisoned
+# including the whole encoder). Four steps on CPU stay finite, so the variable is CUDA
+# plus bf16 autocast, not step count. This arm answers whether the fault is the
+# PRECISION or the PATH:
+#   survives  -> autocast in the shared pool's backward; fix is a targeted
+#                autocast(enabled=False) and the real A/B can then run.
+#   diverges  -> the shared pool has a genuine backward bug, precision-independent.
+#
+# fp32 is ~2x the memory and slower; that is acceptable for a diagnostic and is NOT
+# the configuration any comparison would ship.
+# CANDIDATE-POOL A/B -- arm `SHARED-LONG`.
+#
+# WHY. The entity-typed-argument sweep found that merely ADDING an entity menu costs 30-35% of
+# argument recall (0.2495 -> 0.16) before any filtering: entity queries compete with event
+# queries for candidate budget under `candidate_pool: per_query`. `shared` builds ONE document
+# candidate pool instead of enumerating per query, which is the direct remedy for that.
+#
+# THE HANDICAP, stated because it decides how to read a null. `shared_pool_builder` is built in
+# EVERY checkpoint (model.py:246) but receives NO GRADIENT under per_query -- the only other
+# call site is behind `if diagnostics:` and feeds stats, not the loss. So the shared arm starts
+# from a freshly-initialised pool while the control starts fully trained.
+#
+#   A POSITIVE result is therefore STRONG (it won despite the handicap).
+#   A NULL is UNINFORMATIVE at matched steps -- which is why `shared-long` exists.
+#
+# THE FIRST ATTEMPT MEASURED NOTHING, and the reason is worth carrying. This header used to
+# call `candidate_pool` STRUCTURAL, and it was listed as such -- so on 2026-09-17 the trainer
+# refused both treatment arms at startup and only the control ran. The claim contradicted the
+# sentence beside it: a flag whose tensors "exist in every checkpoint" sizes nothing. Measured:
+# 340 tensors under per_query, 340 under shared, none added, removed or reshaped. The key was
+# in the guard's hand-written group, never in its measured one.
+#
+# THE GATE. Each arm prints ONE line from inside the optimizer step, after a real backward:
+#   control    [pool] candidate_pool=per_query  shared-pool grad norm 0.000e+00
+#   treatment  [pool] candidate_pool=shared     shared-pool grad norm <non-zero>
+# IF BOTH READ ZERO THE ARMS ARE NOT THE ARMS -- stop before reading an F1. Presence of the
+# tensors proves nothing here; only gradient does.
+model:
+  pretrained: whr778/gliner2-eb16-eventrecords-tr
+  architecture: boundary
+  boundary_head:
+    enable_relations: true
+    enable_records: true
+    event_records: true
+    max_gold_per_query: 256
+    training_candidate_budget: 384
+    candidate_pool: shared
+training:
+  output_dir: ./out/pool-shared-long-fp32
+  experiment_name: pool_shared-long
+  num_epochs: 4
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 5.0e-06
+  task_lr: 2.0e-05
+  warmup_ratio: 0.1
+  bf16: false
+  fp16: false
+  eval_strategy: epoch
+  save_best: true
+  save_total_limit: 1
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  max_len: 1024
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+  seed: 42
+  schema_dropout: false
+  negative_pools: tools/train/config/labels/negative_pools.json
+  negative_labels_per_dim: {}
+  negative_label_seed: 42
+  # NOT a raised `max_train_samples`. cmnee+casie train is 10,079 records, so BOTH
+  # 13000 and 26000 were above the corpus and neither bound: the two arms ran the
+  # IDENTICAL 10,079 records for 2 epochs and produced byte-identical failures,
+  # which read as reproduction across arms and was one run executed twice. Length
+  # has to come from epochs.
+  max_train_samples: 13000
+eval:
+  batch_size: 8
+  threshold: 0.3
+labels_file: labels/unified.yaml
+data:
+  corpora:
+  - data/cmnee
+  - data/casie
