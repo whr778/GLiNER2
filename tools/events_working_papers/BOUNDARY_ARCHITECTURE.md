@@ -460,6 +460,37 @@ wall clock (8.5 min against 22). A 4/16/64 width sweep moves structure by 0.0018
 *narrower* is marginally better — the opposite of a search-capacity story. So the beam buys
 nothing here and costs 2.5×.
 
+**THE NULL WAS MEASURED WITH `event_records` OFF, AND THAT SCOPING MATTERS (2026-09-17).**
+`eb16-rebuild-tr` decodes events through the MENTION path. With `event_records: true` events
+are RECORDS -- and joint mode **skips the record decoder entirely** via an early return
+(`engine.py:250-259`): "in joint mode records come out of the beam via role edges; running the
+record head too would double-emit them."
+
+Measured per document on `eb16-eventrecords-tr` (`event_records: true`), 60 cmnee documents,
+`probe_beam_disagreement.py`:
+
+| | |
+|---|---:|
+| documents where joint and greedy DIFFER | **42 of 60 (70%)** |
+| items greedy produced that joint dropped | **70** (29 of them CORRECT) |
+| items joint added that greedy lacked | **16** (6 correct) |
+| **net for joint** | **-23 correct items** |
+| **triggers: dropped / added** | **35 / 0** |
+
+**The beam is NOT inert -- it differs on 70% of documents -- and it is net negative.** The
+dominant mechanism is not substitution but DELETION: 70 items dropped against 16 added, and for
+triggers it adds none at all. The beam's role-edge path recovers less than the record decoder
+it replaces.
+
+Where it does substitute, right-rates are close (41.4% greedy-only against 37.5% joint-only) --
+the coin-flip signature, meaning the candidate scores carry little information about which
+constraint-consistent assignment is correct. That half is what a beam-aware or structured loss
+would address, but it is the SMALLER effect, so it is not the first thing to build.
+
+**Practical consequence: do not pair `decode_mode: joint` with `event_records: true`** until the
+role-edge path is shown to recover what `_decode_records` does. The null above does not license
+it -- that null was measured on a model where events never went through records.
+
 **The first version of that answer had structure at −0.0454, and it was the plumbing in
 §6.** With `dtype: str` compiling `ZERO_OR_MORE`, the ABSENT-relative utility and the
 exclusivity slot never engaged for any structure field, and greedy's format-time rescue
