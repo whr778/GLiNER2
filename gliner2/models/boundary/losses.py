@@ -562,7 +562,26 @@ def marginal_pair_consistency_loss(
 ) -> torch.Tensor:
     """Match boundary marginals to candidate-level noisy-OR probabilities."""
     probabilities = torch.sigmoid(pair_logits) * valid_mask.to(pair_logits.dtype)
-    log_survival = torch.log1p(-probabilities.clamp(max=1.0 - 1e-6))
+    # THE EPSILON MUST BE REPRESENTABLE IN THE TENSOR'S OWN DTYPE. A hard 1e-6 is far below
+    # what bf16 can resolve next to 1.0 -- bf16 has 8 mantissa bits, so its eps is 0.0078125
+    # and `1.0 - 1e-6` rounds to EXACTLY 1.0. The clamp then does nothing, `p` reaches 1.0,
+    # and `log1p(-1.0)` is -inf.
+    #
+    # THE FORWARD SURVIVES THAT, which is why this hid: the -inf is summed by scatter_add and
+    # then `1 - exp(-inf)` is 1, perfectly finite. The BACKWARD does not -- d/dp log1p(-p) is
+    # -1/(1-p) = -inf, and a masked entry's zero grad_output makes it 0 * inf = NaN.
+    #
+    # Measured 2026-09-17 on an A100: `candidate_pool: shared` died at step 1 with a finite
+    # loss and 225 parameters holding non-finite gradients, including the whole encoder. fp32
+    # was clean for five steps, every SDPA backend including MATH reproduced it, and anomaly
+    # mode named this line. An untrained submodule saturates the sigmoid to exactly 1.0, which
+    # is why a freshly-initialised shared pool triggers it and a trained per_query path does
+    # not -- but consistency_loss_weight defaults to 0.1, so ANY bf16 run is exposed.
+    #
+    # max() keeps fp32 behaviour bit-identical (1e-6 > fp32 eps of 1.19e-7) and only raises the
+    # floor where the dtype genuinely cannot hold it: 0.9921875 in bf16, 0.999023 in fp16.
+    eps = max(1e-6, torch.finfo(probabilities.dtype).eps)
+    log_survival = torch.log1p(-probabilities.clamp(max=1.0 - eps))
     b, q, n = start_logits.shape
 
     def accumulate(index: torch.LongTensor):
