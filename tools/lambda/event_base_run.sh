@@ -38,8 +38,10 @@ export HF_TOKEN=$(cat ~/.hf_token)
 export GLINER2_STRICT_ATTN=1   # sdpa on bf16 mmBERT is a CORRECTNESS failure, not a slowdown
 
 PY=./.venv/bin/python
-CFG=tools/train/config/base/eb16-eventrecords-tr.yaml
-OUTDIR=./out/eb16-eventrecords-tr
+# Parameterised so the negatives rebuild reuses this runner rather than forking it --
+# forking the publish block once already shipped a run with no publishing at all.
+CFG=${CFG:-tools/train/config/base/eb16-eventrecords-tr.yaml}
+OUTDIR=${OUTDIR:-./out/eb16-eventrecords-tr}
 REPO=${REPO:-whr778/gliner2-eb16-eventrecords-tr}
 DEST=${DEST:-event_base}
 LOG=$HOME/event_base.log
