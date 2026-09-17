@@ -38,6 +38,30 @@ die() { echo "[prov] *** FATAL: $* ***" >&2; exit 1; }
 [ -n "${LAMBDA_API_KEY:-}" ] || die "LAMBDA_API_KEY is not set -- the box could not
     terminate itself, which is the one failure that bills until someone notices."
 
+# PROVE THE TOKEN WRITES BEFORE AN INSTANCE IS LAUNCHED, not after. A full-access token
+# EXPIRED mid-session on 2026-09-17; the on-box pre-flight caught it, but only after a box
+# had been launched, booted and bootstrapped. Checking here costs a second and no money.
+#
+# NOTE FOR ANYONE DEBUGGING A "WRONG TOKEN" HERE: a non-interactive shell does NOT source
+# ~/.zshrc, so an `export HF_TOKEN=` line there is invisible to this script -- it inherits
+# whatever the parent process had at ITS startup, which can be hours stale. Pass the token
+# explicitly (HF_TOKEN=$(...) bash tools/lambda/provision_box.sh) rather than trusting the
+# environment to be current.
+python3 - <<'TOKCHK' || die "HF_TOKEN does not authenticate -- refusing to launch a box that
+    would bootstrap, fail to publish, and have to be terminated."
+import os, sys
+try:
+    from huggingface_hub import HfApi
+except ImportError:
+    sys.exit(0)                      # cannot check here; the box pre-flight still will
+try:
+    who = HfApi(token=os.environ["HF_TOKEN"].strip()).whoami()["name"]
+except Exception as exc:
+    print(f"[prov] token rejected: {str(exc).splitlines()[0][:100]}")
+    sys.exit(1)
+print(f"[prov] HF_TOKEN authenticates as {who}")
+TOKCHK
+
 SSH="ssh -i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20"
 
 terminate_and_die() {
