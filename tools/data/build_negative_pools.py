@@ -9,6 +9,21 @@ pool. Two rules make it safe, and both are encoded here:
     within-corpus    sample only from labels THIS corpus annotates
     within-dimension only offer entity negatives to records that carry entity gold, etc.
 
+BOTH RULES INFER ANNOTATION FROM THE PRESENCE OF GOLD, AND THAT INFERENCE CAN BE WRONG.
+A corpus DERIVED from another dimension -- event argument spans reframed as typed entities,
+say -- carries entity gold for the spans it derived and nothing for the entities it never
+looked at. Inferred naively it qualifies as an entity annotator and starts drawing entity
+negatives against unlabelled gold: the within-dimension rule violated at the scale of the
+derivation. A negatives pool has no natural correctness signal, so that damage is silent and
+persists into every model trained afterwards.
+
+Declare such a corpus PARTIAL in the training config and it contributes POSITIVES to the
+dimension while being refused as a source of NEGATIVES for it:
+
+    data:
+      partial_annotation:
+        cmnee_roles: [entities]     # has entity gold, but only for derived argument spans
+
 POOLS ARE DERIVED AFTER LABEL UNIFICATION. If a pool held a pre-map alias (``LOC``) of a
 label present under its canonical name (``Location``), the injected negative would contradict
 the gold directly. This reuses the training pipeline's own transforms --
@@ -51,6 +66,23 @@ def _train_helpers():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod._category_fns, mod.load_labels_cfg, mod.transform_record
+
+
+def _partial_annotation(cfg: dict) -> dict:
+    """``{corpus_name: {dims}}`` declared PARTIAL — positives only, never negatives."""
+    raw = (cfg.get("data") or {}).get("partial_annotation") or {}
+    out = {}
+    for name, dims in raw.items():
+        if isinstance(dims, str):
+            dims = [dims]
+        unknown = sorted(set(dims) - set(DIMENSIONS))
+        if unknown:
+            raise SystemExit(
+                f"[pools] partial_annotation[{name}] names unknown dimension(s) {unknown}; "
+                f"valid: {list(DIMENSIONS)}"
+            )
+        out[name] = set(dims)
+    return out
 
 
 def _corpus_train_paths(cfg: dict) -> dict:
@@ -140,6 +172,14 @@ def main() -> int:
     _category_fns, load_labels_cfg, transform_record = _train_helpers()
     fns = _category_fns(load_labels_cfg(cfg, config_path))
     print(f"[pools] label transforms active for: {sorted(fns) or 'NONE'}")
+    partial = _partial_annotation(cfg)
+    for nm, dims in sorted(partial.items()):
+        print(f"[pools] PARTIAL {nm}: {sorted(dims)} — positives only, refused as negatives")
+    # A declaration naming a corpus the config does not train on is a typo that would
+    # otherwise protect nothing at all, silently.
+    unknown = sorted(set(partial) - set(_corpus_train_paths(cfg)))
+    if unknown:
+        raise SystemExit(f"[pools] partial_annotation names corpora not in this config: {unknown}")
 
     pools = {}
     print(f"\n{'corpus':22s}{'records':>9}{'ent':>7}{'evt':>6}{'rel':>6}{'struct':>8}   annotates")
@@ -149,8 +189,17 @@ def main() -> int:
             print(f"{name:22s}{'ABSENT':>9}")
             continue
         info = scan(p, fns, args.limit, transform_record)
+        # PARTIAL wins over the inferred value, and only ever in the safe direction: it can
+        # turn annotation OFF, never on. Recorded rather than silently applied, because the
+        # whole hazard here is a pool that looks fine.
+        for dim in sorted(partial.get(name, ())):
+            if info["annotates"][dim]:
+                info["annotates"][dim] = False
+                info.setdefault("partial", []).append(dim)
         pools[name] = info
         ann = ",".join(d for d, v in info["annotates"].items() if v) or "-"
+        if info.get("partial"):
+            ann += f"  [PARTIAL: {','.join(info['partial'])} positives only]"
         print(f"{name:22s}{info['records_scanned']:>9,}{len(info['entities']):>7}"
               f"{len(info['events']):>6}{len(info['relations']):>6}"
               f"{len(info['structures']):>8}   {ann}")
