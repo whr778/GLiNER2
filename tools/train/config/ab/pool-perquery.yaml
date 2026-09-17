@@ -5,14 +5,26 @@
 # queries for candidate budget under `candidate_pool: per_query`. `shared` builds ONE document
 # candidate pool instead of enumerating per query, which is the direct remedy for that.
 #
-# THE HANDICAP, stated because it decides how to read a null. `candidate_pool` is STRUCTURAL
-# (tools/train/train.py `_STRUCTURAL_BOUNDARY_KEYS`): it gates `shared_pool_builder`, whose 64
-# tensors exist in every checkpoint but receive NO GRADIENT under per_query -- the only other
+# THE HANDICAP, stated because it decides how to read a null. `shared_pool_builder` is built in
+# EVERY checkpoint (model.py:246) but receives NO GRADIENT under per_query -- the only other
 # call site is behind `if diagnostics:` and feeds stats, not the loss. So the shared arm starts
-# with a freshly-initialised pool while the control starts fully trained.
+# from a freshly-initialised pool while the control starts fully trained.
 #
 #   A POSITIVE result is therefore STRONG (it won despite the handicap).
 #   A NULL is UNINFORMATIVE at matched steps -- which is why `shared-long` exists.
+#
+# THE FIRST ATTEMPT MEASURED NOTHING, and the reason is worth carrying. This header used to
+# call `candidate_pool` STRUCTURAL, and it was listed as such -- so on 2026-09-17 the trainer
+# refused both treatment arms at startup and only the control ran. The claim contradicted the
+# sentence beside it: a flag whose tensors "exist in every checkpoint" sizes nothing. Measured:
+# 340 tensors under per_query, 340 under shared, none added, removed or reshaped. The key was
+# in the guard's hand-written group, never in its measured one.
+#
+# THE GATE. Each arm prints ONE line from inside the optimizer step, after a real backward:
+#   control    [pool] candidate_pool=per_query  shared-pool grad norm 0.000e+00
+#   treatment  [pool] candidate_pool=shared     shared-pool grad norm <non-zero>
+# IF BOTH READ ZERO THE ARMS ARE NOT THE ARMS -- stop before reading an F1. Presence of the
+# tensors proves nothing here; only gradient does.
 model:
   pretrained: whr778/gliner2-eb16-eventrecords-tr
   architecture: boundary

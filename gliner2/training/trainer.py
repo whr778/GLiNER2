@@ -1613,6 +1613,8 @@ class ExtractorTrainer:
         if self.config.fp16:
             self.scaler.unscale_(self.optimizer)
 
+        self._note_candidate_pool_gradient()
+
         grad_norm = torch.nn.utils.clip_grad_norm_(
             self.model.parameters(), self.config.max_grad_norm
         )
@@ -1631,6 +1633,42 @@ class ExtractorTrainer:
         self.scheduler.step()
         self.optimizer.zero_grad(set_to_none=True)
         return True
+
+    def _note_candidate_pool_gradient(self) -> None:
+        """Print, once, whether the SHARED candidate pool is carrying gradient.
+
+        A gate for `candidate_pool` A/Bs, and it is built to be capable of failing.
+        `shared_pool_builder` and `shared_pool_scorer` are constructed in EVERY
+        checkpoint regardless of the flag (model.py:246), so their presence proves
+        nothing and a state_dict check proves only that a warm start is safe. What
+        separates the arms is whether the forward reaches them:
+
+            control    [pool] candidate_pool=per_query  shared-pool grad norm 0.0e+00
+            treatment  [pool] candidate_pool=shared     shared-pool grad norm 3.4e-02
+
+        IF BOTH ARMS PRINT 0.0, THE TREATMENT DID NOT APPLY and there is no
+        experiment -- stop before reading an F1. This project has published an
+        inert arm as a null more than once; the rule earned from those is that
+        anything proving a treatment applied must be emitted after logging exists
+        and from a point where the thing has actually happened. Here that means
+        after a real backward, while the gradients are still live -- one line up,
+        inside `_optimizer_step` before the buffers are cleared.
+        """
+        if getattr(self, "_pool_gradient_noted", False):
+            return
+        self._pool_gradient_noted = True
+        total = 0.0
+        found = 0
+        for name, param in self.model.named_parameters():
+            if "shared_pool" not in name or param.grad is None:
+                continue
+            found += 1
+            total += float(param.grad.detach().float().norm() ** 2)
+        pool = getattr(self.model.boundary_settings, "candidate_pool", "?")
+        logger.info(
+            "[pool] candidate_pool=%s  shared-pool grad norm %.3e over %d tensor(s)",
+            pool, total ** 0.5, found,
+        )
 
     def _prepare_data(self, data: TrainDataInput, is_train: bool = True) -> ExtractorDataset:
         """Convert any supported data format to ExtractorDataset."""

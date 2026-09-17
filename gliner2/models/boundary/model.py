@@ -2374,7 +2374,12 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 "enable_span_content, enable_rotary_endpoints, "
                 "boundary_attention_layers, query_conditioned_inside_weight, "
                 "endpoint_difference_features, multihead_pair_compat_heads, "
-                "candidate_pool, pool_boundary_top_k, pool_size, "
+                # NOT candidate_pool. It changes no tensor (measured 2026-09-17:
+                # 340 keys both ways, none reshaped), so it can never raise the
+                # error this list is explaining -- naming it here only sends the
+                # next investigation after the wrong flag. pool_boundary_top_k and
+                # pool_size, which SIZE this same module, do belong.
+                "pool_boundary_top_k, pool_size, "
                 "candidate_attention_layers, candidate_attention_heads, "
                 "query_attention_layers, "
                 "enable_abstention, enable_count_head, enable_records, and "

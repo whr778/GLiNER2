@@ -626,7 +626,28 @@ the ``pretrained`` path cannot work -- the modules are already built -- so we
 refuse rather than apply half of it."""
 _STRUCTURAL_BOUNDARY_KEYS = frozenset({
     "enable_records", "enable_relations", "boundary_dim", "pair_dim",
-    "boundary_refinement_layers", "boundary_ffn_multiplier", "candidate_pool",
+    "boundary_refinement_layers", "boundary_ffn_multiplier",
+    # `candidate_pool` WAS HERE AND DID NOT BELONG. It sat in this hand-written
+    # first group, above the "Measured 2026-09-05" block -- i.e. it was assumed
+    # structural and never checked. Measured 2026-09-17 by building the head both
+    # ways: 340 tensors under `per_query`, 340 under `shared`, ZERO added, ZERO
+    # removed, ZERO reshaped. model.py:246 builds `shared_pool_builder`
+    # UNCONDITIONALLY and says so -- "present for checkpoint transparency even
+    # while the default per-query path is selected". The flag selects a forward
+    # path at runtime; it sizes nothing.
+    #
+    # The cost of the mistake: a three-arm candidate_pool A/B on 2026-09-17 had
+    # both treatment arms refused at startup by this guard, leaving a control that
+    # re-measured the baseline. The guard was doing its job on a key that should
+    # never have been in its list.
+    #
+    # ONE REAL COMBINATION IS NOW REACHABLE and is not defended against here: a
+    # config using BOTH `compile: true` (a `from_pretrained` load kwarg) AND a
+    # candidate_pool override gets the shared modules UNCOMPILED, because
+    # model.py:1407 decides what to compile from the CHECKPOINT's setting inside
+    # `from_pretrained`, which runs before these overrides. Correctness is
+    # unaffected; throughput and any samples/s comparison are not. No config in
+    # the tree sets `compile`.
     "multihead_pair_compat_heads", "relation_heads_per_type",
     "relation_tails_per_type", "directional_relation_states",
     "relation_biaffine_content",
