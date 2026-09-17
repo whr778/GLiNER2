@@ -1,0 +1,80 @@
+# FP32 CONTROL for the shared-pool A/B.
+#
+# WHY IT EXISTS. `candidate_pool: shared` cannot train in bf16 -- its backward goes NaN at
+# step 1 (measured; fp32 is clean for 5 steps). So the treatment must run in fp32, and a
+# bf16 control would confound PRECISION with the thing under test. The existing perquery
+# arm is bf16 AND ran on an A10, so it confounds card as well; it is kept only as a rough
+# reference, never as this experiment's control.
+#
+# Same box, same precision, same data, same steps. One variable.
+# CANDIDATE-POOL A/B -- arm `PERQUERY`.
+#
+# WHY. The entity-typed-argument sweep found that merely ADDING an entity menu costs 30-35% of
+# argument recall (0.2495 -> 0.16) before any filtering: entity queries compete with event
+# queries for candidate budget under `candidate_pool: per_query`. `shared` builds ONE document
+# candidate pool instead of enumerating per query, which is the direct remedy for that.
+#
+# THE HANDICAP, stated because it decides how to read a null. `shared_pool_builder` is built in
+# EVERY checkpoint (model.py:246) but receives NO GRADIENT under per_query -- the only other
+# call site is behind `if diagnostics:` and feeds stats, not the loss. So the shared arm starts
+# from a freshly-initialised pool while the control starts fully trained.
+#
+#   A POSITIVE result is therefore STRONG (it won despite the handicap).
+#   A NULL is UNINFORMATIVE at matched steps -- which is why `shared-long` exists.
+#
+# THE FIRST ATTEMPT MEASURED NOTHING, and the reason is worth carrying. This header used to
+# call `candidate_pool` STRUCTURAL, and it was listed as such -- so on 2026-09-17 the trainer
+# refused both treatment arms at startup and only the control ran. The claim contradicted the
+# sentence beside it: a flag whose tensors "exist in every checkpoint" sizes nothing. Measured:
+# 340 tensors under per_query, 340 under shared, none added, removed or reshaped. The key was
+# in the guard's hand-written group, never in its measured one.
+#
+# THE GATE. Each arm prints ONE line from inside the optimizer step, after a real backward:
+#   control    [pool] candidate_pool=per_query  shared-pool grad norm 0.000e+00
+#   treatment  [pool] candidate_pool=shared     shared-pool grad norm <non-zero>
+# IF BOTH READ ZERO THE ARMS ARE NOT THE ARMS -- stop before reading an F1. Presence of the
+# tensors proves nothing here; only gradient does.
+model:
+  pretrained: whr778/gliner2-eb16-eventrecords-tr
+  architecture: boundary
+  boundary_head:
+    enable_relations: true
+    enable_records: true
+    event_records: true
+    max_gold_per_query: 256
+    training_candidate_budget: 384
+    candidate_pool: per_query
+training:
+  output_dir: ./out/pool-perquery-fp32
+  experiment_name: pool_perquery_fp32
+  num_epochs: 2
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 5.0e-06
+  task_lr: 2.0e-05
+  warmup_ratio: 0.1
+  bf16: false
+  fp16: false
+  eval_strategy: epoch
+  save_best: true
+  save_total_limit: 1
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  max_len: 1024
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+  seed: 42
+  schema_dropout: false
+  negative_pools: tools/train/config/labels/negative_pools.json
+  negative_labels_per_dim: {}
+  negative_label_seed: 42
+  max_train_samples: 13000
+eval:
+  batch_size: 8
+  threshold: 0.3
+labels_file: labels/unified.yaml
+data:
+  corpora:
+  - data/cmnee
+  - data/casie

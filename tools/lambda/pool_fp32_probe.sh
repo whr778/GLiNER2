@@ -55,7 +55,11 @@ fi
 echo "[fp32] fp32 is CLEAN across all steps -- the fault is bf16 autocast. Training the arms."
 
 # --- STAGE 2: the A/B, in fp32 --------------------------------------------------------
-for arm in shared-fp32 shared-long-fp32; do
+# CONTROL INCLUDED, and in the same precision on the same box. The pre-existing perquery
+# arm is bf16 on an A10; comparing an fp32 treatment against it would confound precision
+# and card with the treatment, which is the failure this project keeps paying for.
+# Matched pair first, so a box lost partway still leaves a readable comparison.
+for arm in shared-fp32 perquery-fp32 shared-long-fp32; do
   echo "[fp32] ===== $arm  $(date -u) ====="
   $PY -u tools/train/train.py --config "tools/train/config/ab/pool-$arm.yaml" \
       2>&1 | tee "$OUT/$arm.log"
