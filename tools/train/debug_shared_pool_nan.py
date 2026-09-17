@@ -127,8 +127,17 @@ def main():
     # takes exactly that path, and per_query never reaches it. This flag is the test.
     ap.add_argument("--sdpa-backend", default="default",
                     choices=["default", "efficient", "math", "flash"])
+    # Module backward hooks found NOTHING: no module turned a finite grad_output into a
+    # non-finite grad_input. The shared-pool path does most of its arithmetic as RAW TENSOR
+    # OPS -- einsum, masked_fill, gather, division -- which are autograd nodes but not
+    # nn.Modules, so module-level hooks are structurally blind to them. Anomaly mode is the
+    # instrument that sees those: it raises at the first non-finite in the backward and prints
+    # the traceback of the FORWARD op that created the node.
+    ap.add_argument("--anomaly", action="store_true")
     args = ap.parse_args()
 
+    if args.anomaly:
+        torch.autograd.set_detect_anomaly(True)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[dbg] device={dev} pool={args.pool} bf16={args.bf16} "
           f"sdpa={args.sdpa_backend} torch={torch.__version__}")
