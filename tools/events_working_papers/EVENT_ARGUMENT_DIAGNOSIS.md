@@ -858,6 +858,82 @@ contamination. This is why the within-split rule is text AND target rather than 
 deduplicating on text would silently discard 728 supervised examples.
 
 
+---
+
+## 4k. LINKING NER TO EVENT ARGUMENTS — three options, and what the data supports
+
+In OneIE an argument **is an entity node**: the graph joins a trigger to an *entity mention*
+via a role edge, so role classification is conditioned on entity type. In GLiNER2 an argument
+is its own role query with no connection to the entity head. This section records whether that
+link can be recovered here.
+
+### The data says the structure is there — in exactly one corpus
+
+Measured across every corpus carrying both entities and events:
+
+| corpus | docs with both | argument mentions | also entity gold |
+|---|---:|---:|---:|
+| **casie** | 798 | **17,992** | **17,992 (100.0%)** |
+| every other corpus | 0 | — | — |
+
+**Every casie argument is an entity mention**, exactly OneIE's assumption. And roles are
+strongly typed by entity type:
+
+| role | entity types observed |
+|---|---|
+| `Time` | Time **100%** |
+| `Vulnerability` | Vulnerability **99%** |
+| `Attacker` | Person 80%, Organization 19% |
+| `Compromised-Data` | PII 51%, Data 49% |
+| `Victim` | Person 41%, Organization 35%, System 12% |
+
+**But casie is the ONLY corpus with both**, and cmnee — 85.7% of the blind test's event mass —
+has **zero** entity gold (§6). docee, chfinann and turkish_event have entities and no events.
+So a role-to-type constraint learned from GOLD would train on 798 documents and could not fire
+where the metric is decided.
+
+### Option 1 — `candidate_pool: shared`. Config flag, zero new code.
+
+`boundary_head.candidate_pool` is `"per_query"` by default and accepts `"shared"`
+(`configuration.py:95`). Shared makes entity and argument queries score over ONE candidate
+pool rather than enumerating per query, which gives the representational half of what OneIE
+gets structurally, without any role-to-type constraint. **Never swept on the event line.**
+Cheapest thing on this list and it works everywhere, including corpora with no entity gold.
+
+### Option 2 — extend `joint_ie`'s typed constraints to event roles.
+
+The machinery already exists **for relations**: `relation_specs` carry `head`/`tail` entity-type
+constraints defaulting to `entity_types` (`joint_ie/engine.py:281-289`), and the joint beam
+already decodes records through role edges. Relations get this naturally because head and tail
+ARE entity spans; event roles are the same shape and simply are not wired in.
+
+A real but bounded change. Its payoff is limited to corpora carrying both, i.e. casie — so it
+would be measurable but not decisive on the current mixture.
+
+### Option 3 — constrain argument candidates by the model's OWN entity predictions at decode.
+
+The closest analogue to OneIE that this data can support. OneIE's argument candidates *are*
+entity mentions; we do not need entity GOLD in the event corpus for that, only an
+entity-capable MODEL — and ours is, trained on 89,040 entity-bearing records. At decode,
+restrict or re-rank argument candidates by what the entity head scores highly. **This works on
+cmnee despite cmnee having no entity annotation**, and it is an EVAL-TIME change over one
+trained checkpoint, so it needs no retraining.
+
+**Status: prototyped, NOT yet measurable.** A first attempt scored an oracle bound on casie
+(filter predicted arguments to gold entity surfaces, which by the 100% result above should
+cost zero recall). It returned 4 true positives over 60 documents — because the probe calls
+`extract_events`, which builds an EVENTS-ONLY schema, while every argument number in this
+document comes from `compute_metrics` + `_schema_from_gold`, which builds entities, events and
+classifications together and yields ~20x more arguments on the same corpus. **The filter has
+to be hooked into `compute_metrics`, not layered over `extract_events`** — the two decode
+paths are not interchangeable, which is worth knowing independently of this feature.
+
+### The ceiling on all three
+
+`event_argument` relaxed recall is 0.42 and strict 0.30, so roughly a third of the loss is
+arguments **never proposed**. Typing constrains what IS proposed; it attacks the binding half,
+not the extraction half. None of these three can recover the missing third.
+
 ## 5. What follows, in order
 
 > *Written before §4d-§4g. Item 1 is kept current; items 2-4 are the plan as it stood
