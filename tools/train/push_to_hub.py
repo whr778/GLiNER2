@@ -26,6 +26,26 @@ from huggingface_hub import HfApi
 from gliner2 import AutoExtractor
 
 
+def fresh_token() -> str | None:
+    """Read the Hub token AT THE MOMENT OF USE, not from the environment at startup.
+
+    A 16-hour training run does `export HF_TOKEN=$(cat ~/.hf_token)` at minute 0 and pushes
+    at minute 960. Measured 2026-09-17: a full-access token EXPIRED mid-run, so every child
+    process inherited a 401 from a shell started thirteen hours earlier, while the corrected
+    token sat on disk unread. The model was already trained; only the push would have failed.
+
+    `~/.hf_token` is the box's own credential file, written at provision time and safe to
+    correct in place while a run is going. Falling back to None lets huggingface_hub do its
+    normal resolution off-box, where that file does not exist.
+    """
+    path = Path.home() / ".hf_token"
+    if path.exists():
+        token = path.read_text().strip()
+        if token:
+            return token
+    return None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -66,7 +86,7 @@ def main() -> None:
     print(f"Loading checkpoint from {checkpoint}")
     model = AutoExtractor.from_pretrained(str(checkpoint), map_location="cpu")
 
-    api = HfApi()
+    api = HfApi(token=fresh_token())
     print(f"Ensuring repo '{args.repo_id}' exists (private={args.private})")
     api.create_repo(repo_id=args.repo_id, private=args.private, exist_ok=True)
 

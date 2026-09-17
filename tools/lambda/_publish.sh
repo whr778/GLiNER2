@@ -22,9 +22,16 @@ _publish_once() {
   local dest=$1; shift
   "$PUBPY" - "$LOGREPO" "$dest" "$@" <<'PY'
 import os, sys
+from pathlib import Path
 from huggingface_hub import HfApi
 repo, dest, files = sys.argv[1], sys.argv[2], sys.argv[3:]
-api = HfApi(); api.create_repo(repo, repo_type="dataset", private=True, exist_ok=True)
+# READ THE TOKEN AT THE MOMENT OF USE. A long run exports HF_TOKEN at minute 0; a token that
+# expires before the publish leaves every child holding a 401 while the corrected token sits
+# on disk unread. Measured 2026-09-17 on a 16-hour run.
+_p = Path.home() / ".hf_token"
+_tok = _p.read_text().strip() if _p.exists() else ""
+api = HfApi(token=_tok or None)
+api.create_repo(repo, repo_type="dataset", private=True, exist_ok=True)
 sent, absent = [], []
 for p in files:
     if os.path.exists(p) and os.path.getsize(p) > 0:
