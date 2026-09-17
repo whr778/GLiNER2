@@ -1,0 +1,59 @@
+# CANDIDATE-POOL A/B -- arm `SHARED`.
+#
+# WHY. The entity-typed-argument sweep found that merely ADDING an entity menu costs 30-35% of
+# argument recall (0.2495 -> 0.16) before any filtering: entity queries compete with event
+# queries for candidate budget under `candidate_pool: per_query`. `shared` builds ONE document
+# candidate pool instead of enumerating per query, which is the direct remedy for that.
+#
+# THE HANDICAP, stated because it decides how to read a null. `candidate_pool` is STRUCTURAL
+# (tools/train/train.py `_STRUCTURAL_BOUNDARY_KEYS`): it gates `shared_pool_builder`, whose 64
+# tensors exist in every checkpoint but receive NO GRADIENT under per_query -- the only other
+# call site is behind `if diagnostics:` and feeds stats, not the loss. So the shared arm starts
+# with a freshly-initialised pool while the control starts fully trained.
+#
+#   A POSITIVE result is therefore STRONG (it won despite the handicap).
+#   A NULL is UNINFORMATIVE at matched steps -- which is why `shared-long` exists.
+model:
+  pretrained: whr778/gliner2-eb16-eventrecords-tr
+  architecture: boundary
+  boundary_head:
+    enable_relations: true
+    enable_records: true
+    event_records: true
+    max_gold_per_query: 256
+    training_candidate_budget: 384
+    candidate_pool: shared
+training:
+  output_dir: ./out/pool-shared
+  experiment_name: pool_shared
+  num_epochs: 2
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 5.0e-06
+  task_lr: 2.0e-05
+  warmup_ratio: 0.1
+  bf16: true
+  fp16: false
+  eval_strategy: epoch
+  save_best: true
+  save_total_limit: 1
+  logging_steps: 50
+  num_workers: 2
+  validate_data: false
+  max_len: 1024
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+  seed: 42
+  schema_dropout: false
+  negative_pools: tools/train/config/labels/negative_pools.json
+  negative_labels_per_dim: {}
+  negative_label_seed: 42
+  max_train_samples: 13000
+eval:
+  batch_size: 8
+  threshold: 0.3
+labels_file: labels/unified.yaml
+data:
+  corpora:
+  - data/cmnee
+  - data/casie
