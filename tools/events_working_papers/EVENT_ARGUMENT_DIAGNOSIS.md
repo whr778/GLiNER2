@@ -897,8 +897,49 @@ where the metric is decided.
 `boundary_head.candidate_pool` is `"per_query"` by default and accepts `"shared"`
 (`configuration.py:95`). Shared makes entity and argument queries score over ONE candidate
 pool rather than enumerating per query, which gives the representational half of what OneIE
-gets structurally, without any role-to-type constraint. **Never swept on the event line.**
-Cheapest thing on this list and it works everywhere, including corpora with no entity gold.
+gets structurally, without any role-to-type constraint. Cheapest thing on this list and it
+works everywhere, including corpora with no entity gold.
+
+**ATTEMPT ONE (2026-09-17) MEASURED NOTHING, and the reason is a finding in itself.** Both
+treatment arms died within a minute of starting:
+
+    [config] boundary_head keys ['candidate_pool'] are structural and cannot be
+    overridden on the `pretrained` path -- the checkpoint's modules are already built.
+
+The guard is a good one and it was doing its job; `candidate_pool` simply should never have
+been on its list. It sat in the hand-written first group of `_STRUCTURAL_BOUNDARY_KEYS`,
+above the block marked "Measured 2026-09-05" — assumed structural, never checked. Measured
+now by building the head both ways: **340 tensors under `per_query`, 340 under `shared`,
+none added, none removed, none reshaped.** `model.py:246` builds `shared_pool_builder`
+unconditionally and explains why in a comment — "present for checkpoint transparency even
+while the default per-query path is selected". The flag selects a forward path at runtime.
+
+The contradiction was sitting in this project's own prose. The A/B config header called the
+flag STRUCTURAL and, in the same sentence, said its tensors "exist in every checkpoint". A
+flag whose tensors always exist cannot be structural — nobody read the two halves together.
+The loader's own error message names `candidate_pool` among "parameter-changing flags" as
+well, which is a hint that can never fire, since a flag that changes no tensor cannot cause
+a state-dict mismatch. All three texts are corrected.
+
+**What the failed attempt cost, and what it bought.** One A10 hour, of which the `perquery`
+control was a complete and reusable arm. It bought a narrowed guard, and a gate: the
+treatment now has to prove itself through the gradient, because `shared_pool_builder` is
+present in every checkpoint and an arm that failed to switch is indistinguishable from an
+arm that switched and did nothing. Measured locally on one real backward —
+
+| `candidate_pool` | shared-pool grad norm |
+|---|---|
+| `per_query` | 0.000e+00 |
+| `shared` | 8.890e+00 |
+
+— and `tools/lambda/pool_ab.sh` now aborts the run, before spending on a second arm, if an
+arm's log does not show a non-zero norm.
+
+**THE HANDICAP, which decides how a null is read.** Those shared-pool tensors receive no
+gradient under `per_query`, so a warm-started shared arm begins from a freshly-initialised
+pool while the control begins fully trained. A POSITIVE is therefore strong; a null at
+matched steps is uninformative, which is why a `shared-long` arm at double the samples runs
+beside it.
 
 ### Option 2 — extend `joint_ie`'s typed constraints to event roles.
 

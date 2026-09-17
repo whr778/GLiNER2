@@ -359,7 +359,7 @@ Easy to conflate, so stated separately (checked 2026-09-17):
 | component | gradient? | verdict |
 |---|---|---|
 | **Hungarian matching** (record loss) | **yes, flows** | correct |
-| **`shared_pool_builder`** under `candidate_pool: per_query` | no — never called in the loss | by design |
+| **`shared_pool_builder`** under `candidate_pool: per_query` | no — never called in the loss | by design; measured 0.000e+00 grad norm against 8.890e+00 under `shared`, and that pair is the A/B's gate |
 | **the joint beam** (`decode_mode: joint`) | no — eval-time only | by design, but see below |
 
 **Hungarian is implemented correctly** and is worth checking rather than assuming, because
@@ -371,9 +371,28 @@ non-differentiable and is supposed to be; the loss it selects is not. Standard D
 
 **`shared_pool_builder` gets no gradient under `per_query` simply because nothing calls it in
 the loss** — its only other call site is behind `if diagnostics:` and feeds stats. Its 64
-tensors sit at initialisation in every `per_query` checkpoint, which is why `candidate_pool` is
-in `_STRUCTURAL_BOUNDARY_KEYS` and cannot be swept at eval: doing so would score untrained
-weights and read as a catastrophic result rather than a null.
+tensors sit at initialisation in every `per_query` checkpoint.
+
+**That fact was misfiled for months, and the correction is worth stating precisely, because
+the two claims it ran together are both real and only one of them applies.**
+
+*It cannot be swept at EVAL* — true, and unchanged. Flipping the flag over a trained
+checkpoint scores freshly-initialised weights and reads as catastrophic when the honest
+answer is "untrained". `candidate_pool` is correctly absent from `_EVAL_TIME_BOUNDARY_KEYS`
+and stays absent.
+
+*It is STRUCTURAL* — **false**, and it was listed as such, which blocked the only legitimate
+way to ask the question: TRAIN an arm with the flag on. Measured 2026-09-17 by building the
+head both ways — 340 tensors under `per_query`, 340 under `shared`, none added, removed or
+reshaped. The module is constructed unconditionally at `model.py:246`, and the comment there
+says exactly that. A flag whose tensors are in every checkpoint cannot be structural; the
+sentence this paragraph used to end with contained its own refutation.
+
+The confusion is a general one and worth naming: **"changes the shapes" and "invalidates a
+warm start scientifically" are different properties, and only the first belongs in a guard
+that exists to prevent a state-dict mismatch.** An untrained submodule is a handicap to
+report, not a load error to refuse. The cost of collapsing them was one A10 hour on an A/B
+whose treatment arms never started.
 
 **The joint beam is the interesting one.** It decodes JOINTLY over candidate scores trained
 GREEDILY — nothing in training ever optimises for the beam's constraint satisfaction, so the
