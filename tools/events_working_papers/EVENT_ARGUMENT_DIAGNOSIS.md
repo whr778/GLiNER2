@@ -1016,10 +1016,30 @@ What CUDA adds is **bf16 autocast**: the GPU log shows `shared_pool_scorer.lengt
 taking a finite fp32 input and returning bf16, i.e. the path runs under autocast, and the CPU
 runs did not.
 
-**The remaining question is one arm wide:** run the shared arm on GPU with `bf16: false`. If it
-survives, the fault is autocast in that path's backward and the fix is a targeted
-`autocast(enabled=False)` around the offending op; if it still diverges, the shared pool has a
-genuine backward bug independent of precision. Another ~$0.35.
+**ANSWERED 2026-09-17 (A100, ~2 minutes). IT IS A PRECISION FAULT, NOT A PATH FAULT.**
+
+| precision | step 0 | step 1 | steps 2-4 |
+|---|---|---|---|
+| **fp32** | clean, shared grad 5.90 | clean, 2.45 | clean -- 7.52, 5.62, 3.85; ZERO non-finite parameters throughout |
+| **bf16** | clean, shared grad 6.57 | **grad `nan`, 225 parameters poisoned** | model destroyed |
+
+**`candidate_pool: shared` is sound. bf16 autocast breaks its backward**, and it does so at
+step 1 with a finite forward, which is why every single-step and every CPU repro missed it.
+
+Two consequences, and the second is the one that changes what to do:
+
+1. The fix is a targeted `autocast(enabled=False)` around the offending op in the shared-pool
+   backward -- but the op still has to be named, which needs a backward-side instrument
+   (`register_full_backward_hook`) rather than the forward hooks used so far.
+2. **The treatment can only train in fp32 today, which makes the existing `perquery` arm
+   unusable as its control** -- that arm is bf16 AND ran on an A10, so it confounds precision
+   and card with the thing under test. It is kept as a rough reference only. A `perquery-fp32`
+   control now runs on the same box, same precision, same data, same steps.
+
+**Why an fp32 A/B is worth ~50 minutes even though fp32 is not shippable:** it decides whether
+the bf16 bug is worth fixing at all. If `shared` is a wash even in fp32, the autocast fix buys
+nothing and this option closes; if it wins, the fix is justified and the real bf16 comparison
+follows.
 
 **The standing reading of this, until it is resolved:** `candidate_pool: shared` has never
 been trained in this project — checked, not assumed. The guard only ever blocked the
