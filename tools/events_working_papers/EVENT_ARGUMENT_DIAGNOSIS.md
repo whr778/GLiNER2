@@ -981,6 +981,28 @@ with events, which today means casie alone at 798 documents. Option 4 MANUFACTUR
 coexistence for cmnee, duee, rams and casualty_events — so it is also the enabler for the other
 two, not merely an alternative to them.
 
+**BUT OPTION 2 HAS A CIRCULARITY TRAP, and it constrains how option 4 must label.** Option 2's
+value is constraining "role R is filled by entity type T" where T is determined INDEPENDENTLY.
+If option 4 derives the entity label FROM the role (`Victim` role -> `Victim` entity label),
+then "`Victim` role <- `Victim` entity" is a tautology: it runs and teaches nothing. The two
+guards pull against each other —
+
+| labelling choice | safe? | enables option 2? |
+|---|---|---|
+| keep the role name as the label | yes, deterministic by construction | **no, tautological** |
+| map onto a real NER taxonomy | **no** — `Victim` -> Person 41% / Org 35% / System 12% | yes |
+
+The casie measurement resolves it: **roles whose NAME IS A TYPE NAME are deterministic** —
+`Time` -> Time 100%, `Vulnerability` -> Vulnerability 99%, and `location` (53,779) and `Date`
+(41,812) are the high-volume cases. **Roles naming a semantic FUNCTION are not** — `Victim`,
+`Attacker`, `Subject`, `Object`. So map the type-named roles onto the canonical taxonomy and
+keep the function-named ones as role labels; option 2 then gets real constraints over the
+deterministic subset, which is also the largest by volume.
+
+**And option 2 has a second route that does not need option 4 at all:** use the model's
+PREDICTED entity types as the type signal instead of gold — option 3's mechanism feeding option
+2's constraint. That works on cmnee today, with no data derivation.
+
 ### The ceiling on options 1-3, and why option 4 is not bound by it
 
 `event_argument` relaxed recall is 0.42 and strict 0.30, so roughly a third of the loss is
