@@ -941,6 +941,42 @@ pool while the control begins fully trained. A POSITIVE is therefore strong; a n
 matched steps is uninformative, which is why a `shared-long` arm at double the samples runs
 beside it.
 
+**ATTEMPT TWO (2026-09-17): THE TREATMENT APPLIED AND THE PATH DIVERGES.** With the guard
+narrowed, both arms started, the gate read the shared pool as live — 64 tensors receiving
+gradient — and the gradient was **`nan`**. Both arms then died identically:
+
+    [pool] candidate_pool=shared  shared-pool grad norm nan over 64 tensor(s)
+    FloatingPointError: 196 non-finite micro-batch loss(es) were zeroed
+
+**196 is 49 optimizer steps x 4 accumulation — every micro-batch, from the first.** This is
+not data-dependent, not a rare sample, and not the numerical-instability signature the event
+line has seen before (sdpa+bf16 on mmBERT): FA2 was confirmed loaded at bootstrap and
+`GLINER2_STRICT_ATTN=1` was set, so the known NaN cause is excluded.
+
+**What has been ruled out, all locally and free:**
+
+| repro | result |
+|---|---|
+| tiny head, fp32 and bf16 | finite, shared-pool grad 7.6 |
+| checkpoint's real settings, random weights | finite |
+| checkpoint's TRAINED weights, fp32 | finite |
+| trained weights, bf16, 512 tokens | finite |
+| trained weights + REAL cmnee records through the real collator, `event_records: true` | **finite** (per_query 1.73, shared 4.16) |
+| the checkpoint's 64 shared-pool tensors | all finite, absmax ~0.09 |
+
+So the divergence needs something still untested — the strongest remaining candidates are
+bf16 **autocast** on CUDA (the runs used `bf16: true`, which is autocast, not a `.to()`), and
+negative-label injection, which was active in both arms and in none of the repros.
+
+**The standing reading of this, until it is resolved:** `candidate_pool: shared` has almost
+certainly never been trained in this project. The flag is reachable, its modules are built
+and saved in every checkpoint, and the architecture paper documents it as an option — but
+being listed as structural meant no training run could ever select it, so nothing exercised
+its backward pass. The loss is 2.4x the control's on identical CPU input, which is consistent
+with an untrained module and tells us nothing about whether it would converge. **Option 1 is
+therefore not "unswept"; it is unimplemented in practice**, and pricing it means debugging a
+path with no training history, not running a config flag.
+
 ### Option 2 — extend `joint_ie`'s typed constraints to event roles.
 
 The machinery already exists **for relations**: `relation_specs` carry `head`/`tail` entity-type

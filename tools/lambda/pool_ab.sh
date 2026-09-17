@@ -48,7 +48,10 @@ for arm in $ARMS; do
   echo "[pool] $arm rc=${PIPESTATUS[0]}"
 
   # THE GATE. Read it from the arm's own log, before anything else is believed.
-  GRAD=$(grep -o "shared-pool grad norm [0-9.e+-]*" "$OUT/$arm.log" | tail -1 | awk '{print $NF}')
+  # `[0-9.e+-]*` DID NOT MATCH `nan`, so the capture returned the literal word `norm` and
+  # the zero-check below could not fire. Measured on the first run: the gate printed
+  # `grad norm = norm` while the real value was nan. Capture whatever the field holds.
+  GRAD=$(grep -o "shared-pool grad norm [^ ]*" "$OUT/$arm.log" | tail -1 | awk '{print $NF}')
   echo "[pool] GATE $arm: shared-pool grad norm = ${GRAD:-<ABSENT>}"
   cp "out/pool-$arm/test_metrics.json" "$OUT/$arm.json" 2>/dev/null \
     || echo "[pool] NO METRICS for $arm"
@@ -61,6 +64,14 @@ for arm in $ARMS; do
       echo "[pool] *** THE TREATMENT DID NOT APPLY ($arm) -- shared pool carries no"
       echo "[pool] *** gradient. This arm is a duplicate of the control and the A/B is"
       echo "[pool] *** void. Not starting any further arm."
+      RESCUE=1
+      break;;
+    *nan*|*inf*|*NaN*|*Inf*)
+      # A NON-FINITE norm is not a null and not a small effect -- it is a broken arm, and
+      # it is what BOTH arms produced on 2026-09-17. Stop for the same reason as zero.
+      echo "[pool] *** NON-FINITE SHARED-POOL GRADIENT ($arm): $GRAD"
+      echo "[pool] *** The shared path is diverging, not underperforming. Not starting"
+      echo "[pool] *** any further arm -- there is nothing to compare."
       RESCUE=1
       break;;
   esac

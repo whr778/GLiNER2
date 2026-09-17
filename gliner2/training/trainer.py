@@ -1657,6 +1657,13 @@ class ExtractorTrainer:
         if getattr(self, "_pool_gradient_noted", False):
             return
         self._pool_gradient_noted = True
+        # SPAN models have no boundary head, and `nn.Module.__getattr__` RAISES rather than
+        # returning None -- so this must be a getattr with a default on the attribute itself,
+        # not on one of its fields. Reaching straight for `self.model.boundary_settings` broke
+        # every span training test with `'GLiNER2' object has no attribute`.
+        settings = getattr(self.model, "boundary_settings", None)
+        if settings is None:
+            return
         total = 0.0
         found = 0
         for name, param in self.model.named_parameters():
@@ -1664,7 +1671,7 @@ class ExtractorTrainer:
                 continue
             found += 1
             total += float(param.grad.detach().float().norm() ** 2)
-        pool = getattr(self.model.boundary_settings, "candidate_pool", "?")
+        pool = getattr(settings, "candidate_pool", "?")
         logger.info(
             "[pool] candidate_pool=%s  shared-pool grad norm %.3e over %d tensor(s)",
             pool, total ** 0.5, found,
