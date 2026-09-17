@@ -17,24 +17,73 @@ WordSplitter = Callable[[str, bool], Iterator[Tuple[str, int, int]]]
 WordSplitterSpec = Union[str, WordSplitter, type]
 
 
+# Scripts written without whitespace word delimiters. Each character is its own token,
+# because a run of them would otherwise become ONE token and no entity span inside it could
+# ever align -- `_find_sublist` matches token SUBSEQUENCES, so `美国` cannot be found inside
+# a single `中国国家主席访问美国` token. Defined once and interpolated; the ranges used to be
+# repeated three times inside one pattern, which is how the extension blocks below came to be
+# missing from it.
+_CJK_RANGES = (
+    "\u4e00-\u9fff"      # CJK Unified Ideographs
+    "\u3400-\u4dbf"      # CJK Unified Ideographs Extension A
+    "\uf900-\ufaff"      # CJK Compatibility Ideographs
+    "\U00020000-\U0002a6df"  # Extension B -- outside the BMP
+    "\U0002a700-\U0002ebef"  # Extensions C-F
+    "\u3040-\u309f"      # Hiragana
+    "\u30a0-\u30ff"      # Katakana
+    "\u31f0-\u31ff"      # Katakana Phonetic Extensions
+    "\uff66-\uff9d"      # Halfwidth Katakana
+    "\u3100-\u312f"      # Bopomofo
+    "\uac00-\ud7af"      # Hangul Syllables
+    "\u1100-\u11ff"      # Hangul Jamo
+    "\u3130-\u318f"      # Hangul Compatibility Jamo
+)
+
+# Combining marks (Unicode Mn/Mc) are NOT word characters to `re`, so a bare `\w+` run
+# breaks at every one of them and leaves the mark stranded as its own token: `สวัสดี`
+# tokenized to ['สว', 'ั', 'สด', 'ี'], which is worse than a coarse split because the mark
+# is severed from the base character it modifies. Listing the ranges for the scripts that
+# actually carry them keeps a word and its marks in one token.
+_MARK_RANGES = (
+    "\u0300-\u036f"      # Combining Diacritical Marks (NFD Latin/Greek/Cyrillic)
+    "\u0483-\u0489"      # Cyrillic
+    "\u0591-\u05bd\u05bf\u05c1-\u05c2\u05c4-\u05c5\u05c7"  # Hebrew
+    "\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06dc"          # Arabic
+    "\u0900-\u0903\u093a-\u094f\u0951-\u0957\u0962-\u0963"  # Devanagari
+    "\u0e31\u0e34-\u0e3a\u0e47-\u0e4e"                          # Thai
+    "\u0eb1\u0eb4-\u0ebc\u0ec8-\u0ecd"                          # Lao
+    "\u17b4-\u17d3"      # Khmer
+    "\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20f0\ufe20-\ufe2f"  # further combining blocks
+)
+
+
 class WhitespaceTokenSplitter:
     """Fast regex-based tokenizer for text splitting.
 
-    CJK characters (Chinese/Japanese/Korean) are each matched as individual
-    tokens so that span matching works correctly for languages without spaces.
-    The non-CJK word pattern explicitly excludes CJK ranges so that adjacent
-    Latin and CJK characters are not merged into a single token. ``CharLevelSplitter``
-    below remains available for fully character-level languages.
+    Characters from scripts without whitespace delimiters (Chinese, Japanese, Korean) are
+    each matched as an individual token, so a span inside them can align. The non-CJK word
+    alternation explicitly EXCLUDES those ranges, so adjacent Latin and CJK do not merge --
+    ``Apple公司`` is ``['Apple', '公', '司']``, not one token.
+
+    Combining marks stay attached to the character they modify rather than becoming separate
+    tokens. ``CharLevelSplitter`` below remains available for fully character-level use, but
+    note it fragments URLs and emails, which this splitter keeps intact.
+
+    KNOWN LIMIT: Thai, Lao and Khmer are written without spaces but their words are
+    multi-character, so a run still becomes a single token here. Correct segmentation needs a
+    dictionary, not a regex. Marks are no longer severed from their base, which is the part a
+    regex can get right.
     """
 
     __slots__ = ()
 
     _PATTERN = re.compile(
-        r"""(?:https?://[^\s]+|www\.[^\s]+)
-        |[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}
+        rf"""(?:https?://[^\s]+|www\.[^\s]+)
+        |[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{{2,}}
         |@[a-z0-9_]+
-        |[一-鿿㐀-䶿぀-ゟ゠-ヿ가-힯]
-        |[^\W一-鿿㐀-䶿぀-ゟ゠-ヿ가-힯]+(?:[-_][^\W一-鿿㐀-䶿぀-ゟ゠-ヿ가-힯]+)*
+        |[{_CJK_RANGES}][{_MARK_RANGES}]*
+        |(?:[^\W{_CJK_RANGES}]|[{_MARK_RANGES}])+
+         (?:[-_](?:[^\W{_CJK_RANGES}]|[{_MARK_RANGES}])+)*
         |\S""",
         re.VERBOSE | re.IGNORECASE,
     )
