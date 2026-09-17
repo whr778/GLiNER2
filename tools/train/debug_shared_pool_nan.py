@@ -75,6 +75,28 @@ def _all_finite(obj):
     return all(bool(torch.isfinite(t).all()) for t in ts)
 
 
+def install_backward_hooks(model, found):
+    """Flag the first module whose INPUT gradient is non-finite while its OUTPUT gradient is finite.
+
+    The forward hooks are blind here: the forward is finite and only the backward diverges. In
+    a backward pass gradients flow output -> input, so the module that MANUFACTURED the NaN is
+    the one handed a clean grad_output and returning a dirty grad_input. Everything upstream of
+    it then reports non-finite too, which is why "has a NaN gradient" names 225 parameters and
+    localizes nothing.
+    """
+    def make(name, mod):
+        def hook(_m, grad_input, grad_output):
+            if _all_finite(grad_output) and not _all_finite(grad_input):
+                found.append((name, type(mod).__name__, grad_input, grad_output))
+        return hook
+
+    handles = []
+    for name, mod in model.named_modules():
+        if name:
+            handles.append(mod.register_full_backward_hook(make(name, mod)))
+    return handles
+
+
 def install_hooks(model, found):
     """Flag every module that turns finite inputs into a non-finite output."""
     def make(name, mod):
@@ -178,8 +200,20 @@ def main():
             opt.zero_grad(set_to_none=True)
             # The backward is where the fault lives, so it runs under the same backend
             # selection as the forward.
+            bfound = []
+            bhandles = install_backward_hooks(model, bfound)
             with _sdpa_ctx(args.sdpa_backend):
                 loss.backward()
+            for h in bhandles:
+                h.remove()
+            if bfound:
+                print(f"[dbg] {len(bfound)} module(s) MANUFACTURED a non-finite GRADIENT:")
+                for name, cls, gi, go in bfound[:6]:
+                    print(f"[dbg]   BACKWARD MODULE {name}  ({cls})")
+                    for i, t in enumerate(t for t in _tensors(go) if isinstance(t, torch.Tensor)):
+                        print(f"[dbg]      grad_out[{i}] {_stats(t)}")
+                    for i, t in enumerate(t for t in _tensors(gi) if isinstance(t, torch.Tensor)):
+                        print(f"[dbg]      grad_in[{i}]  {_stats(t)}")
             bad = [n for n, p in model.named_parameters()
                    if p.grad is not None and not bool(torch.isfinite(p.grad).all())]
             sp = sum(float(p.grad.detach().float().norm() ** 2)
