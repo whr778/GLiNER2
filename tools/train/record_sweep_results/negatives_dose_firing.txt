@@ -1,0 +1,14 @@
+[type-fp] 300 documents, FULL menu of 8 event types (gold menus average 1.41 types/doc), threshold 0.3
+
+checkpoint                  precision   recall      F1  invented  predicted
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+Fetching ... files: 0it [00:00, ?it/s]Fetching ... files: 8it [00:00, 27526.20it/s]
+[transformers] You do not have `flash_attn` installed, using `kernels-community/flash-attn2` from the `kernels` library instead!
+[records] compiled 40 field spec(s): 8 scalar, 32 list; 0 of 1 schema(s) declared field dtypes
+lo                             0.5403   0.9669  0.6932       348        757
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+half                           0.5977   0.9622  0.7373       274        681
+[transformers] You are using a model of type `extractor` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+wlo                            0.5823   0.9622  0.7255       292        699
+
+precision here is what the blind test reports as 1.0000 by construction.

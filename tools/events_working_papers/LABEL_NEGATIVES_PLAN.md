@@ -588,6 +588,66 @@ dose; the question is the smallest dose that keeps it.
 
 ---
 
+## 5e. THE DOSE SWEEP: the active ingredient is `events: 1`, and the trade cannot be tuned away
+
+Three arms against the control and BASE already measured on the same split. Blind test
+(cmnee+casie), deltas against BASE:
+
+| arm | dose | argF1 | argP | argR | trigF1 | entF1 |
+|---|---|---:|---:|---:|---:|---:|
+| control | none | **+0.0547** | +0.0169 | **+0.0719** | +0.0016 | **+0.0588** |
+| `lo` | entities 1 | **+0.0545** | +0.0130 | **+0.0741** | −0.0004 | +0.0476 |
+| `half` | entities 1, events 1 | +0.0304 | **+0.0633** | +0.0158 | **+0.0129** | +0.0391 |
+| full | ent 2, evt 1, rel 1 | +0.0326 | **+0.0663** | +0.0176 | **+0.0141** | +0.0300 |
+| `wlo` | full, abstention weight 0.1 | +0.0346 | **+0.0661** | +0.0201 | +0.0119 | +0.0289 |
+
+Absent-type firing (cmnee, n=300, full menu):
+
+| arm | precision | recall | F1 | types invented |
+|---|---:|---:|---:|---:|
+| base | 0.4669 | 0.9669 | 0.6297 | 467 |
+| control | 0.5310 | 0.9716 | 0.6867 | 363 |
+| `lo` | 0.5403 | 0.9669 | 0.6932 | 348 |
+| **`half`** | **0.5977** | 0.9622 | **0.7373** | **274** |
+| full | 0.5882 | 0.9622 | 0.7300 | 285 |
+| `wlo` | 0.5823 | 0.9622 | 0.7255 | 292 |
+
+### Three findings, and they are unusually clean
+
+**1. `events: 1` IS THE ACTIVE INGREDIENT. Entity negatives alone do nothing.** `lo` is
+indistinguishable from the control on every event head — argF1 0.3515 against 0.3517, argP
+0.3930 against 0.3969 — and its firing precision (0.5403) barely beats the control's (0.5310).
+Offering absent ENTITY labels does not teach a model to reject absent EVENT types, which in
+hindsight is obvious and was worth a measurement rather than an assumption.
+
+**2. DOSE BEYOND `events: 1` BUYS NOTHING.** `half`, full and `wlo` are within 0.004 of each
+other on argument precision (0.4432 / 0.4462 / 0.4460) and within 0.012 on firing precision.
+Doubling entity negatives, adding relation negatives, and halving the abstention weight all
+move nothing. **`{entities: 1, events: 1}` is the minimum effective dose** — and it is
+marginally the BEST on the acceptance metric (0.5977, 274 inventions).
+
+**3. THE TRADE IS INHERENT, NOT A DOSE ARTEFACT.** Every arm carrying event negatives shows
+the same shape: roughly **4x the precision gain (+0.065 against +0.015) for about a quarter of
+the recall gain (+0.017 against +0.073)**, netting lower argument F1 (+0.031 against +0.055).
+It cannot be tuned away by lowering the dose or the gate weight — those were the two levers
+and neither moves it.
+
+### So the decision is a preference, not a bug
+
+Negatives buy **precision and rejection**; they cost **recall and argument F1**. Nothing here
+is broken and nothing is recoverable by tuning. Choose on the application:
+
+- **EKF / cross-document tracking: take the negatives.** An invented event type becomes a
+  spurious track, and 274 inventions against 363 is a direct reduction in the failure that
+  costs most downstream.
+- **Maximising argument F1 on a benchmark: do not.** The control is +0.0547 against the
+  treatment's +0.0304.
+
+Recommended if adopted: `negative_labels_per_dim: {entities: 1, events: 1}`, default
+`abstention_loss_weight` 0.2 (halving it changed nothing).
+
+---
+
 ## 6. Sequencing
 
 The event-base blind test lands first: model report, then the comparable 18,786-record eval
