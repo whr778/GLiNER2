@@ -1218,11 +1218,15 @@ def _note_negative_queries(available: int, selected: int) -> None:
     _NEGATIVE_QUERY_SEEN += available
     _NEGATIVE_QUERY_SELECTED += selected
     _NEGATIVE_QUERY_CALLS += 1
-    if _NEGATIVE_QUERY_CALLS % 200 == 1:
+    # BACKOFF, not a fixed interval. Every 200 batches was calibrated for a 1,260-step A/B
+    # and produced 658 lines -- 96% of all INFO output -- across a 130,601-batch base run,
+    # burying the 12 real warnings. A gate needs to prove it fired and then be quiet.
+    n = _NEGATIVE_QUERY_CALLS
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
         logger.info("negative queries: %d absent available, %d selected into the pair loss, "
                     "cumulative over %d batches (0 available means the schema carries no "
                     "absent labels)",
-                    _NEGATIVE_QUERY_SEEN, _NEGATIVE_QUERY_SELECTED, _NEGATIVE_QUERY_CALLS)
+                    _NEGATIVE_QUERY_SEEN, _NEGATIVE_QUERY_SELECTED, n)
 
 
 class BoundaryExtractorModel(BaseExtractorModel):
