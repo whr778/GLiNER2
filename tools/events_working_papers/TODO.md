@@ -296,6 +296,39 @@ mid-flight.
 
 ---
 
+## STATUS 2026-09-17 — label negatives, measured end to end
+
+**The feature is built, measured, and running in a base rebuild.** Full detail in
+[[LABEL_NEGATIVES_PLAN]]; the short version:
+
+- **The machinery was already there and starved.** `negative_query_ratio` (0.5),
+  `abstention_loss` (0.2) and `count_loss` (0.2) all act on ABSENT queries, and there were
+  **0 of 574** in a real training batch — the menu was built from the answer key. Classification
+  was the sole head with real negatives, which is why its precision is real where
+  `event_type`'s is 1.0000 by construction.
+- **`events: 1` is the whole active ingredient.** An arm with entity negatives ALONE was
+  indistinguishable from the control (argF1 0.3515 vs 0.3517). Dose beyond
+  `{entities: 1, events: 1}` moved argument precision by <0.004, and halving
+  `abstention_loss_weight` moved nothing.
+- **What it buys:** type-rejection precision **0.5977 vs 0.5310**, invented types **274 vs 363**,
+  argument precision **+0.065 vs +0.015** over base, trigger **+0.013 vs +0.002**.
+- **What it costs:** ~a quarter of the recall gain, so argument F1 **+0.031 vs +0.055**.
+  **The trade is inherent** — the two available levers do not move it.
+- **Two false alarms retracted by measurement:** no catastrophic forgetting (entity **+0.069**
+  over base, not degrading) and recall was never lost (**+0.003** over base, a smaller gain).
+  Both were written up before the base reference existed.
+
+### Open, in priority order
+
+1. **Read the base rebuild** (`whr778/gliner2-eb16-eventrecords-neg`) against
+   `eb16-eventrecords-tr` on the identical 20,602-record test. At epoch 2 trigger F1 has
+   already crossed ahead (0.3000 vs 0.2955) with precision **+0.124**; argument still trails.
+   Early epochs are NOT predictive — the previous run's epoch 3 went backwards on arguments.
+2. **Link NER to event arguments** — three options costed in EVENT_ARGUMENT_DIAGNOSIS §4k.
+   Cheapest first: `candidate_pool: shared` is an existing config flag never swept on this line.
+3. **Fix the option-3 prototype**: the filter must hook into `compute_metrics`, not
+   `extract_events` — the two decode paths differ by ~20x in arguments returned on casie.
+
 ## P0 — blocks the next experiment
 
 ### 0.2. `record_anchor_threshold` defaults to 0.5, which no model can use well

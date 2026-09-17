@@ -84,6 +84,28 @@ published RAMS recipe scored +0.023 above it from the re-run alone. Any curve cl
 needs at least two seeds per point before it is quoted, and several earlier readings of
 this programme's own curves did not meet that bar.
 
+### 2f. Label negatives, and what a gold-derived menu hides (2026-09-17)
+
+**Established.** Training and evaluation both built their label menu from each document's own
+gold, so no head except classification was ever shown a label it had to reject. Measured: **0
+absent queries in 574** from a real training batch, while `negative_query_ratio`,
+`abstention_loss` and `count_loss` — all live in every model this programme has trained — acted
+on exactly that empty set.
+
+The consequence is a metric identity rather than a measurement: `event_type` has no span to get
+wrong, so a gold menu pins its precision at **1.0000** and `F1 = 2R/(1+R)` exactly, confirmed on
+12 of 12 readings. Against a real taxonomy the same model scores precision **0.5521**, and
+against a menu of only ABSENT types it fires on **63 of 100 documents**.
+
+Supplying absent labels is a genuine but bounded lever, and the trade is inherent rather than
+tunable: roughly **4x the argument-precision gain for a quarter of the recall gain**, with
+invented types down **363 → 274**. Two levers were tried against it — lowering the dose and
+halving the abstention weight — and neither moved it.
+
+**Method consequence, now a rule:** *the menu is part of a metric's identity* (METRICS.md). A
+precision figure from a schema-driven task is uninterpretable without stating what the model
+was offered.
+
 ## 3. What is not established
 
 **The central question is now asked and answered — and the specified design was the wrong

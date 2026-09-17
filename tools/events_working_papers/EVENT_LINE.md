@@ -171,6 +171,22 @@ error in its own analysis.
 individuated **by span, not by type**. `event_records: true` achieves exactly that inside
 the record head — without a closed tag set, and without giving up the document.
 
+## 4h. What the negatives work changed about the risk register
+
+The register above was written when `event_argument` was the line's single point of failure.
+Measured since (LABEL_NEGATIVES_PLAN §5c-§5e):
+
+- **A NEW RISK, now retired: the model could not say no.** Given a schema of only ABSENT event
+  types the incumbent fired on **63 of 100 documents**, and its real full-menu `event_type`
+  precision was **0.5521** against the 1.0000 the blind test reports. Nothing in the standard
+  eval could express this, because training and eval shared the same gold-derived menu. Label
+  negatives cut invented types **363 → 274** and lifted rejection precision **0.5310 → 0.5977**.
+- **The argument ceiling is unchanged.** Negatives improve BINDING (precision) and not
+  EXTRACTION: relaxed argument recall 0.42 means a third of arguments are never proposed, and
+  no typing or rejection change recovers them. The §4i comparison stands.
+- **`event_type` must be quoted as RECALL.** Its precision is an identity of the gold menu, and
+  `F1 = 2R/(1+R)` in 12 of 12 readings on file.
+
 ## 4i. Three approaches, side by side
 
 | | **OneIE** (2020) | **JB / structures** (line 2) | **JB / events** (line 3) |
