@@ -248,13 +248,43 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             # the single-instance mention output.
             event_owners = _event_record_owners(batch, i)
             if joint:
-                # In joint mode records come out of the beam via role edges; running
-                # the record head too would double-emit them.
+                # The beam owns entities and relations; records come out of it via role
+                # edges, so running the record head over the SAME groups would double-emit.
                 sample.update(self._decode_joint(
                     batch, i, core, candidates, threshold, offset, start_map, end_map,
                     text, text_len, include_confidence, include_spans,
                     layout, specs,
                 ))
+                # EVENT groups are the exception, and `event_owners` was always computed for
+                # exactly this decision -- it just was not consulted here. Measured on
+                # eb16-eventrecords-tr, 60 cmnee documents (probe_beam_disagreement.py): the
+                # beam's role-edge path DROPPED 35 triggers and added ZERO, and was net -23
+                # correct items, because with `event_records: true` events ARE records and the
+                # early return meant `_decode_records` never ran for them. The decode-arms
+                # null that blessed joint mode was measured with `event_records` OFF, where
+                # this interaction cannot arise.
+                #
+                # So the record head reclaims the groups it owns, overwriting the beam's
+                # output for those names only. Everything else the beam produced stands.
+                if event_owners:
+                    owned = {spec.task_name: spec for spec in event_owners.values()}
+                    record_results = self._decode_records(
+                        batch, i, core, candidates, offset, start_map, end_map,
+                        text, text_len, include_confidence, include_spans,
+                        threshold=threshold,
+                        metadata=metadata_list[i],
+                        overlap_policy=overlap_policy,
+                    )
+                    for name, instances in record_results.items():
+                        owner = owned.get(name)
+                        if owner is None or not instances:
+                            continue
+                        anchor = next(
+                            (f.name for f in owner.fields if f.is_anchor), "trigger"
+                        )
+                        converted = _record_instances_to_events(instances, anchor)
+                        if converted:
+                            sample[name] = converted
                 self._decode_classifications(sample, batch, core, i)
                 return sample
 

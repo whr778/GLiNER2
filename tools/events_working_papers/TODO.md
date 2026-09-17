@@ -329,6 +329,33 @@ mid-flight.
 3. **Fix the option-3 prototype**: the filter must hook into `compute_metrics`, not
    `extract_events` — the two decode paths differ by ~20x in arguments returned on casie.
 
+## TRACKED, NOT DROPPED — a beam-aware / structured loss
+
+**Deferred on 2026-09-17 in favour of a cheaper fix, and explicitly kept.** The joint beam
+decodes over candidate scores trained GREEDILY: nothing in training optimises for the beam's
+constraint satisfaction, so the search is layered on scores that never knew it was coming.
+That is a genuine train/test mismatch and it is NOT what was fixed today.
+
+What WAS fixed was a plain bug sitting on top of it — joint mode skipped `_decode_records`, so
+with `event_records: true` it lost 35 triggers per 60 documents (net −23 correct items). That
+is repaired and pinned.
+
+**The evidence that the structured-loss question is still live**, from the same probe: where
+the beam SUBSTITUTES rather than deletes, the two arms are right at nearly the same rate —
+**41.4% greedy-only against 37.5% joint-only**. A coin flip is exactly what you see when the
+scores carry no information about which constraint-consistent assignment is correct. That is
+the half a beam-aware or structured loss would address, and no measurement here has touched it.
+
+**And a second symptom pointing the same way:** on biored (entities + relations, no events) the
+beam ADDS 143 entity predictions of which only **5 are correct** — 3.5% precision on what it
+contributes. The beam is making confident, constraint-consistent, wrong choices, which is the
+signature of scores that were never trained against the constraints.
+
+Candidate approaches, none evaluated: a structured hinge over the beam's assignment, a
+differentiable relaxation (Sinkhorn / SparseMAX) so the assignment carries gradient, or a
+cheaper constraint-violation penalty that needs no differentiable beam. **Re-open after the
+decode gap is confirmed fixed at scale.**
+
 ## P0 — blocks the next experiment
 
 ### 0.2. `record_anchor_threshold` defaults to 0.5, which no model can use well

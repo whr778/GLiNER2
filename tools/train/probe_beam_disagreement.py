@@ -72,6 +72,11 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--threshold", type=float, default=0.3)
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--any-doc", action="store_true",
+                    help="Do not require gold events. Needed to exercise the beam's OWN "
+                         "territory (entities + relations) on a corpus with no events -- "
+                         "otherwise the filter selects zero documents and the probe reports "
+                         "a vacuous null.")
     args = ap.parse_args()
 
     import torch
@@ -93,7 +98,9 @@ def main() -> int:
 
     recs = [json.loads(l) for l in Path(args.test).read_text(encoding="utf-8").splitlines()
             if l.strip()]
-    recs = [r for r in recs if (r.get("output") or {}).get("events")][:args.n]
+    if not args.any_doc:
+        recs = [r for r in recs if (r.get("output") or {}).get("events")]
+    recs = recs[:args.n]
     texts, schemas, golds = [], [], []
     for r in recs:
         sch = _schema_from_gold(r["output"])
@@ -133,7 +140,13 @@ def main() -> int:
           f"({100*gr/(gr+gw) if gr+gw else 0:.1f}%)")
     print(f"  joint-only items  : {jr+jw:>5}   of which RIGHT {jr:>5} "
           f"({100*jr/(jr+jw) if jr+jw else 0:.1f}%)")
-    print(f"\n  net for joint     : {jr-gr:+d} correct items")
+    # NOT just "net correct": an arm that adds 143 items of which 5 are right has gained 5
+    # correct and lost 138 to precision. Reporting the first without the second is the
+    # count-firings-not-hits failure this project has been caught by before.
+    print(f"\n  net correct for joint : {jr-gr:+d}   net WRONG for joint : {jw-gw:+d}")
+    if jr + jw:
+        print(f"  joint-only precision  : {jr/(jr+jw):.3f}"
+              + (f"   (greedy-only {gr/(gr+gw):.3f})" if gr + gw else ""))
     if by_task:
         print("\n  where they differ, by task:")
         for (task, side), n in sorted(by_task.items()):
