@@ -129,6 +129,41 @@ roles naming a semantic FUNCTION are not. So:
 
 Mapping happens in the **config**, never by rewriting corpora — the standing rule.
 
+### MEASURED 2026-09-17: six of cmnee's eleven roles COLLIDE with the base vocabulary
+
+The two-way split above was too coarse. The base's entity vocabulary is 1,943 labels, and
+**six of cmnee's eleven roles already exist in it** — so "keep the role name" is not the safe
+default it was assumed to be. Reading the surfaces each side actually tags, per the standing
+rule never to merge on string similarity:
+
+| role | base tags (text2json / paraloq_json) | cmnee tags | verdict |
+|---|---|---|---|
+| `Subject` | "Visual Arts", "Sacrifice of Isaac", "Phonics" — SUBJECT MATTER | 俄罗斯海军总司令部, 印度海军 — the ACTOR | **INCOMPATIBLE** |
+| `Object` | "water-jar", "small bowl", "Louisiana", "Hartford" | the thing acted upon | **INCOMPATIBLE** |
+| `Equipment` | "Pheromone dispensers", "kiln" | 海豹号核潜艇 (submarine) | doubtful — same word, different domain |
+| `Quantity` | "153 countries", "21 billion" | "21", "20" | compatible |
+| `Date` | dates | dates | compatible |
+| `Location` | places | places | compatible |
+
+Merging `Subject` would teach the model that "Visual Arts" and "Russian Navy Headquarters"
+are the same type, at loss weight, across 20,743 mentions — the single largest role in the
+corpus.
+
+**So the policy is THREE-way, not two:**
+
+1. **Type-named and compatible** → map onto the canonical taxonomy: `Date`, `Location`,
+   `Quantity`.
+2. **Function-named, no collision** → keep the role name: `Materials`, `Militaryforce`,
+   `Content`, `Result`, `Area`.
+3. **Colliding with a base label of DIFFERENT meaning** → must be renamed, never merged:
+   `Subject`, `Object`, and probably `Equipment`. A namespaced label (`EventSubject`,
+   or role-qualified) keeps the supervision without corrupting an existing type.
+
+**The general rule this establishes:** a derived label set must be diffed against the BASE's
+vocabulary and every collision adjudicated by reading surfaces, BEFORE generation. A collision
+is not evidence of agreement — it is the most dangerous case precisely because it looks like
+agreement, and nothing downstream will flag it.
+
 **Option 2 does not depend on this anyway.** It has a second route: use the model's PREDICTED
 entity types as the type signal instead of gold, which works on cmnee today with no data
 derivation.
