@@ -1039,6 +1039,45 @@ far stronger basis for option 2 than either alone, and it says the constraint sh
 PER ROLE rather than globally: enforce it where the role is type-named, leave it off where it
 is function-named.
 
+### SWEPT AT 800 DOCUMENTS: the route is NEGATIVE, and the pilot had no baseline
+
+The 120-document pilot above reported "+0.049 precision" and was **wrong about the
+conclusion**. Swept properly — four menus x three filters, 800 cmnee documents, same eval path:
+
+| menu | filter | P | R | **F1** |
+|---|---|---:|---:|---:|
+| **none (baseline)** | — | 0.5430 | **0.2495** | **0.3419** |
+| minimal 6 | none | 0.5875 | 0.1639 | 0.2563 |
+| minimal 6 | global | 0.6684 | 0.0259 | 0.0498 |
+| curated 14 | none | 0.5835 | 0.1591 | 0.2500 |
+| curated 14 | global | 0.6543 | 0.1277 | 0.2136 |
+| wide 28 | none | 0.5967 | 0.1724 | 0.2675 |
+| wide 28 | global | 0.6632 | 0.1202 | 0.2035 |
+| wide 28 | per-role | 0.5928 | 0.1506 | 0.2402 |
+
+**No menu and no filter beats the baseline.** The best menu configuration is −0.074 F1.
+
+**FINDING 1 — merely ADDING an entity menu cannibalises argument extraction.** Recall falls
+0.2495 -> 0.16-0.17, a 30-35% relative loss, BEFORE any filter. Precision rises a little
+(0.543 -> 0.59) and F1 falls hard. Offering entity queries beside event queries competes for
+candidate budget, which is exactly what **`candidate_pool: shared` (option 1)** addresses — so
+this raises option 1's value rather than lowering it.
+
+**FINDING 2 — the pilot had no baseline, and that is the error.** It compared filter-on against
+filter-off WITHIN the menu condition and never against no-menu at all. The menu was costing a
+third of recall the whole time, invisibly, because only the expected comparison was
+instrumented. **This is the second time in two days that a result looked positive because the
+control was absent** (the other: the negatives A/B, until §5d's base reference). The rule worth
+keeping: **when an intervention has two parts — add a menu, then filter on it — the baseline is
+NEITHER, not the first part.**
+
+**What survives.** The correlation is real: 88% of correct arguments carry a predicted type
+against 68% of wrong ones, and `Location`/`Date` discriminate where `Subject` does not. The
+signal exists; under post-hoc filtering with `candidate_pool: per_query` it costs more than it
+returns. Two things would change the verdict and are NOT ruled out: a model **trained** with the
+constraint rather than filtered after the fact, and `candidate_pool: shared`, which targets the
+cannibalisation directly.
+
 ### The ceiling on options 1-3, and why option 4 is not bound by it
 
 `event_argument` relaxed recall is 0.42 and strict 0.30, so roughly a third of the loss is
