@@ -67,13 +67,26 @@ for arm in $ARMS; do
 
   # `0`, `0.000e+00` and an absent line all mean the same thing: the treatment did not
   # apply. Refuse to spend on the next arm rather than produce a second unreadable one.
+  # THE ZERO CHECK APPLIES TO TREATMENT ARMS ONLY. A control is SUPPOSED to read 0.000e+00
+  # -- that is precisely what makes it a control. Applying the check to every arm fired on
+  # `perquery` on 2026-09-17, declared a correct control "void", broke the loop before
+  # `shared-long` ran, and held an A100 idle. A gate that cannot tell a treatment from a
+  # control is not a gate; it is a second bug wearing the costume of the first.
+  case "$arm" in
+    perquery*) echo "[pool] (control arm -- zero is the expected reading)"; EXPECT_ZERO=1;;
+    *)         EXPECT_ZERO=0;;
+  esac
   case "${GRAD:-0}" in
     ""|0|0.0|0.000e+00|0.000000e+00)
-      echo "[pool] *** THE TREATMENT DID NOT APPLY ($arm) -- shared pool carries no"
-      echo "[pool] *** gradient. This arm is a duplicate of the control and the A/B is"
-      echo "[pool] *** void. Not starting any further arm."
-      RESCUE=1
-      break;;
+      if [ "$EXPECT_ZERO" -eq 1 ]; then
+        echo "[pool] control confirmed inert on the shared pool, as designed."
+      else
+        echo "[pool] *** THE TREATMENT DID NOT APPLY ($arm) -- shared pool carries no"
+        echo "[pool] *** gradient. This arm is a duplicate of the control and the A/B is"
+        echo "[pool] *** void. Not starting any further arm."
+        RESCUE=1
+        break
+      fi;;
     *nan*|*inf*|*NaN*|*Inf*)
       # A NON-FINITE norm is not a null and not a small effect -- it is a broken arm, and
       # it is what BOTH arms produced on 2026-09-17. Stop for the same reason as zero.
