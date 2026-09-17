@@ -38,7 +38,7 @@ model:
 training:
   output_dir: ./out/pool-shared-long
   experiment_name: pool_shared-long
-  num_epochs: 2
+  num_epochs: 4
   batch_size: 4
   gradient_accumulation_steps: 4
   encoder_lr: 5.0e-06
@@ -60,7 +60,12 @@ training:
   negative_pools: tools/train/config/labels/negative_pools.json
   negative_labels_per_dim: {}
   negative_label_seed: 42
-  max_train_samples: 26000
+  # NOT a raised `max_train_samples`. cmnee+casie train is 10,079 records, so BOTH
+  # 13000 and 26000 were above the corpus and neither bound: the two arms ran the
+  # IDENTICAL 10,079 records for 2 epochs and produced byte-identical failures,
+  # which read as reproduction across arms and was one run executed twice. Length
+  # has to come from epochs.
+  max_train_samples: 13000
 eval:
   batch_size: 8
   threshold: 0.3

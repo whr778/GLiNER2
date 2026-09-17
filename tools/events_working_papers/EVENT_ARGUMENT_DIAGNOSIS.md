@@ -953,6 +953,16 @@ not data-dependent, not a rare sample, and not the numerical-instability signatu
 line has seen before (sdpa+bf16 on mmBERT): FA2 was confirmed loaded at bootstrap and
 `GLINER2_STRICT_ATTN=1` was set, so the known NaN cause is excluded.
 
+**It is DETERMINISTIC, not reproduced — and the difference matters.** Both arms failing
+identically looked like two independent confirmations. They were one: cmnee+casie train is
+**10,079 records**, and the arms' `max_train_samples` of 13,000 and 26,000 are both ABOVE the
+corpus, so neither cap bound. Both trained the same 10,079 records for the same 2 epochs — the
+logs agree line for line, 1,260 optimizer steps each — so this is one configuration executed
+twice. `shared-long` was supposed to be the longer arm and never was; length has to come from
+`num_epochs`, and the config is corrected. A sample cap cannot manufacture samples the corpus
+does not contain, and a second arm that silently equals the first is the same class of defect
+as a treatment that silently equals its control.
+
 **What has been ruled out, all locally and free:**
 
 | repro | result |
@@ -964,12 +974,34 @@ line has seen before (sdpa+bf16 on mmBERT): FA2 was confirmed loaded at bootstra
 | trained weights + REAL cmnee records through the real collator, `event_records: true` | **finite** (per_query 1.73, shared 4.16) |
 | the checkpoint's 64 shared-pool tensors | all finite, absmax ~0.09 |
 
-So the divergence needs something still untested — the strongest remaining candidates are
-bf16 **autocast** on CUDA (the runs used `bf16: true`, which is autocast, not a `.to()`), and
-negative-label injection, which was active in both arms and in none of the repros.
+Three further candidates were then tested and all stayed finite:
 
-**The standing reading of this, until it is resolved:** `candidate_pool: shared` has almost
-certainly never been trained in this project. The flag is reachable, its modules are built
+| further repro | result |
+|---|---|
+| `gold_injection_prob = 1.0` (its value at step 0; `per_query` never calls the module at all) | finite |
+| bf16 **autocast** rather than `.to(bfloat16)` — what `bf16: true` actually does | finite |
+| the full **backward**, not just the forward | finite: shared grad 6.03, total 83.4 |
+
+Pool-based negative injection is excluded by configuration rather than by test: both arms set
+`negative_labels_per_dim: {}`, and `_negative_labels` treats an empty dict as disabled, so
+`NegativeLabels` never ran. The absent queries the log reports come from `negative_query_ratio`
+in the boundary settings, which the control had equally.
+
+**Every CPU-reachable variable is now finite, so the divergence is CUDA-side** and a Mac
+cannot bisect further. One observation worth carrying into that debug: the shared arm's total
+gradient norm is **83.4 against the control's 21.5**, about 4x, which is what an untrained
+module in the middle of a trained network should look like — suggestive, but not itself a NaN.
+
+**The decisive instrument is one single-arm debug run** with forward hooks on
+`shared_pool_builder` and `shared_pool_scorer` that raise on the first non-finite output. The
+NaN arrives at micro-batch 1, so it names the offending line within a minute: roughly 15
+minutes of A10, about $0.35, and it settles every remaining variable at once.
+
+**The standing reading of this, until it is resolved:** `candidate_pool: shared` has never
+been trained in this project — checked, not assumed. The guard only ever blocked the
+`pretrained` path, so a from-`encoder:` config could always have selected it; searching the
+whole config tree and all of git history for `candidate_pool: shared` returns only the three
+A/B configs written for this experiment on 2026-09-17. The flag is reachable, its modules are built
 and saved in every checkpoint, and the architecture paper documents it as an option — but
 being listed as structural meant no training run could ever select it, so nothing exercised
 its backward pass. The loss is 2.4x the control's on identical CPU input, which is consistent
