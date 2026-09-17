@@ -20,6 +20,11 @@
 # and this script ABORTS THE RUN if it does not -- including before spending on arm two.
 # Measured locally: per_query gives exactly 0.000e+00, shared gives 8.890e+00.
 #
+# THE bf16 NaN THAT BLOCKED THIS IS FIXED (losses.py: the consistency-loss clamp `1.0 - 1e-6`
+# rounds to exactly 1.0 in bf16, so it was a no-op and log1p(-1.0) gave an infinite gradient).
+# Verified on an A100: six bf16 steps, zero non-finite gradients, loss descending. So these
+# arms run in bf16 like the rest of the programme, and no fp32 variant is needed to compare.
+#
 # READING ORDER, decided in advance so it cannot be chosen to suit the result: `shared` is
 # matched-step and starts from an untrained pool, so a NULL there is uninformative and only
 # a POSITIVE counts. `shared-long` doubles the samples and is the arm that can produce a
@@ -33,7 +38,10 @@ export GLINER2_STRICT_ATTN=1   # FA2 is a CORRECTNESS requirement on mmBERT in b
 PY=./.venv/bin/python
 OUT=$HOME/pool_ab
 DEST=${DEST:-pool_ab}
-ARMS=${ARMS:-"shared shared-long"}
+# CONTROL INCLUDED, same box and same precision. The perquery arm from attempt one is bf16
+# but ran on an A10, so using it as this experiment's control would confound card with
+# treatment. It stays a rough reference only.
+ARMS=${ARMS:-"shared perquery shared-long"}
 RESCUE=0
 mkdir -p "$OUT"
 source tools/lambda/_publish.sh
