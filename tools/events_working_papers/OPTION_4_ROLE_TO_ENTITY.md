@@ -208,6 +208,42 @@ single largest role, `Subject` at 20,743, is unusable as a type. Option 4's head
 figure of 484,424 project-wide should be read as roughly a quarter of that until each corpus
 is adjudicated the same way, because nothing about cmnee is unusual here.
 
+### Can we skip the role labels and map roles DIRECTLY to NER types?
+
+Asked 2026-09-17. Two halves, and they answer differently.
+
+**Implementation half — yes.** The `labels_file` indirection exists so SOURCE corpora are never
+rewritten. A derived corpus is new data we author, so the converter may emit the canonical
+label directly (`Location`, not `Area`-then-remap). No rule is bent by that.
+
+**Substantive half — measured on 50 cmnee documents, 583 argument mentions, offering the base
+model a 12-label English menu and asking which type it assigns to each gold argument surface:**
+
+| role | n | model's verdict | agrees on type where it predicts |
+|---|---:|---|---|
+| `Subject` | 176 | **96.0% NOT PREDICTED AT ALL** | — |
+| `Date` | 138 | 66.7% not predicted | `Date` ×46 |
+| `Location` | 91 | 71.4% not predicted | `Location` ×25 |
+| `Quantity` | 57 | 94.7% not predicted | `Quantity` ×3 |
+| `Result`, `Object`, `Equipment`, `Materials` | 110 | 100% not predicted | — |
+
+**A direct map is right for the type-like roles and impossible for the rest — but not for the
+reason expected.** It is not that the model assigns a scattered type; it is that **the model
+does not propose these spans at all**, so there is no predicted type to map onto. Where it does
+predict, it agrees: `Date`→Date, `Location`→Location, `Quantity`→Quantity, which independently
+confirms the four DERIVE decisions above.
+
+**AND THIS IS THE STRONGEST EVIDENCE YET FOR OPTION 4'S THESIS.** 96% of `Subject` spans, 71%
+of `Location` spans and 67% of `Date` spans are human-annotated gold that the entity head never
+puts forward. That is the never-proposed third, measured directly rather than inferred from a
+recall figure — and it is exactly the gap extraction supervision is supposed to close.
+
+**Limits, stated because the number is quotable:** 50 documents; the offered menu is 12 English
+labels chosen by hand, not the model's trained vocabulary, so absolute rates would move with a
+better menu. `Date` and `Location` ARE canonical labels and still go unproposed two thirds of
+the time, so the effect is not an artefact of menu choice. A Chinese-language menu returns
+nothing at all, consistent with labels being an INPUT that must match the trained spelling.
+
 **This does not kill option 4, but it resizes it.** Deriving `Date`, `Location` and `Quantity`
 into a corpus with ZERO entity gold is still real extraction supervision, still attacks the
 never-proposed third, and is now known to be clean. It is simply a quarter of the lever the
