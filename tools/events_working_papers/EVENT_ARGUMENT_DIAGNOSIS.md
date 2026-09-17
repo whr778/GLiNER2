@@ -928,11 +928,70 @@ classifications together and yields ~20x more arguments on the same corpus. **Th
 to be hooked into `compute_metrics`, not layered over `extract_events`** — the two decode
 paths are not interchangeable, which is worth knowing independently of this feature.
 
-### The ceiling on all three
+### Option 4 — REMAP ROLES INTO THE NER SPACE, and inject argument spans as entities
+
+Proposed 2026-09-17. Options 1-3 all constrain BINDING — which span fills which role. This one
+**bypasses binding entirely**: an argument reframed as a typed span is extracted by the ENTITY
+head, needing no trigger link. Given that strict argument F1 is 0.10 against relaxed 0.59, and
+the gap IS binding, sidestepping it is a different and possibly larger lever than constraining
+it.
+
+**Precedent exists and is half of this already.** `tools/data/events_to_entities.py` maps
+`event_type -> entity label` using the TRIGGER surface, which is how `maven_ner` was built.
+Option 4 is the other half: `role -> entity label` using the ARGUMENT surface.
+
+**The supply is large, and concentrated where it is most needed.** 484,424 argument mentions
+across 953 distinct roles, including the corpora with NO entity gold at all:
+
+| corpus | argument mentions | distinct roles | docs with entity gold |
+|---|---:|---:|---:|
+| casualty_events | 124,561 | 4 | **0** |
+| cmnee | 62,573 | 11 | **0** |
+| duee | 28,875 | 121 | **0** |
+| rams | 17,026 | 65 | **0** |
+
+Top roles overall are already entity-shaped: `Subject` (60,255), `location` (53,779), `Date`
+(41,812), `Equipment` (24,043), `Object` (22,844).
+
+**THREE GUARDS, each from something already measured:**
+
+1. **PARTIAL ANNOTATION IS THE SERIOUS RISK.** Non-argument entities in those documents stay
+   unlabelled. With label negatives live, a derived corpus would be marked as annotating
+   entities and would draw entity negatives against gold it never annotated — precisely the
+   contradiction `build_negative_pools.py`'s within-dimension rule exists to prevent,
+   self-inflicted at scale. **The derived corpus must be flagged PARTIAL: a source of
+   positives, never of negatives.**
+2. **ROLE IS NOT ENTITY TYPE.** casie measures `Victim` -> Person 41%, Organization 35%,
+   System 12%. Mapping a polysemous role onto an existing NER type is wrong most of the time.
+   Keep the ROLE NAME as the label — deterministic by construction — and map only the clearly
+   entity-typed ones (`location` -> `Location`, `Date` -> `Date`) through `labels_file`, which
+   is what that machinery is for. This also keeps the rewrite out of the corpora, per the
+   standing rule to unify in the CONFIG.
+3. **INVENTED-LABEL CORPORA MUST NOT DRIVE IT.** `zh_multitask` shows **791** distinct roles
+   and `mix_natural` 156 — the "annotator invented labels per document" problem CLAUDE.md
+   already names. Only taxonomy corpora contribute, measured first.
+
+**And a precedent to avoid:** docee, chfinann, docfee and turkish_event were converted
+DESTRUCTIVELY — events replaced by entities plus classifications — which is why they train zero
+events today (§6). Option 4 must be ADDITIVE: a derived corpus alongside the original, never a
+replacement.
+
+**Why this is worth doing before options 2 and 3:** both of those need entity gold to coexist
+with events, which today means casie alone at 798 documents. Option 4 MANUFACTURES that
+coexistence for cmnee, duee, rams and casualty_events — so it is also the enabler for the other
+two, not merely an alternative to them.
+
+### The ceiling on options 1-3, and why option 4 is not bound by it
 
 `event_argument` relaxed recall is 0.42 and strict 0.30, so roughly a third of the loss is
-arguments **never proposed**. Typing constrains what IS proposed; it attacks the binding half,
-not the extraction half. None of these three can recover the missing third.
+arguments **never proposed**. Typing constrains what IS proposed; options 1-3 attack the
+binding half and none of them recovers the missing third.
+
+**Option 4 is the exception**, which is the argument for it: routing argument spans through the
+entity head adds EXTRACTION supervision rather than constraining binding, so it is the only one
+of the four that can move the never-proposed third. It also gives up the event grouping for
+those spans — a span extracted as an entity is not attached to an instance — so it is a
+complement to the record head, not a replacement for it.
 
 ## 5. What follows, in order
 
