@@ -992,10 +992,34 @@ cannot bisect further. One observation worth carrying into that debug: the share
 gradient norm is **83.4 against the control's 21.5**, about 4x, which is what an untrained
 module in the middle of a trained network should look like — suggestive, but not itself a NaN.
 
-**The decisive instrument is one single-arm debug run** with forward hooks on
-`shared_pool_builder` and `shared_pool_scorer` that raise on the first non-finite output. The
-NaN arrives at micro-batch 1, so it names the offending line within a minute: roughly 15
-minutes of A10, about $0.35, and it settles every remaining variable at once.
+**LOCALIZED 2026-09-17 (A10, ~15 min, ~$0.35).** `tools/train/debug_shared_pool_nan.py` hooks
+every submodule and flags those whose OUTPUT is non-finite while ALL THEIR INPUTS WERE FINITE --
+the conjunction matters, because once a NaN exists it propagates and "contains a NaN" names
+dozens of modules. Both arms were run; `per_query` is clean at every step and proves the
+harness.
+
+| step | `per_query` | `shared` |
+|---|---|---|
+| 0 | loss finite, 0 non-finite grads | loss finite, shared-pool grad **5.40**, 0 non-finite grads |
+| 1 | loss finite, 0 non-finite grads | **loss STILL FINITE (3.995), backward grad `nan`, 225 parameters non-finite** |
+| 2 | loss finite, 0 non-finite grads | weights already corrupted; the embedding table itself now emits NaN |
+
+**THE FORWARD IS HEALTHY. THE BACKWARD DIVERGES, AT STEP 1.** That is why every earlier repro
+missed it — all of them were single-step, and step 0 is clean in both arms. By step 2 the
+optimizer has written NaN into the weights, which is why `encoder.embeddings.tok_embeddings`
+appears to "manufacture" a NaN: its weight is one. The 225 poisoned parameters include the
+entire encoder, so one bad step destroys the whole model, not just the pool.
+
+**It is CUDA-specific.** The same script run for FOUR steps on CPU stays finite throughout
+(shared-pool grad 6.33 / 2.27 / 6.55 / 5.71), so step count was never the missing variable.
+What CUDA adds is **bf16 autocast**: the GPU log shows `shared_pool_scorer.length_projection`
+taking a finite fp32 input and returning bf16, i.e. the path runs under autocast, and the CPU
+runs did not.
+
+**The remaining question is one arm wide:** run the shared arm on GPU with `bf16: false`. If it
+survives, the fault is autocast in that path's backward and the fix is a targeted
+`autocast(enabled=False)` around the offending op; if it still diverges, the shared pool has a
+genuine backward bug independent of precision. Another ~$0.35.
 
 **The standing reading of this, until it is resolved:** `candidate_pool: shared` has never
 been trained in this project — checked, not assumed. The guard only ever blocked the
