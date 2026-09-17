@@ -164,6 +164,55 @@ vocabulary and every collision adjudicated by reading surfaces, BEFORE generatio
 is not evidence of agreement — it is the most dangerous case precisely because it looks like
 agreement, and nothing downstream will flag it.
 
+### FULL ADJUDICATION, 2026-09-17 — and it cuts the usable supply to 24%
+
+Two corrections to the section above before the verdict. First, the exact-match collision check
+was insufficient: matched case-insensitively, **9 of 11 roles collide**, not 6 — `Materials`,
+`Content` and `Result` collide with lowercase `materials`, `content`, `result` in
+`paraloq_json`. Only `Militaryforce` and `Area` are genuinely new.
+
+Second, and decisive: **ROLE IS NOT TYPE, and cmnee proves it internally.**
+
+**19.5% of cmnee documents (1,810 / 9,281) tag one surface with more than one role in the SAME
+document.** 猎豹号核潜艇 — a nuclear submarine — is `Equipment`, `Materials` AND `Subject` in
+one document. 美国华盛顿号航母 (a US carrier) is `Location` + `Subject`. A submarine's TYPE does
+not change within a document; its ROLE does. Deriving type from role therefore manufactures
+contradictory type supervision, and the conflicts concentrate exactly where the volume is:
+
+| conflicting pair, same document | surfaces |
+|---|---:|
+| Object + Subject | 802 |
+| Equipment + Materials | 751 |
+| Equipment + Militaryforce | 333 |
+
+| role | mentions | base label tags | cmnee tags | verdict |
+|---|---:|---|---|---|
+| `Date` | 8,984 | "Sunday", "October" | 2008年11月, 周二 | **DERIVE** → `Date` |
+| `Location` | 5,476 | "New York", "Tahrir Square" | 日本海, 日本群马县 | **DERIVE** → `Location` |
+| `Area` | 338 | *(new)* | 阿富汗, 土耳其中部城市瑟瓦斯 | **DERIVE** → merge into `Location` (67 of its surfaces already conflict with it) |
+| `Quantity` | 390 | "153 countries", "21 billion" | 21, 20名 | **DERIVE** → `Quantity` |
+| `Subject` | 20,743 | "Visual Arts", "Phonics" — subject MATTER | the ACTOR | **REJECT** — incompatible, and 802 same-doc conflicts with Object |
+| `Object` | 6,289 | "water-jar", "Louisiana" | entity acted upon | **REJECT** — incompatible |
+| `Equipment` | 10,496 | "Pheromone dispensers", "kiln" | submarines, aircraft | **REJECT** — 751 same-doc conflicts with Materials |
+| `Materials` | 5,875 | "Oil on canvas", "Enamel paint" | submarines, missiles | **REJECT** — incompatible and conflicting |
+| `Militaryforce` | 2,736 | *(new)* | patrol ships, rescue personnel | **REJECT** — 333 conflicts with Equipment |
+| `Content` | 644 | chat messages, document text | 飞行训练, 军事演习 (activities) | **REJECT** — incompatible |
+| `Result` | 602 | "12.5", "200" | "20人牺牲、21人受伤" | **REJECT** — incompatible |
+
+**Restricted to the four DERIVE roles, the derivation is nearly conflict-free: 71 conflicting
+surfaces in 15,188 mentions (0.5%), and 67 of those are Area↔Location, which merge anyway.
+Four remain.** Against 2,374 conflicts if all roles are used.
+
+**THE COST OF THIS HONESTY: usable supply falls from 62,573 to 15,188 mentions — 24.3%.** The
+single largest role, `Subject` at 20,743, is unusable as a type. Option 4's headline supply
+figure of 484,424 project-wide should be read as roughly a quarter of that until each corpus
+is adjudicated the same way, because nothing about cmnee is unusual here.
+
+**This does not kill option 4, but it resizes it.** Deriving `Date`, `Location` and `Quantity`
+into a corpus with ZERO entity gold is still real extraction supervision, still attacks the
+never-proposed third, and is now known to be clean. It is simply a quarter of the lever the
+scope assumed — and that should be priced before the converter is written, not after.
+
 **Option 2 does not depend on this anyway.** It has a second route: use the model's PREDICTED
 entity types as the type signal instead of gold, which works on cmnee today with no data
 derivation.
