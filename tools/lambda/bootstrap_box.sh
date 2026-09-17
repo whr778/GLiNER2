@@ -42,6 +42,37 @@ print("[bs] device:", torch.cuda.get_device_name(0))
 PY
 
 export HF_TOKEN=$(cat ~/.hf_token)
+
+# THE HUB TOKEN MUST BE PROVEN TO WRITE, HERE, BEFORE ANY GPU TIME IS SPENT.
+# `whoami` is not the test and neither is `create_repo(exist_ok=True)`: on an existing repo
+# that is a no-op which returns cleanly for a READ-ONLY token. The only honest probe is an
+# upload, so this does one and deletes it.
+#
+# THE TRAP THIS EXISTS FOR, measured 2026-09-17 -- three token sources on one laptop, two
+# able to write and the one huggingface_hub reaches for BY DEFAULT not able to:
+#     env HF_TOKEN                 write OK
+#     ~/.cache/huggingface/token   403 "you must use a write token"   <- the library default
+#     ~/.huggingface/token         write OK
+# A read-only token costs nothing until the run finishes and cannot publish -- i.e. it costs
+# the whole run. An EMPTY one is worse: it surfaces as `Illegal header value b'Bearer '` from
+# inside httpx, naming neither the token nor the cause, and on 2026-09-17 that message was
+# the only symptom of a provision that had shipped no token at all.
+echo "[bs] hub write pre-flight $(date -u)"
+./.venv/bin/python - <<'PROBE' || fail "the HF token cannot WRITE -- the run could not publish"
+import io, os, sys
+from huggingface_hub import HfApi
+tok = os.environ.get("HF_TOKEN", "").strip()
+if not tok:
+    print("[bs] HF_TOKEN is EMPTY"); sys.exit(1)
+api = HfApi(token=tok)
+repo = "whr778/gliner2-run-logs"
+api.create_repo(repo, repo_type="dataset", private=True, exist_ok=True)
+api.upload_file(path_or_fileobj=io.BytesIO(b"bootstrap write probe\n"),
+                path_in_repo="_write_probe.txt", repo_id=repo, repo_type="dataset")
+api.delete_file("_write_probe.txt", repo, repo_type="dataset")
+print(f"[bs] hub write OK as {api.whoami().get('name')}")
+PROBE
+
 if [ -n "$CFG" ]; then
   echo "[bs] data for $CFG $(date -u)"
   ./.venv/bin/python tools/data/restore_from_hf.py --config "$CFG" 2>&1 | tail -3 \
