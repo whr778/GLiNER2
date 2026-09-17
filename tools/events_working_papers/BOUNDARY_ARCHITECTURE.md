@@ -352,6 +352,37 @@ name list — the inference shape `{name: {"head": "", "tail": ""}}` is read as 
 empty surfaces), and absent structures must carry `record_metadata` or `compile_record_specs`
 builds no spec and nothing decodes them.
 
+### Three places with NO GRADIENT, and only one of them is a defect
+
+Easy to conflate, so stated separately (checked 2026-09-17):
+
+| component | gradient? | verdict |
+|---|---|---|
+| **Hungarian matching** (record loss) | **yes, flows** | correct |
+| **`shared_pool_builder`** under `candidate_pool: per_query` | no — never called in the loss | by design |
+| **the joint beam** (`decode_mode: joint`) | no — eval-time only | by design, but see below |
+
+**Hungarian is implemented correctly** and is worth checking rather than assuming, because
+this is exactly where a blocked gradient would hide. `field_nll` is computed from the
+grad-carrying `assign_logits` FIRST, and only then does a `with torch.no_grad():` block build
+the matching cost and run the assignment (`records.py:1230-1245`). The assignment is
+non-differentiable and is supposed to be; the loss it selects is not. Standard DETR pattern.
+`linear_sum_assignment` detaching its cost matrix is part of that, not a bug.
+
+**`shared_pool_builder` gets no gradient under `per_query` simply because nothing calls it in
+the loss** — its only other call site is behind `if diagnostics:` and feeds stats. Its 64
+tensors sit at initialisation in every `per_query` checkpoint, which is why `candidate_pool` is
+in `_STRUCTURAL_BOUNDARY_KEYS` and cannot be swept at eval: doing so would score untrained
+weights and read as a catastrophic result rather than a null.
+
+**The joint beam is the interesting one.** It decodes JOINTLY over candidate scores trained
+GREEDILY — nothing in training ever optimises for the beam's constraint satisfaction, so the
+search is layered on scores that never knew it was coming. That is a genuine train/test
+mismatch, and §11's measured result is consistent with it: **joint matches greedy on all seven
+heads at 2.5x the wall clock**. A beam that buys nothing is what one expects when the scores
+beneath it were never trained toward joint decoding. The remedies — a beam-aware or structured
+loss, or a differentiable relaxation — are research directions, not config changes.
+
 ### The loss has no task axis
 
 Every query — entity, relation, event trigger, event role, structure field — flows through
