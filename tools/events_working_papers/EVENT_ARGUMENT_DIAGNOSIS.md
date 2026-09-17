@@ -1003,6 +1003,42 @@ deterministic subset, which is also the largest by volume.
 PREDICTED entity types as the type signal instead of gold — option 3's mechanism feeding option
 2's constraint. That works on cmnee today, with no data derivation.
 
+### MEASURED 2026-09-17: the predicted-entity-type route works, modestly
+
+The cheapest route — option 3's mechanism feeding option 2's constraint, using the model's OWN
+predicted entity types instead of gold, so it runs on cmnee today with no data derivation.
+Probe: `tools/train/probe_predicted_entity_types.py`, 120 cmnee documents through the EVAL path
+(`_schema_from_gold` schemas via `model.batch_extract`) with a 14-type entity menu added, which
+is the intervention — cmnee has no entity gold, so the eval schema normally carries no entities
+and the head is never queried at all.
+
+| | correct arguments | wrong arguments |
+|---|---:|---:|
+| has a predicted entity type | 312 (**88%**) | 92 (**68%**) |
+| no entity type predicted | 44 (12%) | 44 (**32%**) |
+
+"No entity type" is **2.6x enriched among wrong arguments**. The naive filter — drop arguments
+the entity head does not recognise as anything — moves precision **0.7236 -> 0.7723 (+0.049)**
+for **−12.4% relative recall**. Real, and the same precision-for-recall shape as the negatives.
+
+**The per-role detail reproduces the casie split from independent data:**
+
+| role | correct | wrong |
+|---|---|---|
+| `Date` | Date:31, Time:25 | Date:6, Time:2 |
+| `Location` | Location:11 | **none at all** |
+| `Subject` | Aircraft:247 | Aircraft:81 |
+
+`Date` and `Location` — TYPE-NAMED roles — get consistent, discriminating types. `Subject` — a
+FUNCTION-NAMED role — gets `Aircraft` for correct and wrong alike, so type identity carries
+nothing (cmnee is military news; subjects are aircraft either way).
+
+**That is the casie gold split arrived at from model predictions on a corpus with no entity
+annotation whatsoever.** Two independent measurements agreeing on WHICH roles are typeable is a
+far stronger basis for option 2 than either alone, and it says the constraint should be applied
+PER ROLE rather than globally: enforce it where the role is type-named, leave it off where it
+is function-named.
+
 ### The ceiling on options 1-3, and why option 4 is not bound by it
 
 `event_argument` relaxed recall is 0.42 and strict 0.30, so roughly a third of the loss is
