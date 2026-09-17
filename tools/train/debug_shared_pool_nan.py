@@ -28,6 +28,20 @@ CKPT = "whr778/gliner2-eb16-eventrecords-tr"
 DATA = "data/cmnee.train.jsonl"
 
 
+def _sdpa_ctx(name):
+    """Select the scaled-dot-product-attention backend, or a no-op for `default`."""
+    import contextlib
+    if name == "default":
+        return contextlib.nullcontext()
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+    backends = {
+        "efficient": SDPBackend.EFFICIENT_ATTENTION,
+        "math": SDPBackend.MATH,
+        "flash": SDPBackend.FLASH_ATTENTION,
+    }
+    return sdpa_kernel([backends[name]])
+
+
 def _stats(t):
     """Compact finite/range summary for a tensor, or a short tag for anything else."""
     if not isinstance(t, torch.Tensor) or not t.dtype.is_floating_point:
@@ -84,10 +98,24 @@ def main():
     # `action="store_true", default=True` is unturnoffable; bf16 autocast is the
     # variable under test here, so it needs a real off switch.
     ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
+    # SDPA BACKEND. pytorch/pytorch#196678: the cuDNN backend returns NaN grad_q in the
+    # BACKWARD, forward finite, bf16/fp16 only, for seq_len % 128 == 64 with an explicit
+    # attn_mask -- a regression introduced in torch 2.11, which is the version pinned here.
+    # SharedPoolScorer.query_layers is an nn.MultiheadAttention with key_padding_mask, so it
+    # takes exactly that path, and per_query never reaches it. This flag is the test.
+    ap.add_argument("--sdpa-backend", default="default",
+                    choices=["default", "efficient", "math", "flash"])
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[dbg] device={dev} pool={args.pool} bf16={args.bf16}")
+    print(f"[dbg] device={dev} pool={args.pool} bf16={args.bf16} "
+          f"sdpa={args.sdpa_backend} torch={torch.__version__}")
+    if dev == "cuda":
+        # Card and driver, because "is this the known driver bug?" is unanswerable from a log
+        # that only ever said `device=cuda`.
+        print(f"[dbg] gpu={torch.cuda.get_device_name(0)} "
+              f"capability={torch.cuda.get_device_capability(0)} "
+              f"cuda={torch.version.cuda} cudnn={torch.backends.cudnn.version()}")
 
     model = AutoExtractor.from_pretrained(CKPT, architecture="boundary").to(dev)
     bh = dict(model.config.boundary_head)
@@ -117,14 +145,16 @@ def main():
 
         found = []
         handles = install_hooks(model, found)
+        ctx = _sdpa_ctx(args.sdpa_backend)
         torch.manual_seed(step)
-        if args.bf16 and dev == "cuda":
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with ctx:
+            if args.bf16 and dev == "cuda":
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    out = model(collated)
+                    loss = out.total_loss
+            else:
                 out = model(collated)
                 loss = out.total_loss
-        else:
-            out = model(collated)
-            loss = out.total_loss
         for h in handles:
             h.remove()
 
@@ -146,7 +176,10 @@ def main():
 
         if finite:
             opt.zero_grad(set_to_none=True)
-            loss.backward()
+            # The backward is where the fault lives, so it runs under the same backend
+            # selection as the forward.
+            with _sdpa_ctx(args.sdpa_backend):
+                loss.backward()
             bad = [n for n, p in model.named_parameters()
                    if p.grad is not None and not bool(torch.isfinite(p.grad).all())]
             sp = sum(float(p.grad.detach().float().norm() ** 2)
