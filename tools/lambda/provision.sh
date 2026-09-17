@@ -39,7 +39,10 @@ fail() { echo "[prov] *** FATAL: $* ***" >&2; exit 1; }
 # --- Prove the credentials LOCALLY, before an instance is touched --------------------------
 [ -n "${LAMBDA_API_KEY:-}" ] || fail "LAMBDA_API_KEY is not set"
 [ -n "${HF_TOKEN:-}" ] || fail "HF_TOKEN is not set in the environment"
-python3 - <<'PROBE' || fail "HF_TOKEN cannot WRITE to the Hub -- a run would train and then fail to publish"
+# `uv run python`, not `python3`: the system interpreter has no huggingface_hub, so the probe
+# fails to IMPORT and the guard reports "cannot write" for a token that writes fine. A gate
+# that cannot tell a missing library from a missing permission fails safe but reads wrong.
+(cd "$(dirname "$0")/../.." && uv run python -) <<'PROBE' || fail "HF_TOKEN cannot WRITE to the Hub -- a run would train and then fail to publish"
 import io, os, sys
 from huggingface_hub import HfApi
 api = HfApi(token=os.environ["HF_TOKEN"].strip())
