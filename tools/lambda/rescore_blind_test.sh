@@ -3,7 +3,7 @@
 #
 # WHY IT EXISTS. On 2026-09-17 a 16-hour run finished and pushed its model, then lost its
 # test_metrics.json to a network outage. The model is on the Hub; only the evaluation is
-# gone. This regenerates the evaluation -- ~1 pass, not a $28 retrain.
+# gone. This regenerates the evaluation -- ONE pass, ~0.5 A100-hour, not a $28 retrain.
 #
 # THE COMPARISON IS FIXED BY THE CONTROL, NOT BY CHOICE. The control is
 # run-logs:negatives_ab/rebase-eb16-eventrecords-tr.json, produced by negatives_ab.sh as
@@ -79,11 +79,16 @@ if [ -f "$OUTDIR/test_metrics.json" ]; then
   cp "$OUTDIR/test_metrics.json" "$OUT/rebase-$NAME.json"
   publish "$DEST" "$OUT/rebase-$NAME.json" "$OUT/rebase-$NAME.log" || RESCUE=1
 else
-  echo "[rescore] *** NO metrics at $OUTDIR/test_metrics.json -- FAILED JOB, not an empty publish ***"
-  publish "$DEST" "$OUT/rebase-$NAME.log" || RESCUE=1
-  RESCUE=1
+  # A named-but-never-written artefact is a FAILED job, not an empty publish. Say so and
+  # EXIT: the trap has already published the log, so there is nothing left on this box worth
+  # paying to keep alive. Holding here would bill the full hard deadline for a crash.
+  echo "[rescore] *** NO metrics at $OUTDIR/test_metrics.json -- FAILED JOB ***"
+  publish "$DEST" "$OUT/rebase-$NAME.log" || true
+  exit 4
 fi
 
 echo "[rescore] ===== DONE $(date -u) ====="
-[ "$RESCUE" -ne 0 ] && { echo "[rescore] *** publish failed or no metrics; holding for inspection ***"; sleep infinity; }
+# Hold ONLY when the finding exists but could not be shipped -- that is the one case where
+# an SSH rescue can still recover something the box alone cannot.
+[ "$RESCUE" -ne 0 ] && { echo "[rescore] *** metrics EXIST but publish FAILED; holding for rescue ***"; sleep infinity; }
 exit 0
