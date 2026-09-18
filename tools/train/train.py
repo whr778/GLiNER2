@@ -1163,7 +1163,9 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         # nothing about the threshold or menu behind them, so establishing that a published
         # baseline was read at 0.3 under --full-menu meant grepping the runner script that
         # produced it. Two numbers are only comparable at the same operating point; store it.
+        from model_card import git_commit
         metrics["eval_provenance"] = {
+            "commit": git_commit(),
             "threshold": ev["threshold"],
             "full_menu": bool((overrides or {}).get("full_menu")),
             "menu_negatives": (int((overrides or {}).get("menu_negatives", 20))

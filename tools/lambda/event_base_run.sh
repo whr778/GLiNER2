@@ -51,10 +51,37 @@ RESCUE=0
 echo "[base] ===== START $(date -u) ====="
 echo "[base] config $CFG -> $REPO"
 
+# PROVENANCE, PUBLISHED AT MINUTE ZERO. Establishing whether a finished model predated the
+# bf16 consistency-loss fix had to be done by arithmetic on push timestamps, because nothing
+# recorded what code built it. Write it down before the run can fail.
+{
+  echo "arm_dest      $DEST"
+  echo "config        $CFG"
+  echo "repo          $REPO"
+  echo "commit        $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  echo "branch        $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+  echo "started_utc   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "instance      $(cat ~/.instance_id 2>/dev/null || echo unknown)"
+  echo "gpu           $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null)"
+  echo "torch         $($PY -c 'import torch;print(torch.__version__)' 2>/dev/null)"
+} > "$HOME/START.txt"
+publish "$DEST" "$HOME/START.txt" "$CFG" || echo "[base] start marker did not publish (continuing)"
+
 # A heartbeat so a 14-hour run is legible from outside without attaching to tmux.
 ( while sleep 900; do
     echo "[hb] $(date -u) gpu=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader | tr -d ' ') $(tr '\r' '\n' < "$LOG" 2>/dev/null | grep -aoE '[0-9]+/[0-9]+ \[[^]]*\]' | tail -1)"
   done ) >> "$HOME/heartbeat.log" 2>&1 &
+disown
+
+# PERIODIC PUBLISH, so a 16-hour run is not a 16-hour hole. Nothing used to reach the Hub
+# until the very end, which means a network outage or a dead box at hour 15 took the whole
+# log with it -- exactly what happened on 2026-09-17. Every 30 minutes, ship the heartbeat
+# and the tail of the training log. Failures here are IGNORED on purpose: this is a
+# convenience stream, and it must never be able to fail the run it is reporting on.
+( while sleep 1800; do
+    tail -c 200000 "$LOG" > "$HOME/progress.log" 2>/dev/null
+    publish "$DEST" "$HOME/heartbeat.log" "$HOME/progress.log" >/dev/null 2>&1 || true
+  done ) >> "$HOME/publisher.log" 2>&1 &
 disown
 
 timeout 72000 $PY -u tools/train/train.py --config "$CFG" 2>&1 | tee "$LOG"

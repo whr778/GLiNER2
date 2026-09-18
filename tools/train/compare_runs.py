@@ -75,6 +75,12 @@ def main() -> int:
         differing = [f for f in ("threshold", "full_menu", "menu_negatives",
                                  "split", "records")
                      if pa.get(f) != pb.get(f)]
+        # A differing CODE COMMIT is a warning, not a refusal: two arms of one A/B should
+        # share it, but a legitimate before/after comparison of a fix necessarily does not.
+        if pa.get("commit") and pb.get("commit") and pa["commit"] != pb["commit"]:
+            print(f"[compare] WARNING: different code commits "
+                  f"({pa['commit']} vs {pb['commit']}). The delta includes whatever changed "
+                  f"between them, not only the treatment.")
         if differing:
             raise SystemExit(
                 f"[compare] REFUSING: the runs were scored at different operating points "

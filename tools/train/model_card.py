@@ -128,6 +128,23 @@ def summarize_licenses(named: List[tuple]) -> LicenseVerdict:
 # Small rendering helpers
 # ---------------------------------------------------------------------------
 
+
+def git_commit() -> str:
+    """The commit the code was AT, or "unknown".
+
+    Recorded because its absence has cost real reasoning twice: establishing whether a
+    published model predated the bf16 consistency-loss fix (5af9e00) had to be done by
+    arithmetic on push timestamps, because no card and no metrics file recorded what code
+    built the weights. A model is a function of its code as much as its data.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
 def _fmt_duration(seconds: Optional[float]) -> str:
     if not seconds or seconds <= 0:
         return "—"
@@ -396,6 +413,7 @@ def _training_section(config, cfg, results, generated_at) -> str:
     rows = ["## Training procedure", "",
             "| Setting | Value |", "|---|---|",
             f"| Trained on | {generated_at} |",
+            f"| Code commit | `{git_commit()}` |",
             f"| Duration | {_fmt_duration(rt)} |"]
     if sps:
         rows.append(f"| Throughput | {sps:.1f} samples/s |")
