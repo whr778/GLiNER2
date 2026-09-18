@@ -11,20 +11,35 @@ measured directly on 50 cmnee documents: 96% of `Subject`, 71% of `Location` and
 constrain BINDING and cannot recover a span that was never proposed; this adds extraction
 supervision instead.
 
-ROLE IS NOT TYPE, and only four roles survive that. 19.5% of cmnee documents tag one surface
-with more than one role (a submarine is `Equipment`, `Materials` AND `Subject` in the same
-document) -- a thing's TYPE does not change within a document, its ROLE does, so deriving type
-from role manufactures contradictory supervision. Seven of eleven roles are rejected: either
-incompatible with a base label of the same spelling (`Subject` tags subject MATTER in the base
--- "Visual Arts" -- and the ACTOR in cmnee), or heavily self-conflicting. See
-OPTION_4_ROLE_TO_ENTITY.md section 5 for the surface-by-surface adjudication.
+ROLE IS NOT TYPE. 19.5% of cmnee documents tag one surface with more than one role -- a
+submarine is `Equipment`, `Materials` AND `Subject` in the same document. A thing's TYPE does
+not change within a document; its ROLE does. And 9 of 11 role names collide case-insensitively
+with a base entity label of DIFFERENT meaning (`Subject` tags subject MATTER in the base --
+"Visual Arts" -- and the ACTOR in cmnee).
 
-THE COST OF THAT HONESTY: 15,188 of 62,573 mentions, 24.3%.
+`--mode namespaced` (the DEFAULT) answers both by refusing to claim these are types: every role
+becomes `Event<Role>`, a label of its own. Measured against the base's 2,092-label entity
+vocabulary, none of the eleven collide. Two consequences follow, and they are the point:
 
-Labels are emitted CANONICAL and directly -- `Area` is written as `Location`, not written as
-`Area` and remapped. The `labels_file` indirection exists to protect SOURCE corpora from being
-rewritten; a derived corpus is new data we author, so nothing is bent by naming it correctly
-at birth.
+* **The same-document conflict DISSOLVES.** `EventEquipment` and `EventSubject` on one span is
+  ordinary multi-label role annotation, not contradictory typing. Nothing is dropped, so the
+  supply is the whole 62,573 rather than the 15,188 a type-claiming derivation survives with --
+  including `Subject`, the largest role at 20,743 and the one the entity head fails hardest on
+  (96% of its gold surfaces are never proposed at all).
+* **It buys PROPOSAL, not typing.** Option 4 exists to move the never-proposed third; a
+  namespaced label still trains the entity head to put the span forward. It does NOT transfer
+  to a real NER taxonomy, and it stays tautological for option 2 -- use `--mode canonical` or
+  `hybrid` when transfer is what is wanted.
+
+`--mode canonical` is the narrow, type-claiming derivation: only the four adjudicated-compatible
+roles (`Date`, `Location`, `Quantity`, `Area`->`Location`), 24.3% of the supply, emitted as
+canonical labels so the supervision transfers. `--mode hybrid` takes those four canonical and
+namespaces the other seven.
+
+Labels are emitted DIRECTLY in their final spelling -- `Area` is written as `Location`, never
+written as `Area` and remapped. The `labels_file` indirection exists to protect SOURCE corpora
+from being rewritten; a derived corpus is new data we author, so nothing is bent by naming it
+correctly at birth.
 
 THE OUTPUT IS PARTIAL and must be declared so. It labels Date/Location/Quantity and leaves
 every other entity in the document unlabelled, so it is a source of entity POSITIVES and never
@@ -46,18 +61,18 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent))
 from _split import dumps_record  # noqa: E402
 
-# The four roles adjudicated DERIVE, with the canonical label each becomes. `Area` merges
-# into `Location`: 67 of its surfaces already conflict with Location, and they mean the same
-# thing (阿富汗, 土耳其中部城市瑟瓦斯).
-ROLE_MAP = {
-    "Date": "Date",
-    "Location": "Location",
-    "Area": "Location",
-    "Quantity": "Quantity",
-}
+# Every role cmnee uses. Order is the corpus's own frequency order, for readability.
+ALL_ROLES = ("Subject", "Equipment", "Date", "Object", "Materials", "Location",
+             "Militaryforce", "Content", "Result", "Quantity", "Area")
 
-# Kept explicit rather than implied by absence, so a reader sees the decision and its reason.
-REJECTED = {
+# The four adjudicated compatible with the base vocabulary by READING THE SURFACES each side
+# tags, per the standing rule never to merge on string similarity. `Area` merges into
+# `Location`: 67 of its surfaces already conflict with Location and they mean the same thing.
+CANONICAL = {"Date": "Date", "Location": "Location", "Area": "Location", "Quantity": "Quantity"}
+
+# Why each of the other seven cannot be emitted as a TYPE. Kept in code so the decision is
+# visible where it is enforced, not only in the working paper.
+INCOMPATIBLE = {
     "Subject": "base `Subject` tags subject MATTER (Visual Arts); cmnee tags the ACTOR",
     "Object": "base `Object` tags artefacts (water-jar); cmnee tags the thing acted upon",
     "Equipment": "751 same-document conflicts with Materials; different domain from the base",
@@ -68,20 +83,38 @@ REJECTED = {
 }
 
 
-def derive(rec: dict) -> tuple[dict, Counter]:
+def label_map(mode: str) -> dict:
+    """role -> emitted label, or role absent when the mode drops it.
+
+    `namespaced` claims no types, so every role survives; `canonical` claims types and so
+    keeps only the four that can carry one; `hybrid` claims types where it can and namespaces
+    the rest. Verified against the base's 2,092-label entity vocabulary: none of the eleven
+    `Event<Role>` names collide with it, while 9 of 11 PLAIN role names do.
+    """
+    if mode == "namespaced":
+        return {r: f"Event{r}" for r in ALL_ROLES}
+    if mode == "canonical":
+        return dict(CANONICAL)
+    if mode == "hybrid":
+        return {**{r: f"Event{r}" for r in ALL_ROLES}, **CANONICAL}
+    raise SystemExit(f"unknown mode {mode!r}")
+
+
+def derive(rec: dict, lmap: dict) -> tuple[dict, "Counter"]:
     """One event record -> one entity record, plus what happened to it.
 
     Returns ``({}, stats)`` when nothing survives: a record with no derived span must be
     DROPPED, never emitted with an empty entity map. An empty map asserts "no entities in
-    this document", which is false here -- the rejected roles are entities, just not ones
-    whose type we can trust -- and that is the within-dimension rule this corpus exists
-    under.
+    this document", which is false here -- the roles this mode drops ARE entities -- and
+    that is the within-dimension rule this corpus lives under.
     """
     stats = Counter()
     text = rec.get("input") or ""
-    by_label: dict[str, list[str]] = {}
-    # A surface may appear under several roles in one document. Collect first, then decide,
-    # so a conflict is detected rather than resolved by whichever role was read last.
+    type_labels = set(CANONICAL.values())
+    # Collect first, decide after: a surface may carry several roles, and whether that is a
+    # CONFLICT depends on what the label claims. `EventEquipment` + `EventSubject` on one span
+    # is ordinary multi-label ROLE annotation. `Location` + `Date` on one span is contradictory
+    # TYPE annotation, because a thing has one type.
     surface_labels: dict[str, set] = {}
     for ev in rec.get("output", {}).get("events") or []:
         for arg in ev.get("arguments") or []:
@@ -89,29 +122,34 @@ def derive(rec: dict) -> tuple[dict, Counter]:
             if not isinstance(role, str) or not isinstance(surface, str) or not surface:
                 continue
             stats[f"role:{role}"] += 1
-            label = ROLE_MAP.get(role)
+            label = lmap.get(role)
             if label is None:
-                stats["rejected_mention"] += 1
+                stats["dropped_by_mode"] += 1
                 continue
             if surface not in text:
                 # Gate A measured 99.98% alignment; the failures are annotation artifacts
                 # (a trailing digit belonging to the next token). Drop rather than emit a
-                # span the tokenizer cannot locate.
+                # span the tokenizer cannot locate as a subsequence.
                 stats["unaligned"] += 1
                 continue
             surface_labels.setdefault(surface, set()).add(label)
 
+    by_label: dict[str, list[str]] = {}
     for surface, labels in surface_labels.items():
+        claimed_types = labels & type_labels
+        if len(claimed_types) > 1:
+            # Fail closed on the TYPE claims only; any role labels on this surface stand.
+            stats["type_conflict_dropped"] += 1
+            labels = labels - claimed_types
+            if not labels:
+                continue
         if len(labels) > 1:
-            # Fail closed. Four such surfaces survive the Area->Location merge across the
-            # whole corpus; keeping either label would be inventing supervision.
-            stats["conflict_dropped"] += 1
-            continue
-        label = next(iter(labels))
-        by_label.setdefault(label, [])
-        if surface not in by_label[label]:
-            by_label[label].append(surface)
-            stats["kept_mention"] += 1
+            stats["multi_label_surface"] += 1
+        for label in sorted(labels):
+            by_label.setdefault(label, [])
+            if surface not in by_label[label]:
+                by_label[label].append(surface)
+                stats["kept_mention"] += 1
 
     if not by_label:
         stats["record_dropped"] += 1
@@ -120,14 +158,14 @@ def derive(rec: dict) -> tuple[dict, Counter]:
     return {"input": text, "output": {"entities": by_label}}, stats
 
 
-def convert(path: str) -> tuple[list[dict], Counter]:
+def convert(path: str, lmap: dict) -> tuple[list[dict], Counter]:
     out, total = [], Counter()
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
-            rec, stats = derive(json.loads(line))
+            rec, stats = derive(json.loads(line), lmap)
             total.update(stats)
             if rec:
                 out.append(rec)
@@ -147,9 +185,17 @@ def main() -> None:
     ap.add_argument("--val")
     ap.add_argument("--test")
     ap.add_argument("--out-base", required=True, help="e.g. data/cmnee_roles_ner")
+    ap.add_argument("--mode", choices=("namespaced", "canonical", "hybrid"),
+                    default="namespaced",
+                    help="namespaced (default): every role becomes Event<Role>, claims no "
+                         "type, keeps the whole supply. canonical: only the four roles that "
+                         "can carry a type, 24%% of the supply, transfers to the real "
+                         "taxonomy. hybrid: those four canonical, the rest namespaced.")
     ap.add_argument("--dry-run", action="store_true", help="report, write nothing")
     args = ap.parse_args()
 
+    lmap = label_map(args.mode)
+    print(f"[roles2ner] mode={args.mode}: {len(lmap)} of {len(ALL_ROLES)} roles emitted")
     base = Path(args.out_base)
     stem = base.with_suffix("") if base.suffix == ".jsonl" else base
     grand = Counter()
@@ -157,7 +203,7 @@ def main() -> None:
         if not path:
             print(f"[roles2ner] {split}: not supplied")
             continue
-        recs, stats = convert(path)
+        recs, stats = convert(path, lmap)
         grand.update(stats)
         print(f"[roles2ner] {split}: {stats['record_kept']:,} kept, "
               f"{stats['record_dropped']:,} dropped (no derivable span), "
@@ -165,18 +211,27 @@ def main() -> None:
         if not args.dry_run:
             _write(Path(f"{stem}.{split}.jsonl"), recs)
 
-    kept, rejected = grand["kept_mention"], grand["rejected_mention"]
-    seen = kept + rejected + grand["unaligned"] + grand["conflict_dropped"]
-    print(f"\n[roles2ner] mentions seen {seen:,}")
-    print(f"[roles2ner]   kept       {kept:,} ({kept / seen:.1%})")
-    print(f"[roles2ner]   rejected   {rejected:,} (role not in the DERIVE set)")
-    print(f"[roles2ner]   unaligned  {grand['unaligned']:,} (surface not verbatim in text)")
-    print(f"[roles2ner]   conflicts  {grand['conflict_dropped']:,} (one surface, two labels)")
+    kept, dropped_mode = grand["kept_mention"], grand["dropped_by_mode"]
+    seen = sum(v for k, v in grand.items() if k.startswith("role:"))
+    print(f"\n[roles2ner] argument mentions seen {seen:,}")
+    # NOT a loss rate: `kept` counts UNIQUE (label, surface) pairs per record, so a surface
+    # mentioned five times in one document contributes once. What is actually lost is
+    # `dropped_by_mode` + `unaligned` + `type_conflict_dropped`; everything else is dedup.
+    lost = dropped_mode + grand["unaligned"] + grand["type_conflict_dropped"]
+    print(f"[roles2ner]   kept       {kept:,} unique (label, surface) pairs")
+    print(f"[roles2ner]   LOST       {lost:,} ({lost / seen:.1%} of mentions)")
+    print(f"[roles2ner]   dropped by mode {dropped_mode:,}")
+    print(f"[roles2ner]   unaligned       {grand['unaligned']:,} (surface not verbatim)")
+    print(f"[roles2ner]   type conflicts  {grand['type_conflict_dropped']:,} "
+          f"(one surface, two TYPE claims)")
+    print(f"[roles2ner]   multi-label surfaces kept {grand['multi_label_surface']:,} "
+          f"(legitimate when the label claims a ROLE)")
     print("\n[roles2ner] per-role mentions seen:")
     for key, n in sorted(((k, v) for k, v in grand.items() if k.startswith("role:")),
                          key=lambda kv: -kv[1]):
         role = key.split(":", 1)[1]
-        verdict = f"-> {ROLE_MAP[role]}" if role in ROLE_MAP else f"REJECTED ({REJECTED.get(role, 'unlisted')})"
+        verdict = (f"-> {lmap[role]}" if role in lmap
+                   else f"dropped ({INCOMPATIBLE.get(role, 'not in this mode')})")
         print(f"    {role:16s} {n:7,d}  {verdict}")
     print(f"\n[roles2ner] PARTIAL CORPUS. Register it under data.partial_annotation before "
           f"build_negative_pools.py sees it, or it becomes a source of entity NEGATIVES "
