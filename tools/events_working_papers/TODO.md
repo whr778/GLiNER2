@@ -1000,3 +1000,49 @@ trace that it did.
   across differing operating points. Files written BEFORE 2026-09-18 have no provenance;
   for those the threshold must still be recovered from the runner that produced them --
   `negatives_ab/rebase-*.json` is `--threshold 0.3 --full-menu`, from `negatives_ab.sh:43`.
+
+### Open after 2026-09-18 -- the negatives verdict and the loss-commingling hypothesis
+
+- **NEGATIVES: hit the target, broke an untargeted head. Do not ship.** Like-for-like at
+  threshold 0.3, full menu, 18,786 records (both files carry matching `eval_provenance`):
+  `event_argument` strict **+0.0322** (0.1497 -> 0.1819, +21.5% relative, outside the floor)
+  -- and visible ONLY under the full menu; gold reads -0.0014. Cost: `classification`
+  **-0.1492** (7x the floor, precision AND recall both down, so not a trade). Aggregate
+  full-menu selection score -0.0024, INSIDE the floor -- a wash that hides entity +913 and
+  event_argument +671 being cancelled by classification -1535 (support x delta).
+
+- **LOSS COMMINGLING IS THE LEADING HYPOTHESIS, and it is testable locally for free.**
+  There are no per-task losses: the boundary terms are per-MECHANISM (start/end/pair/inside/
+  soft_iou/rerank/proposal/consistency/null/count) and entities, relations, events and
+  json_structures all flow through them over ONE pooled query axis. `_reduce(mode="global")`
+  (losses.py:167-170) divides by `keep_f.sum()` pooled across every task in the batch, and
+  its own docstring states the consequence: "scaling positives by k multiplies a task's
+  contribution by (k*pos + neg)/(pos + neg)". Injecting entity/event negatives adds queries
+  to that denominator. Classification cannot compensate: it has a SEPARATE head and loss
+  (`_classification_loss`, model.py:1761) with one global `classification_loss_weight`, and
+  `TASK_TYPES = ("entities","relations","events","json_structures")` does NOT include it, so
+  `task_loss_weights` has no lever for it.
+  **THE TEST: one batch, built with and without negative injection, printing `keep_f.sum()`
+  and the per-task contributions.** No GPU rental. Do this before any repair.
+
+- **Candidate repairs, once the mechanism is confirmed:** (1) `reduction="per_query"`, already
+  implemented at losses.py:171-176, removes the pooled coupling; (2) add `classifications` to
+  `TASK_TYPES` so it can be weighted at all; (3) raise `classification_loss_weight` (crudest,
+  and tuning on one run fits noise); (4) **negatives on events only** -- entity negatives
+  bought +0.0116, inside the floor, so they may be pure cost while event_argument keeps the win.
+
+- **The negatives A/B (`negatives_ab/{control,treatment}.json`) CANNOT corroborate this.** It
+  scores no classification or structure at all, and its other heads are near-zero (entity
+  0.0147, relation 0.0000, event_argument 0.0000) -- barely-trained smoke arms, not a
+  comparable measurement. The -0.1492 rests on a single run.
+
+- **Long-document test pool is BUILT and SAVED:** `whr778/cc_news_long` (PRIVATE, 764 docs,
+  unannotated). All 764 exceed 4,096 tokens, 98.3% span 2+ windows, 50% span 3+, 24.2% span
+  4+; median 9,274 tokens, max 38,412 against an encoder limit of 8,192. Harvested by
+  `tools/data/harvest_long_ccnews.py` from all 708,241 CC-News documents. Yield was 764, not
+  the ~513 extrapolated -- the first 40,000 in stream order under-sample the long tail.
+  BEFORE ANNOTATING, three caps must rise: `fetch_cc_news.py --max-chars 12000`, the
+  annotators' `MAX_CHARS` (4000-6000), and `max_tokens` (900-3000, which would TRUNCATE a
+  38,412-token document's annotation into invalid JSON). Cost ~$7 in batch mode for all 764;
+  pilot 10 first and measure verbatim-span match rate against length, because a silently
+  thinned gold set would make the sliding window look worse than it is.
