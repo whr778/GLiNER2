@@ -39,6 +39,9 @@ def main() -> int:
                     help="deltas smaller than this are reported as inside the floor")
     ap.add_argument("--label-baseline", default="baseline")
     ap.add_argument("--label-candidate", default="candidate")
+    ap.add_argument("--menu", choices=("gold", "full", "both"), default="both",
+                    help="which menu's keys to compare; a precision intervention is "
+                         "invisible under the gold menu, which cannot express a wrong answer")
     args = ap.parse_args()
 
     # The comparison is void if the two runs did not score the same thing. Refuse rather
@@ -57,17 +60,52 @@ def main() -> int:
 
     base = json.load(open(args.baseline, encoding="utf-8"))
     cand = json.load(open(args.candidate, encoding="utf-8"))
-    keys = sorted(k for k in set(base) | set(cand)
-                  if k.endswith("micro_f1") and "fullmenu" not in k)
 
-    print(f"\n{'metric (micro F1)':36s} {args.label_baseline:>12s} "
+    # SAME DATA IS NOT ENOUGH -- the same data at two operating points is still two
+    # measurements. The model cards say so themselves: "numbers quoted at each model's own
+    # threshold are read at different operating points and are not directly comparable."
+    pa, pb = base.get("eval_provenance"), cand.get("eval_provenance")
+    if pa and pb:
+        differing = [f for f in ("threshold", "full_menu", "split", "records")
+                     if pa.get(f) != pb.get(f)]
+        if differing:
+            raise SystemExit(
+                f"[compare] REFUSING: the runs were scored at different operating points "
+                f"({differing}): {', '.join(f'{f}={pa.get(f)!r} vs {pb.get(f)!r}' for f in differing)}."
+            )
+        print(f"[compare] operating point identical (threshold={pa.get('threshold')}, "
+              f"full_menu={pa.get('full_menu')}, {pa.get('records')} records)")
+    else:
+        print("[compare] WARNING: no eval_provenance on "
+              f"{'both' if not (pa or pb) else 'one'} side — the threshold and menu behind "
+              "these numbers are UNVERIFIED. Confirm them before quoting the delta.")
+
+    menus = {"gold": ("gold menu", lambda k: "fullmenu" not in k),
+             "full": ("FULL menu (model's own taxonomy)", lambda k: "fullmenu" in k)}
+    wanted = ["gold", "full"] if args.menu == "both" else [args.menu]
+    rc = 0
+    for which in wanted:
+        title, pred = menus[which]
+        keys = sorted(k for k in set(base) | set(cand)
+                      if k.endswith("micro_f1") and pred(k))
+        if not keys:
+            print(f"\n[compare] no {title} keys on either side — skipping that block")
+            continue
+        _block(base, cand, keys, title, args)
+    return rc
+
+
+def _block(base, cand, keys, title, args) -> None:
+    """One comparison table, for one menu mode."""
+    print(f"\n=== {title} ===")
+    print(f"{'metric (micro F1)':36s} {args.label_baseline:>12s} "
           f"{args.label_candidate:>12s} {'delta':>9s}")
     print("-" * 76)
     moved_up = moved_down = inside = 0
     for k in keys:
         x, y = base.get(k), cand.get(k)
         if x is None or y is None:
-            print(f"{k.replace('eval_','').replace('_micro_f1',''):36s} "
+            print(f"{k.replace('eval_fullmenu_','').replace('eval_','').replace('_micro_f1',''):36s} "
                   f"{'-' if x is None else f'{x:.4f}':>12s} "
                   f"{'-' if y is None else f'{y:.4f}':>12s} {'n/a':>9s}  (missing one side)")
             continue
@@ -78,13 +116,12 @@ def main() -> int:
             tag, moved_up = "  UP", moved_up + 1
         else:
             tag, moved_down = "  DOWN", moved_down + 1
-        print(f"{k.replace('eval_','').replace('_micro_f1',''):36s} "
+        print(f"{k.replace('eval_fullmenu_','').replace('eval_','').replace('_micro_f1',''):36s} "
               f"{x:12.4f} {y:12.4f} {d:+9.4f}{tag}")
 
     print("-" * 76)
     print(f"outside the +/-{args.floor} floor: {moved_up} up, {moved_down} down; "
           f"{inside} inside it")
-    return 0
 
 
 if __name__ == "__main__":

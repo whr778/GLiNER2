@@ -1155,6 +1155,18 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
                      split_data if split != "val" else None, streaming=False)
     metrics = _run_blind_test(best, split_data, ev["batch_size"], ev["threshold"], ev["by_language"], gd_kwargs)
     if metrics:
+        # RECORD THE OPERATING POINT. A <split>_metrics.json used to carry 314 numbers and
+        # nothing about the threshold or menu behind them, so establishing that a published
+        # baseline was read at 0.3 under --full-menu meant grepping the runner script that
+        # produced it. Two numbers are only comparable at the same operating point; store it.
+        metrics["eval_provenance"] = {
+            "threshold": ev["threshold"],
+            "full_menu": bool((overrides or {}).get("full_menu")),
+            "split": split,
+            "records": len(split_data),
+            "checkpoint": str(best),
+            "config": str(config_path),
+        }
         fname = f"{split}_metrics.json"
         out_dir = Path(cfg["training"]["output_dir"])
         out_dir.mkdir(parents=True, exist_ok=True)
