@@ -305,6 +305,7 @@ datasets:
     tasks: NER + relations (scientific)
     license: research use (AI2)
     source_url: http://nlp.cs.washington.edu/sciIE/
+    hf_jsonl: whr778/scierc          # a box has no data/; without this the fetch no-ops
     language: [en]
     description: "Scientific NER + RE over AI2 abstracts; 6 entity types, 7 relation types."
   # --- Classification ---
@@ -359,6 +360,7 @@ datasets:
     tasks: Schema-driven structured extraction
     license: Apache-2.0
     hf_id: paraloq/json_data_extraction
+    hf_jsonl: whr778/paraloq_json    # a box has no data/; without this the fetch no-ops
     source_url: https://huggingface.co/datasets/paraloq/json_data_extraction
     language: [en]
     description: "Schema-driven structured extraction; maps JSON Schema + item triples to typed entity fields."
@@ -408,6 +410,15 @@ datasets:
     license: see source
     source_url: https://github.com/2086482524/CMNEE
     hf_jsonl: whr778/cmnee
+  cmnee_roles_ner:
+    name: CMNEE argument roles as entity spans (DERIVED)
+    tasks: NER (derived from event arguments; Event<Role> labels)
+    license: see source (derived from CMNEE)
+    source_url: local (tools/data/roles_to_entities.py --mode namespaced from cmnee)
+    hf_jsonl: whr778/cmnee_roles_ner
+    # PARTIAL: entity POSITIVES only. Declare it under data.partial_annotation or
+    # build_negative_pools.py will treat it as an entity annotator and draw negatives
+    # against documents where only these argument spans are labelled.
     language: [zh]
     description: "Chinese military news event extraction; 8 event types, 11 argument roles."
   docee:

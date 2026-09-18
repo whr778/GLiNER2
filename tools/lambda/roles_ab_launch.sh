@@ -35,6 +35,15 @@ REPO=whr778/gliner2-roles-$ARM \
 DEST=roles_$ARM \
 bash tools/lambda/event_base_run.sh"
 
+# PRE-FLIGHT: a box has no data/, so every corpus must be fetchable from the Hub. The first
+# launch of this A/B died in the data phase on BOTH arms ~12 minutes in -- scierc and
+# paraloq_json had no hf_jsonl entry and `_fetch_corpus` returns SILENTLY when a corpus is
+# unregistered. Both files were present on the laptop, which is why the configs looked fine.
+# Free, local, and seconds; it runs before anything can be billed.
+uv run python tools/train/check_corpora_fetchable.py \
+    --config "tools/train/config/ab/roles-$ARM.yaml" --offline \
+  || { echo "[roles-ab] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
+
 echo "[roles-ab] arm=$ARM  job_timeout=${JOB_TIMEOUT}s  hard_deadline=${HARD_DEADLINE}s"
 echo "[roles-ab] model -> whr778/gliner2-roles-$ARM"
 echo "[roles-ab] logs  -> whr778/gliner2-run-logs : roles_$ARM/"
