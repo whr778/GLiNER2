@@ -1099,3 +1099,45 @@ negatives bought +0.0116, inside the floor, and entities are the bulk of the inj
 has a partial-corpus flag, 884d25d); (3) `loss_reduction: per_query` is now UNMOTIVATED as a
 fix for this -- no config in the repo has ever set it, but the dilution it would fix is not
 what is happening.
+
+### 2026-09-18 (later) -- BOTH mechanisms refuted, and the verdict is downgraded
+
+**RETRACTED: "injection moves the classification token positions."** That claim came from a
+single draw per arm (1306 -> 1801 tokens, cls markers 7 -> 514). It was NOISE. The control
+that should have been run first -- the SAME schema collated six times, nothing injected --
+gives seq_len 1149-1884 and classification choices 2-59. An arm was read without a control,
+again. Pinning `random`/`torch`/`numpy` does NOT isolate it either, because injecting a label
+changes the RNG CONSUMPTION ORDER, so every downstream draw diverges.
+
+**Properly controlled (N=150 draws per arm, one docee record):**
+
+| | no-neg | with-neg | delta |
+|---|---|---|---|
+| seq_len | 1386.8 +/- 245.6 | 1403.6 +/- 256.6 | +16.9 (~1.2%) |
+| cls choices | 25.63 +/- 22.73 | 24.37 +/- 22.97 | -1.26, SE 2.64, **\|t\|=0.48** |
+
+Injection adds about one label's worth of tokens and leaves classification's presentation
+statistically unchanged. **So "labels-as-input perturbs classification" is REFUTED, alongside
+denominator dilution.** Neither mechanism survives contact with a control.
+
+### THE REAL FINDING: classification supervision is half-degenerate by design
+
+`SamplingConfig` (processor.py:271, consumed at 1075 and 1349) samples the label menu. On a
+60-label docee task the classification head is shown **mean 25.6 labels, sd 22.7, and ONLY 2
+labels 46% of the time.** This is identical in both arms, so it cannot explain the delta --
+but it means classification is trained through a very high-variance channel.
+
+**CONSEQUENCE: the -0.1492 is UNATTRIBUTED, and the "not shippable" verdict is DOWNGRADED.**
+The +/-0.02 floor this programme quotes was measured on other heads. Classification's own
+run-to-run floor has NEVER been measured, and 46%-degenerate supervision predicts a large one.
+-0.1492 may sit inside it.
+
+**DO NOT PIVOT on this evidence.** "Negatives on events only" has no support: it rests
+entirely on a classification loss that may be noise. What stands is `event_argument` +0.0322,
+which is real, targeted, and outside its floor.
+
+**NEXT TEST, and it must come before any repair:** measure classification's run-to-run floor.
+Cheapest honest version is to re-run the CONTROL arm twice under different seeds and read the
+spread on `classification_strict`; a negatives arm at a second `negative_label_seed` answers a
+different (also useful) question. Until that number exists, no classification delta on this
+programme is interpretable.
