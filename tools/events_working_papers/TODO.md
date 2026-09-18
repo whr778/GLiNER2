@@ -979,14 +979,21 @@ trace that it did.
   67% -- and where it does predict it agrees exactly. Negatives cannot touch that; they are
   a precision intervention. Do not read one as evidence about the other.
 
-- **`extract_events` decodes NOTHING on a checkpoint the eval path scores 0.8156 on.**
-  `whr778/gliner2-eb16-eventrecords-tr` returns `{"event_extraction": {"Earthquake": []}}`
-  for an unambiguous earthquake sentence at thresholds 0.5, 0.3, 0.1 and 0.01, and returns
-  the same for a negative control -- while `event_type` strict micro-F1 is 0.8156 through
-  `_run_blind_test`. Measured on CPU/MPS locally, so the MPS flash-attn patch is an
-  uncontrolled variable; repeat on CUDA before concluding. Either the convenience API takes
-  a calling convention we are not using, or it is broken -- and it is what an external user
-  reaches for first. Not chased yet because it gated nothing.
+- **`extract_events` decodes nothing -- but on `eb16-rebuild-tr`, NOT the event model.**
+  CORRECTED 2026-09-18. The probe ran against `/Volumes/Development/tmp/ckpt_incumbent`,
+  which sha256 proves is `eb16_rebuild_tr` (`e1272b7b...`), NOT
+  `gliner2-eb16-eventrecords-tr` (`84a9918f...`). Its config carries
+  `boundary_head.event_records: False`, so a model whose record head was never trained on
+  events returning `{"Earthquake": []}` is close to expected, and the "scores 0.8156" figure
+  belongs to a DIFFERENT checkpoint. The identity was assumed from byte size -- all three
+  checkpoints are exactly 1,257,024,736 bytes, so size distinguishes nothing. THE OPEN
+  QUESTION IS NOW UNTESTED, not answered: re-run against an `event_records: True` checkpoint
+  on CUDA before claiming anything about the convenience API.
+
+- **Checkpoint directories must be identified by sha256, never by name or size.** Three eb16
+  checkpoints share a byte size to the digit. Hub-recorded sha256:
+  `eb16-eventrecords-neg` 25d05a3d, `eb16-eventrecords-tr` 84a9918f, `eb16-rebuild-tr`
+  e1272b7b.
 
 - **A `<split>_metrics.json` now records its operating point** (`eval_provenance`:
   threshold, full_menu, split, records, checkpoint, config), and `compare_runs.py` refuses
