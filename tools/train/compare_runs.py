@@ -66,7 +66,14 @@ def main() -> int:
     # threshold are read at different operating points and are not directly comparable."
     pa, pb = base.get("eval_provenance"), cand.get("eval_provenance")
     if pa and pb:
-        differing = [f for f in ("threshold", "full_menu", "split", "records")
+        # A file written before --menu-negatives existed has no dose recorded, but its dose
+        # is not unknown: max_absent was HARDCODED at 20 and the gold menu offers none. Infer
+        # it rather than refusing a comparison that is actually like-for-like.
+        for prov in (pa, pb):
+            if prov.get("menu_negatives") is None:
+                prov["menu_negatives"] = 20 if prov.get("full_menu") else 0
+        differing = [f for f in ("threshold", "full_menu", "menu_negatives",
+                                 "split", "records")
                      if pa.get(f) != pb.get(f)]
         if differing:
             raise SystemExit(
@@ -74,7 +81,8 @@ def main() -> int:
                 f"({differing}): {', '.join(f'{f}={pa.get(f)!r} vs {pb.get(f)!r}' for f in differing)}."
             )
         print(f"[compare] operating point identical (threshold={pa.get('threshold')}, "
-              f"full_menu={pa.get('full_menu')}, {pa.get('records')} records)")
+              f"full_menu={pa.get('full_menu')}, "
+              f"menu_negatives={pa.get('menu_negatives')}, {pa.get('records')} records)")
     else:
         print("[compare] WARNING: no eval_provenance on "
               f"{'both' if not (pa or pb) else 'one'} side — the threshold and menu behind "
