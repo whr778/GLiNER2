@@ -157,6 +157,7 @@ def compute_metrics(
     batch_size: int = 8,
     threshold: float = 0.5,
     full_menu: Optional[Dict] = None,
+    menu_negatives: int = 20,
     stopwords: frozenset = _DEFAULT_STOPWORDS,
     chunk_size: int = None,
     chunk_overlap: int = 128,
@@ -200,7 +201,8 @@ def compute_metrics(
         if not schema:
             continue
         if full_menu:
-            schema = _widen_with_absent(schema, full_menu, index=i)
+            schema = _widen_with_absent(schema, full_menu,
+                                        max_absent=menu_negatives, index=i)
         texts.append(text)
         golds.append(output)
         schemas.append(schema)
@@ -1015,6 +1017,7 @@ def evaluate_checkpoint(
     global_decode_config=None,
     boundary_overrides: Dict[str, Any] = None,
     full_menu: Any = None,
+    menu_negatives: int = 20,
 ) -> Dict[str, Any]:
     """Load a saved GLiNER2 checkpoint and run :func:`compute_metrics` on a test set.
 
@@ -1078,11 +1081,16 @@ def evaluate_checkpoint(
                 model, dataset, batch_size=batch_size, threshold=threshold,
                 stopwords=stopwords, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
                 global_decode=global_decode, global_decode_config=global_decode_config,
-                full_menu=menu, report=False,
+                full_menu=menu, menu_negatives=menu_negatives, report=False,
             ) or {}
             metrics.update({k.replace("eval_", "eval_fullmenu_", 1): v
                             for k, v in wide.items()})
             metrics["fullmenu_sizes"] = {
+                # The DOSE matters as much as the pool. Training injects
+                # negative_labels_per_dim (1 per dimension on eb16); the gold menu offers 0
+                # and this pass offers `menu_negatives` per dimension. All three are
+                # different operating points, so record which one produced these keys.
+                "menu_negatives": menu_negatives,
                 "entities": len(menu.get("entities") or []),
                 "events": len(menu.get("events") or {}),
                 "relations": len(menu.get("relations") or []),

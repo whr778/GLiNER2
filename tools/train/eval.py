@@ -41,6 +41,12 @@ def main() -> None:
     p.add_argument("--abstention-threshold", dest="abstention_threshold", type=float,
                    help="Override boundary_head.abstention_threshold (ships at 0.5). An "
                         "eval-time operating point over one trained model, like --decode-mode.")
+    p.add_argument("--menu-negatives", dest="menu_negatives", type=int, default=20,
+                   help="absent labels per dimension under --full-menu (default 20). "
+                        "TRAINING injects negative_labels_per_dim -- 1 per dimension on "
+                        "eb16 -- so 20 is NOT the condition the model was trained under, "
+                        "and the gold menu (0) is not either. Set 1 to score at the "
+                        "training dose.")
     p.add_argument("--full-menu", dest="full_menu", action="store_true",
                    help="Also score with the model's own default_schema as the menu, "
                         "emitting eval_fullmenu_* keys. Gold-menu precision is 1.0000 by "
@@ -75,6 +81,7 @@ def main() -> None:
         overrides["abstention_threshold"] = args.abstention_threshold
     if args.full_menu:
         overrides["full_menu"] = True
+        overrides["menu_negatives"] = args.menu_negatives
     if args.threshold is not None:
         overrides["threshold"] = args.threshold
     if args.decode_mode is not None:

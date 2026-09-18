@@ -1147,6 +1147,10 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     # number is a gold-menu number.
     if (overrides or {}).get("full_menu"):
         gd_kwargs["full_menu"] = True
+        # The DOSE is part of the operating point. Training injects 1 absent label per
+        # dimension; this pass defaults to 20. Neither is the other, and a number read at
+        # one dose is not comparable to a number read at the other.
+        gd_kwargs["menu_negatives"] = int((overrides or {}).get("menu_negatives", 20))
     # Log what is being scored, for the same reason training does: a <split>_metrics.json
     # records the numbers and nothing about the corpus behind them. Per-field coverage is
     # the part that matters -- a metric computed over a split with no `location` gold says
@@ -1162,6 +1166,8 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         metrics["eval_provenance"] = {
             "threshold": ev["threshold"],
             "full_menu": bool((overrides or {}).get("full_menu")),
+            "menu_negatives": (int((overrides or {}).get("menu_negatives", 20))
+                               if (overrides or {}).get("full_menu") else 0),
             "split": split,
             "records": len(split_data),
             "checkpoint": str(best),
