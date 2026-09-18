@@ -1212,3 +1212,33 @@ event type, or hand-adjudicate a sample of 50) to turn the upper bound into a ra
 materially above zero, the fix is in `_usable_pool`: draw negatives only from labels a corpus
 annotates EXHAUSTIVELY, which is a stronger property than `annotates[dim]` and is not
 currently recorded by `build_negative_pools.py`.
+
+
+### 2026-09-18 (later still) -- the tightened probe REFUTES the false-negative explanation
+
+Tightening the probe on 4,000 docee documents, 2,659 testable injected negatives:
+
+| probe | rate |
+|---|---|
+| loose substring (as first reported) | 35.8% |
+| + surface UNAMBIGUOUS corpus-wide and seen >= 2 | **5.6%** |
+| + surface carried that label under THIS document's EVENT TYPE | **0.6%** |
+
+Hand-adjudicating the 12 survivors: ~5 genuine (`Archaeologist` injected absent while the text
+says *Archaeologists*; `Date` absent while the text says *in July*; `Location` absent in a
+Sports Competition naming *Indianapolis Motor Speedway*), ~4 clear probe errors
+(`Historical Sites` firing on *fossils*, `Affected Area` on *world*), ~3 marginal. Probe
+precision ~40-65%, so the true rate is **~0.25-0.6%**.
+
+**REAL, BUT TWO ORDERS OF MAGNITUDE TOO SMALL** to explain a precision shift of +0.089. The
+claim that the negatives break the within-dimension rule "from the inside" does NOT survive its
+own tightened test. `_usable_pool` is still weak in principle -- `annotates[dim]` is a boolean
+over the whole corpus -- but it is not causing measurable harm, so building the surface-index
+guard is NOT justified by evidence.
+
+**AND NO DEFECT IS NEEDED.** Negatives are SUPPOSED to make the model conservative; precision
+up and recall down is the designed behaviour of absent-label supervision, not a symptom. Under
+the gold menu that trade is F1-neutral; under the FULL menu, where suppressing wrong labels is
+the whole task, `event_argument` F1 rose +0.0322. Three mechanisms were proposed and refuted
+today (denominator dilution, labels-as-input perturbation, false negatives) before the
+parsimonious reading was considered. **Measure before proposing a mechanism.**
