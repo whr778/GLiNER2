@@ -1122,10 +1122,29 @@ denominator dilution.** Neither mechanism survives contact with a control.
 
 ### THE REAL FINDING: classification supervision is half-degenerate by design
 
-`SamplingConfig` (processor.py:271, consumed at 1075 and 1349) samples the label menu. On a
-60-label docee task the classification head is shown **mean 25.6 labels, sd 22.7, and ONLY 2
-labels 46% of the time.** This is identical in both arms, so it cannot explain the delta --
-but it means classification is trained through a very high-variance channel.
+`SamplingConfig` (processor.py:271) augments the classification menu hard. CORRECTED
+2026-09-18: an earlier note here said "mean 25.6 labels, sd 22.7, only 2 labels 46% of the
+time". That was an INDEXING BUG -- it read `structure_labels[0][1]`, and group order varies,
+so index 1 sometimes pointed at the ENTITIES group and returned 2. Measured properly over 400
+presentations of one docee record (60-label task):
+
+| | rate |
+|---|---|
+| synthetic `label N` naming (all semantics stripped) | **48.0%** |
+| true label ABSENT from the menu | **13.9%** |
+| labels offered | mean **45.0**, sd 8.5, range 31-61 |
+
+`synthetic_label_prob: 0.5` renames every label to `label 1..N` and remaps descriptions and
+few-shot examples with it (processor.py:1315-1324); `synthetic_entity_label_prob: 0.2` does
+the same for entities (`entity 1`). `include_true_label_prob: 0.5` is a RESCUE, not an
+inclusion rate -- the true label is re-appended only if dropping removed it, so absence needs
+a drop AND a failed rescue.
+
+So classification supervision is NOT half-degenerate, and the claim that its floor must
+therefore be huge is weaker than stated. What is real: 48% of training presentations carry no
+label semantics at all and 14% have no correct answer, while EVAL always gives real names and
+always includes the true label. That asymmetry is by design, identical in both arms, and
+still unquantified as a source of run-to-run variance.
 
 **CONSEQUENCE: the -0.1492 is UNATTRIBUTED, and the "not shippable" verdict is DOWNGRADED.**
 The +/-0.02 floor this programme quotes was measured on other heads. Classification's own
