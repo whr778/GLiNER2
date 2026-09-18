@@ -1242,3 +1242,38 @@ the gold menu that trade is F1-neutral; under the FULL menu, where suppressing w
 the whole task, `event_argument` F1 rose +0.0322. Three mechanisms were proposed and refuted
 today (denominator dilution, labels-as-input perturbation, false negatives) before the
 parsimonious reading was considered. **Measure before proposing a mechanism.**
+
+### 2026-09-18 -- classification's floor MEASURED from data we already had; verdict REINSTATED
+
+The "-0.1492 may be inside an unmeasured floor" downgrade was WRONG, and it should never have
+been written: it rested on a speculated large floor, which in turn rested on the indexing bug
+already retracted above. Two independent estimates existed in runs this programme had already
+paid for.
+
+| source | regime | classification floor |
+|---|---|---|
+| gate3 warm cells, seeds s1/s4/s21 | warm-cell fine-tune | sd **0.0178**, range 0.0400 |
+| clean re-baseline, seed42 vs seed43 | warm-start | **0.0013** |
+
+Seed-to-seed sd by head (gate3, same config, same 18,786-record test set):
+
+| head | sd | our delta | sigma |
+|---|---:|---:|---:|
+| classification | 0.0178 | **-0.1492** | **8.4** |
+| event_argument | 0.0009 | **+0.0322** | **36** |
+| event_type | 0.0395 | -0.0154 | 0.4 (inside) |
+| relation | 0.0110 | +0.0007 | 0.1 (inside) |
+| structure | 0.0025 | -0.0274 | 11 |
+
+**BOTH EFFECTS ARE REAL.** `event_argument` +0.0322 and `classification` -0.1492 are far outside
+any floor measured for those heads, in either regime. `structure` -0.0274 is also real (11 sd).
+`event_type` and `relation` are inside.
+
+**VERDICT REINSTATED: do not ship the negatives as configured.** The mechanism remains
+unexplained -- denominator dilution, labels-as-input perturbation and false negatives were each
+proposed and refuted today -- but the EFFECT is not in doubt. An unexplained real effect is a
+reason to investigate, not a reason to discount.
+
+**PROCESS LESSON, the expensive one from this day:** look for seed replicates already in hand
+BEFORE speculating about a floor. Three mechanisms were hypothesised and refuted, and a verdict
+was downgraded and reinstated, when the number that settled it was sitting in two prior runs.
