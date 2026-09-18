@@ -46,27 +46,17 @@ from huggingface_hub import snapshot_download
 snapshot_download('$HFCKPT', local_dir='$CKPT')" || exit 2
 fi
 
-# SANITY BEFORE SPEND: the model must DECODE EVENTS, not merely load. A boundary model that
-# loads cleanly and emits zero events is a failure already on file (159ef04). Loading is not
-# evidence of working, and this run exists to produce a number -- not to discover at the end
-# that every event metric is 0.0 for a mechanical reason.
-echo "[rescore] sanity: does it decode events at all?"
-CKPT="$CKPT" $PY - <<'SANITY' || { echo "[rescore] *** SANITY FAILED -- not spending ***"; exit 3; }
-import json, os, torch
-from gliner2 import AutoExtractor
-m = AutoExtractor.from_pretrained(os.environ["CKPT"], architecture="boundary").eval()
-if torch.cuda.is_available():
-    m = m.to("cuda")
-text = ("The company announced on Tuesday that it had acquired the startup for $2 billion, "
-        "and the deal will close in March.")
-with torch.no_grad():
-    out = m.extract_events(text, {"Acquisition": ["buyer", "target", "price", "date"]})
-evs = (out or {}).get("events", out)
-n = sum(len(v) for v in evs.values()) if isinstance(evs, dict) else len(evs or [])
-print(f"[rescore] sanity decode -> {json.dumps(out, ensure_ascii=False)[:240]}")
-print(f"[rescore] sanity event count = {n}")
-raise SystemExit(0 if n > 0 else 1)
-SANITY
+# NO PRE-FLIGHT DECODE GATE, deliberately. The obvious one -- call extract_events and
+# require n>0 -- was built and DISCARDED here: on the incumbent, a checkpoint that scores
+# event_type F1 0.8156 through the eval path, extract_events returns {"Earthquake": []} for
+# an unambiguous earthquake sentence at every threshold from 0.5 down to 0.01, and returns
+# the same for a negative control. A gate that cannot separate those two is not a gate.
+# (The first draft was worse: it summed len() over the OUTER dict and reported "1 event" for
+# an empty result -- the same nested-shape misread that made an extract_entities probe print
+# a flat 100% "not predicted" across eleven roles.)
+# The job is ~30 minutes and publishes its log, so a real failure is visible for free.
+# OPEN QUESTION, worth its own look: why does the convenience API decode nothing on a
+# checkpoint the eval path scores 0.8156 on? Not chased here -- it does not gate this run.
 
 echo "[rescore] ===== TEST $NAME  threshold=$THRESH  full-menu  $(date -u) ====="
 $PY -u tools/train/eval.py --config "$CFG" --checkpoint "$CKPT" \

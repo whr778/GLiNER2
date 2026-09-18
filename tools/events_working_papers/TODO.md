@@ -962,3 +962,34 @@ observations; the fix was returning `None` so "no number here" stays distinguish
 "the number is zero". A hard veto on prior-implausibility is the same mistake wearing a
 Bayesian hat -- it erases the tsunami-in-Turkey the tracker exists to catch, and leaves no
 trace that it did.
+
+### Open after 2026-09-18 -- recovering the negatives blind test
+
+- **Option 4 (role -> NER label) is REQUESTED and unbuilt.** Step 1 landed (884d25d: a
+  corpus can be PARTIAL, positives for a dimension and never negatives). Step 2 --
+  `tools/data/roles_to_entities.py` -- does not exist. The adjudication is written up in
+  `OPTION_4_ROLE_TO_ENTITY.md`: map DIRECTLY to NER labels rather than emitting role names
+  and remapping, because a derived corpus is new data we author, so no source corpus is
+  rewritten and the `labels_file` indirection is not bent. Usable supply is **24.3%**
+  (15,188 of 62,573), not 100%. Run it after the negatives verdict.
+
+- **The strongest evidence for Option 4's thesis is a RECALL measurement, and the negatives
+  run measures PRECISION.** On 50 cmnee docs / 583 argument mentions the base model does not
+  PROPOSE the gold argument spans at all -- Subject 96% never predicted, Location 71%, Date
+  67% -- and where it does predict it agrees exactly. Negatives cannot touch that; they are
+  a precision intervention. Do not read one as evidence about the other.
+
+- **`extract_events` decodes NOTHING on a checkpoint the eval path scores 0.8156 on.**
+  `whr778/gliner2-eb16-eventrecords-tr` returns `{"event_extraction": {"Earthquake": []}}`
+  for an unambiguous earthquake sentence at thresholds 0.5, 0.3, 0.1 and 0.01, and returns
+  the same for a negative control -- while `event_type` strict micro-F1 is 0.8156 through
+  `_run_blind_test`. Measured on CPU/MPS locally, so the MPS flash-attn patch is an
+  uncontrolled variable; repeat on CUDA before concluding. Either the convenience API takes
+  a calling convention we are not using, or it is broken -- and it is what an external user
+  reaches for first. Not chased yet because it gated nothing.
+
+- **A `<split>_metrics.json` now records its operating point** (`eval_provenance`:
+  threshold, full_menu, split, records, checkpoint, config), and `compare_runs.py` refuses
+  across differing operating points. Files written BEFORE 2026-09-18 have no provenance;
+  for those the threshold must still be recovered from the runner that produced them --
+  `negatives_ab/rebase-*.json` is `--threshold 0.3 --full-menu`, from `negatives_ab.sh:43`.
