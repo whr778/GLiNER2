@@ -62,7 +62,9 @@ except Exception as exc:
 print(f"[prov] HF_TOKEN authenticates as {who}")
 TOKCHK
 
-SSH="ssh -i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20"
+# ServerAliveInterval keeps a long bootstrap from dying to an idle NAT timeout, which is
+# how a laptop network blip once returned "job did not start" for a box that was training.
+SSH="ssh -i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=8"
 
 terminate_and_die() {
   echo "[prov] terminating $ID rather than leaving it billing"
@@ -142,5 +144,19 @@ $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && CFG=$CFG CKPT=$CKPT bash tools/lambda
 
 echo "[prov] starting job $(date -u)"
 $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && JOB=\"$JOB\" JOB_TIMEOUT=$JOB_TIMEOUT HARD_DEADLINE=$HARD_DEADLINE nohup bash tools/lambda/box_run.sh > ~/box.log 2>&1 & disown'" \
-  || terminate_and_die "job did not start"
+  || {
+    # DO NOT TRUST THE TRANSPORT'S WORD. The job is detached with nohup+disown, so an SSH that
+    # drops AFTER it starts returns non-zero and looks identical to one that never ran it.
+    # On 2026-09-18 a `client_loop: send disconnect: Broken pipe` on the LAPTOP terminated two
+    # A100s that were 20 minutes into training at step 553 -- the network blip killed the run,
+    # which is the exact failure the three-stop design exists to prevent. Ask the BOX whether
+    # the runner is alive before believing it is not.
+    echo "[prov] ssh returned non-zero starting the job -- asking the box before terminating"
+    sleep 25
+    if $SSH ubuntu@$IP 'pgrep -f box_run.sh >/dev/null || [ -s ~/box.log ]' 2>/dev/null; then
+      echo "[prov] the job IS running; the ssh transport dropped, not the job -- continuing"
+    else
+      terminate_and_die "job did not start (verified on the box: no runner, no box.log)"
+    fi
+  }
 echo "[prov] RUNNING -- ip=$IP  id=$ID"
