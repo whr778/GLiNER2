@@ -1,0 +1,300 @@
+# OPTION 4 A/B -- TREATMENT arm.
+#
+# THE ONE VARIABLE: whether `data/cmnee_roles_ner` is in the mix. It is cmnee's event
+# ARGUMENTS reframed as entity spans under namespaced `Event<Role>` labels -- see
+# tools/data/roles_to_entities.py and OPTION_4_ROLE_TO_ENTITY.md.
+#
+# WHAT IT TESTS: roughly a third of event_argument loss is spans NEVER PROPOSED. Measured on
+# 50 cmnee documents, the entity head does not put forward 96% of `Subject`, 71% of
+# `Location` and 67% of `Date` gold surfaces. Options 1 and 3 both constrained BINDING and
+# both measured negative; this adds EXTRACTION supervision instead, which is the only lever
+# of the four that can move a span that was never proposed at all.
+#
+# THE LABELS CLAIM A ROLE, NOT A TYPE. `EventSubject`, not `Subject`: a submarine is
+# Equipment, Materials AND Subject in one cmnee document, so role-as-type manufactures
+# contradictory supervision, and 9 of 11 plain role names collide with a base entity label of
+# DIFFERENT meaning. Verified: none of the eleven `Event<Role>` names collide with the base's
+# 2,050-label entity vocabulary.
+#
+# PARTIAL, AND THIS IS THE GUARD THAT MATTERS. The derived corpus labels ONLY these argument
+# spans and leaves every other entity in the document unlabelled. `build_negative_pools.py`
+# infers annotation from the presence of gold, so without the declaration below it would
+# auto-qualify as an entity annotator and draw entity negatives against documents where
+# almost everything is unlabelled -- poisoning the pool for every model trained afterwards,
+# silently, because a negatives pool has no natural correctness signal.
+# THE EVENT-CAPABLE BASE. eb16-rebuild-tr's DATA -- trilingual, repaired, label-unified --
+# with events routed through the RECORD head instead of the mention path.
+#
+# WHY THIS FILE EXISTS. `eb16-rebuild-tr` sets `enable_records: true` with the comment
+# "events decode as trigger + role edges". That comment describes JOINT DECODE-TIME
+# behaviour and is misleading about TRAINING: without `event_records`, an events group
+# never reaches the record head at all, so eb16's record head was supervised on
+# `json_structures` only and has never seen an event. Verified -- `event_records` appears
+# zero times in eb16-rebuild-tr.yaml and zero times in every other file under config/base/.
+#
+# WHAT THAT COSTS, measured on the 18,786-record blind test
+# (EVENT_ARGUMENT_DIAGNOSIS.md): `event_argument` reads 0.1178 STRICT against 0.5783
+# RELAXED on the same predictions. The only difference between those keys is whether the
+# argument must attach to the right TRIGGER. Boundary and label errors together are 6.6% of
+# gold, so the model FINDS the arguments and cannot BIND them -- because the mention path
+# compiles ONE INSTANCE PER EVENT TYPE and 64.2% of gold event instances share their type
+# with another instance in the same document (cmnee 1,606 docs, maven 346, casie 102).
+# Two-thirds of gold events are structurally inexpressible by that decoder.
+#
+# `event_records: true` routes events through the record head, which is multi-instance by
+# construction. VERIFIED through `collate_fn_train` -- the TRAINING path, not inference --
+# on a real CMNEE document carrying Experiment x2 / Accident x1 / Injure x2:
+#
+#     event_records=False -> 0 record specs   (events never reach the record head)
+#     event_records=True  -> 3 record specs   (one per type, natural mode, 5 fields each)
+#
+# WHY NOT A TIER 2 FINE-TUNE, WHICH WAS TRIED TWICE AND FAILED. CASIE Tier 2 scored 0.0036
+# against a 0.2998 control; MAVEN gave trigger -0.008. Both flipped the decode path on a
+# record head with NO event competence, measuring the sum of a path change and a head-init
+# failure -- and head-init is the largest effect in this programme (RAMS arguments
+# 0.042 -> 0.462, elevenfold). This config makes the change at COLD START, so the head is
+# warmed on events from step 0 and that sum never forms.
+#
+# WHAT IT KEEPS FROM eb16-rebuild-tr, unchanged: the 13-corpus trilingual mix
+# (en 43.8% / zh 38.0% / tr 18.2%), the character-class length proxy, `labels/unified.yaml`,
+# and every hyperparameter. Those were rebuilt deliberately and are not in question here.
+#
+# WHAT IT ADDS BEYOND eb16, all three vetted 2026-09-15 with ZERO exact-text overlap
+# against the corpora already in the mix:
+#
+#   professorbob_re  +13,926 relation records, regrouped BY PASSAGE so each record carries
+#                    all of a passage's triples -- the dense multi-relation shape the joint
+#                    decode exists for, which sentence_rex (one triple per sentence) cannot
+#                    supply.
+#   scierc           +265. Domain, not volume: the only scientific relation corpus.
+#   paraloq_json     +378. The only structure corpus besides text2json, and it is here
+#                    BECAUSE of event_records -- moving events onto the record head
+#                    increases what that head must do.
+#
+# DELIBERATELY NOT ADDED, and these refusals are load-bearing:
+#
+#   rams        NO. The EVENT DOWNSTREAM. It trains joint-boundary-rams-137k, the
+#               rams-clean-* arms and PAPER_0's head-init curve. Putting it in a base
+#               contaminates all of them INVISIBLY -- the downstream just looks better.
+#               Requested 2026-09-15 and refused for this reason.
+#   redocred    NO. Relation downstream, same argument.
+#   wikievents  NO. Event downstream, same argument.
+#   docred      NO. Re-DocRED re-annotates its documents; including it leaks downstream.
+#   klue_re     NO for now -- 22,521 Korean records at 17% contamination (TODO). Currently
+#               "not in a live config, so not blocking"; adding it would make it blocking.
+#   ace2005     NOT AVAILABLE. LDC2006T06, not redistributable, not present in data/.
+#
+# READ AGAINST: `whr778/gliner2-eb16-rebuild-tr`, which is this data with the mention path.
+# PRIMARY: `eval_event_argument_strict_micro_f1` -- eb16's own figure is 0.1178.
+# REPORT RELAXED BESIDE STRICT. Strict moving toward relaxed while relaxed HOLDS is the
+# binding hypothesis confirmed. Both moving means something else changed, and the run says
+# less than it appears to.
+#
+# NOT A ONE-VARIABLE A/B: this differs from eb16-rebuild-tr by the flag AND by three added
+# corpora. A difference is attributable to either. If the clean flag comparison is what is
+# wanted, drop the three additions below and the diff becomes one key.
+#
+# COST: full cold start, ~180k records x 5 epochs at effective batch 16 on ONE GPU. Budget
+# ~$25-35 and read the per-GPU batch warning in the training block before using two cards.
+
+# eb16 REBUILT: the length-proxy fix, plus Turkish -- the base becomes trilingual.
+#
+# TWO REASONS, and only the first is a defect.
+#
+# 1. THE LENGTH PROXY WAS BROKEN WHEN eb16 TRAINED. `lengths` was len(text.split()),
+#    which returns ~1 for Chinese. eb16 is 46.5% Chinese (ChFinAnn 25,632 + DocFEE 16,384
+#    + DuEE 11,603 + CMNEE 9,281 = 62,900 of 135,352) -- the MOST affected model in the
+#    project -- so nearly half its corpus sorted into one length bucket. Measured on
+#    gate3.train, that regime put 39.2% of batches at 100% one language against a 3.7%
+#    random floor; the char-class fix brings it to 9.7%. eb16 sits at the ROOT of the
+#    lineage (casualty-multilingual warm-starts from it, and stage-1 from that), so the
+#    defect propagates downstream.
+#
+# 2. THE BASE HAD NEVER SEEN TURKISH while its own child had. casualty-multilingual
+#    fine-tunes Turkish onto an encoder with zero Turkish grounding. data/turkish_event
+#    (30,134 rows, bought 2026-09-04) closes that.
+#
+# TURKISH WAS VERIFIED COMPATIBLE BEFORE BEING ADDED, not assumed:
+#   - its 338 entity roles are a CLEAN SUBSET of DocEE's 356 (0 foreign roles), because
+#     the entity menu was conditioned on DocEE's own per-type role sets when bought;
+#   - 5 of them are keys in labels/unified.yaml (Start_Date and Start Date both ->
+#     StartDate, End_Date and End Date -> EndDate, Areas Affected -> Areas affected), so
+#     labels_file is LOAD-BEARING here: without it those train as separate roles. DocEE
+#     itself carries the variants; the map exists to collapse them;
+#   - its only classification label outside DocEE's 59 is `none` (16.9%), kept because it
+#     is a real negative for the classifier.
+#
+# THE CORPUS LIST IS RESTORED FROM THE MODEL CARD, not from this file's previous contents.
+# The config on disk listed 3 corpora while the card records 12 at 135,352 rows -- the
+# "a config is not a permanent record of the run" trap. All 12 verified present locally
+# with row counts matching the card exactly.
+#
+# SHARES SHIFT and that is deliberate: en 53.5% -> 43.8%, zh 46.5% -> 38.0%, tr 0 -> 18.2%.
+# Adding a language dilutes the others -- that mechanic cost Chinese in gate2_tr and
+# English in gate3. For a BASE, broader coverage is the point, but the shares are recorded
+# here so the next person does not rediscover them from a regression.
+#
+# WikiANN was CONSIDERED AND REJECTED for this rebuild. Its 3-class annotation would not
+# inject noise -- entity menus are per-record, so unlabeled spans are never scored -- but
+# its PER/ORG/LOC would need unifying against a vocabulary that deliberately keeps
+# GPE != Location and NORP != Organization, which is judgement work requiring surface
+# reading. turkish_event needs no unification beyond the 5 map entries above.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary     # NOT span -- no max_width here on purpose: that is a
+                             # span_head field, and removing the span width cap is
+                             # the point of the boundary head (COUNTING_LAYER).
+  max_len: 8192
+  # FlashAttention 2 is required for CORRECTNESS here, not just speed. Measured on
+  # 1x H100, 60 steps of this exact config: sdpa+bf16 goes non-finite at step 15
+  # (start/end/pair/soft_iou/rerank all at once) and runs 2.0 samples/s; FA2+bf16
+  # is clean for 60 steps at 22.0 samples/s. mmBERT is ModernBERT and is built
+  # around FA2 + unpadding (arXiv 2509.06888 Table 8). Needs the 'kernels' package.
+  attn_implementation: flash_attention_2
+  boundary_head:
+    # max_gold_per_query: 32 (the library DEFAULT) drops the WHOLE sample's gold, and this
+    # config's `on_capacity_exceeded: skip_sample` is what makes that silent. skip_sample
+    # fires when ANY ONE query overflows and clears gold for EVERY query in the document --
+    # and an empty mention_mask is not "no supervision", it is POSITIVE supervision to
+    # abstain: abstention_loss targets `~mention_mask.any(-1)` (boundary/losses.py:601) and
+    # count_log_rate_loss supervises a count of zero. The model is actively taught to emit
+    # nothing on the documents carrying the MOST gold. It fired 3,520 times in the
+    # eb16-eventrecords-tr run, on overflows of 34-66, and plausibly explains that run's
+    # entity regression (strict 0.5340 -> 0.4343).
+    #
+    # THE BASE CONFIGS WERE THE OUTLIER. Eleven other configs already raise this: the
+    # casualty and zh-multitask lines use 256, and tier2/archive/casie-* records why --
+    # "a single query carries up to 188 gold spans against the default cap of 32". Those hit
+    # it as a loud TargetCapacityError because they kept the default `raise`; these configs
+    # set skip_sample, which converted the same overflow into silent damage.
+    #
+    # Sized from the data AND aligned to that precedent. Across this config's own corpora,
+    # of 89,392 (doc, label) query groups: 0.789% exceed 32, 0.037% exceed 128, 0.011%
+    # exceed 256. 256 matches the established value so warm-started comparisons stay
+    # like-for-like. training_candidate_budget must be >= it; 384 is the casie pair and is
+    # sufficient -- the casualty configs' 1024 is far beyond the constraint and costs
+    # throughput (6.4x the enumeration of the 160 default) for no additional coverage here.
+    # candidate_budget is deliberately LEFT at its 128 default: that is an inference-width
+    # decision, and the casualty precedent likewise trains wider than it decodes.
+    # Pinned by tests/processing/test_gold_capacity.py.
+    max_gold_per_query: 256
+    training_candidate_budget: 384
+    enable_relations: true   # load-bearing: relations decode as edges in the beam
+    enable_records: true     # load-bearing: events decode as trigger + role edges
+    # THE CHANGE. Off in eb16-rebuild-tr and in every other config/base/ file, which is why
+    # no base model's record head has ever been trained on an event. Lifts the
+    # one-instance-per-event-type cap that `compile_record_specs` records as costing 78.8%
+    # of gold instances on CASIE, 62.5% on WikiEvents, 38.3% on MAVEN -- and 0.0% on RAMS,
+    # which is exactly why the RAMS argument curves could never have surfaced it.
+    event_records: true
+  # No decode_mode here. decode_mode is an EVAL-time switch selecting the greedy or
+  # joint arm over ONE trained model (JOINT_IE_SCALING sec 3c); baking it into a
+  # training run would make the two arms different models and void the comparison.
+  struct_loss: bce_posweight
+  struct_pos_weight: 4.0
+
+training:
+  output_dir: ./out/roles-treatment
+  experiment_name: roles_treatment
+  data_parallel: false
+  num_epochs: 5              # held equal across the curve (only total volume varies)
+  batch_size: 4
+  # WARNING, measured not assumed: batch_size is PER-GPU, so this file is a DIFFERENT
+  # recipe depending on how it is launched, and the note that used to sit here claimed
+  # otherwise.
+  #
+  #   1 GPU : 4 x 4         = effective 16, 42,730 steps  <- what the 137k v1 base and
+  #                                                          the rest of the curve ran
+  #   2 GPUs: 4 x 4 x 2     = effective 32, 21,365 steps  <- HALF the optimizer updates
+  #
+  # v1's model card records "4 (x 4 grad-accum)" on one GPU, and 42,730 steps over
+  # 135,635 records x 5 epochs is effective 16 exactly. So a 2-GPU launch doubles the
+  # batch and halves the updates rather than matching the curve. Set
+  # gradient_accumulation_steps: 2 under torchrun --nproc_per_node=2 to reproduce the
+  # curve's optimization, or accept an off-curve base and re-baseline everything
+  # downstream of it.
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_loss
+  greater_is_better: false
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 0
+  validate_data: false
+  # Long documents are WINDOWED, not truncated: a 4096-subword window with a 3072
+  # stride (25% overlap) so cross-boundary structure is still seen. mmBERT supports
+  # 8192; 4096 keeps attention cost sane. window_stride is set explicitly because
+  # the default 256 would give 94% overlap at this window size -- ~16x redundant
+  # work on long docs. Docs under 4096 subwords yield a single window unchanged.
+  sliding_window: true
+  window_stride: 3072
+  max_len: 4096
+  gradient_checkpointing: true
+  pin_memory: false
+  early_stopping: false
+  # ~7-13% of records in chfinann/docfee/casie/text2json cannot be mapped to word
+  # token boundaries by the boundary preprocessor even though every surface IS
+  # present verbatim in the text (verified). That is an alignment limitation, not
+  # bad data, and it hits languages without whitespace delimiters hardest. Skip
+  # those records (counted, not silent) and skip gold-capacity overflows, rather
+  # than aborting a multi-hour run. Recorded in JOINT_IE_SCALING.
+  error_policy: skip
+  on_capacity_exceeded: skip_sample
+
+eval:
+  batch_size: 2
+  threshold: 0.5
+  threshold_sweep: true
+  eval_by_language: false
+
+# Unified label space, shared with every model warm-started from this base so they
+# all present the same labels. Generated -- see the file header to regenerate.
+labels_file: labels/unified.yaml
+
+data:
+  # POSITIVES ONLY, NEVER NEGATIVES. It carries entity gold for derived
+  # argument spans and nothing else, so absence of a label in it means
+  # NOT LABELLED, not NOT PRESENT.
+  partial_annotation:
+    cmnee_roles_ner: [entities]
+  # Relation corpora warm the relation head; the event corpora cannot.
+  # Every point carries BOTH, at the pool's own 73/27 ratio.
+  corpora:
+  # THE TREATMENT: cmnee's arguments as Event<Role> entity spans.
+  - data/cmnee_roles_ner
+  - data/sentence_rex
+  - data/bio_ner_relations
+  - data/biored
+  - data/chfinann
+  - data/docee
+  - data/docfee
+  - data/duee
+  - data/cmnee
+  - data/text2json
+  - data/maven
+  - data/events_biotech
+  - data/casie
+  - data/turkish_event
+  # Added beyond eb16-rebuild-tr -- see the header for the vetting and the refusals.
+  - data/professorbob_re
+  - data/scierc
+  - data/paraloq_json
+  event_files:
+    chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}
+    docee:           {train: data/docee.train.jsonl, val: data/scaling_joint/docee.val.jsonl, test: data/docee.test.jsonl}
+    docfee:          {train: data/docfee.train.jsonl, val: data/scaling_joint/docfee.val.jsonl, test: data/docfee.test.jsonl}
+    duee:            {train: data/duee.train.jsonl, val: data/scaling_joint/duee.val.jsonl}
+    cmnee:           {train: data/cmnee.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl, test: data/cmnee.test.jsonl}
+    text2json:       {train: data/text2json.train.jsonl, val: data/scaling_joint/text2json.val.jsonl, test: data/text2json.test.jsonl}
+    maven:           {train: data/maven.train.jsonl}
+    events_biotech:  {train: data/events_biotech.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl, test: data/events_biotech.test.jsonl}
+    mendeley_ed:     {train: data/mendeley_ed.train.jsonl, val: data/scaling_joint/mendeley_ed.val.jsonl, test: data/mendeley_ed.test.jsonl}
+    casie:           {train: data/casie.train.jsonl, val: data/scaling_joint/casie.val.jsonl, test: data/casie.test.jsonl}
