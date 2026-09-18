@@ -1046,3 +1046,56 @@ trace that it did.
   38,412-token document's annotation into invalid JSON). Cost ~$7 in batch mode for all 764;
   pilot 10 first and measure verbatim-span match rate against length, because a silently
   thinned gold set would make the sliding window look worse than it is.
+
+### 2026-09-18 -- the denominator test RAN, and it REFUTED the dilution hypothesis
+
+**MEASURED, on 4,960 records sampled across 124 train files, with the real injector
+(`NegativeLabels.load(negative_pools.json, {entities: 1, events: 1}, seed=42)`):**
+
+| dimension | before | after | growth |
+|---|---|---|---|
+| entities | 13,214 | 13,701 | +3.7% |
+| events | 3,377 | 3,555 | +5.3% |
+| relations / classifications / structures | — | — | **0.0%** |
+| TOTAL | 23,310 | 23,975 | **+2.9%** |
+
+Records whose query set changed: **12.6%**. `no_candidate` fired on **82.5%** -- most records
+have no corpus pool containing all their gold labels, so they are never injected.
+
+**A +2.9% change in the pooled `keep_f.sum()` denominator cannot produce a -0.1492
+(-18.4% relative) classification collapse.** The magnitudes differ by an order of magnitude,
+and the naive dilution story also predicts the WRONG SIGN: a bigger denominator with
+near-zero added numerator LOWERS the boundary mean, which would raise classification's
+relative share and HELP it. Hypothesis dead. Do not resurrect it without new evidence.
+
+### The surviving explanation: labels are an INPUT, and injection concentrates on the
+### classification corpora
+
+**Injection is not uniform -- it is near-universal exactly where classification lives:**
+docee **100%** injected (120/120 have classifications), chfinann **100%** (120/120),
+turkish_event 82.5% (120/120), docfee 56.7%, docee_zh 50.0%. Across corpora that receive any
+injection, **684 of 1,032 classification-bearing records (66%) were perturbed** -- against the
+12.6% global rate. The global figure is diluted by corpora that get nothing.
+
+**And the perturbation reaches classification directly, not through the loss.** Schema and
+text are encoded in ONE sequence: `processor.extract_embeddings_from_batch` gathers BOTH
+`all_token_embs` and `all_schema_embs` out of the same `token_embeddings` via
+`schema_special_indices` / `text_word_indices`, and classification logits are built from
+`all_schema_embs[i][g]` (model.py:1621). So an injected entity or event label changes the
+encoded context for the classification group's own schema tokens. Labels are an INPUT to
+GLiNER2 -- that is the standing rule in CLAUDE.md, and this is it biting.
+
+**Plus a train/eval mismatch:** training offers a menu carrying negatives on 66% of
+classification records; eval offers the gold menu with none. The classification head is
+trained in one input distribution and scored in another.
+
+**STILL TO PROVE (next increment, local and free):** tokenize one docee/chfinann record with
+and without injection and show the input sequence and the classification group's schema
+positions actually move. Code reading says they must; measure it before claiming it.
+
+**Repair candidates, re-ranked by this evidence:** (1) negatives on EVENTS only -- entity
+negatives bought +0.0116, inside the floor, and entities are the bulk of the injection;
+(2) exclude classification-bearing corpora from injection (`build_negative_pools.py` already
+has a partial-corpus flag, 884d25d); (3) `loss_reduction: per_query` is now UNMOTIVATED as a
+fix for this -- no config in the repo has ever set it, but the dilution it would fix is not
+what is happening.
