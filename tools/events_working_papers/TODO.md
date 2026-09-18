@@ -1160,3 +1160,55 @@ Cheapest honest version is to re-run the CONTROL arm twice under different seeds
 spread on `classification_strict`; a negatives arm at a second `negative_label_seed` answers a
 different (also useful) question. Until that number exists, no classification delta on this
 programme is interpretable.
+
+### 2026-09-18 -- THE NEGATIVES INJECT FALSE NEGATIVES, and it explains the measured trade
+
+**The mechanical part is correct:** an injected negative carries an EMPTY surface list
+(0 of 1,416 on docee carried a surface). Absent by construction, which is the point.
+
+**The risk is whether the label is absent from the TEXT, not merely from the GOLD.** Probed on
+1,500 docee documents: build surface -> label from docee's OWN gold, then ask whether a
+document injected with "absent" label L contains a surface known to carry L elsewhere in the
+same corpus. Strict matcher (surface >= 5 chars, non-numeric, word-boundary):
+**313 / 874 = 35.8%.** `Location` injected as absent while the text says *Africa*;
+`Affected Area` absent while the text says *France*, *Singapore*; `Discover Time` absent while
+the text says *Saturday*, *March*.
+
+**35.8% is an UPPER BOUND, not the rate.** The probe over-fires: `Archaeologist Organization`
+fires on *Spain*, and docee's entity gold is event-argument-derived, so a passing mention of
+Africa may legitimately not be a labelled `Location` FOR THAT EVENT. A loose matcher gave 62%;
+the difference between the two is a measure of how much the instrument, not the data, is
+talking. Do not quote either number as the false-negative rate without a tighter test.
+
+**THE GUARD IS TOO WEAK, and this is the actionable part.** `_usable_pool` vetoes a dimension
+unless every candidate corpus ANNOTATES it:
+
+```python
+if not (spec.get("annotates") or {}).get(dim):
+    return set()
+```
+
+That tests annotation of a DIMENSION, never exhaustive annotation of a LABEL. docee annotates
+entities -- but only event-relevant ones, leaving most mentions untagged -- so "in the pool,
+not in this record's gold" does NOT imply "absent from the text". The within-dimension rule
+("absence means not labelled, not not present") is the rule the partial-annotation flag exists
+to protect, and the negatives mechanism is breaking it from the inside.
+
+**IT PREDICTS THE MEASURED SIGNATURE.** False negatives teach suppression of correct spans:
+precision up, recall down, F1 flat. Measured on event_argument at threshold 0.3: precision
+**0.3797 -> 0.4685**, recall **0.2437 -> 0.2157**, F1 -0.0015. A one-for-one trade is what
+suppression looks like; better discrimination would have moved F1.
+
+**AND THE AUGMENTATION DILUTES THE REST.** `synthetic_entity_label_prob: 0.2` renames EVERY
+entity key including injected negatives, measured at **20.7%** of presentations, and an
+injected negative has no description to fall back on. So ~1 in 5 negatives teaches
+"entity 7 is offered and absent" -- true, and non-transferable. Effective dose is ~0.79 per
+record, not 1. No LEAK, though: 0 of 500 records in every injected corpus carry
+`entity_descriptions`, so "has no description" does not distinguish a negative from a real
+label.
+
+**NEXT:** tighten the probe (require the surface to be tagged L in a document of the SAME
+event type, or hand-adjudicate a sample of 50) to turn the upper bound into a rate. If it is
+materially above zero, the fix is in `_usable_pool`: draw negatives only from labels a corpus
+annotates EXHAUSTIVELY, which is a stronger property than `annotates[dim]` and is not
+currently recorded by `build_negative_pools.py`.
