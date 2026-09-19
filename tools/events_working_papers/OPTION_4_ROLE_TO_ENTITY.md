@@ -1,6 +1,7 @@
 # Option 4 — remap event ROLES into the ENTITY space
 
-**Status: BUILT 2026-09-18, A/B RUNNING 2026-09-19.** `tools/data/roles_to_entities.py`
+**Status: BUILT 2026-09-18, A/B RUNNING 2026-09-19.** The step AFTER this one is
+[[OPTION_2_TYPED_ROLE_CONSTRAINTS]], which is gated behind this result. `tools/data/roles_to_entities.py`
 exists, the corpus is on the Hub, and both arms are training — see [[EXPERIMENT_CATALOG]].
 
 **AND THE DESIGN CHANGED, which supersedes §5 below.** This document concludes that only four

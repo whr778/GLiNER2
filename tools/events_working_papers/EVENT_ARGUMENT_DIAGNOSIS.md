@@ -1082,7 +1082,7 @@ would be measurable but not decisive on the current mixture.
 > with the constraint rather than filtered after the fact" — and that is precisely option 2,
 > because `joint_ie`'s typed constraints live in the BEAM rather than in a post-hoc filter.
 > The sweep also says how: **per role, not globally.** Bounded payoff, unbuilt, and now the
-> best-supported of the three.
+> best-supported of the three. Implementation plan: [[OPTION_2_TYPED_ROLE_CONSTRAINTS]].
 
 ### Option 3 — constrain argument candidates by the model's OWN entity predictions at decode.
 
