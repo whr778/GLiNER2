@@ -134,18 +134,47 @@ space, rather than filtering after they have ranked without knowing about it.** 
 cheapest first. Only the first is proposed for this plan; the others are named because they are
 the same question at larger scale.
 
-1. **A constraint-violation penalty — a consistency loss between two heads.** Penalise the
-   model when its ARGUMENT head binds a span its ENTITY head types incompatibly. No
-   differentiable beam is required. **This shape already exists in the codebase:**
-   `marginal_pair_consistency_loss` (`boundary/losses.py:555`) forces the boundary marginals to
-   agree with the candidate-level noisy-OR probabilities — two views of the same object made to
-   agree, at `consistency_loss_weight: 0.1` after `consistency_warmup_steps: 2000`. Option 2's
-   version is the same template over a different pair of views, and should reuse the weight and
-   the warmup rather than inventing new ones.
-2. **A structured hinge over the beam's assignment** — train against what the beam will
-   actually choose. Addresses the mismatch directly and is the tracked item's first candidate.
-3. **A differentiable relaxation (Sinkhorn / SparseMAX)** so the assignment itself carries
-   gradient. Most principled, most expensive, and out of scope here.
+**PREFERRED (added 2026-09-19): type-aware HARD NEGATIVES in the listwise ranking loss that
+already runs.** `proposal_listwise_loss` (`boundary/losses.py:496`), which
+`reranker_listwise_loss` delegates to, is:
+
+```python
+all_lse  = torch.logsumexp(logits, dim=-1)
+gold_lse = torch.logsumexp(logits.masked_fill(~gold_mask, floor), dim=-1)
+loss     = all_lse - gold_lse
+```
+
+That is **multiple-negatives ranking** -- `-log( sum_gold e^s / sum_all e^s )`, the softmax form
+rather than the hinge form -- and it is ON BY DEFAULT at `rerank_listwise_weight: 0.3`, with
+`hard_negatives_per_positive: 5` already feeding the span axis.
+
+So the constraint does not need a new loss at all. For a role with a type map entry, promote
+the **type-incompatible candidates to hard negatives** for that role's slot. The loss then
+teaches the score to rank the gold filler above competitors *that the constraint would have
+refused anyway* -- which is the ranking-inside-the-constrained-space property this whole
+section is about, obtained as a weighting change inside a loss that already runs.
+
+It is also the cheapest thing to gate: the count of promoted negatives per role is a
+deterministic per-run line, and a role whose map entry is absent must promote ZERO.
+
+Two larger designs, named because they are the same question at scale, neither proposed here:
+
+1. **A constraint-violation penalty between the two heads.** Penalise the ARGUMENT head for
+   binding a span the ENTITY head types incompatibly. The shape exists --
+   `marginal_pair_consistency_loss` (`losses.py:555`) makes boundary marginals agree with
+   candidate noisy-OR at weight 0.1 after 2000 warmup steps. **Weaker than the ranking route
+   and carrying more ways to be wrong:** it optimises AGREEMENT, a proxy, and cannot separate
+   "wrong type" from "right type, wrong span".
+2. **A structured hinge, or a differentiable relaxation (Sinkhorn / SparseMAX).** A hinge needs
+   the most-violating assignment, i.e. decoding inside the training loop; a relaxation makes the
+   assignment itself differentiable. Both buy assignment COHERENCE.
+
+**THEY DO NOT BUY PROPOSAL RECALL, and it is worth being explicit because the roadmap depends
+on it.** Every design in this document operates on candidates the boundary head ALREADY
+proposed. The never-proposed third -- 96% of `Subject`, 71% of `Location`, 67% of `Date` -- is
+not in the candidate set at all, so no assignment-level loss can reach it. **Raising what gets
+proposed is option 4; ranking what was proposed is option 2.** Expecting recall from a
+relaxation conflates the two.
 
 **THE FAILURE MODE THIS MUST BE GATED AGAINST, and it is not hypothetical.** A penalty on
 disagreement has a trivial solution: **both heads agreeing while both are wrong.** Agreement is
