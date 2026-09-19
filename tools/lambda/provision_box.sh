@@ -135,6 +135,19 @@ cd gliner2 && git checkout -q $BRANCH
 echo "[prov] repo at \$(git log --oneline -1)"
 SETUP
 
+# STOP 4: arm the box-side idle guard BEFORE the bootstrap, so every laptop-side failure
+# from here on is covered. Stops 1-3 all live inside box_run.sh and none of them exists
+# until the job starts; this one does. Non-fatal if it cannot be armed -- it only covers a
+# window the other three already handle in the normal case -- but the arming is VERIFIED by
+# asking the box, not by trusting an ssh exit code.
+IDLE_GRACE=${IDLE_GRACE:-1200}
+$SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && IDLE_GRACE=$IDLE_GRACE nohup setsid bash tools/lambda/idle_guard.sh > ~/idle_guard.log 2>&1 < /dev/null & disown'" >/dev/null 2>&1
+if $SSH ubuntu@$IP 'pgrep -f "tools/lambda/idle_guard\.sh" >/dev/null' 2>/dev/null; then
+  echo "[prov] idle guard armed (${IDLE_GRACE}s)"
+else
+  echo "[prov] WARNING: idle guard NOT armed -- a dropped link during job start leaves this box unwatched"
+fi
+
 echo "[prov] bootstrap $(date -u)"
 $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && CFG=$CFG CKPT=$CKPT bash tools/lambda/bootstrap_box.sh'" \
   2>&1 | grep -v "^Restored session:" | tail -20
@@ -151,12 +164,31 @@ $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && JOB=\"$JOB\" JOB_TIMEOUT=$JOB_TIMEOUT
     # A100s that were 20 minutes into training at step 553 -- the network blip killed the run,
     # which is the exact failure the three-stop design exists to prevent. Ask the BOX whether
     # the runner is alive before believing it is not.
+    # THREE outcomes, not two. The old probe ran ONE ssh over the same link that had just
+    # failed and treated "could not connect" as "no runner" -- so on 2026-09-19 it printed
+    # "verified on the box" for two boxes it never reached, and terminated both. A gate
+    # whose two failure modes are indistinguishable cannot verify anything. Terminate only
+    # on an answer FROM THE BOX; never on silence.
     echo "[prov] ssh returned non-zero starting the job -- asking the box before terminating"
-    sleep 25
-    if $SSH ubuntu@$IP 'pgrep -f box_run.sh >/dev/null || [ -s ~/box.log ]' 2>/dev/null; then
-      echo "[prov] the job IS running; the ssh transport dropped, not the job -- continuing"
-    else
-      terminate_and_die "job did not start (verified on the box: no runner, no box.log)"
-    fi
+    verdict=""
+    for attempt in 1 2 3 4 5; do
+      sleep 20
+      verdict=$($SSH ubuntu@$IP 'if pgrep -f "tools/lambda/box_run\.sh" >/dev/null || [ -s ~/box.log ]; then echo RUNNER_ALIVE; else echo RUNNER_DEAD; fi' 2>/dev/null \
+                 | grep -E '^RUNNER_(ALIVE|DEAD)$' | tail -1)
+      [ -n "$verdict" ] && break
+      echo "[prov] probe $attempt: no answer from the box (transport), retrying"
+    done
+    case "$verdict" in
+      RUNNER_ALIVE)
+        echo "[prov] the job IS running; the ssh transport dropped, not the job -- continuing" ;;
+      RUNNER_DEAD)
+        terminate_and_die "job did not start (the box ANSWERED: no runner, no box.log)" ;;
+      *)
+        echo "[prov] *** UNREACHABLE after 5 probes -- NOT terminating $ID blind ***"
+        echo "[prov] *** if the job started, its own three stops apply; if it did not, the"
+        echo "[prov] *** box-side idle guard terminates within ${IDLE_GRACE}s of arming"
+        echo "[prov] *** instance $ID at $IP -- check it when the link is back"
+        exit 7 ;;
+    esac
   }
 echo "[prov] RUNNING -- ip=$IP  id=$ID"
