@@ -134,11 +134,35 @@ The script is **registry-driven**: it restores whatever carries an `hf_jsonl` in
 being touched. That is why `docee_zh`, `turkish_event`, `casualty_ml`, `gate3` and
 `gate2_tr` needed no change to it.
 
-Every `--all` run prints an UNRECOVERABLE list — 17 corpora. **Most of that list is not a
-backup gap.** `ace2005` is LDC, the eight BioNLP sets and `scierc` are "see source" /
-research-use, and `casualty_full_ml` inherits publisher news text; none of them may be
-redistributed. Read the list as "these die with the disk", then check the licence column
-before treating any one entry as something to fix.
+Every `--all` run prints an UNRECOVERABLE list. **Most of that list is not a backup gap.**
+`ace2005` is LDC, the eight BioNLP sets are "see source" / research-use, and
+`casualty_full_ml` inherits publisher news text; none of them may be REDISTRIBUTED. Read the
+list as "these die with the disk", then check the licence column before treating any one
+entry as something to fix.
+
+**2026-09-18 — three corpora left that list, and one of them needs its reasoning stated.**
+A fresh box has no `data/`, and `_fetch_corpus` RETURNS SILENTLY for a corpus with no
+`hf_jsonl`, so an unregistered corpus is not merely un-backed-up: it kills any run that needs
+it, in the data phase, on a billing box. That is how two A100s died on 2026-09-18.
+
+| corpus | licence | now mirrored | note |
+|---|---|---|---|
+| `paraloq_json` | Apache-2.0 | `whr778/paraloq_json` (private) | freely redistributable; it was simply never registered |
+| `cmnee_roles_ner` | derived from CMNEE | `whr778/cmnee_roles_ner` (private) | DERIVED here, and PARTIAL — declare it under `data.partial_annotation` |
+| `scierc` | research use (AI2) | `whr778/scierc` (**private**) | **a PRIVATE MIRROR FOR OUR OWN RECOVERY, NOT REDISTRIBUTION** |
+
+`scierc` is the one worth being explicit about. It sits under a research-use licence and must
+not be redistributed, and that has not changed: the mirror is private, is readable only by
+this account, and exists so a box we own can restore data we already hold. **Do not make it
+public, and do not add it to any public listing.** The same reasoning would extend to the
+BioNLP sets and `casualty_full_ml` if a run ever needs them on a box; `ace2005` (LDC) should
+stay off the Hub entirely.
+
+Check any config against this before launching:
+
+```bash
+uv run python tools/train/check_corpora_fetchable.py --config <config.yaml>
+```
 
 **To rebuild from source instead of the Hub, do not hand-run the converters.**
 `tools/data/run_all_converters.sh` runs every one of them in the right order, logs each
