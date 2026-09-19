@@ -270,9 +270,26 @@ head, and the aggregate then read as a wash.
 3. Any gain is **concentrated in type-named roles** — `Location`, `Date`, `Quantity` — and
    absent on `Subject`/`Object`. If a gain appears on `Subject`, the mechanism is not the one
    claimed and the result needs a different explanation.
-4. **Bounded payoff.** Only corpora with both entity and event gold can supply the map, so the
-   ceiling is set by casie's share of the mixture. This is measurable but not decisive, and
-   that was true in §4k before any of it was built.
+4. **Bounded payoff, now MEASURED at ~36%.** Only corpora with both entity and event gold can
+   supply the map or receive the constraint. Counted over the eb16 mix:
+
+   | corpus | event arguments | in documents WITH entity gold |
+   |---|---:|---:|
+   | cmnee | 25,679 | **0 (0.0%)** |
+   | casie | 17,992 | 17,992 (100%) |
+   | duee | 6,757 | **0 (0.0%)** |
+
+   **17,992 of 50,428 arguments -- 35.7%.** casie is the ONLY source in this mix; `wikievents`
+   is not in it. So "expand the map to all event corpora" is not a matter of effort: 64% of
+   the arguments live in documents with zero entity gold, which can neither derive a map nor
+   be checked against one.
+
+   **OPTION 4 DOES NOT UNLOCK THIS.** Its derived labels are `Event<Role>` -- role-derived, so
+   typing a role by them is circular by construction, and the canonical mode (`Date`->Date) is
+   tautological for the same reason. What would unlock it is INDEPENDENTLY annotated entity
+   gold on cmnee and duee -- a purchase like the cc_news batches, not a derivation. Until that
+   exists option 2's reach is a third of the argument population, and its result must be read
+   as such.
 
 ---
 
