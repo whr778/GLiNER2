@@ -2574,6 +2574,15 @@ class ExtractorTrainer:
         if self.is_main_process and self.progress_bar is not None:
             postfix = {}
             for key, value in metrics.items():
+                # A TREATMENT GATE BELONGS ON THE PROGRESS BAR, not only in the loss dict.
+                # On 2026-09-19 `absent_negatives_used` was returned in the losses and
+                # nothing printed it, so a 16-hour A/B could not show from its own published
+                # log that the treatment had applied -- the exact failure the gate exists to
+                # prevent. It had to be inferred from a loss delta between arms instead.
+                # Any metric whose name ends `_used` is a gate: surface it.
+                if key.endswith("_used") and isinstance(value, (int, float)):
+                    postfix[key] = f"{value:.0f}"
+                    continue
                 if key in ["loss", "learning_rate", "throughput"]:
                     if isinstance(value, float):
                         if math.isnan(value):
