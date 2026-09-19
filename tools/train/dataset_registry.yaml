@@ -410,6 +410,24 @@ datasets:
     license: see source
     source_url: https://github.com/2086482524/CMNEE
     hf_jsonl: whr778/cmnee
+  cmnee_ner:
+    name: CMNEE with DERIVED entity gold (Haiku-4.5), events preserved
+    tasks: NER + event extraction on the SAME documents
+    license: see source (derived from CMNEE)
+    source_url: local (tools/data/annotate_entities_zh.py over data/cmnee)
+    hf_jsonl: whr778/cmnee_ner
+    # Bought 2026-09-19 because a role-type map can only be derived from, or applied to,
+    # documents carrying BOTH golds -- cmnee had event gold and ZERO entity gold. It now
+    # yields 23 constrained (event_type, role) pairs covering 75.9% of its arguments, where
+    # it contributed nothing before. INDEPENDENT of the roles, unlike cmnee_roles_ner:
+    # typing a role by a role-derived label is circular.
+  duee_ner:
+    name: DuEE with DERIVED entity gold (Haiku-4.5), events preserved
+    tasks: NER + event extraction on the SAME documents
+    license: see source (derived from DuEE)
+    source_url: local (tools/data/annotate_entities_zh.py over data/duee)
+    hf_jsonl: whr778/duee_ner
+    # train + val only; DuEE's mirror ships no test split. Sentence-level, median 32 chars.
   cmnee_roles_ner:
     name: CMNEE argument roles as entity spans (DERIVED)
     tasks: NER (derived from event arguments; Event<Role> labels)
