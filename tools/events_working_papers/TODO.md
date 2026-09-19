@@ -1279,3 +1279,38 @@ reason to investigate, not a reason to discount.
 **PROCESS LESSON, the expensive one from this day:** look for seed replicates already in hand
 BEFORE speculating about a floor. Three mechanisms were hypothesised and refuted, and a verdict
 was downgraded and reinstated, when the number that settled it was sitting in two prior runs.
+
+### Buy entity gold for cmnee and duee -- the only thing that lifts option 2 past 35.7%
+
+**Priced 2026-09-19, not started.** A role-type map can only be derived from, or applied to,
+documents carrying BOTH entity and event gold. Measured over the eb16 mix: cmnee 25,679
+arguments at **0%** entity-bearing, duee 6,757 at **0%**, casie 17,992 at 100% -- so
+**17,992 of 50,428 (35.7%)** are reachable and casie is the only source. That is option 2's
+ceiling, and no amount of work on the map moves it.
+
+**OPTION 4 DOES NOT SUBSTITUTE.** Its labels are `Event<Role>`, derived from the roles, so
+typing a role by them is circular; the canonical mode (`Date`->Date) is tautological the same
+way. Only INDEPENDENT entity annotation unlocks it.
+
+**Priced from the corpora, Haiku 4.5 Batch API (-50%), entity-only prompt:**
+
+| plan | input | output | total |
+|---|---:|---:|---:|
+| cmnee FULL, 13,611 docs @ ~243 tok | $4.38 | $8.51 | **$12.88** |
+| duee FULL, 13,056 docs @ ~40 tok, 10 per request | $0.52 | $3.26 | **$3.79** |
+| **both, full** | | | **$16.67** |
+| cmnee sample 2,000 -- enough for the MAP alone | $0.64 | $1.25 | $1.89 |
+| duee sample 2,000 -- enough for the MAP alone | $0.08 | $0.50 | $0.58 |
+| **both, map-only sample** | | | **$2.47** |
+
+**The two buys answer different questions.** The $2.47 sample only lets a map be DERIVED for
+cmnee/duee event types -- it does not let the constraint be APPLIED, because applying it needs
+an entity type on the document being decoded. The $16.67 full buy does both, and its real
+value is larger than option 2: **it is genuine entity supervision on 26,667 documents that
+have none**, which is what option 4 is currently manufacturing from roles. If the option 4 A/B
+is positive, this is the honest version of the same lever; if it is negative, this tests
+whether derived labels were the problem rather than the idea.
+
+**Note duee's shape before writing the prompt:** median 32 characters, mean 54 -- these are
+SENTENCES, not articles. One document per request wastes ~400 prompt tokens on a 40-token
+input, which is why the amortised row is a third of the naive one. Batch ~10 per request.
