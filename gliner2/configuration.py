@@ -104,6 +104,11 @@ class BoundaryHeadSettings:
     proposal_loss_weight: float = 0.3
     consistency_loss_weight: float = 0.1
     rerank_listwise_weight: float = 0.3
+    # Put ABSENT-LABEL candidates into the listwise denominator. A real query with no gold is
+    # an absent label -- injected by `negative_pools` or simply not present in the document --
+    # and until 2026-09-19 it contributed EXACTLY ZERO to either listwise loss. OFF by default
+    # because it changes a trained objective: opt in per config so it can be A/B'd.
+    absent_negatives_in_denominator: bool = False
     soft_iou_aux_weight: float = 0.2
     soft_iou_anneal_steps: int = 20_000
     abstention_loss_weight: float = 0.2
@@ -363,6 +368,10 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "consistency_loss_weight": float(
             values.get("consistency_loss_weight", d.consistency_loss_weight)
+        ),
+        "absent_negatives_in_denominator": bool(
+            values.get("absent_negatives_in_denominator",
+                       d.absent_negatives_in_denominator)
         ),
         "rerank_listwise_weight": float(
             values.get("rerank_listwise_weight", d.rerank_listwise_weight)

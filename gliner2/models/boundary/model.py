@@ -902,6 +902,7 @@ class BoundaryHead(nn.Module):
                 query_axis=query_axis,
                 candidate_axis=candidate_axis,
                 query_weights=wide_weights,
+                absent_negatives=self.settings.absent_negatives_in_denominator,
                 capture=(
                     captures.setdefault("rerank", {}) if want_task_losses else None
                 ),
@@ -942,6 +943,7 @@ class BoundaryHead(nn.Module):
                 query_axis=proposal_query_axis,
                 candidate_axis=proposal_candidate_axis,
                 query_weights=wide_weights,
+                absent_negatives=self.settings.absent_negatives_in_denominator,
                 capture=(
                     captures.setdefault("proposal", {}) if want_task_losses else None
                 ),

@@ -502,6 +502,7 @@ def proposal_listwise_loss(
     query_axis: int = 1,
     candidate_axis: int = 2,
     query_weights: Optional[torch.Tensor] = None,
+    absent_negatives: bool = False,
     capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Rank injected gold candidates above other valid proposals."""
@@ -515,9 +516,46 @@ def proposal_listwise_loss(
     all_lse = torch.logsumexp(logits, dim=-1)
     gold_lse = torch.logsumexp(logits.masked_fill(~gold_mask, floor), dim=-1)
     has_gold = gold_mask.any(-1) & query_mask
+
+    # ABSENT-LABEL NEGATIVES IN THE DENOMINATOR.
+    #
+    # This is multiple-negatives ranking: -log( sum_gold e^s / sum_all e^s ). Until
+    # 2026-09-19 `sum_all` ran over one query's OWN candidates only, so a query with no gold
+    # scored `has_gold == False` and contributed EXACTLY ZERO -- and an injected label
+    # negative IS a label mapped to an empty list (`training/negatives.py:152`). Label
+    # negatives therefore reached neither listwise loss, 0.6 of combined weight
+    # (`proposal_loss_weight` 0.3 + `rerank_listwise_weight` 0.3), and acted only through the
+    # pointwise BCE, abstention and count terms.
+    #
+    # That predicts the signature the negatives arm measured: precision 0.3797 -> 0.4685,
+    # recall 0.2437 -> 0.2157, F1 -0.0015. A mechanism that only pushes scores DOWN, and never
+    # teaches which candidate should be ON TOP, moves precision and leaves F1 alone.
+    #
+    # The fix needs no new loss and no new plumbing: a real query with NO gold is an absent
+    # label already, whether the injector put it there or the document simply lacks it. Its
+    # candidates join the denominator of every query that DOES have gold, so the objective
+    # becomes "rank the gold filler above every candidate of a label that is not present".
+    # Off by default -- it changes a trained objective, so it is opt-in and A/B-able.
+    absent_used = logits.new_zeros(())
+    if absent_negatives:
+        absent = query_mask & ~gold_mask.any(-1)                      # [B, Q]
+        b, q, c = logits.shape
+        pooled = logits.masked_fill(~absent.unsqueeze(-1), floor).reshape(b, q * c)
+        absent_lse = torch.logsumexp(pooled, dim=-1, keepdim=True)    # [B, 1]
+        # logaddexp, not a second logsumexp over a concatenation: the denominator is the
+        # union of this query's candidates and the absent pool, and both are already
+        # log-sum-exps. Broadcasting keeps it [B, Q] with no materialised concatenation.
+        all_lse = torch.logaddexp(all_lse, absent_lse.expand_as(all_lse))
+        absent_used = absent.sum().to(logits.dtype)
+
     loss = torch.where(
         has_gold, all_lse - gold_lse, torch.zeros_like(all_lse)
     )
+    if capture is not None:
+        # THE GATE. Zero absent queries means the treatment did not apply, and this
+        # programme has shipped that failure three times. Recorded from AFTER the pooling,
+        # so it reports what actually entered the denominator.
+        capture["absent_negatives_used"] = absent_used.detach()
     if capture is not None:
         _note_capture(capture, loss.unsqueeze(-1), has_gold.unsqueeze(-1), query_mask)
     if query_weights is not None:
@@ -536,6 +574,7 @@ def reranker_listwise_loss(
     query_axis: int = 1,
     candidate_axis: int = 2,
     query_weights: Optional[torch.Tensor] = None,
+    absent_negatives: bool = False,
     capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Listwise gold-mass loss over reranked candidates, empty-query safe."""
@@ -548,6 +587,7 @@ def reranker_listwise_loss(
         query_axis=query_axis,
         candidate_axis=candidate_axis,
         query_weights=query_weights,
+        absent_negatives=absent_negatives,
         capture=capture,
     )
 
