@@ -28,6 +28,13 @@
 
 ## EXPERIMENTS AND MEASUREMENT
 
+- EVERY EXPERIMENT GOES IN THE CATALOG. `tools/events_working_papers/EXPERIMENT_CATALOG.md`
+  is the chronological record, newest at the top. Add a row when the run ENDS -- with its
+  branch era, purpose, where it ran, the OUTCOME, the real billed cost, and any working-paper
+  link -- and mark it RUNNING at launch if it will take hours. Record nulls, negatives and
+  runs that died: they are the majority and they are the point, and an absent row reads as an
+  experiment nobody ran. Quote the measured floor beside any delta, and reference the paper
+  rather than restating its argument.
 - A GATE MUST BE ABLE TO FAIL. Before trusting any check, ask what it would print if the
   thing it guards were broken. Real cases: a form gate scored best-over-range rewarded
   indiscriminate firing and inverted a verdict; a gate that admitted nothing scored a
