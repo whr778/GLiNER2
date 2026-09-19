@@ -1,5 +1,7 @@
 # Project History — Global Inference on Boundary-Head Candidates
 
+**For the same runs as a table rather than a narrative, see [[EXPERIMENT_CATALOG]]** — newest first, with research line, outcome and cost.
+
 > **⚠ 2026-08-18: every joint_ie / 137k number in this document predates a data repair
 > and is superseded.** 45 corpora shipped overlapping train/val/test, and the scaling
 > configs additionally paired regenerated train files against frozen val slices

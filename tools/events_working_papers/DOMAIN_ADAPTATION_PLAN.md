@@ -1,7 +1,13 @@
 # Domain-adapting mmBERT: plan, constraints, and what would make it worth doing
 
-**Status: NOT STARTED. Deliberately held.** The gate is the `casualty_ml` run finishing and
-the EKF gates being re-tested against it. Nothing here should be executed before that,
+**Status: NOT STARTED. Still deliberately held — but the stated gate has now PASSED, so the
+hold is a choice rather than a dependency.** The gate was the `casualty_ml` run finishing and
+the EKF gates being re-tested against it: `casualty_ml` completed 2026-09-03 and gates 3+4
+passed 2026-08-23, with the rebuilt front end beating the incumbent on all 8 strict heads.
+Reviewed 2026-09-19; what holds it now is that the event line (§Events in
+[[EXPERIMENT_CATALOG]]) is mid-flight and an adapted encoder would invalidate its baseline.
+The original gate text is kept below because the reasoning still applies to whenever this
+restarts. Nothing here should be executed before that,
 because the adapted encoder invalidates every downstream comparison until the current
 baseline is measured. This document exists so the design is settled before the budget is.
 

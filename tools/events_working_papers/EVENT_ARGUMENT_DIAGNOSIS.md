@@ -862,6 +862,16 @@ deduplicating on text would silently discard 728 supervised examples.
 
 ## 4k. LINKING NER TO EVENT ARGUMENTS — three options, and what the data supports
 
+> **A FOURTH OPTION EXISTS AND IS THE ONE RUNNING (added 2026-09-19).** Options 1 and 3 here
+> were both measured and both NEGATIVE — option 1 (`candidate_pool: shared`) moved the target
+> not at all while costing entity −0.089, and it mattered because it was a PRE-REGISTERED
+> rescue for option 3, so budget competition is not the binding constraint. Option 2 remains
+> prototyped and unmeasured. **Option 4 — reframe an argument as a typed span the ENTITY head
+> extracts — is the only one that adds EXTRACTION supervision rather than constraining
+> binding, and so the only one that can move a span that was never proposed at all.** It is
+> built and its A/B is running: see [[OPTION_4_ROLE_TO_ENTITY]] and [[EXPERIMENT_CATALOG]].
+> Read the three options below as the state of the question before that was written.
+
 In OneIE an argument **is an entity node**: the graph joins a trigger to an *entity mention*
 via a role edge, so role classification is conditioned on entity type. In GLiNER2 an argument
 is its own role query with no connection to the entity head. This section records whether that

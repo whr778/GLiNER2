@@ -1,5 +1,7 @@
 # Global Inference over Boundary-Head Candidates: A Research Programme
 
+**Every experiment this programme has run is catalogued chronologically in [[EXPERIMENT_CATALOG]]**, with its research line, outcome and real billed cost.
+
 **William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
 
 ¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting

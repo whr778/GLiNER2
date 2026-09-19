@@ -1,6 +1,25 @@
 # Option 4 — remap event ROLES into the ENTITY space
 
-**Status: scoped, not built.** Written 2026-09-17, after options 1 and 3 both measured
+**Status: BUILT 2026-09-18, A/B RUNNING 2026-09-19.** `tools/data/roles_to_entities.py`
+exists, the corpus is on the Hub, and both arms are training — see [[EXPERIMENT_CATALOG]].
+
+**AND THE DESIGN CHANGED, which supersedes §5 below.** This document concludes that only four
+of eleven roles survive and usable supply is 24.3% (15,188 of 62,573). That reasoning assumed
+the derived label CLAIMS A TYPE. It does not have to. Under `--mode namespaced` every role
+becomes `Event<Role>` — a label of its own, claiming a ROLE — and both objections dissolve:
+the same-document conflict is ordinary multi-label role annotation, and none of the eleven
+namespaced names collide with the base's 2,050-label entity vocabulary (9 of 11 PLAIN names
+do). **Supply is 76,863 unique (label, surface) pairs with 0% lost**, including `Subject` at
+31,071 — the role the entity head fails hardest on, 96% never proposed.
+
+What namespacing buys is PROPOSAL, not typing: it does not transfer to a real NER taxonomy and
+stays tautological for option 2. `--mode canonical` (§5's four roles as real labels) and
+`--mode hybrid` are retained for when transfer is the goal. Read §5 as the adjudication of the
+TYPE-CLAIMING variant, which it is, and which remains correct on its own terms.
+
+---
+
+Written 2026-09-17, after options 1 and 3 both measured
 negative. Every number below is measured, not estimated; where something is an estimate it
 says so.
 

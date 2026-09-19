@@ -1,5 +1,7 @@
 # Model Lineage — every training config, in training order, mapped to the research
 
+**The experiments that produced these models are in [[EXPERIMENT_CATALOG]]**, newest first.
+
 > **⚠ 2026-08-18: every joint_ie / 137k number in this document predates a data repair
 > and is superseded.** 45 corpora shipped overlapping train/val/test, and the scaling
 > configs additionally paired regenerated train files against frozen val slices

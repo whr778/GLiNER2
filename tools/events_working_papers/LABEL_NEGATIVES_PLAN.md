@@ -1,7 +1,10 @@
 # Label negatives: implementation plan
 
-**Status: PLAN, nothing implemented.** Living checklist — tick items as they land and record
-the measurement that proved each one. Companion to [[EVENT_ARGUMENT_DIAGNOSIS]] §4h, §4i.
+**Status: BUILT, RUN, and MEASURED — the header said "nothing implemented" until
+2026-09-19, which its own ticked Phases 1-5 already contradicted.** The feature exists, two
+A/B arms trained, and the verdict is in §5f. Living checklist — tick items as they land and
+record the measurement that proved each one. Companion to [[EVENT_ARGUMENT_DIAGNOSIS]] §4h,
+§4i and [[EXPERIMENT_CATALOG]] (the run rows).
 
 ---
 
@@ -414,7 +417,7 @@ scale.
 - [x] `model_card.py` states the menu beside the metric table.
 - [x] `EVENT_ARGUMENT_DIAGNOSIS.md` opens by pointing at this plan and says its numbers are
       expected to be superseded.
-- [ ] `RESEARCH_PROGRAM.md`, `EVENT_LINE.md`, `TODO.md` — after the A/B result.
+- [x] `RESEARCH_PROGRAM.md`, `EVENT_LINE.md`, `TODO.md` — the A/B result is §5f.
 - [ ] Supersede §4h/§4i with the measured outcome — after the A/B result.
 - [ ] Model cards for anything published.
 
@@ -647,6 +650,46 @@ Recommended if adopted: `negative_labels_per_dim: {entities: 1, events: 1}`, def
 `abstention_loss_weight` 0.2 (halving it changed nothing).
 
 ---
+
+## 5f. THE FULL-MENU VERDICT, 2026-09-18 — the target moves, an untargeted head breaks
+
+§5c measured absent-type FIRING and found precision up with firing recall flat. This is the
+different question: what happens to the scored heads on the blind test, at one fixed operating
+point, under a menu wide enough for precision to be a measurement at all.
+
+Like-for-like, threshold 0.3, **full menu**, 18,786 records, both files carrying matching
+`eval_provenance`:
+
+| dimension | support | incumbent | negatives | delta | vs floor |
+|---|---:|---:|---:|---:|---|
+| **event_argument** | 20,827 | 0.1497 | **0.1819** | **+0.0322** | **36σ** |
+| entity | 78,666 | 0.5405 | 0.5521 | +0.0116 | inside |
+| relation | 5,258 | 0.0190 | 0.0197 | +0.0007 | inside |
+| event_trigger | 14,041 | 0.2542 | 0.2449 | −0.0093 | inside |
+| event_type | 9,862 | 0.3386 | 0.3233 | −0.0154 | inside |
+| structure | 4,167 | 0.2351 | 0.2078 | −0.0274 | 11σ |
+| **classification** | 10,291 | 0.8091 | **0.6600** | **−0.1492** | **8.4σ** |
+
+**The mechanism works on its target, and is invisible without the wide menu** — under the gold
+menu `event_argument` reads −0.0014. That is the whole case for scoring at the widened
+operating point, and it is why `compare_runs.py` now takes `--menu gold|full|both`.
+
+**The collateral is disqualifying until explained.** `negative_labels_per_dim: {entities: 1,
+events: 1}` never targets classification and `negative_pools.json` has no classifications
+dimension, yet classification falls 8.4σ with precision AND recall both down — not a trade.
+Three mechanisms were proposed and ALL THREE REFUTED on 2026-09-18: pooled-denominator
+dilution (query axis grows only +2.9%, and the sign is wrong), labels-as-input perturbation
+(+16.9 tokens, classification presentation unchanged at |t|=0.48), and injected false
+negatives (0.25–0.6% once the probe was tightened, not the 35.8% first reported).
+
+**No defect is required to explain the trade.** Negatives are supposed to make the model
+conservative; precision-up/recall-down is the designed behaviour, and under a wide menu that
+is exactly what `event_argument` needed. What remains unexplained is why an untargeted head
+pays for it.
+
+**VERDICT: do not ship as configured.** Floors used above were measured, not assumed — gate3's
+three seeds (classification sd 0.0178) and the clean re-baseline's seed42/43 pair
+(classification 0.0013). See [[EXPERIMENT_CATALOG]].
 
 ## 6. Sequencing
 

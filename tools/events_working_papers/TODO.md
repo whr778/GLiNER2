@@ -1,5 +1,7 @@
 # Open items — resume list
 
+**Closed items live in [[EXPERIMENT_CATALOG]]** — every run, newest first, with its outcome and cost. This file is what is still open.
+
 Completed work is removed rather than struck through; history lives in
 `PROJECT_HISTORY.md` and the commit log. Everything below is a defect with evidence
 attached, or a decision with a stated next test.

@@ -1,5 +1,7 @@
 # Line 3 — full event support, and what could sink it
 
+**The runs on this line are rows in [[EXPERIMENT_CATALOG]]** (research line: Events).
+
 Status: **stated 2026-09-15, first base training.** This is the research line, its named
 incumbent, and its risks written down BEFORE the numbers arrive so they can be checked
 against rather than reconstructed afterwards. Companion to
