@@ -503,6 +503,8 @@ def proposal_listwise_loss(
     candidate_axis: int = 2,
     query_weights: Optional[torch.Tensor] = None,
     absent_negatives: bool = False,
+    task_ids: Optional[torch.Tensor] = None,
+    num_tasks: int = 4,
     capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Rank injected gold candidates above other valid proposals."""
@@ -538,14 +540,39 @@ def proposal_listwise_loss(
     # Off by default -- it changes a trained objective, so it is opt-in and A/B-able.
     absent_used = logits.new_zeros(())
     if absent_negatives:
+        # PER TASK, NOT GLOBAL. Pooling every absent label into one denominator would make an
+        # absent ENTITY label a negative for an EVENT role's gold: defensible as "gold beats
+        # anything absent", but it mixes task semantics and lets a dimension with many absent
+        # labels dominate the denominator for the others. Constrain the contrast to the task
+        # the query belongs to.
+        if task_ids is None:
+            # FAIL CLOSED. Silently falling back to a global pool would change the objective
+            # without saying so, and `query_task_ids` is only populated when the diagnostic
+            # `report_task_losses` is on -- exactly the kind of coupling that hides.
+            raise ValueError(
+                "absent_negatives=True requires task_ids [B, Q]; refusing to pool globally"
+            )
         absent = query_mask & ~gold_mask.any(-1)                      # [B, Q]
         b, q, c = logits.shape
-        pooled = logits.masked_fill(~absent.unsqueeze(-1), floor).reshape(b, q * c)
-        absent_lse = torch.logsumexp(pooled, dim=-1, keepdim=True)    # [B, 1]
-        # logaddexp, not a second logsumexp over a concatenation: the denominator is the
-        # union of this query's candidates and the absent pool, and both are already
-        # log-sum-exps. Broadcasting keeps it [B, Q] with no materialised concatenation.
-        all_lse = torch.logaddexp(all_lse, absent_lse.expand_as(all_lse))
+        # TASK_TYPES is 4, so an explicit loop is clearer than a scatter-logsumexp and costs
+        # nothing measurable. Padded/unknown queries carry an id outside range(num_tasks)
+        # and so join no pool, matching `reduce_by_task`'s contract.
+        pools = logits.new_full((b, num_tasks), floor)
+        for t in range(num_tasks):
+            sel = absent & (task_ids == t)
+            if not bool(sel.any()):
+                continue
+            masked = logits.masked_fill(~sel.unsqueeze(-1), floor).reshape(b, q * c)
+            pools[:, t] = torch.logsumexp(masked, dim=-1)
+        # Each query draws the pool of its OWN task; an out-of-range id draws `floor`, which
+        # logaddexp leaves a no-op.
+        safe = task_ids.clamp(0, num_tasks - 1)
+        per_query_pool = pools.gather(1, safe)                        # [B, Q]
+        in_range = (task_ids >= 0) & (task_ids < num_tasks)
+        per_query_pool = per_query_pool.masked_fill(~in_range, floor)
+        # logaddexp, not a logsumexp over a concatenation: the denominator is the union of
+        # this query's own candidates and its task's absent pool, both already log-sum-exps.
+        all_lse = torch.logaddexp(all_lse, per_query_pool)
         absent_used = absent.sum().to(logits.dtype)
 
     loss = torch.where(
@@ -575,6 +602,8 @@ def reranker_listwise_loss(
     candidate_axis: int = 2,
     query_weights: Optional[torch.Tensor] = None,
     absent_negatives: bool = False,
+    task_ids: Optional[torch.Tensor] = None,
+    num_tasks: int = 4,
     capture: Optional[dict] = None,
 ) -> torch.Tensor:
     """Listwise gold-mass loss over reranked candidates, empty-query safe."""
@@ -588,6 +617,8 @@ def reranker_listwise_loss(
         candidate_axis=candidate_axis,
         query_weights=query_weights,
         absent_negatives=absent_negatives,
+        task_ids=task_ids,
+        num_tasks=num_tasks,
         capture=capture,
     )
 

@@ -729,7 +729,9 @@ class BoundaryHead(nn.Module):
         use_focal = getattr(self.settings, "boundary_marginal_loss", "bce") == "asymmetric_focal"
         reduction = getattr(self.settings, "loss_reduction", "global")
 
-        want_task_losses = query_task_ids is not None
+        want_task_losses = query_task_ids is not None and getattr(
+            self.settings, "report_task_losses", False
+        )
         captures: Dict[str, Dict] = {}
         task_losses: Dict[str, torch.Tensor] = {}
 
@@ -903,6 +905,8 @@ class BoundaryHead(nn.Module):
                 candidate_axis=candidate_axis,
                 query_weights=wide_weights,
                 absent_negatives=self.settings.absent_negatives_in_denominator,
+                task_ids=query_task_ids,
+                num_tasks=len(TASK_TYPES),
                 capture=(
                     captures.setdefault("rerank", {}) if want_task_losses else None
                 ),
@@ -944,6 +948,8 @@ class BoundaryHead(nn.Module):
                 candidate_axis=proposal_candidate_axis,
                 query_weights=wide_weights,
                 absent_negatives=self.settings.absent_negatives_in_denominator,
+                task_ids=query_task_ids,
+                num_tasks=len(TASK_TYPES),
                 capture=(
                     captures.setdefault("proposal", {}) if want_task_losses else None
                 ),
@@ -2029,8 +2035,13 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     batch, core["query_mask"]
                 ),
                 query_task_ids=(
+                    # Needed for the DIAGNOSTIC per-task split, and independently by
+                    # absent-negative pooling, which is per task and refuses to run without
+                    # them. Computing them does NOT switch the diagnostics on -- see
+                    # `want_task_losses` below, which still gates on `report_task_losses`.
                     self._query_task_ids(batch, core["query_mask"])
-                    if getattr(self.boundary_settings, "report_task_losses", False)
+                    if (getattr(self.boundary_settings, "report_task_losses", False)
+                        or self.boundary_settings.absent_negatives_in_denominator)
                     else None
                 ),
             )
