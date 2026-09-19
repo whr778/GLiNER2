@@ -40,4 +40,9 @@ DEST=absneg_$ARM \
 bash tools/lambda/event_base_run.sh"
 
 echo "[absneg] arm=$ARM  model -> whr778/gliner2-absneg-$ARM  logs -> absneg_$ARM/"
-exec env NAME="absneg-$ARM" JOB="$JOB" bash tools/lambda/launch_when_available.sh
+# PIN THE CARD. launch_when_available.sh falls back to gpu_1x_a10 when the A100 pool is
+# empty, and on 2026-09-19 that put the control on an A100 and the treatment on an A10 --
+# two arms on different silicon is not a matched A/B, whatever the loss does. Wait for the
+# right card instead of silently accepting a different one.
+exec env NAME="absneg-$ARM" JOB="$JOB" TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
+     bash tools/lambda/launch_when_available.sh
