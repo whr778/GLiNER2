@@ -169,6 +169,48 @@ Two larger designs, named because they are the same question at scale, neither p
    the most-violating assignment, i.e. decoding inside the training loop; a relaxation makes the
    assignment itself differentiable. Both buy assignment COHERENCE.
 
+### 3.4 The same denominator takes LABEL NEGATIVES — and today they reach no ranking loss
+
+Raised 2026-09-19, and checking it found a gap in the shipped negatives feature.
+
+`proposal_listwise_loss` skips any query with no gold:
+
+```python
+has_gold = gold_mask.any(-1) & query_mask
+loss = torch.where(has_gold, all_lse - gold_lse, torch.zeros_like(all_lse))
+```
+
+An injected label negative **is** a label mapped to an EMPTY LIST (`negatives.py:152-155`), so
+`has_gold` is False and its loss is **exactly zero**. **Label negatives therefore contribute
+NOTHING to either listwise ranking loss** — `proposal_loss_weight: 0.3` plus
+`rerank_listwise_weight: 0.3`, so 0.6 of combined weight never sees them. They reach the model
+only through the pointwise BCE terms, abstention, and count.
+
+**That predicts the measured signature.** The negatives arm bought precision
+(`event_argument` 0.3797 → 0.4685) and gave recall back (0.2437 → 0.2157) for F1 −0.0015:
+pointwise suppression with the ranking objective untouched. A mechanism that only pushes
+scores down, and never teaches which candidate should be ON TOP, is expected to move precision
+and not F1.
+
+**The fix is the same denominator, not a new loss.** Put an absent label's candidates into the
+SAME `all_lse` as the gold label's, so the objective becomes *rank the gold label's filler
+above every candidate of a label that is not present*. That is real ranking supervision from a
+negative, and it unifies two lines that are currently separate: the typed constraint (§3.3)
+promotes type-incompatible candidates to hard negatives, and the label negatives promote
+absent-label candidates to hard negatives — **one denominator, two sources**.
+
+**Gates, because this is a loss change and both failure modes are on file:**
+
+- A deterministic per-run line counting negatives that ENTERED the denominator. Zero means the
+  change did not apply, which is the failure this programme has shipped three times.
+- The correctness companion: the denominator growing is a FORM metric. The gate is
+  `event_argument` strict F1 rising WITH it, not ranking-loss magnitude alone.
+- A control arm with negatives injected but NOT entering the denominator, so the delta is
+  attributable to the ranking channel rather than to the negatives themselves.
+
+Cheap to test relative to its reach: it is a masking change in a loss that already runs, and it
+can be measured on the existing negatives checkpoints' training recipe without new data.
+
 **THEY DO NOT BUY PROPOSAL RECALL, and it is worth being explicit because the roadmap depends
 on it.** Every design in this document operates on candidates the boundary head ALREADY
 proposed. The never-proposed third -- 96% of `Subject`, 71% of `Location`, 67% of `Date` -- is
