@@ -907,8 +907,13 @@ class BoundaryHead(nn.Module):
                 absent_negatives=self.settings.absent_negatives_in_denominator,
                 task_ids=query_task_ids,
                 num_tasks=len(TASK_TYPES),
+                # The capture also carries the absent-negatives GATE, so it must exist when
+                # the treatment is on even if the per-task DIAGNOSTIC is off. Populating it
+                # is harmless: the reduce loop below is gated on `want_task_losses`.
                 capture=(
-                    captures.setdefault("rerank", {}) if want_task_losses else None
+                    captures.setdefault("rerank", {})
+                    if (want_task_losses
+                        or self.settings.absent_negatives_in_denominator) else None
                 ),
             )
 
@@ -1067,6 +1072,13 @@ class BoundaryHead(nn.Module):
             "consistency_loss": consistency_loss,
             "abstention_loss": null_loss,
             "count_loss": count_loss,
+            # THE GATE, logged every step. Zero while the treatment is on means absent labels
+            # never reached the denominator -- the treatment did not apply, and this
+            # programme has shipped exactly that failure three times. It is a plain count,
+            # so it is readable in the training log without a diagnostic flag.
+            "absent_negatives_used": (
+                captures.get("rerank", {}).get("absent_negatives_used", total.new_zeros(()))
+            ),
         }
 
 
