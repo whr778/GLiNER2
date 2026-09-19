@@ -1,0 +1,143 @@
+{
+  "config": {
+    "corpora": [
+      "data/casie"
+    ],
+    "out": "tools/train/config/labels/role_types_casie.json",
+    "min_support": 20,
+    "min_purity": 0.8,
+    "min_dominance": 0.8,
+    "max_types": 2,
+    "min_type_share": 0.05,
+    "labels_config": null,
+    "limit": 0
+  },
+  "role_types": {
+    "Cyber.DiscoverVulnerability": {
+      "Vulnerability": [
+        "Vulnerability"
+      ],
+      "Capabilities": [
+        "Capabilities"
+      ],
+      "Vulnerable_System_Owner": [
+        "Organization",
+        "Person"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "CVE": [
+        "CVE"
+      ],
+      "Vulnerable_System_Version": [
+        "Version"
+      ]
+    },
+    "Cyber.PatchVulnerability": {
+      "Vulnerability": [
+        "Vulnerability"
+      ],
+      "Releaser": [
+        "Organization",
+        "Person"
+      ],
+      "Patch": [
+        "Patch"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "Patch-Number": [
+        "Version"
+      ],
+      "Issues-Addressed": [
+        "Capabilities"
+      ],
+      "Vulnerable_System_Version": [
+        "Version"
+      ],
+      "CVE": [
+        "CVE"
+      ],
+      "Supported_Platform": [
+        "Device",
+        "System"
+      ]
+    },
+    "Cyber.Phishing": {
+      "Victim": [
+        "Organization",
+        "Person"
+      ],
+      "Attacker": [
+        "Organization",
+        "Person"
+      ],
+      "Purpose": [
+        "Purpose"
+      ],
+      "Attack-Pattern": [
+        "Capabilities"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "Place": [
+        "GPE"
+      ],
+      "Damage-Amount": [
+        "Money"
+      ]
+    },
+    "Cyber.Ransom": {
+      "Attacker": [
+        "Organization",
+        "Person"
+      ],
+      "Attack-Pattern": [
+        "Capabilities"
+      ],
+      "Price": [
+        "Money"
+      ],
+      "Tool": [
+        "File",
+        "Malware"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "Payment-Method": [
+        "PaymentMethod"
+      ],
+      "Place": [
+        "GPE"
+      ]
+    },
+    "Cyber.Databreach": {
+      "Time": [
+        "Time"
+      ],
+      "Attack-Pattern": [
+        "Capabilities"
+      ],
+      "Number-of-Data": [
+        "Number"
+      ],
+      "Tool": [
+        "File",
+        "Malware"
+      ],
+      "Purpose": [
+        "Purpose"
+      ],
+      "Number-of-Victim": [
+        "Number"
+      ],
+      "Place": [
+        "GPE"
+      ]
+    }
+  }
+}

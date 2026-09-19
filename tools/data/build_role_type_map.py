@@ -88,14 +88,19 @@ def main() -> int:
                     help="share the admitted types must cover. Below this the role is FLAT "
                          "and carries no constraint, so it is omitted -- that omission is "
                          "the point, not a shortfall")
-    ap.add_argument("--min-dominance", type=float, default=0.55,
+    ap.add_argument("--min-dominance", type=float, default=0.80,
                     help="share the SINGLE most common type must carry. Purity alone is not "
                          "enough: with --max-types 3 a role spread evenly over three types "
                          "covers 100%% and passes, which is how `Victim` (Person 41 / Org 35 "
                          "/ System 12) slipped through on the first run. A constraint that "
                          "admits three heterogeneous types constrains nothing.")
-    ap.add_argument("--max-types", type=int, default=3,
+    ap.add_argument("--max-types", type=int, default=2,
                     help="a role admitting many types is not a constraint")
+    ap.add_argument("--min-type-share", type=float, default=0.05,
+                    help="drop an admitted type carrying less than this. A tail type at 0-1%% "
+                         "is noise and admitting it only widens the constraint: casie's "
+                         "`Patch` is Patch 100%% / System 0%%, and letting System in makes the "
+                         "rule allow a span it should refuse.")
     ap.add_argument("--labels-config",
                     help="a training config whose labels_file unifies the entity vocabulary. "
                          "WITHOUT IT, MIXING CORPORA IS A BUG: casie types `Person` where "
@@ -128,6 +133,8 @@ def main() -> int:
             continue
         chosen, covered = [], 0
         for t, n in counter.most_common(args.max_types):
+            if n / total < args.min_type_share:
+                continue
             chosen.append(t); covered += n
         purity = covered / total
         if purity < args.min_purity:
