@@ -1073,6 +1073,17 @@ ARE entity spans; event roles are the same shape and simply are not wired in.
 A real but bounded change. Its payoff is limited to corpora carrying both, i.e. casie — so it
 would be measurable but not decisive on the current mixture.
 
+> *Updated 2026-09-19 — of options 1-3 this is the ONLY one still open, and the evidence for
+> it got STRONGER while the others failed.* Option 1 measured negative (entity −0.089, argument
+> null) and option 3 measured negative (−0.074 F1). But the 800-document sweep that killed
+> option 3 also found the type signal is real and **role-dependent**: 88% of correct arguments
+> carry a predicted entity type against 68% of wrong ones, and `Location`/`Date` discriminate
+> where `Subject` does not. Its own conclusion names what is not ruled out — "a model TRAINED
+> with the constraint rather than filtered after the fact" — and that is precisely option 2,
+> because `joint_ie`'s typed constraints live in the BEAM rather than in a post-hoc filter.
+> The sweep also says how: **per role, not globally.** Bounded payoff, unbuilt, and now the
+> best-supported of the three.
+
 ### Option 3 — constrain argument candidates by the model's OWN entity predictions at decode.
 
 The closest analogue to OneIE that this data can support. OneIE's argument candidates *are*
@@ -1081,6 +1092,13 @@ entity-capable MODEL — and ours is, trained on 89,040 entity-bearing records. 
 restrict or re-rank argument candidates by what the entity head scores highly. **This works on
 cmnee despite cmnee having no entity annotation**, and it is an EVAL-TIME change over one
 trained checkpoint, so it needs no retraining.
+
+> *Retracted 2026-09-19 — the status below is superseded by the 800-document sweep later in
+> this section ("SWEPT AT 800 DOCUMENTS: the route is NEGATIVE"). Option 3 WAS measured:
+> no menu and no filter beat the no-menu baseline, best configuration **−0.074 F1**, and
+> merely adding an entity menu cost 30-35% of argument recall BEFORE any filter. The
+> prototyping note is kept because it records the decode-path trap that delayed the
+> measurement, which is worth knowing on its own.*
 
 **Status: prototyped, NOT yet measurable.** A first attempt scored an oracle bound on casie
 (filter predicted arguments to gold entity surfaces, which by the 100% result above should
