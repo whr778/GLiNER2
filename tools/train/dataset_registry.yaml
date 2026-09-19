@@ -669,6 +669,16 @@ datasets:
     source_url: null
     language: [en]
     description: "Locally generated synthetic multi-task IE corpus (4,997 records) over 28 document registers, covering entities, relations, events, classification, and structures; produced with claude-haiku-4-5. Entity types carry ~91% purity on repeated surfaces, and 12 absent types per document are seeded as explicit negatives."
+  cc_news_long:
+    name: CC-News LONG documents, Haiku-4.5 annotations (blind test set)
+    tasks: multi-task IE (NER, relations, classification, events, structures)
+    license: see source (cc_news licence unknown, publisher copyright -- PRIVATE only)
+    hf_id: vblagoje/cc_news
+    hf_jsonl: whr778/cc_news_long
+    # TEST SPLIT ONLY, and deliberately: it exists to exercise the sliding window, which
+    # engages past 4,096 subwords. Median 9,274 tokens, max 38,412; 100% engage the window,
+    # 98.3% span 2+. One document was REMOVED for overlapping cc_news_haiku45.train -- a
+    # blind set that shares a document with training is not blind.
   cc_news_haiku45:
     name: CC-News real text, Haiku-4.5 annotations
     tasks: multi-task IE (NER, relations, classification, events, structures)

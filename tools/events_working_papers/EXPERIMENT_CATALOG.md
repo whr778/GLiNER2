@@ -46,6 +46,9 @@ beside it. Measured floors: `event_argument` seed sd **0.0009–0.0020**, `entit
 
 | date | line | experiment | purpose | where | outcome | cost | refs |
 |---|---|---|---|---|---|---|---|
+| 2026-09-19 | **Events** | **absent-negatives A/B** | do label negatives reach the RANKING loss, and does it matter? | 2× A100 | **RUNNING** — the gate `absent_negatives_used` must be non-zero on the treatment or the result is void | ~$65 | `OPTION_2_TYPED_ROLE_CONSTRAINTS.md` |
+| 2026-09-19 | **Data** | cc_news_long annotation | a blind test set that actually reaches the sliding window | Batch API | **688 rows** of 743 (92.7%), verbatim **93.7%**, all five tasks; 1 document removed for overlapping cc_news_haiku45.train | ~$16 | — |
+| 2026-09-19 | **Infra** | absent-negatives in the listwise denominator | negatives reached NEITHER listwise loss — 0.6 of combined weight | local | BUILT, per-task, fail-closed; default path bit-identical; 9 tests, 2 of which fail without it | — | `OPTION_2_TYPED_ROLE_CONSTRAINTS.md` |
 | 2026-09-18 | **Events** | **Option 4 roles A/B** | does cmnee's arguments-as-entity-spans move the never-proposed third? | 2× A100 | **RUNNING** (3rd launch; 1st died on a corpus-registry gap, 2nd on a dropped SSH read as a dead job) | ~$65 | `OPTION_4_ROLE_TO_ENTITY.md` |
 | 2026-09-18 | **Events** | **negatives blind-test rescore** | recover a blind test lost to a network outage, like-for-like | A100 | `event_argument` **+0.0322** under the FULL menu (invisible under gold) but `classification` **−0.1492**; both real vs measured floors. **NOT shippable** | $2.52 | `TODO.md` |
 | 2026-09-18 | **Events** | cmnee roles→NER derivation | manufacture entity supervision where a corpus has none | local | BUILT as namespaced `Event<Role>`: claiming a ROLE not a TYPE keeps all 11 roles, 76,863 pairs, **0% lost** | — | `OPTION_4_ROLE_TO_ENTITY.md` |
