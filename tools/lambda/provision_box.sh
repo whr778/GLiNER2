@@ -141,8 +141,14 @@ SETUP
 # window the other three already handle in the normal case -- but the arming is VERIFIED by
 # asking the box, not by trusting an ssh exit code.
 IDLE_GRACE=${IDLE_GRACE:-1200}
-$SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && IDLE_GRACE=$IDLE_GRACE nohup setsid bash tools/lambda/idle_guard.sh > ~/idle_guard.log 2>&1 < /dev/null & disown'" >/dev/null 2>&1
-if $SSH ubuntu@$IP 'pgrep -f "tools/lambda/idle_guard\.sh" >/dev/null' 2>/dev/null; then
+# BOUND THESE TWO CALLS. A backgrounded remote command does not necessarily let sshd close
+# the channel, so the call can sit open indefinitely -- on 2026-09-19 the arming ssh hung for
+# 12 minutes and blocked the bootstrap behind it, leaving two boxes idle while the guard it
+# had just armed counted down on them. The remote work takes under a second; if the channel
+# lingers we do not care, and the VERIFY below is what decides whether it armed.
+TMO=$(command -v timeout || command -v gtimeout || true)
+${TMO:+$TMO 30} $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && IDLE_GRACE=$IDLE_GRACE nohup setsid bash tools/lambda/idle_guard.sh > ~/idle_guard.log 2>&1 < /dev/null & disown'" >/dev/null 2>&1
+if ${TMO:+$TMO 30} $SSH ubuntu@$IP 'pgrep -f "tools/lambda/idle_guard\.sh" >/dev/null' 2>/dev/null; then
   echo "[prov] idle guard armed (${IDLE_GRACE}s)"
 else
   echo "[prov] WARNING: idle guard NOT armed -- a dropped link during job start leaves this box unwatched"

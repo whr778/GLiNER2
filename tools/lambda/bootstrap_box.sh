@@ -59,7 +59,7 @@ export HF_TOKEN=$(cat ~/.hf_token)
 # the only symptom of a provision that had shipped no token at all.
 echo "[bs] hub write pre-flight $(date -u)"
 ./.venv/bin/python - <<'PROBE' || fail "the HF token cannot WRITE -- the run could not publish"
-import io, os, sys
+import io, os, sys, uuid
 from huggingface_hub import HfApi
 tok = os.environ.get("HF_TOKEN", "").strip()
 if not tok:
@@ -67,9 +67,14 @@ if not tok:
 api = HfApi(token=tok)
 repo = "whr778/gliner2-run-logs"
 api.create_repo(repo, repo_type="dataset", private=True, exist_ok=True)
+# UNIQUE PER BOX. A fixed probe path makes two boxes bootstrapping against the same repo
+# race: both upload `_write_probe.txt`, the first delete removes it, the second 404s and the
+# gate reports "the HF token cannot WRITE" about a token that just wrote. That killed the
+# absneg control arm on 2026-09-19 while its treatment arm, seconds behind, passed.
+probe = f"_write_probe_{uuid.uuid4().hex}.txt"
 api.upload_file(path_or_fileobj=io.BytesIO(b"bootstrap write probe\n"),
-                path_in_repo="_write_probe.txt", repo_id=repo, repo_type="dataset")
-api.delete_file("_write_probe.txt", repo, repo_type="dataset")
+                path_in_repo=probe, repo_id=repo, repo_type="dataset")
+api.delete_file(probe, repo, repo_type="dataset")
 print(f"[bs] hub write OK as {api.whoami().get('name')}")
 PROBE
 
