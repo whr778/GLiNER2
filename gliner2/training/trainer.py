@@ -2331,6 +2331,20 @@ class ExtractorTrainer:
                         throughput=self._safe_divide(samples_seen, elapsed, default=0.0),
                     )
                     logged_metrics = metrics.to_dict()
+                    # TREATMENT GATES, lifted out of the model's loss dict. TrainingMetrics
+                    # is a FIXED dataclass -- loss, classification_loss, structure_loss,
+                    # count_loss and the scalars -- so anything else the model returns is
+                    # dropped here silently. That is why `absent_negatives_used` reached the
+                    # losses on 2026-09-19 and never reached a log, leaving a 16-hour A/B
+                    # unable to show from its own output that the treatment applied.
+                    # Any key ending `_used` is a gate and rides along.
+                    if hasattr(outputs, "get"):
+                        for _k in outputs:
+                            if str(_k).endswith("_used"):
+                                try:
+                                    logged_metrics[str(_k)] = float(outputs[_k])
+                                except (TypeError, ValueError):
+                                    pass
                     proposal_counts = getattr(outputs, "metrics", None)
                     if proposal_counts:
                         logged_metrics.update(
