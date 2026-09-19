@@ -1677,6 +1677,25 @@ class ExtractorTrainer:
             pool, total ** 0.5, found,
         )
 
+    def _wired(self, dataset, is_train: bool):
+        """A configured injector that never reached the dataset must stop the run.
+
+        Declaring `negative_pools` and getting no negatives cost a 16-hour A/B and put an
+        inert treatment arm into a published verdict. Silence is the failure mode this
+        guards: nothing downstream can tell "no negatives configured" from "configured and
+        dropped on the floor".
+        """
+        if not is_train or dataset is None:
+            return dataset
+        wanted = bool(self.config.negative_pools and self.config.negative_labels_per_dim)
+        if wanted and getattr(dataset, "negatives", None) is None:
+            raise SystemExit(
+                "[negatives] configured (negative_pools + negative_labels_per_dim) but the "
+                "training dataset carries NO injector -- the run would train without them. "
+                "Refusing to start."
+            )
+        return dataset
+
     def _prepare_data(self, data: TrainDataInput, is_train: bool = True) -> ExtractorDataset:
         """Convert any supported data format to ExtractorDataset."""
         if data is None:
@@ -1691,7 +1710,7 @@ class ExtractorTrainer:
         negatives = self._negative_labels() if is_train else None
 
         if not self.config.sliding_window:
-            return ExtractorDataset(
+            return self._wired(ExtractorDataset(
                 data=data,
                 max_samples=max_samples,
                 shuffle=is_train,
@@ -1700,7 +1719,7 @@ class ExtractorTrainer:
                 guide_scores=guide_scores,
                 rivals_per_record=self.config.rivals_per_record,
                 negatives=negatives,
-            )
+            ), is_train)
 
         # Sliding window: load records, expand each into overlapping subword windows
         # (max_len window / window_stride step; each chunk keeps only annotations whose
@@ -1737,7 +1756,7 @@ class ExtractorTrainer:
         # Chunking rewrites the text, so cached scores (keyed by the full record's text)
         # simply will not be found -- the veto goes quiet rather than acting on the wrong
         # spans. Precompute against the chunked corpus if the two are to be combined.
-        return ExtractorDataset(
+        return self._wired(ExtractorDataset(
             data=records,
             max_samples=-1,   # already applied
             shuffle=False,    # already shuffled
@@ -1745,7 +1764,13 @@ class ExtractorTrainer:
             validate=False,   # already validated
             guide_scores=guide_scores,
             rivals_per_record=self.config.rivals_per_record,
-        )
+            # THE LINE THAT WAS MISSING FROM 2026-09-16 TO 2026-09-19. `negatives=` was added
+            # to the branch above and not to this one, so EVERY config combining
+            # `negative_pools` with `sliding_window: true` trained with no injected negatives
+            # at all -- silently, because `label negatives ON` is logged by the LOADER and
+            # says nothing about whether the dataset ever received the injector.
+            negatives=negatives,
+        ), is_train)
 
     def _negative_labels(self):
         """Load the negative-label injector once, or None when the feature is off."""
