@@ -2338,11 +2338,18 @@ class ExtractorTrainer:
                     # losses on 2026-09-19 and never reached a log, leaving a 16-hour A/B
                     # unable to show from its own output that the treatment applied.
                     # Any key ending `_used` is a gate and rides along.
-                    if hasattr(outputs, "get"):
-                        for _k in outputs:
+                    # ITERATE `outputs.losses`, NOT `outputs`. The output object exposes
+                    # .get(), a STRING-ONLY __getitem__ and __contains__, but no __iter__ --
+                    # so `for k in outputs` falls back to integer indexing and dies with
+                    # KeyError: 0 on the first logging step. That is exactly what happened at
+                    # step 20 on 2026-09-19 and killed both restarted arms; `hasattr(outputs,
+                    # "get")` passed and told me nothing.
+                    _losses = getattr(outputs, "losses", None)
+                    if isinstance(_losses, dict):
+                        for _k, _v in _losses.items():
                             if str(_k).endswith("_used"):
                                 try:
-                                    logged_metrics[str(_k)] = float(outputs[_k])
+                                    logged_metrics[str(_k)] = float(_v)
                                 except (TypeError, ValueError):
                                     pass
                     proposal_counts = getattr(outputs, "metrics", None)
