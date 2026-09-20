@@ -148,13 +148,27 @@ def _span_of(value: Any) -> Optional[tuple[int, int]]:
 _TYPED_ROLE_REFUSALS: "defaultdict[tuple, int]" = defaultdict(int)
 
 
+# Counted SEPARATELY from beam refusals on purpose. A beam refusal happens inside
+# `_decode_joint`, whose event output the record head then overwrites, so it changes nothing;
+# a DROP removes an argument from the emitted sample. Summing them into one number says "the
+# constraint fired 45 times" when 5 of those touched the output -- the same conflation as
+# counting firings instead of hits.
+_TYPED_ROLE_DROPS: "defaultdict[tuple, int]" = defaultdict(int)
+
+
 def typed_role_refusals() -> dict:
-    """``{(event_type, role): refusals}`` accumulated since the last reset."""
+    """``{(event_type, role): refusals}`` inside the BEAM, since the last reset."""
     return dict(_TYPED_ROLE_REFUSALS)
+
+
+def typed_role_drops() -> dict:
+    """``{(event_type, role): drops}`` from the EMITTED sample, since the last reset."""
+    return dict(_TYPED_ROLE_DROPS)
 
 
 def reset_typed_role_refusals() -> None:
     _TYPED_ROLE_REFUSALS.clear()
+    _TYPED_ROLE_DROPS.clear()
 
 
 @dataclass(frozen=True)

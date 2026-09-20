@@ -412,7 +412,9 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         results: List[Dict[str, Any]] = []
         for i in range(len(batch)):
             try:
-                results.append(decode_sample(i))
+                _s = decode_sample(i)
+                self._apply_typed_role(_s)
+                results.append(_s)
             except Exception:
                 logger.exception("extraction failed for sample %d", i)
                 if getattr(self, "strict_extraction", True):
@@ -617,6 +619,63 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             logger.info("[typed-role] %d constraints over %d event types from %s",
                         len(cached), len(table), path)
         return cached
+
+    def _apply_typed_role(self, sample: Dict[str, Any]) -> None:
+        """OPTION 2 at the point events are ACTUALLY emitted.
+
+        `_decode_joint` emits TypedRole into the beam, but with `event_records: true` the
+        record head reclaims event groups and OVERWRITES the beam's events (see the reclaim
+        block above). So a constraint applied only in the beam refuses real edges and cannot
+        touch the output -- measured 2026-09-20: 918 refusals, output identical to the digit.
+        This runs on the FINISHED sample, after either decode path, which is why it is one
+        call site rather than three.
+
+        It can only REMOVE an argument, never substitute a better filler -- the record head
+        is greedy, so there is no alternative assignment to re-route to. Read any gain as a
+        precision filter, and expect recall to pay for it.
+
+        A filler no entity query typed is KEPT (`require_typed` is False by default): the
+        model proposed no type, so there is no evidence to refuse it on.
+        """
+        cons = self._typed_role_constraints()
+        if not cons:
+            return
+        by_key = {(c.event_type, c.role): c for c in cons}
+        # SHAPE, measured not assumed: internally `sample["entities"]` is a LIST wrapping one
+        # `{entity_type: [values]}` dict (engine.py:391, 805) -- it is the FORMATTED output
+        # that is a bare dict. Reading it as a dict here raised
+        # `AttributeError: 'list' object has no attribute 'items'` on the first real sample.
+        # Values are strings, or dicts carrying "text" when include_spans is on.
+        blocks = sample.get("entities") or []
+        if isinstance(blocks, dict):
+            blocks = [blocks]
+        surfaces: Dict[str, set] = {}
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            for etype, vals in block.items():
+                for v in (vals if isinstance(vals, list) else [vals]):
+                    text = v.get("text") if isinstance(v, dict) else v
+                    if isinstance(text, str) and text.strip():
+                        surfaces.setdefault(text.strip(), set()).add(str(etype))
+        from gliner2.joint_ie.constraints import _TYPED_ROLE_DROPS
+        for name, instances in list(sample.items()):
+            if not isinstance(instances, list):
+                continue
+            for inst in instances:
+                if not (isinstance(inst, dict) and isinstance(inst.get("arguments"), list)):
+                    continue
+                kept = []
+                for arg in inst["arguments"]:
+                    role = arg.get("role") if isinstance(arg, dict) else None
+                    filler = arg.get("entity") if isinstance(arg, dict) else None
+                    c = by_key.get((str(name), str(role)))
+                    types = surfaces.get(str(filler).strip()) if filler else None
+                    if c is None or not types or (types & set(c.allowed_types)):
+                        kept.append(arg)
+                    else:
+                        _TYPED_ROLE_DROPS[(c.event_type, c.role)] += 1
+                inst["arguments"] = kept
 
     def _decode_joint(
         self,

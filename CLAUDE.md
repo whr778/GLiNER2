@@ -16,6 +16,42 @@
 - Never use emojis in code or in print statements or logging.
 - Keep README.md concise.
 
+## TRACE FIRST -- BEFORE THE CHANGE, AFTER THE CHANGE, THEN THE TESTS
+
+This is the standing working order, and it comes before writing code, not after:
+
+1. **Trace the existing flow** with real data, watching the variables change at each block.
+2. **Make the change.**
+3. **Trace it again**, the same way, on real data.
+4. **Then** write the test cases.
+
+**Tracing is more effective than test cases, and it is not a substitute for them -- it is what
+comes first.** A test asserts what you already believed; a trace shows what is actually there.
+The point is to see the ACTUAL flow against the DOCUMENTED flow, because the two drift and
+nothing announces it.
+
+**The tertiary effect is the valuable one.** Watching real values move through real blocks
+surfaces data that is malformed, missing, misunderstood, or simply a different shape than
+expected -- and it surfaces it UPSTREAM, before it manifests as a bug in code or as a failing
+test, often before it manifests at all. Problems found this way are found in the place they
+originate rather than where they eventually hurt.
+
+**A trace is real only if it runs the real objects on real data.** A simulation of a type is
+not a test of that type: hand-simulating a dict hop "verified" a change that then died on the
+first real object (`KeyError: 0`, both A/B arms, step 20). Print the variables; do not reason
+about what they must contain.
+
+Measured on 2026-09-20, all four found by tracing and none by a test:
+- `sample["entities"]` is a LIST wrapping a dict internally, a bare dict only once formatted;
+  code that read it as a dict raised on the first real sample.
+- The extraction key is `event_extraction`, not `events` -- a counter reading `events`
+  returned 0 at every threshold and made a working decode look dead.
+- One counter incremented from two places reported "45 refusals" when 40 changed nothing and
+  5 changed the output.
+- A constraint fired 918 times against output it could not affect, because a later decode
+  path overwrote the result -- visible in the flow, invisible in any assertion about the
+  constraint itself.
+
 ## Important -- debugging and fixing
 
 - When troubleshooting problems, ALWAYS identify root cause BEFORE fixing
