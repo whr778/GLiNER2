@@ -255,8 +255,13 @@ injected 1 absent label per dimension while eval offered 0 or 20).
 
 **Primary metric:** `event_argument` strict micro-F1 on the shared blind test, at a fixed
 operating point, both arms at the same threshold and menu dose, `eval_provenance` matching.
-**Floors, measured:** `event_argument` seed sd **0.0009–0.0020**, entity **0.0139**,
-classification **0.0013–0.0178**. A delta inside the floor is a null and will be reported as one.
+**Floors:** `event_argument` seed sd **0.0009–0.0020**, entity **0.0139**. A delta inside the
+floor is a null and will be reported as one. **The classification floor is NO LONGER TRUSTED**
+(2026-09-20): it came from the `eb16-eventrecords-tr` vs `-neg` pair, which the sliding-window
+wiring bug made nominal duplicates -- two identical trainings differing by **0.1492** on
+classification. Either that head's run-to-run variance is an order of magnitude larger than we
+quoted, or something else differed between those runs. Do not call a classification delta
+signal until the pair is re-run.
 
 **Secondary, and watched for collateral:** entity, event_trigger, event_type, structure,
 classification. The negatives run is the precedent — it hit its target and broke an untargeted
@@ -270,11 +275,34 @@ head, and the aggregate then read as a wash.
 3. Any gain is **concentrated in type-named roles** — `Location`, `Date`, `Quantity` — and
    absent on `Subject`/`Object`. If a gain appears on `Subject`, the mechanism is not the one
    claimed and the result needs a different explanation.
-4. **Bounded payoff, now MEASURED at ~36%.** Only corpora with both entity and event gold can
-   supply the map or receive the constraint. Counted over the eb16 mix:
+4. **Bounded payoff -- SUPERSEDED 2026-09-20, the bound is now ~99%, not 36%.**
 
-   | corpus | event arguments | in documents WITH entity gold |
-   |---|---:|---:|
+   The original reasoning was right and its premise expired. It said only casie carries both
+   entity and event gold, capping reach at 35.7% of arguments, and that what would unlock
+   cmnee and duee is "INDEPENDENTLY annotated entity gold -- a purchase like the cc_news
+   batches, not a derivation". **That purchase was made.** `whr778/cmnee_ner` and
+   `whr778/duee_ner` exist, and they JOIN to the event corpora on document text:
+
+   | corpus | event docs | join to purchased entity gold | entity types |
+   |---|---:|---:|---:|
+   | cmnee | 9,281 | **9,270 (99.9%)** | 32 |
+   | duee | 11,600 | **11,320 (97.6%)** | 21 |
+   | casie | 797 | 797 (same record) | -- |
+
+   Weighted by arguments the reachable share is **99.3%**. (Counted with this tool's own
+   convention, which yields different absolutes from the table above -- the RATE is the claim,
+   not the absolute.)
+
+   **WHAT THIS COSTS IN IMPLEMENTATION.** `build_role_type_map.py` reads documents whose
+   entity and event gold sit in the SAME record. cmnee/duee do not: the gold lives in two
+   corpora that must be JOINED on document text. Step 1 therefore grows a join, and the join
+   must be gated -- a document that fails to match contributes nothing rather than silently
+   typing a role from the wrong document.
+
+   **Option 4 still does not unlock this.** Its `Event<Role>` labels are role-derived, so
+   typing a role by them is circular. That part of the original argument stands.
+
+---|---:|---:|
    | cmnee | 25,679 | **0 (0.0%)** |
    | casie | 17,992 | 17,992 (100%) |
    | duee | 6,757 | **0 (0.0%)** |

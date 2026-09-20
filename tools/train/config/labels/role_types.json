@@ -1,0 +1,740 @@
+{
+  "config": {
+    "corpora": [
+      "data/casie",
+      "data/cmnee",
+      "data/duee"
+    ],
+    "out": "tools/train/config/labels/role_types.json",
+    "min_support": 20,
+    "min_purity": 0.8,
+    "min_dominance": 0.8,
+    "max_types": 2,
+    "min_type_share": 0.05,
+    "labels_config": "tools/train/config/ab/roles2-treatment.yaml",
+    "join": [
+      "data/cmnee:data/cmnee_ner",
+      "data/duee:data/duee_ner"
+    ],
+    "min_join_rate": 0.9,
+    "limit": 0
+  },
+  "role_types": {
+    "Experiment": {
+      "Subject": [
+        "Location",
+        "Organization"
+      ],
+      "Equipment": [
+        "Product"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "Support": {
+      "Subject": [
+        "Location",
+        "Organization"
+      ],
+      "Materials": [
+        "Product"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "match_result": {
+      "Winner": [
+        "Organization",
+        "Person"
+      ],
+      "loser": [
+        "Organization",
+        "Person"
+      ],
+      "event_name": [
+        "Event"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "Deploy": {
+      "Militaryforce": [
+        "Facility",
+        "Product"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "Cyber.DiscoverVulnerability": {
+      "Vulnerability": [
+        "Vulnerability"
+      ],
+      "Capabilities": [
+        "Capabilities"
+      ],
+      "Vulnerable_System_Owner": [
+        "Organization",
+        "Person"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "CVE": [
+        "CVE"
+      ],
+      "Vulnerable_System_Version": [
+        "Version"
+      ]
+    },
+    "Exhibit": {
+      "Subject": [
+        "Location",
+        "Organization"
+      ],
+      "Equipment": [
+        "Product"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "Cyber.PatchVulnerability": {
+      "Vulnerability": [
+        "Vulnerability"
+      ],
+      "Releaser": [
+        "Organization",
+        "Person"
+      ],
+      "Patch": [
+        "Patch"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "Patch-Number": [
+        "Version"
+      ],
+      "Issues-Addressed": [
+        "Capabilities"
+      ],
+      "Vulnerable_System_Version": [
+        "Version"
+      ],
+      "CVE": [
+        "CVE"
+      ],
+      "Supported_Platform": [
+        "Device",
+        "System"
+      ]
+    },
+    "product_publish": {
+      "Publisher": [
+        "Organization"
+      ],
+      "Released Product": [
+        "Product"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "Cyber.Phishing": {
+      "Victim": [
+        "Organization",
+        "Person"
+      ],
+      "Attacker": [
+        "Organization",
+        "Person"
+      ],
+      "Purpose": [
+        "Purpose"
+      ],
+      "Attack-Pattern": [
+        "Capabilities"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "Place": [
+        "GPE"
+      ],
+      "Damage-Amount": [
+        "Money"
+      ]
+    },
+    "Cyber.Ransom": {
+      "Attacker": [
+        "Organization",
+        "Person"
+      ],
+      "Attack-Pattern": [
+        "Capabilities"
+      ],
+      "Price": [
+        "Money"
+      ],
+      "Tool": [
+        "File",
+        "Malware"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "Payment-Method": [
+        "PaymentMethod"
+      ],
+      "Place": [
+        "GPE"
+      ]
+    },
+    "divorce": {
+      "Divorce Parties": [
+        "Person"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "Accident": {
+      "Date": [
+        "Date"
+      ],
+      "Subject": [
+        "Product"
+      ],
+      "Location": [
+        "Facility",
+        "Location"
+      ]
+    },
+    "marriage": {
+      "Marriage Parties": [
+        "Person"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "resignation": {
+      "Original Organization": [
+        "Organization"
+      ],
+      "Departing Employee": [
+        "Occupation",
+        "Person"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "joined": {
+      "Joined Organization": [
+        "Organization"
+      ],
+      "Franchisee": [
+        "Person"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "Cyber.Databreach": {
+      "Time": [
+        "Time"
+      ],
+      "Attack-Pattern": [
+        "Capabilities"
+      ],
+      "Number-of-Data": [
+        "Number"
+      ],
+      "Tool": [
+        "File",
+        "Malware"
+      ],
+      "Purpose": [
+        "Purpose"
+      ],
+      "Number-of-Victim": [
+        "Number"
+      ],
+      "Place": [
+        "GPE"
+      ]
+    },
+    "product_recall": {
+      "Recall Party": [
+        "Organization"
+      ],
+      "Date": [
+        "Date"
+      ],
+      "Recall Content": [
+        "Product",
+        "Quantity"
+      ]
+    },
+    "Manoeuvre": {
+      "Date": [
+        "Date"
+      ],
+      "Area": [
+        "Facility",
+        "Location"
+      ],
+      "Content": [
+        "Event",
+        "Product"
+      ]
+    },
+    "Injure": {
+      "Date": [
+        "Date"
+      ],
+      "Location": [
+        "Facility",
+        "Location"
+      ],
+      "Quantity": [
+        "Quantity"
+      ],
+      "Subject": [
+        "Nationality",
+        "Occupation"
+      ]
+    },
+    "judicial_action_fine": {
+      "Fine Amount": [
+        "Money"
+      ],
+      "Law Enforcement": [
+        "Facility",
+        "Organization"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "price_limit_up": {
+      "Trading Halt Stock": [
+        "Organization",
+        "Product"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "championship_win": {
+      "Championship Event": [
+        "Event"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "breakup": {
+      "Breakup Parties": [
+        "Person"
+      ]
+    },
+    "judicial_action_arrest": {
+      "Arrester": [
+        "Occupation",
+        "Organization"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "Death": {
+      "Deceased Age": [
+        "Measurement",
+        "Quantity"
+      ],
+      "Location": [
+        "Facility",
+        "Location"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "judicial_action_summon": {
+      "Interview Initiator": [
+        "Organization"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "product_release": {
+      "Date": [
+        "Date"
+      ],
+      "Released Media": [
+        "Product"
+      ]
+    },
+    "opening": {
+      "Activity Name": [
+        "Event"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "departure": {
+      "Original Organization": [
+        "Organization"
+      ]
+    },
+    "Conflict": {
+      "Date": [
+        "Date"
+      ],
+      "Location": [
+        "Location"
+      ]
+    },
+    "Traffic Accident": {
+      "Location": [
+        "Location"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ],
+      "Injured Count": [
+        "Quantity"
+      ],
+      "Death Count": [
+        "Quantity"
+      ]
+    },
+    "advancement": {
+      "Advancement Event": [
+        "Event"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "layoff": {
+      "layoff_party": [
+        "Organization"
+      ],
+      "layoff_count": [
+        "Quantity"
+      ]
+    },
+    "competition_withdrawal": {
+      "withdrawal_party": [
+        "Person"
+      ],
+      "withdrawn_event": [
+        "Event"
+      ]
+    },
+    "birthday_celebration": {
+      "Birthday Person": [
+        "Person"
+      ],
+      "Celebrant": [
+        "Person"
+      ],
+      "Birthday Person Age": [
+        "Age",
+        "Quantity"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "sale_acquisition": {
+      "Acquirer": [
+        "Organization"
+      ],
+      "Seller": [
+        "Organization"
+      ],
+      "Sale Price": [
+        "Money"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "financing": {
+      "Funding Amount": [
+        "Money"
+      ],
+      "Financing Party": [
+        "Organization"
+      ],
+      "lead_investor": [
+        "Organization"
+      ],
+      "follow_investor": [
+        "Organization"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "Earthquake": {
+      "magnitude": [
+        "Measurement"
+      ],
+      "focal_depth": [
+        "Measurement"
+      ],
+      "epicenter": [
+        "Location"
+      ]
+    },
+    "judicial_action_prosecution": {
+      "Plaintiff": [
+        "Organization",
+        "Person"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "birth": {
+      "Giver Birth": [
+        "Person"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "retirement": {
+      "retired_person": [
+        "Person"
+      ]
+    },
+    "competition_ban": {
+      "banned_athlete": [
+        "Person"
+      ],
+      "Ban Authority": [
+        "Organization"
+      ]
+    },
+    "Fire": {
+      "Location": [
+        "Location",
+        "Organization"
+      ],
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "wedding": {
+      "Marriage Parties": [
+        "Person"
+      ]
+    },
+    "dissolution": {
+      "dissolution_party": [
+        "Organization"
+      ]
+    },
+    "proposal": {
+      "Proposal Target": [
+        "Person"
+      ],
+      "Proposer": [
+        "Person"
+      ]
+    },
+    "judicial_action_imprisonment": {
+      "Imprisoned Person": [
+        "Person"
+      ]
+    },
+    "judicial_action_filing": {
+      "Case Authority": [
+        "Facility",
+        "Organization"
+      ],
+      "Case Subject": [
+        "Organization",
+        "Person"
+      ]
+    },
+    "visit_on_set": {
+      "Visit Target": [
+        "Organization",
+        "Person"
+      ],
+      "Set Visitor": [
+        "Person"
+      ]
+    },
+    "pregnancy": {
+      "Pregnant Person": [
+        "Person"
+      ]
+    },
+    "lost_contact": {
+      "Location": [
+        "Location"
+      ]
+    },
+    "price_decrease": {
+      "price_reduced_item": [
+        "Product"
+      ],
+      "price_reducer": [
+        "Organization"
+      ]
+    },
+    "dismissal": {
+      "dismissal_party": [
+        "Organization",
+        "Person"
+      ]
+    },
+    "strike": {
+      "Affiliated Organization": [
+        "Facility",
+        "Organization"
+      ]
+    },
+    "judicial_action_hearing": {
+      "Date": [
+        "Date"
+      ]
+    },
+    "Plane Crash": {
+      "Location": [
+        "Location",
+        "Nationality"
+      ],
+      "Death Count": [
+        "Quantity"
+      ]
+    },
+    "engagement": {
+      "engagement_subject": [
+        "Person"
+      ]
+    },
+    "meet_with": {
+      "meet_subject": [
+        "Person"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "closing": {
+      "Activity Name": [
+        "Event"
+      ],
+      "Date": [
+        "Date"
+      ]
+    },
+    "ipo": {
+      "Listed Company": [
+        "Organization"
+      ]
+    },
+    "rate_decrease": {
+      "rate_cutting_institution": [
+        "Organization"
+      ]
+    },
+    "price_limit_down": {
+      "Date": [
+        "Date",
+        "Time"
+      ]
+    },
+    "infidelity": {
+      "Cheating Party": [
+        "Person"
+      ]
+    },
+    "price_increase": {
+      "Price Increased Item": [
+        "Product"
+      ]
+    },
+    "Attack": {
+      "Location": [
+        "Location"
+      ],
+      "Date": [
+        "Date"
+      ],
+      "Death Count": [
+        "Quantity"
+      ]
+    },
+    "march": {
+      "Location": [
+        "Location"
+      ]
+    },
+    "Collapse": {
+      "Death Count": [
+        "Quantity"
+      ]
+    },
+    "rate_increase": {
+      "Rate Raising Institution": [
+        "Organization"
+      ]
+    },
+    "thank": {
+      "Thanking Party": [
+        "Organization",
+        "Person"
+      ]
+    },
+    "product_award": {
+      "Date": [
+        "Date"
+      ]
+    },
+    "suspension": {
+      "Affiliated Organization": [
+        "Location",
+        "Organization"
+      ]
+    },
+    "Explosion": {
+      "Location": [
+        "Location"
+      ]
+    },
+    "Flood": {
+      "Location": [
+        "Location"
+      ]
+    },
+    "product_delist": {
+      "Date": [
+        "Date"
+      ]
+    }
+  }
+}
