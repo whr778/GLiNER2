@@ -144,6 +144,31 @@ def _event_record_owners(batch, sample_index: int) -> Dict[int, Any]:
     }
 
 
+
+_TYPED_ROLE_CALLS = 0
+
+
+def _note_typed_role_refusals() -> None:
+    """Report how many role edges the TypedRole constraints actually refused.
+
+    ZERO REFUSALS MEANS THE CONSTRAINT DID NOT APPLY -- the failure this programme has
+    shipped three times. Emitted AFTER `joint_decode`, so the refusals have already
+    happened; a line printed before decoding would be a gate that cannot fail. Backs off
+    like the negative-query counter so it proves itself and then goes quiet.
+    """
+    global _TYPED_ROLE_CALLS
+    from gliner2.joint_ie.constraints import typed_role_refusals
+    _TYPED_ROLE_CALLS += 1
+    n = _TYPED_ROLE_CALLS
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        table = typed_role_refusals()
+        total = sum(table.values())
+        top = ", ".join(f"{et}/{role}={c}" for (et, role), c in
+                        sorted(table.items(), key=lambda kv: -kv[1])[:3]) or "none"
+        logger.info("[typed-role] %d role edges refused over %d decoded samples (%s)",
+                    total, n, top)
+
+
 class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
     """Boundary architecture with the shared public extraction runtime.
 
@@ -568,6 +593,31 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         surface = text[c0:c1].strip()
         return (surface, c0, c1) if surface else None
 
+    def _typed_role_constraints(self):
+        """OPTION 2: a `TypedRole` per (event_type, role) in the configured map.
+
+        Built once and cached. `role_type_map` unset emits nothing, so the default decode is
+        bit-identical -- the A/B turns this on by pointing at the map.
+        """
+        path = getattr(self.boundary_settings, "role_type_map", None)
+        if not path:
+            return ()
+        cached = getattr(self, "_typed_role_cache", None)
+        if cached is None:
+            import json as _json
+            from pathlib import Path as _Path
+            from gliner2.joint_ie.constraints import TypedRole
+            blob = _json.loads(_Path(path).read_text(encoding="utf-8"))
+            table = blob.get("role_types", blob)
+            cached = tuple(
+                TypedRole(event_type=str(et), role=str(role), allowed_types=tuple(types))
+                for et, roles in table.items() for role, types in (roles or {}).items()
+            )
+            self._typed_role_cache = cached
+            logger.info("[typed-role] %d constraints over %d event types from %s",
+                        len(cached), len(table), path)
+        return cached
+
     def _decode_joint(
         self,
         batch,
@@ -638,6 +688,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             )
             for entry in core["rel_specs"][sample_index]
         ]
+        constraints.extend(self._typed_role_constraints())
         solution = joint_decode(
             candidates,
             query_types,
@@ -658,6 +709,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             # greedy arm moved 0.0461 -> 0.4134 over the same range).
             decision_threshold=threshold,
         )
+        _note_typed_role_refusals()
 
         sample: Dict[str, Any] = {}
         # Relation head/tail-role queries are mentions too; only entity queries

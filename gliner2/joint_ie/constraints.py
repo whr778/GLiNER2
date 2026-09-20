@@ -141,6 +141,22 @@ def _span_of(value: Any) -> Optional[tuple[int, int]]:
     return (int(start), int(end))
 
 
+# THE REFUSAL COUNTER. Option 2's step-3 gate: zero refusals means the constraint did not
+# apply, which this programme has shipped three times. Module-level because TypedRole is
+# frozen and the beam builds it per sample; read it AFTER decoding, from a point where the
+# refusal has already happened.
+_TYPED_ROLE_REFUSALS: "defaultdict[tuple, int]" = defaultdict(int)
+
+
+def typed_role_refusals() -> dict:
+    """``{(event_type, role): refusals}`` accumulated since the last reset."""
+    return dict(_TYPED_ROLE_REFUSALS)
+
+
+def reset_typed_role_refusals() -> None:
+    _TYPED_ROLE_REFUSALS.clear()
+
+
 @dataclass(frozen=True)
 class TypedRole(Constraint):
     """An event role edge may only land on a span the model types compatibly.
@@ -197,7 +213,10 @@ class TypedRole(Constraint):
         types.discard(own_role)
         if not types:
             return not self.require_typed          # no typed evidence either way
-        return bool(types & set(self.allowed_types))
+        ok = bool(types & set(self.allowed_types))
+        if not ok:
+            _TYPED_ROLE_REFUSALS[(self.event_type, self.role)] += 1
+        return ok
 
 
 @dataclass(frozen=True)

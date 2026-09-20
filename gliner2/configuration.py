@@ -109,6 +109,11 @@ class BoundaryHeadSettings:
     # and until 2026-09-19 it contributed EXACTLY ZERO to either listwise loss. OFF by default
     # because it changes a trained objective: opt in per config so it can be A/B'd.
     absent_negatives_in_denominator: bool = False
+    # OPTION 2: path to a `(event_type, role) -> allowed entity types` map, as emitted by
+    # tools/data/build_role_type_map.py. When set, `_decode_joint` emits a TypedRole
+    # constraint per entry, so a role edge may only land on a compatibly typed span. None
+    # (default) emits nothing and decoding is bit-identical.
+    role_type_map: Optional[str] = None
     soft_iou_aux_weight: float = 0.2
     soft_iou_anneal_steps: int = 20_000
     abstention_loss_weight: float = 0.2
@@ -373,6 +378,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             values.get("absent_negatives_in_denominator",
                        d.absent_negatives_in_denominator)
         ),
+        "role_type_map": (values.get("role_type_map", d.role_type_map) or None),
         "rerank_listwise_weight": float(
             values.get("rerank_listwise_weight", d.rerank_listwise_weight)
         ),

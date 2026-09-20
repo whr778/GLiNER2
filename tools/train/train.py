@@ -83,6 +83,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import os
 from pathlib import Path
 from pprint import pprint
@@ -755,6 +756,18 @@ def _auto_negative_pools(cfg: dict, config_path, output_dir: str) -> str:
         _Path(__file__).resolve().parents[1] / "data" / "build_negative_pools.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+
+    # FETCH BEFORE DERIVING. A fresh box has no data/ -- train.py pulls each corpus when it
+    # builds the datasets, which is AFTER this point, so deriving here saw every train file
+    # as absent and the gate below refused two boxes on 2026-09-20. Restoring first is the
+    # same step bootstrap_box.sh runs when it is given CFG, via the same tool, so there is no
+    # second copy of the fetch logic to drift.
+    want = {p for p in mod._corpus_train_paths(cfg).values() if not _Path(p).is_file()}
+    if want:
+        print(f"[negatives] {len(want)} train file(s) absent locally; restoring before deriving pools")
+        import subprocess
+        subprocess.run([sys.executable, "tools/data/restore_from_hf.py", "--config", str(config_path)],
+                       check=False)
 
     pools = mod.build_pools(cfg, _Path(config_path))
     wanted = set(mod._corpus_train_paths(cfg))
