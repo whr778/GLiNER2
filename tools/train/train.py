@@ -1065,6 +1065,29 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
     }
 
 
+def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
+                     checkpoint, config_path) -> dict:
+    """The operating point behind a metrics file, so two numbers can be compared.
+
+    ONE helper for BOTH writers on purpose. A `<split>_metrics.json` used to carry 314
+    numbers and nothing about the threshold or menu, and when this was first fixed only the
+    `eval` subcommand's writer got it -- so every file the TRAINING path produced, which is
+    what the Lambda runners publish, still carried 314 bare numbers. The roles A/B verdict
+    on 2026-09-20 had to reconstruct its operating point by diffing configs.
+    """
+    from model_card import git_commit
+    return {
+        "commit": git_commit(),
+        "threshold": threshold,
+        "full_menu": bool(full_menu),
+        "menu_negatives": int(menu_negatives) if full_menu else 0,
+        "split": split,
+        "records": records,
+        "checkpoint": str(checkpoint),
+        "config": str(config_path),
+    }
+
+
 def _run_blind_test(best, split_data, batch_size, threshold, by_language, gd_kwargs) -> Dict:
     """Score ``split_data`` against the ``best`` checkpoint (per-language or
     combined) and return the metrics dict. Shared by train and eval."""
@@ -1163,18 +1186,15 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         # nothing about the threshold or menu behind them, so establishing that a published
         # baseline was read at 0.3 under --full-menu meant grepping the runner script that
         # produced it. Two numbers are only comparable at the same operating point; store it.
-        from model_card import git_commit
-        metrics["eval_provenance"] = {
-            "commit": git_commit(),
-            "threshold": ev["threshold"],
-            "full_menu": bool((overrides or {}).get("full_menu")),
-            "menu_negatives": (int((overrides or {}).get("menu_negatives", 20))
-                               if (overrides or {}).get("full_menu") else 0),
-            "split": split,
-            "records": len(split_data),
-            "checkpoint": str(best),
-            "config": str(config_path),
-        }
+        metrics["eval_provenance"] = _eval_provenance(
+            threshold=ev["threshold"],
+            full_menu=(overrides or {}).get("full_menu"),
+            menu_negatives=(overrides or {}).get("menu_negatives", 20),
+            split=split,
+            records=len(split_data),
+            checkpoint=best,
+            config_path=config_path,
+        )
         fname = f"{split}_metrics.json"
         out_dir = Path(cfg["training"]["output_dir"])
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -1488,6 +1508,11 @@ def main(config_path: str) -> None:
     test_metrics = _run_blind_test(best, test_data, eval_bs, eval_thr, eval_by_language, gd_kwargs)
 
     if test_metrics:
+        # The runners publish THIS file, so it is the one an A/B verdict is read from.
+        test_metrics["eval_provenance"] = _eval_provenance(
+            threshold=eval_thr, full_menu=False, menu_negatives=0, split="test",
+            records=len(test_data), checkpoint=best, config_path=config_path,
+        )
         metrics_path = Path(config.output_dir) / "test_metrics.json"
         metrics_path.write_text(json.dumps(test_metrics, indent=2, ensure_ascii=False))
         best_metrics_path = best / "test_metrics.json"
