@@ -1,9 +1,52 @@
 # Option 2 — typed constraints on event role edges
 
-**Status: PLAN, nothing implemented.** Written 2026-09-19 while the Option 4 A/B runs, and
-**gated behind it**: option 4 must first show the lever moves on cmnee, and the derivation must
-then be generalised to every event corpus with no entity gold. This document is the design for
-the step after that.
+**Status: STEPS 1-4 BUILT, RUN AND MEASURED 2026-09-20. Step 5 (the trained A/B) is the
+remaining question.** Written 2026-09-19 as a plan; the gating on option 4 was overtaken when
+option 4 measured NEGATIVE but for a regime reason (see [[OPTION_4_ROLE_TO_ENTITY]]).
+
+> ## *** WHAT IS BUILT, AND WHAT IT MEASURED ***
+>
+> **Step 1 -- the map.** 174 roles across 74 event types emitted, 122 omitted as FLAT
+> (`Cyber.Databreach/Victim` = Organization 38 / Person 31 / System 16; `Deploy/Subject`).
+> A map admitting every role would be no constraint, so the omissions are the gate passing.
+>
+> **REACH IS NO LONGER 35.7% -- IT IS 99.3%.** §5.4 said only casie carries both golds and
+> named the unlock: "independently annotated entity gold on cmnee and duee -- a purchase like
+> the cc_news batches". **That purchase was made.** `--join EVENTS:ENTITIES` matches on
+> document text: **cmnee 99.8%, duee 97.6%**, with a join below `--min-join-rate` REFUSED
+> rather than built from whatever matched.
+>
+> **Step 2 -- `TypedRole`**, 15 tests, including the required fails-without-it gate.
+>
+> **Step 3 -- emission, AND THE EMISSION POINT WAS WRONG.** Emitting from `_decode_joint`
+> refused **918 real role edges and changed nothing**, because with `event_records: true`
+> the RECORD HEAD reclaims event groups and OVERWRITES the beam's events
+> (`engine.py:290-307`). The constraint was working perfectly against output that was then
+> discarded -- invisible to any test of the constraint, obvious the moment the data was
+> traced. It now also filters the FINISHED sample, at the single call site every decode path
+> converges on.
+>
+> **Step 4 -- decode-only A/B, measured LOCALLY for free (40 casie docs, 846 gold triples):**
+>
+> | threshold | emitted drops | docs changed | added | P | R | F1 |
+> |---:|---:|---:|---:|---|---|---|
+> | 0.05 | 37 | 19/40 | 0 | 0.1141 -> **0.1266** | 0.0355 -> 0.0343 | 0.0541 -> 0.0540 |
+> | 0.01 | 306 | 38/40 | 0 | 0.0523 -> **0.0567** | 0.1123 -> 0.1076 | 0.0713 -> **0.0743** |
+>
+> **The filter discriminates well and F1 does not move.** At 0.01 it removed 212 distinct
+> predictions, 208 wrong and 4 right -- 98% of the drops were false positives -- for
+> F1 +0.0030. `added=0` in both rows, because the record head is greedy: **this arm can only
+> REMOVE an argument, never substitute a better filler.**
+>
+> **PREDICTION 1 WAS RIGHT, FOR THE REASON GIVEN.** The decode-only arm is a null on F1 with
+> a real precision/recall trade. It does NOT refute option 2: the trained arm is a different
+> intervention -- the constraint shapes the objective, so the model can learn to put a
+> DIFFERENT filler there rather than having a wrong one deleted afterwards.
+>
+> **Caveat on the base checkpoint.** `eb16-eventrecords-tr` scores P=0.11 at threshold 0.05;
+> a precision filter measured on a model that wrong says little about one at P=0.45. Re-run
+> the decode arm against `absneg-control` before quoting any decode-time number on the blind
+> test.
 
 Companion to [[EVENT_ARGUMENT_DIAGNOSIS]] §4k (where options 1–4 are stated),
 [[OPTION_4_ROLE_TO_ENTITY]] (the step before this one), [[JOINT_IE_DESIGN_RECORD]] (the beam),
@@ -239,10 +282,12 @@ injected 1 absent label per dimension while eval offered 0 or 20).
    ABSENT. A map that contains every role has failed, not succeeded.
 2. **`TypedRole` + unit tests.** Gate: a test that FAILS without the constraint — an edge to a
    wrongly-typed span is admitted before and refused after.
-3. **Emission from `_decode_joint`.** Gate: a deterministic line per run showing how many role
-   edges the constraint actually refused. **Zero refusals means it did not apply**, which is the
-   failure this programme has shipped three times; the line must be emitted from a point where
-   the refusal has already happened.
+3. **Emission where the events are ACTUALLY emitted.** ~~From `_decode_joint`~~ -- DONE and
+   CORRECTED 2026-09-20: `_decode_joint` emission cannot reach events when `event_records` is
+   on, because the record head reclaims those groups and overwrites the beam's output. The
+   constraint must also filter the finished sample. Gate: a deterministic line showing refusals,
+   **and beam refusals counted SEPARATELY from emitted drops** -- summing them reported "45
+   refusals" when 40 changed nothing and 5 touched the output.
 4. **Decode-only A/B (cheap, and expected to be ~NULL).** One trained checkpoint, constraint on
    vs off. This is the honest replication of option 3 through the beam rather than a filter. If
    it is strongly positive, stop — the training step is unnecessary.

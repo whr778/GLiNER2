@@ -1,8 +1,42 @@
 # Label negatives: implementation plan
 
-**Status: BUILT, RUN, and MEASURED — the header said "nothing implemented" until
-2026-09-19, which its own ticked Phases 1-5 already contradicted.** The feature exists, two
-A/B arms trained, and the verdict is in §5f. Living checklist — tick items as they land and
+**Status: BUILT, RUN, MEASURED — and the 2026-09-18 verdict is CONFOUNDED AND REOPENED.**
+
+> ## *** THE FEATURE NEVER APPLIED IN ANY SLIDING-WINDOW RUN (found 2026-09-19) ***
+>
+> `negatives=` was passed at exactly ONE of the two dataset branches in
+> `ExtractorTrainer._prepare_data`. The SLIDING-WINDOW branch never received it, from this
+> feature's own commit (`f89ebfd`, "absent label queries reach the model -- 0 -> 271 on real
+> data") until `78dd190`. **Every config combining `negative_pools` with
+> `sliding_window: true` trained with no injected negatives at all.**
+>
+> Proven through the trainer's own `_prepare_data` on the real config values:
+> `sliding_window=False -> dataset.negatives PRESENT`, `sliding_window=True -> NONE`.
+>
+> **WHAT IT INVALIDATES.** `eb16-eventrecords-tr.yaml` and `eb16-eventrecords-neg.yaml` BOTH
+> set `sliding_window: true`, so the neg config's negatives block did nothing and the two
+> checkpoints differ only by output_dir and training nondeterminism. **The §5f verdict
+> measures two nominal duplicates, not negatives.** That retrodicts the one thing it could
+> never explain -- a -0.1492 classification collapse from an intervention that never touches
+> classification. Treat those deltas as an unexplained run-to-run difference, and do NOT
+> quote the classification floor from them.
+>
+> **WHY IT HID.** `label negatives ON: {...}` is logged by the LOADER when the pools file is
+> read, and is true whether or not the dataset ever receives the injector -- it was the line
+> everyone checked. The injector's own `composition_line()` WOULD have shown `0/0 records`,
+> but it logs at EPOCH END and no A/B in this series reached one.
+>
+> **FIXED AND GATED.** Both branches now pass the injector, and a config declaring negatives
+> whose training dataset carries none REFUSES TO START. Confirmed live: absent queries per
+> forward **0.38 -> 4.11**. A clean A/B (`absneg`) is running as of 2026-09-20.
+>
+> **AND A STATIC POOL FILE WAS A SECOND SILENT GAP.** `negative_pools.json` is keyed by corpus
+> name and omits anything added since it was generated, so a corpus absent from it is skipped
+> as `no_candidate` and receives nothing -- measured at 300/300 records for
+> `cmnee_roles_ner`. `negative_pools: auto` now derives the pools from the config's own
+> corpora and refuses to start if any corpus lacks one.
+
+The feature exists, two A/B arms trained, and the (now confounded) verdict is in §5f. Living checklist — tick items as they land and
 record the measurement that proved each one. Companion to [[EVENT_ARGUMENT_DIAGNOSIS]] §4h,
 §4i and [[EXPERIMENT_CATALOG]] (the run rows).
 

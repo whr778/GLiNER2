@@ -1,6 +1,55 @@
 # Option 4 — remap event ROLES into the ENTITY space
 
-**Status: BUILT 2026-09-18, A/B RUNNING 2026-09-19.** The step AFTER this one is
+**Status: A/B COMPLETE 2026-09-20 — NEGATIVE — and RE-RUNNING, because the first run's
+REGIME was broken rather than the idea.**
+
+> ## *** VERDICT 1 (2026-09-20): NEGATIVE, AND REGIME-BOUND ***
+>
+> | metric (strict micro F1) | control | treatment | delta |
+> |---|---:|---:|---:|
+> | **event_argument** | 0.3506 | 0.3206 | **-0.0300** |
+> | **event_trigger** | 0.6057 | 0.5516 | **-0.0541** |
+> | event | 0.5375 | 0.5124 | -0.0251 |
+> | structure | 0.2288 | 0.2063 | -0.0225 |
+> | entity | 0.5540 | 0.5358 | -0.0182 (inside floor) |
+> | event_type | 0.8137 | 0.8314 | +0.0176 (inside floor) |
+>
+> **0 up, 10 down outside the ±0.02 floor.** Both arms calibrated to threshold **0.3** on
+> their own val sets at the same commit `92c0605`, so the operating point is not the
+> explanation.
+>
+> **IT IS NOT A PRECISION/RECALL TRADE -- BOTH HALVES FELL.** `event_argument` precision
+> 0.4536 -> 0.4252 and recall 0.2858 -> 0.2573, with **694 MORE arguments never found**
+> (FN 11,696 -> 12,390). The sweep lines suggested a trade; the blind test does not.
+>
+> **THE FIRST STEP OF THE MECHANISM WORKED, THE SECOND DID NOT.** Entity recall rose
+> **+0.0429** (0.5017 -> 0.5446) -- the entity head really does propose more after seeing
+> `Event<Role>` spans, which was the premise. But entity precision fell **-0.0912** and the
+> error decomposition shows why: COR +12,365 against **FP +18,373**. 60% of the new proposals
+> are wrong, so the shared candidate pool got NOISIER, not richer, and `event_trigger`
+> -- a head this corpus never touches -- paid for it.
+>
+> **WHY THE REGIME WAS BROKEN.** Nothing in that run could punish over-proposal:
+> 1. the roles configs declared **no `negative_pools`**;
+> 2. `partial_annotation: cmnee_roles_ner: [entities]` is read ONLY by
+>    `build_negative_pools.py` -- **the trainer never reads it**, so it protected nothing at
+>    training time;
+> 3. measured across all 11 fetchable corpora in the mix, **0% of presented entity labels
+>    carry an empty answer** -- the mix itself never teaches that an offered label can be
+>    absent;
+> 4. and per [[LABEL_NEGATIVES_PLAN]], negatives could not have applied even if asked for.
+>
+> The augmentation pushes the same way: `synthetic_entity_label_prob: 0.2` renames a fifth of
+> entity presentations, and with no descriptions and no absent labels a renamed label still
+> has gold -- teaching "whatever this label is called, these spans answer it".
+>
+> **SO THE REFUTATION IS REAL BUT REGIME-BOUND**, and the re-run (`roles2-*`, launched
+> 2026-09-20) puts both arms in a regime that injects: **~4.9 absent queries per forward
+> against 0.37**. The derived corpus KEEPS `partial_annotation` -- measured, 42.3% (upper
+> bound) of its records have an absent role whose surface is in the text (核潜艇 present while
+> `EventMilitaryforce` is absent), so it is positives-only and must never SOURCE negatives.
+
+**Status of the original build: BUILT 2026-09-18, A/B RAN 2026-09-19.** The step AFTER this one is
 [[OPTION_2_TYPED_ROLE_CONSTRAINTS]], which is gated behind this result. `tools/data/roles_to_entities.py`
 exists, the corpus is on the Hub, and both arms are training — see [[EXPERIMENT_CATALOG]].
 
