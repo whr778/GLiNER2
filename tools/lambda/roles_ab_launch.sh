@@ -25,14 +25,18 @@
 set -uo pipefail
 ARM=${ARM:?ARM=control or ARM=treatment}
 case "$ARM" in control|treatment) ;; *) echo "ARM must be control or treatment"; exit 2;; esac
+# EXP selects the config family: `roles` is the original A/B, `roles2` the 2026-09-20 re-run
+# in which BOTH arms inject label negatives. Parameterised rather than copied -- three bugs
+# in one day came from a second copy of something drifting from the first.
+EXP=${EXP:-roles}
 
 export JOB_TIMEOUT=${JOB_TIMEOUT:-82800}     # 23h: the runner caps training at 20h, then pushes
 export HARD_DEADLINE=${HARD_DEADLINE:-90000} # 25h absolute, whatever happens
 
-JOB="CFG=tools/train/config/ab/roles-$ARM.yaml \
-OUTDIR=./out/roles-$ARM \
-REPO=whr778/gliner2-roles-$ARM \
-DEST=roles_$ARM \
+JOB="CFG=tools/train/config/ab/$EXP-$ARM.yaml \
+OUTDIR=./out/$EXP-$ARM \
+REPO=whr778/gliner2-$EXP-$ARM \
+DEST=${EXP}_$ARM \
 bash tools/lambda/event_base_run.sh"
 
 # PRE-FLIGHT: a box has no data/, so every corpus must be fetchable from the Hub. The first
@@ -41,10 +45,13 @@ bash tools/lambda/event_base_run.sh"
 # unregistered. Both files were present on the laptop, which is why the configs looked fine.
 # Free, local, and seconds; it runs before anything can be billed.
 uv run python tools/train/check_corpora_fetchable.py \
-    --config "tools/train/config/ab/roles-$ARM.yaml" --offline \
-  || { echo "[roles-ab] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
+    --config "tools/train/config/ab/$EXP-$ARM.yaml" --offline \
+  || { echo "[$EXP-ab] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
 
-echo "[roles-ab] arm=$ARM  job_timeout=${JOB_TIMEOUT}s  hard_deadline=${HARD_DEADLINE}s"
-echo "[roles-ab] model -> whr778/gliner2-roles-$ARM"
-echo "[roles-ab] logs  -> whr778/gliner2-run-logs : roles_$ARM/"
-exec env NAME="roles-$ARM" JOB="$JOB" bash tools/lambda/launch_when_available.sh
+echo "[$EXP-ab] arm=$ARM  job_timeout=${JOB_TIMEOUT}s  hard_deadline=${HARD_DEADLINE}s"
+echo "[$EXP-ab] model -> whr778/gliner2-$EXP-$ARM"
+echo "[$EXP-ab] logs  -> whr778/gliner2-run-logs : ${EXP}_$ARM/"
+# PIN THE CARD. launch_when_available.sh falls back to gpu_1x_a10 when the A100 pool is
+# empty, and two arms on different silicon is not a matched A/B whatever the loss does.
+exec env NAME="$EXP-$ARM" JOB="$JOB" TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
+     bash tools/lambda/launch_when_available.sh
