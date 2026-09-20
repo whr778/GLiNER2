@@ -25,24 +25,28 @@
 set -uo pipefail
 ARM=${ARM:?ARM=control or ARM=treatment}
 case "$ARM" in control|treatment) ;; *) echo "ARM must be control or treatment"; exit 2;; esac
+# EXP selects the config family: `absneg` is the first pair (confounded by checkpoint
+# selection), `absneg2` the re-run that selects on a task metric. Parameterised rather than
+# copied -- three bugs in one day came from a second copy drifting from the first.
+EXP=${EXP:-absneg}
 
 uv run python tools/train/check_corpora_fetchable.py \
-    --config "tools/train/config/ab/absneg-$ARM.yaml" --offline \
-  || { echo "[absneg] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
+    --config "tools/train/config/ab/$EXP-$ARM.yaml" --offline \
+  || { echo "[$EXP] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
 
 export JOB_TIMEOUT=${JOB_TIMEOUT:-82800}
 export HARD_DEADLINE=${HARD_DEADLINE:-90000}
 
-JOB="CFG=tools/train/config/ab/absneg-$ARM.yaml \
-OUTDIR=./out/absneg-$ARM \
-REPO=whr778/gliner2-absneg-$ARM \
-DEST=absneg_$ARM \
+JOB="CFG=tools/train/config/ab/$EXP-$ARM.yaml \
+OUTDIR=./out/$EXP-$ARM \
+REPO=whr778/gliner2-$EXP-$ARM \
+DEST=${EXP}_$ARM \
 bash tools/lambda/event_base_run.sh"
 
-echo "[absneg] arm=$ARM  model -> whr778/gliner2-absneg-$ARM  logs -> absneg_$ARM/"
+echo "[$EXP] arm=$ARM  model -> whr778/gliner2-$EXP-$ARM  logs -> ${EXP}_$ARM/"
 # PIN THE CARD. launch_when_available.sh falls back to gpu_1x_a10 when the A100 pool is
 # empty, and on 2026-09-19 that put the control on an A100 and the treatment on an A10 --
 # two arms on different silicon is not a matched A/B, whatever the loss does. Wait for the
 # right card instead of silently accepting a different one.
-exec env NAME="absneg-$ARM" JOB="$JOB" TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
+exec env NAME="$EXP-$ARM" JOB="$JOB" TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
      bash tools/lambda/launch_when_available.sh
