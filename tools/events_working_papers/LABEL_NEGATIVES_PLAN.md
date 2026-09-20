@@ -36,7 +36,50 @@
 > `cmnee_roles_ner`. `negative_pools: auto` now derives the pools from the config's own
 > corpora and refuses to start if any corpus lacks one.
 
-The feature exists, two A/B arms trained, and the (now confounded) verdict is in §5f. Living checklist — tick items as they land and
+The feature exists, two A/B arms trained, and the (now confounded) verdict is in §5f.
+
+> ## *** THE CLEAN RE-RUN (`absneg`, 2026-09-20) IS ALSO CONFOUNDED -- BY CHECKPOINT SELECTION ***
+>
+> First A/B in which the injector genuinely reached the dataset (treatment 4.14 absent
+> queries/step, control exactly 0). Both arms commit `b880f06`, both calibrated to threshold
+> 0.3 on their own val sets. The raw comparison is spectacular and must NOT be quoted:
+>
+> | metric (strict micro F1) | control | treatment | delta |
+> |---|---:|---:|---:|
+> | event_argument | 0.0222 | 0.1880 | +0.1657 |
+> | event_trigger | 0.2326 | 0.4411 | +0.2084 |
+> | event_type | 0.4839 | 0.6257 | +0.1418 |
+> | relation | 0.0056 | 0.0788 | +0.0732 |
+> | classification | 0.4583 | 0.5019 | +0.0436 |
+> | entity | 0.4743 | 0.5040 | +0.0297 |
+>
+> **19 up, 0 down -- and that uniformity is the tell.** The treatment changes a listwise
+> DENOMINATOR; it has no path to lifting `classification` by +0.0436 or `relation` by
+> +0.0732. A model trained twice as long lifts everything, which is what happened:
+>
+> | arm | val-loss improvements | last improvement | SHIPPED |
+> |---|---|---|---|
+> | control | 2 (1.4965, 1.3127) | after epoch 2 | **epoch 2 of 5** |
+> | treatment | 3 (1.6154, 1.5970, 1.5436) | after epoch 4 | **epoch 4 of 5** |
+>
+> **ROOT CAUSE: `metric_for_best: eval_loss` (config line 227) with two DIFFERENT
+> OBJECTIVES.** The treatment's loss carries the extra absent-negative terms -- measured
+> locally at total 7.32 -> 7.94 with the flag on -- so `eval_loss` is not the same quantity
+> in the two runs, and selecting on it shipped checkpoints from different epochs. This is the
+> same defect as the "+0.049 win" that turned out to be checkpoint selection; it was fixed on
+> that path and not on this one.
+>
+> **NOT RECOVERABLE POST HOC.** Only `best/` was pushed and both boxes terminated, so the
+> control's epoch-4 checkpoint no longer exists to be scored.
+>
+> **WHAT IT DOES ESTABLISH, weakly:** on identical data with one flag different, the control's
+> val loss plateaued after epoch 2 while the treatment's improved to epoch 4. That is
+> CONSISTENT with absent negatives regularising, and consistent-with is not measured -- n=1
+> per arm, and it could be seed variance.
+>
+> **TO GET AN ANSWER:** re-run with `metric_for_best` on a TASK METRIC, or score both arms at
+> a fixed epoch, so selection cannot differ by construction. ~$40, and the fix is one config
+> line. Living checklist — tick items as they land and
 record the measurement that proved each one. Companion to [[EVENT_ARGUMENT_DIAGNOSIS]] §4h,
 §4i and [[EXPERIMENT_CATALOG]] (the run rows).
 
