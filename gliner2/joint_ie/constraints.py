@@ -118,6 +118,88 @@ class TypedEndpoints(Constraint):
         return (not self.head_types or head in self.head_types) and (not self.tail_types or tail in self.tail_types)
 
 
+def _unqualify(value: Any) -> str:
+    """Strip a `qualified_query_type` prefix: ``"7::Location"`` -> ``"Location"``.
+
+    A MIRROR of `gliner2.models.base.display_query_type`, kept local because this module
+    deliberately imports no schema or model code. `tests/joint_ie/test_typed_role.py`
+    asserts the two agree on every shape -- three separate bugs on 2026-09-19 were one
+    feature living at two call sites that silently drifted, so the parity is tested, not
+    assumed.
+    """
+    text = str(value)
+    head, sep, name = text.partition("::")
+    return name if sep and head.isdigit() else text
+
+
+def _span_of(value: Any) -> Optional[tuple[int, int]]:
+    start, end = _get(value, "start"), _get(value, "end")
+    if start is None or end is None:
+        if isinstance(value, (tuple, list)) and len(value) == 3:
+            return (int(value[1]), int(value[2]))
+        return None
+    return (int(start), int(end))
+
+
+@dataclass(frozen=True)
+class TypedRole(Constraint):
+    """An event role edge may only land on a span the model types compatibly.
+
+    Applied PER (event_type, role), never globally: the sweep measured that `Location`
+    and `Date` discriminate while `Subject` does not, so a global constraint spends its
+    precision where type identity carries no information.
+
+    The role edge's tail is keyed by the ROLE (``(role, start, end)``), not by an entity
+    type, so the filler's type cannot be read off the edge. It is read from the accepted
+    NODES at the same span -- excluding the role-keyed node itself, which would otherwise
+    "type" every filler as its own role and make the constraint vacuous.
+
+    ``require_typed`` decides the no-evidence case. Default FALSE: a span no entity query
+    proposed carries no type to judge, and refusing it would make this a recall filter of
+    the kind option 3 already measured negative. Set True only to test that arm
+    deliberately.
+    """
+
+    event_type: Optional[str] = None
+    role: Optional[str] = None
+    allowed_types: tuple[str, ...] = ()
+    require_typed: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "allowed_types", tuple(self.allowed_types))
+
+    def _applies_to(self, candidate: Any) -> bool:
+        """Does this edge carry the (event_type, role) this constraint governs?"""
+        rel = _label(candidate)
+        if rel is None:
+            return False
+        text = str(rel)
+        task, sep, rest = text.partition("::")
+        role = _unqualify(rest if sep else text)
+        if self.event_type is not None and task != self.event_type:
+            return False
+        if self.role is not None and role != self.role:
+            return False
+        return True
+
+    def allows(self, candidate: Any, relations: Sequence[Any] = (), entities: Sequence[Any] = ()) -> bool:
+        if not self.allowed_types or not self._applies_to(candidate):
+            return True
+        tail = _endpoint(candidate, "tail")
+        span = _span_of(tail)
+        if span is None:
+            return True
+        own_role = _unqualify(_label(tail)) if _label(tail) is not None else None
+        types = {
+            _unqualify(_label(node)) for node in entities
+            if _span_of(node) == span and _label(node) is not None
+        }
+        types.discard(own_role)
+        if not types:
+            return not self.require_typed          # no typed evidence either way
+        return bool(types & set(self.allowed_types))
+
+
 @dataclass(frozen=True)
 class NoSelfLoops(Constraint):
     relation: Optional[str] = None

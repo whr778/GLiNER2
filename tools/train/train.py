@@ -734,6 +734,54 @@ def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
         head.pair_scorer.use_inside_evidence = settings.use_inside_evidence
 
 
+def _auto_negative_pools(cfg: dict, config_path, output_dir: str) -> str:
+    """Derive the negative-label pools from THIS config's corpora, and refuse gaps.
+
+    `negative_pools: auto` instead of a committed JSON. The static file is keyed by corpus
+    name and silently omits anything added since it was generated: option 4's derived corpus
+    `cmnee_roles_ner` was absent from it, so `_candidates` matched no pool and 300 of 300 of
+    its records were skipped as `no_candidate`. The arm trained on pure positive entity
+    supervision and over-proposed -- entity FP +18,373 against COR +12,365 -- and the A/B was
+    read as a refutation of the idea rather than of the regime.
+
+    Every corpus the config trains on must end up with an entry, or the run refuses to start:
+    a silently absent pool is the failure this replaces.
+    """
+    import importlib.util
+    from pathlib import Path as _Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_gliner2_pool_builder",
+        _Path(__file__).resolve().parents[1] / "data" / "build_negative_pools.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    pools = mod.build_pools(cfg, _Path(config_path))
+    wanted = set(mod._corpus_train_paths(cfg))
+    missing = sorted(wanted - set(pools))
+    if missing:
+        raise SystemExit(
+            f"[negatives] auto pools could not be derived for {missing} -- their train files "
+            f"are missing. Every corpus in the mix must have a pool or its records silently "
+            f"receive no negatives. Refusing to start."
+        )
+
+    out = _Path(output_dir) / "negative_pools.auto.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"config": str(config_path), "pools": pools},
+                              ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print(f"[negatives] derived pools for {len(pools)} corpora -> {out}")
+    for name, info in sorted(pools.items()):
+        dims = [d for d, v in info["annotates"].items() if v]
+        note = ""
+        if info.get("partial"):
+            note = f"  PARTIAL on {','.join(info['partial'])}: RECEIVES NO NEGATIVES there"
+        print(f"[negatives]   {name:24s} can draw from: {dims or 'NOTHING'}"
+              f"  (entities={len(info['entities'])}, events={len(info['events'])}){note}")
+    return str(out)
+
+
 def _build_model(model_cfg: Dict):
     """Build the model from the ``model`` config section.
 
@@ -1344,6 +1392,11 @@ def main(config_path: str) -> None:
     split_hygiene = str((cfg.get("training") or {}).pop("split_hygiene", "drop"))
 
     config = TrainingConfig(**cfg["training"])
+
+    # `negative_pools: auto` derives the pools from this config's own corpora, so a dataset
+    # added to the mix cannot silently miss out on negatives the way cmnee_roles_ner did.
+    if str(config.negative_pools or "").strip().lower() == "auto":
+        config.negative_pools = _auto_negative_pools(cfg, config_path, config.output_dir)
 
     # DDP auto-detect: torchrun sets LOCAL_RANK per process; copy it into the
     # config so the trainer's distributed path (config.local_rank >= 0) engages.

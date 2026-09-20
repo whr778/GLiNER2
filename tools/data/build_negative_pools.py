@@ -159,6 +159,39 @@ def scan(path: Path, fns: dict, limit: int, transform=None) -> dict:
     }
 
 
+def build_pools(cfg: dict, config_path: Path, limit: int = 0, log=print) -> dict:
+    """Derive every pool this config's corpora can supply, applying `partial_annotation`.
+
+    Importable so the TRAINER can derive pools for whatever corpora a config names, instead
+    of depending on a committed JSON that silently omits any newly added dataset. Option 4's
+    derived corpus was absent from the static file, so 300 of 300 of its records were
+    `no_candidate` and it received no negatives at all -- the static list is why.
+    """
+    _category_fns, load_labels_cfg, transform_record = _train_helpers()
+    fns = _category_fns(load_labels_cfg(cfg, config_path))
+    partial = _partial_annotation(cfg)
+    known = _corpus_train_paths(cfg)
+    unknown = sorted(set(partial) - set(known))
+    if unknown:
+        raise SystemExit(f"[pools] partial_annotation names corpora not in this config: {unknown}")
+
+    pools: dict = {}
+    for name, path in sorted(known.items()):
+        p = Path(path)
+        if not p.is_file():
+            log(f"[pools] {name}: train file ABSENT at {path}")
+            continue
+        info = scan(p, fns, limit, transform_record)
+        # PARTIAL wins over the inferred value, and only in the safe direction: it can turn
+        # annotation OFF, never on.
+        for dim in sorted(partial.get(name, ())):
+            if info["annotates"][dim]:
+                info["annotates"][dim] = False
+                info.setdefault("partial", []).append(dim)
+        pools[name] = info
+    return pools
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -172,31 +205,13 @@ def main() -> int:
     _category_fns, load_labels_cfg, transform_record = _train_helpers()
     fns = _category_fns(load_labels_cfg(cfg, config_path))
     print(f"[pools] label transforms active for: {sorted(fns) or 'NONE'}")
-    partial = _partial_annotation(cfg)
-    for nm, dims in sorted(partial.items()):
+    for nm, dims in sorted(_partial_annotation(cfg).items()):
         print(f"[pools] PARTIAL {nm}: {sorted(dims)} — positives only, refused as negatives")
-    # A declaration naming a corpus the config does not train on is a typo that would
-    # otherwise protect nothing at all, silently.
-    unknown = sorted(set(partial) - set(_corpus_train_paths(cfg)))
-    if unknown:
-        raise SystemExit(f"[pools] partial_annotation names corpora not in this config: {unknown}")
 
-    pools = {}
+    pools = build_pools(cfg, config_path, args.limit)
+
     print(f"\n{'corpus':22s}{'records':>9}{'ent':>7}{'evt':>6}{'rel':>6}{'struct':>8}   annotates")
-    for name, path in sorted(_corpus_train_paths(cfg).items()):
-        p = Path(path)
-        if not p.is_file():
-            print(f"{name:22s}{'ABSENT':>9}")
-            continue
-        info = scan(p, fns, args.limit, transform_record)
-        # PARTIAL wins over the inferred value, and only ever in the safe direction: it can
-        # turn annotation OFF, never on. Recorded rather than silently applied, because the
-        # whole hazard here is a pool that looks fine.
-        for dim in sorted(partial.get(name, ())):
-            if info["annotates"][dim]:
-                info["annotates"][dim] = False
-                info.setdefault("partial", []).append(dim)
-        pools[name] = info
+    for name, info in sorted(pools.items()):
         ann = ",".join(d for d, v in info["annotates"].items() if v) or "-"
         if info.get("partial"):
             ann += f"  [PARTIAL: {','.join(info['partial'])} positives only]"
