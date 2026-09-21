@@ -261,9 +261,13 @@ not English medical", which is why a per-language prior table would be the wrong
 except `biored` at 3.8, which is far more general in its prose than the other five. If you are
 choosing where to spend annotation or fine-tuning budget, this column is the ranking.
 
-**It correlates with something downstream.** Base-encoder perplexity rank-predicts the RERANK
-listwise logit sd perfectly on the four corpora measured both ways (Spearman rho = -1.000,
-n=4, p=0.042): the less familiar the cell, the flatter the model's ranking. See
+**It correlates with something downstream, but not perfectly.** Base-encoder perplexity
+rank-predicts the RERANK listwise logit sd at Spearman **rho = -0.797** across all twelve
+corpora (t=-4.18, p ~ 0.002): the less familiar the cell, the flatter the model's ranking.
+An earlier reading on only four corpora gave -1.000; that was partly luck. Note the FLOOR --
+across the biomedical cluster perplexity spans 5x (3.8 to 18.8) while rerank sd stays flat at
+2.87-4.54 -- so this column ranks where fine-tuning has most to teach, but does not linearly
+predict how the model will behave. The proposal path shows rho = -0.133, i.e. nothing. See
 `tools/events_working_papers/OPTION_2_TYPED_ROLE_CONSTRAINTS.md`.
 
 **Mask, or the number is meaningless.** Scoring a masked LM with `labels=input_ids` and no

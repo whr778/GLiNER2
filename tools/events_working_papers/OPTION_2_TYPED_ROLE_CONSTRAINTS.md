@@ -504,6 +504,25 @@ match. It could never have fired before, because the mask was always None.
 
 ## Scale is a familiarity signal, not a nuisance
 
+**EXTENDED TO n=12, AND THE CLAIM IS WEAKER THAN IT FIRST LOOKED.** At n=4 the rank
+correlation was perfect; adding the biomedical cluster and three more cells gives Spearman
+**rho = -0.797** (n=12, t=-4.18, p ~ 0.002). Real and significant, but the -1.000 was partly
+luck and should not be quoted.
+
+Three things the extension showed that n=4 could not:
+
+- **There is a FLOOR.** Across the biomedical corpora pseudo-perplexity spans 3.8 to 18.8, a
+  5x range, while rerank sd stays flat at 2.87-4.54 -- and `bc2gm`, the LEAST familiar cell
+  measured, has a HIGHER sd than `bionlp13cg`. Past some point more unfamiliarity does not
+  flatten the ranking further.
+- **The correlation is driven by the familiar end**: `chfinann` (ppl 3.5, sd 15.39) and
+  `docee` (4.4, 8.98) are the two most familiar cells and carry by far the widest logits.
+- **Task composition is a partial confound but does not explain it.** Event-bearing corpora
+  have a higher median rerank sd (4.87) than non-event ones (3.62), but the relationship
+  survives inside both subgroups: rho = -0.80 within event corpora, -0.57 within non-event.
+
+The original n=4 reading, kept because the weakening is the point:
+
 Base-encoder masked pseudo-perplexity rank-predicts the RERANK logit sd perfectly across four
 cells spanning two languages and four domains (Spearman rho = -1.000, n=4, p=0.042):
 
