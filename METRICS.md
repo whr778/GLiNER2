@@ -29,6 +29,12 @@ and is documented here so every metric this project quotes has one definition.
 
 ## The MENU is part of a metric's identity
 
+> **The two schemas, and worked examples of both:** `tools/data/SCHEMA_EXAMPLES.md` catalogues
+> the EVALUATION schema (the gold `output` block in a corpus record) against the INFERENCE
+> schema (the menu you hand `model.extract`, and the `default_schema` every checkpoint ships in
+> its `config.json`), with a real example of all five dimensions and the `open_vocab` trap that
+> makes `eval_fullmenu_entity_*` gold-menu numbers under a full-menu key name.
+
 A metric here is always quoted with its type (F1, TVD, RMSE, nrmse). For any schema-driven
 task there is a second thing that must be quoted with it: **the label menu the model was
 scored against.**

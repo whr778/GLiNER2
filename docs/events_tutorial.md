@@ -205,6 +205,9 @@ positive as absent.
 
 ## See also
 
+- `tools/data/SCHEMA_EXAMPLES.md` -- every schema shape, evaluation and inference, transcribed
+  from real corpora and real checkpoints. Start here if you are unsure which object you hold.
+
 - [`EVENT_ARGUMENT_DIAGNOSIS.md`](../tools/events_working_papers/EVENT_ARGUMENT_DIAGNOSIS.md) —
   why event arguments fail, measured
 - [`LABEL_NEGATIVES_PLAN.md`](../tools/events_working_papers/LABEL_NEGATIVES_PLAN.md) — the

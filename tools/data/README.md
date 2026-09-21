@@ -1,5 +1,9 @@
 # Dataset Converters
 
+> Writing a converter? `SCHEMA_EXAMPLES.md` in this directory is the catalogue of the gold
+> `output` shapes every converter must emit, with a real example of each of the five
+> dimensions plus the `entity_types` join.
+
 The ~36 `convert_*.py` scripts here transform public datasets (mostly
 HuggingFace, plus GitHub / S3 / Google-Drive / LDC sources) into the GLiNER2
 JSONL training format, whose `output` may carry `entities`,

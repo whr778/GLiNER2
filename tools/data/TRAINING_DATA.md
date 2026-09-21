@@ -230,6 +230,46 @@ corpus on disk are Chinese." That was wrong: 20,901 real Chinese casualty record
 The English arm was synthetic for the same reason in reverse -- nobody had asked for real
 English casualty annotation until `cas_ann_en`.
 
+## How well does the base encoder already know each corpus? (2026-09-21)
+
+Masked pseudo-perplexity of `jhu-clsp/mmBERT-base` on raw corpus text, 30 documents each,
+15% of tokens masked. This is a property of the DATA against a given base, and it says where
+fine-tuning has the most to teach. Regenerate with
+`tools/train/measure_corpus_familiarity.py`.
+
+| corpus | lang | domain | NLL | pseudo-perplexity |
+|---|---|---|---|---|
+| chfinann | zh | finance | 1.258 | **3.5** |
+| biored | en | biomedical | 1.343 | 3.8 |
+| docee | en | news | 1.492 | 4.4 |
+| cmnee_typed | zh | news | 1.548 | 4.7 |
+| casie_typed | en | cyber | 1.765 | 5.8 |
+| cc_news_haiku45 | en | news | 1.773 | 5.9 |
+| duee_typed | zh | news | 1.872 | 6.5 |
+| scierc | en | science | 1.908 | 6.7 |
+| anatem | en | biomedical | 2.386 | 10.9 |
+| bionlp13cg | en | biomedical | 2.452 | 11.6 |
+| bc5cdr | en | biomedical | 2.521 | 12.4 |
+| bc2gm | en | biomedical | 2.936 | **18.8** |
+
+**LANGUAGE ALONE PREDICTS NOTHING.** The most familiar cell here is CHINESE finance (3.5) and
+the least is ENGLISH biomedical (18.8), a 5.4x range. Two Chinese news corpora differ by 1.4x
+(cmnee 4.7, duee 6.5). Only the (language, domain) CELL expresses "knows Chinese medical but
+not English medical", which is why a per-language prior table would be the wrong object.
+
+**The biomedical cluster is the outlier**, 10.9-18.8 against 3.5-6.7 for everything else --
+except `biored` at 3.8, which is far more general in its prose than the other five. If you are
+choosing where to spend annotation or fine-tuning budget, this column is the ranking.
+
+**It correlates with something downstream.** Base-encoder perplexity rank-predicts the RERANK
+listwise logit sd perfectly on the four corpora measured both ways (Spearman rho = -1.000,
+n=4, p=0.042): the less familiar the cell, the flatter the model's ranking. See
+`tools/events_working_papers/OPTION_2_TYPED_ROLE_CONSTRAINTS.md`.
+
+**Mask, or the number is meaningless.** Scoring a masked LM with `labels=input_ids` and no
+masking lets it see the token it is predicting: that reads NLL 0.001 on English clinical text
+and 0.213 on pure gibberish. With real masking the same two read 1.84 and 7.47.
+
 ## Summary
 
 | Dataset | Task(s) | Train | Val† | Test | License‡ | Source |
