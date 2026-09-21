@@ -264,7 +264,11 @@ training:
   experiment_name: eb17_best
   data_parallel: false
   num_epochs: 5              # held equal across the curve (only total volume varies)
-  batch_size: 4
+  # H100 80GB, not A100 40GB. batch_size DOUBLES and grad-accum HALVES, so the EFFECTIVE
+  # batch stays 16 and the recipe is unchanged -- only the number of accumulation steps
+  # drops. batch_size is PER-GPU, so this is the one axis where a card swap silently becomes
+  # a different experiment if the product is not held fixed.
+  batch_size: 8
   # WARNING, measured not assumed: batch_size is PER-GPU, so this file is a DIFFERENT
   # recipe depending on how it is launched, and the note that used to sit here claimed
   # otherwise.
@@ -279,7 +283,7 @@ training:
   # gradient_accumulation_steps: 2 under torchrun --nproc_per_node=2 to reproduce the
   # curve's optimization, or accept an off-curve base and re-baseline everything
   # downstream of it.
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 2      # 8 x 2 = 16, same as eb16's 4 x 4
   encoder_lr: 2.0e-5
   task_lr: 5.0e-4
   warmup_ratio: 0.05
@@ -298,7 +302,18 @@ training:
   save_best: true
   save_total_limit: 2
   logging_steps: 20
-  num_workers: 0
+  # `num_workers: 0` was an MPS constraint carried over from local runs, not a CUDA one.
+  # 4 workers: measured 0 -> 12 took 5.0 -> 3.2 s/it on the joint-boundary training path.
+  # (The "num_workers refuted" note in the catalog is an INFERENCE measurement -- 18.4 at 0
+  # against 18.5 at 4 -- and does not transfer to training.)
+  #
+  # CONSEQUENCE, AND IT MUST NOT BE MISREAD: `__getitem__` runs in FORKED workers, so the
+  # injector's counters live in the child and `composition_line()` reads the PARENT's, which
+  # stay at zero. **A `[composition] ... 0/0 records` line under num_workers > 0 is an
+  # artefact of forking, NOT evidence that negatives failed.** The guard that still works is
+  # `ExtractorTrainer._wired`, which refuses to start when negatives are configured and the
+  # dataset carries no injector -- that runs in the parent at dataset construction.
+  num_workers: 4
   validate_data: true
   # Long documents are WINDOWED, not truncated: a 4096-subword window with a 3072
   # stride (25% overlap) so cross-boundary structure is still seen. mmBERT supports
@@ -309,7 +324,7 @@ training:
   window_stride: 3072
   max_len: 4096
   gradient_checkpointing: true
-  pin_memory: false
+  pin_memory: true                    # worth it once num_workers > 0
   early_stopping: false
   # ~7-13% of records in chfinann/docfee/casie/text2json cannot be mapped to word
   # token boundaries by the boundary preprocessor even though every surface IS
