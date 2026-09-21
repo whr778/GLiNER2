@@ -13,7 +13,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
-| 5 | **Cross-event contamination** | the top real decode defect on multi-event documents | probe gated behind item 4 | build the probe |
+| 5 | **Cross-event contamination** | 4.7% of Helene's `dead` observations belong to OTHER events, and they carry the LARGE values | **NOT BLOCKED** — the gate (old item 0) closed 2026-08-19; my rewrite mis-cited it as item 4 | fix the unsound readout, then try a SPATIAL filter |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
@@ -61,9 +61,46 @@ Consider it for `metric_for_best` in place of entity F1.
 itself was swept and moved the 137k structure reference to 0.1119 at 0.1; the anchor cutoff
 never got the same treatment.
 
-**Cross-event contamination** is the top real decode defect, and its probe is gated behind the
-threshold work above. Do NOT reach for sharper type boundaries — the standard mitigations were
-considered and the data-side remedy (negative documents) is the proposed route.
+### Cross-event contamination — NOT blocked; the citation was stale
+
+Whole-article reading via `extract_long` binds casualty figures lifted from unrelated stories
+sharing an article body — streams surfaced for `poland`, `bosnia`, `afghanistan`, `iran`,
+`japan`, `ukraine`, `cameroon`.
+
+**Quantified 2026-08-11**, context audit of all 106 Helene `dead` observations: 82.1% genuine,
+**4.7% cross-event**, 3.8% non-casualty, 9.4% unclear. The five are Katrina 1400, a Typhoon's
+250, Milton's 230, Bosnia's 16 and Hurricane John's 2 in Mexico — **they carry the LARGE
+values, so the most damage per instance.**
+
+**THE STATED GATE IS STALE.** It read "Gated by item 0 (2026-08-17)", and item 0 closed
+2026-08-19 (`runtime.py` dropped `record_metadata`; the record head was fine). The 2026-09-21
+TODO rewrite additionally mis-cited it as "item 4". Nothing blocks this.
+
+**The real remaining blocker is the readout**: the probe that would score any fix is unsound
+— it counts a copied casualty number as a caught cross-event, so a training arm cannot be told
+from an artifact. Fix that first.
+
+**Three signals tried, all failed** (`EKF_MHT_BUILD_RECORD.md` §27.2): nearest named event
+3/11 at 32.5% false positives, only-competitor-named 3/11 at 31.3%, record-head binding 2/11
+at 26.5%. All three infer the owning event from TEXT NEAR THE NUMBER, and Helene articles
+routinely name Milton and Katrina for comparison. Bosnia's 16 is structurally invisible to all
+of them — Bosnia is a *place*, not a named storm.
+
+**The pattern worth noticing: EXTERNAL-ANCHOR checks work, text-proximity inference does not.**
+The temporal filter is the external-anchor version and it WORKED — Izmit 15 false bindings
+down to 3, zero genuine losses. **The spatial version does not exist**, and the foreign places
+were left deliberately unmapped in `datasets/helene2024/rollup.json` so the problem stays
+visible rather than hidden.
+
+A temporal + spatial composition plausibly covers all five: spatial catches Bosnia, Mexico and
+the Typhoon (outside the six-state footprint), temporal catches Katrina (2005) and Milton
+(October vs Helene's September). Note the scope gate currently removes Katrina's 1400 for the
+WRONG reason — because it is large, not because it belongs elsewhere — which is exactly why it
+keeps Bosnia's 16 and Mexico's 2.
+
+NOT YET LOCATED: the per-observation store carrying association keys. `rollup.json` holds
+aliases and an aggregate/parts hierarchy, and `real_truth.jsonl` is the 31-point ground-truth
+series, so the spatial filter needs the pipeline's own observation stream first.
 
 ## 4. Open experiments, cheap
 
