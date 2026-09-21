@@ -320,6 +320,11 @@ into the sample. `classification_loss` is a separate term.
 | `relation_loss` | typed relation edges |
 | `null_loss` (`abstention_loss`, weight **0.2**) | a per-query gate whose target is **1 for an ABSENT query** |
 | `count_loss` (`count_log_rate_loss`, weight **0.2**) | how many spans a query should yield; supervises a count of **zero** for an absent one |
+| `absent_negatives_used` | NOT A LOSS -- a gate counter, absent queries that entered a denominator |
+| `typed_margin_used` | NOT A LOSS -- a gate counter, candidates the typed margin penalised |
+
+The last two ride in `output.losses` for logging but are counters, not terms, and are
+excluded from the golden-parity contract for that reason.
 
 All are **masking-aware and empty-query safe**: denominators use `clamp_min(1)`, so a query
 with no positive span still contributes finite negative supervision rather than `0/0`.
@@ -351,6 +356,71 @@ key at once and `_process_events` SKIPS an event with empty triggers, so absent 
 name list — the inference shape `{name: {"head": "", "tail": ""}}` is read as a GOLD pair of
 empty surfaces), and absent structures must carry `record_metadata` or `compile_record_specs`
 builds no spec and nothing decodes them.
+
+### The ranking channel: two levers on the listwise denominator
+
+`proposal_listwise_loss` is `all_lse - gold_lse`, i.e. `-log( sum_gold e^s / sum_all e^s )`,
+and `reranker_listwise_loss` delegates to it. Two opt-in settings change WHAT IS IN THE
+DENOMINATOR. Both default off and the default path is bit-identical.
+
+**1. `absent_negatives_in_denominator`.** The listwise loss SKIPS any query with no gold, so
+an injected label negative -- a label mapped to an empty list -- contributed EXACTLY ZERO to
+both listwise losses, 0.6 of combined weight. This pools those absent queries per task and
+adds them to the denominator of every query that DOES have gold: "rank the gold filler above
+every candidate of a label that is not present."
+
+Pooling is PER TASK over `TASK_TYPES = ("entities", "relations", "events", "json_structures")`
+and FAILS CLOSED without `task_ids` -- pooling globally would make an absent ENTITY label a
+negative for an EVENT role and would change the objective silently.
+
+**MEASURED (absneg2, the first legal comparison; both arms injected label negatives
+identically, so the pooling was the single variable):**
+
+| head | precision | recall | strict micro F1 |
+|---|---|---|---|
+| event_argument | -0.0178 | **+0.0329** | **+0.0376** |
+| event_type | 0.0000 | **-0.0818** | -0.0686 |
+| event_trigger | +0.0333 | -0.0468 | -0.0234 |
+| structure | +0.0291 | -0.0134 | -0.0159 |
+| classification | -0.1998 | -0.1956 | **-0.1977** |
+
+Every head loses recall and gains precision -- the designed effect of a negative -- EXCEPT
+`event_argument`, which gains recall. The Ortmann decomposition says why: **754 gold
+arguments left "never found"** (FN 15,511 -> 14,757), 598 of them landing correct. So
+arguments improved DESPITE fewer event instances, not because of them.
+
+Two decompositions that change what the headline means:
+
+- The `-0.1977` on classification is **96% ONE TASK**: `docee_event` 0.8135 -> 0.4803 on
+  support 5,834 of 10,291, while `chfinann_event` went UP. Precision equals recall exactly,
+  so it is argmax accuracy, not a threshold. `docee` annotates entities and classifications
+  with ZERO events, so it cannot be part of the argument gain.
+- `event_type` precision is **1.0000 on both sides by construction** under a gold menu -- the
+  menu cannot express a wrong answer. Read its "recall" as instance-proposal rate.
+
+**2. `absent_negatives_scope: all | roles`.** `TASK_TYPES` puts the event ANCHOR (trigger)
+and the event ROLES in ONE `events` bucket, and an injected absent event type contributes an
+absent anchor query ALONGSIDE its absent role queries. The table above says those two halves
+move in opposite directions, so pooling them together is the defect. `roles` gives anchor
+queries task id **-1**, which the pooling code already treats as join-no-pool/draw-no-pool.
+
+It rides a SEPARATE tensor from `query_task_ids`, which still drives `reduce_by_task`: a -1
+there would silently drop anchors from the per-task loss report. Traced live -- scope `all`
+pools 7 absent queries and drops 0 anchors; scope `roles` pools 6 and drops 1.
+Under test as `absneg4-roles`.
+
+**3. The typed margin (`typed_margin_proposal_k` / `typed_margin_rerank_k`), REFUTED.**
+`apply_typed_margin` adds `k * sd` to candidates whose entity type the role-type map forbids
+for this query's role; gold is never penalised. The scale is a bias-corrected EMA of the live
+logit sd, because the logits are not normalised.
+
+**It does not work, and the reason is structural rather than a tuning failure.** The effect
+has a closed form -- `p_gold' / p_gold = 1 / (1 + (e^d - 1) * w_S)` -- in which `sd` DOES NOT
+APPEAR. What bounds it is `w_S`, the probability mass on disallowed candidates, and measured
+on held-out val that is median 0.00003 / mean 0.00284, i.e. a loss effect of 0.00% median and
+0.28% mean at `d = ln 2`. The mask fires (0.339% of candidate cells), so this is not a wiring
+failure: the model ALREADY scores type-incompatible fillers near zero. See
+[[OPTION_2_TYPED_ROLE_CONSTRAINTS]].
 
 ### Three places with NO GRADIENT, and only one of them is a defect
 
