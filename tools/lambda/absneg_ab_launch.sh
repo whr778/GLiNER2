@@ -37,6 +37,13 @@ uv run python tools/train/check_corpora_fetchable.py \
     --config "tools/train/config/ab/$EXP-$ARM.yaml" --offline \
   || { echo "[$EXP] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
 
+# A task whose MENU differs between corpora has never been asked to consider the missing
+# labels for those documents. `unified.yaml` protects entities with a 95-entry map; its
+# classification map is EMPTY, so this is the only thing checking it.
+uv run python tools/train/check_label_menus.py \
+    --config "tools/train/config/ab/$EXP-$ARM.yaml" \
+  || { echo "[$EXP] *** REFUSING TO LAUNCH -- classification menus disagree ***"; exit 4; }
+
 export JOB_TIMEOUT=${JOB_TIMEOUT:-82800}
 export HARD_DEADLINE=${HARD_DEADLINE:-90000}
 
