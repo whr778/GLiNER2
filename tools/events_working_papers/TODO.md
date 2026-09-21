@@ -14,8 +14,8 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
 | 5 | **Cross-event contamination** | the top real decode defect on multi-event documents | probe gated behind item 4 | build the probe |
-| 6 | **`candidate_pool: shared` never A/B'd** | its 64 tensors sit untrained in every checkpoint; proven NOT structural, so the experiment is available | open | one arm, cheap |
-| 7 | **Purchased NER gold is idle for a reason that does not hold** | +167,315 entity mentions (+23.7%) already paid for | **PREMISE REFUTED 2026-09-21** — the flag exists and is in use; exhaustiveness matches docee | swap `cmnee`→`cmnee_ner`, `duee`→`duee_ner` in eb17-best |
+| 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
+| 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | **`turkish_event` gold-surface failures** | costs real supervision and aborts tolerant runs | known; `on_missing_surface=skip` masks it | fix `max_len`/windowing properly |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
 | 10 | **EKF: §10 crux reopened, §14 does not reproduce** | the EKF's claimed edge under unreliability | open | re-derive on real streams |
@@ -67,9 +67,11 @@ considered and the data-side remedy (negative documents) is the proposed route.
 
 ## 4. Open experiments, cheap
 
-- **`candidate_pool: shared`** — never A/B'd. Measured NOT structural (340 tensors either way,
-  none added, removed or reshaped), so the only honest way to ask is to TRAIN an arm with it on.
-  Its tensors currently sit at initialisation in every `per_query` checkpoint.
+- **`candidate_pool: shared`** — RUNNING since 2026-09-21 17:55 UTC. Three small arms
+  (2 corpora, 13,000 samples, ~1,625 steps each) on one A100, ~$4. The control is re-run on
+  the SAME box deliberately: attempt one's control was bf16 on an A10, so reusing it would
+  confound card with treatment. Note the script's header comment claims it runs only the two
+  `shared` arms; `ARMS` actually defaults to three. The code is right, the comment is stale.
 - **Negative documents** (data, not decode) for cross-event contamination.
 - **Base-word positive/negative samples** — a different granularity, aimed at noun-phrase
   boundaries rather than event interference.
