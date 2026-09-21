@@ -52,8 +52,17 @@ assert hasattr(base, "record_anchor_threshold"), "wrong settings object"
 
 print(f"{'anchor':>8}{'field':>8}{'records':>9}{'w/ dead':>9}{'w/ event':>10}{'span matched':>14}")
 for anc in (0.5, 0.3, 0.2, 0.1, 0.05, 0.01):
-    model.boundary_settings = dataclasses.replace(
+    # SET IT IN BOTH PLACES. `model.boundary_settings` and `model.boundary_head.settings`
+    # start as the SAME frozen object, so `dataclasses.replace` rebinds only the model's and
+    # leaves the head holding the original -- and the decode path reads the head's. The
+    # symptom is a sweep that is FLAT at every threshold, which reads exactly like "the
+    # threshold is not the bottleneck". Measured on eb16-eventrecords-tr before this fix:
+    # 1 record at 0.50 and 1 record at 0.01.
+    swept = dataclasses.replace(
         base, record_anchor_threshold=anc, record_field_threshold=min(anc, 0.5))
+    model.boundary_settings = swept
+    if getattr(model, "boundary_head", None) is not None:
+        model.boundary_head.settings = swept
     n = dd = ev = matched = 0
     for ctx, span in pairs:
         for r in (model.extract(ctx, sch).get("casualty_report") or []):
