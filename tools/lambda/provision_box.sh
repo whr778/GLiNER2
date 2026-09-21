@@ -77,15 +77,28 @@ terminate_and_die() {
 echo "[prov] waiting for $ID to become active"
 IP=""
 for _ in $(seq 1 60); do
-  IP=$(curl -s -u "$LAMBDA_API_KEY:" https://cloud.lambda.ai/api/v1/instances \
-       | python3 -c "
-import sys,json
-for x in json.load(sys.stdin)['data']:
-    if x['id']=='$ID' and x['status']=='active': print(x['ip'])")
+  # TOLERANT OF A TRANSIENT API HICCUP. The instances endpoint intermittently answers with
+  # an empty body or an HTML error page while a box is booting, and an unguarded json.load
+  # then dumps a traceback into the log on every poll. `set -e` is deliberately NOT on here,
+  # so that never killed the loop -- but it buried the real state behind a stack trace and
+  # cost a diagnosis. A parse failure means "not ready yet"; retry.
+  IP=$(curl -s -u "$LAMBDA_API_KEY:" https://cloud.lambda.ai/api/v1/instances 2>/dev/null \
+       | uv run python -c "
+import sys, json
+try:
+    data = json.load(sys.stdin).get('data') or []
+except Exception:
+    raise SystemExit(0)
+for x in data:
+    if x.get('id') == '$ID' and x.get('status') == 'active':
+        print(x.get('ip') or '')" 2>/dev/null)
   [ -n "$IP" ] && break
   sleep 20
 done
-[ -n "$IP" ] || die "instance never became active"
+# TERMINATE, do not just die. The instance is ALREADY CREATED and billing by this point, so
+# exiting without terminating leaves a box with no job, no watchdog and no owner -- the one
+# outcome this whole file exists to prevent. `die` here was the last path that still did it.
+[ -n "$IP" ] || terminate_and_die "instance never became active after 20 minutes"
 echo "[prov] active at $IP"
 
 for _ in $(seq 1 40); do $SSH ubuntu@$IP true 2>/dev/null && break; sleep 15; done
