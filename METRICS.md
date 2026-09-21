@@ -416,6 +416,34 @@ deduplicated surface set the strict/relaxed regimes already score.
 
 ---
 
+## Overall, across heads — the aggregate a BASE should be selected on
+
+Until 2026-09-21 there was no aggregate metric, so a general-purpose base could be selected
+only on ONE head or on `eval_loss` — and loss selection ships a different epoch per arm,
+which voided both the absneg and roles2 verdicts. Three keys per regime
+(`strict` / `relaxed`):
+
+| key | what it is |
+|---|---|
+| `eval_overall_<regime>_micro_{precision,recall,f1,support}` | tp/fp/fn POOLED across the primitive heads |
+| `eval_overall_<regime>_head_macro_f1` | unweighted mean of each head's own strict micro F1 |
+| `eval_overall_<regime>_head_min_f1` | the WORST head's F1 |
+| `eval_overall_<regime>_head_count` | how many heads were live |
+
+**Three numbers because none is trustworthy alone.** `micro` is the honest overall, but entity
+carries 78,666 support against classification's 10,291, so a head can collapse and barely move
+it — absneg2's −0.1977 on classification shows up there as roughly −0.015. `head_macro`
+weights every head equally, so a single collapsing head is visible. **`head_min` cannot be
+improved by trading one head away**, which is the failure this programme keeps hitting:
+absneg2 bought +0.0376 on `event_argument` and paid −0.1977 on classification; the gate3 warm
+cells bought +0.024 on target and lost on all eight heads.
+
+`eb17-best` is the first run to use `metric_for_best: eval_overall_strict_head_min_f1`.
+
+**The `event` roll-up is EXCLUDED** from the pool: it is already type+trigger+argument, so
+including it beside its own components would count every event key twice. Fewer than two live
+heads emits nothing at all.
+
 ## Returned keys
 
 Plus the span error diagnostic, per span category `<cat>` in `entity`,

@@ -10,7 +10,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | # | item | why it matters | state | next action |
 |---|---|---|---|---|
 | 1 | **absneg4: absent pool scoped to event roles** | the only lever that has ever moved `event_argument` outside the floor (+0.0376), minus the collateral | **RUNNING** since 16:38 UTC 2026-09-21, ~19h, A100 `ceeee75126414…` | read it against BOTH absneg2 arms |
-| 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
+| 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | **RUNNING** since 20:31 UTC 2026-09-21 on **1x H100 PCIe** us-west-3 `085c1b94a018…`, ~$29 | read `head_min_f1` per epoch; then sweep `record_anchor_threshold` on it |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | on `137k-clean` the sweep is decisive: 1/40 windows at 0.5 against **37/40 at 0.10** | **NO BOX NEEDED — the sweep already exists and was run.** On `eb16-eventrecords-tr` it is FLAT (1 record at every threshold), so the probe does not engage that checkpoint's record head | sweep on eb17-best after it trains, or build a probe that engages an event-records head |
 | 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **keying root cause FIXED at source; both anchors turn out to ALREADY EXIST as `--scope-filter`/`--event-year`; the cached artefact is IRREPRODUCIBLE** | do NOT overwrite the cache; re-score `--scope-filter` on corrected labels |
@@ -48,7 +48,28 @@ has trained has ever had a single absent query (0 in 574 measured), so `null_los
 `count_loss`, `negative_query_ratio` and `abstention_loss`'s entire positive class have been
 supervised on an empty set in every model to date.
 
-Hold until absneg4 lands — `absent_negatives_in_denominator` is exactly a base-level decision.
+**LAUNCHED 2026-09-21 20:31 UTC without waiting for absneg4, deliberately.** The earlier plan
+held it back because `absent_negatives_in_denominator` is a base-level decision — but that
+setting is ABSENT from eb17 (defaults off), so absneg4's verdict cannot invalidate it either
+way. If absneg4 is positive, eb17 becomes the clean one-variable CONTROL for a follow-up;
+baking a setting that cost classification −0.1977 into a general base is the aggressive
+choice, not the safe one. Waiting would have cost a full day.
+
+**On 1x H100 PCIe (us-west-3), not an A100** — `gpu_1x_a100_sxm4` had no capacity, and H100
+PCIe at $3.29/hr is roughly cost-neutral (~$29 against ~$28) for ~5h less wall clock.
+`batch_size` 4 → 8 with grad-accum 4 → 2, so the EFFECTIVE batch stays 16 and the recipe is
+unchanged — `batch_size` is PER-GPU, the one axis where a card swap silently becomes a
+different experiment. `num_workers` 0 → 4 (the 0 was an MPS constraint, not a CUDA one) and
+`pin_memory` follows.
+
+**WATCH FOR THIS AND DO NOT MISREAD IT:** `__getitem__` runs in FORKED workers, so the
+injector's counters live in the child and `composition_line()` reads the parent's. A
+`[composition] ... 0/0 records` line under `num_workers > 0` is an artefact of forking, **NOT**
+evidence that negatives failed. The guard that still works is `ExtractorTrainer._wired`, which
+refuses to start when negatives are configured and the dataset carries no injector — it runs
+in the parent at dataset construction.
+
+Selection is on `eval_overall_strict_head_min_f1`, the first run to use it.
 
 **Selection now has an aggregate.** `eval_overall_{strict,relaxed}_{micro_f1, head_macro_f1,
 head_min_f1}` landed 2026-09-21. `head_min_f1` is the interesting one for a base: it cannot be
