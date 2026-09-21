@@ -16,7 +16,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 5 | **Cross-event contamination** | the top real decode defect on multi-event documents | probe gated behind item 4 | build the probe |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
-| 8 | **`turkish_event` gold is LEMMATISED, not truncated** | ~10,600 mentions (7.5%) are unlearnable AND unscorable | **CAUSE CORRECTED 2026-09-21** — Turkish agglutination, not `max_len` | decide between repair / prefix-match / re-annotate |
+| 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
 | 10 | **EKF: §10 crux reopened, §14 does not reproduce** | the EKF's claimed edge under unreliability | open | re-derive on real streams |
 | 11 | **EKF: exposure counts are not casualties** | 12 of Helene's 106 `dead` are audited non-casualty; schema has nowhere to put them | open | extend the schema |
@@ -114,34 +114,26 @@ considered and the data-side remedy (negative documents) is the proposed route.
   writes a typing SIGNAL rather than an `entities` block because it attaches types to
   argument spans for the typed margin; that is not the same as using a corpus's own entity
   gold as supervision.
-- **`turkish_event` gold surfaces are LEMMATISED. The `max_len` diagnosis was wrong**
-  (measured 2026-09-21). 7.5% of its surfaces fail to align, and **234 of 235 failures are the
-  gold surface being a PREFIX of a longer word in the text** -- `'mesafe'` where the text says
-  `'mesafenin'`, `'futbol'` where it says `'futbolcunun'`. Every failing position sits well
-  inside the window, 0 are case-only, and 0 are genuinely absent. This is Turkish
-  agglutination: the annotator gave the dictionary form, the text carries the inflected one.
+- **`turkish_event` REPAIRED 2026-09-21** (`tools/data/repair_turkish_surfaces.py`). The
+  `max_len` diagnosis was wrong: the annotator lemmatised the LABELS but not the TEXT, so
+  gold read `mesafe` where the document reads `mesafenin`. 234 of 235 failures were the gold
+  surface being a prefix of a longer word, every failing position well inside the window,
+  0 case-only, 0 genuinely absent.
 
-  **It is worse than lost supervision.** The model predicts spans over the text's OWN words,
-  so it can never emit `mesafe` when the text reads `mesafenin` -- the gold is unlearnable and
-  unscorable. And `on_missing_surface=skip` drops the mention while its LABEL may survive on
-  other surfaces, turning the dropped span into a false negative.
+  Train+val went **93.02% -> 99.83% aligned, 9,648 mentions recovered**; 88 derivational
+  repairs were REFUSED and left for `skip` (`futbol` -> `futbolcunun` is football -> of the
+  footballer). TEST DELIBERATELY UNTOUCHED and verified byte-identical -- repairing it would
+  move the blind set, and would buy nothing, since those surfaces score zero either way.
 
-  **Turkish-specific**, measured across nine corpora: turkish_event 92.5% aligned against
-  99.1-100% everywhere else (scierc and cmnee_ner are exactly 100%). ~10,600 of its 141,576
-  mentions, which is 1.2% of the base's entity supervision but 7.5% of the only Turkish data
-  we have.
+  **`tools/data/augment_baseword.py` had already written down this exact failure**: "never
+  lemmatize text and label strings in separate passes ... the passes diverge and the label
+  stops matching", and "a mention it cannot find is silently dropped -- it quietly shrinks
+  supervision and reads as 'augmentation did not help'." The RAMS base-word corpus avoids it
+  by rebuilding text and labels from the SAME token list. That is also the dup-control
+  experiment (lemma beat dup-control +0.0119 strict argument, PROVISIONAL).
 
-  **Four options, and the choice is a data-semantics judgement, not a bug fix:**
-  1. leave it -- costs 7.5% of Turkish supervision and creates false negatives;
-  2. repair to the word boundary -- free and deterministic, but NOT semantically neutral
-     (`futbol` "football" -> `futbolcunun` "of the footballer" changes the head noun, while
-     `mesafe` -> `mesafenin` only adds a case affix). Measure how many repairs change the head
-     noun before shipping this;
-  3. prefix-tolerant matching for agglutinative languages -- but it makes `futbol` match
-     `futbolcu` globally. Precedent: the RAMS base-word run measured lemma beating its
-     dup-control by +0.0119 strict argument, though in English, where affixation is far lighter;
-  4. re-annotate with surface-exact spans -- correct, costs money, and the annotator may
-     lemmatise again.
+  REMAINING: `data/turkish_event.{train,val}.jsonl` now differ from the HF mirror
+  `whr778/turkish-event`, which still holds the unrepaired originals. Re-upload when convenient.
 
 - **`biored` aligns at 97.4%** and only 8 of its 126 failures are the prefix pattern, so it has
   a DIFFERENT cause. Not yet diagnosed.
