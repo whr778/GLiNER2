@@ -11,6 +11,29 @@
 > Two earlier attempts at this measurement were void (injector never wired; then checkpoint
 > selection), so any number for this lever dated before 2026-09-21 should not be quoted.
 
+> ## *** 2026-09-21 (later): ALL FOUR OPTIONS ARE NOW CLOSED ***
+>
+> Option 2 was the last one open. Its trained margin is refuted on measurement -- see §Option 2
+> -- so the structural menu this document opened with is exhausted:
+>
+> | option | verdict |
+> |---|---|
+> | 1 `candidate_pool: shared` | NEGATIVE (entity -0.089, argument null) |
+> | 2 typed role constraints | **trained margin REFUTED (0.28% mean loss effect); decode-time a null on F1** |
+> | 3 constrain by predicted entity type | NEGATIVE (-0.074 F1) |
+> | 4 roles remapped into the NER space | NEGATIVE (event_argument -0.0300, trigger -0.0541, 0 up / 10 down) |
+>
+> **The only lever that has ever moved `event_argument` outside the floor is absent negatives
+> (+0.0376), and it is not shippable at -0.1977 on classification.** That is the honest state
+> of this line. The next question is therefore not "which option", it is whether the
+> classification collateral can be repaired or routed around -- see [[LABEL_NEGATIVES_PLAN]].
+>
+> A structural reading worth carrying: options 2 and 3 both assumed the model ranks
+> type-incompatible fillers too highly. Measured, it does not -- disallowed candidates hold
+> w_S ~ 0.003 of the probability mass. The type signal is real as a DESCRIPTION of correct
+> versus wrong arguments (88% vs 68% carry a predicted type) and useless as a CORRECTION,
+> because the model has already applied it.
+
 Companion to [[JOINT_IE_SCALING]] (Tier 2) and [[PAPER_0_FOUNDATION]] §10.
 
 **This document grew by accretion and is ordered by when things were learned, not by how
@@ -1075,6 +1098,17 @@ therefore not "unswept"; it is unimplemented in practice**, and pricing it means
 path with no training history, not running a config flag.
 
 ### Option 2 — extend `joint_ie`'s typed constraints to event roles.
+
+> *** RESOLVED 2026-09-21: the TRAINED margin is refuted; the DECODE constraint is a null. ***
+> Option 2 was the last of options 1-4 still open, and it is now closed on measurement rather
+> than on argument. `typed_margin_mask` was built and the ceiling measured on held-out val:
+> the mask fires (0.339% of candidate cells, 91 queries carrying a disallowed competitor) but
+> the probability mass on disallowed candidates is **w_S median 0.00003, mean 0.00284**, so
+> the loss effect at delta=ln2 is **0.00% median / 0.28% mean**. The model already scores
+> type-incompatible fillers near zero -- it was trained on this data -- so the margin spends
+> its effort on candidates that were never competing. The prediction below that a model
+> "TRAINED with the constraint" would beat filtering after the fact is NOT supported.
+> Full numbers and the three brackets in [[OPTION_2_TYPED_ROLE_CONSTRAINTS]].
 
 The machinery already exists **for relations**: `relation_specs` carry `head`/`tail` entity-type
 constraints defaulting to `entity_types` (`joint_ie/engine.py:281-289`), and the joint beam

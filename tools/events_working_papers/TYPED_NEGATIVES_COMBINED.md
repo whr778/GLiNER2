@@ -1,5 +1,22 @@
 # Combining absent negatives with typed role edges
 
+> ## *** SUPERSEDED IN PART, 2026-09-21 (same day, later): THE TYPED HALF IS DEAD ***
+>
+> This plan combines two interventions. **The typed-role half no longer has a mechanism to
+> contribute.** `typed_margin_mask` was built later the same day and the ceiling measured
+> instead of argued: the mask fires on 0.339% of candidate cells and 91 queries, and moves
+> gold by **0.00% (median) / 0.28% (mean)** at delta=ln2, with only 5 of 91 affected queries
+> above w_S 0.01. The model already ranks type-incompatible fillers near zero, so there is no
+> probability mass for a margin to move at any k.
+>
+> **What survives:** the ABSENT-NEGATIVES half, which is a real and separately measured
+> effect (`absneg2`: event_argument strict +0.0376, classification -0.1977). Read sections
+> below that combine the two as describing one live lever and one dead one. The decode-time
+> typed constraint is also untouched by this -- it acts on PREDICTED types against a different
+> distribution, and its own verdict is still "null on F1, real precision/recall trade".
+>
+> Do not cost or schedule a combined arm on the strength of this document.
+
 **Status: PLAN, nothing built.** Written 2026-09-21, the day absent negatives got their first
 legal measurement and option 2's decode-time arm came back a null on F1. Companion to
 [[LABEL_NEGATIVES_PLAN]] and [[OPTION_2_TYPED_ROLE_CONSTRAINTS]].

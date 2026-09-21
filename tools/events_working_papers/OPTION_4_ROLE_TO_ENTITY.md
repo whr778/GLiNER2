@@ -361,6 +361,11 @@ into a corpus with ZERO entity gold is still real extraction supervision, still 
 never-proposed third, and is now known to be clean. It is simply a quarter of the lever the
 scope assumed — and that should be priced before the converter is written, not after.
 
+> *Updated 2026-09-21: option 2's TRAINED margin is refuted (loss effect 0.28% mean -- the
+> model already down-ranks type-incompatible fillers), so neither route rescues the trained
+> arm. The decode-time route below is unaffected and remains a null on F1 with a real
+> precision/recall trade. See [[OPTION_2_TYPED_ROLE_CONSTRAINTS]].*
+
 **Option 2 does not depend on this anyway.** It has a second route: use the model's PREDICTED
 entity types as the type signal instead of gold, which works on cmnee today with no data
 derivation.
