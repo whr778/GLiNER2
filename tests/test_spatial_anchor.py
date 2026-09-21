@@ -84,3 +84,48 @@ def test_load_footprint_reads_the_events_own_rollup(tmp_path):
     aliases, footprint = load_footprint(p)
     assert aliases["asheville"] == "north carolina", "aliases must be lowercased"
     assert footprint == {"north carolina", "florida", "__aggregate__"}
+
+
+# --------------------------------------------------------------------------------------
+# The temporal anchor. It exists to add ONE case the spatial anchor structurally cannot
+# see -- the 1916 Appalachian hurricanes, correctly keyed `north carolina` and 108 years
+# early -- and its evidence is that single positive. Treat it as a conservative complement.
+# --------------------------------------------------------------------------------------
+
+from spatial_anchor import temporal_flag  # noqa: E402
+
+
+def test_an_ancient_year_is_flagged():
+    assert temporal_flag("the 1916 Appalachian hurricanes killed 80") is True
+
+
+@pytest.mark.parametrize("ctx", [
+    "Helene is already the deadliest hurricane to hit the mainland U.S. since Katrina in 2005",
+    "Helene passed the 35 people killed in the state after Hurricane Hugo in 1989",
+    "the wettest storm since August 2023.All five who died were in one Florida county",
+])
+def test_a_comparative_clause_abstains(ctx):
+    """THE FP MODE THAT DECIDES THE DESIGN. 10 of 81 genuine Helene observations carry a
+    non-2024 year, essentially all in a comparison -- the year is attached to the COMPARISON,
+    not to the figure. A permissive rule inherits exactly the proximity-is-not-attachment
+    failure that caps signals A and B: a year<2010 rule scores 11.1% FP."""
+    assert temporal_flag(ctx) is None
+
+
+def test_no_year_abstains():
+    assert temporal_flag("at least 16 killed in Bosnia floods") is None
+    assert temporal_flag("") is None
+    assert temporal_flag(None) is None
+
+
+def test_it_never_returns_false():
+    """Absence of an ancient year is not evidence a figure is current, so this signal only
+    ever ADDS a flag on top of the spatial one -- it must never overrule it."""
+    for ctx in ("nothing here", "in 2024 Helene struck", "since Katrina in 2005", ""):
+        assert temporal_flag(ctx) is not False
+
+
+def test_the_cutoff_is_configurable_and_permissive_ones_are_worse():
+    ctx = "the deadliest since Katrina in 2005"
+    assert temporal_flag(ctx, cutoff=1950) is None
+    assert temporal_flag(ctx, cutoff=2010) is True, "a permissive cutoff is what creates FPs"

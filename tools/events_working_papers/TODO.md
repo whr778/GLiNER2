@@ -13,7 +13,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
-| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **SPATIAL ANCHOR BUILT 2026-09-21: 4/6 at 1.2% FP**, beating all three text signals on BOTH axes | add the TEMPORAL anchor (recovers the 1916 case); fix the Taiwan mis-association |
+| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **ANCHORS BUILT 2026-09-21: spatial+temporal = 5/6 at 1.2% FP**, against the best text signal's 3/6 at 19.5% | the last miss and the 1 FP are UPSTREAM keying errors — fix those |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING**, arm 1 of 3 on epoch 2/2. **GATE PASSED: shared-pool grad norm 3.853e+00** (per_query reads 0.000e+00), so the treatment is live. ETA ~20:55 UTC, ~$6 | compare the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
@@ -181,11 +181,43 @@ exactly the false positives that make A and B unshippable.
 figure of 180 is keyed `scotland`. Both remaining misses and the single FP are association
 errors, so the ceiling here is set by the keying, not by the test over it.
 
-**NEXT, in order:** (1) the TEMPORAL anchor -- it recovers `'80'` (the 1916 Appalachian
-hurricanes, correctly in-footprint and 108 years early) and is the same external-anchor shape
-that already took Izmit from 15 false bindings to 3 with zero genuine losses; (2) the two
-mis-associations (`dozens` -> tennessee, `180` -> scotland), which no spatial test over a
-wrong key can recover. 19 tests.
+### TEMPORAL ANCHOR ADDED -- one case, and the naive version does NOT work
+
+| anchor | catches | FP on genuine |
+|---|---|---|
+| SPATIAL | 4/6 | 1/81 = 1.2% |
+| TEMPORAL (year < 1950) | 1/6 | 0/81 = 0.0% |
+| **COMBINED** | **5/6** | **1/81 = 1.2%** |
+
+**The permissive version reproduces the A/B failure exactly.** 10 of 81 GENUINE Helene
+observations carry a non-2024 year, essentially all in a comparative clause -- "Helene is
+already the deadliest hurricane to hit the mainland U.S. since Katrina in 2005", "Helene
+passed the 35 killed after Hurricane Hugo" (1989). **The year is attached to the COMPARISON,
+not to the figure**, which is the same proximity-is-not-attachment problem that caps A and B:
+
+    a year < 2010 in context    2/6    9/81 = 11.1% FP
+    a year < 2000               1/6    2/81
+    a year < 1950               1/6    0/81
+
+Only an ANCIENT year survives. `temporal_flag` therefore returns True or ABSTAINS and never
+False -- absence of an old year is not evidence a figure is current, so the signal can only
+ADD to spatial, never overrule it.
+
+**STATE THE EVIDENCE HONESTLY: this rests on ONE positive** (`'80'`, the 1916 Appalachian
+hurricanes). The sharpness of the threshold -- 11.1% FP at 2010 against 0% at 1950 -- is
+itself a fragility signal. It is a conservative complement to the spatial anchor, not a
+validated signal in its own right, and it adds exactly one case.
+
+**WHAT REMAINS IS NOT A DETECTION PROBLEM.** The single miss and the single false positive
+are both UPSTREAM ASSOCIATION ERRORS:
+
+    dozens   keyed `tennessee`  -- a Taiwan typhoon        (miss)
+    180      keyed `scotland`   -- a genuine Helene figure  (FP)
+
+No test over a wrong key can recover either. **The ceiling on cross-event detection is set by
+the keying, not by the test over it** -- which is the more useful finding than the 5/6.
+
+26 tests.
 
 ## 4. Open experiments, cheap
 
