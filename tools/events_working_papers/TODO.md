@@ -13,7 +13,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
-| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **SIGNALS RE-RUN 2026-09-21: C is DEAD (0/6); A/B are 3/6 at 19-23% FP and are DOMINATED by spatial** | build the spatial+temporal anchor and score its FP |
+| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **SPATIAL ANCHOR BUILT 2026-09-21: 4/6 at 1.2% FP**, beating all three text signals on BOTH axes | add the TEMPORAL anchor (recovers the 1916 case); fix the Taiwan mis-association |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
@@ -148,8 +148,44 @@ footprint, so spatial gets those three PLUS Bosnia and Taiwan, and temporal gets
 case. The text signals find less, at 19.5-23.2% false positives -- roughly one genuine
 observation in five discarded. **They are dominated and should not be shipped.**
 
-**NEXT:** build the spatial + temporal external anchor and score it on FP against the 82
-genuine observations, not only on recall over the 6. Recall was never the hard part.
+### SPATIAL ANCHOR BUILT 2026-09-21 -- `tools/ekf_showcase/spatial_anchor.py`
+
+The pipeline ALREADY binds every observation to a place; that is what `event_key` is. So the
+anchor needs no extraction and no model call: is that place inside the event's footprint? The
+footprint and its 38 aliases come from the event's own `rollup.json`, not an invented
+gazetteer -- `hierarchy.parts` is the six states, aliases map `asheville` to `north carolina`
+and `carolinas` to `__aggregate__`.
+
+| signal | catches cross-event | FP on genuine | model call |
+|---|---|---|---|
+| A nearest is a competitor | 3/6 | 23.2% | no |
+| B only a competitor named | 3/6 | 19.5% | no |
+| C bound event is a competitor | 0/6 | 1.2% | yes |
+| **SPATIAL** | **4/6** | **1.2%** | **no** |
+
+**Strictly better than A and B on BOTH axes**, and cheaper than C, which catches nothing.
+
+    at least two   event_key=mexico                 FLAG
+    3,000          event_key=puerto rico            FLAG
+    at least 16    event_key=bosnia                 FLAG
+    1,400          event_key=reading pennsylvania   FLAG   (Katrina)
+    dozens         event_key=tennessee              pass   <- MIS-ASSOCIATED upstream
+    80             event_key=north carolina         pass   <- 1916, TEMPORAL's job
+
+**ABSTAINING IS LOAD-BEARING.** `event_key` is sometimes a TYPE (`Storm`, `Floods`) rather
+than a place -- `collapse_type` territory. Those carry no spatial evidence and are passed,
+never flagged; 5 genuine observations abstain this way. Flagging them would manufacture
+exactly the false positives that make A and B unshippable.
+
+**THE ONE FALSE POSITIVE IS ALSO AN UPSTREAM BUG**, not a filter error: a genuine Helene
+figure of 180 is keyed `scotland`. Both remaining misses and the single FP are association
+errors, so the ceiling here is set by the keying, not by the test over it.
+
+**NEXT, in order:** (1) the TEMPORAL anchor -- it recovers `'80'` (the 1916 Appalachian
+hurricanes, correctly in-footprint and 108 years early) and is the same external-anchor shape
+that already took Izmit from 15 false bindings to 3 with zero genuine losses; (2) the two
+mis-associations (`dozens` -> tennessee, `180` -> scotland), which no spatial test over a
+wrong key can recover. 19 tests.
 
 ## 4. Open experiments, cheap
 
