@@ -324,6 +324,51 @@ def compute_metrics(
         if present:
             metrics.update(_finalize(prefix, "strict", *strict))
             metrics.update(_finalize(prefix, "relaxed", *relaxed))
+    # ---- OVERALL, across heads: the metric a general-purpose BASE should be selected on ----
+    #
+    # There was no aggregate metric, so a base could only be selected on ONE head or on
+    # `eval_loss` -- and loss selection ships a different epoch per arm and has already voided
+    # two verdicts in this programme. These three keys close that gap.
+    #
+    # `event` is EXCLUDED: it is already a roll-up of type/trigger/arg, so including it
+    # alongside its own components would count every event key twice.
+    #
+    # THREE NUMBERS, because one of them cannot be trusted alone:
+    #   micro     pools tp/fp/fn across heads. The honest "overall", but entity carries
+    #             78,666 support against classification's 10,291, so a head can collapse and
+    #             barely move it -- absneg2's -0.1977 on classification shows up here as
+    #             roughly -0.015.
+    #   head_macro  weights every head equally, so a single collapsing head is visible.
+    #   head_min    the worst head. A guard: it cannot be improved by trading one head away.
+    primitive_heads = (
+        (has_entities, "entity", ent_s, ent_r),
+        (has_relations, "relation", rel_s, rel_r),
+        (has_classifications, "classification", cls_s, cls_r),
+        (has_structures, "structure", st_s, st_r),
+        (has_event_types, "event_type", ety_s, ety_r),
+        (has_event_triggers, "event_trigger", et_s, et_r),
+        (has_event_arguments, "event_argument", ea_s, ea_r),
+    )
+    for regime, which in (("strict", 2), ("relaxed", 3)):
+        live = [row[which] for row in primitive_heads if row[0]]
+        if len(live) < 2:
+            continue
+        pooled_tp = sum(sum(c[0].values()) for c in live)
+        pooled_fp = sum(sum(c[1].values()) for c in live)
+        pooled_fn = sum(sum(c[2].values()) for c in live)
+        micro_p, micro_r, micro_f = _pr_f1(pooled_tp, pooled_fp, pooled_fn)
+        per_head = [
+            _pr_f1(sum(t.values()), sum(f.values()), sum(n.values()))[2]
+            for t, f, n in live
+        ]
+        metrics[f"eval_overall_{regime}_micro_precision"] = micro_p
+        metrics[f"eval_overall_{regime}_micro_recall"] = micro_r
+        metrics[f"eval_overall_{regime}_micro_f1"] = micro_f
+        metrics[f"eval_overall_{regime}_micro_support"] = pooled_tp + pooled_fn
+        metrics[f"eval_overall_{regime}_head_macro_f1"] = sum(per_head) / len(per_head)
+        metrics[f"eval_overall_{regime}_head_min_f1"] = min(per_head)
+        metrics[f"eval_overall_{regime}_head_count"] = len(per_head)
+
     for present, prefix, err, conf in (
         (has_entities, "entity", ent_err, ent_conf),
         (has_event_triggers, "event_trigger", trig_err, trig_conf),
