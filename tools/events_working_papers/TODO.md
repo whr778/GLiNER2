@@ -14,7 +14,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
 | 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **keying root cause FIXED at source; both anchors turn out to ALREADY EXIST as `--scope-filter`/`--event-year`; the cached artefact is IRREPRODUCIBLE** | do NOT overwrite the cache; re-score `--scope-filter` on corrected labels |
-| 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING**, arm 1 of 3 on epoch 2/2. **GATE PASSED: shared-pool grad norm 3.853e+00** (per_query reads 0.000e+00), so the treatment is live. ETA ~20:55 UTC, ~$6 | compare the three arms |
+| 6 | **`candidate_pool: shared` A/B** | does one shared document pool beat per-query pools? | **NEGATIVE on 2 of 3 arms**: 0 up / 3 down, entity −0.0745. Both gates discriminated (treatment 3.853e+00, control 0.000e+00). `shared-long` (4ep) still running | read shared-long, then close |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
@@ -296,7 +296,31 @@ produced 106 observations is identified.
 
 ## 4. Open experiments, cheap
 
-- **`candidate_pool: shared`** — RUNNING since 2026-09-21 17:55 UTC on one A100.
+- **`candidate_pool: shared` — NEGATIVE so far (2 of 3 arms in), 2026-09-21.**
+  Operating point verified identical (threshold 0.3, test, 2,831 records, same box):
+
+  | head | per_query | shared | delta |
+  |---|---|---|---|
+  | entity | 0.1788 | 0.1043 | **−0.0745** |
+  | event_trigger | 0.7064 | 0.6769 | −0.0295 |
+  | event_argument | 0.3537 | 0.3446 | −0.0091 |
+  | event_type | 0.9748 | 0.9693 | −0.0054 |
+
+  **0 up / 3 down.** The hypothesis was that `per_query` makes entity and event queries
+  compete for candidate budget, so `shared` should RECOVER argument recall; measured, it makes
+  `event_argument` slightly worse and `entity` much worse.
+
+  **QUOTE THE ENTITY NUMBER ONLY.** Those floors were measured on the 18,786/20,602-record
+  blind test and this probe scores 2,831 records -- roughly 2.7x the noise by support alone --
+  so the trigger and argument deltas may sit inside a properly-scaled floor. Entity's −0.0745
+  survives that rescaling; the others should not be claimed.
+
+  **BOTH GATES DISCRIMINATED**, which is what attempt one could never do: treatment
+  3.853e+00, control exactly 0.000e+00 ("control confirmed inert on the shared pool, as
+  designed"). So this is a real reading of a live treatment, not an arm that failed to switch.
+
+  `shared-long` (4 epochs) is still running and asks whether `shared` merely needs more
+  training. RUNNING since 2026-09-21 17:55 UTC on one A100.
   **The gate has PASSED on arm 1: `shared-pool grad norm 3.853e+00`.** That matters more than
   it looks: `shared_pool_builder` exists in every checkpoint and receives NO gradient under
   `per_query`, so an arm that failed to switch is indistinguishable from one that switched and
