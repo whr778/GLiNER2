@@ -324,11 +324,41 @@ The type energy catches **0/11** here, exactly as predicted -- the type is *righ
 Katrina's 1,400 scores `death toll` 0.95. What is wrong is which event owns it. Three ways to
 ask, with generic words ("hurricane", "storm") excluded so only NAMED competitors count:
 
+> ## *** THIS TABLE IS MEASURED AGAINST REFUTED LABELS -- RE-RUN 2026-09-21 BELOW ***
+>
+> The `/11` denominators come from the pre-2026-08-20 audit, which was later found **27%
+> correct on its own positive class** (3 of 11): all six `'230'`s were marked cross-event
+> when every one is Helene's OWN national total, `'250'` likewise, one `'1,400'` is "1,400
+> LANDSLIDES" not people, and it MISSED Maria's 3,000, the 1916 hurricanes' 80 and a Taiwan
+> typhoon. A detector reading 3/11 might have found the three real cases or three of the
+> eight false ones. **Do not quote the numbers below.**
+
 | signal | catches | false positives |
 |---|--:|--:|
 | A. nearest named event is a competitor | 3/11 | 32.5% |
 | B. only competitors named in the window | 3/11 | 31.3% |
 | C. record head binds a competitor as the event | 2/11 | 26.5% |
+
+**RE-RUN 2026-09-21 against the corrected labels** (`helene_audit_labels.json`, 6 cross-event
+of 86), on `whr778/gliner2-base-v1-casualty-docee`, 104 observations:
+
+| signal | catches | false positives |
+|---|--:|--:|
+| A. nearest named event is a competitor | 3/6 | 19/82 = 23.2% |
+| B. only competitors named in the window | 3/6 | 16/82 = 19.5% |
+| **C. record head binds a competitor** | **0/6** | 1/82 = 1.2% |
+| C-raw (unsound, diagnostic) | 3/6 | 32/82 = 39.0% |
+
+**C IS DEAD.** Honestly scored it catches NOTHING -- for all six cases it either bound nothing
+(3) or named something the schema never found (3). Its old reading was artifact, and the
+2026-08-17 `validate_binding` fix is confirmed working by C-raw still showing 3/6 at 39% FP
+beside it. A and B cap at 3/6 for a structural reason: the three they miss are Bosnia (a
+PLACE, not a storm), a Taiwan typhoon not named nearby, and an 1916 figure whose window names
+no event at all.
+
+**AND THE TEXT SIGNALS ARE DOMINATED.** A/B's three catches are a STRICT SUBSET of what the
+scope filter catches: Katrina is Louisiana, Maria is Puerto Rico, John is Mexico, all outside
+the six-state footprint. See GATES.md [6].
 
 Not shippable at any threshold: Helene articles routinely name Milton, Katrina and historical
 storms for comparison, so ~30% of *genuine* observations are flagged.

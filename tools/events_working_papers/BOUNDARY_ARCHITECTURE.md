@@ -429,7 +429,7 @@ Easy to conflate, so stated separately (checked 2026-09-17):
 | component | gradient? | verdict |
 |---|---|---|
 | **Hungarian matching** (record loss) | **yes, flows** | correct |
-| **`shared_pool_builder`** under `candidate_pool: per_query` | no — never called in the loss | by design; measured 0.000e+00 grad norm against 8.890e+00 under `shared`, and that pair is the A/B's gate |
+| **`shared_pool_builder`** under `candidate_pool: per_query` | no — never called in the loss | by design; measured 0.000e+00 grad norm against 8.890e+00 under `shared`, and that pair is the A/B's gate. **The A/B RAN 2026-09-21 and `shared` is NEGATIVE** — 0 up / 3 down, entity −0.0745 — so the untrained tensors cost nothing worth recovering. See TODO #6 |
 | **the joint beam** (`decode_mode: joint`) | no — eval-time only | by design, but see below |
 
 **Hungarian is implemented correctly** and is worth checking rather than assuming, because

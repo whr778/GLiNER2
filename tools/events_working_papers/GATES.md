@@ -505,8 +505,23 @@ signal tried:**
 
 | | cross-event caught | false positives |
 |---|---|---|
-| scope membership (no model) | 4/6 | **7.3%** |
-| best learned signal, one call/obs | 4/6 | 31.7% |
+| scope membership (no model) | 4/6 | **1.2%** |
+| + `--event-year` (temporal) | **5/6** | **1.2%** |
+| best learned signal, one call/obs | 3/6 | 19.5% |
+
+**RE-SCORED 2026-09-21 and the figures MOVED.** The previous readings (7.3% here, 31.7% for
+the learned signal) were taken against the pre-2026-08-20 audit labels, which were 27% correct
+on their own positive class. On the corrected labels the scope filter reads 1.2% FP, the best
+learned signal 3/6 at 19.5%, and the record-head signal catches NOTHING (0/6). Composing scope
+with `--event-year` adds the 1916 Appalachian case -- in the footprint and 108 years early --
+for 5/6 at no extra FP.
+
+**BOTH REMAINING ERRORS ARE UPSTREAM KEYING, NOT FILTER ERRORS.** The one miss (`dozens`, a
+Taiwan typhoon keyed `tennessee`) and the one false positive (`180`, a genuine Helene figure
+keyed `scotland`) both come from AP related-coverage rails embedded in the story body and
+flattened into the text with no separator. Fixed at source in `build_helene_feed.plain`
+2026-09-21; the cached artefacts still carry the old text. **So the ceiling here is set by the
+keying, not by the test over it.**
 
 It works because the contaminating events happened *somewhere else* -- Mexico, Puerto
 Rico, Bosnia, Reading PA -- which is declared knowledge, not a statistical property.
