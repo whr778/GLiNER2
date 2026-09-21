@@ -226,6 +226,39 @@ def _fetch_if_missing(path: str):
         return ABSENT_SPLIT
 
 
+def _dedupe_paths(paths: List[str], split: str) -> List[str]:
+    """Drop repeats of the SAME path, preserving order, and say what was dropped.
+
+    `corpora` and `event_files` are resolved independently and concatenated, and nine
+    corpora are named in BOTH -- casie, chfinann, cmnee, docee, docfee, duee,
+    events_biotech, maven, text2json. Each therefore contributed its train file TWICE per
+    epoch: measured on eb16-eventrecords-tr, 26 file entries holding 274,015 records against
+    17 unique files holding 175,369, a 1.56x inflation that silently doubled the weight of
+    those nine and of nothing else. No config declares that as intent, `task_loss_weights`
+    already exists for deliberate weighting, and the standing rule is that aggregated splits
+    are verified unique.
+
+    Only EXACT path repeats are dropped. `data/cmnee.val.jsonl` and
+    `data/scaling_joint/cmnee.val.jsonl` are different slices and both survive -- that is
+    `event_files` doing its job of pinning a smaller val, not a duplicate.
+    """
+    seen, out, dropped = set(), [], []
+    for path in paths:
+        if path in seen:
+            dropped.append(path)
+            continue
+        seen.add(path)
+        out.append(path)
+    if dropped:
+        names = ", ".join(sorted({Path(d).name for d in dropped}))
+        effect = ("train them twice per epoch" if split == "train"
+                  else f"count their records twice in {split}")
+        print(f"[data] {split}: dropped {len(dropped)} duplicate file entr"
+              f"{'y' if len(dropped) == 1 else 'ies'} ({names}) -- named in BOTH `corpora` "
+              f"and `event_files`, which would {effect}")
+    return out
+
+
 def _event_split(event_files: Dict[str, Dict[str, str]], suffix: str) -> List[str]:
     """Resolve the event-file paths for one split, fetching what is absent.
 
@@ -1183,8 +1216,9 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     cfg = yaml.safe_load(Path(config_path).read_text())
     data = cfg.get("data") or {}
     suffix = "val" if split == "val" else "test"
-    split_data = (_split_files(data.get("corpora") or [], suffix)
-                  + _event_split(data.get("event_files") or {}, suffix))
+    split_data = _dedupe_paths(
+        _split_files(data.get("corpora") or [], suffix)
+        + _event_split(data.get("event_files") or {}, suffix), suffix)
     fns = _category_fns(load_labels_cfg(cfg, config_path))
     if fns:
         split_data = [transform_record(r, fns) for r in _read_records(split_data)]
@@ -1441,9 +1475,12 @@ def main(config_path: str) -> None:
                 f"A typo here would silently protect nothing."
             )
         print(f"[data] train_only (excluded from val and test): {sorted(train_only)}")
-    train_data = _split_files(corpora, "train", train_only) + _event_split(event_files, "train")
-    eval_data = _split_files(corpora, "val", train_only) + _event_split(event_files, "val")
-    test_data = _split_files(corpora, "test", train_only) + _event_split(event_files, "test")
+    train_data = _dedupe_paths(
+        _split_files(corpora, "train", train_only) + _event_split(event_files, "train"), "train")
+    eval_data = _dedupe_paths(
+        _split_files(corpora, "val", train_only) + _event_split(event_files, "val"), "val")
+    test_data = _dedupe_paths(
+        _split_files(corpora, "test", train_only) + _event_split(event_files, "test"), "test")
 
     # Optional per-category label transforms, applied identically to train/val/test.
     fns = _category_fns(load_labels_cfg(cfg, config_path))

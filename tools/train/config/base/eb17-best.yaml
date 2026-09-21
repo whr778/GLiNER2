@@ -335,8 +335,8 @@ data:
   - data/chfinann
   - data/docee
   - data/docfee
-  - data/duee
-  - data/cmnee
+  - data/duee_ner
+  - data/cmnee_ner
   - data/text2json
   - data/maven
   - data/events_biotech
@@ -361,14 +361,29 @@ data:
   # on different denominators is not a comparison -- `compare_runs.py` refuses it, and that
   # defect already voided an entity row here. docee_zh's 3,398 test records would move the
   # blind test off 20,602 and break every comparison against eb16 and the absneg arms.
-  train_only: [docee_zh]
+  # cmnee_ner / duee_ner: the SAME documents as cmnee / duee (99.9%% and 97.6%% overlap, same
+  # events) plus the purchased entity gold -- cmnee and duee carry ZERO entity mentions, these
+  # carry 120,985 and 46,330. TRAIN ONLY, because their val/test splits are near-identical but
+  # NOT the same (cmnee.test 2,724 docs / 0 entities against cmnee_ner.test 2,724 / 37,816,
+  # overlapping 2,721), so scoring on them would move the blind test AND change entity support.
+  # The `event_files` entries below keep val/test on the ORIGINAL cmnee/duee files and have had
+  # their `train` key removed, or the entity-less train would come straight back in.
+  train_only: [docee_zh, cmnee_ner, duee_ner]
+
+  # cmnee_ner's gold is NOT exhaustive within an offered label -- probed at 4.23 missed per
+  # document against 13.0 annotated, i.e. 32.4%. It is declared PARTIAL so it contributes
+  # POSITIVES while being refused as a source of NEGATIVES for entities. For scale: docee,
+  # already supplying 26.9%% of this mix's entity mentions, probes at 33.0% on the identical
+  # probe, and duee_ner at 7.1% -- so this is the incumbent bar, not a new risk.
+  partial_annotation:
+    cmnee_ner: [entities]
 
   event_files:
     chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}
     docee:           {train: data/docee.train.jsonl, val: data/scaling_joint/docee.val.jsonl, test: data/docee.test.jsonl}
     docfee:          {train: data/docfee.train.jsonl, val: data/scaling_joint/docfee.val.jsonl, test: data/docfee.test.jsonl}
-    duee:            {train: data/duee.train.jsonl, val: data/scaling_joint/duee.val.jsonl}
-    cmnee:           {train: data/cmnee.train.jsonl, val: data/scaling_joint/cmnee.val.jsonl, test: data/cmnee.test.jsonl}
+    duee:            {val: data/scaling_joint/duee.val.jsonl}
+    cmnee:           {val: data/scaling_joint/cmnee.val.jsonl, test: data/cmnee.test.jsonl}
     text2json:       {train: data/text2json.train.jsonl, val: data/scaling_joint/text2json.val.jsonl, test: data/text2json.test.jsonl}
     maven:           {train: data/maven.train.jsonl}
     events_biotech:  {train: data/events_biotech.train.jsonl, val: data/scaling_joint/events_biotech.val.jsonl, test: data/events_biotech.test.jsonl}
