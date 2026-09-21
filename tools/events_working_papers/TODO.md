@@ -15,7 +15,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
 | 5 | **Cross-event contamination** | the top real decode defect on multi-event documents | probe gated behind item 4 | build the probe |
 | 6 | **`candidate_pool: shared` never A/B'd** | its 64 tensors sit untrained in every checkpoint; proven NOT structural, so the experiment is available | open | one arm, cheap |
-| 7 | **Purchased NER gold is unusable as supervision** | 20,604 docs of real entity gold sitting idle, because it is not exhaustive | needs a partial-annotation flag | build the flag, then add the corpora |
+| 7 | **Purchased NER gold is idle for a reason that does not hold** | +167,315 entity mentions (+23.7%) already paid for | **PREMISE REFUTED 2026-09-21** — the flag exists and is in use; exhaustiveness matches docee | swap `cmnee`→`cmnee_ner`, `duee`→`duee_ner` in eb17-best |
 | 8 | **`turkish_event` gold-surface failures** | costs real supervision and aborts tolerant runs | known; `on_missing_surface=skip` masks it | fix `max_len`/windowing properly |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
 | 10 | **EKF: §10 crux reopened, §14 does not reproduce** | the EKF's claimed edge under unreliability | open | re-derive on real streams |
@@ -78,11 +78,40 @@ considered and the data-side remedy (negative documents) is the proposed route.
 
 ## 5. Data debt
 
-- **The purchased NER gold cannot be used as supervision** until there is a partial-annotation
-  flag. cmnee_ner (9,281) and duee_ner (11,323) are real entity gold on documents already in
-  the mix, but it is not exhaustive: adding it as `entities` would teach the entity head that
-  every unannotated entity is absent. This is exactly why `merge_entity_types.py` writes
-  `entity_types` and never an `entities` block.
+- **The purchased NER gold: both reasons for leaving it idle turned out to be wrong**
+  (checked 2026-09-21).
+
+  **1. The flag already exists and is already in use.** `partial_annotation` is documented in
+  `build_negative_pools.py` and live in roles2/roles3: a corpus declared partial for a
+  dimension "contributes POSITIVES to the dimension while being refused as a source of
+  NEGATIVES for it". Nothing needs building.
+
+  **2. It is a corpus SWAP, not an addition, and the exhaustiveness bar is already met.**
+  `cmnee_ner` IS `cmnee` plus entities -- the same 9,281 documents (99.9% overlap), the same
+  19,422 events -- and `cmnee` currently contributes **ZERO** entity mentions. Same for
+  `duee_ner`/`duee`. Swapping adds **167,315 entity mentions, +23.7%** of the base's entity
+  supervision, already paid for at $6.92.
+
+  Probed for exhaustiveness *within an offered label*, which is the only risk that matters
+  because the menu is built from the record's own gold keys:
+
+  | corpus | annotated/doc | missed/doc | missed as % of annotated |
+  |---|---|---|---|
+  | cmnee_ner | 13.0 | 4.23 | **32.4%** |
+  | duee_ner | 4.1 | 0.29 | **7.1%** |
+  | **docee (already used as supervision)** | 8.7 | 2.87 | **33.0%** |
+
+  `cmnee_ner` is exactly as exhaustive as `docee`, which supplies 26.9% of the base's entity
+  mentions today; `duee_ner` is 4.6x cleaner than both. So the bar excluding them is one the
+  incumbent mix does not clear either. The probe is an UPPER BOUND -- a string match is not
+  proof of the same entity in context, and this methodology once read 35.8% loose against
+  0.25-0.6% tightened -- but the comparison between corpora is fair, being the same probe at
+  the same settings.
+
+  **Note the `entity_types` decision still stands and is different.** `merge_entity_types.py`
+  writes a typing SIGNAL rather than an `entities` block because it attaches types to
+  argument spans for the typed margin; that is not the same as using a corpus's own entity
+  gold as supervision.
 - **`turkish_event` surfaces fail to align.** Currently masked by `on_missing_surface=skip`,
   which silently drops supervision. Needs the `max_len`/windowing fix, not a tolerance flag.
 
