@@ -114,6 +114,19 @@ class BoundaryHeadSettings:
     # constraint per entry, so a role edge may only land on a compatibly typed span. None
     # (default) emits nothing and decoding is bit-identical.
     role_type_map: Optional[str] = None
+    # OPTION 2, TRAINED. A margin of `k * sd(live logits)` on candidates the role-type map
+    # disallows, so the gold filler must out-score a wrongly typed rival by that much more.
+    # SELF-NORMALISING because the logits are not: measured p5-p95 spread runs 12.2 (English
+    # scierc) to 20.0 (Chinese cmnee), and sd 2.30 (proposal) against 7.18 (rerank), so a
+    # FIXED margin would be a different intervention per language and per path.
+    #
+    # TWO KNOBS, ON PURPOSE. The proposal path ranks what gets PROPOSED at all -- the only
+    # route to recall, and a third of arguments are never proposed. The rerank path ranks
+    # which proposed candidate wins, which is the filter behaviour the decode-time arm
+    # already measured as a null on F1. Run them in that order rather than together, so a
+    # result is attributable.
+    typed_margin_proposal_k: float = 0.0
+    typed_margin_rerank_k: float = 0.0
     soft_iou_aux_weight: float = 0.2
     soft_iou_anneal_steps: int = 20_000
     abstention_loss_weight: float = 0.2
@@ -379,6 +392,12 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
                        d.absent_negatives_in_denominator)
         ),
         "role_type_map": (values.get("role_type_map", d.role_type_map) or None),
+        "typed_margin_proposal_k": float(
+            values.get("typed_margin_proposal_k", d.typed_margin_proposal_k)
+        ),
+        "typed_margin_rerank_k": float(
+            values.get("typed_margin_rerank_k", d.typed_margin_rerank_k)
+        ),
         "rerank_listwise_weight": float(
             values.get("rerank_listwise_weight", d.rerank_listwise_weight)
         ),

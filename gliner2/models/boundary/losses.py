@@ -493,6 +493,86 @@ def inside_consistency_loss(
     )
 
 
+def apply_typed_margin(
+    logits: torch.Tensor,
+    valid_mask: torch.BoolTensor,
+    gold_mask: torch.BoolTensor,
+    typed_margin_mask: Optional[torch.BoolTensor],
+    k: float,
+    *,
+    scale_state: Optional[dict] = None,
+    beta: float = 0.99,
+    clamp: float = 2.0,
+) -> tuple:
+    """Make TYPE-INCOMPATIBLE candidates harder to beat, in units of the batch's own scale.
+
+    Returns ``(logits, used)``. A candidate the role-type map disallows gets ``+k * sd``
+    added to its logit before the denominator, so the gold filler must out-score it by that
+    much more. Adding to the NEGATIVE rather than subtracting from the positive is
+    deliberate: a query with no typed candidates is then left completely alone, which is the
+    `require_typed=False` stance -- no evidence, no opinion.
+
+    SELF-NORMALISING, because the logits are NOT normalised and their scale moves with the
+    data. Measured on this checkpoint, p5-p95 spread: cmnee (Chinese) 19.95, duee 16.43,
+    casie (English) 14.76, scierc 12.17 -- and across the two loss paths, sd 2.30 (proposal)
+    against 7.18 (rerank). A FIXED margin would therefore be a different intervention per
+    language, per domain and per path: delta=1.0 is 13.6% of the proposal spread and 4.5% of
+    the rerank one. Scaling by the batch's own sd captures language, domain, candidate count
+    and model familiarity at once, with no external per-language table to go stale.
+
+    GOLD IS NEVER PENALISED. 4.0% of gold arguments carry a type the map disallows -- the
+    map's own tail filters drop legitimate minorities like `Nationality` on
+    `Experiment/Subject` -- so marginalising gold would train against the data.
+    """
+    used = logits.new_zeros(())
+    if typed_margin_mask is None or k <= 0:
+        return logits, used
+    live = valid_mask & (logits > MASK_LOGIT + 1.0)
+    if not bool(live.any()):
+        return logits, used
+    sample = logits[live].detach().float().std()
+    if not torch.isfinite(sample) or float(sample) <= 0:
+        return logits, used
+
+    # THE SCALE IS AN EMA, BIAS-CORRECTED, AND A PLAIN EMA WOULD BE WORSE THAN NONE.
+    # Measured on 72 real batches of a mixed-corpus stream: raw per-batch sd has CV 0.555
+    # (proposal, range 1.86-8.33). An uncorrected EMA at beta=0.99 gives CV 0.511 -- and on
+    # the rerank path 0.548 against a raw 0.338, i.e. WORSE than not smoothing at all,
+    # because the estimate starts at zero and the climb dominates the variation. With bias
+    # correction the same beta gives CV 0.061 / 0.078, a ~9x reduction, and reaches the
+    # median scale within five batches.
+    #
+    # THE CLAMP IS SET AT 2.0 BY MEASUREMENT, NOT TASTE. It is insurance against a single
+    # degenerate batch, and it must not fire on ordinary corpus variation. Swept on a real
+    # round-robin stream over cmnee/duee/casie/scierc (tools/train/measure_logit_scale.py):
+    # 1.5 clips 50% of proposal batches, 2.0 clips 3%, and BOTH produce the same scale to
+    # within 2%. So 1.5 was paying a large clipping rate for nothing. It guards the INPUT,
+    # which is where the risk is; clipping the output would guard nothing, because the
+    # margin is already bounded by k * sd.
+    #
+    # WHAT THE CLAMP CANNOT DO: this is ONE EMA for the whole model, so on a mixed stream
+    # every corpus is dosed with the MIX's scale rather than its own -- measured scierc
+    # 1.53x its own scale, cmnee 0.92x, a 1.66x spread (2.08x on rerank). That spread is
+    # IDENTICAL at every clamp value including off. Calibrate k on the mix you will actually
+    # train: proposal 0.177 and rerank 0.134 for a 2x multiplier on this checkpoint.
+    sd = sample
+    if scale_state is not None:
+        prev, t = float(scale_state.get("ema", 0.0)), int(scale_state.get("t", 0))
+        if t > 0 and clamp > 1.0:
+            ref = prev / (1.0 - beta ** t)
+            sample = sample.clamp(ref / clamp, ref * clamp)
+        t += 1
+        ema = beta * prev + (1.0 - beta) * float(sample)
+        scale_state["ema"], scale_state["t"] = ema, t
+        corrected = ema / (1.0 - beta ** t)
+        if corrected <= 0:
+            return logits, used
+        sd = sample.new_tensor(corrected)
+    target = typed_margin_mask & valid_mask & ~gold_mask
+    used = target.sum().to(logits.dtype)
+    return logits + (k * sd).to(logits.dtype) * target.to(logits.dtype), used
+
+
 def proposal_listwise_loss(
     proposal_logits: torch.Tensor,
     gold_mask: torch.BoolTensor,
@@ -506,6 +586,9 @@ def proposal_listwise_loss(
     task_ids: Optional[torch.Tensor] = None,
     num_tasks: int = 4,
     capture: Optional[dict] = None,
+    typed_margin_mask: Optional[torch.BoolTensor] = None,
+    typed_margin_k: float = 0.0,
+    typed_margin_scale: Optional[dict] = None,
 ) -> torch.Tensor:
     """Rank injected gold candidates above other valid proposals."""
     proposal_logits = _to_query_candidate(
@@ -515,6 +598,10 @@ def proposal_listwise_loss(
     valid_mask = _to_query_candidate(valid_mask, query_axis, candidate_axis)
     floor = MASK_LOGIT
     logits = proposal_logits.masked_fill(~valid_mask, floor)
+    logits, typed_used = apply_typed_margin(
+        logits, valid_mask, gold_mask, typed_margin_mask, typed_margin_k,
+        scale_state=typed_margin_scale,
+    )
     all_lse = torch.logsumexp(logits, dim=-1)
     gold_lse = torch.logsumexp(logits.masked_fill(~gold_mask, floor), dim=-1)
     has_gold = gold_mask.any(-1) & query_mask
@@ -583,6 +670,11 @@ def proposal_listwise_loss(
         # programme has shipped that failure three times. Recorded from AFTER the pooling,
         # so it reports what actually entered the denominator.
         capture["absent_negatives_used"] = absent_used.detach()
+        # SEPARATE from the absent-negatives count. Summing them would report "the
+        # constraint fired N times" when the two mechanisms fired different numbers of
+        # times for different reasons -- the same conflation that reported 45 refusals
+        # when 5 touched the output.
+        capture["typed_margin_used"] = typed_used.detach()
     if capture is not None:
         _note_capture(capture, loss.unsqueeze(-1), has_gold.unsqueeze(-1), query_mask)
     if query_weights is not None:
@@ -605,6 +697,9 @@ def reranker_listwise_loss(
     task_ids: Optional[torch.Tensor] = None,
     num_tasks: int = 4,
     capture: Optional[dict] = None,
+    typed_margin_mask: Optional[torch.BoolTensor] = None,
+    typed_margin_k: float = 0.0,
+    typed_margin_scale: Optional[dict] = None,
 ) -> torch.Tensor:
     """Listwise gold-mass loss over reranked candidates, empty-query safe."""
     gold_mask = (labels > 0.5) & valid_mask
@@ -620,6 +715,12 @@ def reranker_listwise_loss(
         task_ids=task_ids,
         num_tasks=num_tasks,
         capture=capture,
+        # FORWARD THEM. This wrapper accepted both and dropped them on the floor, so the
+        # rerank path would have taken the flag and applied no margin -- a treatment arm
+        # that reads as configured and trains as the control.
+        typed_margin_mask=typed_margin_mask,
+        typed_margin_k=typed_margin_k,
+        typed_margin_scale=typed_margin_scale,
     )
 
 

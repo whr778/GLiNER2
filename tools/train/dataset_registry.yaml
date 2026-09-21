@@ -428,6 +428,32 @@ datasets:
     source_url: local (tools/data/annotate_entities_zh.py over data/duee)
     hf_jsonl: whr778/duee_ner
     # train + val only; DuEE's mirror ships no test split. Sentence-level, median 32 chars.
+  cmnee_typed:
+    name: CMNEE with the purchased entity TYPES attached (events preserved)
+    tasks: event extraction; entity types carried as a typing signal, NOT as supervision
+    license: see source (derived from CMNEE)
+    source_url: local (tools/data/merge_entity_types.py over cmnee + cmnee_ner)
+    hf_jsonl: whr778/cmnee_typed
+    # `entity_types` lives INSIDE the schema -- the dataset's __getitem__ returns only
+    # (text, schema), so a top-level key never reaches collate. No `entities` block is
+    # added: the purchased gold is not exhaustive, and making it supervision would teach
+    # the entity head that every unannotated entity is absent.
+    # 13,611 records, 99.8% joined, 64.3% of event arguments typed.
+  duee_typed:
+    name: DuEE with the purchased entity TYPES attached (events preserved)
+    tasks: event extraction; entity types as a typing signal only
+    license: see source (derived from DuEE)
+    source_url: local (tools/data/merge_entity_types.py over duee + duee_ner)
+    hf_jsonl: whr778/duee_typed
+    # train + val only, as DuEE ships no test split. 56.7% of arguments typed.
+  casie_typed:
+    name: CASIE with its own entity gold echoed as a typing signal
+    tasks: event extraction + NER; entity_types mirrors the entities already present
+    license: see source (derived from CASIE)
+    source_url: local (tools/data/merge_entity_types.py over casie + casie)
+    hf_jsonl: whr778/casie_typed
+    # 100% typed -- casie is the only corpus carrying both golds in one record, which is
+    # why a typed margin without this merge would touch under 0.5% of the training mix.
   cmnee_roles_ner:
     name: CMNEE argument roles as entity spans (DERIVED)
     tasks: NER (derived from event arguments; Event<Role> labels)

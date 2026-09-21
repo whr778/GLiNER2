@@ -386,3 +386,85 @@ other order wastes the more expensive one.
 
 **And if option 4 is negative**, option 2 becomes more interesting rather than less — it would
 mean the argument gap is binding after all, which is what option 2 addresses directly.
+
+---
+
+# The ceiling, measured before the spend (2026-09-21)
+
+**Do not launch the typed-ON arm yet.** The margin's maximum effect is bounded by a quantity
+nobody had measured, and the bound turns out to be conditional on something still unbuilt.
+
+## The margin's effect has a closed form
+
+Adding margin `d` to a disallowed set `S` changes the listwise loss's view of gold by
+
+```
+p_gold' / p_gold  =  1 / (1 + (e^d - 1) * w_S)        w_S = probability mass on S
+```
+
+Only `d` and `w_S`. **The logit sd does not appear.** So all the EMA/clamp/`k` calibration
+work normalises a quantity the mechanism does not depend on; what it actually depends on is
+where the disallowed candidates sit in the score order.
+
+## Three brackets, held-out val, d = ln 2
+
+`typed_margin_mask` is still a `None` placeholder, so the real disallowed set cannot be used.
+Bracketing it instead -- a random 3.4% of non-gold candidates (the measured containment dose),
+the bottom 3.4% by score, and the top 3.4%:
+
+| corpus | H (nats) | w random | w bottom | w TOP | loss effect (random) | loss effect (TOP) |
+|---|---|---|---|---|---|---|
+| cmnee_typed | 2.81 | 0.0075 | 0.00002 | **0.248** | 0.7% | **20.0%** |
+| scierc | 2.27 | 0.0024 | 0.00000 | 0.044 | 0.2% | 4.2% |
+| duee_typed | 0.55 | 0.0001 | 0.00000 | 0.022 | 0.0% | 2.1% |
+| casie_typed | 0.58 | 0.0000 | 0.00000 | 0.000 | 0.0% | **0.0%** |
+
+**The verdict is conditional and the condition is the unmeasured one.** If type-disallowed
+fillers are scattered randomly through the candidate list, or already down-ranked, the margin
+does nothing at any `k`. If they are TOP competitors -- which is precisely the failure the
+constraint exists to fix -- it delivers a real 20% gradient push on cmnee. The brackets cannot
+distinguish these, and that is the whole finding.
+
+Candidate distributions are peaked: H of 0.46-3.07 nats is 1.6-21 effective candidates out of
+hundreds. **Memorisation is not the explanation** -- train and val differ negligibly.
+
+`casie_typed` reads 0.0000 in every bracket despite being the corpus with 100% typed coverage:
+its distributions are so peaked that even the top 3.4% of non-gold candidates carry no mass.
+
+## What has to happen before the $34
+
+Build the real `typed_margin_mask` (span -> type -> allowed, at the point `gold_mask` is
+built), then re-run `/Volumes/Development/tmp/ws.py` with the mask in place of the brackets.
+That converts a 0.0%-20.0% range into one number, and that number decides the arm.
+
+## Scale is a familiarity signal, not a nuisance
+
+Base-encoder masked pseudo-perplexity rank-predicts the RERANK logit sd perfectly across four
+cells spanning two languages and four domains (Spearman rho = -1.000, n=4, p=0.042):
+
+| corpus | cell | pseudo-ppl | rerank sd |
+|---|---|---|---|
+| cmnee_typed | zh / news | 4.7 | 6.58 |
+| casie_typed | en / cyber | 5.8 | 5.17 |
+| duee_typed | zh / news | 6.5 | 4.56 |
+| scierc | en / science | 6.7 | 2.99 |
+
+The proposal path shows rho = -0.200, i.e. nothing, and has only 1.39x of spread to explain
+against rerank's 2.20x. **Language alone predicts nothing**: Chinese finance is the most
+familiar cell measured (3.5) and English biomedical the least (10.9-18.8), and two Chinese
+news corpora differ by 1.4x. Only the (language, domain) CELL expresses "knows Chinese
+medical, not English medical".
+
+Measure it with `tools/train/measure_corpus_familiarity.py`; mask, or the number is
+meaningless (scoring an MLM with `labels=input_ids` reads 0.001 NLL on clinical English and
+0.213 on gibberish, because the model can see the token it is predicting).
+
+## Two instrument bugs paid for here
+
+- **The proposal path was double-counted.** `reranker_listwise_loss` delegates to
+  `proposal_listwise_loss`, so patching the name in `losses` intercepts rerank twice --
+  n=16 proposal against n=8 rerank on 8 batches. Every proposal sd reported before this fix
+  was a 50/50 blend of the two paths (cmnee read 4.26; true value 2.36). Patch the MODEL's
+  namespace, not the loss module's.
+- **rerank passes float `labels` where proposal passes a bool `gold_mask`**, so `&` raised;
+  a swallowed exception turned that into a silent table of zeros rather than a crash.

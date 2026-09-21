@@ -894,6 +894,16 @@ class BoundaryHead(nn.Module):
                     captures.setdefault("soft_iou", {}) if want_task_losses else None
                 ),
             )
+        # OPTION 2's typed margin mask, [B, Q, C]: True where the role-type map disallows
+        # this candidate's entity type for this query's (event_type, role). None disables
+        # the margin entirely and the losses stay bit-identical.
+        typed_margin_mask = None
+        # Per-head EMA state for the margin's scale. Kept on the module so it persists
+        # across batches; each DDP rank keeps its own, which is acceptable for a scale
+        # estimate but means ranks can differ slightly early in training.
+        if not hasattr(self, "_typed_margin_scale"):
+            self._typed_margin_scale = {}
+
         rerank_loss = loss_logits.new_zeros(())
         if self.settings.rerank_listwise_weight > 0:
             rerank_loss = reranker_listwise_loss(
@@ -907,6 +917,9 @@ class BoundaryHead(nn.Module):
                 absent_negatives=self.settings.absent_negatives_in_denominator,
                 task_ids=query_task_ids,
                 num_tasks=len(TASK_TYPES),
+                typed_margin_mask=typed_margin_mask,
+                typed_margin_k=self.settings.typed_margin_rerank_k,
+                typed_margin_scale=self._typed_margin_scale,
                 # The capture also carries the absent-negatives GATE, so it must exist when
                 # the treatment is on even if the per-task DIAGNOSTIC is off. Populating it
                 # is harmless: the reduce loop below is gated on `want_task_losses`.
@@ -955,8 +968,13 @@ class BoundaryHead(nn.Module):
                 absent_negatives=self.settings.absent_negatives_in_denominator,
                 task_ids=query_task_ids,
                 num_tasks=len(TASK_TYPES),
+                typed_margin_mask=typed_margin_mask,
+                typed_margin_k=self.settings.typed_margin_proposal_k,
+                typed_margin_scale=self._typed_margin_scale,
                 capture=(
-                    captures.setdefault("proposal", {}) if want_task_losses else None
+                    captures.setdefault("proposal", {})
+                    if (want_task_losses or self.settings.typed_margin_proposal_k > 0)
+                    else None
                 ),
             )
         consistency_loss = loss_logits.new_zeros(())
