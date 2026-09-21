@@ -14,7 +14,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
 | 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **SPATIAL ANCHOR BUILT 2026-09-21: 4/6 at 1.2% FP**, beating all three text signals on BOTH axes | add the TEMPORAL anchor (recovers the 1916 case); fix the Taiwan mis-association |
-| 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
+| 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING**, arm 1 of 3 on epoch 2/2. **GATE PASSED: shared-pool grad norm 3.853e+00** (per_query reads 0.000e+00), so the treatment is live. ETA ~20:55 UTC, ~$6 | compare the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
@@ -189,11 +189,18 @@ wrong key can recover. 19 tests.
 
 ## 4. Open experiments, cheap
 
-- **`candidate_pool: shared`** — RUNNING since 2026-09-21 17:55 UTC. Three small arms
-  (2 corpora, 13,000 samples, ~1,625 steps each) on one A100, ~$4. The control is re-run on
-  the SAME box deliberately: attempt one's control was bf16 on an A10, so reusing it would
-  confound card with treatment. Note the script's header comment claims it runs only the two
-  `shared` arms; `ARMS` actually defaults to three. The code is right, the comment is stale.
+- **`candidate_pool: shared`** — RUNNING since 2026-09-21 17:55 UTC on one A100.
+  **The gate has PASSED on arm 1: `shared-pool grad norm 3.853e+00`.** That matters more than
+  it looks: `shared_pool_builder` exists in every checkpoint and receives NO gradient under
+  `per_query`, so an arm that failed to switch is indistinguishable from one that switched and
+  did nothing — attempt one died on exactly that confusion. A non-zero reading proves the
+  treatment is live before any result is believed.
+
+  Three arms (shared 2ep, perquery 2ep, shared-long 4ep), 1,260 steps per epoch at ~20 min,
+  so ~2.7h and **~$6** — not the ~$4/1.5h first estimated. The control is re-run on the SAME
+  box deliberately: attempt one's control was bf16 on an A10, so reusing it would confound
+  card with treatment. Note the script's header comment claims it runs only the two `shared`
+  arms; `ARMS` actually defaults to three. The code is right, the comment is stale.
 - **Negative documents** (data, not decode) for cross-event contamination.
 - **Base-word positive/negative samples** — a different granularity, aimed at noun-phrase
   boundaries rather than event interference.
