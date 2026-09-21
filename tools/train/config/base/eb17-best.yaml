@@ -346,6 +346,23 @@ data:
   - data/professorbob_re
   - data/scierc
   - data/paraloq_json
+  # docee_zh: 27,122 Chinese records on the SAME 60-label docee_event menu -- verified
+  # identical to docee-en and turkish_event. The menus were unified by
+  # unify_docee_menus.py, which rewrote only `labels` and never `true_label`, so no
+  # annotation changed and no label was invented. Built, split-clean (0 overlap against
+  # every docee/docee_zh val and test split) and on HF since before eb16, and simply never
+  # wired in. It is free supervision on the one head that keeps collapsing under
+  # interventions that never target it. Its entity contribution is small by design --
+  # 31,369 mentions over 4 roles, the other 340 CJK roles were dropped rather than passed
+  # through under Chinese names.
+  - data/docee_zh
+
+  # TRAIN ONLY. An added corpus silently brings its own TEST split too, and two arms scored
+  # on different denominators is not a comparison -- `compare_runs.py` refuses it, and that
+  # defect already voided an entity row here. docee_zh's 3,398 test records would move the
+  # blind test off 20,602 and break every comparison against eb16 and the absneg arms.
+  train_only: [docee_zh]
+
   event_files:
     chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}
     docee:           {train: data/docee.train.jsonl, val: data/scaling_joint/docee.val.jsonl, test: data/docee.test.jsonl}
