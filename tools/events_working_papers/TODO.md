@@ -13,7 +13,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
-| 5 | **Cross-event contamination** | 4.7% of Helene's `dead` observations belong to OTHER events, and they carry the LARGE values | **NOT BLOCKED** — the gate (old item 0) closed 2026-08-19; my rewrite mis-cited it as item 4 | fix the unsound readout, then try a SPATIAL filter |
+| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **NOT BLOCKED and the readout is already FIXED** (scorer 2026-08-17, labels 2026-08-20) | re-run the 3 signals against the CORRECTED labels; try spatial+temporal |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
@@ -61,46 +61,64 @@ Consider it for `metric_for_best` in place of entity F1.
 itself was swept and moved the 137k structure reference to 0.1119 at 0.1; the anchor cutoff
 never got the same treatment.
 
-### Cross-event contamination — NOT blocked; the citation was stale
+### Cross-event contamination — not blocked, and the readout is already fixed
 
 Whole-article reading via `extract_long` binds casualty figures lifted from unrelated stories
-sharing an article body — streams surfaced for `poland`, `bosnia`, `afghanistan`, `iran`,
-`japan`, `ukraine`, `cameroon`.
+sharing an article body.
 
-**Quantified 2026-08-11**, context audit of all 106 Helene `dead` observations: 82.1% genuine,
-**4.7% cross-event**, 3.8% non-casualty, 9.4% unclear. The five are Katrina 1400, a Typhoon's
-250, Milton's 230, Bosnia's 16 and Hurricane John's 2 in Mexico — **they carry the LARGE
-values, so the most damage per instance.**
+**TWO STALE BLOCKERS, both cleared.** The entry read "Gated by item 0 (2026-08-17)" -- item 0
+CLOSED 2026-08-19. The 2026-09-21 rewrite additionally mis-cited it as "item 4". And "fix the
+unsound readout first" was done twice over, in `tools/ekf_showcase/event_binding_probe.py`:
 
-**THE STATED GATE IS STALE.** It read "Gated by item 0 (2026-08-17)", and item 0 closed
-2026-08-19 (`runtime.py` dropped `record_metadata`; the record head was fine). The 2026-09-21
-TODO rewrite additionally mis-cited it as "item 4". Nothing blocks this.
+- **2026-08-17, the scorer.** Signal C scored `bool(bound) and not OURS.search(bound)`, so it
+  fired on any non-empty string lacking "helene". A casualty-trained record head has no
+  `event` field in distribution and copies the anchor number in, so `'230'` counted as a
+  caught cross-event and C read 9/11 on pure artifact. Now `validate_binding` keeps a binding
+  only if it names an event the schema ALSO found, `_NUMERIC` rejects copied numbers, the
+  `recs[0]` fallback is gone, and "bound nothing" is reported separately from "bound ours".
+- **2026-08-20, the LABELS.** The ground truth itself was **27% correct on its own positive
+  class** (3 of 11). All six `'230'`s were marked cross-event (Milton) when every one is
+  Helene's OWN national total (truth 228, windows read "Helene death toll hits 230"); `'250'`
+  likewise; one `'1,400'` is "1,400 LANDSLIDES", not people. It MISSED Maria's 3,000, the 1916
+  hurricanes' 80 and a Taiwan typhoon's "dozens".
 
-**The real remaining blocker is the readout**: the probe that would score any fix is unsound
-— it counts a copied casualty number as a caught cross-event, so a training arm cannot be told
-from an artifact. Fix that first.
+**CONSEQUENCE: every published score on this instrument is uninterpretable.** A detector
+reading 3/11 might have found the three real cases or three of the eight false ones. That
+includes the three signal results still quoted in `EKF_MHT_BUILD_RECORD.md` §27.2 (nearest
+3/11 at 32.5% FP, only-competitor 3/11 at 31.3%, bound 2/11 at 26.5%) and the 2026-08-11
+"4.7% cross-event of 106" figure. **Do not reuse either.**
 
-**Three signals tried, all failed** (`EKF_MHT_BUILD_RECORD.md` §27.2): nearest named event
-3/11 at 32.5% false positives, only-competitor-named 3/11 at 31.3%, record-head binding 2/11
-at 26.5%. All three infer the owning event from TEXT NEAR THE NUMBER, and Helene articles
-routinely name Milton and Katrina for comparison. Bosnia's 16 is structurally invisible to all
-of them — Bosnia is a *place*, not a named storm.
+**THE CORRECTED GROUND TRUTH** lives in `tools/ekf_showcase/helene_audit_labels.json`, keyed
+by `sha1(value|normalised context)` so a label survives re-extraction. 86 occurrences:
+64 helene, 11 non-casualty, **6 cross-event**, 5 unclear.
 
-**The pattern worth noticing: EXTERNAL-ANCHOR checks work, text-proximity inference does not.**
-The temporal filter is the external-anchor version and it WORKED — Izmit 15 false bindings
-down to 3, zero genuine losses. **The spatial version does not exist**, and the foreign places
-were left deliberately unmapped in `datasets/helene2024/rollup.json` so the problem stays
-visible rather than hidden.
+| span | belongs to |
+|---|---|
+| 3,000 | Hurricane Maria, Puerto Rico |
+| 1,400 | Hurricane Katrina |
+| 80 | the **1916** Appalachian hurricanes |
+| dozens | Typhoon heading to Taiwan (injuries, not deaths) |
+| at least 16 | Bosnia floods/landslides |
+| at least two | Hurricane John, Mexico |
 
-A temporal + spatial composition plausibly covers all five: spatial catches Bosnia, Mexico and
-the Typhoon (outside the six-state footprint), temporal catches Katrina (2005) and Milton
-(October vs Helene's September). Note the scope gate currently removes Katrina's 1400 for the
-WRONG reason — because it is large, not because it belongs elsewhere — which is exactly why it
-keeps Bosnia's 16 and Mexico's 2.
+**EXTERNAL ANCHORS LOOK RIGHT, and the two are complementary.** Against the corrected six:
+spatial (outside Helene's six-state footprint) catches 5/6, temporal (outside Sept 2024)
+catches 3/6, **composed 6/6** -- the one spatial misses is the 1916 Appalachian hurricanes,
+IN the footprint and 108 years early, which is exactly what temporal is for. This matches the
+pattern that external-anchor checks work where text-proximity inference does not: the temporal
+filter already took Izmit from 15 false bindings to 3 with zero genuine losses, while all
+three text signals infer ownership from the words near the number and Helene articles
+routinely name Milton and Katrina for comparison.
 
-NOT YET LOCATED: the per-observation store carrying association keys. `rollup.json` holds
-aliases and an aggregate/parts hierarchy, and `real_truth.jsonl` is the 31-point ground-truth
-series, so the spatial filter needs the pipeline's own observation stream first.
+**CAVEAT, and it is the one that matters.** That 6/6 is a feasibility analysis over the places
+and dates recorded in the audit's own `why` fields -- NOT an end-to-end run. A real filter must
+EXTRACT place and date per observation, and that extraction can fail. **The false-positive rate
+against the 64 genuine observations is unmeasured, and FP is precisely where all three prior
+signals died** (3/11 recall at 26-32% FP). Recall on six cases proves nothing on its own.
+
+**NEXT, in order:** (1) re-run the three signals against the corrected labels, since their
+published numbers are uninterpretable and the instrument is already fixed; (2) only then build
+the spatial anchor, and score it on FP against the 64 as well as recall on the 6.
 
 ## 4. Open experiments, cheap
 
