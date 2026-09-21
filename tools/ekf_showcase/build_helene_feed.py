@@ -82,18 +82,45 @@ def plain(raw: str) -> str:
 
     So the body is selected structurally (`RichTextStoryBody`), not by regex over the
     whole document.
+
+    THE RELATED-COVERAGE RAILS ARE INSIDE THE STORY BODY, so selecting the body is not
+    enough. AP embeds a `PageListEnhancementGeneric` block of unrelated headlines mid-article
+    and it is flattened into the text with NO separator -- "...paired at pro-am event in
+    Scotland More than 180 people have been killed from Hurricane Helene..." -- so the
+    boundary is unrecoverable downstream. That cost two association errors measured on the
+    Helene feed: a Taiwan typhoon's `dozens` keyed to `tennessee` from the next headline in
+    the rail, and a GENUINE Helene figure of 180 keyed to `scotland` from a golf headline.
+    Both were the only miss and the only false positive of the spatial anchor.
+
+    THE SELECTOR MUST BE THE BLOCK, NOT THE WORD "Enhancement". `contains(@class,
+    "Enhancement")` also matches `LinkEnhancement`, which is an inline link INSIDE the prose
+    -- stripping those deletes real article words ("Broadway", "assassination attempts").
+    Measured: the broad form matches 26-48 nodes per article, the block form 1-2.
     """
     try:
         from lxml import html as lhtml
-    except ImportError:
-        raw = re.sub(r"<script.*?</script>|<style.*?</style>", " ", raw, flags=re.S)
-        return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", raw))).strip()
+    except ImportError as exc:
+        # FAIL LOUDLY. The fallback strips script/style and then every tag, with NO
+        # structural selection -- it returns navigation, rails and footer as article text.
+        # Measured: the structural path gives a 5,100-character median document, the whole
+        # page 26,598, and articles about a four-day workweek then "name" Florida and
+        # Georgia. A feed like that measures page furniture. lxml is a declared dependency;
+        # if it is missing the answer is to install it, not to build a feed quietly worth
+        # nothing.
+        raise RuntimeError(
+            "lxml is required to extract article bodies structurally. Without it this "
+            "function returns page chrome as article text (median 26,598 chars against "
+            "5,100), which silently poisons every downstream measurement. `uv add lxml`."
+        ) from exc
 
     try:
         tree = lhtml.fromstring(raw)
     except Exception:
         return ""
-    for bad in tree.xpath('//*[starts-with(@id,"wm-ipp")] | //script | //style | //nav | //footer'):
+    drop = ('//*[starts-with(@id,"wm-ipp")] | //script | //style | //nav | //footer'
+            ' | //*[@data-gtm-region="RELATED COVERAGE"]'
+            ' | //div[contains(@class,"PageListEnhancement")]')
+    for bad in tree.xpath(drop):
         bad.getparent().remove(bad) if bad.getparent() is not None else None
     nodes = tree.xpath('//div[contains(@class,"RichTextStoryBody")]')
     if not nodes:

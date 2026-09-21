@@ -13,7 +13,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
-| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **ANCHORS BUILT 2026-09-21: spatial+temporal = 5/6 at 1.2% FP**, against the best text signal's 3/6 at 19.5% | the last miss and the 1 FP are UPSTREAM keying errors — fix those |
+| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **anchors 5/6 at 1.2% FP; the KEYING ROOT CAUSE found and fixed** — AP related-coverage rails inside the story body | rebuild the feed, re-run the pipeline, re-score |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING**, arm 1 of 3 on epoch 2/2. **GATE PASSED: shared-pool grad norm 3.853e+00** (per_query reads 0.000e+00), so the treatment is live. ETA ~20:55 UTC, ~$6 | compare the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
@@ -208,16 +208,46 @@ hurricanes). The sharpness of the threshold -- 11.1% FP at 2010 against 0% at 19
 itself a fragility signal. It is a conservative complement to the spatial anchor, not a
 validated signal in its own right, and it adds exactly one case.
 
-**WHAT REMAINS IS NOT A DETECTION PROBLEM.** The single miss and the single false positive
-are both UPSTREAM ASSOCIATION ERRORS:
+**WHAT REMAINED WAS NOT A DETECTION PROBLEM -- and the cause is now found and fixed.**
+The single miss and the single false positive were both upstream association errors, and they
+share ONE mechanism: **AP embeds a rail of unrelated headlines INSIDE the story body**, and it
+is flattened into the text with no separator.
 
-    dozens   keyed `tennessee`  -- a Taiwan typhoon        (miss)
-    180      keyed `scotland`   -- a genuine Helene figure  (FP)
+    dozens   keyed `tennessee`  -- "RELATED COVERAGE Typhoon headed to Taiwan injures
+                                    dozens ... 11 workers at a Tennessee factory ..."
+    180      keyed `scotland`   -- "... paired at pro-am event in Scotland More than 180
+                                    people have been killed from Hurricane Helene ..."
 
-No test over a wrong key can recover either. **The ceiling on cross-event detection is set by
-the keying, not by the test over it** -- which is the more useful finding than the 5/6.
+A genuine Helene figure took its place from a GOLF headline. The boundary is unrecoverable
+downstream -- the headlines run together with no punctuation -- so the fix belongs at
+HTML->text time, where the rail is a DOM node (`build_helene_feed.plain`).
 
-26 tests.
+**TWO TRAPS, both measured before committing:**
+
+- **Strip by text and you lose more than you gain.** 74% of articles carry the marker, and
+  11 of 106 `dead` observations sit within 400 chars after one -- 7 of them GENUINE. Dropping
+  everything after the marker would discard 7 real observations to remove 2 cross-event ones.
+- **`contains(@class,"Enhancement")` is too broad.** It also matches `LinkEnhancement`, an
+  inline link inside the prose; stripping those deletes real article words ("Broadway",
+  "assassination attempts"). Measured 26-48 nodes per article against 1-2 for the block
+  selector. The committed xpath targets `@data-gtm-region="RELATED COVERAGE"` and
+  `div[contains(@class,"PageListEnhancement")]` only.
+
+**A SECOND LATENT DEFECT, found in passing: `lxml` was never declared.** Without it `plain()`
+fell back to stripping every tag with NO structural selection, returning navigation, rails
+and footer as article text -- a 26,598-character median document against 5,100, which is how
+an article about a four-day workweek comes to "name" Florida and Georgia. It now RAISES
+instead of silently producing a feed worth nothing, and lxml is a declared dependency.
+
+**VERIFIED on the real article**: `RELATED COVERAGE`, `Scotland` and `Typhoon headed to
+Taiwan` are all gone, and the 180 figure now sits in clean body prose.
+
+**NOT YET DONE:** this fixes the SOURCE. The cached `feed.jsonl` and `tracked_rollup.json`
+still carry the old text, so the 5/6 and 1.2% figures stand until the feed is rebuilt and the
+pipeline re-run. That is the next step, and it is the thing that would actually move the
+score.
+
+31 tests.
 
 ## 4. Open experiments, cheap
 
