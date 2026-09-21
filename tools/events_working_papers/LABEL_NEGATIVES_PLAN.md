@@ -38,6 +38,56 @@
 
 The feature exists, two A/B arms trained, and the (now confounded) verdict is in §5f.
 
+> ## *** THE CLEAN VERDICT AT LAST (`absneg2`, 2026-09-21) ***
+>
+> Third attempt, and the first whose comparison is legal on every axis. `compare_runs.py`:
+> **"operating point identical (threshold=0.3, full_menu=False, 20602 records)"**.
+>
+> | metric (strict micro F1) | control | treatment | delta |
+> |---|---:|---:|---:|
+> | **event_argument** | 0.1840 | 0.2215 | **+0.0376 UP** |
+> | event_argument (fair) | 0.2482 | 0.2958 | +0.0476 UP |
+> | **classification** | 0.8538 | 0.6561 | **-0.1977 DOWN** |
+> | event_type | 0.7390 | 0.6704 | -0.0686 DOWN |
+> | event_trigger | 0.5213 | 0.4978 | -0.0234 DOWN |
+> | event | 0.4394 | 0.4192 | -0.0202 DOWN |
+> | entity | 0.5176 | 0.5057 | -0.0119 (inside floor) |
+> | relation | 0.1201 | 0.1272 | +0.0070 (inside floor) |
+> | structure | 0.2312 | 0.2153 | -0.0159 (inside floor) |
+>
+> **3 up, 8 down outside the +/-0.02 floor.**
+>
+> **THE MECHANISM HITS ITS TARGET AND BREAKS AN UNTARGETED HEAD.** `event_argument` +0.0376
+> strict is the intervention doing exactly what it was designed to do, far outside the
+> 0.0009-0.0020 seed floor. `classification` -0.1977 is a head a listwise DENOMINATOR has no
+> route to.
+>
+> **WHY THIS COMPARISON IS TRUSTWORTHY, where two earlier ones were not:**
+> - identical corpora, val and test (16 corpora both arms, 20,602 records, verified by
+>   reading the configs -- a first attempt at that check falsely passed because both halves
+>   errored to empty output);
+> - both arms selected on `eval_entity_strict_micro_f1`, a TASK metric identical across arms
+>   and deliberately NOT the treatment's target, at threshold 0.3 because at 0.5 the event
+>   heads decode almost nothing;
+> - **both arms shipped their FINAL (epoch-5) checkpoint** -- control improved 0.5212 ->
+>   0.5965, treatment 0.5299 -> 0.5882, both still climbing -- so no selection confound;
+> - treatment proven applied from inside the run: gate non-zero on ~88% of steps against
+>   EXACTLY zero on the control, and injection identical (105,371 labels into 104,574 of
+>   175,324 records on both).
+>
+> **IT REPRODUCES THE SHAPE OF THE 2026-09-18 CLAIM, WHICH WAS ITSELF VOID.** That run
+> reported event_argument +0.0322 and classification -0.1492 -- from two nominal duplicates,
+> so its agreement with this is coincidence. The PHENOMENON survives independent, clean
+> measurement; the earlier numbers still do not.
+>
+> **CAVEATS.** Single seed per arm: -0.0234 and -0.0202 deserve a replicate. And the
+> classification floor is UNVERIFIED -- it came from that same confounded pair -- so
+> -0.1977 cannot be quoted in sigma, only in magnitude.
+>
+> **NOT SHIPPABLE AS-IS, and the question is now sharp:** can the argument gain be kept
+> without the classification collapse? Candidates: exclude classification-bearing corpora
+> from injection, or weight the absent-negative term per task.
+
 > ## *** THE CLEAN RE-RUN (`absneg`, 2026-09-20) IS ALSO CONFOUNDED -- BY CHECKPOINT SELECTION ***
 >
 > First A/B in which the injector genuinely reached the dataset (treatment 4.14 absent

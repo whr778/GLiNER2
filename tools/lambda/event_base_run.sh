@@ -103,6 +103,27 @@ else
   RESCUE=1
 fi
 
+# 1b. THE FINAL-EPOCH CHECKPOINT, to a SEPARATE repo.
+#
+# `best/` is whichever epoch won on `metric_for_best`, and two arms of one A/B can win on
+# DIFFERENT epochs: roles2 shipped its control at epoch 2 against its treatment at epoch 5,
+# so every head rose and the run was void. The trainer already writes `final/` and
+# `checkpoint-epoch-N/`; the box then terminates and destroys them, which is why that run
+# could not be rescued by re-scoring and needs the control retrained (~$20).
+#
+# Pushing `final/` makes a like-for-like comparison possible AFTER THE FACT, whatever
+# selection did. Non-fatal by design: this is the diagnostic copy, and it must never cost
+# the run its irreplaceable `best/`.
+if [ -d "$OUTDIR/final" ]; then
+  echo "[base] pushing the final-epoch checkpoint (diagnostic copy, non-fatal)"
+  $PY -u tools/train/push_to_hub.py --checkpoint "$OUTDIR/final" \
+      --repo-id "$REPO-final" --private \
+      --commit-message "final-epoch checkpoint, for like-for-like comparison" 2>&1 | tail -3 \
+    || echo "[base] final-epoch push failed; continuing (best/ is what matters)"
+else
+  echo "[base] no $OUTDIR/final to push"
+fi
+
 # 2. METRICS AND LOGS, whatever happened to the model.
 cp "$OUTDIR/test_metrics.json" "$HOME/test_metrics.json" 2>/dev/null || echo "[base] no test_metrics.json"
 # eval_metrics.json is OPTIONAL -- train.py writes test_metrics.json and val_metrics.json,
