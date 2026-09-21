@@ -348,7 +348,8 @@ def compile_record_specs(
         if mode == "natural" and anchor_query_id is None:
             raise ValueError(
                 f"record {name!r} declares anchor {anchor_name!r} but no matching "
-                "field query was found in the layout"
+                f"field query was found in the layout; the extractive fields present "
+                f"are {[q.role_name for q in queries]}"
             )
         specs[task_index] = RecordSpec(
             task_index=task_index,
