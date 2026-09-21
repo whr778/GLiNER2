@@ -156,6 +156,42 @@ def proposal_settings_from_head(settings: BoundaryHeadSettings) -> ProposalSetti
     )
 
 
+def _typed_margin_mask(
+    indices: torch.LongTensor,
+    allowed_bits: Optional[torch.Tensor],
+    span_table: Optional[torch.Tensor],
+) -> Optional[torch.BoolTensor]:
+    """``[B, Q, C]`` True where the role-type map DISALLOWS this candidate for this query.
+
+    Three conditions must all hold, and each one is a deliberate abstention:
+
+    * the query is CONSTRAINED (``allowed_bits != 0``) -- the map has an opinion about this
+      (event_type, role) at all;
+    * the candidate has a KNOWN entity type (``span_bits != 0``) -- its exact word span
+      carries gold typing. An untyped span is unknown, not wrong, and is left alone;
+    * NONE of its types are allowed (``span_bits & allowed_bits == 0``) -- a span carrying
+      several types survives if any one of them is permitted.
+
+    The loop runs over TYPED SPANS, not candidates: a document carries ~10-40 of them against
+    hundreds of candidates, so this is the cheap axis.
+    """
+    if allowed_bits is None or span_table is None:
+        return None
+    n_batch, n_query, n_cand, _ = indices.shape
+    span_bits = indices.new_zeros((n_batch, n_query, n_cand))
+    starts, ends = indices[..., 0], indices[..., 1]
+    for b in range(n_batch):
+        rows = span_table[b]
+        for start, end, bits in rows[rows[:, 0] >= 0].tolist():
+            hit = (starts[b] == start) & (ends[b] == end)
+            if bool(hit.any()):
+                span_bits[b] = torch.where(
+                    hit, span_bits[b] | int(bits), span_bits[b]
+                )
+    wanted = allowed_bits.unsqueeze(-1)
+    return (wanted != 0) & (span_bits != 0) & ((span_bits & wanted) == 0)
+
+
 class BoundaryHead(nn.Module):
     """Composable boundary head: encoding, marginals, proposal, scoring, losses."""
 
@@ -375,6 +411,8 @@ class BoundaryHead(nn.Module):
         query_weights: Optional[torch.Tensor] = None,
         query_pos_weights: Optional[torch.Tensor] = None,
         query_task_ids: Optional[torch.Tensor] = None,
+        typed_allowed_bits: Optional[torch.Tensor] = None,
+        typed_span_table: Optional[torch.Tensor] = None,
     ) -> ExtractorOutput:
         b, l, _ = token_states.shape
         text_lengths = text_mask.sum(dim=1).long()
@@ -579,6 +617,9 @@ class BoundaryHead(nn.Module):
                 query_weights=query_weights,
                 query_pos_weights=query_pos_weights,
                 query_task_ids=query_task_ids,
+                typed_margin_mask=_typed_margin_mask(
+                    proposals.indices, typed_allowed_bits, typed_span_table
+                ),
             )
             total_loss = losses["total_loss"]
 
@@ -704,6 +745,7 @@ class BoundaryHead(nn.Module):
         query_weights: Optional[torch.Tensor] = None,
         query_pos_weights: Optional[torch.Tensor] = None,
         query_task_ids: Optional[torch.Tensor] = None,
+        typed_margin_mask: Optional[torch.BoolTensor] = None,
     ) -> Dict[str, torch.Tensor]:
         boundary_keep = boundary_mask.unsqueeze(1) & query_mask.unsqueeze(-1)  # [B,Q,L+1]
         n_boundary = marginals.start_logits.shape[2]
@@ -895,9 +937,9 @@ class BoundaryHead(nn.Module):
                 ),
             )
         # OPTION 2's typed margin mask, [B, Q, C]: True where the role-type map disallows
-        # this candidate's entity type for this query's (event_type, role). None disables
-        # the margin entirely and the losses stay bit-identical.
-        typed_margin_mask = None
+        # this candidate's entity type for this query's (event_type, role). Built by
+        # `_typed_margin_mask` from the proposals and passed in; None disables the margin
+        # entirely and the losses stay bit-identical.
         # Per-head EMA state for the margin's scale. Kept on the module so it persists
         # across batches; each DDP rank keeps its own, which is acceptable for a scale
         # estimate but means ranks can differ slightly early in training.
@@ -2020,6 +2062,92 @@ class BoundaryExtractorModel(BaseExtractorModel):
     # Forward
     # =========================================================================
 
+    def _typed_margin_tables(self):
+        """``(type -> bit, (event_type, role) -> allowed bits)``, built once from the map.
+
+        A BITMASK because the map names 27 distinct entity types, which fits an int64 with
+        room to spare, and membership then costs one AND. Returns None when the margin is
+        off or no map is configured, which keeps the default path bit-identical.
+        """
+        if hasattr(self, "_typed_tables_cache"):
+            return self._typed_tables_cache
+        path = getattr(self.boundary_settings, "role_type_map", None)
+        on = (self.boundary_settings.typed_margin_proposal_k > 0
+              or self.boundary_settings.typed_margin_rerank_k > 0)
+        tables = None
+        if path and on:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                blob = json.load(fh)
+            table = blob.get("role_types", blob)
+            vocab, allowed = {}, {}
+            for event_type, roles in table.items():
+                for role, types in (roles or {}).items():
+                    bits = 0
+                    for t in types or ():
+                        if t not in vocab:
+                            vocab[t] = 1 << len(vocab)
+                        bits |= vocab[t]
+                    if bits:
+                        allowed[(str(event_type), str(role))] = bits
+            if allowed:
+                tables = (vocab, allowed)
+        self._typed_tables_cache = tables
+        return tables
+
+    def _typed_margin_inputs(self, batch, query_mask):
+        """Per-batch inputs for the typed margin: allowed bits per query, typed spans.
+
+        Returns ``(allowed_bits [B, Q], span_table [B, N, 3])`` or ``(None, None)``. A query
+        with 0 allowed bits is UNCONSTRAINED -- the map has no opinion about it, and the
+        margin must leave it completely alone.
+
+        Event arguments live in ``record_specs``, not ``query_layouts``: with
+        ``event_records: true`` an events group is compiled to a RecordSpec whose fields
+        carry the query ids, so that is where (event_type, role) comes from.
+        """
+        tables = self._typed_margin_tables()
+        specs = getattr(batch, "record_specs", None)
+        typed_spans = getattr(batch, "typed_spans", None)
+        if tables is None or not specs or not typed_spans:
+            return None, None
+        vocab, allowed = tables
+        n_batch, n_query = query_mask.shape
+        bits = torch.zeros((n_batch, n_query), dtype=torch.long)
+        for b, per_task in enumerate(specs):
+            if not isinstance(per_task, dict):
+                continue
+            for spec in per_task.values():
+                if getattr(spec, "task_type", None) != "events":
+                    continue
+                for field in getattr(spec, "fields", ()):
+                    got = allowed.get((str(spec.task_name), str(field.name)))
+                    if got and 0 <= field.query_id < n_query:
+                        bits[b, field.query_id] = got
+        if not int(bits.any()):
+            return None, None
+        rows = []
+        for b in range(n_batch):
+            row = []
+            for (start, end), types in (
+                typed_spans[b] if b < len(typed_spans) else {}
+            ).items():
+                mask_bits = 0
+                for t in types:
+                    mask_bits |= vocab.get(t, 0)
+                if mask_bits:
+                    row.append((start, end, mask_bits))
+            rows.append(row)
+        width = max((len(r) for r in rows), default=0)
+        if width == 0:
+            return None, None
+        table = torch.full((n_batch, width, 3), -1, dtype=torch.long)
+        for b, row in enumerate(rows):
+            if row:
+                table[b, : len(row)] = torch.tensor(row, dtype=torch.long)
+        device = query_mask.device
+        return bits.to(device), table.to(device)
+
     def forward(
         self,
         batch,
@@ -2074,6 +2202,10 @@ class BoundaryExtractorModel(BaseExtractorModel):
                         or self.boundary_settings.absent_negatives_in_denominator)
                     else None
                 ),
+                **dict(zip(
+                    ("typed_allowed_bits", "typed_span_table"),
+                    self._typed_margin_inputs(batch, core["query_mask"]),
+                )),
             )
             if output.candidates is not None:
                 validate_candidate_indices(

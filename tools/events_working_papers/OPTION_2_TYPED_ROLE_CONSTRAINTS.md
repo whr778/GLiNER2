@@ -452,11 +452,55 @@ runs. Three causes, found by varying one axis at a time:
 
 With all three fixed, two runs are byte-identical. Quote ranges over seeds regardless.
 
-## What has to happen before the $34
+## THE MASK IS BUILT, AND THE ANSWER IS A NUMBER: DO NOT SPEND THE $34
 
-Build the real `typed_margin_mask` (span -> type -> allowed, at the point `gold_mask` is
-built), then re-run `/Volumes/Development/tmp/ws.py` with the mask in place of the brackets.
-That converts a 0.0%-20.0% range into one number, and that number decides the arm.
+`typed_margin_mask` is no longer a placeholder. With the real mask in place the bracket
+collapses to a measurement, taken on held-out val across casie/cmnee/duee, 58 batches:
+
+- the mask FIRES: **1,390 of 410,112 candidate cells (0.339%)** are type-disallowed, and
+  **91 queries** had at least one disallowed competitor;
+- and it moves almost nothing.
+
+| | w_S | loss effect at d = ln 2 |
+|---|---|---|
+| median | 0.00003 | **0.00%** |
+| p75 | 0.00143 | 0.14% |
+| p90 | 0.00347 | 0.35% |
+| **mean** | 0.00284 | **0.28%** |
+| max | 0.11233 | 10.10% |
+
+Only **5 of 91 affected queries (5%)** carry w_S above 0.01.
+
+**This lands on the BOTTOM bracket, not the top.** The model already scores type-incompatible
+fillers near zero -- unsurprising, since it was trained on this data -- so the margin spends
+its effort pushing down candidates that were never competing. The optimistic branch of the
+previous section (20.0% on cmnee, if disallowed fillers were top competitors) is refuted: they
+are not top competitors.
+
+**A 0.28% mean gradient perturbation cannot produce a measurable F1 change.** The single-run
+noise floor on this programme is +/-0.02, and event_argument's measured floor is 0.0009. The
+$34 arm would be an expensive way to measure zero.
+
+**What is NOT refuted.** This measures the TRAINING-TIME margin only. The decode-time
+constraint is a different intervention against a different distribution (inference has no gold
+types, so it acts on predicted ones), and the 5% tail where w_S exceeds 0.01 is real. If the
+margin is ever revisited, target that tail rather than applying it globally.
+
+## What had to happen before the $34 -- done, and what it cost
+
+BUILT. The join lives on the processor (`SchemaTransformer._typed_spans`), because aligning
+a surface to word positions needs the SAME tokenizer the text went through -- measured 99.6%
+(casie), 99.8% (cmnee, char splitter), 100% (duee), against 1.5% for a reconstruction that did
+not reuse it. The mask itself is `_typed_margin_mask` in the boundary model: a bitmask over
+the map's 27 entity types, looped over TYPED SPANS (10-40 per document) rather than candidates
+(hundreds).
+
+**A latent bug surfaced while wiring it.** `proposal_listwise_loss` normalised
+`proposal_logits`, `gold_mask` and `valid_mask` through `_to_query_candidate` but NOT
+`typed_margin_mask`. The shared-pool branch calls that loss with
+`(query_axis, candidate_axis) = (2, 1)`, so a `[B, Q, C]` mask would have been applied against
+a `[B, C, Q]` tensor -- a raise when Q != C, and a silent mis-margin when they happen to
+match. It could never have fired before, because the mask was always None.
 
 ## Scale is a familiarity signal, not a nuisance
 

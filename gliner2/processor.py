@@ -417,7 +417,10 @@ class SchemaTransformer:
         """
         self.is_training = True
         result = self._collate_batch(batch, max_len=max_len, error_policy=error_policy)
-        return self._add_boundary_metadata(
+        # `_add_boundary_metadata` is a staticmethod, so the typed-span join -- which needs
+        # this instance's tokenizer -- is attached here instead. Training only: the typed
+        # margin is a loss-time intervention and inference never reads it.
+        out = self._add_boundary_metadata(
             result, architecture, is_training=True,
             max_gold_per_query=max_gold_per_query,
             on_capacity_exceeded=on_capacity_exceeded,
@@ -430,6 +433,9 @@ class SchemaTransformer:
                 else "raise"
             ),
         )
+        if architecture == "boundary" and len(out):
+            out.typed_spans = self._typed_spans(out)
+        return out
 
     def collate_fn_inference(
             self,
@@ -1477,6 +1483,40 @@ class SchemaTransformer:
                 })
 
         return results
+
+    def _typed_spans(self, batch) -> tuple:
+        """Word spans that carry a gold entity TYPE, one dict per batch item.
+
+        ``{(start, end): (type, ...)}``, half-open to match ``BoundaryProposals.indices``.
+        Feeds the typed-margin mask, which needs a candidate span's entity type to decide
+        whether the role-type map allows it.
+
+        THIS MUST LIVE ON THE PROCESSOR, because aligning a surface to word positions needs
+        the SAME tokenizer the text went through -- ``_tokenize_text`` plus ``_find_sublist``,
+        exactly what the gold mention path uses. Measured on 40 documents each: casie 99.6%
+        of surfaces align, cmnee 99.8% (char splitter), duee 100%. A hand-rolled
+        reconstruction that did not reuse the tokenizer managed 1.5%.
+
+        ``entity_types`` is written INSIDE the schema by tools/data/merge_entity_types.py and
+        is a TYPING SIGNAL, never supervision -- the purchased gold is not exhaustive, so an
+        absent surface means unknown, not "not an entity".
+        """
+        out = []
+        for i, schema in enumerate(batch.original_schemas):
+            spans = {}
+            types_map = schema.get("entity_types") if isinstance(schema, dict) else None
+            if types_map:
+                words = batch.text_tokens[i]
+                for surface, types in types_map.items():
+                    if not types:
+                        continue
+                    for start, end_inclusive in self._find_sublist(
+                        self._tokenize_text(surface), words
+                    ):
+                        if start >= 0:
+                            spans[(start, end_inclusive + 1)] = tuple(types)
+            out.append(spans)
+        return tuple(out)
 
     def _find_sublist(
             self, 

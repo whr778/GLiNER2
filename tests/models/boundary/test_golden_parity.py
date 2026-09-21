@@ -30,10 +30,17 @@ def _forward(batch):
         {
             f"losses.{name}": value.detach().contiguous()
             for name, value in output.losses.items()
+            # Keys this branch ADDED to output.losses, excluded so the upstream golden
+            # stays the contract for the tensors it actually covers. The last three are
+            # GATE COUNTERS rather than losses -- they count firings, vary with
+            # configuration by design, and have their own gates; a numeric parity contract
+            # is the wrong instrument for them.
             if name not in {
                 "soft_iou_loss",
                 "rerank_listwise_loss",
                 "count_loss",
+                "absent_negatives_used",
+                "typed_margin_used",
             }
         }
     )

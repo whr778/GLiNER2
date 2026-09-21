@@ -616,6 +616,14 @@ def proposal_listwise_loss(
     )
     gold_mask = _to_query_candidate(gold_mask, query_axis, candidate_axis)
     valid_mask = _to_query_candidate(valid_mask, query_axis, candidate_axis)
+    # THE MASK MUST BE TRANSPOSED WITH EVERYTHING ELSE. The shared-pool branch calls this
+    # with (query_axis, candidate_axis) = (2, 1), so a [B, Q, C] mask left untransposed
+    # would align against a [B, C, Q] tensor -- either a shape error or, when Q == C,
+    # a silent mis-margin. Every other mask here is normalised; this one was not.
+    typed_margin_mask = (
+        None if typed_margin_mask is None
+        else _to_query_candidate(typed_margin_mask, query_axis, candidate_axis)
+    )
     floor = MASK_LOGIT
     logits = proposal_logits.masked_fill(~valid_mask, floor)
     logits, typed_used = apply_typed_margin(
