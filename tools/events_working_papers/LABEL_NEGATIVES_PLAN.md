@@ -80,9 +80,26 @@ The feature exists, two A/B arms trained, and the (now confounded) verdict is in
 > so its agreement with this is coincidence. The PHENOMENON survives independent, clean
 > measurement; the earlier numbers still do not.
 >
-> **CAVEATS.** Single seed per arm: -0.0234 and -0.0202 deserve a replicate. And the
-> classification floor is UNVERIFIED -- it came from that same confounded pair -- so
-> -0.1977 cannot be quoted in sigma, only in magnitude.
+> **AGAINST THE MEASURED FLOORS** -- which were NOT taken from the confounded pair. gate3's
+> three seeds (s1/s4/s21, same config, same test set) give per-head sd, and the clean
+> re-baseline's seed42/43 pair corroborates classification:
+>
+> | head | delta | floor sd | sigma |
+> |---|---:|---:|---:|
+> | event_argument | +0.0376 | 0.0009 | **~42** |
+> | classification | -0.1977 | 0.0178 | **~11** |
+> | structure | -0.0159 | 0.0025 | ~6 |
+> | event_type | -0.0686 | 0.0395 | ~1.7 (marginal) |
+> | relation | +0.0070 | 0.0110 | 0.6 (inside) |
+> | entity | -0.0119 | 0.0139 | 0.9 (inside) |
+>
+> **CAVEAT ON TRANSFER, not on trust:** those sds come from the gate3 warm-cell config on an
+> 18,786-record test set, while this ran a different config on 20,602 records. They are the
+> programme's standing floors and the earlier verdict used them the same way, but a seed
+> replicate OF THIS PAIR would make the sigmas exact rather than transferred.
+>
+> Single seed per arm, so `event_trigger` -0.0234 (no published sd for that head) is the one
+> row genuinely wanting a replicate.
 >
 > **NOT SHIPPABLE AS-IS, and the question is now sharp:** can the argument gain be kept
 > without the classification collapse? Candidates: exclude classification-bearing corpora

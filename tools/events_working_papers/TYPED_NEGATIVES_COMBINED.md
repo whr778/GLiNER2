@@ -89,10 +89,13 @@ where A/Bs go wrong:
 matching -- `compare_runs.py` REFUSES across differing points now, which is how the roles2
 test-set defect surfaced.
 
-**Floors:** `event_argument` seed sd **0.0009-0.0020**, entity **0.0139**. **The
-classification floor is NOT trusted** -- it came from a pair the wiring bug made nominal
-duplicates -- so a classification delta is reported as a magnitude, never as a sigma, until a
-seed replicate exists.
+**Floors, all from SEED REPLICATES and none from the confounded pair:** gate3's three seeds
+(s1/s4/s21, same config and test set) give `event_argument` **0.0009**, `structure` 0.0025,
+`relation` 0.0110, `classification` **0.0178**, `event_type` 0.0395; the clean re-baseline's
+seed42/43 pair corroborates classification at 0.0013. Against these, absneg2's
+`event_argument` +0.0376 is **~42 sigma** and its `classification` -0.1977 is **~11 sigma**.
+They are transferred from a different config and an 18,786-record test set, so a replicate of
+the absneg pair would make them exact -- but the floors themselves are measured, not assumed.
 
 **Predictions, recorded so they can fail:**
 1. Typed-ON raises `event_argument` **precision** more than recall, at both negative levels.
@@ -111,8 +114,12 @@ seed replicate exists.
 matching. The 2x2 costs half what it looks like because two cells exist.
 
 **Do not run it if:** the classification collapse turns out to be unfixable and
-disqualifying, in which case the negatives axis is dead and only the typed axis is worth
-one arm; or if a seed replicate of `absneg2` shows `event_argument +0.0376` was noise, which
-would remove the reason to build on it at all. **A seed replicate of the existing pair
-(~$50) is arguably the better next purchase than this 2x2** -- it is the single measurement
-everything here is built on, and it currently rests on one seed.
+disqualifying, in which case the negatives axis is dead and only the typed axis is worth one
+arm.
+
+**A SEED REPLICATE IS NOT A PREREQUISITE.** It was proposed as one on the mistaken belief
+that the classification floor was unverified. It is not: three seeds measured it. At ~42
+sigma for `event_argument` and ~11 for `classification`, absneg2's two headline rows are not
+plausibly noise, and the 2x2 can proceed. A replicate of this exact pair remains worth having
+LATER -- it would turn transferred sigmas into exact ones, and give `event_trigger` a floor
+it currently lacks -- but it is a refinement, not a gate.
