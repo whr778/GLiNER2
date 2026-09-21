@@ -70,6 +70,31 @@ where A/Bs go wrong:
    and verified with a check that can fail. A first attempt at exactly this check passed
    because both halves errored to empty output.
 
+## 3b. THE PROGRAMME HAS RUN A TREATMENT FACTORIAL BEFORE, AND THE COMBINATION LOST
+
+Checked 2026-09-21 rather than assumed. Two earlier things are called "2x2" in these papers
+and only one is a treatment factorial:
+
+| prior | what it was | outcome |
+|---|---|---|
+| **real vs synthetic 2x2**, 2026-08-23, $7.47 | a genuine treatment factorial on the DATA axis | **the MIX preserved WORST, -38.6%, worse than either arm alone** |
+| JOINT_IE_SCALING's "2x2" | 2 checkpoints x 2 TEST SETS, a cross-scoring matrix | read down the columns, never across the rows |
+
+**No negatives x typed-roles factorial has been run.** This one is new.
+
+**But the precedent matters and argues against optimism.** The one time this programme
+combined two interventions factorially, the combination was WORSE than either alone. So
+prediction 2 above -- "the combination beats either alone, sub-additively" -- is the
+optimistic branch, and the measured precedent points the other way. If the combination
+UNDERPERFORMS both single arms, that is not an anomaly to explain away; it is this
+programme's second observation of the same shape, and the 2x2 is precisely the design that
+can tell the difference.
+
+A related caution already recorded in PROJECT_HISTORY: **a genuine 2x2 needs a second
+FACTOR, not a second dose.** Absent negatives and typed negatives are two different signals
+entering one denominator, so they qualify -- but the check is worth making explicitly before
+spending, because "more of the same mechanism" would not.
+
 ## 4. Gates -- each arm must prove its own treatment from inside the run
 
 - `absent_negatives_used` non-zero on negatives-ON arms, **exactly zero** on negatives-OFF.
