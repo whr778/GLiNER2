@@ -16,7 +16,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **keying root cause FIXED at source; both anchors turn out to ALREADY EXIST as `--scope-filter`/`--event-year`; the cached artefact is IRREPRODUCIBLE** | do NOT overwrite the cache; re-score `--scope-filter` on corrected labels |
 | 6 | **`candidate_pool: shared` A/B** | does one shared document pool beat per-query pools? | **NEGATIVE on 2 of 3 arms**: 0 up / 3 down, entity −0.0745. Both gates discriminated (treatment 3.853e+00, control 0.000e+00). `shared-long` (4ep) still running | read shared-long, then close |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
-| 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
+| 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered** | **DONE + PUSHED TO HF 2026-09-21** — this was a BLOCKER, not housekeeping: a fresh box fetches corpora from HF, so the repair would never have reached a GPU run | — |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
 | 10 | **EKF: §10 crux reopened, §14 does not reproduce** | the EKF's claimed edge under unreliability | open | re-derive on real streams |
 | 11 | **EKF: exposure counts are not casualties** | 12 of Helene's 106 `dead` are audited non-casualty; schema has nowhere to put them | open | extend the schema |
@@ -409,6 +409,50 @@ produced 106 observations is identified.
 - **Regional disaster profiles as a plausibility prior** — an operator observation, recorded
   as an idea. The flag-not-veto mechanism it needs already exists twice and is switchable.
 - **Do NOT buy scope labels under the current scheme** — settled by a $2.25 dual-label probe.
+
+## 6b. Closed 2026-09-21 by a cheap local check
+
+- **`biored`'s 97.4% alignment: DIAGNOSED, and NO ACTION.** 108 of 126 failures are
+  "word-bounded but the tokenizer splits it differently" -- biomedical hyphenation, where the
+  gold marks a SUB-TOKEN of a compound: `'mannose'` inside `'mannose-binding'`,
+  `'Catecholamine'` inside `'Catecholamine-induced'`, `'-31T/C'` inside `'IL1B-31T/C'`. This is
+  NOT the Turkish case and must not be repaired the same way -- extending `'mannose'` to
+  `'mannose-binding'` changes a chemical into a binding property, exactly like the derivational
+  repairs that were refused. Splitting on hyphens would change tokenisation globally. At 126 of
+  4,927 mentions on a corpus that is 0.7% of the base, leave it.
+
+- **Chunking units: the claim is CORRECT and the configs are now right.**
+  `gliner2/training/chunking.py` line 26 states "Window / stride are measured in **subword
+  tokens**", and the function is `chunk_text_by_subwords`. The "word window" comments the
+  entry complained about have since been fixed -- every current config says subword.
+
+- **Classification inheritance is REAL but INERT at the current window, so it does NOT explain
+  the docee collapse.** `chunking.py:200` copies a document's `classifications` verbatim to
+  every chunk with no check that the fragment supports the label, which is genuine injected
+  label noise. But the +124.5% figure was measured at a 384/256 window on deberta. At eb17's
+  4096-subword window, measured over 1,200 documents each:
+
+  | corpus | median subwords | % chunked |
+  |---|---|---|
+  | **docee** | 646 | **0.2%** |
+  | chfinann | 336 | 0.0% |
+  | docfee | 1,198 | 6.0% |
+  | docee_zh | 620 | 2.2% |
+
+  docee is barely chunked at all, so this mechanism cannot be behind its −0.333. Recorded so
+  nobody chases it. It WOULD matter again at a small window.
+
+- **"Boundary beats span at 10K": the entry MIS-CITES it, and the claim is stronger than the
+  entry suggests.** The live claim (`PROJECT_HISTORY` line 793) compares **0.177 against
+  0.050** -- the span curve's 10K point -- not 0.158. That is +0.127, **6.4x the +/-0.02
+  single-run variance**, and the same passage had already retired every marginal claim on that
+  curve ("no point-to-point difference on it is interpretable"). It appears in PROJECT_HISTORY
+  only, NOT in PAPER_0 or RESEARCH_PROGRAM, so it has not propagated.
+
+  **What remains genuinely unverified is the same-test-set question**: 0.177 and 0.050 come
+  from different experiments, and a support mismatch (3,527 against 20,845) invalidated a row
+  of this very curve once. Re-derive on a shared test set before it goes near Paper 0 -- but
+  it is not the marginal claim the entry described.
 
 ## 7. Research direction
 
