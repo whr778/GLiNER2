@@ -87,7 +87,7 @@ import sys
 import os
 from pathlib import Path
 from pprint import pprint
-from typing import Dict, List
+from typing import Dict, List, Set
 
 import yaml
 
@@ -138,7 +138,8 @@ def _dataset_counts(corpora: List[str], event_files: Dict[str, Dict[str, str]]) 
 ABSENT_SPLIT = object()   # the Hub answered: this corpus has no such split
 
 
-def _split_files(corpora: List[str], suffix: str) -> List[str]:
+def _split_files(corpora: List[str], suffix: str,
+                 train_only: Optional[Set[str]] = None) -> List[str]:
     """Resolve one split for every corpus, dropping the ones that legitimately lack it.
 
     Not every corpus has all three splits: DuEE's HF mirror ships train + validation
@@ -149,9 +150,20 @@ def _split_files(corpora: List[str], suffix: str) -> List[str]:
     A split that is absent is NAMED and dropped, never dropped in silence -- the same
     rule ``_event_split`` already follows, and for the same reason: a blind test that
     quietly scores fewer corpora than it claims is worse than one that fails.
+
+    ``train_only`` names corpora that must contribute to TRAIN and to nothing else. An A/B
+    whose treatment adds a corpus otherwise evaluates the two arms on DIFFERENT test sets:
+    roles2 scored 20,602 records against 23,326 and entity support 79,912 against 96,306,
+    because the added corpus brought its own test split. Comparing F1 across different gold
+    is void, and it went unnoticed through two runs until `eval_provenance` let
+    `compare_runs.py` refuse it.
     """
+    skip = {Path(c).name for c in (train_only or ())}
     paths = []
     for c in corpora:
+        if suffix != "train" and Path(c).name in skip:
+            print(f"[data] {c} is train_only; it contributes nothing to {suffix}.")
+            continue
         p = f"{c}.{suffix}.jsonl"
         if _fetch_if_missing(p) is ABSENT_SPLIT:
             print(f"[data] {c} has no {suffix} split; it contributes nothing to it.")
@@ -1420,9 +1432,18 @@ def main(config_path: str) -> None:
     data = cfg.get("data") or {}
     corpora = data.get("corpora") or []
     event_files = data.get("event_files") or {}
-    train_data = _split_files(corpora, "train") + _event_split(event_files, "train")
-    eval_data = _split_files(corpora, "val") + _event_split(event_files, "val")
-    test_data = _split_files(corpora, "test") + _event_split(event_files, "test")
+    train_only = set((cfg.get("data") or {}).get("train_only") or ())
+    if train_only:
+        unknown = sorted(train_only - {Path(c).name for c in corpora})
+        if unknown:
+            raise SystemExit(
+                f"[data] train_only names corpora this config does not train on: {unknown}. "
+                f"A typo here would silently protect nothing."
+            )
+        print(f"[data] train_only (excluded from val and test): {sorted(train_only)}")
+    train_data = _split_files(corpora, "train", train_only) + _event_split(event_files, "train")
+    eval_data = _split_files(corpora, "val", train_only) + _event_split(event_files, "val")
+    test_data = _split_files(corpora, "test", train_only) + _event_split(event_files, "test")
 
     # Optional per-category label transforms, applied identically to train/val/test.
     fns = _category_fns(load_labels_cfg(cfg, config_path))
