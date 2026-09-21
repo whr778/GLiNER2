@@ -13,7 +13,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
-| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **NOT BLOCKED and the readout is already FIXED** (scorer 2026-08-17, labels 2026-08-20) | re-run the 3 signals against the CORRECTED labels; try spatial+temporal |
+| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **SIGNALS RE-RUN 2026-09-21: C is DEAD (0/6); A/B are 3/6 at 19-23% FP and are DOMINATED by spatial** | build the spatial+temporal anchor and score its FP |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
@@ -116,9 +116,40 @@ EXTRACT place and date per observation, and that extraction can fail. **The fals
 against the 64 genuine observations is unmeasured, and FP is precisely where all three prior
 signals died** (3/11 recall at 26-32% FP). Recall on six cases proves nothing on its own.
 
-**NEXT, in order:** (1) re-run the three signals against the corrected labels, since their
-published numbers are uninterpretable and the instrument is already fixed; (2) only then build
-the spatial anchor, and score it on FP against the 64 as well as recall on the 6.
+### RE-RUN 2026-09-21, against the corrected labels -- the text signals are dominated
+
+`whr778/gliner2-base-v1-casualty-docee`, 104 observations, audit classes
+{cross-event 6, helene 82, non-casualty 12, unclear 4}:
+
+| signal | catches cross-event | FP on genuine Helene |
+|---|---|---|
+| A nearest is a competitor | 3/6 | 19/82 = **23.2%** |
+| B only a competitor named | 3/6 | 16/82 = **19.5%** |
+| **C bound event is a competitor** | **0/6** | 1/82 = 1.2% |
+| C-raw (unsound, diagnostic) | 3/6 | 32/82 = 39.0% |
+
+**C IS DEAD.** Honestly scored it catches NOTHING -- for all six cross-event cases it either
+bound nothing (3) or named something the schema never found (3). Its old 9/11 was pure
+artifact, and the fix is confirmed working by the fact that C-raw still reads 3/6 at 39% FP
+beside it.
+
+**A AND B CAP AT 3/6, and the per-case detail says why:**
+
+    '1,400'        nearest='Hurricane Katrina'    caught
+    '3,000'        nearest='Hurricane Maria'      caught
+    'at least two' nearest='John'                 caught
+    'at least 16'  nearest='Hurricane Helene'     Bosnia is a PLACE, not a storm
+    'dozens'       nearest='Hurricane Helene'     Taiwan typhoon, not named nearby
+    '80'           nearest='None'  events=[]      1916 -- names no event at all
+
+**THE DECIDING RESULT: A/B's three catches are a STRICT SUBSET of spatial's five.**
+Katrina -> Louisiana, Maria -> Puerto Rico, John -> Mexico are all outside the six-state
+footprint, so spatial gets those three PLUS Bosnia and Taiwan, and temporal gets the 1916
+case. The text signals find less, at 19.5-23.2% false positives -- roughly one genuine
+observation in five discarded. **They are dominated and should not be shipped.**
+
+**NEXT:** build the spatial + temporal external anchor and score it on FP against the 82
+genuine observations, not only on recall over the 6. Recall was never the hard part.
 
 ## 4. Open experiments, cheap
 
