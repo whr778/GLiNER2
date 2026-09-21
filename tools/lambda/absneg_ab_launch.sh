@@ -24,7 +24,10 @@
 # terminate on the normal path.
 set -uo pipefail
 ARM=${ARM:?ARM=control or ARM=treatment}
-case "$ARM" in control|treatment) ;; *) echo "ARM must be control or treatment"; exit 2;; esac
+# `roles` is absneg4's single arm: absent pooling scoped to event ROLES, compared against
+# BOTH absneg2 arms, which are reusable because the operating point and test set match.
+case "$ARM" in control|treatment|roles) ;;
+  *) echo "ARM must be control, treatment or roles"; exit 2;; esac
 # EXP selects the config family: `absneg` is the first pair (confounded by checkpoint
 # selection), `absneg2` the re-run that selects on a task metric. Parameterised rather than
 # copied -- three bugs in one day came from a second copy drifting from the first.
