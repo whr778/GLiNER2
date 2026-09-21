@@ -379,6 +379,20 @@ corpora one at a time is not sufficient: a training mix pools many corpora, and 
 train can hold a document sitting in corpus B's test — neither file overlaps itself, yet the
 blind test is contaminated. The report attributes every overlap to the file pair responsible.
 
+### 3c-2. `train_only`: a treatment corpus must not move the test set
+
+An A/B arm that adds a corpus adds that corpus's TEST split too, and then the two arms are
+scored on different denominators. That is not a comparison, and `compare_runs.py` refuses it.
+
+```yaml
+data:
+  train_only: [cmnee_roles_ner]   # contributes to TRAIN and to nothing else
+```
+
+The log says so per corpus: `[data] cmnee_roles_ner is train_only; it contributes nothing to
+test.` This went unnoticed through two runs -- supports of 79,912 against 96,306 -- and the
+entity row of that comparison was void.
+
 ### 3d. The trainer gates it anyway
 
 `tools/train/train.py` runs the same check before a single step and repairs it:
@@ -672,6 +686,93 @@ plumbing.
 
 ---
 
+## 5c. Ranking-loss levers: label negatives and the typed margin (2026-09)
+
+Three switches reach the LISTWISE losses. All default off. None of them were documented here
+before, and the first one cost a 16-hour A/B by being silently inert.
+
+### The switches
+
+```yaml
+data:
+  negative_pools: labels/negative_pools.json   # built by tools/data/build_negative_pools.py
+  negative_labels_per_dim: {entities: 1, events: 1}
+  negative_label_seed: 42
+
+model:
+  absent_negatives_in_denominator: true   # pool absent-label queries into the listwise denominator
+  role_type_map: labels/role_types.yaml   # built by tools/data/build_role_type_map.py
+  typed_margin_proposal_k: 0.0            # +k*sd on type-incompatible candidates, proposal path
+  typed_margin_rerank_k: 0.0              # same, rerank path
+```
+
+`negative_*` INJECTS labels the document does not have, so the model learns to decline. It is
+a PRECISION intervention, which is why it is structurally invisible under a gold menu -- score
+it with `--full-menu` or do not score it (see METRICS.md).
+
+`absent_negatives_in_denominator` is a different mechanism with a similar name: it pools those
+absent-label queries into the listwise denominator, per task, so they compete for rank rather
+than only for presence.
+
+`typed_margin_*` adds `k * sd` to candidates whose entity type the role-type map disallows,
+making the gold filler out-score them by that much more. **Gold is never penalised** -- 4.0% of
+gold arguments carry a type the map disallows.
+
+### THE GATE: a configured injector that never arrives now stops the run
+
+`negatives=` was passed at exactly ONE of the two dataset branches in `_prepare_data` from
+`f89ebfd` (2026-09-16) to `78dd190` (2026-09-19). Every config with `sliding_window: true` --
+which is most of them -- declared negatives and trained without them. It cost a 16-hour A/B
+and put an inert treatment arm into a published verdict.
+
+Why it hid: `label negatives ON: {...}` is logged by the LOADER when the pools file is read,
+and is true whether or not the dataset ever receives the injector. That was the line everyone
+checked. `ExtractorTrainer._wired` now refuses to start:
+
+```
+[negatives] configured (negative_pools + negative_labels_per_dim) but the training dataset
+carries NO injector -- the run would train without them. Refusing to start.
+```
+
+**The lesson generalises past negatives:** three features in this programme were added to one
+call site of two. Grep for the second branch before believing a feature is wired.
+
+### Calibrating `k`, and checking whether it can do anything at all
+
+The margin's effect on the loss has a closed form:
+
+```
+p_gold' / p_gold  =  1 / (1 + (e^d - 1) * w_S)      w_S = probability mass on disallowed candidates
+```
+
+**The logit sd does not appear.** `k * sd` sets the UNITS of `k`; what decides whether the
+margin does anything is `w_S`, and `w_S` depends on where disallowed candidates sit in the
+score order. Measure both before spending:
+
+```bash
+# per-corpus logit scale, EMA-stabilised CV, implied k, mixed-stream dose, clamp sweep
+PYTHONHASHSEED=0 uv run python tools/train/measure_logit_scale.py     --checkpoint <ckpt> --corpora data/cmnee_typed data/scierc --batches 8
+
+# the ceiling: how much mass the margin could move at all
+PYTHONHASHSEED=0 uv run python tools/train/measure_margin_ceiling.py     --checkpoint <ckpt> --corpora data/cmnee_typed data/scierc --split val
+```
+
+Measured on the eb16 event base, held-out val, 3 seeds: if disallowed fillers are TOP
+competitors the margin moves gold 18.1-19.5% on cmnee but **0.0% on casie in every seed**; if
+they are randomly placed it never exceeds 1.1% anywhere. So the intervention is conditional,
+and the condition is not yet measurable -- `typed_margin_mask` is still a placeholder.
+
+**Reproducibility is not free here.** Seed torch, Python's `random` (the processor uses it) AND
+`PYTHONHASHSEED` (label order derives from sets, so the query COUNT moves without it). Dropout
+must stay ON: in eval mode the proposal loss is never called at all.
+
+### Scale is a familiarity signal
+
+Base-encoder masked pseudo-perplexity rank-predicts the rerank logit sd perfectly across four
+cells (Spearman rho = -1.000, n=4). Language alone predicts nothing -- Chinese finance is the
+most familiar cell measured and English biomedical the least. `tools/train/measure_corpus_familiarity.py`
+produces the (language, domain) table; the values are in `tools/data/TRAINING_DATA.md`.
+
 ## 6. EKF/MHT disaster tracking
 
 **The EKF has no learned parameters.** `est_ekf` is a censoring-aware random-walk smoother
@@ -827,6 +928,25 @@ Structures are **not scored by the blind test**: `_schema_from_gold` builds no s
 `tools/train/probe_records.py` for structure quality.
 
 ---
+
+### 7c. Two confounds that have each voided a verdict here
+
+**`metric_for_best: eval_loss` selects arms on an objective they do not share.** If the
+treatment adds a loss term, the two arms are not comparable on loss, and they ship DIFFERENT
+EPOCHS -- epoch 2 against epoch 4/5 in the absneg and roles2 pairs. Select on the task metric
+the experiment is about (`eval_event_argument_strict_micro_f1`, `eval_entity_strict_micro_f1`),
+never on loss, whenever the arms' objectives differ.
+
+**A changed test set voids the delta entirely.** Comparing the incumbent against ITSELF across
+two splits reported relation +0.0517 "UP", every point of it from support falling 9,428 to
+5,258. `<split>_metrics.json` now carries `eval_provenance` (threshold, full_menu,
+menu_negatives, split, record count, checkpoint, config path), written by
+`tools/train/train.py`. ONE helper serves BOTH writers deliberately: when this was first
+fixed only the `eval` subcommand got it, so every file the TRAINING path produced -- which is
+what the Lambda runners publish -- still carried bare numbers.
+`compare_runs.py` REFUSES across differing operating points and warns when provenance is
+absent. Files written before 2026-09-18 have none -- for those, grep the runner that produced
+them.
 
 ## 8. Push to the Hub
 
