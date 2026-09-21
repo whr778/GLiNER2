@@ -14,7 +14,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | on `137k-clean` the sweep is decisive: 1/40 windows at 0.5 against **37/40 at 0.10** | **NO BOX NEEDED — the sweep already exists and was run.** On `eb16-eventrecords-tr` it is FLAT (1 record at every threshold), so the probe does not engage that checkpoint's record head | sweep on eb17-best after it trains, or build a probe that engages an event-records head |
 | 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **keying root cause FIXED at source; both anchors turn out to ALREADY EXIST as `--scope-filter`/`--event-year`; the cached artefact is IRREPRODUCIBLE** | do NOT overwrite the cache; re-score `--scope-filter` on corrected labels |
-| 6 | **`candidate_pool: shared` A/B** | does one shared document pool beat per-query pools? | **NEGATIVE on 2 of 3 arms**: 0 up / 3 down, entity −0.0745. Both gates discriminated (treatment 3.853e+00, control 0.000e+00). `shared-long` (4ep) still running | read shared-long, then close |
+| 6 | ~~`candidate_pool: shared` A/B~~ **CLOSED — REFUTED** | at 2 epochs entity −0.0745; at **4 epochs still −0.0435 against a 2-epoch control**. Needs 2x the compute and still loses the biggest head | **DONE 2026-09-21**, ~$6, all 3 arms, gates discriminated | — |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered** | **DONE + PUSHED TO HF 2026-09-21** — this was a BLOCKER, not housekeeping: a fresh box fetches corpora from HF, so the repair would never have reached a GPU run | — |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
@@ -325,7 +325,7 @@ produced 106 observations is identified.
 
 ## 4. Open experiments, cheap
 
-- **`candidate_pool: shared` — NEGATIVE so far (2 of 3 arms in), 2026-09-21.**
+- **`candidate_pool: shared` — CLOSED, REFUTED, 2026-09-21 (all 3 arms).**
   Operating point verified identical (threshold 0.3, test, 2,831 records, same box):
 
   | head | per_query | shared | delta |
@@ -348,8 +348,26 @@ produced 106 observations is identified.
   3.853e+00, control exactly 0.000e+00 ("control confirmed inert on the shared pool, as
   designed"). So this is a real reading of a live treatment, not an arm that failed to switch.
 
-  `shared-long` (4 epochs) is still running and asks whether `shared` merely needs more
-  training. RUNNING since 2026-09-21 17:55 UTC on one A100.
+  **`shared-long` (4 epochs) answered the last question: more training does not rescue it.**
+
+  | head | per_query (2ep) | shared (2ep) | shared-long (4ep) | 4ep vs 2ep control |
+  |---|---|---|---|---|
+  | entity | 0.1788 | 0.1043 | 0.1353 | **−0.0435** |
+  | event_trigger | 0.7064 | 0.6769 | 0.6882 | −0.0182 |
+  | event_argument | 0.3537 | 0.3446 | 0.3625 | +0.0087 |
+  | event_type | 0.9748 | 0.9693 | 0.9765 | +0.0017 |
+
+  Doubling the epochs recovers only part of the entity loss and **still trails a control with
+  HALF the training** by −0.0435. The nominal gains on argument and type sit inside the floor
+  once rescaled for a 2,831-record test set. Operating point verified identical on all three
+  (threshold 0.3, test, 2,831 records, one box).
+
+  **VERDICT: do not ship `shared`.** The hypothesis -- that `per_query` makes entity and event
+  queries compete for candidate budget, so one document pool would recover the 30-35% of
+  argument recall an entity menu costs -- is refuted. `per_query` stays the default, and the
+  `shared_pool_builder` tensors that sit untrained in every checkpoint are confirmed to cost
+  nothing worth recovering. **~$6 for a question open since a guard wrongly called
+  `candidate_pool` structural.**
   **The gate has PASSED on arm 1: `shared-pool grad norm 3.853e+00`.** That matters more than
   it looks: `shared_pool_builder` exists in every checkpoint and receives NO gradient under
   `per_query`, so an arm that failed to switch is indistinguishable from one that switched and
