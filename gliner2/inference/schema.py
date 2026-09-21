@@ -28,6 +28,17 @@ from gliner2.inference.schema_model import SchemaInput
 _OPEN_VOCAB_LIMIT = 1000
 
 
+# Extraction output is a FLAT namespace: these three are fixed container keys, while
+# classification TASK names and structure NAMES are hoisted to the top level beside them.
+# So user-chosen names compete with these and with each other, and every collision used to
+# resolve by SILENT LOSS -- measured on a real model: a classification task named
+# ``entities`` replaced the whole entity block with a label string; a structure sharing a
+# name with a task was dropped entirely. Nothing raised, at build time or at extraction, and
+# eval then mis-scored both heads because it reads a classification from ``pred[task]``.
+# Scanned across 130 corpora before adding this: nothing in the repository collides.
+_RESERVED_OUTPUT_KEYS = ("entities", "relation_extraction", "event_extraction")
+
+
 def derive_schema(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     """Union a multi-task extraction schema from the gold ``output`` of records.
 
@@ -285,6 +296,29 @@ class Schema:
         self._entity_attribute_labels = set()
         self._active_builder = None
 
+    def _claim_output_name(self, name: str, kind: str) -> None:
+        """Refuse a name that would silently overwrite something in the output namespace.
+
+        ``kind`` is "classification task" or "structure", used only in the message.
+        """
+        if name in _RESERVED_OUTPUT_KEYS:
+            raise ValueError(
+                f"{kind} name {name!r} collides with a reserved extraction output key "
+                f"({', '.join(_RESERVED_OUTPUT_KEYS)}). Extraction output is a flat dict, so "
+                f"this would silently replace that block. Rename it."
+            )
+        tasks = {c.get("task") for c in self.schema["classifications"] if isinstance(c, dict)}
+        structures = set(self._record_metadata) | {
+            k for item in self.schema["json_structures"] if isinstance(item, dict) for k in item
+        }
+        clash = ("structure" if name in structures else
+                 "classification task" if name in tasks else None)
+        if clash and clash != kind:
+            raise ValueError(
+                f"{kind} name {name!r} is already used by a {clash}. Extraction output is a "
+                f"flat dict keyed by these names, so one would silently drop the other."
+            )
+
     def _store_field_metadata(self, parent, field, dtype, threshold, choices, validators=None):
         if threshold is not None and not 0 <= threshold <= 1:
             raise ValueError(f"Threshold must be 0-1, got {threshold}")
@@ -357,6 +391,7 @@ class Schema:
         """
         if self._active_builder:
             self._active_builder._auto_finish()
+        self._claim_output_name(name, "structure")
         self._active_builder = StructureBuilder(
             self, name, mode=mode, anchor=anchor, occurrence_policy=occurrence_policy
         )
@@ -374,6 +409,8 @@ class Schema:
         if self._active_builder:
             self._active_builder._auto_finish()
             self._active_builder = None
+
+        self._claim_output_name(task, "classification task")
 
         label_names = list(labels.keys()) if isinstance(labels, dict) else labels
         label_descs = labels if isinstance(labels, dict) else None
