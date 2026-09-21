@@ -16,7 +16,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 5 | **Cross-event contamination** | the top real decode defect on multi-event documents | probe gated behind item 4 | build the probe |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING** 17:55 UTC, A100 `81ba971849a6…`, 3 arms ~$4 | read the gate, then the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
-| 8 | **`turkish_event` gold-surface failures** | costs real supervision and aborts tolerant runs | known; `on_missing_surface=skip` masks it | fix `max_len`/windowing properly |
+| 8 | **`turkish_event` gold is LEMMATISED, not truncated** | ~10,600 mentions (7.5%) are unlearnable AND unscorable | **CAUSE CORRECTED 2026-09-21** — Turkish agglutination, not `max_len` | decide between repair / prefix-match / re-annotate |
 | 9 | **Relation warm-start regression (−0.037, −22%)** | `task_lr: 5.0e-4` was tuned for COLD heads | hypothesis unverified | try a lower task_lr on the warm stage |
 | 10 | **EKF: §10 crux reopened, §14 does not reproduce** | the EKF's claimed edge under unreliability | open | re-derive on real streams |
 | 11 | **EKF: exposure counts are not casualties** | 12 of Helene's 106 `dead` are audited non-casualty; schema has nowhere to put them | open | extend the schema |
@@ -114,8 +114,37 @@ considered and the data-side remedy (negative documents) is the proposed route.
   writes a typing SIGNAL rather than an `entities` block because it attaches types to
   argument spans for the typed margin; that is not the same as using a corpus's own entity
   gold as supervision.
-- **`turkish_event` surfaces fail to align.** Currently masked by `on_missing_surface=skip`,
-  which silently drops supervision. Needs the `max_len`/windowing fix, not a tolerance flag.
+- **`turkish_event` gold surfaces are LEMMATISED. The `max_len` diagnosis was wrong**
+  (measured 2026-09-21). 7.5% of its surfaces fail to align, and **234 of 235 failures are the
+  gold surface being a PREFIX of a longer word in the text** -- `'mesafe'` where the text says
+  `'mesafenin'`, `'futbol'` where it says `'futbolcunun'`. Every failing position sits well
+  inside the window, 0 are case-only, and 0 are genuinely absent. This is Turkish
+  agglutination: the annotator gave the dictionary form, the text carries the inflected one.
+
+  **It is worse than lost supervision.** The model predicts spans over the text's OWN words,
+  so it can never emit `mesafe` when the text reads `mesafenin` -- the gold is unlearnable and
+  unscorable. And `on_missing_surface=skip` drops the mention while its LABEL may survive on
+  other surfaces, turning the dropped span into a false negative.
+
+  **Turkish-specific**, measured across nine corpora: turkish_event 92.5% aligned against
+  99.1-100% everywhere else (scierc and cmnee_ner are exactly 100%). ~10,600 of its 141,576
+  mentions, which is 1.2% of the base's entity supervision but 7.5% of the only Turkish data
+  we have.
+
+  **Four options, and the choice is a data-semantics judgement, not a bug fix:**
+  1. leave it -- costs 7.5% of Turkish supervision and creates false negatives;
+  2. repair to the word boundary -- free and deterministic, but NOT semantically neutral
+     (`futbol` "football" -> `futbolcunun` "of the footballer" changes the head noun, while
+     `mesafe` -> `mesafenin` only adds a case affix). Measure how many repairs change the head
+     noun before shipping this;
+  3. prefix-tolerant matching for agglutinative languages -- but it makes `futbol` match
+     `futbolcu` globally. Precedent: the RAMS base-word run measured lemma beating its
+     dup-control by +0.0119 strict argument, though in English, where affixation is far lighter;
+  4. re-annotate with surface-exact spans -- correct, costs money, and the annotator may
+     lemmatise again.
+
+- **`biored` aligns at 97.4%** and only 8 of its 126 failures are the prefix pattern, so it has
+  a DIFFERENT cause. Not yet diagnosed.
 
 ## 6. EKF / casualty line
 
