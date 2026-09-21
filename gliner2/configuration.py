@@ -109,6 +109,13 @@ class BoundaryHeadSettings:
     # and until 2026-09-19 it contributed EXACTLY ZERO to either listwise loss. OFF by default
     # because it changes a trained objective: opt in per config so it can be A/B'd.
     absent_negatives_in_denominator: bool = False
+    # WHICH event queries the absent pool applies to. "all" is the measured behaviour and the
+    # default. "roles" excludes the event ANCHOR (trigger) query, because absneg2 showed the
+    # two halves of the `events` bucket move in OPPOSITE directions: argument recall +0.0329
+    # (754 gold arguments left "never found") while event_type recall fell -0.0818 and
+    # trigger recall -0.0468. Pooling absent anchors teaches the model not to propose event
+    # instances; pooling absent roles teaches it to rank fillers. Only the second is wanted.
+    absent_negatives_scope: str = "all"
     # OPTION 2: path to a `(event_type, role) -> allowed entity types` map, as emitted by
     # tools/data/build_role_type_map.py. When set, `_decode_joint` emits a TypedRole
     # constraint per entry, so a role edge may only land on a compatibly typed span. None
@@ -243,6 +250,14 @@ def validate_span_head(values: Mapping[str, Any]) -> dict:
     if not 0.0 <= result["dropout"] < 1.0:
         raise ValueError(f"span_head.dropout must be in [0, 1), got {result['dropout']}")
     return result
+
+
+def _one_of(value, allowed, name):
+    """Reject an unknown enum at config time rather than silently taking a default."""
+    v = str(value)
+    if v not in allowed:
+        raise ValueError(f"{name} must be one of {allowed}, got {value!r}")
+    return v
 
 
 def validate_boundary_head(values: Mapping[str, Any]) -> dict:
@@ -391,6 +406,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             values.get("absent_negatives_in_denominator",
                        d.absent_negatives_in_denominator)
         ),
+        "absent_negatives_scope": _one_of(
+            values.get("absent_negatives_scope", d.absent_negatives_scope),
+            ("all", "roles"), "absent_negatives_scope"),
         "role_type_map": (values.get("role_type_map", d.role_type_map) or None),
         "typed_margin_proposal_k": float(
             values.get("typed_margin_proposal_k", d.typed_margin_proposal_k)

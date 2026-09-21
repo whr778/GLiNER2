@@ -413,6 +413,7 @@ class BoundaryHead(nn.Module):
         query_task_ids: Optional[torch.Tensor] = None,
         typed_allowed_bits: Optional[torch.Tensor] = None,
         typed_span_table: Optional[torch.Tensor] = None,
+        absent_task_ids: Optional[torch.Tensor] = None,
     ) -> ExtractorOutput:
         b, l, _ = token_states.shape
         text_lengths = text_mask.sum(dim=1).long()
@@ -617,6 +618,7 @@ class BoundaryHead(nn.Module):
                 query_weights=query_weights,
                 query_pos_weights=query_pos_weights,
                 query_task_ids=query_task_ids,
+                absent_task_ids=absent_task_ids,
                 typed_margin_mask=_typed_margin_mask(
                     proposals.indices, typed_allowed_bits, typed_span_table
                 ),
@@ -745,8 +747,12 @@ class BoundaryHead(nn.Module):
         query_weights: Optional[torch.Tensor] = None,
         query_pos_weights: Optional[torch.Tensor] = None,
         query_task_ids: Optional[torch.Tensor] = None,
+        absent_task_ids: Optional[torch.Tensor] = None,
         typed_margin_mask: Optional[torch.BoolTensor] = None,
     ) -> Dict[str, torch.Tensor]:
+        # Ids for the ABSENT POOL only. `query_task_ids` continues to drive per-task loss
+        # reporting; see `_absent_pool_task_ids` for why they must not be the same tensor.
+        pool_task_ids = query_task_ids if absent_task_ids is None else absent_task_ids
         boundary_keep = boundary_mask.unsqueeze(1) & query_mask.unsqueeze(-1)  # [B,Q,L+1]
         n_boundary = marginals.start_logits.shape[2]
         start_targets = targets.start_targets
@@ -957,7 +963,7 @@ class BoundaryHead(nn.Module):
                 candidate_axis=candidate_axis,
                 query_weights=wide_weights,
                 absent_negatives=self.settings.absent_negatives_in_denominator,
-                task_ids=query_task_ids,
+                task_ids=pool_task_ids,
                 num_tasks=len(TASK_TYPES),
                 typed_margin_mask=typed_margin_mask,
                 typed_margin_k=self.settings.typed_margin_rerank_k,
@@ -1008,7 +1014,7 @@ class BoundaryHead(nn.Module):
                 candidate_axis=proposal_candidate_axis,
                 query_weights=wide_weights,
                 absent_negatives=self.settings.absent_negatives_in_denominator,
-                task_ids=query_task_ids,
+                task_ids=pool_task_ids,
                 num_tasks=len(TASK_TYPES),
                 typed_margin_mask=typed_margin_mask,
                 typed_margin_k=self.settings.typed_margin_proposal_k,
@@ -2062,6 +2068,46 @@ class BoundaryExtractorModel(BaseExtractorModel):
     # Forward
     # =========================================================================
 
+    def _absent_pool_task_ids(self, batch, query_mask, task_ids):
+        """Task ids for the ABSENT-NEGATIVE POOL only -- never for per-task reporting.
+
+        `absent_negatives_in_denominator` pools every query with no gold into its task's
+        denominator, and `TASK_TYPES` puts the event ANCHOR (trigger) and the event ROLES in
+        one `events` bucket. absneg2 measured those two halves moving in OPPOSITE directions:
+        argument recall +0.0329 (754 gold arguments left "never found", 598 of them correct)
+        against event_type recall -0.0818 and trigger recall -0.0468. Pooling absent anchors
+        teaches the model not to PROPOSE event instances; pooling absent roles teaches it to
+        RANK fillers.
+
+        With scope "roles" the anchor queries are given -1, which the pooling code already
+        treats as "join no pool and draw no pool" -- so anchors neither contribute absent
+        candidates nor receive them. Returns `task_ids` unchanged under the default scope, so
+        that path stays bit-identical.
+
+        A SEPARATE TENSOR, deliberately: `query_task_ids` is also read by `reduce_by_task`
+        and by the per-task diagnostic, and -1 there would silently drop anchors from the
+        loss report.
+        """
+        if task_ids is None:
+            return None
+        if getattr(self.boundary_settings, "absent_negatives_scope", "all") != "roles":
+            return task_ids
+        specs = getattr(batch, "record_specs", None)
+        if not specs:
+            return task_ids
+        out = task_ids.clone()
+        width = out.shape[1]
+        for b, per_task in enumerate(specs):
+            if b >= out.shape[0] or not isinstance(per_task, dict):
+                continue
+            for spec in per_task.values():
+                if getattr(spec, "task_type", None) != "events":
+                    continue
+                for field in getattr(spec, "fields", ()):
+                    if field.is_anchor and 0 <= field.query_id < width:
+                        out[b, field.query_id] = -1
+        return out
+
     def _typed_margin_tables(self):
         """``(type -> bit, (event_type, role) -> allowed bits)``, built once from the map.
 
@@ -2206,6 +2252,11 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     ("typed_allowed_bits", "typed_span_table"),
                     self._typed_margin_inputs(batch, core["query_mask"]),
                 )),
+                absent_task_ids=self._absent_pool_task_ids(
+                    batch, core["query_mask"],
+                    self._query_task_ids(batch, core["query_mask"])
+                    if self.boundary_settings.absent_negatives_in_denominator else None,
+                ),
             )
             if output.candidates is not None:
                 validate_candidate_indices(
