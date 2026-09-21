@@ -12,7 +12,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 1 | **absneg4: absent pool scoped to event roles** | the only lever that has ever moved `event_argument` outside the floor (+0.0376), minus the collateral | **RUNNING** since 16:38 UTC 2026-09-21, ~19h, A100 `ceeee75126414…` | read it against BOTH absneg2 arms |
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
-| 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; the RECORD threshold swept to **0.1**, so 0.5 is likely far off | **DECIDED 2026-09-21: dedicated ~$2 box once absneg4 frees the queue** | sweep on validation, pick once, score blind once |
+| 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; the RECORD threshold swept to **0.1**, so 0.5 is likely far off | **DECIDED 2026-09-21: dedicated ~$2 box, runnable NOW** — it depends on neither running experiment | sweep on validation, pick once, score blind once |
 | 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **keying root cause FIXED at source; both anchors turn out to ALREADY EXIST as `--scope-filter`/`--event-year`; the cached artefact is IRREPRODUCIBLE** | do NOT overwrite the cache; re-score `--scope-filter` on corrected labels |
 | 6 | **`candidate_pool: shared` A/B** | does one shared document pool beat per-query pools? | **NEGATIVE on 2 of 3 arms**: 0 up / 3 down, entity −0.0745. Both gates discriminated (treatment 3.853e+00, control 0.000e+00). `shared-long` (4ep) still running | read shared-long, then close |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
@@ -61,10 +61,16 @@ Consider it for `metric_for_best` in place of entity F1.
 itself was swept and moved the 137k structure reference to 0.1119 at 0.1; the anchor cutoff
 never got the same treatment, and it gates whether a record FORMS at all.
 
-**DECIDED 2026-09-21: option C -- a dedicated ~$2 box once absneg4 frees the queue.** The
-alternatives were a local CPU sweep on a subset (indicative but not authoritative) and folding
-it into the eb17-best run as a post-training pass (near-free but couples the answer to that
-run's completion). A dedicated box keeps it a clean, separately-reportable measurement.
+**DECIDED 2026-09-21: option C -- a dedicated ~$2 box.** The alternatives were a local CPU
+sweep on a subset (indicative but not authoritative) and folding it into the eb17-best run as
+a post-training pass (near-free but couples the answer to that run's completion). A dedicated
+box keeps it a clean, separately-reportable measurement.
+
+**IT DEPENDS ON NEITHER RUNNING EXPERIMENT and can go at any time.** An earlier draft of this
+entry said "once absneg4 frees the queue" -- that was wrong twice over: Lambda boxes are
+independent and self-terminating, so nothing frees a slot, and the absneg4 dependency belongs
+to eb17-best, not to this. The only real constraint is concurrent spend (three boxes is
+~$6/hr). It needs a checkpoint, not a new one -- `eb16-eventrecords-tr` is on HF.
 PICK ON VALIDATION, SCORE THE BLIND TEST ONCE -- sweeping on test and quoting the best is
 fitting the test set, and a "+0.049 win" on this programme already turned out to be exactly
 that.
