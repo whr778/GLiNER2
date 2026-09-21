@@ -22,12 +22,32 @@ REGIME was broken rather than the idea.**
 > 0.4536 -> 0.4252 and recall 0.2858 -> 0.2573, with **694 MORE arguments never found**
 > (FN 11,696 -> 12,390). The sweep lines suggested a trade; the blind test does not.
 >
-> **THE FIRST STEP OF THE MECHANISM WORKED, THE SECOND DID NOT.** Entity recall rose
-> **+0.0429** (0.5017 -> 0.5446) -- the entity head really does propose more after seeing
-> `Event<Role>` spans, which was the premise. But entity precision fell **-0.0912** and the
-> error decomposition shows why: COR +12,365 against **FP +18,373**. 60% of the new proposals
-> are wrong, so the shared candidate pool got NOISIER, not richer, and `event_trigger`
-> -- a head this corpus never touches -- paid for it.
+> **~~THE FIRST STEP OF THE MECHANISM WORKED, THE SECOND DID NOT.~~ RETRACTED 2026-09-21.**
+> That diagnosis -- entity recall +0.0429, entity precision -0.0912, COR +12,365 against FP
+> +18,373, "the pool got noisier not richer" -- rested ENTIRELY on the entity row, and **the
+> entity row is VOID**: the arms were scored on different test sets. The treatment config
+> adds `data/cmnee_roles_ner`, whose TEST split joins the eval, so entity support is 79,912
+> on the control and **96,306** on the treatment. Comparing F1 across different gold is
+> exactly what the standing rule forbids.
+>
+> **WHICH ROWS SURVIVE.** Support is IDENTICAL on all other heads, so they compare legally:
+>
+> | head | support (both) | delta | valid |
+> |---|---:|---:|---|
+> | event_argument | 20,827 | -0.0300 | yes |
+> | event_trigger | 14,041 | -0.0541 | yes |
+> | event | 44,730 | -0.0251 | yes |
+> | structure | 4,167 | -0.0225 | yes |
+> | event_type | 9,862 | +0.0176 | yes (inside floor) |
+> | classification | 10,291 | -0.0002 | yes |
+> | relation | 9,428 | +0.0025 | yes |
+> | **entity** | **79,912 vs 96,306** | ~~-0.0182~~ | **VOID** |
+>
+> **So the VERDICT stands and its EXPLANATION does not.** The derived corpus cost the event
+> heads, on matched gold. Why is now unknown: the over-proposal story was measured on
+> incomparable data. It was only caught because `eval_provenance` -- added 2026-09-20 -- made
+> `compare_runs.py` REFUSE the re-run outright; yesterday's files had no provenance, so the
+> tool could only warn and I read the entity row as evidence.
 >
 > **WHY THE REGIME WAS BROKEN.** Nothing in that run could punish over-proposal:
 > 1. the roles configs declared **no `negative_pools`**;
@@ -42,6 +62,20 @@ REGIME was broken rather than the idea.**
 > The augmentation pushes the same way: `synthetic_entity_label_prob: 0.2` renames a fifth of
 > entity presentations, and with no descriptions and no absent labels a renamed label still
 > has gold -- teaching "whatever this label is called, these spans answer it".
+>
+> ## *** THE RE-RUN (`roles2`, 2026-09-21) IS VOID -- TWO CONFOUNDS ***
+>
+> 1. **Shipped checkpoints differ.** `metric_for_best: eval_loss` again: the control improved
+>    on val loss ONCE and shipped its **epoch-2** checkpoint, the treatment improved three
+>    times and shipped **epoch 5**. Same defect as the absneg pair; it was diagnosed on
+>    2026-09-20 while this run was already four hours in, fixed in `absneg2`, and never
+>    back-checked against the run in flight.
+> 2. **Different test sets**, 20,602 vs 23,326 records, for the same reason as above.
+>
+> `compare_runs.py` REFUSED it, which is the provenance fix working. ~$40, and preventable.
+>
+> **BEFORE ANY FURTHER RE-RUN, FIX BOTH:** `metric_for_best` on a shared task metric, and
+> evaluate the treatment on the CONTROL's test set so the entity comparison is legal at all.
 >
 > **SO THE REFUTATION IS REAL BUT REGIME-BOUND**, and the re-run (`roles2-*`, launched
 > 2026-09-20) puts both arms in a regime that injects: **~4.9 absent queries per forward
