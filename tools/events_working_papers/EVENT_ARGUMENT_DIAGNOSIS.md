@@ -1,5 +1,16 @@
 # Event arguments: why they fail, and what has been measured
 
+> ## *** 2026-09-21: THE NEGATIVES LEVER, MEASURED CLEANLY AT LAST ***
+>
+> `absneg2` is the first legal comparison of absent-negatives-in-the-denominator:
+> **event_argument strict 0.1840 -> 0.2215, +0.0376**, against a seed floor of 0.0009-0.0020.
+> So this diagnosis's central head DOES move, by a mechanism that costs `classification`
+> -0.1977 -- a head it has no route to. The lever is real and the price is currently
+> unacceptable; see [[LABEL_NEGATIVES_PLAN]].
+>
+> Two earlier attempts at this measurement were void (injector never wired; then checkpoint
+> selection), so any number for this lever dated before 2026-09-21 should not be quoted.
+
 Companion to [[JOINT_IE_SCALING]] (Tier 2) and [[PAPER_0_FOUNDATION]] §10.
 
 **This document grew by accretion and is ordered by when things were learned, not by how

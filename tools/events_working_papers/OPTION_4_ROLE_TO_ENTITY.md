@@ -74,6 +74,15 @@ REGIME was broken rather than the idea.**
 >
 > `compare_runs.py` REFUSED it, which is the provenance fix working. ~$40, and preventable.
 >
+> **ONLY THE CONTROL NEEDS RETRAINING.** Checked against the Hub: each arm pushed `best/`
+> and nothing else. The TREATMENT's `best/` IS its epoch-5 (final) checkpoint, from a run
+> whose training was never corrupted -- it trained on exactly its intended 17 corpora. The
+> CONTROL's `best/` is epoch 2 and its later weights are gone. So: retrain the control
+> (~$20) with `roles3-control.yaml`, re-score the existing treatment on the common 15-corpus
+> test set (~$2), and compare. Code drift between the two commits is INERT -- the only
+> changes are option 2's TypedRole paths, both gated on `role_type_map`, which neither config
+> sets.
+
 > **BEFORE ANY FURTHER RE-RUN, FIX BOTH:** `metric_for_best` on a shared task metric, and
 > evaluate the treatment on the CONTROL's test set so the entity comparison is legal at all.
 >

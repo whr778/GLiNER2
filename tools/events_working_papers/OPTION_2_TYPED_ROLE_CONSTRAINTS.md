@@ -308,6 +308,13 @@ classification. Either that head's run-to-run variance is an order of magnitude 
 quoted, or something else differed between those runs. Do not call a classification delta
 signal until the pair is re-run.
 
+> **SUPERSEDED 2026-09-21.** The `+0.0322 / -0.1492` pair quoted here came from
+> `eb16-eventrecords-tr` vs `-neg`, which the sliding-window wiring bug made NOMINAL
+> DUPLICATES -- the injector never reached the dataset, so neither arm had negatives. The
+> phenomenon was re-measured cleanly in `absneg2` (2026-09-21) and SURVIVES, larger:
+> **event_argument strict +0.0376, classification -0.1977**, operating point verified
+> identical by `compare_runs.py`. Quote those; the older pair is void.
+
 **Secondary, and watched for collateral:** entity, event_trigger, event_type, structure,
 classification. The negatives run is the precedent — it hit its target and broke an untargeted
 head, and the aggregate then read as a wash.

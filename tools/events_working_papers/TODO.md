@@ -1,5 +1,20 @@
 # Open items — resume list
 
+## STATUS 2026-09-21 -- where the three event levers actually stand
+
+| question | status | evidence |
+|---|---|---|
+| **do absent negatives help?** | **ANSWERED** | `absneg2`: event_argument strict **+0.0376**, classification **-0.1977**, 3 up / 8 down outside the floor. Operating point verified IDENTICAL, both arms shipped their final epoch, treatment proven applied. NOT shippable as-is |
+| **does the derived corpus help (option 4)?** | **OPEN** | first run negative on 7 of 8 heads (event_argument -0.0300, trigger -0.0541); its entity row and the over-proposal diagnosis are RETRACTED (different test sets). `roles2` re-run VOID (epoch 2 vs 5, and different test sets). `roles3-*` configs fix both; only the CONTROL needs retraining, the treatment's final-epoch checkpoint is reusable |
+| **does a typed-role constraint help (option 2)?** | **PARTLY** | decode-time is a NULL on F1 with a real precision/recall trade (98% of drops were false positives). Map reach lifted 35.7% -> 99.3% by joining the purchased entity gold. The TRAINED arm is the real test, ~$65 |
+
+**Three defects found and fixed in two days, each of which had silently voided experiments:**
+the label-negative injector never reached a sliding-window dataset (since the feature
+shipped); `metric_for_best: eval_loss` selecting two arms on objectives they do not share;
+and an A/B treatment scoring on its own added test split. All three are now gated, and the
+runner publishes `final/` so a selection confound is diagnosable after the fact.
+
+
 **Closed items live in [[EXPERIMENT_CATALOG]]** — every run, newest first, with its outcome and cost. This file is what is still open.
 
 Completed work is removed rather than struck through; history lives in
