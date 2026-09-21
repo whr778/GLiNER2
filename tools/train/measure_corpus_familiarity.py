@@ -63,8 +63,11 @@ def main() -> int:
     ap.add_argument("--frac", type=float, default=0.15, help="fraction of tokens masked")
     ap.add_argument("--max-length", type=int, default=256)
     ap.add_argument("--split", default="train")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out")
     args = ap.parse_args()
+
+    torch.manual_seed(args.seed)
 
     from transformers import AutoModelForMaskedLM, AutoTokenizer
     tok = AutoTokenizer.from_pretrained(args.encoder)

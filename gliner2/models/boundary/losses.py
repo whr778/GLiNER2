@@ -512,13 +512,26 @@ def apply_typed_margin(
     deliberate: a query with no typed candidates is then left completely alone, which is the
     `require_typed=False` stance -- no evidence, no opinion.
 
-    SELF-NORMALISING, because the logits are NOT normalised and their scale moves with the
-    data. Measured on this checkpoint, p5-p95 spread: cmnee (Chinese) 19.95, duee 16.43,
-    casie (English) 14.76, scierc 12.17 -- and across the two loss paths, sd 2.30 (proposal)
-    against 7.18 (rerank). A FIXED margin would therefore be a different intervention per
-    language, per domain and per path: delta=1.0 is 13.6% of the proposal spread and 4.5% of
-    the rerank one. Scaling by the batch's own sd captures language, domain, candidate count
-    and model familiarity at once, with no external per-language table to go stale.
+    THE SCALE DOES NOT ENTER THE EFFECT -- read this before tuning k. Adding margin `d` to a
+    disallowed set S changes the listwise loss's view of gold by
+
+        p_gold' / p_gold  =  1 / (1 + (e^d - 1) * w_S)      w_S = probability mass on S
+
+    `sd` does not appear. What bounds the intervention is w_S, and w_S depends on WHERE the
+    disallowed candidates sit in the score order, not on how wide the logits are. Measured on
+    held-out val at d=ln2 (tools/train/measure_logit_scale.py, and the ceiling script in
+    OPTION_2_TYPED_ROLE_CONSTRAINTS.md): disallowed candidates placed RANDOMLY move gold
+    0.0-0.7%, placed at the BOTTOM 0.000%, placed at the TOP 20.0% (cmnee) to 0.0% (casie).
+    So scaling by sd makes k INTERPRETABLE and stable across corpora; it does not make the
+    effect uniform, and it is not what decides whether the margin does anything.
+
+    Scale still varies enough to be worth normalising. Measured per corpus on this
+    checkpoint, live-logit sd: proposal 2.21 (scierc) to 3.08 (duee), a 1.39x spread; rerank
+    2.99 (scierc) to 6.58 (cmnee), 2.20x. Language alone does not predict it -- two Chinese
+    corpora differ 1.31x and two ENGLISH corpora 1.68x -- but base-encoder masked
+    pseudo-perplexity rank-predicts the RERANK sd perfectly (Spearman rho = -1.000, n=4), so
+    the scale is largely a (language, domain) FAMILIARITY signal. See
+    tools/train/measure_corpus_familiarity.py.
 
     GOLD IS NEVER PENALISED. 4.0% of gold arguments carry a type the map disallows -- the
     map's own tail filters drop legitimate minorities like `Nationality` on
@@ -534,27 +547,34 @@ def apply_typed_margin(
     if not torch.isfinite(sample) or float(sample) <= 0:
         return logits, used
 
-    # THE SCALE IS AN EMA, BIAS-CORRECTED, AND A PLAIN EMA WOULD BE WORSE THAN NONE.
-    # Measured on 72 real batches of a mixed-corpus stream: raw per-batch sd has CV 0.555
-    # (proposal, range 1.86-8.33). An uncorrected EMA at beta=0.99 gives CV 0.511 -- and on
-    # the rerank path 0.548 against a raw 0.338, i.e. WORSE than not smoothing at all,
-    # because the estimate starts at zero and the climb dominates the variation. With bias
-    # correction the same beta gives CV 0.061 / 0.078, a ~9x reduction, and reaches the
-    # median scale within five batches.
+    # THE SCALE IS AN EMA, BIAS-CORRECTED, AND A PLAIN EMA IS WORSE THAN NONE.
+    # Re-measured 2026-09-21 on a de-contaminated 31-batch round-robin over
+    # cmnee/duee/casie/scierc (an earlier table double-counted rerank into proposal; see the
+    # instrument's own note). Coefficient of variation of the per-batch sd:
     #
-    # THE CLAMP IS SET AT 2.0 BY MEASUREMENT, NOT TASTE. It is insurance against a single
-    # degenerate batch, and it must not fire on ordinary corpus variation. Swept on a real
-    # round-robin stream over cmnee/duee/casie/scierc (tools/train/measure_logit_scale.py):
-    # 1.5 clips 50% of proposal batches, 2.0 clips 3%, and BOTH produce the same scale to
-    # within 2%. So 1.5 was paying a large clipping rate for nothing. It guards the INPUT,
-    # which is where the risk is; clipping the output would guard nothing, because the
-    # margin is already bounded by k * sd.
+    #     path       raw     plain EMA     bias-corrected
+    #     proposal   0.205   0.525         0.039
+    #     rerank     0.282   0.520         0.091
+    #
+    # The plain EMA is WORSE THAN RAW on BOTH paths -- it starts at zero and the climb
+    # dominates. Bias correction is what makes the smoothing work at all: 5.3x and 3.1x
+    # better than raw, and it reaches the median scale within five batches.
+    #
+    # THE CLAMP AT 2.0 BUYS NOTHING MEASURABLE, AND IS KEPT ONLY AS INSURANCE. Swept on the
+    # de-contaminated stream: 1.5 clips 3% of proposal batches and 26% of rerank batches;
+    # 2.0 clips 0% of both; and the resulting scale and CV are IDENTICAL either way (0.039 /
+    # 0.091). So 1.5 was paying a 26% clipping rate on rerank for no change in the answer.
+    # It guards the INPUT, which is where the risk is; clipping the output would guard
+    # nothing, since the margin is already bounded by k * sd. No degenerate batch has
+    # actually been observed -- do not claim this clamp has been shown to help.
     #
     # WHAT THE CLAMP CANNOT DO: this is ONE EMA for the whole model, so on a mixed stream
     # every corpus is dosed with the MIX's scale rather than its own -- measured scierc
-    # 1.53x its own scale, cmnee 0.92x, a 1.66x spread (2.08x on rerank). That spread is
-    # IDENTICAL at every clamp value including off. Calibrate k on the mix you will actually
-    # train: proposal 0.177 and rerank 0.134 for a 2x multiplier on this checkpoint.
+    # 1.18x its own scale and duee 0.85x on proposal (1.39x spread), scierc 1.65x and cmnee
+    # 0.76x on rerank (2.17x spread). Those spreads are IDENTICAL at every clamp value
+    # including off. On this checkpoint the mixed-stream scale is 2.62 (proposal) and 4.88
+    # (rerank), so k for a 2x multiplier is 0.265 and 0.142 -- but see the docstring: that
+    # sets the UNITS of k, not the size of the effect.
     sd = sample
     if scale_state is not None:
         prev, t = float(scale_state.get("ema", 0.0)), int(scale_state.get("t", 0))

@@ -76,7 +76,11 @@ mention path compiles one instance per TYPE and cannot express the second one.
 ]
 ```
 From `data/bio_ner_relations.train.jsonl`. The relation NAME is the key; `head`/`tail` are
-surfaces. Duplicates are legal and are counted as they appear.
+surfaces. Duplicates are legal in the data but are **collapsed at scoring**: verified in
+`_gold_relation_set` (`gliner2/training/eval_metrics.py:574`), which accumulates
+`(name, head, tail)` into a `set`. The two identical `bind` rows above are ONE gold triple,
+so a corpus carrying many exact-duplicate relations has a smaller effective support than its
+raw count suggests. A relation whose head or tail is empty or whitespace is dropped entirely.
 
 ### 1.4 classifications -- the menu travels WITH the answer
 

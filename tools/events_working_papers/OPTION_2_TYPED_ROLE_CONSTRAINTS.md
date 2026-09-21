@@ -412,12 +412,18 @@ where the disallowed candidates sit in the score order.
 Bracketing it instead -- a random 3.4% of non-gold candidates (the measured containment dose),
 the bottom 3.4% by score, and the top 3.4%:
 
-| corpus | H (nats) | w random | w bottom | w TOP | loss effect (random) | loss effect (TOP) |
-|---|---|---|---|---|---|---|
-| cmnee_typed | 2.81 | 0.0075 | 0.00002 | **0.248** | 0.7% | **20.0%** |
-| scierc | 2.27 | 0.0024 | 0.00000 | 0.044 | 0.2% | 4.2% |
-| duee_typed | 0.55 | 0.0001 | 0.00000 | 0.022 | 0.0% | 2.1% |
-| casie_typed | 0.58 | 0.0000 | 0.00000 | 0.000 | 0.0% | **0.0%** |
+Three seeds, ranges not single draws (`tools/train/measure_margin_ceiling.py`, held-out val,
+d = ln 2, frac 0.034). Proposal path above, rerank in brackets:
+
+| corpus | H (nats) | w random | w TOP | **loss effect if TOP** |
+|---|---|---|---|---|
+| cmnee_typed | 2.77-3.41 [2.52-3.00] | 0.0067-0.0109 | 0.221-0.242 [0.194-0.213] | **18.1-19.5%** [16.3-17.6%] |
+| scierc | 1.39-1.91 [1.60-2.71] | 0.0011-0.0041 | 0.021-0.071 [0.056-0.124] | 2.1-6.6% [5.3-11.0%] |
+| duee_typed | 0.73-0.88 [0.68-0.80] | 0.0001-0.0005 | 0.024-0.034 [0.026-0.029] | 2.4-3.3% [2.5-2.8%] |
+| casie_typed | 0.20-0.59 [0.36-0.72] | 0.0000 | **0.0000** | **0.0%** in all three seeds |
+
+The RANDOM bracket never exceeds 1.1% on any corpus or seed; the BOTTOM bracket is 0.000%
+throughout.
 
 **The verdict is conditional and the condition is the unmeasured one.** If type-disallowed
 fillers are scattered randomly through the candidate list, or already down-ranked, the margin
@@ -430,6 +436,21 @@ hundreds. **Memorisation is not the explanation** -- train and val differ neglig
 
 `casie_typed` reads 0.0000 in every bracket despite being the corpus with 100% typed coverage:
 its distributions are so peaked that even the top 3.4% of non-gold candidates carry no mass.
+
+## The instrument had to be made reproducible first
+
+The first draft of this table was a single draw and moved by up to 3.4x between identical
+runs. Three causes, found by varying one axis at a time:
+
+- **Dropout.** `model.train()` is REQUIRED -- in eval mode the proposal loss is never called
+  (0 queries) and rerank shifts hard (scierc w_top 0.375 against 0.084) -- so dropout is live
+  and must be seeded, not switched off.
+- **Python's `random`.** The processor's label handling uses it, and `torch.manual_seed` does
+  not touch it. Seeding torch alone left the run non-deterministic.
+- **`PYTHONHASHSEED`.** Label order derives from sets, so without it the QUERY COUNT itself
+  moved between processes (15 against 14 on identical data).
+
+With all three fixed, two runs are byte-identical. Quote ranges over seeds regardless.
 
 ## What has to happen before the $34
 

@@ -117,8 +117,11 @@ def main() -> int:
     ap.add_argument("--device", default="cpu",
                     help="cpu by default: MPS int64 gather corrupts packed candidate keys "
                          "on long Chinese documents")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", help="write the measurements as JSON")
     args = ap.parse_args()
+
+    torch.manual_seed(args.seed)
 
     import gliner2.models.boundary.losses as L
     from gliner2.models.boundary.constants import MASK_LOGIT
