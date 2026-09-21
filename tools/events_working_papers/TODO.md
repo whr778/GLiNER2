@@ -13,7 +13,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 2 | **eb17-best: the warm-start base** | folds in every measured lesson; adds label negatives, which four dead mechanisms have waited on | BUILT, not launched, ~14h ~$30 | launch once (1) lands |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | **`record_anchor_threshold` defaults to 0.5** | nothing calibrates record cutoffs; no model can use 0.5 well | open, unstarted | sweep on validation like the record threshold was |
-| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **anchors 5/6 at 1.2% FP; the KEYING ROOT CAUSE found and fixed** — AP related-coverage rails inside the story body | rebuild the feed, re-run the pipeline, re-score |
+| 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **keying root cause FIXED at source; both anchors turn out to ALREADY EXIST as `--scope-filter`/`--event-year`; the cached artefact is IRREPRODUCIBLE** | do NOT overwrite the cache; re-score `--scope-filter` on corrected labels |
 | 6 | **`candidate_pool: shared` A/B** | `per_query` makes entity and event queries compete for candidate budget; adding an entity menu costs 30-35% of argument recall | **RUNNING**, arm 1 of 3 on epoch 2/2. **GATE PASSED: shared-pool grad norm 3.853e+00** (per_query reads 0.000e+00), so the treatment is live. ETA ~20:55 UTC, ~$6 | compare the three arms |
 | 7 | ~~Purchased NER gold idle~~ **DONE** | swapped into eb17-best; train entity mentions 707,007 → 905,691 (**+28.1%**) with the blind test byte-identical | **DONE 2026-09-21** | — |
 | 8 | ~~`turkish_event` lemmatised gold~~ **DONE** | train+val 93.02% → **99.83%** aligned, **9,648 mentions recovered**, 88 unsafe repairs refused | **DONE 2026-09-21** | re-upload the HF mirror when convenient |
@@ -242,10 +242,55 @@ instead of silently producing a feed worth nothing, and lxml is a declared depen
 **VERIFIED on the real article**: `RELATED COVERAGE`, `Scotland` and `Typhoon headed to
 Taiwan` are all gone, and the 180 figure now sits in clean body prose.
 
-**NOT YET DONE:** this fixes the SOURCE. The cached `feed.jsonl` and `tracked_rollup.json`
-still carry the old text, so the 5/6 and 1.2% figures stand until the feed is rebuilt and the
-pipeline re-run. That is the next step, and it is the thing that would actually move the
-score.
+### THE REBUILD WAS ATTEMPTED AND MUST NOT BE INSTALLED
+
+The feed rebuilt cleanly and offline from cached HTML: 70 -> 65 rows, 375,609 -> 332,419
+chars, and `RELATED COVERAGE` present in 52 rows -> **0**. **The 5 dropped articles are a
+CORRECTION**, every one off-topic and qualifying only because the rail injected Helene states
+and toll words into it -- "Georgia Supreme Court restores near-ban on abortions"
+(has_toll=True, states=[NC, GA]), "Elon Musk makes first appearance at Trump rally"
+(has_toll=True, states=[NC, SC]).
+
+**But the pipeline re-run cannot be installed, and a CONTROL is what showed why:**
+
+| run | dead obs | joined to audit labels | cross-event |
+|---|---|---|---|
+| committed artefact | 106 | 102 | **6** |
+| control: OLD feed, current config | 47 | 27 | **0** |
+| rebuilt: new feed, current config | 44 | 22 | **0** |
+
+**The current configuration extracts NONE of the six cross-event observations -- from the old
+feed either.** So the text change costs 3 observations (47 -> 44), not 62; the other 59 and
+all six positives are lost to a configuration difference. Overwriting the cache would destroy
+the basis for every cross-event measurement and orphan 80 of 86 hand-assigned audit labels.
+
+**The committed `tracked_rollup.json` is IRREPRODUCIBLE.** It records only `feed`,
+`associate` and counts -- no models, thresholds or flags. `run_pipeline` now writes an
+`invocation` block (args, argv, git_commit) and the artefact I produced carries it, but the
+committed one predates that. Same class as the `eval_provenance` defect, in a different
+pipeline, and already fixed going forward.
+
+### BOTH ANCHORS ALREADY EXISTED -- I duplicated them
+
+    --scope-filter   "drop observations keyed outside the rollup's declared hierarchy.
+                      Needs --rollup. 4/6 cross-event at 7.3% FP on Helene, no model."
+    --event-year     "reject casualty figures whose nearest date predates this year ...
+                      The 1999 Izmit toll was tracked as a 2023 figure in every Turkiye
+                      configuration until this existed"
+
+`--scope-filter` IS the spatial anchor; `--event-year` IS the temporal one, and better
+engineered (nearest date to the span, with slack). I missed them by searching the probe files
+and "association" rather than the pipeline's flag list.
+
+**What survives as new work:** the `--scope-filter` figure of **7.3% FP predates the
+2026-08-20 label correction**; re-scored against the corrected labels it is **4/6 at 1.2%**.
+That is the same uninterpretability that voided the three text signals. `spatial_anchor.py`
+is therefore worth keeping as a SCORER against the audit labels -- which no flag does -- but
+its filter logic should defer to `--scope-filter` rather than reimplement it.
+
+**NEXT:** re-score `--scope-filter` and `--event-year` in place, on an artefact that still
+carries the six positives. Do NOT regenerate that artefact until the configuration which
+produced 106 observations is identified.
 
 31 tests.
 
