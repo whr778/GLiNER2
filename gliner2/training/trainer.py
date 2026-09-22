@@ -196,7 +196,16 @@ class TrainingConfig:
     scheduler_type: str = "linear"
     warmup_ratio: float = 0.1
     warmup_steps: int = 0
-    num_cycles: float = 0.5
+    # 1.0 = one full cosine that anneals to ZERO. This was 0.5 until 2026-09-22, and 0.5 is
+    # a trap: `cosine_restarts` computes `cos(pi * ((num_cycles * progress) % 1.0))`, so with
+    # num_cycles=0.5 the argument only reaches 0.5, NEVER WRAPS, and the schedule degenerates
+    # to a half-cosine that performs no restarts and ends at 50% of base LR. Every one of the
+    # 158 configs in this repo names `cosine_restarts` and none sets `num_cycles`, so every
+    # model this project has trained -- eb16, the 137k curve, every A/B -- finished its last
+    # epoch taking half-size steps instead of annealing. Measured LR multipliers:
+    #     num_cycles=0.5   p=0.50 -> 0.854   p=1.00 -> 0.500   (no restart, no anneal)
+    #     num_cycles=1.0   p=0.50 -> 0.500   p=1.00 -> 0.000   (identical to `cosine`)
+    num_cycles: float = 1.0
     fp16: Optional[bool] = None
     bf16: Optional[bool] = None
     eval_strategy: str = "steps"
@@ -2168,6 +2177,23 @@ class ExtractorTrainer:
         # Create optimizer and scheduler
         self.optimizer = self._create_optimizer()
         self.scheduler = get_scheduler(self.optimizer, self.config.scheduler_type, max_steps, warmup_steps, self.config.num_cycles)
+        # PRINT THE SCHEDULE THE RUN WILL ACTUALLY FOLLOW. `cosine_restarts` with
+        # num_cycles < 1.0 silently becomes a non-restarting partial cosine that never
+        # anneals; that went unnoticed across 158 configs because nothing ever showed the
+        # curve. Sampling the real lambda cannot drift from it the way a comment can.
+        if self.is_main_process:
+            fn = self.scheduler.lr_lambdas[0]
+            pts = {f"{int(f*100)}%": round(fn(int(f * max_steps)), 3)
+                   for f in (0.0, 0.25, 0.5, 0.75, 1.0)}
+            logger.info("[lr] %s warmup=%d/%d cycles=%s -> multiplier %s",
+                        self.config.scheduler_type, warmup_steps, max_steps,
+                        self.config.num_cycles, pts)
+            tail = fn(max_steps - 1)
+            if self.config.scheduler_type.startswith("cosine") and tail > 0.05:
+                logger.warning(
+                    "[lr] this schedule ends at %.3f of base LR, NOT ~0 -- the final epoch "
+                    "takes full-size steps. For cosine_restarts that means num_cycles < 1.0, "
+                    "which also performs no restarts.", tail)
 
         start_epoch = 0
         if resume_state is not None:

@@ -297,6 +297,12 @@ training:
   encoder_lr: 2.0e-5
   task_lr: 5.0e-4
   warmup_ratio: 0.05
+  # `num_cycles` is NOT set here and inherits the default, which changed 2026-09-22 from
+  # 0.5 to 1.0. At 0.5 this schedule performed NO restarts and ended at 50% of base LR --
+  # `cos(pi * ((num_cycles * progress) % 1.0))` never wraps when the argument tops out at
+  # 0.5 -- so every model this project trained before that date finished its last epoch
+  # taking full-size steps instead of annealing. At 1.0 it is identical to `cosine` at
+  # every real step. The trainer now prints the resolved multiplier curve at startup.
   scheduler_type: cosine_restarts
   bf16: true
   fp16: false
