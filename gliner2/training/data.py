@@ -246,15 +246,26 @@ class DataLoader_Factory:
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         
+        # Stamp the corpus each record came from. `data.partial_annotation` declares a
+        # corpus's gold NON-exhaustive for a dimension, and the negatives injector must
+        # not offer an absent label to a corpus where absent-from-gold does not mean
+        # absent-from-text -- that manufactures false negatives (cmnee_ner: 9,281 records
+        # at a measured 32.4% miss rate within an offered label). Provenance is the only
+        # thing the injector lacks to honour it, so it is attached here, at load.
+        corpus = path.name.split(".")[0]
+
         records = []
         with open(path, 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if line:
                     try:
-                        records.append(json.loads(line))
+                        rec = json.loads(line)
                     except json.JSONDecodeError as e:
                         raise ValueError(f"Invalid JSON in {path} line {line_num}: {e}")
+                    if isinstance(rec, dict):
+                        rec.setdefault("_corpus", corpus)
+                    records.append(rec)
         
         return records
     

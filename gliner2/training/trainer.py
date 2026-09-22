@@ -259,6 +259,10 @@ class TrainingConfig:
     # find, so they train as ABSENT while the entity is in the text -- measured at
     # 1.41% of label queries. On, the query is dropped instead. Training only.
     suppress_orphaned_queries: bool = False
+    # `{corpus: [dimension, ...]}` -- gold that is NOT exhaustive for that dimension.
+    # Such a corpus is refused as a SOURCE of negatives by build_negative_pools.py and,
+    # from here, as a TARGET of them: absent-from-gold is not absent-from-text.
+    partial_annotation: Optional[Dict[str, list]] = None
     sliding_window: bool = False
     window_stride: int = 256
     # data_parallel: DEPRECATED no-op. The trainer now uses DistributedDataParallel
@@ -608,7 +612,7 @@ class ExtractorDataset(Dataset):
             # item per epoch in the worker -- so negatives resample across epochs while
             # staying deterministic in (seed, epoch, index), which is what DDP ranks and
             # dataloader workers need to agree.
-            schema = self.negatives.inject(schema, idx)
+            schema = self.negatives.inject(schema, idx, record.get("_corpus"))
         return text, schema
 
     # Factory methods for explicit creation
@@ -1793,10 +1797,13 @@ class ExtractorTrainer:
                 self.config.negative_pools,
                 self.config.negative_labels_per_dim,
                 seed=self.config.negative_label_seed,
+                partial=getattr(self.config, "partial_annotation", None),
             )
             self._negatives_cache = cached
-            logger.info("label negatives ON: %s from %s",
-                        self.config.negative_labels_per_dim, self.config.negative_pools)
+            logger.info("label negatives ON: %s from %s | partial-annotation "
+                        "protected corpora: %s",
+                        self.config.negative_labels_per_dim, self.config.negative_pools,
+                        sorted(cached.partial) or "NONE")
         return cached
 
     def _guide_scores(self):

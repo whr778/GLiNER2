@@ -297,7 +297,13 @@ def chunk_records(
             new_out = _filter_record_output(output, chunk_text)
             if not _record_has_content(new_out):
                 continue
-            expanded.append({"input": chunk_text, "output": new_out})
+            chunk = {"input": chunk_text, "output": new_out}
+            # Carry provenance for the same reason record_metadata is carried: a chunk
+            # that forgets which corpus it came from cannot be protected by
+            # `partial_annotation`, and the loss of the tag would be silent.
+            if record.get("_corpus"):
+                chunk["_corpus"] = record["_corpus"]
+            expanded.append(chunk)
         if show_progress:
             iterator.set_postfix(
                 chunked=n_chunked,

@@ -1452,6 +1452,17 @@ def main(config_path: str) -> None:
 
     config = TrainingConfig(**cfg["training"])
 
+    # `partial_annotation` is declared under `data:` but is consumed by the TRAINER, via
+    # the negatives injector. Until 2026-09-22 nothing carried it across that gap, so the
+    # key was read only by build_negative_pools.py and declaring it protected nothing at
+    # training time -- eb17-best declared it for cmnee_ner and paid for a guard that did
+    # not exist. Carry it explicitly, and say so when it is on.
+    config.partial_annotation = (cfg.get("data") or {}).get("partial_annotation") or None
+    if config.partial_annotation:
+        print(f"[data] partial_annotation: {config.partial_annotation} -- these corpora "
+              f"contribute POSITIVES to those dimensions and are refused as a target for "
+              f"injected negatives there")
+
     # `negative_pools: auto` derives the pools from this config's own corpora, so a dataset
     # added to the mix cannot silently miss out on negatives the way cmnee_roles_ner did.
     if str(config.negative_pools or "").strip().lower() == "auto":

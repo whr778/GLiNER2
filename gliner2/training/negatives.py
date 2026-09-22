@@ -47,9 +47,21 @@ class NegativeLabels:
     """Per-corpus negative pools plus the injection that puts them in a schema."""
 
     def __init__(self, pools: Dict[str, dict], per_dim: Dict[str, int], seed: int = 42,
-                 max_per_record: Optional[int] = None):
+                 max_per_record: Optional[int] = None,
+                 partial: Optional[Dict[str, list]] = None):
         self.pools = pools
         self.per_dim = {d: int(n) for d, n in (per_dim or {}).items() if int(n) > 0}
+        # PARTIAL ANNOTATION. `{corpus: [dimension, ...]}` -- a corpus whose gold is NOT
+        # exhaustive for that dimension. Injecting an absent label there asserts something
+        # the corpus cannot support: absent-from-gold is not absent-from-text, so the
+        # "negative" may be present and unannotated. cmnee_ner is 9,281 records with entity
+        # gold at a measured 32.4% miss rate within an offered label, so honouring this
+        # withholds roughly 3,000 would-be false negatives.
+        #
+        # `build_negative_pools.py` already refuses such a corpus as a SOURCE of negatives.
+        # This is the other half, which nothing implemented: refusing it as a TARGET.
+        self.partial = {str(c): {str(d) for d in (dims or [])}
+                        for c, dims in (partial or {}).items()}
         # TOKEN BUDGET. Every injected label is schema-marker tokens in the prompt: it costs
         # throughput and eats the input budget the text needs. The per-dimension counts bound
         # this already; `max_per_record` is the single number to turn when a run is
@@ -58,13 +70,14 @@ class NegativeLabels:
         self.seed = seed
         self.epoch = 0
         self.stats = {"records": 0, "injected": 0, "records_with_injection": 0,
-                      "no_candidate": 0}
+                      "no_candidate": 0, "partial_skips": 0}
 
     @classmethod
     def load(cls, path: str, per_dim: Dict[str, int], seed: int = 42,
-             max_per_record: Optional[int] = None) -> "NegativeLabels":
+             max_per_record: Optional[int] = None,
+             partial: Optional[Dict[str, list]] = None) -> "NegativeLabels":
         blob = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(blob.get("pools") or {}, per_dim, seed, max_per_record)
+        return cls(blob.get("pools") or {}, per_dim, seed, max_per_record, partial)
 
     def set_epoch(self, epoch: int) -> None:
         """Resample every epoch. The trainer calls this, as with DistributedSampler."""
@@ -122,11 +135,19 @@ class NegativeLabels:
         return pool or set()
 
     # -- injection -------------------------------------------------------------------
-    def inject(self, schema: Any, index: int) -> Any:
-        """Return ``schema`` with up to ``per_dim[d]`` absent labels added per dimension."""
+    def inject(self, schema: Any, index: int, corpus: Optional[str] = None) -> Any:
+        """Return ``schema`` with up to ``per_dim[d]`` absent labels added per dimension.
+
+        ``corpus`` is the record's source. Dimensions this corpus declares PARTIAL are
+        skipped: its gold is not exhaustive there, so an "absent" label may simply be
+        unannotated, and injecting it would teach the model to reject something present.
+        """
         if not isinstance(schema, dict) or not self.per_dim:
             return schema
         self.stats["records"] += 1
+        skip = self.partial.get(corpus or "", frozenset())
+        if skip:
+            self.stats["partial_skips"] += 1
         gold = self._gold_labels(schema)
         candidates = self._candidates(gold)
         if not candidates:
@@ -144,7 +165,7 @@ class NegativeLabels:
                 return k
             return max(0, min(k, self.max_per_record - added))
 
-        k = budget(self.per_dim.get("entities", 0))
+        k = 0 if "entities" in skip else budget(self.per_dim.get("entities", 0))
         if k and gold["entities"]:
             pool = sorted(self._usable_pool("entities", candidates) - gold["entities"])
             chosen = rng.sample(pool, min(k, len(pool))) if pool else []
@@ -155,7 +176,7 @@ class NegativeLabels:
                                    **{name: [] for name in chosen}}
                 added += len(chosen)
 
-        k = budget(self.per_dim.get("events", 0))
+        k = 0 if "events" in skip else budget(self.per_dim.get("events", 0))
         if k and gold["events"] and isinstance(schema.get("events"), list):
             pool_types = self._usable_pool("events", candidates) - gold["events"]
             chosen = rng.sample(sorted(pool_types), min(k, len(pool_types))) if pool_types else []
@@ -174,7 +195,7 @@ class NegativeLabels:
                 out["absent_events"] = {**(out.get("absent_events") or {}), **roles}
                 added += len(chosen)
 
-        k = budget(self.per_dim.get("relations", 0))
+        k = 0 if "relations" in skip else budget(self.per_dim.get("relations", 0))
         if k and gold["relations"] and isinstance(schema.get("relations"), list):
             pool = sorted(self._usable_pool("relations", candidates) - gold["relations"])
             chosen = rng.sample(pool, min(k, len(pool))) if pool else []
@@ -186,7 +207,7 @@ class NegativeLabels:
                     set(out.get("absent_relations") or []) | set(chosen))
                 added += len(chosen)
 
-        k = budget(self.per_dim.get("structures", 0))
+        k = 0 if "structures" in skip else budget(self.per_dim.get("structures", 0))
         if k and gold["structures"] and isinstance(schema.get("json_structures"), list):
             pool_names = self._usable_pool("structures", candidates) - gold["structures"]
             chosen = rng.sample(sorted(pool_names), min(k, len(pool_names))) if pool_names else []
@@ -232,7 +253,8 @@ class NegativeLabels:
         pct = 100.0 * self.stats["records_with_injection"] / n
         return (f"[composition]   negatives: {dims} | {self.stats['injected']:,} labels into "
                 f"{self.stats['records_with_injection']:,}/{self.stats['records']:,} records "
-                f"({pct:.1f}%) | no-candidate {self.stats['no_candidate']:,}")
+                f"({pct:.1f}%) | no-candidate {self.stats['no_candidate']:,}"
+                f" | partial-protected {self.stats['partial_skips']:,}")
 
 
 __all__ = ["NegativeLabels", "DIMENSIONS"]

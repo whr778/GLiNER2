@@ -262,7 +262,12 @@ training:
   # in 574). That left `null_loss`, `count_loss`, `negative_query_ratio` and
   # `abstention_loss`'s entire positive class supervised on nothing, in every model ever
   # trained here. This is the cheapest way to turn four dead mechanisms on.
-  negative_pools: tools/train/config/labels/negative_pools.json
+  # `auto` derives the pools from THIS config's corpora. The committed JSON was built
+  # from eb16-eventrecords-tr.yaml and has no pool for cmnee_ner, duee_ner or
+  # docee_zh, so 47,726 records -- 23.6% of this mix -- received ZERO negatives while
+  # `_candidates` returned nothing for them, silently. That is the exact failure the
+  # `auto` path exists to prevent, and the header already warned about it.
+  negative_pools: auto
   negative_labels_per_dim: {entities: 1, events: 1}
   negative_label_seed: 42
   output_dir: ./out/eb17-best
