@@ -2044,9 +2044,23 @@ class ExtractorTrainer:
         effective_num_workers = (
             self.config.num_workers if len(dataset) > self.config.num_workers else 0
         )
-        # macOS spawn must pickle the tokenizer-bearing collator; fast
-        # tokenizers may contain non-picklable cached callables.
-        if self.device.type == "mps" or sys.platform == "darwin":
+        # WAS: forced to 0 on darwin/mps, because macOS spawn must pickle the
+        # tokenizer-bearing collator. The comment blamed "fast tokenizers ... non-picklable
+        # cached callables"; measured 2026-09-22, the fast tokenizer pickles FINE (13.7MB,
+        # byte-exact roundtrip) and the single offender was `SchemaTransformer
+        # ._tokenize_cached`, a functools.lru_cache wrapper -- those can never be pickled.
+        # The processor now drops and rebuilds it in __getstate__/__setstate__, and a real
+        # DataLoader with num_workers=4 runs on darwin (verified, 4 worker processes).
+        #
+        # THE COST OF THE OLD GUARD WAS NOT SPEED. It meant a local run and a GPU run
+        # executed structurally different data paths -- one process here, forked workers
+        # there -- so any defect needing worker semantics was invisible on the operator's
+        # machine BY CONSTRUCTION. That is why an eb17 crash reproducible on the box within
+        # 6,269 steps survived five local traces over ~600k samples.
+        #
+        # MPS keeps the old behaviour: it is a device question (shared-memory tensors),
+        # not a pickling one, and nothing here has measured it.
+        if self.device.type == "mps":
             effective_num_workers = 0
 
         # Python 3.14 changed Linux's default multiprocessing start method to

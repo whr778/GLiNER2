@@ -370,6 +370,18 @@ def _pack_relation_routes(
     )
 
 
+def _label_shapes(sample_labels):
+    """Per-task ``(count, n_instances)`` for a sample's gold -- shape only, never surfaces."""
+    out = []
+    for lab in sample_labels or ():
+        if isinstance(lab, (list, tuple)) and len(lab) == 2:
+            count, instances = lab
+            out.append((count, len(instances) if hasattr(instances, "__len__") else None))
+        else:
+            out.append(None)
+    return out
+
+
 def build_boundary_batch_metadata(
     *,
     schema_tokens_list: Sequence[Sequence[Sequence[str]]],
@@ -546,12 +558,43 @@ def build_boundary_batch_metadata(
             if field_dtypes_list is not None and sample_idx < len(field_dtypes_list)
             else None
         )
-        specs = compile_record_specs(
-            query_layout=layout,
-            record_metadata=sample_meta,
-            field_dtypes=sample_dtypes,
-            event_records=event_records,
-        )
+        try:
+            specs = compile_record_specs(
+                query_layout=layout,
+                record_metadata=sample_meta,
+                field_dtypes=sample_dtypes,
+                event_records=event_records,
+            )
+        except ValueError as exc:
+            # SELF-DIAGNOSING RAISE. This failure names a SHAPE but not the SAMPLE, and the
+            # shape alone cost a day: the on-disk data is clean (0 of 202,211 records have an
+            # anchor missing from its group), schema sampling never drops an anchor (0 of
+            # 155,080 draws), `_transform_record` never drops one (0 of 62,032), and a
+            # single-process collate over 203,736 chunks does not reproduce it -- twice.
+            #
+            # It cannot be reproduced on the operator's machine AT ALL: trainer.py forces
+            # `num_workers = 0` on darwin and pins Linux to `fork`, so local runs and GPU
+            # runs execute structurally different data paths. The evidence therefore has to
+            # travel off the box with the exception.
+            #
+            # Gold is printed as COUNTS, never surfaces: a surface can be a whole document
+            # and can carry licensed corpus text that must not land in a run log.
+            worker = None
+            try:
+                from torch.utils.data import get_worker_info
+                info = get_worker_info()
+                worker = None if info is None else info.id
+            except Exception:
+                pass
+            raise ValueError(
+                f"{exc}\n"
+                f"  [diag] sample_idx={sample_idx} worker={worker} "
+                f"batch_samples={len(schema_tokens_list)}\n"
+                f"  [diag] record_metadata={sample_meta!r}\n"
+                f"  [diag] task_types={list(sample_types)!r}\n"
+                f"  [diag] gold_shape={_label_shapes(sample_labels)!r}\n"
+                f"  [diag] schema_tokens={[list(t) for t in sample_schemas]!r}"
+            ) from exc
         record_specs_out.append(specs)
         relation_gold_out.append(sample_relation_gold)
 

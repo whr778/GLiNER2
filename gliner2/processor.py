@@ -370,6 +370,28 @@ class SchemaTransformer:
         # redundant work. Per-instance, thread-safe (functools.lru_cache).
         self._tokenize_cached = lru_cache(maxsize=_TOKENIZE_CACHE_SIZE)(self.tokenizer.tokenize)
 
+    # -- pickling ---------------------------------------------------------------------
+    # WHY THIS EXISTS. `_tokenize_cached` is a functools.lru_cache wrapper, and those can
+    # NEVER be pickled -- the unpickler cannot prove the restored object is the same cache.
+    # It was the ONLY unpicklable attribute on this class (measured: the fast tokenizer
+    # itself pickles fine at 13.7MB, as do every other attribute), and it is why
+    # trainer.py forced `num_workers = 0` on darwin, where DataLoader workers are spawned
+    # and must pickle the collator. The cost of that guard was not a slow loader: it meant
+    # local runs and GPU runs executed STRUCTURALLY DIFFERENT data paths, so any defect
+    # requiring worker semantics was invisible on the operator's machine by construction.
+    #
+    # Dropping the cache is safe because it is pure memoisation of a deterministic
+    # function: `tokenize()` is byte-exact per string, so a rebuilt cache produces
+    # identical output and only refills the speed.
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("_tokenize_cached", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._tokenize_cached = lru_cache(maxsize=_TOKENIZE_CACHE_SIZE)(self.tokenizer.tokenize)
+
     def change_mode(self, is_training: bool):
         """Switch between training and inference mode."""
         self.is_training = is_training
