@@ -20,8 +20,15 @@ Per-task filtering rules:
 * **Events** — emit only when the trigger appears in the chunk; per-event
   arguments are independently filtered (so the same event may surface
   with fewer arguments in some chunks).
-* **JSON structures** — passed through unchanged; the processor's
+* **JSON structures** — passed through unchanged, together with their
+  ``record_metadata`` declaration and ``field_dtypes``; the processor's
   existing verbatim filter handles missing-field cases at collation time.
+  The declaration is deliberately NOT filtered by surface: it describes the
+  record TYPE, not which instances landed in this window, so an anchor whose
+  surface falls outside a chunk still yields its field query (the query comes
+  from the gold keys, which pass through) and simply carries no mention —
+  exactly what already happens for a short record whose anchor value is not
+  verbatim in its text.
 
 Window / stride are measured in **subword tokens** from the encoder's
 tokenizer. Chunk character boundaries are snapped left/right to whitespace
@@ -211,6 +218,19 @@ def _filter_record_output(
     # JSON structures pass through; the processor verbatim-filters fields.
     if output.get("json_structures"):
         new_out["json_structures"] = output["json_structures"]
+        # The record DECLARATION rides with them, in full. It is schema, not gold: `mode`,
+        # the anchor's NAME, per-field `cardinality`/`exclusive` and `occurrence_policy`
+        # are properties of the record TYPE, and not one of them is chunk-dependent -- so
+        # there is nothing here to filter by surface. Dropping it left every CHUNKED long
+        # document carrying a structure the boundary record head cannot decode: it trains
+        # nothing and raises nothing. Measured on text2json before the fix: 98 records
+        # chunk, and all 235 of their chunks lost the declaration while keeping the gold.
+        # `field_dtypes` is the sibling carrier `structure_field_dtypes` reads to decide
+        # cardinality, and `Schema.build()` writes it, so it goes the same way.
+        if output.get("record_metadata"):
+            new_out["record_metadata"] = output["record_metadata"]
+        if output.get("field_dtypes"):
+            new_out["field_dtypes"] = output["field_dtypes"]
     if output.get("json_descriptions"):
         new_out["json_descriptions"] = output["json_descriptions"]
 
