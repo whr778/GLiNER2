@@ -84,7 +84,10 @@ disown
   done ) >> "$HOME/publisher.log" 2>&1 &
 disown
 
-timeout 72000 $PY -u tools/train/train.py --config "$CFG" 2>&1 | tee "$LOG"
+# JOB_TIMEOUT stops TRAIN.PY, not the box: the runner then publishes logs and
+# terminates on the normal path. A watchdog kill skips the publish, so a short
+# diagnostic run wants this knob and not a short deadline.
+timeout ${JOB_TIMEOUT:-72000} $PY -u tools/train/train.py --config "$CFG" 2>&1 | tee "$LOG"
 rc=${PIPESTATUS[0]}
 echo "[base] train.py rc=$rc  $(date -u)"
 
