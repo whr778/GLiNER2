@@ -59,20 +59,39 @@ def main() -> int:
         if not batch.query_layouts:
             continue
         n_q = batch.query_layouts[0].extractive_count()
-        d = per.setdefault(name, [0, 0])
+        # MEASURE the absent queries, do not assert them. `mention_mask` is
+        # (batch, query, max_gold); a query whose row is all False carries no gold and IS
+        # an absent query by this file's own definition. The previous version counted
+        # queries and then PRINTED "ABSENT queries: 0" as a literal, reasoning that every
+        # query comes from the document's own gold. That reasoning is true and the
+        # conclusion is false: a gold surface that fails to align contributes a query with
+        # no mention, so it is absent in effect. The gate could not fail, and the 0 it
+        # printed was quoted as "measured" in eb17-best.yaml and LABEL_NEGATIVES_PLAN.md.
+        n_absent = 0
+        mask = getattr(batch.targets, "mention_mask", None)
+        if mask is not None:
+            per_query = mask[0].any(dim=-1)
+            n_absent = int((~per_query).sum())
+        d = per.setdefault(name, [0, 0, 0])
         d[0] += n_q
         d[1] += 1
+        d[2] += n_absent
 
-    print(f"{'corpus':12s}{'docs':>7}{'extractive queries':>21}{'per doc':>10}")
-    tq = td = 0
-    for name, (q, d) in sorted(per.items()):
-        print(f"{name:12s}{d:>7}{q:>21,}{q/d:>10.1f}")
+    print(f"{'corpus':12s}{'docs':>7}{'extractive queries':>21}{'per doc':>10}{'ABSENT':>9}{'%':>8}")
+    tq = td = ta = 0
+    for name, (q, d, a) in sorted(per.items()):
+        print(f"{name:12s}{d:>7}{q:>21,}{q/d:>10.1f}{a:>9,}{100.0*a/q if q else 0:>7.2f}%")
         tq += q
         td += d
+        ta += a
     if td:
-        print(f"{'ALL':12s}{td:>7}{tq:>21,}{tq/td:>10.1f}")
-    print("\nABSENT queries: 0 (0.00%) -- every query above is derived from that document's")
-    print("own gold. This is the measurement the collator change must move.")
+        print(f"{'ALL':12s}{td:>7}{tq:>21,}{tq/td:>10.1f}{ta:>9,}"
+              f"{100.0*ta/tq if tq else 0:>7.2f}%")
+    print("\nAn ABSENT query is one carrying no gold mention. Before the label-negatives "
+          "work none were\nINJECTED -- but that is not the same as none EXISTING: a gold "
+          "surface that fails to align\nleaves its query standing with nothing to find, "
+          "which is an absent query the corpus\nmanufactured by accident. Read this "
+          "beside tools/data/measure_surface_alignment.py.")
     return 0
 
 

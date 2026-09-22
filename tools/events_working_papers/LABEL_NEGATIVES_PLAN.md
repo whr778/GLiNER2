@@ -229,7 +229,14 @@ line 418). It contains:
 - `max_num_labels: 1000` — an existing per-schema budget knob worth reusing for the token
   budget below rather than inventing another.
 
-Neither adds a label the model must reject. The measurement stands: **0 absent queries of
+Neither adds a label the model must reject. **CORRECTED 2026-09-22:** the "0" here was a
+HARDCODED PRINT in `probe_absent_queries.py`, not a measurement -- the probe counted queries
+and then asserted zero from the reasoning that every query comes from the document's own gold.
+That reasoning is true and the conclusion is false: a gold surface that fails to align leaves
+its query standing with no mention, which is an absent query the corpus manufactured by
+accident. Measured properly: **0.19% (2 of 1,079)**, all in chfinann. The plan's substance is
+unaffected -- 0.19% is still nothing to train on, and none of it was injected -- but the
+number was never zero. Original line: **0 absent queries of
 574** in a real training batch.
 
 ---

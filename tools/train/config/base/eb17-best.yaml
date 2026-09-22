@@ -24,7 +24,10 @@
 #
 # 4. LABEL NEGATIVES ADDED. This is the largest single change and it is not a tuning knob:
 #    until now NO base this project trained had a single absent query, because the menu was
-#    built from the gold. Measured: 0 absent queries in 574. So `null_loss` (weight 0.2),
+#    built from the gold. Measured: 0.19% absent queries (2 of 1,079) -- NOT the 0 this
+#    line used to claim, which was a hardcoded print in probe_absent_queries.py and not a
+#    measurement at all. Corrected 2026-09-22; the substance stands because 0.19% is still
+#    nothing to train on, and none of it was INJECTED. So `null_loss` (weight 0.2),
 #    `count_loss` (0.2), `negative_query_ratio` (0.5) and `abstention_loss`'s positive class
 #    have been supervised on an EMPTY SET in every model this project has ever trained. The
 #    decode consequence is measurable: given a schema of only ABSENT event types the incumbent
@@ -253,7 +256,9 @@ model:
 
 training:
   # LABEL NEGATIVES. Until this file, no base this project trained had a SINGLE absent
-  # query: the menu was built from the gold, so every query carried gold (measured, 0 absent
+  # query: the menu was built from the gold, so nearly every query carried gold (measured
+  # 2026-09-22 at 0.19%, 2 of 1,079 -- the few absent ones are an ACCIDENT of surfaces that
+  # fail to align, not a design; see tools/data/measure_surface_alignment.py
   # in 574). That left `null_loss`, `count_loss`, `negative_query_ratio` and
   # `abstention_loss`'s entire positive class supervised on nothing, in every model ever
   # trained here. This is the cheapest way to turn four dead mechanisms on.
