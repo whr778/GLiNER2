@@ -50,6 +50,41 @@ def missing_surface_counts() -> "Counter[str]":
     return _MISSING_SURFACES
 
 
+# Entity labels whose query was SUPPRESSED because every one of their gold surfaces
+# failed to align, by label name. Counted so the suppression is reportable rather than
+# another silent change of supervision.
+_SUPPRESSED_QUERIES: "Counter[str]" = Counter()
+
+
+def suppressed_query_counts() -> "Counter[str]":
+    """Entity labels dropped from a document's menu, and how often."""
+    return _SUPPRESSED_QUERIES
+
+
+def _orphaned_entity_fields(fields, labels) -> set:
+    """Field indices whose gold is non-empty but NONE of it aligns.
+
+    Such a label is offered to the model with nothing to find, so it trains as ABSENT
+    while the entity is in the text -- a false negative the corpus manufactured by
+    accident (measured at 1.41% of label queries). An EMPTY gold list is a different
+    thing entirely and is never orphaned: that is an INTENTIONALLY injected negative
+    (``{label: []}``, the shape `NegativeLabels.inject` writes), which must survive.
+    """
+    if not labels or labels[0] == 0 or len(labels) < 2:
+        return set()
+    seen, aligned = set(), set()
+    for instance in labels[1]:
+        for field_index, positions in enumerate(instance):
+            if field_index >= len(fields) or not positions:
+                continue
+            seen.add(field_index)
+            for pos in positions:
+                if tuple(pos) != (-1, -1):
+                    aligned.add(field_index)
+                    break
+    return seen - aligned
+
+
 def _extractive_fields(schema_tokens: Sequence[str]) -> list[str]:
     return [
         str(schema_tokens[i + 1])
@@ -349,6 +384,7 @@ def build_boundary_batch_metadata(
     on_capacity_exceeded: str = "raise",
     on_missing_surface: str = "raise",
     event_records: bool = False,
+    suppress_orphaned_queries: bool = False,
 ) -> tuple:
     """Build layouts, optional padded targets, and compiled record specs.
 
@@ -405,8 +441,27 @@ def build_boundary_batch_metadata(
                 continue
             name = _group_name(schema_tokens, task_type)
 
+            # A label whose gold is entirely unalignable is offered with nothing to find,
+            # which trains it as ABSENT while the entity sits in the text. Suppressing the
+            # query teaches nothing instead of teaching a falsehood. ENTITIES ONLY and
+            # deliberately: dropping a structure field or event role would remove an
+            # anchor's field query, which is exactly the
+            # "declares anchor X but no matching field query" abort.
+            orphaned = (
+                _orphaned_entity_fields(fields, labels)
+                if suppress_orphaned_queries and task_type == "entities" and build_targets
+                else frozenset()
+            )
+
             field_query_ids = []
             for role_index, field in enumerate(fields):
+                if role_index in orphaned:
+                    # `None` keeps this list positionally aligned with `fields` so the
+                    # mention loop still indexes by field_index; `query_id` stays
+                    # contiguous because it only advances for queries that survive.
+                    field_query_ids.append(None)
+                    _SUPPRESSED_QUERIES[field] += 1
+                    continue
                 field_query_ids.append(query_id)
                 queries.append(
                     QuerySpec(
@@ -445,6 +500,8 @@ def build_boundary_batch_metadata(
                 for field_index, positions in enumerate(instance):
                     if field_index >= len(field_query_ids):
                         break
+                    if field_query_ids[field_index] is None:
+                        continue  # query suppressed: no query, so no mention to attach
                     if task_type == "entities":
                         # A labeled entity surface that cannot be located is
                         # normally an annotation error and must raise rather than

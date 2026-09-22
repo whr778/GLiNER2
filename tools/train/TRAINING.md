@@ -488,6 +488,77 @@ Both generation paths ask for them in the same words, enforced by a test: the bl
 only in the annotate prompt for a day, which silently made any one-call-vs-two-stage
 comparison a two-treatment experiment. *(`LABEL_SPACE_COLLAPSE.md`.)*
 
+## 3d. Gold that never reaches the model, and the false negatives it manufactures
+
+A mention is supervision only if its surface aligns to the **tokenized** text. The training
+path is `word_splitter(text, lower=True)` -> `_tokenize_text(surface)` -> `_find_sublist`.
+A miss decodes to `(-1, -1)` and is skipped: no error, no counter in the run log.
+
+**`surface in text` is NOT that test, and it is the test most converters use.** On docee the
+substring check says 100.00% and the real path says 99.19%. `convert_docee.py` guards with
+`if surface not in text: continue`, so `'ood services'` passes at build time (it IS inside
+`"...food services..."`) and fails at train time. Tighten new converters to a word-boundary
+or token-alignment check, not a substring one.
+
+```bash
+# how much gold never aligns, split by what would fix it; --fail-over gates a launch
+uv run python tools/data/measure_surface_alignment.py --checkpoint <ckpt> \
+    --config tools/train/config/base/eb17-best.yaml --fail-over 2.0
+```
+
+Measured across the eb17 mix: **1.34% of gold surfaces never align** (2,277 of 170,533).
+Worst `bio_ner_relations` **4.77%**, `paraloq_json` 3.31%, `chfinann` 3.03%, `biored` 2.56%,
+`text2json` 2.40%; clean `scierc` 0.00%, `cmnee_ner` 0.02%, `duee_ner` 0.06%,
+`turkish_event` 0.13% (the repaired corpus).
+
+The split is by **what would fix it**, because three of the four are not "repair the gold":
+
+| category | share | what it is | action |
+|---|---:|---|---|
+| `EXTENDABLE` | 8.2% | truncated span -- `'ood services'` -> `'food services'` | repairable |
+| `SUBTOKEN` | 24.7% | inside a longer word -- `'artist'` -> `'artists'`, `'66'` -> `'66th'` | **never repair** |
+| `RUNON` | 29.4% | no word boundary there: CJK, concatenated tables, a missing space in the source | no repair |
+| `TOKENIZATION` | 37.7% | clean boundaries, splitter disagrees | splitter question |
+| `ABSTRACTIVE` | 0 | nothing is inferred-only | — |
+
+**Repair on WORDHOOD, never on edit distance.** `'ood'->'food'` and `'artist'->'artists'`
+are both a single edit; only the first is safe, because `'ood'` is not a word and no
+annotator meant it. Extending `'artist'` changes the referent -- the same trap as biored's
+`'mannose'` inside `'mannose-binding'`, a chemical inside a binding property.
+
+**Where does the truncation come from? Not from us, and not from our offsets.** Traced to
+source: DocEE's own annotations are self-consistent -- `mention["text"] == body[start:end]`
+for **45,553 of 45,553** -- and the truncated surfaces (`'ood services'`, `'New Delh'`,
+`'he child’s skeleton'`) appear **verbatim in the raw file**. So DocEE's annotation tool
+recorded `start+1`, and its text field faithfully records the wrong offset. Our converter
+copied it correctly. The signature is a tool bug, not an annotator: **84.2% of repairable
+cases need exactly ONE character** (112 of 133), split trailing 54.9% / leading 44.4%, and
+it reproduces across corpora with different annotators (casie 21/21 at +1, biored 2/2,
+docee 82.4%). *(The classifier caps expansion at 4 characters, so that distribution is
+truncated by construction.)*
+
+**Why this is not merely lost supervision -- it is WRONG supervision.** The mention is
+skipped but the label's QUERY survives, so the label is still offered with nothing to
+find. Measured over 46,122 label queries: **1.41% ORPHANED** (the unaligned surface was the
+label's only one, so it trains as ABSENT while the entity is in the text) and 1.17%
+PARTIAL. Worst `chfinann` 1.98%, cleanest `casie` 0.07%. Since nothing is abstractive,
+every one of those is a false negative.
+
+So there are three actions, and the third is usually right:
+
+1. **repair** where the fragment is not a word (`EXTENDABLE`);
+2. **suppress the query** where it is -- `suppress_orphaned_queries: true` drops a label
+   from that document's menu when every one of its surfaces fails to align, teaching
+   nothing instead of teaching a falsehood. ENTITIES ONLY and deliberately: dropping a
+   structure field or event role removes an anchor's field query, which is the
+   `record 'record' declares anchor 'type' but no matching field query` abort. An
+   INTENTIONALLY injected negative is an EMPTY gold list and is never suppressed;
+3. **never assert absence** for a surface you know is in the text.
+
+> `partial_annotation` does NOT do this. It is read only by `build_negative_pools.py`, to
+> refuse a corpus as a SOURCE of negatives; the trainer never reads it, so declaring it
+> protects nothing at training time.
+
 ## 3e. One label space, shared by a base and everything warm-started from it
 
 A label is an INPUT to GLiNER2 at inference, so two spellings of one concept are two

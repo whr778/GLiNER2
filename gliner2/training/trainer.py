@@ -255,6 +255,10 @@ class TrainingConfig:
     # sliding_window/window_stride: window long training docs (word-level) so a
     # short-context encoder (e.g. DeBERTa-v3 512-cap) doesn't overflow; each window
     # carries its own gold. False -> single pass with max_len truncation.
+    # Entity labels whose gold is entirely unalignable are offered with nothing to
+    # find, so they train as ABSENT while the entity is in the text -- measured at
+    # 1.41% of label queries. On, the query is dropped instead. Training only.
+    suppress_orphaned_queries: bool = False
     sliding_window: bool = False
     window_stride: int = 256
     # data_parallel: DEPRECATED no-op. The trainer now uses DistributedDataParallel
@@ -645,11 +649,16 @@ class ExtractorCollator:
             error_policy: str = "raise",
             event_records: bool = False,
             allow_invalid_samples: bool = False,
+            suppress_orphaned_queries: bool = False,
     ):
         self.processor = processor
         # Tier 2: compile event groups as records so the record head can separate
         # multiple instances of one event type. Off unless the head config asks.
         self.event_records = event_records
+        # Drop an entity label from a document's menu when EVERY one of its gold surfaces
+        # fails to align. Off by default: it changes what the model is supervised on, so
+        # the default reproduces the older numbers.
+        self.suppress_orphaned_queries = suppress_orphaned_queries
         self.is_training = is_training
         self.max_len = max_len
         self.architecture = architecture
@@ -684,6 +693,7 @@ class ExtractorCollator:
                 on_capacity_exceeded=self.on_capacity_exceeded,
                 error_policy=self.error_policy,
                 event_records=self.event_records,
+                suppress_orphaned_queries=self.suppress_orphaned_queries,
             )
             if self.allow_invalid_samples:
                 kwargs.update(
@@ -2005,6 +2015,9 @@ class ExtractorTrainer:
                 getattr(model_config, "boundary_head", {}).get("event_records", False)
             ),
             allow_invalid_samples=self.config.allow_invalid_samples,
+            suppress_orphaned_queries=(
+                is_training and bool(getattr(self.config, "suppress_orphaned_queries", False))
+            ),
         )
 
         # Fix Bug #1 & #9: Handle small datasets

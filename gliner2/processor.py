@@ -389,6 +389,7 @@ class SchemaTransformer:
             on_capacity_exceeded: str = "raise",
             event_records: bool = False,
             ignore_missing_entities: bool = False,
+            suppress_orphaned_queries: bool = False,
     ) -> PreprocessedBatch:
         """
         Collate function for training DataLoader.
@@ -425,6 +426,7 @@ class SchemaTransformer:
             max_gold_per_query=max_gold_per_query,
             on_capacity_exceeded=on_capacity_exceeded,
             event_records=event_records,
+            suppress_orphaned_queries=suppress_orphaned_queries,
             # A tolerant record policy implies tolerance for the alignment failures
             # that would otherwise abort the whole run on one unlocatable surface.
             on_missing_surface=(
@@ -501,6 +503,7 @@ class SchemaTransformer:
             on_missing_surface: str = "raise",
             event_records: bool = False,
             ignore_missing_entities: bool = False,
+            suppress_orphaned_queries: bool = False,
     ) -> PreprocessedBatch:
         if architecture != "boundary" or len(batch) == 0:
             return batch
@@ -556,6 +559,7 @@ class SchemaTransformer:
             build_targets=build_targets,
             on_capacity_exceeded=on_capacity_exceeded,
             event_records=event_records,
+            suppress_orphaned_queries=suppress_orphaned_queries,
             on_missing_surface=(
                 "skip"
                 if (ignore_missing_entities or on_missing_surface != "raise")
