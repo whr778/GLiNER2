@@ -280,6 +280,12 @@ Read from the paper (Lin, Ji, Huang & Wu, ACL 2020, `2020.acl-main.713`) on 2026
 prompted by the question "didn't OneIE solve this?". It did, and the answer has two halves,
 of which the second matters more to us.
 
+> **SUPERSEDED IN PART — read [4c-i](#4c-i-verified-in-code-2026-09-22--and-it-inverts-the-summary-above)
+> first.** This section was read from the PAPER. The SOURCE was read on 2026-09-22 and
+> inverts the emphasis: the architectural half is the one that matters. OneIE trains the
+> trigger->argument edge with its own loss over candidate pairs; we only MEASURE that
+> binding. Their scoring is looser than ours; their training is tighter.
+
 ### The architectural half: OneIE never creates the pooling problem
 
 OneIE identifies triggers by **token-level BIO tagging with a CRF**:
@@ -341,6 +347,77 @@ Our two metrics bracket that criterion; neither equals it:
 4. **The "catastrophic 0.118" framing overstated the gap against the field**, and that is my
    error to correct: relaxed at 0.578 is roughly where the field's own criterion already
    places this model.
+
+### 4c-i. VERIFIED IN CODE, 2026-09-22 — and it inverts the summary above
+
+§4c was read from the PAPER. The source was read on 2026-09-22
+([`GerlinGreen/OneIE`](https://github.com/GerlinGreen/OneIE), a mirror of the Blender Lab
+release) because a paper states a criterion and the code is what actually ran. It confirms
+the metric claim exactly, and it contradicts the emphasis: **the half that matters is the
+architectural one, not the metric one.**
+
+**Representation** — `graph.py`:
+
+```python
+trigger = (start_offset, end_offset, label_idx)   # ONE NODE PER TRIGGER SPAN
+role    = (trigger_idx, entity_idx, label_idx)    # EDGE: this trigger -> this entity
+```
+
+**Loss** — `model.py`. Arguments have their OWN objective, summed unweighted beside four
+siblings, over **(trigger, entity) CANDIDATE PAIRS** with a null role:
+
+```python
+classification_loss = entity_criteria(...) + event_criteria(...) + relation_criteria(...)
+                    + role_criteria(role_type_scores, batch.role_type_idxs)   # arguments
+                    + mention_criteria(...)
+loss = classification_loss - entity_label_loglik.mean() - trigger_label_loglik.mean()
+if use_global_features:                       # optional structured margin on the graph
+    loss = loss + (top_scores - gold_scores).clamp(min=0).mean()
+```
+
+**Metric** — `scorer.py`:
+
+```python
+args.add((arg_start, arg_end, trigger_label, role))   # event TYPE, not the trigger SPAN
+```
+
+**So the accurate statement is NOT "OneIE does not bind the trigger".** It binds harder
+than we do, and in the place that counts:
+
+| | OneIE | ours |
+|---|---|---|
+| argument→trigger in the REPRESENTATION | yes, `trigger_idx` edge | yes, the record anchor |
+| argument→trigger in the LOSS | **YES — `role_criteria` over (trigger, entity) pairs** | **NO — nothing optimises the edge** |
+| argument→trigger in the METRIC | **no — keyed on event TYPE** | **YES — strict is `(type, role, entity, trigger_key)`** |
+
+Their **scoring** is looser than ours. Their **training** is tighter. We have it exactly the
+other way round: **we measure a binding that nothing in our loss is responsible for
+producing.** Our `candidate_pair_loss` pairs a span's START with its END; it is not a
+trigger↔argument objective, and no such objective exists in the boundary head. The record
+anchor makes the binding *expressible* and the decoder *structural* — it never makes it
+*trained*.
+
+That is a coherent mechanism for the strict/relaxed spread this whole paper is about, and
+it agrees with the finding in §2 that the model FINDS arguments and cannot BIND them.
+It is a mechanism story, not a measurement: nobody has shown that adding an edge objective
+moves our numbers.
+
+**A second consequence, which lands on the label-negatives line.** OneIE's role loss is
+saturated with negatives BY CONSTRUCTION — every (trigger, entity) pair that is not an
+argument is a null-role negative, supplied by the sentence itself and requiring no
+configuration. On 2026-09-22 this project measured its own negatives at a **14.1% ratio**
+(`negative_labels_per_dim: 1`), found a stale pools file giving **23.6% of eb17's records
+ZERO negatives**, and found `partial_annotation` never reached the trainer at all. OneIE
+never had to get any of that right.
+
+**Why it is not a drop-in.** OneIE is SENTENCE-level (ACE/ERE), so its candidate-pair set is
+small. At our 4096-token document scope the same formulation is quadratic in a far larger
+span set — and our own "64.2% of gold instances share a type with another in the same
+document" is a DOCUMENT-level statistic that sentence-level models never face.
+
+**The ACTION from §4c is STILL OPEN** — checked 2026-09-22, `eval_metrics.py` has no
+trigger-free argument key. Until it exists, every claim about the distance between this
+line and OneIE is unsupported in both directions.
 
 ### 4c-ii. What OneIE would cost us — the objections, before anyone adopts it
 
