@@ -32,7 +32,17 @@ CKPT=${CKPT:-}
 BRANCH=${BRANCH:-merge/main-20260805}
 JOB_TIMEOUT=${JOB_TIMEOUT:-14400}
 HARD_DEADLINE=${HARD_DEADLINE:-18000}
-SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20"
+# KEEPALIVES ARE NOT OPTIONAL ON A FLAKY LINK. Without ServerAlive*, an ssh that
+# establishes and then stalls mid-stream hangs FOREVER: on 2026-09-22 this script printed
+# "active at <ip>", hung inside the credentials heredoc (which holds the connection open
+# streaming stdin -- the most fragile shape there is), and left a bare box billing with no
+# guard armed, because the guard is armed AFTER credentials. provision_box.sh already had
+# these; this copy had drifted. A second copy diverging from the first is a failure this
+# project has paid for more than once.
+SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 \
+ -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes"
+# Per-step ceiling, so a stall FAILS visibly instead of hanging silently.
+TMO=$(command -v timeout || command -v gtimeout || true)
 
 fail() { echo "[prov] *** FATAL: $* ***" >&2; exit 1; }
 
@@ -106,6 +116,19 @@ git clone -q https://github.com/whr778/GLiNER2.git gliner2
 cd gliner2 && git checkout -q $BRANCH
 echo "[prov] repo at \$(git log --oneline -1)"
 SETUP
+
+# STOP 4, ARMED THE MOMENT IT CAN BE: after the repo exists and the credentials are
+# verified, and BEFORE the bootstrap -- which is the step that can hang. Stops 1-3 live
+# inside box_run.sh and none of them exists until the job starts, so without this a laptop
+# that dies in between leaves a bare box billing with no watchdog at all. That is exactly
+# what happened on 2026-09-22: the provisioner was killed at session teardown, the box sat
+# unguarded, and only a human noticed. The guard needs nothing from the laptop afterwards.
+${TMO:+$TMO 30} $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && IDLE_GRACE=${IDLE_GRACE:-1800} nohup setsid bash tools/lambda/idle_guard.sh > ~/idle_guard.log 2>&1 < /dev/null & disown'" >/dev/null 2>&1 || true
+if ${TMO:+$TMO 30} $SSH ubuntu@$IP 'pgrep -f "tools/lambda/idle_guard\.sh" >/dev/null' 2>/dev/null; then
+  echo "[prov] idle guard armed (${IDLE_GRACE:-1800}s): box self-terminates if no runner starts"
+else
+  echo "[prov] WARNING: idle guard NOT armed -- a stall from here leaves an unguarded box"
+fi
 
 echo "[prov] bootstrap $(date -u)"
 $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && CFG=$CFG CKPT=$CKPT bash tools/lambda/bootstrap_box.sh'" \
