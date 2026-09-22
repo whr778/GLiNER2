@@ -24,11 +24,15 @@ import sys
 import yaml
 
 
-def scan(corpora, limit=6000):
-    """``task -> corpus -> frozenset(labels)`` over each corpus's train split."""
+def scan(paths, limit=6000):
+    """``task -> corpus -> frozenset(labels)`` over each FILE the trainer will load."""
     menus = collections.defaultdict(dict)
-    for prefix in corpora:
-        path = f"{prefix}.train.jsonl"
+    for path in paths:
+        prefix = path[: -len(".jsonl")] if path.endswith(".jsonl") else path
+        for suffix in (".train", ".val", ".test"):
+            if prefix.endswith(suffix):
+                prefix = prefix[: -len(suffix)]
+                break
         if not os.path.exists(path):
             continue
         seen = collections.defaultdict(set)
@@ -53,8 +57,24 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
-    corpora = (cfg.get("data") or {}).get("corpora") or []
-    menus = scan(corpora, args.records)
+    # Resolve the files the TRAINER will actually load, with the trainer's own helpers.
+    # Reading `data.corpora` and appending ".train.jsonl" by hand missed two things and so
+    # could not fail on either: a corpus named ONLY in `event_files` was never scanned at
+    # all (mendeley_ed), and an `event_files` entry pointing its split at a different path
+    # was scanned at the wrong one.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import train as _train
+
+    data = cfg.get("data") or {}
+    corpora = data.get("corpora") or []
+    train_only = set(data.get("train_only") or ())
+    event_files = data.get("event_files") or {}
+    paths = _train._dedupe_paths(
+        _train._split_files(corpora, "train", train_only)
+        + _train._event_split(event_files, "train"),
+        "train",
+    )
+    menus = scan(paths, args.records)
 
     failed = []
     for task, per_corpus in sorted(menus.items()):
@@ -76,7 +96,11 @@ def main() -> int:
               f"(see tools/data/unify_docee_menus.py) before training. ***")
         return 1
     print(f"\n[menus] every classification task offers ONE menu across "
-          f"{len(corpora)} corpora")
+          f"{len(paths)} train files")
+    print("[menus] NOTE: this scans the LOCAL data/ tree. A fresh box fetches every corpus "
+          "from HF, so a local pass does NOT prove the RUN's menus agree -- eb17-best "
+          "trained docee at 59 labels against docee_zh and turkish_event at 60 while this "
+          "gate read 60/60/60 on disk. Verify local and HF agree before launching.")
     return 0
 
 
