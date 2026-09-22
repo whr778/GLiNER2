@@ -83,11 +83,26 @@ the finished model on strict F1 at its own calibrated point, not on relaxed reca
 **Threshold is not the lever.** Sweeping it moves argument *recall* a lot — never-proposed
 falls from ~48.8% to ~29.4% — and no F1 at all, because precision pays for it. (§4d)
 
-**There are no label negatives, for events or for NER** — the training menu is built from
-each document's own gold, so the model is never shown a type it must reject. Given a schema
-of only absent types it fires on **63%** of documents (incumbent) / **54%** (event-records).
-Training and eval share the blind spot, which is why no metric caught it. Probably the
-largest lever on the table, and a data-side change rather than an architectural one. (§4i)
+**Label negatives: diagnosed here, BUILT since, and still not clean.** The training menu was
+built from each document's own gold, so the model was never shown a type it must reject —
+given a schema of only absent types it fires on **63%** of documents (incumbent) / **54%**
+(event-records). Training and eval shared the blind spot, which is why no metric caught it.
+(§4i) **Status 2026-09-22:** the injector exists and eb17 uses it, but three defects were
+found the same week — the "0 absent queries" that motivated it was a HARDCODED PRINT (the
+measured figure is 0.19%), the committed pools file was stale and gave **23.6% of eb17's
+records zero negatives** (now `negative_pools: auto`), and `partial_annotation` never
+reached the trainer. The realised negative ratio is **14.1%** against GLiNER v1's ablated
+optimum of 50% — a dose sweep is TODO 17, unrun.
+
+**The argument→trigger binding IS trained, and the headline spread predates it.**
+`record_loss_weight` defaults to 1.0 and `compute_group_loss` seeds a record instance from
+the ANCHOR, supervising field losses into it — so strict's trigger requirement is an
+optimisation target, not merely a scoring one. OneIE trains the same binding in a different
+form (pairwise (trigger, entity) classification, negative-saturated by construction, at
+sentence scope) and then discards it at scoring time: **their metric is looser than ours.**
+Crucially the 0.1178 / 0.5783 spread was measured WITHOUT `event_records`, on a record head
+that had never seen an event and so had no event binding objective at all — it is not
+evidence about the architecture eb17 trains. (§4c-i)
 
 **`event_type` has never actually been scored.** Its precision is 1.0000 *by construction* —
 the eval builds the type menu from the document's own gold, so no wrong answer is on offer,
@@ -280,11 +295,8 @@ Read from the paper (Lin, Ji, Huang & Wu, ACL 2020, `2020.acl-main.713`) on 2026
 prompted by the question "didn't OneIE solve this?". It did, and the answer has two halves,
 of which the second matters more to us.
 
-> **SUPERSEDED IN PART — read [4c-i](#4c-i-verified-in-code-2026-09-22--and-it-inverts-the-summary-above)
-> first.** This section was read from the PAPER. The SOURCE was read on 2026-09-22 and
-> inverts the emphasis: the architectural half is the one that matters. OneIE trains the
-> trigger->argument edge with its own loss over candidate pairs; we only MEASURE that
-> binding. Their scoring is looser than ours; their training is tighter.
+> **This section was read from the PAPER and is kept for its quotations. For the settled
+> position, read §4c-i, which was read from the SOURCE.**
 
 ### The architectural half: OneIE never creates the pooling problem
 
@@ -348,117 +360,75 @@ Our two metrics bracket that criterion; neither equals it:
    error to correct: relaxed at 0.578 is roughly where the field's own criterion already
    places this model.
 
-### 4c-i. VERIFIED IN CODE, 2026-09-22 — and it inverts the summary above
+### 4c-i. SETTLED, from OneIE's SOURCE (2026-09-22)
 
-§4c was read from the PAPER. The source was read on 2026-09-22
+Everything above in §4c was read from the PAPER. The source was read on 2026-09-22
 ([`GerlinGreen/OneIE`](https://github.com/GerlinGreen/OneIE), a mirror of the Blender Lab
-release) because a paper states a criterion and the code is what actually ran. It confirms
-the metric claim exactly, and it contradicts the emphasis: **the half that matters is the
-architectural one, not the metric one.**
+release). **This subsection is the current position; read it instead of the two above.**
 
-**Representation** — `graph.py`:
+#### The conclusion, in one line
 
-```python
-trigger = (start_offset, end_offset, label_idx)   # ONE NODE PER TRIGGER SPAN
-role    = (trigger_idx, entity_idx, label_idx)    # EDGE: this trigger -> this entity
-```
+**Both OneIE and this project train the argument->trigger binding. Their SCORING is looser
+than ours. The forms of the objective differ, and the number everyone quotes was measured
+on a model that had no event binding objective at all.**
 
-**Loss** — `model.py`. Arguments have their OWN objective, summed unweighted beside four
-siblings, over **(trigger, entity) CANDIDATE PAIRS** with a null role:
+#### What OneIE does, verified in code
 
 ```python
-classification_loss = entity_criteria(...) + event_criteria(...) + relation_criteria(...)
-                    + role_criteria(role_type_scores, batch.role_type_idxs)   # arguments
-                    + mention_criteria(...)
+# graph.py -- one node per trigger SPAN; an argument is an EDGE to a specific trigger
+trigger = (start_offset, end_offset, label_idx)
+role    = (trigger_idx, entity_idx, label_idx)
+
+# model.py -- arguments get their OWN loss, over (trigger, entity) CANDIDATE PAIRS
+classification_loss = entity + event + relation + role_criteria(...) + mention
 loss = classification_loss - entity_label_loglik.mean() - trigger_label_loglik.mean()
-if use_global_features:                       # optional structured margin on the graph
+if use_global_features:
     loss = loss + (top_scores - gold_scores).clamp(min=0).mean()
+
+# scorer.py -- and the metric then DISCARDS the binding
+args.add((arg_start, arg_end, trigger_label, role))     # event TYPE, not trigger SPAN
 ```
 
-**Metric** — `scorer.py`:
+#### What we do, verified in code
+
+`record_loss_weight` defaults to **1.0** (`configuration.py:180`), and `compute_group_loss`
+supervises `natural` mode by seeding an instance FROM THE ANCHOR:
 
 ```python
-args.add((arg_start, arg_end, trigger_label, role))   # event TYPE, not the trigger SPAN
+anchor_qid   = group.spec.anchor_query_id
+anchor_f_idx = group.field_query_ids.index(anchor_qid)
+seed_to_inst = {seed[1]: i for i, seed in enumerate(group.instance_seed)
+                if seed is not None and seed[0] == anchor_f_idx}
+for record in records:
+    aft = record.field_for_query(anchor_qid)
 ```
 
-**So the accurate statement is NOT "OneIE does not bind the trigger".** It binds harder
-than we do, and in the place that counts:
+The anchor span seeds the instance; field losses are supervised INTO that instance.
+`record_object_loss` and `record_field_loss` both sum into the boundary loss.
+
+#### Side by side
 
 | | OneIE | ours |
 |---|---|---|
-| argument→trigger in the REPRESENTATION | yes, `trigger_idx` edge | yes, the record anchor |
-| argument→trigger in the LOSS | **YES — `role_criteria` over (trigger, entity) pairs** | **NO — nothing optimises the edge** |
-| argument→trigger in the METRIC | **no — keyed on event TYPE** | **YES — strict is `(type, role, entity, trigger_key)`** |
+| binding in the REPRESENTATION | `trigger_idx` edge | the record anchor |
+| binding in the LOSS | yes -- pairwise classification over (trigger, entity) candidates, null role included | yes -- anchor-seeded instance assignment |
+| binding in the METRIC | **no** -- keyed on event TYPE | **yes** -- strict is `(type, role, entity, trigger_key)` |
+| negatives for that objective | **saturated by construction**: every non-argument pair is a null-role negative | from candidate sampling, not from the pair set |
+| scope | sentence -- the pair set is small | document, 4096 tokens -- a pair set is quadratic |
 
-Their **scoring** is looser than ours. Their **training** is tighter. We have it exactly the
-other way round: **we measure a binding that nothing in our loss is responsible for
-producing.** Our `candidate_pair_loss` pairs a span's START with its END; it is not a
-trigger↔argument objective, and no such objective exists in the boundary head. The record
-anchor makes the binding *expressible* and the decoder *structural* — it never makes it
-*trained*.
+#### The consequence that actually matters
 
-That is a coherent mechanism for the strict/relaxed spread this whole paper is about, and
-it agrees with the finding in §2 that the model FINDS arguments and cannot BIND them.
-It is a mechanism story, not a measurement: nobody has shown that adding an edge objective
-moves our numbers.
+**The 0.1178 strict / 0.5783 relaxed spread was measured WITHOUT `event_records`** -- on a
+record head that, per §3, "was supervised on `json_structures` only and has never seen an
+event". That model had no event binding objective at all. That is a sufficient explanation
+for the spread, and it is **not evidence about the architecture eb17 trains**.
 
-**A second consequence, which lands on the label-negatives line.** OneIE's role loss is
-saturated with negatives BY CONSTRUCTION — every (trigger, entity) pair that is not an
-argument is a null-role negative, supplied by the sentence itself and requiring no
-configuration. On 2026-09-22 this project measured its own negatives at a **14.1% ratio**
-(`negative_labels_per_dim: 1`), found a stale pools file giving **23.6% of eb17's records
-ZERO negatives**, and found `partial_annotation` never reached the trainer at all. OneIE
-never had to get any of that right.
+So the open question is not "add an edge objective". It is: **does the binding objective we
+already have move strict argument F1, now that events reach the record head?** eb17 was
+bought to answer that and has not yet. See [[TODO]] item 16; step 1 is still the free Arg-C
+metric, open since 2026-09-15 and confirmed missing from `eval_metrics.py` on 2026-09-22.
 
-**Why it is not a drop-in.** OneIE is SENTENCE-level (ACE/ERE), so its candidate-pair set is
-small. At our 4096-token document scope the same formulation is quadratic in a far larger
-span set — and our own "64.2% of gold instances share a type with another in the same
-document" is a DOCUMENT-level statistic that sentence-level models never face.
-
-**The ACTION from §4c is STILL OPEN** — checked 2026-09-22, `eval_metrics.py` has no
-trigger-free argument key. Until it exists, every claim about the distance between this
-line and OneIE is unsupported in both directions.
-
-
-> ### CORRECTION 2026-09-22, same day: "we never train the edge" was WRONG
->
-> The claim above that NOTHING in our loss optimises argument->trigger does not survive
-> reading our own code, and it was asserted before that reading. It is retracted here
-> rather than left standing.
->
-> `record_loss_weight` defaults to **1.0** (`configuration.py:180`) and
-> `compute_group_loss` supervises `natural` mode by seeding an instance FROM THE ANCHOR:
->
-> ```python
-> anchor_qid   = group.spec.anchor_query_id
-> anchor_f_idx = group.field_query_ids.index(anchor_qid)
-> seed_to_inst = {seed[1]: i for i, seed in enumerate(group.instance_seed)
->                 if seed is not None and seed[0] == anchor_f_idx}
-> for record in records:
->     aft = record.field_for_query(anchor_qid)
-> ```
->
-> The anchor span seeds the instance and field losses are supervised INTO that instance,
-> so the binding IS an optimisation target. `record_object_loss` and `record_field_loss`
-> are both summed into the boundary loss.
->
-> **What actually differs is the FORM, not the presence:**
->
-> | | OneIE | ours |
-> |---|---|---|
-> | form | pairwise classification over (trigger, entity) candidates, with a NULL role | anchor-seeded instance assignment; fields supervised into the seeded instance |
-> | negatives | saturated BY CONSTRUCTION -- every non-argument pair is a null-role negative | come from candidate sampling, not from the pair set |
-> | scope | sentence -- the pair set is small | document, 4096 tokens -- a pair set would be quadratic |
->
-> **And the figure everyone quotes does not measure the current architecture.** The
-> 0.1178 / 0.5783 spread was measured on a model trained WITHOUT `event_records`, whose
-> record head "was supervised on `json_structures` only and has never seen an event".
-> That model had no event binding objective at all -- which is a sufficient explanation
-> for the spread, and it is not evidence about the architecture eb17 trains.
->
-> **So the open question is not "add an edge objective". It is: does the binding objective
-> we ALREADY have move strict argument F1, now that events actually reach the record
-> head?** That is what eb17 was bought to answer and has not yet answered.
+*How this conclusion moved, including the two wrong turns taken to reach it: [[PROJECT_HISTORY]], 2026-09-22.*
 
 ### 4c-ii. What OneIE would cost us — the objections, before anyone adopts it
 

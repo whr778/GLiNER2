@@ -4335,3 +4335,41 @@ whether derived labels were the problem rather than the idea.
 SENTENCES, not articles. One document per request wastes ~400 prompt tokens on a 40-token
 input, which is why the amortised row is a third of the naive one. Batch ~10 per request.
 
+### 2026-09-22 -- OneIE read from SOURCE, and two wrong turns taken getting there
+
+The settled position lives in [[EVENT_ARGUMENT_DIAGNOSIS]] §4c-i. This is the path, because
+two of the three steps were errors and the errors share one cause.
+
+**1. Read from the paper (09-15).** §4c concluded the answer had two halves -- architectural
+and metric -- "of which the second matters more to us". The metric claim was right: OneIE's
+Arg-C requires offsets + event type + role, and not the specific trigger.
+
+**2. Read from the source (09-22), which inverted the emphasis.** Prompted by the question
+"do their arguments have their own loss?". They do: `role_criteria(role_type_scores,
+batch.role_type_idxs)`, a cross-entropy over (trigger, entity) CANDIDATE PAIRS with a null
+role, summed unweighted beside four siblings. And `graph.py` represents an argument as an
+edge to a specific trigger node. So OneIE trains the binding its own scorer then discards.
+The architectural half, not the metric half, is the live one.
+
+**3. Over-corrected within the hour, and that was the real error.** From (2) I wrote that
+"NOTHING in our boundary loss optimises that edge" -- reasoning from OneIE's loss and our
+`candidate_pair_loss`, which pairs a span's start with its end. It went into three working
+papers, a TODO row, a catalog row and a commit message before anyone read our OWN record
+loss. It is false: `record_loss_weight` defaults to 1.0 and `compute_group_loss` seeds an
+instance FROM THE ANCHOR, supervising field losses into it. We train the binding too, in a
+different form -- anchor-seeded instance assignment rather than pairwise edge classification.
+
+**What the correction bought, which is more than the correction cost.** Once the binding was
+known to be trained, the interesting question moved: the 0.1178 strict / 0.5783 relaxed
+spread everyone quotes was measured WITHOUT `event_records`, on a record head that had never
+seen an event and therefore had no event binding objective at all. That is a sufficient
+explanation for the spread and says nothing about the architecture eb17 trains. TODO 16 was
+rewritten from "add an edge objective" to "measure whether the objective we already have
+works", which is a much cheaper question and one eb17 was already bought to answer.
+
+**The standing lesson.** Both wrong turns came from reasoning about one codebase while
+reading another. The tidy formulation -- "we measure a binding we never train" -- is exactly
+the kind that should be checked against the code before it is written down, and it was
+written down three times first. It joins the rerank double-count, the hardcoded
+`ABSENT queries: 0`, and the menu gate that read the wrong tree: a claim that sounds
+explanatory is the one most worth verifying.
