@@ -1,5 +1,44 @@
 # Event arguments: why they fail, and what has been measured
 
+## AT A GLANCE — what is settled, what is open, and what to do next
+
+*This document is long and chronological. Read this table, jump to the section you need.
+Everything here is measured unless the row says otherwise.*
+
+### Settled — the diagnosis, and the things that turned out not to be the answer
+
+| # | finding | the number that settles it | § |
+|---|---|---|---|
+| S1 | The model **finds** arguments and cannot **bind** them | strict **0.0991** vs relaxed **0.5884**, same predictions | §1, §4d |
+| S2 | Mechanical cause: the mention path keys instances by TYPE and pools them | **0/12** documents emitted 2 instances; **11/12** pooled | §2 |
+| S3 | No content-derived key fixes it — only an *index* does | type collapses **69.7%**, trigger **39.9%**, index **0%** | §2, `event_multiplicity.py` |
+| S4 | `event_records: true` was never configured before 2026-09-15 | `event_records` appeared 0× in every base config | §3 |
+| S5 | The record head **works**, on a 40%-trained checkpoint | **5/12** multi-instance, **0/12** pooled, precision **1.3–1.7×** | §4e |
+| S6 | Its low recall is **undertraining**, not a missing mechanism | +41% in one epoch, nothing structural capping it | §4f |
+| S7 | Threshold is **not** the lever | moves recall 48.8%→29.4% never-proposed, **zero** F1 | §4d |
+| S8 | `event_type` precision is **1.0000 by construction** | real full-menu precision **0.5521**; quote it as recall | §4h |
+| S9 | The argument→trigger binding **IS trained** (`record_loss_weight` 1.0, anchor-seeded) — and OneIE's metric is **looser** than ours, not tighter | their key drops the trigger span; ours keeps it | §4c-i |
+| S10 | **All four NER↔argument linking options are CLOSED** | shared pool −0.0745; typed margin w_S 0.00003; predicted types −0.074; roles→entities −0.0300 | §4k |
+| S11 | Absent negatives: the lever is **real but dead** | +0.0376 argument at **−0.1977** classification; scoping to roles lost the gain (−0.1027) and recovered 15% of the cost | §4i, [[EXPERIMENT_CATALOG]] |
+| S12 | Blind-test row count is inflated by the **config**, not the corpora | duplicates are a config artefact, handled correctly | §4j |
+
+### Open — cheapest first, because that is the order to do them in
+
+| # | question | cost | blocked on | § / ref |
+|---|---|---|---|---|
+| O1 | **Add the Arg-C metric** (exact surface + type + role, **no** trigger) | **free**, scorer-only | nothing — open since 2026-09-15, still absent from `eval_metrics.py` | §4c-i, TODO 16 |
+| O2 | **Does the binding objective we already have move strict argument F1** on a fully-trained `event_records` base? | eb17, already bought | eb17 completing — the 0.0991/0.5884 spread was measured on a head that had **never seen an event** | §4c-i, TODO 2 |
+| O3 | **Negative-ratio sweep toward 50%** | ~$44, 3 arms × 2 epochs, A100 | nothing | TODO 17 |
+| O4 | **`record_anchor_threshold` sweep** on an event-records base | free once O2 exists | O2 | TODO 4 |
+| O5 | **Classification collapse** (−0.1977 on absneg2, 96% `docee_event`) | free to re-read | may already be explained: docee trained at a **59-label** menu against 60 elsewhere until 2026-09-22 | TODO 3, 14 |
+
+**If you do one thing: O1.** It costs nothing, it has been open for a week, and until it
+exists every comparison between this line and the literature is unsupported in both
+directions. **If you do two: O1 then O2** — O2 is already paid for and it is the question
+S9 leaves open.
+
+---
+
 > ## *** 2026-09-21: THE NEGATIVES LEVER, MEASURED CLEANLY AT LAST ***
 >
 > `absneg2` is the first legal comparison of absent-negatives-in-the-denominator:
@@ -10,6 +49,12 @@
 >
 > Two earlier attempts at this measurement were void (injector never wired; then checkpoint
 > selection), so any number for this lever dated before 2026-09-21 should not be quoted.
+>
+> **CLOSED 2026-09-22 — the lever is DEAD.** `absneg4` scoped the absent pool to event ROLES
+> to keep the +0.0376 without the -0.1977. It did neither: `event_argument` **-0.1027**
+> against absneg2-treatment (recall 0.1481 -> 0.0681, **below** the control it had to beat),
+> while recovering only 15% of the classification collapse. The gain depends on the
+> UNSCOPED pool and the cost is inseparable from it. See row S11.
 
 > ## *** 2026-09-21 (later): ALL FOUR OPTIONS ARE NOW CLOSED ***
 >
