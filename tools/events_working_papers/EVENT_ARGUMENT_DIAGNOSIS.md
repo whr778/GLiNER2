@@ -419,6 +419,47 @@ document" is a DOCUMENT-level statistic that sentence-level models never face.
 trigger-free argument key. Until it exists, every claim about the distance between this
 line and OneIE is unsupported in both directions.
 
+
+> ### CORRECTION 2026-09-22, same day: "we never train the edge" was WRONG
+>
+> The claim above that NOTHING in our loss optimises argument->trigger does not survive
+> reading our own code, and it was asserted before that reading. It is retracted here
+> rather than left standing.
+>
+> `record_loss_weight` defaults to **1.0** (`configuration.py:180`) and
+> `compute_group_loss` supervises `natural` mode by seeding an instance FROM THE ANCHOR:
+>
+> ```python
+> anchor_qid   = group.spec.anchor_query_id
+> anchor_f_idx = group.field_query_ids.index(anchor_qid)
+> seed_to_inst = {seed[1]: i for i, seed in enumerate(group.instance_seed)
+>                 if seed is not None and seed[0] == anchor_f_idx}
+> for record in records:
+>     aft = record.field_for_query(anchor_qid)
+> ```
+>
+> The anchor span seeds the instance and field losses are supervised INTO that instance,
+> so the binding IS an optimisation target. `record_object_loss` and `record_field_loss`
+> are both summed into the boundary loss.
+>
+> **What actually differs is the FORM, not the presence:**
+>
+> | | OneIE | ours |
+> |---|---|---|
+> | form | pairwise classification over (trigger, entity) candidates, with a NULL role | anchor-seeded instance assignment; fields supervised into the seeded instance |
+> | negatives | saturated BY CONSTRUCTION -- every non-argument pair is a null-role negative | come from candidate sampling, not from the pair set |
+> | scope | sentence -- the pair set is small | document, 4096 tokens -- a pair set would be quadratic |
+>
+> **And the figure everyone quotes does not measure the current architecture.** The
+> 0.1178 / 0.5783 spread was measured on a model trained WITHOUT `event_records`, whose
+> record head "was supervised on `json_structures` only and has never seen an event".
+> That model had no event binding objective at all -- which is a sufficient explanation
+> for the spread, and it is not evidence about the architecture eb17 trains.
+>
+> **So the open question is not "add an edge objective". It is: does the binding objective
+> we ALREADY have move strict argument F1, now that events actually reach the record
+> head?** That is what eb17 was bought to answer and has not yet answered.
+
 ### 4c-ii. What OneIE would cost us — the objections, before anyone adopts it
 
 §4c calls span-tagged triggers "the other road". It is a road with tolls, and they are

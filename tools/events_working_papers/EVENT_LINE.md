@@ -134,6 +134,23 @@ regardless of share says something other than pooling changed.
 
 ### 4h. Our headline metric is not the field's, and the gap was overstated
 
+> **AMENDED 2026-09-22 — read this first.** §4h was written from the PAPER. The SOURCE was
+> read on 2026-09-22 ([[EVENT_ARGUMENT_DIAGNOSIS]] §4c-i) and it changes the conclusion, not
+> just the detail. **OneIE's scoring is looser than ours; its TRAINING is tighter.** It
+> represents an argument as an edge to a specific trigger node
+> (`role = (trigger_idx, entity_idx, label_idx)`) **and optimises that edge** with its own
+> cross-entropy over (trigger, entity) candidate pairs. Then its scorer discards the
+> binding. We are the mirror image: our strict metric REQUIRES the trigger, and **nothing
+> in our loss produces it** — `candidate_pair_loss` pairs a span's START with its END, not
+> a trigger with an argument. **CORRECTED the same day:** that last clause was wrong.
+> `record_loss_weight` defaults to 1.0 and `compute_group_loss` seeds an instance FROM THE
+> ANCHOR, supervising fields into it -- so we DO train the binding, by anchor-seeded
+> assignment rather than pairwise edge classification. What differs is the FORM (and that
+> OneIE's pair set is negative-saturated by construction). Crucially, the 0.1178/0.5783
+> spread was measured WITHOUT `event_records`, on a record head that had never seen an
+> event -- so it is not evidence about the architecture eb17 trains. See
+> [[EVENT_ARGUMENT_DIAGNOSIS]] §4c-i CORRECTION.
+
 Read from the OneIE paper 2026-09-15 ([[EVENT_ARGUMENT_DIAGNOSIS]] §4c). OneIE's Arg-C
 requires **offsets + event type + role** and does **not** require the specific trigger to
 match. Our `strict` adds trigger identity; our `relaxed` drops exact spans for overlap. So:
@@ -160,6 +177,13 @@ match. Our `strict` adds trigger identity; our `relaxed` drops exact spans for o
 costly one, and the costs are enumerated in [[EVENT_ARGUMENT_DIAGNOSIS]] §4c-ii. It
 identifies triggers with token-level BIO + CRF, so one node per trigger SPAN and
 multi-instance falls out with no cap to lift.
+
+**The separable part of it is the LOSS, not the tagger.** `event_records: true` already
+gives us multi-instance, so the pooling half is answered. What remains unanswered is the
+edge: OneIE trains argument→trigger and we do not. That half can be adopted WITHOUT the BIO
+tagger and without forfeiting schema-driven labels, because a pairwise role objective over
+(anchor, argument-span) candidates is indifferent to where the candidates came from. See
+TODO item 16.
 
 **It is not, however, a drop-in fallback.** BIO tagging scores *"a tag in a target tag
 set"* fixed at training, and **GLiNER2's premise is that labels are an INPUT at inference** —
