@@ -1015,6 +1015,48 @@ class InputExample:
                     if is_valid:
                         valid_fields[field_name] = value
                 
+                # ---------------------------------------------------------------
+                # THE ANCHOR MUST SURVIVE, OR THE STRUCTURE GOES WITH IT.
+                #
+                # This block edits GOLD. `record_metadata` -- which names the anchor --
+                # is DECLARATION, and nothing here used to touch it. Dropping a field the
+                # declaration names left a record whose anchor pointed at nothing, and
+                # `compile_record_specs` then raised:
+                #
+                #   record 'record' declares anchor 'type' but no matching field query
+                #   was found in the layout; the extractive fields present are ['url']
+                #
+                # THAT KILLED eb17-best AND eb17-smoke, twice, at ~11% of a 5-epoch run,
+                # with no checkpoint written. It took a day to find because it is
+                # invisible until `validate_data: true`, and eb17 is the FIRST base config
+                # to set it -- its own header lists that as change #3. Six traces over
+                # ~600,000 samples missed it for one reason: every one of them ran with
+                # validation OFF, so the sanitizer never ran.
+                #
+                # THERE IS A SECOND, QUIETER FAILURE and it is the worse of the two.
+                # `get_record_metadata` defaults a natural-mode anchor to
+                # `next(iter(self._fields))` -- the FIRST declared field. Reassigning
+                # `_fields` below therefore RE-POINTS a defaulted anchor at whatever field
+                # now happens to be first. No crash, no warning: the record simply trains
+                # against a different anchor than it declares. A crash is recoverable;
+                # this is not.
+                #
+                # So: resolve the anchor the way `get_record_metadata` will resolve it,
+                # BEFORE mutating, and drop the whole structure if that field did not
+                # survive. Validation's contract is "remove invalid parts" -- a structure
+                # whose anchor is gone is not a part, it is a contradiction.
+                anchor = struct.anchor
+                if struct.mode == "natural" and not anchor:
+                    anchor = next(iter(struct._fields), None)
+                if struct.mode and anchor is not None and anchor not in valid_fields:
+                    warnings.append(
+                        f"Structure '{struct.struct_name}' lost its anchor field "
+                        f"'{anchor}' during sanitization - dropping the whole structure "
+                        f"(a record_metadata anchor naming a field that no longer exists "
+                        f"aborts record-spec compilation)"
+                    )
+                    continue
+
                 # Only keep structure if it has at least one valid field
                 if valid_fields:
                     struct._fields = valid_fields
