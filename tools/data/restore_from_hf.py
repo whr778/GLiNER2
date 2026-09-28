@@ -111,9 +111,30 @@ def main():
         keep = set(wanted_from_config(args.config))
         jobs = [j for j in jobs if str(j[2]) in keep]
         absent = keep - {str(j[2]) for j in jobs}
-        if absent:
-            print(f"NOT RESTORABLE for this config ({len(absent)}):")
-            for a in sorted(absent):
+        # A FILE THE HUB DOES NOT HAVE IS ONLY A BACKUP GAP IF WE HOLD IT LOCALLY.
+        # `wanted_from_config` enumerates train/val/test for every corpus, because a
+        # corpus is restored in full whether or not this config reads every split --
+        # `train_only` must NOT narrow the download, or a train-only corpus would lose
+        # its val and test copies on a restore. The cost of enumerating is that splits
+        # which never existed get asked for: duee_ner has no test split anywhere, because
+        # DuEE's upstream mirror ships train + validation only (convert_duee.py documents
+        # it and the model card records an em-dash).
+        #
+        # Reporting those as "NOT RESTORABLE ... these die with the disk" put a
+        # non-problem in the one list whose whole job is to be believed. Split it: on
+        # disk with no Hub copy is a REAL gap and stays loud; absent from both never
+        # existed and is a note.
+        gaps = sorted(a for a in absent if Path(a).exists())
+        never = sorted(a for a in absent if not Path(a).exists())
+        if gaps:
+            print(f"*** NOT BACKED UP ({len(gaps)}) -- on disk, no Hub copy, these die "
+                  f"with the disk:")
+            for a in gaps:
+                print(f"   {a}")
+        if never:
+            print(f"not on the Hub, and not on disk ({len(never)}) -- nothing to restore; "
+                  f"expected where a corpus has no such split:")
+            for a in never:
                 print(f"   {a}")
 
     todo = [j for j in jobs if args.force or not j[2].exists()]
