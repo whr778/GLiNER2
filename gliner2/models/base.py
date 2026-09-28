@@ -324,10 +324,20 @@ class BaseExtractorModel(PreTrainedModel):
             kwargs = {"trust_remote_code": True, "dtype": torch.float32}
             if implementation:
                 kwargs["attn_implementation"] = implementation
-            if encoder_config is not None:
-                encoder = AutoModel.from_config(config, **kwargs)
-            else:
-                encoder = AutoModel.from_pretrained(model_name, **kwargs)
+            with warnings.catch_warnings():
+                # Transformers' DeBERTa module decorates helpers with
+                # ``torch.jit.script`` at import time, which PyTorch flags as
+                # unsupported on Python 3.14+. The helpers still run eagerly,
+                # so the warning is not actionable for GLiNER2 users.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"`torch\.jit\.script` is not supported",
+                    category=FutureWarning,
+                )
+                if encoder_config is not None:
+                    encoder = AutoModel.from_config(config, **kwargs)
+                else:
+                    encoder = AutoModel.from_pretrained(model_name, **kwargs)
             # Transformers 5 honors a serialized encoder dtype during
             # ``from_config``. GLiNER2 task heads are initialized in FP32, so a
             # half-precision encoder would emit activations that cannot enter
