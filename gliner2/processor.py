@@ -1496,9 +1496,17 @@ class SchemaTransformer:
             # rather than a membership check, and silently scores every label whose text
             # happens to appear inside the true label as a match.
             schema["classifications"][idx]["labels"] = cls_labels
-            true_label = schema["classifications"][idx]["true_label"]
-            true_label = true_label.copy() if isinstance(true_label, list) else [true_label]
-            schema["classifications"][idx]["true_label"] = [real2syn.get(i, i) for i in true_label]
+            # ABSENT is now legal (upstream 022cfc6 dropped the `true_label: ["N/A"]`
+            # sentinel the compiler used to emit unconditionally), so this must .get().
+            # Reading it directly raised KeyError on every inference-path collate once
+            # the sentinel went away -- and error_policy="fallback" swallowed that into a
+            # dummy record, so the schema silently arrived with no prompt at all.
+            true_label = schema["classifications"][idx].get("true_label")
+            if true_label is not None:
+                true_label = true_label.copy() if isinstance(true_label, list) else [true_label]
+                schema["classifications"][idx]["true_label"] = [
+                    real2syn.get(i, i) for i in true_label
+                ]
             labels.append([])
 
     def _transform_schema(
