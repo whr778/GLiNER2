@@ -44,8 +44,9 @@ REFUSAL_MARK = "__REFUSAL__"
 SEEDS = ("Person", "Organization", "Location", "Date", "Time", "Quantity", "Facility",
          "Product", "Event", "Money", "Nationality", "Occupation", "Region", "Measurement")
 
-SYSTEM = ("You annotate Chinese text for a named-entity dataset."
-          ) + " " + rules("json_only", "verbatim", "no_inference", "minority", "ambiguity")
+SYSTEM = (
+    "You annotate Chinese text for a named-entity dataset."
+) + " " + rules("json_only", "verbatim", "no_inference", "minority", "ambiguity")
 
 USER = """Label the named entities in each numbered Chinese passage below.
 
