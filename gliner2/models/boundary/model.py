@@ -910,7 +910,7 @@ class BoundaryHead(nn.Module):
             )
             selected = (rank.view_as(absent_queries) < n_keep) & absent_queries
             pair_query_mask = positive_queries | selected
-            _note_negative_queries(int(absent_queries.sum()), int(selected.sum()))
+            _note_negative_queries(absent_queries.sum(), selected.sum())
         pair_loss = candidate_pair_loss(
             loss_logits,
             labels,
@@ -1288,7 +1288,7 @@ _NEGATIVE_QUERY_SELECTED = 0
 _NEGATIVE_QUERY_CALLS = 0
 
 
-def _note_negative_queries(available: int, selected: int) -> None:
+def _note_negative_queries(available: "torch.Tensor", selected: "torch.Tensor") -> None:
     """Report the RUNNING TOTAL of absent queries seen, every 200 training batches.
 
     The first version logged once, globally, on the first forward that reached here -- which
@@ -1299,10 +1299,19 @@ def _note_negative_queries(available: int, selected: int) -> None:
 
     Periodic totals cannot be fooled that way: an arm whose cumulative `available` stays 0
     across a whole epoch has not applied the treatment, whatever its config says.
+
+    TAKES TENSORS, NOT ints, AND THAT IS THE POINT. `int(t.sum())` copies from the GPU,
+    so calling it here stalled the training hot path on EVERY step to feed a line that is
+    printed seven times in a whole run -- ~126,000 synchronizing copies for 7 log lines on
+    a 63,275-step base. `test_boundary_training_hot_path_has_no_cuda_host_sync` forbids
+    exactly this and could not see it: the check only runs under CUDA, so every local run
+    on MPS or CPU passed it. Found on an A10, 2026-09-28.
+
+    The totals now accumulate ON DEVICE and are read back only on a batch that logs.
     """
     global _NEGATIVE_QUERY_SEEN, _NEGATIVE_QUERY_SELECTED, _NEGATIVE_QUERY_CALLS
-    _NEGATIVE_QUERY_SEEN += available
-    _NEGATIVE_QUERY_SELECTED += selected
+    _NEGATIVE_QUERY_SEEN = _NEGATIVE_QUERY_SEEN + available
+    _NEGATIVE_QUERY_SELECTED = _NEGATIVE_QUERY_SELECTED + selected
     _NEGATIVE_QUERY_CALLS += 1
     # BACKOFF, not a fixed interval. Every 200 batches was calibrated for a 1,260-step A/B
     # and produced 658 lines -- 96% of all INFO output -- across a 130,601-batch base run,
@@ -1312,7 +1321,7 @@ def _note_negative_queries(available: int, selected: int) -> None:
         logger.info("negative queries: %d absent available, %d selected into the pair loss, "
                     "cumulative over %d batches (0 available means the schema carries no "
                     "absent labels)",
-                    _NEGATIVE_QUERY_SEEN, _NEGATIVE_QUERY_SELECTED, n)
+                    int(_NEGATIVE_QUERY_SEEN), int(_NEGATIVE_QUERY_SELECTED), n)
 
 
 class BoundaryExtractorModel(BaseExtractorModel):
