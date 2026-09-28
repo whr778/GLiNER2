@@ -85,10 +85,38 @@ curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
 export PATH="\$HOME/.local/bin:\$PATH"
 git clone --depth 1 --branch "$BRANCH" "$REPO" repo 2>&1 | tail -2
 cd repo
+# PYTHON IS PINNED, like bootstrap_box.sh. Left to itself uv picked 3.14 here, which is not
+# the interpreter any GPU run of this project has ever used.
+uv venv --python 3.12 2>&1 | tail -2
 uv sync --group dev 2>&1 | tail -3
-uv run python -c "import torch; print(f'[cuda] torch {torch.__version__} cuda={torch.cuda.is_available()} {torch.cuda.get_device_name(0)}')"
+
+# THE cu128 TRAP, and it is the reason this block exists rather than a plain uv sync.
+# Lambda boxes run a 12.8 driver; uv resolves a torch wheel built for CUDA 13, and the
+# first torch.cuda call dies with "The NVIDIA driver on your system is too old (found
+# version 12080)". Measured on an A10 on 2026-09-28: the whole suite ran with CUDA
+# unavailable, so every cuda-gated test SKIPPED and the run looked like a pass.
+#
+# `--reinstall-package torch` IS THE LOAD-BEARING FLAG. Both wheels call themselves
+# 2.11.0 -- the CUDA 13 one is just +cu130 -- so a plain pin is already satisfied, uv
+# changes nothing, and torch.cuda.is_available() stays False. Same trap documented in
+# bootstrap_box.sh; this is a deliberate duplicate of those three lines, and the two must
+# be changed together.
+uv pip install --reinstall-package torch "torch==2.11.0" \
+  --index-url https://download.pytorch.org/whl/cu128 2>&1 | tail -2
+
+# PROVE IT, AND STOP IF IT DID NOT TAKE. The A10 run continued past a failed swap and
+# produced a 2,814-passed report that said nothing whatever about CUDA. A test run whose
+# entire purpose is the cuda branch must refuse to score anything without it.
+./.venv/bin/python - <<'PROOF' || { echo "[cuda] *** REFUSING: CUDA unavailable after the cu128 swap; a run now would score the CPU path and report it as CUDA ***"; exit 1; }
+import sys, torch
+print(f"[cuda] torch {torch.__version__} | available {torch.cuda.is_available()} | built for {torch.version.cuda}")
+if not torch.cuda.is_available():
+    sys.exit(1)
+print("[cuda] device:", torch.cuda.get_device_name(0))
+PROOF
+
 # Stop 1: the timeout on the run itself.
-timeout $TEST_TIMEOUT uv run pytest tests/ -q -rf --deselect tests/training/test_matching.py 2>&1 | tail -40
+timeout $TEST_TIMEOUT ./.venv/bin/python -m pytest tests/ -q -rf --deselect tests/training/test_matching.py 2>&1 | tail -40
 echo "[cuda] pytest exit: \${PIPESTATUS[0]}"
 REMOTE
 

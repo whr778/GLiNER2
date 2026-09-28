@@ -179,7 +179,7 @@ Probes, sweeps, gates and measures are in [section 1](#1-instruments--the-things
 `resolve_device` picks cuda -> mps -> cpu, so a laptop run never takes the cuda branch:
 two known device-specific facts (MPS `torch.gather` on int64 corrupting above 2^24, and
 the DDP test's skip guard being unable to fire on Darwin) are invisible locally in both
-directions. Needs no `$HF_TOKEN`, because it publishes nothing.
+directions. Needs no `$HF_TOKEN`, because it publishes nothing. Does the cu128 swap itself (`--reinstall-package torch`, the load-bearing flag) and REFUSES to score anything if `torch.cuda.is_available()` is still False -- without that it once ran the whole suite with CUDA dead and reported 2,814 passed.
 
 ---
 
