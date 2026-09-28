@@ -354,6 +354,17 @@ training:
   on_capacity_exceeded: skip_sample
 
 eval:
+  # WINDOWING IS INHERITED, not set here. `chunk_records` runs on the eval split as well
+  # as train -- trainer.py picks `split = "train" if is_train else "eval"` -- using
+  # `training.max_len` and `training.window_stride`. Measured on the 2026-09-28 run:
+  #   [sliding-window] train: 201,072 records -> 202,469 chunks (4096 subwords, stride 3072)
+  #   [sliding-window] eval:   19,286 records ->  19,472 chunks (4096 subwords, stride 3072)
+  # So long eval documents are WINDOWED, never truncated, and there is no eval.window_size
+  # to set. The tokenizer line this provokes --
+  #   "Token indices sequence length is longer than the specified maximum sequence length
+  #    for this model (19847 > 8192) ... will result in indexing errors"
+  # -- is EXPECTED and benign: it is emitted while tokenizing the WHOLE document to find
+  # the window boundaries, before it is split. It is not evidence of truncation.
   batch_size: 2
   threshold: 0.3
   threshold_sweep: true
