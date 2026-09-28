@@ -85,7 +85,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
 export PATH="\$HOME/.local/bin:\$PATH"
 git clone --depth 1 --branch "$BRANCH" "$REPO" repo 2>&1 | tail -2
 cd repo
-uv sync --extra dev 2>&1 | tail -3
+uv sync --group dev 2>&1 | tail -3
 uv run python -c "import torch; print(f'[cuda] torch {torch.__version__} cuda={torch.cuda.is_available()} {torch.cuda.get_device_name(0)}')"
 # Stop 1: the timeout on the run itself.
 timeout $TEST_TIMEOUT uv run pytest tests/ -q -rf --deselect tests/training/test_matching.py 2>&1 | tail -40
