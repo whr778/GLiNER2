@@ -274,11 +274,13 @@ training:
   experiment_name: eb17_best
   data_parallel: false
   num_epochs: 5              # held equal across the curve (only total volume varies)
-  # H100 80GB, not A100 40GB. batch_size DOUBLES and grad-accum HALVES, so the EFFECTIVE
-  # batch stays 16 and the recipe is unchanged -- only the number of accumulation steps
-  # drops. batch_size is PER-GPU, so this is the one axis where a card swap silently becomes
-  # a different experiment if the product is not held fixed.
-  batch_size: 8
+  # A100 40GB (2026-09-28 relaunch). This file shipped 8 x 2 for an 80GB H100; that card
+  # has had zero capacity for days, so it runs 4 x 4 instead. The EFFECTIVE batch is 16
+  # either way, which is the invariant that matters and matches eb16's 4 x 4 exactly.
+  # batch_size is PER-GPU, so this is the one axis where a card swap silently becomes a
+  # different experiment if the product is not held fixed -- hence changing BOTH numbers
+  # together, never one.
+  batch_size: 4
   # WARNING, measured not assumed: batch_size is PER-GPU, so this file is a DIFFERENT
   # recipe depending on how it is launched, and the note that used to sit here claimed
   # otherwise.
@@ -293,7 +295,7 @@ training:
   # gradient_accumulation_steps: 2 under torchrun --nproc_per_node=2 to reproduce the
   # curve's optimization, or accept an off-curve base and re-baseline everything
   # downstream of it.
-  gradient_accumulation_steps: 2      # 8 x 2 = 16, same as eb16's 4 x 4
+  gradient_accumulation_steps: 4      # 4 x 4 = 16 on A100 40GB, identical to eb16
   encoder_lr: 2.0e-5
   task_lr: 5.0e-4
   warmup_ratio: 0.05
