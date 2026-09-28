@@ -437,16 +437,30 @@ class BaseExtractorModel(PreTrainedModel):
                             f"CORRECTNESS failure (non-finite losses), not a slowdown. "
                             f"Underlying error: {error}"
                         ) from error
-                    warnings.warn(
-                        f"Encoder rejected attn_implementation={implementation!r}; "
-                        f"falling back to {candidates[index + 1]!r} ({error}). On a "
-                        f"ModernBERT encoder trained in bf16 this is a correctness "
-                        f"issue, not just speed: sdpa+bf16 there produces non-finite "
-                        f"losses (measured), so install 'kernels' to keep FA2. Set "
-                        f"GLINER2_STRICT_ATTN=1 to make this an error instead.",
-                        RuntimeWarning,
-                        stacklevel=2,
-                    )
+                    # WARN ABOUT WHAT WAS ASKED FOR, and only then. A request for sdpa
+                    # degrading to eager is EXPECTED -- deberta-v2 supports neither FA2
+                    # nor sdpa and must reach eager -- so warning on it fires on every
+                    # ordinary deberta load and trains people to ignore the one warning
+                    # that means a run is about to be lost. The correctness failure this
+                    # exists to catch (FA2 -> sdpa on a bf16 ModernBERT) can only happen
+                    # when FA2 was requested, which is exactly the condition below.
+                    #
+                    # `attn_implementation`, not `requested`: off CUDA `requested` was
+                    # rewritten to "sdpa" above, so using it would both suppress the
+                    # warning on the path that needs it and drop the name the caller
+                    # actually passed out of the message.
+                    if attn_implementation in ("flash_attention_2", _HUB_FLASH_ATTN_2):
+                        warnings.warn(
+                            f"Encoder rejected attn_implementation={implementation!r}; "
+                            f"falling back to {candidates[index + 1]!r} ({error}). "
+                            f"flash_attention_2 was requested and is NOT in use. On a "
+                            f"ModernBERT encoder trained in bf16 this is a correctness "
+                            f"issue, not just speed: sdpa+bf16 there produces non-finite "
+                            f"losses (measured), so install 'kernels' to keep FA2. Set "
+                            f"GLINER2_STRICT_ATTN=1 to make this an error instead.",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
         raise last_error
 
     def _encoder_autocast(self):

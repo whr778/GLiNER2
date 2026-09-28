@@ -48,7 +48,14 @@ def _training_batch(model):
     examples = golden_multitask_examples()
     dataset = [(ex.text, ex.to_dict()["output"]) for ex in examples]
     model.processor.change_mode(is_training=False)  # deterministic (no sampling)
-    collator = ExtractorCollator(model.processor, is_training=False)
+    # `is_training=False` is for DETERMINISM (no label sampling), but these are
+    # TRAINING-forward losses, so targets are still required. Upstream's 022cfc6 made
+    # the inference collate stop building them unless asked -- before that, targets came
+    # for free and this read `ExtractorCollator(processor, is_training=False)`. Without
+    # build_targets the classification head sees no gold, and classification_loss (and
+    # therefore total_loss) drifts ~1.7% against the golden while every other component
+    # matches exactly.
+    collator = ExtractorCollator(model.processor, is_training=False, build_targets=True)
     return collator(dataset)
 
 
