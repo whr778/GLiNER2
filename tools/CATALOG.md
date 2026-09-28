@@ -28,7 +28,7 @@ is not a result without a noise floor beside it. Measured floors:
 | [`tools/data`](#2-toolsdata--corpus-construction) | 98 | converters, annotators, repairs, label space, Hub mirrors |
 | [`tools/ekf_showcase`](#5-toolsekf_showcase--textnormaltracking) | 55 | the disaster-tracking research line end to end |
 | [`tools/train`](#3-toolstrain--training-probing-scoring) | 45 | training, probes, sweeps, scoring, model cards |
-| [`tools/lambda`](#4-toolslambda--gpu-runs-that-stop-themselves) | 24 | GPU runs that provision, publish and terminate |
+| [`tools/lambda`](#4-toolslambda--gpu-runs-that-stop-themselves) | 25 | GPU runs that provision, publish and terminate |
 | [`tools/data/synthetic`](#21-toolsdatasynthetic) | 8 | LLM generation of base-training data |
 | [`tools/prototypes`](#6-toolsprototypes--architecture-spikes) | 4 | architecture spikes on toy harnesses |
 | [`tools`](#7-tools-root) | 3 | inference CLI and import-surface diffing |
@@ -174,6 +174,12 @@ Probes, sweeps, gates and measures are in [section 1](#1-instruments--the-things
 `negatives_verdict.sh`, `dose_sweep.sh`, `dose_curve_box.sh`,
 `event_threshold_sweep.sh`, `base_reference.sh`, `rescore_blind_test.sh`,
 `throughput_smoke.sh`, `pool_nan_debug.sh`, `pool_fp32_probe.sh`, `score_pool.py`.
+
+**`run_tests_cuda.sh`** — runs the TEST SUITE on a real CUDA box, then terminates it.
+`resolve_device` picks cuda -> mps -> cpu, so a laptop run never takes the cuda branch:
+two known device-specific facts (MPS `torch.gather` on int64 corrupting above 2^24, and
+the DDP test's skip guard being unable to fire on Darwin) are invisible locally in both
+directions. Needs no `$HF_TOKEN`, because it publishes nothing.
 
 ---
 
