@@ -50,10 +50,15 @@ def main() -> int:
     ap.add_argument("--map-location", default="cpu",
                     help="cpu by default: MPS dies with 'Invalid buffer size: 151.56 GiB' "
                          "on the long val docs, and resolve_device picks MPS on this Mac.")
-    ap.add_argument("--chunk-size", type=int, default=512,
-                    help="whole-document decode blows up attention on the long val docs. "
-                         "BOTH arms get the same chunking, so the RATIO -- which is what "
-                         "this tool reports -- is unaffected by the choice.")
+    ap.add_argument("--chunk-size", type=int, default=0,
+                    help="0 = the TRAINING config's own max_len, so the model is scored "
+                         "at the width it trained at. Whole-document decode blows up "
+                         "attention on the long val docs; an ARBITRARY width (512 was "
+                         "used on 2026-09-29) changes the input regime instead.")
+    ap.add_argument("--chunk-overlap", type=int, default=0,
+                    help="0 = non-overlapping, matching the probe. evaluate_checkpoint "
+                         "defaults to 128, which double-counts spans in the overlap and "
+                         "is why the two tools were not scoring the same physical units.")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -73,6 +78,9 @@ def main() -> int:
     import random
     random.Random(int(tc.get("seed", 42))).shuffle(records)
     records = records[: args.max_records]
+    chunk = int(args.chunk_size) or int(tc.get("max_len") or 512)
+    print(f"[rec] window {chunk} overlap {args.chunk_overlap} "
+          f"(training max_len {tc.get('max_len')})", flush=True)
     print(f"[rec] {len(records):,} {args.split} event records from {len(files)} file(s) "
           f"-- THE PROBE'S OWN POPULATION", flush=True)
 
@@ -81,7 +89,8 @@ def main() -> int:
         m = evaluate_checkpoint(args.checkpoint, records, batch_size=args.batch_size,
                                 threshold=args.span_threshold,
                                 map_location=args.map_location,
-                                chunk_size=args.chunk_size,
+                                chunk_size=chunk,
+                                chunk_overlap=args.chunk_overlap,
                                 boundary_overrides=overrides) or {}
         return {c: float(m.get(f"eval_event_trigger_error_{c}", 0.0)) for c in CATS}
 

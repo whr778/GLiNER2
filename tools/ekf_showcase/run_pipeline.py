@@ -993,10 +993,23 @@ def main() -> None:
                     help="reject casualty figures whose nearest date predates this year "
                          "(0 = off). The 1999 Izmit toll was tracked as a 2023 figure in "
                          "every Turkiye configuration until this existed")
-    ap.add_argument("--chunk-size", type=int, default=200,
-                    help="with --window long: words per chunk. 200 is the measured band; "
-                         "the library default 384 loses one binding on Turkiye")
-    ap.add_argument("--chunk-overlap", type=int, default=50)
+    ap.add_argument("--chunk-size", type=int, default=0,
+                    help="with --window long: words per chunk. 0 = the MODEL's own "
+                         "configured window -- one window across training, eval, blind "
+                         "test and inference. THIS OVERRIDES A MEASUREMENT: 200 was the "
+                         "measured band (16/16 on both countries vs 15/16 at the library "
+                         "default 384, Turkiye), so the uniform window is NOT yet shown "
+                         "to preserve that binding and needs re-measuring. Pass 200 to "
+                         "reproduce the pre-2026-09-29 pipeline exactly.")
+    ap.add_argument("--chunk-overlap", type=int, default=0,
+                    help="0: the stride is a TRAINING device. Overlap double-counts spans "
+                         "and was 50 before the uniform-window policy. NOTE the cost on "
+                         "LONG documents: at stride 0 a span straddling a window boundary "
+                         "is unrecoverable, and cross-window EVENTS need --global-decode, "
+                         "which assembles them by design. Measured 2026-09-29: only ~1% "
+                         "of corpus documents exceed 4096 tokens (13 cuts across 4,000 "
+                         "test docs), but production documents run far larger and that "
+                         "exposure is UNMEASURED.")
     ap.add_argument("--scope-filter", action="store_true",
                     help="drop observations keyed outside the rollup's declared hierarchy. "
                          "Needs --rollup. 4/6 cross-event at 7.3%% FP on Helene, no model.")
@@ -1066,11 +1079,13 @@ def main() -> None:
                 # reads text the lead window never sees. Proven on Turkiye: 16/16 on both
                 # countries over the full article at chunk_size 200, versus 15/16 at the
                 # default 384 -- the framing curve's band, not a guess.
+                _win = args.chunk_size or max(
+                    64, int(int(getattr(cas_model.config, "max_len", 4096)) / 1.5))
                 records = (cas_model.extract_long(
                     row["text"], cas_schema, threshold=args.event_threshold,
-                    chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
+                    chunk_size=_win, chunk_overlap=args.chunk_overlap,
                 ).get("casualty_report") or [])
-                entry["envelopes"] = [{"text": f"<extract_long chunks of {args.chunk_size} words>"}]
+                entry["envelopes"] = [{"text": f"<extract_long chunks of {_win} words>"}]
                 for rec in records:
                     key = (record_key(events[i], rec) if args.associate == "record"
                            else association_key(events[i], args.associate, {}))

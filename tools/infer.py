@@ -61,8 +61,12 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p.add_argument("--schema-json", help="Path to a full schema JSON (overrides --entities/--events).")
     p.add_argument("--global-decode", action="store_true",
                    help="OneIE-style document-level event assembly across windows.")
-    p.add_argument("--chunk-size", type=int, default=384, help="Word window length for long docs.")
-    p.add_argument("--chunk-overlap", type=int, default=128, help="Word overlap between windows.")
+    p.add_argument("--chunk-size", type=int, default=0,
+                   help="Word window for long docs. 0 = the MODEL's own configured window, "
+                        "which is the default: one window everywhere.")
+    p.add_argument("--chunk-overlap", type=int, default=0,
+                   help="Word overlap. 0 by default: the stride is a TRAINING device and "
+                        "double-counts spans anywhere else.")
     p.add_argument("--beam-width", type=int, default=8, help="Global-decode beam width.")
     p.add_argument("--include-spans", action="store_true")
     p.add_argument("--include-confidence", action="store_true")
@@ -70,6 +74,30 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args(argv)
 
+
+
+def resolve_model_window(model, requested=None, *, tokens_per_word: float = 1.5):
+    """Words per window for a model whose window is configured in TOKENS.
+
+    ONE WINDOW EVERYWHERE, STRIDE ONLY IN TRAINING. Training, eval, blind test and
+    inference all read the model's configured sliding-window SIZE; only training uses the
+    STRIDE, whose overlapping views are a training device and which double-counts spans
+    anywhere else.
+
+    THE UNIT DIFFERS AND THAT IS NOT COSMETIC. The model's window is `max_len` TOKENS;
+    `extract_long` chunks by WORDS. Sizing words at the token count would silently
+    truncate whatever did not fit, so the count is divided by a deliberately pessimistic
+    tokens-per-word factor. 1.5 is above English subword rates and well above the
+    whitespace-poor scripts in this corpus, so the window under-fills rather than
+    truncates. It is a CONVERSION, not a measurement -- a corpus that tokenises harder
+    than 1.5 tokens/word will still under-fill, which is the safe direction.
+    """
+    if requested:
+        return int(requested)
+    max_len = getattr(getattr(model, "config", None), "max_len", None)
+    if not max_len:
+        return 384
+    return max(64, int(int(max_len) / tokens_per_word))
 
 def main(argv: List[str] = None) -> None:
     args = _parse_args(argv)
@@ -80,11 +108,14 @@ def main(argv: List[str] = None) -> None:
     texts = _read_texts(args.input)
     schema = _build_schema(args)
     model = GLiNER2.from_pretrained(args.model)
+    chunk_size = resolve_model_window(model, args.chunk_size)
+    print(f"[infer] window {chunk_size} words (model max_len "
+          f"{getattr(model.config, 'max_len', '?')} tokens), overlap {args.chunk_overlap}")
 
     results = model.batch_extract_long(
         texts, schema,
         batch_size=args.batch_size, threshold=args.threshold,
-        chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap,
+        chunk_size=chunk_size, chunk_overlap=args.chunk_overlap,
         include_spans=args.include_spans, include_confidence=args.include_confidence,
         global_decode=args.global_decode,
         global_decode_config=GlobalDecodeConfig(beam_width=args.beam_width),

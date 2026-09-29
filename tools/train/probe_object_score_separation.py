@@ -70,6 +70,17 @@ def main() -> int:
     ap.add_argument("--max-batches", type=int, default=100)
     ap.add_argument("--batch-size", type=int, default=2)
     ap.add_argument("--anchor-threshold", type=float, default=0.1)
+    ap.add_argument("--window-size", type=int, default=0,
+                    help="0 = the TRAINING config's own max_len. Scoring at a different "
+                         "width than the model trained at changes the input regime, so "
+                         "this must not be an arbitrary number. What must NOT carry over "
+                         "is the stride: the config's window_stride overlaps windows "
+                         "(4096/3072 = 1024 tokens of overlap), which decodes a gold "
+                         "trigger in the overlap TWICE and double-counts it.")
+    ap.add_argument("--window-stride", type=int, default=0,
+                    help="0 means stride == window: NON-OVERLAPPING, so each gold trigger "
+                         "is scored exactly once. Set equal to the eval's chunking to make "
+                         "the two measurements share a data path.")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -97,11 +108,13 @@ def main() -> int:
     # unaffected -- we call decode_group directly on the group.
     model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").train()
     proc = model.processor
-    if tc.get("sliding_window"):
-        records = chunk_records(records, tokenizer=proc.tokenizer,
-                                window_size=int(tc.get("max_len") or 512),
-                                stride=int(tc.get("window_stride") or 512),
-                                show_progress=False)
+    win = int(args.window_size) or int(tc.get("max_len") or 512)
+    stride = int(args.window_stride) or win
+    records = chunk_records(records, tokenizer=proc.tokenizer, window_size=win,
+                            stride=stride, show_progress=False)
+    print(f"[obj] chunked to {len(records):,} window(s) at size={win} stride={stride}"
+          f"{' (NON-OVERLAPPING)' if stride >= win else ' (OVERLAPPING -- double counts)'}",
+          flush=True)
     head = (cfg.get("model") or {}).get("boundary_head") or {}
     coll = ExtractorCollator(proc, is_training=True, max_len=tc.get("max_len"),
                              architecture="boundary",

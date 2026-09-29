@@ -1142,8 +1142,24 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
     eval_cfg = cfg.get("eval") or {}
     chunk_explicit = "chunk_size" in overrides
 
-    chunk_size = overrides.get("chunk_size", eval_cfg.get("chunk_size"))
-    chunk_overlap = overrides.get("chunk_overlap", eval_cfg.get("chunk_overlap", 128))
+    # ONE WINDOW EVERYWHERE. Training, eval, blind test and inference all read the
+    # model's configured sliding-window SIZE, taken from `training.max_len` rather than a
+    # constant so it cannot drift from the model it measures. An eval reading a different
+    # width measures a regime the model never ships in. Before this, eval defaulted to
+    # WHOLE-DOCUMENT, so no published event number was read at the model's own window --
+    # numbers produced after this change are NOT comparable with those before it.
+    #
+    # THE OVERLAP IS PROVISIONAL, NOT SETTLED. The training STRIDE is a training device
+    # and does not belong here. But the inference OVERLAP is a different thing wearing the
+    # same name: it buys boundary coverage, and it does NOT double-count, because
+    # `compute_metrics` scores through `model.batch_extract_long` (eval_metrics.py:225) --
+    # literally the inference path, whose merge concatenates and DEDUPES. So 0 is one arm
+    # of an open experiment, not an answer. Our own corpora cannot settle it (median
+    # 406-596 tokens, ~1% over the window); `cc_news_long` can (median 9,697 tokens, 100%
+    # multi-window, 4.1% of gold within ~128 tokens of a cut).
+    default_window = (cfg.get("training") or {}).get("max_len")
+    chunk_size = overrides.get("chunk_size", eval_cfg.get("chunk_size", default_window))
+    chunk_overlap = overrides.get("chunk_overlap", eval_cfg.get("chunk_overlap", 0))
     gd_raw = overrides.get("global_decode", eval_cfg.get("global_decode", False))
     global_decode = bool(gd_raw)
     global_decode_config = None
@@ -1153,8 +1169,8 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
         if "single_filler_roles" in gd_params:
             gd_params["single_filler_roles"] = frozenset(gd_params["single_filler_roles"])
         global_decode_config = GlobalDecodeConfig(**gd_params)
-    # global_decode implies chunking; default the window to training max_len,
-    # unless the caller explicitly set chunk_size (e.g. --chunk-size 0 = whole-doc).
+    # Kept for the case where `training.max_len` is itself absent: global_decode cannot
+    # run whole-document. The general default above now covers every other path.
     if global_decode and chunk_size is None and not chunk_explicit:
         chunk_size = (cfg.get("training") or {}).get("max_len", 384)
 
