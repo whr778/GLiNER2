@@ -55,19 +55,32 @@ def _record(anchor_span, item_span):
 
 
 def _run(anchor_span):
-    """Score one gold record whose anchor is `anchor_span`, against fixed candidates."""
+    """Score one gold record whose anchor is `anchor_span`, against fixed candidates.
+
+    Returns ``(losses, gate, head)`` -- the head so a caller can check GRADIENTS, which is
+    the only way to show "contributes nothing" rather than "reports zero".
+    """
     torch.manual_seed(0)
     cands = make_candidates([[(0, 1), (3, 4)], [(1, 2), (4, 5)]], HIDDEN, high_logit_field=0)
     head = RecordHead(HIDDEN, record_dim=24, instance_queries=8)
     group = head.forward_group(_spec(), torch.randn(2, HIDDEN), cands, 0)
     R.reset_anchor_gate()
     losses = compute_group_loss(group, [_record(anchor_span, (1, 2))])
-    return losses, R.anchor_gate_stats()
+    return losses, R.anchor_gate_stats(), head
+
+
+def _grad_mass(head, losses):
+    """Total absolute gradient reaching the head's parameters from these losses."""
+    total = losses["object_loss"] + losses["field_loss"]
+    head.zero_grad(set_to_none=True)
+    if getattr(total, "requires_grad", False):
+        total.backward()
+    return sum(float(p.grad.abs().sum()) for p in head.parameters() if p.grad is not None)
 
 
 def test_a_proposed_anchor_trains_and_is_counted():
     """Control. (0, 1) IS in the candidate set, so the record supervises normally."""
-    losses, gate = _run((0, 1))
+    losses, gate, _ = _run((0, 1))
     assert gate["seen"] == 1
     assert gate["trained_n"] == 1
     assert gate["anchor_not_proposed_n"] == 0
@@ -76,7 +89,7 @@ def test_a_proposed_anchor_trains_and_is_counted():
 
 def test_an_unproposed_anchor_trains_nothing_and_is_counted():
     """(9, 10) is NOT a candidate span. The record is skipped entirely."""
-    losses, gate = _run((9, 10))
+    losses, gate, _ = _run((9, 10))
     assert gate["seen"] == 1
     assert gate["trained_n"] == 0
     assert gate["anchor_not_proposed_n"] == 1, (
@@ -86,11 +99,27 @@ def test_an_unproposed_anchor_trains_nothing_and_is_counted():
 
 
 def test_the_dropped_record_produces_no_gradient():
-    """'No loss' has to mean no gradient, not merely a zero in the report."""
-    losses, _ = _run((9, 10))
-    total = losses["object_loss"] + losses["field_loss"]
-    assert float(total) == 0.0
-    assert not total.requires_grad or total.grad_fn is None or float(total) == 0.0
+    """'Contributes nothing' must mean NO GRADIENT, not merely a zero in the report.
+
+    The first version of this test asserted
+    ``not total.requires_grad or total.grad_fn is None or float(total) == 0.0`` -- an `or`
+    chain whose last clause was already asserted on the line above, so it could not fail.
+    This one backpropagates and weighs the gradient that actually reaches the parameters.
+    """
+    losses, _, head = _run((9, 10))
+    assert float(losses["object_loss"] + losses["field_loss"]) == 0.0
+    assert _grad_mass(head, losses) == 0.0, "a dropped record must not move any parameter"
+
+
+def test_the_control_DOES_produce_gradient():
+    """Without this, 'no gradient' could just mean the test never backpropagates anything.
+
+    Same head, same candidates, same code path -- only the anchor span differs.
+    """
+    losses, _, head = _run((0, 1))
+    assert _grad_mass(head, losses) > 0.0, (
+        "the proposed-anchor control must move parameters, or the test above proves nothing"
+    )
 
 
 def test_the_three_outcomes_are_distinguished():

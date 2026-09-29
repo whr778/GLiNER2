@@ -21,7 +21,7 @@ Everything here is measured unless the row says otherwise.*
 | S10 | **All four NER↔argument linking options are CLOSED** | shared pool −0.0745; typed margin w_S 0.00003; predicted types −0.074; roles→entities −0.0300 | §4k |
 | S11 | Absent negatives: the lever is **real but dead** | +0.0376 argument at **−0.1977** classification; scoping to roles lost the gain (−0.1027) and recovered 15% of the cost | §4i, [[EXPERIMENT_CATALOG]] |
 | S12 | Blind-test row count is inflated by the **config**, not the corpora | duplicates are a config artefact, handled correctly | §4j |
-| S13 | The anchor supervision gate is **NOT** the recall floor — REFUTED the day it was proposed | **0 of 357** gold records dropped (100% trained) on a fully-trained event-records base | §4f-i |
+| S13 | The anchor supervision gate is **NOT** the recall floor — REFUTED the day it was proposed | **0 of 362 EVENT** records dropped (100% trained) on a fully-trained event-records base | §4f-i |
 
 ### Open — cheapest first, because that is the order to do them in
 
@@ -918,14 +918,20 @@ THE MEASUREMENT. `tools/train/probe_anchor_gate.py` on
 `max_gold_per_query=256`), 800 samples from a seeded 5,000-record subsample of eb17-best's
 own train mix:
 
-| outcome | n | share |
-|---|---:|---:|
-| **trained** | **357** | **100.0%** |
-| anchor NOT proposed | 0 | 0.0% |
-| proposed, not seeded | 0 | 0.0% |
-| no gold anchor | 0 | 0.0% |
+| task type | n | trained | anchor NOT proposed | proposed, not seeded |
+|---|---:|---:|---:|---:|
+| **events** | **362** | **100.0%** | **0.0%** | **0.0%** |
+| json_structures | 36 | 97.2% | 0.0% | 0.0% |
 
-Zero. By the rule of three, 0/357 puts the true rate **under ~1%** at 95%.
+Zero. By the rule of three, 0/362 puts the true event rate **under ~0.8%** at 95%.
+
+**THE BREAKDOWN BY TASK TYPE IS THE EVIDENCE, AND THE FIRST RUN DID NOT HAVE IT.** The gate
+originally counted only an aggregate -- 357 records, 100% trained -- and `json_structures`
+and `events` BOTH compile record groups, so a pass driven by structures would have said
+nothing whatever about triggers while reading as a complete answer. The conclusion happened
+to be right; the evidence for it was not sufficient to support it until the gate was keyed
+by `task_type` and re-run. The probe now refuses to print an event conclusion when no
+`events` groups reached it. Two independent runs agree on 0% dropped.
 
 WHY IT IS ZERO, AND THE DISTINCTION IS THE USEFUL PART. **Candidate PROPOSAL is not
 prediction.** The incumbent decodes `event_trigger` at F1 ~0.36, which invited the

@@ -131,6 +131,23 @@ def main() -> int:
                      ("anchor_not_seeded", "proposed, but not seeded as an instance"),
                      ("no_gold_anchor", "no gold anchor value at all")):
         print(f"        {label:44} {st[k + '_n']:>9,}  {st[k + '_share']:6.1%}")
+    by_task = st.get("by_task") or {}
+    print("\n[gate] BY TASK TYPE -- the aggregate above cannot answer the only question that")
+    print("[gate] matters, because a 100% pass driven by json_structures says nothing about")
+    print("[gate] triggers. `events` MUST appear here or this run measured the wrong thing.")
+    tasks = sorted({k.split("/")[0] for k in by_task})
+    for t in tasks:
+        row = {o: by_task.get(f"{t}/{o}", 0) for o in
+               ("trained", "anchor_not_proposed", "anchor_not_seeded", "no_gold_anchor")}
+        tot = max(sum(row.values()), 1)
+        print(f"        {t:20} n={tot:>7,}  trained {row['trained'] / tot:6.1%}  "
+              f"not_proposed {row['anchor_not_proposed'] / tot:6.1%}  "
+              f"not_seeded {row['anchor_not_seeded'] / tot:6.1%}")
+    if "events" not in tasks:
+        print("\n[gate] *** NO `events` RECORD GROUPS REACHED THE GATE. This run says NOTHING "
+              "about event arguments -- check event_records is on and the sample carries "
+              "events. ***")
+
     lost = st["anchor_not_proposed_share"] + st["anchor_not_seeded_share"]
     print(f"\n[gate] {lost:.1%} of gold records contributed NO supervision of any kind.")
     print("[gate] For events the anchor is the TRIGGER, so that share of gold event "

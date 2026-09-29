@@ -1365,13 +1365,21 @@ def compute_dense_batch_loss(
 # "12,000 skipped" says nothing until you know whether 13,000 or 1,300,000 were seen.
 _ANCHOR_GATE = {"trained": 0, "anchor_not_proposed": 0, "anchor_not_seeded": 0,
                 "no_gold_anchor": 0}
+# BY TASK TYPE, because the aggregate cannot answer the only question that matters.
+# `json_structures` and `events` both compile record groups, and a 100% pass driven by
+# structures would say NOTHING about triggers while looking like an answer. Keyed
+# "<task_type>/<outcome>".
+_ANCHOR_GATE_BY_TASK: Dict[str, int] = {}
 _ANCHOR_GATE_CALLS = 0
 
 
-def _note_anchor_gate(outcome: str) -> None:
+def _note_anchor_gate(outcome: str, task_type: str = "?") -> None:
     """Tally one gold record's fate at the anchor gate, and report with backoff."""
     global _ANCHOR_GATE_CALLS
     _ANCHOR_GATE[outcome] += 1
+    _ANCHOR_GATE_BY_TASK[f"{task_type}/{outcome}"] = (
+        _ANCHOR_GATE_BY_TASK.get(f"{task_type}/{outcome}", 0) + 1
+    )
     _ANCHOR_GATE_CALLS += 1
     n = _ANCHOR_GATE_CALLS
     if n in (1000, 10000, 50000) or (n > 50000 and n % 250000 == 0):
@@ -1394,6 +1402,7 @@ def anchor_gate_stats() -> Dict[str, float]:
     out = {f"{k}_n": v for k, v in _ANCHOR_GATE.items()}
     out.update({f"{k}_share": v / total for k, v in _ANCHOR_GATE.items()})
     out["seen"] = _ANCHOR_GATE_CALLS
+    out["by_task"] = dict(_ANCHOR_GATE_BY_TASK)
     return out
 
 
@@ -1402,6 +1411,7 @@ def reset_anchor_gate() -> None:
     global _ANCHOR_GATE_CALLS
     for k in _ANCHOR_GATE:
         _ANCHOR_GATE[k] = 0
+    _ANCHOR_GATE_BY_TASK.clear()
     _ANCHOR_GATE_CALLS = 0
 
 
@@ -1422,7 +1432,7 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
         for record in records:
             aft = record.field_for_query(anchor_qid)
             if aft is None or not aft.values:
-                _note_anchor_gate("no_gold_anchor")
+                _note_anchor_gate("no_gold_anchor", group.spec.task_type)
                 continue
             # THE SUPERVISION GATE. The gold anchor is resolved against the MODEL'S OWN
             # candidate spans, so a record whose anchor the model did not propose trains
@@ -1431,12 +1441,12 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
             # that instance's entire argument supervision. See _note_anchor_gate.
             cols = _resolve_value_cols(aft.values[0], span_indices[anchor_f_idx])
             if not cols:
-                _note_anchor_gate("anchor_not_proposed")
+                _note_anchor_gate("anchor_not_proposed", group.spec.task_type)
                 continue
             if (inst := seed_to_inst.get(cols[0] - 1)) is None:
-                _note_anchor_gate("anchor_not_seeded")
+                _note_anchor_gate("anchor_not_seeded", group.spec.task_type)
                 continue
-            _note_anchor_gate("trained")
+            _note_anchor_gate("trained", group.spec.task_type)
             field_loss = field_loss + _instance_field_loss(group, inst, record, span_indices)
             n += 1
         return {
