@@ -380,14 +380,31 @@ class BaseExtractorModel(PreTrainedModel):
             # -- otherwise the load succeeds and the first TRAINING forward raises
             # KeyError(repo id). See _register_hub_flash_attn_mask.
             _register_hub_flash_attn_mask()
+        # A FALL OUT OF FA2 GOES TO EAGER, NEVER TO SDPA. sdpa + bf16 on a ModernBERT
+        # encoder is a CORRECTNESS failure and not a slowdown -- finite forward, NaN
+        # backward -- so the "safe" middle rung is the one that silently breaks a run,
+        # while eager is merely slow. Leaving sdpa in this chain is how a 42-minute arm
+        # trained on a numerically broken path on 2026-09-14.
+        #
+        # A request for sdpa ITSELF still degrades to eager as before: deberta-v2 supports
+        # neither FA2 nor sdpa and must reach eager.
         if requested:
-            candidates += [c for c in ("sdpa", "eager") if c not in candidates]
+            tail = (("eager",) if requested in ("flash_attention_2", _HUB_FLASH_ATTN_2)
+                    else ("sdpa", "eager"))
+            candidates += [c for c in tail if c not in candidates]
 
         last_error: Exception
         for index, implementation in enumerate(candidates):
             try:
                 return load(implementation)
-            except (TypeError, ValueError, ImportError) as error:
+            # KeyError IS LOAD-BEARING HERE. When the Hub kernel cannot be fetched --
+            # a kernels/transformers version mismatch, no Hub access, or the repo 404ing
+            # as kernels-community/flash-attn2 has done to a valid token before -- the
+            # config still names it and the first forward raises
+            # KeyError('kernels-community/flash-attn2') out of ALL_ATTENTION_FUNCTIONS.
+            # That escaped this tuple, so the degrade chain never ran and the caller got
+            # a bare KeyError instead of the warning below naming the pin to check.
+            except (TypeError, ValueError, ImportError, KeyError) as error:
                 last_error = error
                 if index + 1 < len(candidates):
                     # A silent downgrade is how a whole training run gets lost. Measured
