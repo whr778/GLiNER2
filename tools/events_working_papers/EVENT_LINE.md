@@ -345,3 +345,32 @@ fixed recall. `object_logits` is exactly that per-instance existence score -- an
 mode it receives NO gradient (`compute_group_loss` returns `object_loss = zero`,
 records.py:1453; the Hungarian branch that trains it is anchorless-only). Whether that head
 carries usable signal once trained is unmeasured, and is the head-init question again.
+
+### The gate we tune is the object head, and it is untrained but NOT uninformative
+
+`record_anchor_threshold` does NOT threshold the anchor span score. `decode_group`
+(records.py:731-736) computes `obj_prob = sigmoid(object_logits / temperature)` and selects
+instances with `obj_prob >= anchor_threshold` in natural mode. So the existence head IS the
+gate this programme has been tuning -- and it is the same head that receives
+`object_loss = zero` for every event in training.
+
+**Measured 2026-09-29** (`tools/train/probe_object_score_separation.py`, eb17-best, val
+event corpora, threshold 0.1), labelling a decoded instance GOOD when its `anchor_span`
+matches a gold anchor span resolved exactly as `compute_group_loss` resolves it:
+
+| sample | groups | good | spurious | mean good | mean spurious | **AUC** |
+|---|---|---|---|---|---|---|
+| smoke | 19 | 51 | 25 | 0.7040 | 0.2955 | **0.8196** |
+| 23x larger | 446 | 898 | 860 | 0.6925 | 0.3045 | **0.8272** |
+
+**AUC 0.83 with zero gradient.** The head inherits usable signal from the shared
+representation, so training `object_loss` in natural mode starts from something rather than
+from noise -- this is NOT the head-init situation that has bitten this programme before.
+
+**UNRECONCILED, AND IT BOUNDS THE CLAIM.** The spurious:good ratio here is 0.96:1; the
+blind test's extra-trigger accounting gives 3.78:1. Candidate explanations, none verified:
+this probe counts decoded INSTANCES while the eval counts trigger SPANS after formatting
+and dedup (one instance can emit several); this probe labels a match by anchor SPAN within
+the group while the eval requires event TYPE and trigger TEXT; and the populations differ
+(event corpora val here, the full 26,724-record test split there). Until that is resolved,
+AUC 0.83 is evidence the head ranks, NOT a prediction of how much precision training buys.
