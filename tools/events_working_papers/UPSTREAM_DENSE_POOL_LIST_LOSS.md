@@ -1,7 +1,7 @@
 # Upstream report: dense record loss averages the list-field term over padding
 
-**Status:** drafted, NOT yet filed. Target: `fastino-ai/GLiNER2`, alongside PR #155 and
-issue #156. File as an ISSUE, not a PR -- see "Why not a PR" below.
+**Status:** FILED 2026-09-29 as https://github.com/fastino-ai/GLiNER2/issues/180,
+alongside PR #155 and issue #156. Filed as an ISSUE, not a PR -- see "Why not a PR" below.
 
 **Affects:** `boundary_head.candidate_pool: "shared"` only. The default `"per_query"`
 routes to `compute_group_loss` and is unaffected.

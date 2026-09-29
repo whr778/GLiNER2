@@ -308,3 +308,40 @@ Backfill is accepted as a cost of moving forward, and is listed so it is a decis
 than an omission: the single-variable `event_records` run (drop the three corpora, ~$28), a
 second event corpus in the blind test (§4c), and the argument-recall problem (§4b). None
 blocks the next step; all block a defensible claim.
+
+## The trigger is the anchor, and the argument is keyed by the trigger (2026-09-29)
+
+Measured on the eb17 blind test, control vs `record_anchor_threshold` 0.1, 26,724 records.
+
+**The extra triggers are not badly-bounded duplicates -- they are 91.5% pure false
+positives**, on spans carrying no gold trigger at all. The Ortmann error accounting
+reconciles exactly:
+
+| category | control | anchor 0.1 | delta |
+|---|---|---|---|
+| COR | 7,624 | 9,110 | +1,486 |
+| FN | 10,708 | 8,415 | -2,293 |
+| **FP** | 3,265 | 11,923 | **+8,658** |
+| BES+BEO+BEL+LBE+LE | 552 | 1,359 | +807 |
+
+2,293 recovered false negatives = 1,486 now exactly correct + 807 boundary/label errors,
+to the unit. Separately, 8,658 brand-new FPs appear. **3.78 spurious triggers per gold
+trigger recovered** -- that is the bar any separator has to clear.
+
+**A seed/claim split at decode CANNOT work.** `_pred_event_argument_set`
+(`eval_metrics.py:944`) keys every argument as `(etype, role, entity, trigger_key)` and
+does `if not trigger_key: continue` -- an event with no emitted trigger contributes NO
+arguments. So suppressing the trigger claim while keeping the instance seeded would delete
+exactly the arguments the low threshold was bought for. The argument tuple also CONTAINS
+the trigger text, so an argument matches gold only when its trigger does.
+
+That is the whole shape of the +0.0579 result: argument recall rides on the 1,486
+newly-correct triggers, and argument precision falls 0.4246 -> 0.2418 because each of the
+8,658 spurious triggers carries spurious arguments with it.
+
+**So the lever is INSTANCE REJECTION, not a second threshold.** Dropping a whole spurious
+instance (trigger and its arguments) would lift trigger precision AND argument precision at
+fixed recall. `object_logits` is exactly that per-instance existence score -- and in natural
+mode it receives NO gradient (`compute_group_loss` returns `object_loss = zero`,
+records.py:1453; the Hungarian branch that trains it is anchorless-only). Whether that head
+carries usable signal once trained is unmeasured, and is the head-init question again.
