@@ -50,6 +50,14 @@ def main() -> int:
     ap.add_argument("--windows", default="256,512,1024,2048,4096")
     ap.add_argument("--max-records", type=int, default=40)
     ap.add_argument("--max-batches", type=int, default=60)
+    ap.add_argument("--candidate-budget", type=int, default=0, help="0 = leave as built")
+    ap.add_argument("--start-top-k", type=int, default=0)
+    ap.add_argument("--end-top-k", type=int, default=0)
+    ap.add_argument("--top-k-alpha", type=float, default=-1.0,
+                    help="length-adaptive boundary top-k: ceil(alpha*(n_boundaries-1)), "
+                         "clamped to [base_k, k_max]. The mechanism EXISTS and ships "
+                         "DISABLED at alpha=0.0. -1 leaves it alone.")
+    ap.add_argument("--top-k-max", type=int, default=0)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -78,8 +86,46 @@ def main() -> int:
         print("[cov] *** no module exposes collect_diagnostics -- UNMEASURED ***")
         return 1
 
+    # PROPOSAL SETTINGS ARE BAKED AT CONSTRUCTION (model.py:246 builds them in __init__),
+    # so setting BoundaryHeadSettings after from_pretrained lands too late and changes
+    # NOTHING -- the decorative-override trap. Replace the proposer's own frozen settings,
+    # which its forward re-reads each call, and PRINT what actually took effect.
+    import dataclasses
+    changes = {}
+    if args.candidate_budget:
+        changes["candidate_budget"] = args.candidate_budget
+    if args.start_top_k:
+        changes["start_top_k"] = args.start_top_k
+    if args.end_top_k:
+        changes["end_top_k"] = args.end_top_k
+    if args.top_k_alpha >= 0:
+        changes["boundary_top_k_alpha"] = args.top_k_alpha
+    if args.top_k_max:
+        changes["boundary_top_k_max"] = args.top_k_max
+    proposers = [m for m in model.modules() if hasattr(m, "settings")
+                 and hasattr(getattr(m, "settings"), "candidate_budget")]
+    if changes:
+        if not proposers:
+            print("[cov] *** asked to change the budget but found no proposer -- the "
+                  "override would be DECORATIVE. Refusing. ***")
+            return 1
+        for m in proposers:
+            m.settings = dataclasses.replace(m.settings, **changes)
+        eff = proposers[0].settings
+        print(f"[cov] OVERRIDE APPLIED to {len(proposers)} proposer(s): {changes}")
+        print(f"[cov] effective: start_top_k={eff.start_top_k} end_top_k={eff.end_top_k} "
+              f"candidate_budget={eff.candidate_budget} alpha={eff.boundary_top_k_alpha} "
+              f"k_max={eff.boundary_top_k_max}", flush=True)
+    else:
+        eff = proposers[0].settings if proposers else None
+        if eff is not None:
+            print(f"[cov] BASELINE as built: start_top_k={eff.start_top_k} "
+                  f"end_top_k={eff.end_top_k} candidate_budget={eff.candidate_budget} "
+                  f"alpha={eff.boundary_top_k_alpha} k_max={eff.boundary_top_k_max}", flush=True)
+
     rows = []
-    print(f"\n  {'window':>8} {'gold':>10} {'in candidates':>15} {'coverage':>10} {'gold/window':>12}")
+    print(f"\n  {'window':>8} {'gold':>10} {'in candidates':>15} {'coverage':>10} "
+          f"{'gold/window':>12}   boundary coverage")
     for win in [int(w) for w in args.windows.split(",")]:
         recs = chunk_records(raw, tokenizer=proc.tokenizer, window_size=win,
                              stride=win, show_progress=False)
@@ -91,6 +137,7 @@ def main() -> int:
                                          seed=42, validate=False),
                         batch_size=1, shuffle=False, num_workers=0, collate_fn=coll)
         hit = gold_total = n_win = 0
+        s_hit = e_hit = b_total = 0
         for i, batch in enumerate(dl):
             if i >= args.max_batches:
                 break
@@ -102,6 +149,14 @@ def main() -> int:
                     continue
                 hit += int(st.gold_hit_without_injection)
                 gold_total += int(st.gold_total)
+                # SEPARATE THE TWO FAILURES. High start/end hit with low PAIR coverage means
+                # the boundaries were found and the PAIRING lost them (ends_per_start).
+                # Low start/end hit means the scorer never ranked them in -- a model
+                # problem no budget fixes.
+                if st.start_hit is not None:
+                    s_hit += int(st.start_hit)
+                    e_hit += int(st.end_hit)
+                    b_total += int(st.boundary_total)
                 m._last_proposal_stats = None      # don't double count the next window
             n_win += 1
         stats = {"pos": hit}
@@ -111,8 +166,12 @@ def main() -> int:
         cov = stats["pos"] / gold_total
         rows.append({"window": win, "gold": gold_total, "in_candidates": stats["pos"],
                      "coverage": cov, "windows": n_win})
+        sc = (s_hit / b_total * 100) if b_total else float("nan")
+        ec = (e_hit / b_total * 100) if b_total else float("nan")
+        rows[-1].update({"start_cov": sc, "end_cov": ec})
         print(f"  {win:>8} {gold_total:>10,} {stats['pos']:>15,} {cov*100:>9.1f}% "
-              f"{gold_total/max(n_win,1):>12.1f}", flush=True)
+              f"{gold_total/max(n_win,1):>12.1f}   start {sc:>5.1f}%  end {ec:>5.1f}%",
+              flush=True)
 
     print()
     if len(rows) >= 2:

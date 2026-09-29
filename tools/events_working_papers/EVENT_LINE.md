@@ -615,3 +615,45 @@ the recall is unmeasured; so is its cost (enumeration is quadratic-ish in bounda
 the config notes 1024 costs 6.4x the enumeration of 160 for no gain on SHORT documents).
 Nothing here touches events: `global_decode` was off in every run so far, so the event
 numbers remain unmeasured rather than negative.
+
+### The cap decomposed: half configuration, half the boundary scorer
+
+Paired sweep, identical documents, `gold_hit_without_injection`:
+
+| window | baseline (16/16, budget 128, alpha 0) | bumped (128/128, 2048, alpha 0.05) | aggressive (256/256, 8192, alpha 0.25) |
+|---|---|---|---|
+| 512 | 29.7% | 64.9% | **73.7%** |
+| 1024 | 19.9% | 43.6% | 50.5% |
+| 2048 | 14.8% | 30.4% | 32.8% |
+| 4096 | **8.1%** | 19.7% | **21.5%** |
+
+**Capacity is a real lever that SATURATES.** Baseline -> bumped roughly doubles coverage at
+every width. Bumped -> aggressive (2x top-k, 4x budget, 5x alpha, 4x k_max) buys only
+19.7% -> 21.5% at 4096. And coverage still falls 73.7% -> 21.5% across widths AT the
+aggressive setting, so configuration explains about half the collapse and cannot close it.
+
+**WHERE THE REST GOES.** `ProposalStats.start_hit`/`end_hit` separate boundary selection
+from pairing. At the aggressive setting:
+
+| window | pair coverage | start boundaries found | end boundaries found |
+|---|---|---|---|
+| 512 | 74.6% | **89.2%** | **84.6%** |
+| 4096 | 22.1% | **50.3%** | **57.9%** |
+
+Pair coverage tracks the PRODUCT of the two (0.892 x 0.846 = 75.5% vs 74.6% observed;
+0.503 x 0.579 = 29.1% vs 22.1%), so `ends_per_start` costs ~1 point at 512 and ~7 at 4096
+-- real but minor.
+
+**THE DOMINANT FAILURE IS BOUNDARY RANKING, AND IT IS NOT CONFIGURATION.** At 4096 the
+scorer ranks only 50.3% of gold starts into a top-k with room for ~1024 of ~4096 positions.
+Capacity is 4x what is needed and half the gold boundaries still never make the list.
+
+**LIKELY CAUSE, NOT YET PROVEN.** eb17 trains at `max_len: 4096` with `window_stride: 3072`,
+but its corpora have a median document of **457 tokens** -- so the boundary scorer has
+almost never seen 4096 tokens of real content, and its ranking at that scale is untrained
+rather than broken. That is a TRAINING-DISTRIBUTION hypothesis and the way to test it is a
+long-document training mix, not a config change.
+
+**WHAT THIS SETTLES.** The earlier "entities want small windows, events want large" tension
+is an artefact: arm C won by getting 16x more independent budgets. Raising the budget
+recovers half of that for free at eval/inference time, and the remainder needs training.
