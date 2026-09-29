@@ -53,9 +53,13 @@ echo "[sweep+rescore] --- record-gate sweep (VALIDATION) $(date -u) ---"
 # 0.1 or near 0.5 -- in ~3 min a pass. The shipped threshold must then be confirmed on the
 # FULL split at the chosen value, which is one more pass, not nineteen.
 SWEEP_MAX_RECORDS=${SWEEP_MAX_RECORDS:-4000}
+# record_temperature dropped 2026-09-29: the anchor axis is where the signal is, and
+# 4 passes on a knob with no evidence behind it is 4 passes not spent at the bottom
+# of the anchor grid, which is where the first run said the optimum lies.
+SWEEP_AXES=${SWEEP_AXES:-record_anchor_threshold,record_field_threshold}
 timeout 7200 $PY tools/train/sweep_record_anchor_threshold.py \
   --config "$CFG" --checkpoint "$CKPT" \
-  --axes record_anchor_threshold,record_field_threshold,record_temperature \
+  --axes "$SWEEP_AXES" \
   --span-thresholds 0.3,0.1,0.05 \
   --max-records "$SWEEP_MAX_RECORDS" \
   --batch-size 8 --out "$OUT/record_gate_sweep_val.json" 2>&1 | tee "$OUT/sweep.log"
