@@ -128,10 +128,15 @@ if _r:
 # and overlap as A, proposal width AS SHIPPED. A - D is the width effect on metrics.
 WIDE = {"start_top_k": 128, "end_top_k": 128, "candidate_budget": 384,
         "boundary_top_k_alpha": 0.05, "boundary_top_k_max": 512}
+# ORDER MATTERS AND I GOT IT WRONG ONCE. Arm C reads ~49 windows per document against
+# ~3 for the others, so it costs roughly 12x an arm. Run it LAST: with C third, a job that
+# overruns its timeout loses the arms after it -- on 2026-09-29 that would have killed the
+# width CONTROL, which was the whole reason for a fourth arm. Cheap arms first, and the
+# controls before the expensive variant.
 ARMS = [("A_win_ov0_wide", WIN_WORDS, 0, WIDE),
         ("B_win_ov64_wide", WIN_WORDS, 64, WIDE),
-        ("C_200_ov50_wide", 200, 50, WIDE),
-        ("D_win_ov0_shipped", WIN_WORDS, 0, {})]
+        ("D_win_ov0_shipped", WIN_WORDS, 0, {}),
+        ("C_200_ov50_wide", 200, 50, WIDE)]
 HEADS = ("entity", "event_trigger", "event_argument", "event_type", "structure", "relation")
 
 def run(rows, label):
@@ -145,6 +150,17 @@ def run(rows, label):
                                 boundary_overrides=dict(wide) or None) or {}
         res[name] = m
         Path(f"{out}/{label}_{name}.json").write_text(json.dumps(m, indent=2), encoding="utf-8")
+        # PUBLISH EACH ARM AS IT LANDS. Publishing only after the last arm means a job that
+        # overruns loses every completed arm with the box -- the metrics are the finding and
+        # they are kilobytes. Failure here must not abort the remaining arms.
+        try:
+            import subprocess
+            subprocess.run(["bash", "-c",
+                            f'source tools/lambda/_publish.sh && publish "$DEST" '
+                            f'"{out}/{label}_{name}.json"'],
+                           check=False, timeout=600)
+        except Exception as exc:                     # noqa: BLE001
+            print(f"[win] per-arm publish failed for {name}: {exc}", flush=True)
     return res
 
 long_res = run(long_rows, "long")
