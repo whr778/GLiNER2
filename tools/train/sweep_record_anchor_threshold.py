@@ -91,6 +91,14 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--max-records", type=int, default=0,
                     help="subsample val for SHAPE; the shipped pick must use the full split")
+    ap.add_argument("--wide", action="store_true",
+                    help="lift the PROPOSAL cap while sweeping: start/end top_k 128, "
+                         "candidate_budget 384, boundary_top_k_alpha 0.05, k_max 512. "
+                         "WHY IT MATTERS FOR THIS SWEEP: the anchor optimum was picked at "
+                         "the SHIPPED cap, where gold coverage at a 4096-token window is "
+                         "8.1%%. A starved candidate set forces a LOW threshold to get "
+                         "anything through, so 0.1 may have been optimal only for a starved "
+                         "decoder. Sweep both ways and compare where the optimum sits.")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -121,6 +129,9 @@ def main() -> int:
 
     print("[sweep] boundary_head override record_anchor_threshold_wins=True -- without it "
           "the record gate IS the span gate and the sweep is flat")
+    print(f"[sweep] proposal width: {'WIDE (cap lifted)' if args.wide else 'SHIPPED (capped)'}"
+          + ("  -- the anchor optimum was originally picked UNDER the cap, so where it sits "
+             "here is the question" if args.wide else ""), flush=True)
 
     rows = []
     for axis in [a.strip() for a in args.axes.split(",") if a.strip()]:
@@ -135,6 +146,14 @@ def main() -> int:
             # forced `threshold=None` globally -- keeping it global keeps these rows
             # comparable with the 2026-09-29 run.
             overrides = {axis: value, "record_anchor_threshold_wins": True}
+            if args.wide:
+                # candidate_budget stays at training_candidate_budget: decoding wider than
+                # the model trained is refused by validate_boundary_head, and the illegal
+                # 2048 buys ~1 coverage point over 384 anyway.
+                overrides.update({"start_top_k": 128, "end_top_k": 128,
+                                  "candidate_budget": 384,
+                                  "boundary_top_k_alpha": 0.05,
+                                  "boundary_top_k_max": 512})
             # THE DEAD SETTING STILL GATES THE LIVE ONE. `record_anchor_proposal_threshold`
             # is read by NOTHING (no decoder, no loss -- verified 2026-09-29), which is why
             # it was dropped from AXES. But `validate_boundary_head` still enforces
