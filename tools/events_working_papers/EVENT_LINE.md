@@ -569,3 +569,49 @@ local and entity-like -- and would be a poor choice for long-range event structu
 verbatim and are excluded, so the distances describe ~72% of argument links. If the missing
 surfaces are systematically abstractive the distribution shifts, though not enough to bring
 30.5% near 100%.
+
+## The cap: candidate enumeration does not scale with the window (2026-09-29)
+
+`candidate_budget` is 128 and eb17 leaves it there. The config calls it "an inference-width
+decision" and sizes it from query-group statistics on corpora whose median document is 457
+tokens. It is a FIXED enumeration per query, independent of how much text the window holds.
+
+Measured with `ProposalStats.gold_hit_without_injection` -- the proposals BEFORE gold
+injection, which is the inference-time question -- on cc_news_long:
+
+| window (tokens) | gold | in candidates | coverage |
+|---|---|---|---|
+| 128 | 559 | 355 | 63.5% |
+| 256 | 1,069 | 506 | 47.3% |
+| 512 | 1,645 | 521 | 31.7% |
+| 1024 | 2,104 | 446 | 21.2% |
+| 2048 | 4,838 | 685 | 14.2% |
+| **4096** | **11,797** | **853** | **7.2%** |
+
+**Gold grows 21x while the candidate set captures a nearly FLAT 355-853.** That is a cap,
+not a gradient. At the model's own 4096 window **92.8% of gold entities never enter the
+candidate set**, so no threshold, no calibration and no decode change can recover them.
+
+**THIS EXPLAINS THE WINDOW ARMS ENTIRELY.** Arm A's 3.7% entity recall sits under a 7.2%
+ceiling; arm C's 11.0% sits under ~47%. Arm C did not win because small windows read better
+-- it won because 16x more windows means 16x more independent 128-candidate budgets. The
+"tension" between entity-wants-small and event-wants-large is an ARTEFACT of the cap, not a
+property of the tasks.
+
+**WHY THE REGULAR CORPORA LOOK FINE.** At 483 median tokens a window holds ~11 gold
+entities against a budget of 128, so the cap never binds -- consistent with entity strict
+F1 0.5736 on the blind test. The cap is a LONG-DOCUMENT failure and is invisible on every
+corpus this programme normally measures.
+
+**THE FIRST VERSION OF THIS PROBE WAS VACUOUS.** It counted positives in
+`candidate_pair_loss` and reported 100% coverage at 256/512/1024, because
+`gold_injection_prob` defaults to **1.0** -- training INJECTS gold into the candidate set,
+so the answer was fixed before the model ran. Three consecutive 100% readings are what
+prompted the check. `gold_hit_without_injection` already existed for exactly this and needs
+`collect_diagnostics`.
+
+**NEXT, AND NOT YET DONE.** Whether raising `candidate_budget` with window length recovers
+the recall is unmeasured; so is its cost (enumeration is quadratic-ish in boundaries, and
+the config notes 1024 costs 6.4x the enumeration of 160 for no gain on SHORT documents).
+Nothing here touches events: `global_decode` was off in every run so far, so the event
+numbers remain unmeasured rather than negative.
