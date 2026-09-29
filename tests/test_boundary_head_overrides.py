@@ -176,3 +176,54 @@ def test_parameter_changing_flags_are_refused_on_a_warm_start(key):
 
     with pytest.raises(SystemExit, match=key):
         _apply_boundary_head_overrides(model, {key: flip})
+
+
+# ---------------------------------------------------------------------------
+# The record gate's operating point must survive the eval-time filter
+# ---------------------------------------------------------------------------
+
+def test_the_record_operating_point_survives_the_eval_time_filter():
+    """`evaluate_config` DROPS any boundary_head override outside its allowlist.
+
+    It does it silently -- `bh = {k: v for k, v in bh.items() if k in
+    _EVAL_TIME_BOUNDARY_KEYS}` -- so a missing key turns `--record-anchor-threshold`
+    into a decorative flag that prints its override and changes nothing, which is the
+    same failure this module was written for.
+
+    All THREE keys are load-bearing: the value; `_wins`, without which the record gate
+    is the span gate and the value does nothing; and the proposal threshold, because
+    `validate_boundary_head` enforces proposal <= anchor and refuses any anchor below
+    the 0.2 default.
+    """
+    from train import _EVAL_TIME_BOUNDARY_KEYS, _STRUCTURAL_BOUNDARY_KEYS
+
+    required = (
+        "record_anchor_threshold",
+        "record_anchor_threshold_wins",
+        "record_anchor_proposal_threshold",
+    )
+    missing = [k for k in required if k not in _EVAL_TIME_BOUNDARY_KEYS]
+    assert not missing, (
+        f"{missing} would be filtered out of the boundary overrides in silence, so "
+        "--record-anchor-threshold would change nothing"
+    )
+    # An operating point is not structural: it adds and removes no tensors and is read
+    # at decode. If one of these were classed structural, eval would REFUSE instead.
+    assert not [k for k in required if k in _STRUCTURAL_BOUNDARY_KEYS]
+
+
+def test_the_override_reaches_boundary_settings_on_a_real_config():
+    """End to end through the real validator, not a hand-built dict."""
+    from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
+
+    shipped = BoundaryHeadSettings(**validate_boundary_head({}))
+    assert shipped.record_anchor_threshold_wins is False, "default must not move"
+
+    merged = validate_boundary_head({
+        "record_anchor_threshold": 0.1,
+        "record_anchor_proposal_threshold": 0.1,
+        "record_anchor_threshold_wins": True,
+    })
+    settings = BoundaryHeadSettings(**merged)
+    assert settings.record_anchor_threshold_wins is True
+    assert settings.record_anchor_threshold == 0.1

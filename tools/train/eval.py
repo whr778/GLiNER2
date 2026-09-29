@@ -57,6 +57,13 @@ def main() -> None:
                         "eval blocks on a device sync per batch (model.py:1108, "
                         "keep.nonzero), so a larger batch amortises the same stall over "
                         "more documents.")
+    p.add_argument("--record-anchor-threshold", dest="record_anchor_threshold", type=float,
+                   help="Override boundary_head.record_anchor_threshold AND turn on "
+                        "record_anchor_threshold_wins, which is what makes it reachable: "
+                        "without that flag the record gate is the SPAN gate and this value "
+                        "changes nothing. Also clamps record_anchor_proposal_threshold, "
+                        "since validate_boundary_head enforces proposal <= anchor and "
+                        "would otherwise refuse any value below 0.2.")
     p.add_argument("--decode-mode", dest="decode_mode", choices=("greedy", "joint"),
                    help="Override boundary_head.decode_mode for this eval only. 'joint' "
                         "routes entities+relations through the joint_ie typed-constraint "
@@ -84,6 +91,10 @@ def main() -> None:
         overrides["menu_negatives"] = args.menu_negatives
     if args.threshold is not None:
         overrides["threshold"] = args.threshold
+    if args.record_anchor_threshold is not None:
+        overrides["record_anchor_threshold"] = args.record_anchor_threshold
+        overrides["record_anchor_threshold_wins"] = True
+        overrides["record_anchor_proposal_threshold"] = args.record_anchor_threshold
     if args.decode_mode is not None:
         overrides["decode_mode"] = args.decode_mode
     if args.joint_beam_width is not None:

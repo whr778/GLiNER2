@@ -169,6 +169,31 @@ def _note_typed_role_refusals() -> None:
                     total, n, top)
 
 
+def resolve_record_threshold(settings, threshold) -> float:
+    """Which threshold governs the greedy RECORD decode.
+
+    The record gate is the SPAN gate unless ``record_anchor_threshold_wins`` says
+    otherwise. Both ``_decode_records`` call sites fill ``threshold`` with the span
+    threshold and ``_extract_from_batch(threshold: float)`` is a required positional,
+    so the span value always won and ``record_anchor_threshold`` was unreachable on
+    every eval path -- a sweep over it reads perfectly flat. Traced 2026-09-29: the
+    setting moved 0.5 -> 0.1 -> 0.01 while the decode used 0.3 each time and the
+    output never changed.
+
+    OFF BY DEFAULT ON PURPOSE. Every checkpoint on the Hub carries an explicit
+    ``record_anchor_threshold: 0.5``, so honouring it unconditionally would move every
+    existing model off the span threshold -- on an axis measured to swing
+    ``event_argument`` strict F1 2.8x. Turn it on to reach an operating point a sweep
+    picked; leave it off and the decode is bit-identical to what was measured.
+
+    ``_decode_joint`` reads ``record_anchor_threshold`` directly and always has, so
+    with the flag off the two decode arms disagree and with it on they agree.
+    """
+    if getattr(settings, "record_anchor_threshold_wins", False) or threshold is None:
+        return float(settings.record_anchor_threshold)
+    return float(threshold)
+
+
 class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
     """Boundary architecture with the shared public extraction runtime.
 
@@ -1863,11 +1888,15 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             return {}
 
         settings = self.boundary_settings
-        record_threshold = (
-            float(threshold)
-            if threshold is not None
-            else settings.record_anchor_threshold
-        )
+        # THE RECORD GATE IS THE SPAN GATE UNLESS YOU SAY OTHERWISE. Both call sites
+        # fill `threshold` with the SPAN threshold and it is a required positional, so
+        # the `threshold is not None` branch below always won and
+        # `record_anchor_threshold` was unreachable on every eval path -- a sweep over
+        # it reads perfectly flat until something forces the setting through.
+        # `record_anchor_threshold_wins` is that switch, and it is OFF by default so
+        # existing checkpoints (which all carry an explicit 0.5) keep the exact decode
+        # they were measured with.
+        record_threshold = resolve_record_threshold(settings, threshold)
         metadata = metadata or {}
         query_states_i = core["query_states"][sample_index]
         out: Dict[str, Any] = {}

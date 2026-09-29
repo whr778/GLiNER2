@@ -723,6 +723,21 @@ _STRUCTURAL_BOUNDARY_KEYS = frozenset({
     "candidate_attention_heads", "pool_boundary_top_k", "pool_size",
 })
 
+# The record gate's operating point joins the eval-time set on the same test as
+# abstention_threshold: it adds and removes no tensors and is read at decode. It takes
+# THREE keys, not one, and all three are load-bearing:
+#   record_anchor_threshold          the value
+#   record_anchor_threshold_wins     without it the record gate is the SPAN gate and
+#                                    the value changes nothing (traced 2026-09-29)
+#   record_anchor_proposal_threshold validate_boundary_head enforces proposal <= anchor,
+#                                    so any anchor below the 0.2 default is REFUSED
+# Anything not in this tuple is filtered out two lines down in silence, which is how a
+# decorative override happens.
+_EVAL_TIME_BOUNDARY_KEYS = ("decode_mode", "joint_beam_width", "abstention_threshold",
+                            "record_anchor_threshold", "record_anchor_threshold_wins",
+                            "record_anchor_proposal_threshold")
+
+
 
 def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
     """Apply a config's ``model.boundary_head`` block to an already-loaded model.
@@ -1260,7 +1275,6 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     # read at decode (engine.py:390, 965). Sweeping it is the cheapest way to ask whether a
     # trained abstention gate is merely mis-calibrated -- the stage-0 gate in this programme
     # ran its whole life at 0.5 and needed 0.998.
-    _EVAL_TIME_BOUNDARY_KEYS = ("decode_mode", "joint_beam_width", "abstention_threshold")
     bh.update({k: v for k, v in (overrides or {}).items()
                if k in _EVAL_TIME_BOUNDARY_KEYS})
     bh = {k: v for k, v in bh.items() if k in _EVAL_TIME_BOUNDARY_KEYS}

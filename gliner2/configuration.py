@@ -176,6 +176,20 @@ class BoundaryHeadSettings:
     record_instance_queries: int = 32       # anchorless / latent capacity
     record_anchor_proposal_threshold: float = 0.2   # lower rescue threshold
     record_anchor_threshold: float = 0.5    # final anchor selection threshold
+    # Whether record_anchor_threshold actually GOVERNS the greedy record decode.
+    # It does not by default, and did not for this setting's whole life:
+    # `_decode_records` takes `float(threshold) if threshold is not None`, and
+    # `_extract_from_batch(threshold: float)` is a required positional that both call
+    # sites fill with the SPAN threshold -- so the record gate simply WAS the span gate
+    # and this knob was unreachable on every eval path (traced 2026-09-29: the setting
+    # moved 0.5 -> 0.1 -> 0.01 while the decode used 0.3 each time, output identical).
+    # Default False because every checkpoint already on the Hub carries an explicit
+    # 0.5 here, and honouring it unconditionally would silently move every existing
+    # model off the span threshold -- on an axis measured to swing event_argument
+    # strict F1 2.8x. Turn it ON to reach the operating point a sweep picked.
+    # `_decode_joint` (engine.py:732) reads the setting directly and always has, so
+    # with this flag off the two decode arms disagree, and with it on they agree.
+    record_anchor_threshold_wins: bool = False
     record_field_threshold: float = 0.5     # list-field / null decision cutoff
     record_loss_weight: float = 1.0
     # Per-task rebalancing of the span losses (start/end/pair), keyed by task
@@ -517,6 +531,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "record_anchor_threshold": float(
             values.get("record_anchor_threshold", d.record_anchor_threshold)
+        ),
+        "record_anchor_threshold_wins": bool(
+            values.get("record_anchor_threshold_wins", d.record_anchor_threshold_wins)
         ),
         "record_field_threshold": float(
             values.get("record_field_threshold", d.record_field_threshold)

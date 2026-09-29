@@ -75,38 +75,6 @@ def _row(metrics, label, value):
     return row
 
 
-def _force_settings_to_win(engine_cls):
-    """Make `_decode_records` honour `boundary_settings`, not the caller's threshold.
-
-    MEASURED 2026-09-29, and this is the whole reason this helper exists:
-
-        record_threshold = float(threshold) if threshold is not None \
-                           else settings.record_anchor_threshold
-
-    Every eval path passes a threshold -- `_extract_from_batch` takes it as a REQUIRED
-    positional -- so `record_anchor_threshold` is NEVER consulted, and the record gate is
-    silently the SPAN gate. Verified end-to-end on eb16-eventrecords-tr: decoding one real
-    casie record at record_anchor_threshold 0.5 and 0.02, span threshold fixed at 0.3,
-    produced BYTE-IDENTICAL output.
-
-    That is also why `tools/train/sweep_record_thresholds.py` no longer works: it patches
-    the settings and then forwards the caller's threshold into the original, so its grid
-    collapses to one point. Its reported 137k figures (0.076 at 0.5 vs 0.112 at 0.10)
-    predate the threshold argument and cannot be reproduced by running it today.
-
-    Forcing `threshold=None` hands precedence back to the settings, which is what makes a
-    record-threshold sweep mean anything at all.
-    """
-    original = engine_cls._decode_records
-
-    def decode_with_settings(self, *a, **kw):
-        kw["threshold"] = None
-        return original(self, *a, **kw)
-
-    engine_cls._decode_records = decode_with_settings
-    return original
-
-
 def main() -> int:
     import yaml
 
@@ -151,12 +119,8 @@ def main() -> int:
               f"Re-run on the full split before shipping a threshold.")
     print(f"[sweep] {len(records):,} VAL records from {len(files)} files\n", flush=True)
 
-    # Hand precedence back to boundary_settings BEFORE any scoring, or every row below is
-    # the same number and the sweep measures nothing. Restored in the finally.
-    from gliner2.models.boundary.engine import BoundaryExtractor as _Engine
-    _original_decode = _force_settings_to_win(_Engine)
-    print("[sweep] patched `_decode_records` so boundary_settings wins over the passed "
-          "threshold -- without this the record gate IS the span gate and the sweep is flat")
+    print("[sweep] boundary_head override record_anchor_threshold_wins=True -- without it "
+          "the record gate IS the span gate and the sweep is flat")
 
     rows = []
     for axis in [a.strip() for a in args.axes.split(",") if a.strip()]:
@@ -165,7 +129,12 @@ def main() -> int:
             continue
         print(f"[sweep] === {axis} (span threshold held at {span_thr}) ===", flush=True)
         for value in AXES[axis]:
-            overrides = {axis: value}
+            # `record_anchor_threshold_wins` is what makes a record-threshold sweep
+            # mean anything: without it the record gate IS the span gate and every row
+            # is identical. Set for EVERY axis, because the monkeypatch this replaced
+            # forced `threshold=None` globally -- keeping it global keeps these rows
+            # comparable with the 2026-09-29 run.
+            overrides = {axis: value, "record_anchor_threshold_wins": True}
             # THE DEAD SETTING STILL GATES THE LIVE ONE. `record_anchor_proposal_threshold`
             # is read by NOTHING (no decoder, no loss -- verified 2026-09-29), which is why
             # it was dropped from AXES. But `validate_boundary_head` still enforces
@@ -228,7 +197,6 @@ def main() -> int:
         print(f"\n[sweep] best {key} = {best[key]} at {best['axis']}={best['value']}"
               + (f"  (default gives {base})" if base is not None else ""))
         print("[sweep] PICKED ON VALIDATION. Score the blind test ONCE at this point.")
-    _Engine._decode_records = _original_decode
     if args.out:
         Path(args.out).write_text(json.dumps(rows, indent=2), encoding="utf-8")
         print(f"[sweep] wrote {args.out}")
