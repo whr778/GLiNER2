@@ -445,3 +445,33 @@ by 4.6x, and the ranking signal at 0.835 has margin above chance to absorb that.
 **STILL WORTH DOING BEFORE A TRAINING RUN**, now a small change rather than a rebuild:
 label each instance by whether the eval counts its trigger as COR, and re-run the AUC.
 That removes the last estimate from the chain.
+
+### Eval-equivalent labelling: dedup is a no-op, and the residual is NOT explained
+
+Added the metric's own unit to the probe -- trigger predictions deduped by anchor span,
+strongest score kept. On 400 val event records at anchor 0.1:
+
+| view | good | spurious | ratio | AUC |
+|---|---|---|---|---|
+| instances | 382 | 374 | 0.98 : 1 | 0.8426 |
+| **deduped (eval's unit)** | **382** | **374** | **0.98 : 1** | **0.8426** |
+
+**Identical.** No two instances in a group decode the same anchor span, so dedup was never
+the difference. Two hypotheses are now eliminated:
+
+- **dedup** -- measured, a no-op;
+- **the emitted trigger differs from the anchor span** -- refuted in code. `decode_group`
+  (records.py:816-819) puts `rec.anchor_span` into the trigger field with `rec.score` as
+  its score, so for natural-mode records the emitted trigger IS the anchor span and the
+  probe's unit IS the metric's unit.
+
+**THE RESIDUAL IS UNEXPLAINED AND I AM NOT GUESSING AT IT.** The probe counts 382 good on
+these records; the eval counts COR 239 and FP 455 (absolute 1.90:1 against the probe's
+0.98:1). Remaining candidate, unverified: the two runs do not process the same physical
+units -- the probe uses the TRAINING collator with `sliding_window`, the eval run used
+`chunk_size=512` plus its own split hygiene, so "the same 400 records" may be different
+numbers of scored windows with different menus.
+
+**AUC IS STABLE ACROSS FOUR INDEPENDENT SAMPLES: 0.8196, 0.8272, 0.8351, 0.8426.** The
+ranking signal is not in doubt. What is not established is the exact class balance of the
+task a trained gate would face, and one estimate therefore remains in the chain.

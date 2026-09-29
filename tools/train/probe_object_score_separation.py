@@ -114,6 +114,7 @@ def main() -> int:
                     collate_fn=coll)
 
     good, spurious, groups_seen = [], [], 0
+    good_d, spurious_d = [], []   # deduped by anchor span: the eval's unit
     real_loss = R.compute_group_loss
 
     def loss_spy(group, recs):
@@ -143,6 +144,19 @@ def main() -> int:
                                      object_threshold=args.anchor_threshold)
             for d in decoded:
                 (good if d.anchor_span in gold_spans else spurious).append(float(d.score))
+            # EVAL-EQUIVALENT VIEW. The metric scores trigger PREDICTIONS after dedup, so
+            # two instances decoding the SAME anchor span are one prediction, not two.
+            # Keep the strongest score per distinct span, exactly as a decoder emitting
+            # one prediction per span would.
+            best: dict = {}
+            for d in decoded:
+                if d.anchor_span is None:
+                    continue
+                prev = best.get(d.anchor_span)
+                if prev is None or float(d.score) > prev:
+                    best[d.anchor_span] = float(d.score)
+            for span, sc in best.items():
+                (good_d if span in gold_spans else spurious_d).append(sc)
         return real_loss(group, recs)
 
     R.compute_group_loss = loss_spy
@@ -165,6 +179,7 @@ def main() -> int:
         return 1
 
     auc = _auc(good, spurious)
+    auc_d = _auc(good_d, spurious_d)
     mg, ms = sum(good) / len(good), sum(spurious) / len(spurious)
     print(f"[obj] instances matching a GOLD anchor : {len(good):>7,}  mean score {mg:.4f}")
     print(f"[obj] instances matching NO gold anchor: {len(spurious):>7,}  mean score {ms:.4f}")
@@ -172,6 +187,16 @@ def main() -> int:
     print(f"\n[obj] AUC of sigmoid(object_logit) = {auc:.4f}")
     print("[obj] 0.5 is chance. Well above -> the untrained head already ranks good above")
     print("[obj] spurious and training it is promising. At chance -> head-init question.")
+    print()
+    print("[obj] === EVAL-EQUIVALENT VIEW (deduped by anchor span, the metric's unit) ===")
+    if auc_d is None:
+        print("[obj] one class empty after dedup -- UNMEASURED, not chance.")
+    else:
+        rd = len(spurious_d) / max(len(good_d), 1)
+        print(f"[obj] good {len(good_d):,}  spurious {len(spurious_d):,}  "
+              f"ratio {rd:.2f} : 1")
+        print(f"[obj] AUC (deduped) = {auc_d:.4f}")
+        print("[obj] Compare against the eval's own absolute FP:COR on the same records.")
     if args.out:
         Path(args.out).write_text(json.dumps(
             {"auc": auc, "n_good": len(good), "n_spurious": len(spurious),
