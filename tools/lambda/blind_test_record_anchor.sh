@@ -23,6 +23,9 @@ cd ~/gliner2
 export PATH="$HOME/.local/bin:$PATH"
 export HF_TOKEN=$(cat ~/.hf_token)
 export GLINER2_STRICT_ATTN=1
+# The allocator's own advice from the OOM above: fragmentation was 506MB reserved-but-
+# unallocated at the point it died.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 PY=./.venv/bin/python
 CFG=${CFG:-tools/train/config/base/eb17-best.yaml}
@@ -31,6 +34,12 @@ HFCKPT=${HFCKPT:-whr778/gliner2-eb17-best}
 NAME=${NAME:-eb17-best}
 CKPT=${CKPT:-$HOME/ckpt/$NAME}
 THRESH=${THRESH:-0.3}
+# BATCH IS CARD-DEPENDENT AND THIS JOB IS NOT. The 2026-09-29 launch inherited
+# batch-size 8 from a sweep that ran on a 40GB A100 and put it on a 22GB A10: the
+# control arm died with "tried to allocate 2.91 GiB ... 2.50 GiB is free" ~11 minutes
+# in, and the treatment arm walked into the same wall. Eval is GPU-insensitive on this
+# workload, so the cheap card is right and the BATCH has to come down to match it.
+BATCH=${BATCH:-2}
 ANCHOR=${ANCHOR:-0.1}
 DEST=${DEST:-eb17_blind_record_anchor}
 OUT=$HOME/blindtest
@@ -61,7 +70,7 @@ run_arm() {                       # $1 = arm name, $2... = extra eval.py args
   echo "[blind] --- arm $arm  $(date -u) ---"
   rm -f "$OUTDIR/test_metrics.json"
   timeout 7200 $PY -u tools/train/eval.py --config "$CFG" --checkpoint "$CKPT" \
-      --split test --threshold "$THRESH" --batch-size 8 "$@" 2>&1 \
+      --split test --threshold "$THRESH" --batch-size "$BATCH" "$@" 2>&1 \
       | tee "$OUT/$arm.log" | tail -20
   local rc=${PIPESTATUS[0]}
   if [ -f "$OUTDIR/test_metrics.json" ]; then
