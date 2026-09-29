@@ -475,3 +475,55 @@ numbers of scored windows with different menus.
 **AUC IS STABLE ACROSS FOUR INDEPENDENT SAMPLES: 0.8196, 0.8272, 0.8351, 0.8426.** The
 ranking signal is not in doubt. What is not established is the exact class balance of the
 task a trained gate would face, and one estimate therefore remains in the chain.
+
+## Emission does not scale with window size (2026-09-29)
+
+Three arms over 300 `cc_news_long` documents (median 9,697 tokens, 100% multi-window),
+same model, same docs, threshold 0.3, differing only in chunking.
+
+| head, strict micro F1 | A: 4096 win, ov 0 | B: 4096 win, ov 64 | C: 200 words, ov 50 |
+|---|---|---|---|
+| entity | 0.0668 | 0.0686 | **0.1407** |
+| event_type | 0.3663 | 0.4135 | **0.9427** |
+| event_trigger | 0.0036 | 0.0024 | 0.0078 |
+| structure | 0.0100 | 0.0100 | 0.0192 |
+| event_argument | 0.0000 | 0.0000 | 0.0013 |
+| relation | 0.0000 | 0.0000 | 0.0000 |
+
+**A vs B -- OVERLAP IS A WASH.** Identical window, only overlap differs, and entity moves
+0.0668 -> 0.0686. The provisional overlap 0 stands; boundary coverage is not what long
+documents are losing.
+
+**THE REAL FINDING: the model emits a roughly FIXED number of spans per window, whatever
+the window holds.** Gold is 22.7 entities per 1,000 tokens. Arm A emits **2.4** per 1,000
+tokens (10.6% of gold), arm C emits **12.4** (54.6%). Per window that is ~7.7 emitted
+where ~73 exist at 4096 tokens, against ~2.4 where ~4.5 exist at ~260 tokens. Recall per
+window is ~11% at the model's own window and ~55% at the small one.
+
+| arm | predictions | correct | FN | recall | precision |
+|---|---|---|---|---|---|
+| A | 6,893 | 2,459 | 60,963 | **3.7%** | 0.353 |
+| B | 7,187 | 2,534 | 60,784 | 3.8% | 0.349 |
+| C | 35,930 | 7,232 | 47,326 | **11.0%** | 0.199 |
+
+**DENSITY IS RULED OUT, and it inverts the obvious explanation.** cc_news_long is 22.1
+entities per 1k tokens; `cc_news_haiku45` -- the SAME SOURCE, in training -- is **36.1**,
+and assorted test corpora are 52.4. The eval corpus is SPARSER than what the model trained
+on. The only variable left is DOCUMENT LENGTH: median 457 tokens in training against 9,511
+here.
+
+**CONSEQUENCE FOR PRODUCTION.** Recall degrades with document length because emission does
+not grow with the window. On a 9,697-token document read at the model's own 4096 window,
+eb17 finds under 4% of the entities; the same document read in 200-word windows finds 11%.
+The EKF pipeline's 200-word band was not a tuning quirk -- it was compensating for this,
+and the recorded "16/16 vs 15/16 at the library default 384 on Turkiye" is consistent.
+
+**CONSEQUENCE FOR THE UNIFORM-WINDOW POLICY.** "One window everywhere at the model's
+configured size" is the WORST setting measured for long-document recall. The policy is
+right that training, eval, blind test and inference should agree; it is wrong that the
+agreed value should be the training window, at least until emission scales.
+
+**WHAT IS NOT ESTABLISHED.** Why emission is capped -- candidate budget, decode threshold
+behaviour at length, or attention dilution -- is unmeasured, and C wins here on F1 while
+LOSING precision (0.199 vs 0.353), so "smaller is better" is a recall trade, not a free
+win. A/B-vs-C also varies window AND overlap together; only A-vs-B is clean.
