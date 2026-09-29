@@ -192,3 +192,61 @@ def test_unknown_dataset_is_flagged_not_silently_dropped():
     )
     assert "totally_unknown_corpus" in card
     assert "UNKNOWN" in card
+
+
+# ---------------------------------------------------------------------------
+# OneIE criteria live in their OWN table
+# ---------------------------------------------------------------------------
+
+def test_oneie_table_is_separate_and_never_merged_into_the_heads():
+    """They read HIGHER than the corpus heads by construction, so they must not mix.
+
+    Arg-C on eb17-best's blind test is 0.2027 against `event_argument` strict 0.1752.
+    Quoting one where the other is expected overstates the model, which is why these
+    are a separate table and are kept out of `primitive_heads` so they can never reach
+    `head_min` and steer checkpoint selection.
+    """
+    from model_card import _oneie_table, _metrics_table
+
+    metrics = {
+        "eval_trigi_external_micro_precision": 0.7512,
+        "eval_trigi_external_micro_recall": 0.4261,
+        "eval_trigi_external_micro_f1": 0.5438,
+        "eval_argc_external_micro_precision": 0.6053,
+        "eval_argc_external_micro_recall": 0.1217,
+        "eval_argc_external_micro_f1": 0.2027,
+        "eval_event_argument_strict_micro_f1": 0.1752,
+        "eval_event_argument_relaxed_micro_f1": 0.2288,
+    }
+    table = _oneie_table(metrics, "OneIE criteria (blind test)")
+    assert "Trig-I" in table and "Arg-C" in table
+    assert "0.2027" in table
+    # the corpus-head table must NOT pick these up
+    assert "Trig-I" not in _metrics_table(metrics, "heads")
+
+
+def test_the_arg_c_sanity_bound_can_fail():
+    """A bound that cannot report a violation is decoration."""
+    from model_card import _oneie_table
+
+    base = {
+        "eval_argc_external_micro_f1": 0.2027,
+        "eval_argc_external_micro_precision": 0.6053,
+        "eval_argc_external_micro_recall": 0.1217,
+        "eval_event_argument_strict_micro_f1": 0.1752,
+        "eval_event_argument_relaxed_micro_f1": 0.2288,
+    }
+    assert "holds." in _oneie_table(base, "t")
+
+    broken = dict(base, eval_argc_external_micro_f1=0.9000)
+    assert "VIOLATED" in _oneie_table(broken, "t")
+
+    below = dict(base, eval_argc_external_micro_f1=0.0100)
+    assert "VIOLATED" in _oneie_table(below, "t")
+
+
+def test_no_oneie_metrics_means_no_table():
+    """A model trained without events must not grow an empty section."""
+    from model_card import _oneie_table
+
+    assert _oneie_table({"eval_entity_strict_micro_f1": 0.5}, "t") == ""

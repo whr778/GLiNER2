@@ -355,6 +355,56 @@ def _license_section(verdict: LicenseVerdict, base_name, base_license) -> str:
     return "\n".join(out)
 
 
+
+ONEIE_CRITERIA = (
+    ("trigi", "Trig-I", "trigger span identified, type ignored"),
+    ("trigc", "Trig-C", "trigger span AND event type both correct"),
+    ("argi", "Arg-I", "argument span identified, role ignored"),
+    ("argc", "Arg-C", "argument span AND role both correct"),
+)
+
+
+def _oneie_table(metrics: Dict[str, Any], title: str) -> str:
+    """OneIE's four criteria, in their OWN table and never merged into the heads.
+
+    These exist to be comparable with published OneIE-style work, and they read HIGHER
+    than our corpus heads BY CONSTRUCTION -- different matching, not a better model. They
+    are deliberately kept out of `primitive_heads`, so they can never reach `head_min` and
+    influence checkpoint selection. Quoting one beside a corpus-head number without saying
+    which is which is the mistake this separation exists to prevent.
+    """
+    present = [(k, lbl, note) for k, lbl, note in ONEIE_CRITERIA
+               if f"eval_{k}_external_micro_f1" in metrics]
+    if not present:
+        return ""
+    rows = [f"### {title}", "",
+            "OneIE's own criteria, for comparison with published work using them. "
+            "**Not** the corpus heads above and not interchangeable with them: the "
+            "matching differs, so these read higher by construction.", "",
+            "| Criterion | Precision | Recall | F1 | What it requires |",
+            "|---|--:|--:|--:|---|"]
+    for key, label, note in present:
+        def g(m):
+            v = metrics.get(f"eval_{key}_external_micro_{m}")
+            return f"{v:.4f}" if isinstance(v, (int, float)) else "—"
+        rows.append(f"| {label} | {g('precision')} | {g('recall')} | {g('f1')} | {note} |")
+    lo = metrics.get("eval_event_argument_strict_micro_f1")
+    hi = metrics.get("eval_event_argument_relaxed_micro_f1")
+    ac = metrics.get("eval_argc_external_micro_f1")
+    if all(isinstance(v, (int, float)) for v in (lo, hi, ac)):
+        ok = lo - 1e-9 <= ac <= hi + 1e-9
+        rows += ["", f"> **Sanity bound:** `event_argument` strict {lo:.4f} ≤ Arg-C "
+                     f"{ac:.4f} ≤ relaxed {hi:.4f} — "
+                     + ("holds." if ok else
+                        "**VIOLATED**, so the two accountings disagree and Arg-C here is "
+                        "not trustworthy.")]
+    tl_g = metrics.get("eval_argc_external_triggerless_gold")
+    tl_p = metrics.get("eval_argc_external_triggerless_pred")
+    if isinstance(tl_g, (int, float)) or isinstance(tl_p, (int, float)):
+        rows += ["", f"> **Triggerless:** {tl_g or 0:.0f} gold and {tl_p or 0:.0f} predicted "
+                     "events carried no trigger, so they contribute no Arg-C pair at all."]
+    return "\n".join(rows) + "\n"
+
 def _metrics_table(metrics: Dict[str, Any], title: str) -> str:
     present = [c for c in CATEGORIES if f"eval_{c}_strict_micro_f1" in metrics]
     if not present:
@@ -544,10 +594,16 @@ def build_model_card(
 
     blind = _metrics_table(test_metrics or {}, "Blind test (held-out test splits)")
     val = _metrics_table(eval_metrics or {}, "Best checkpoint (validation)")
+    blind_oneie = _oneie_table(test_metrics or {}, "OneIE criteria (blind test)")
+    val_oneie = _oneie_table(eval_metrics or {}, "OneIE criteria (validation)")
     if blind:
         parts += [blind, ""]
+    if blind_oneie:
+        parts += [blind_oneie, ""]
     if val:
         parts += [val, ""]
+    if val_oneie:
+        parts += [val_oneie, ""]
     if not blind and not val:
         parts += ["_No evaluation metrics were produced for this run._", ""]
 
