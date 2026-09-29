@@ -374,3 +374,40 @@ and dedup (one instance can emit several); this probe labels a match by anchor S
 the group while the eval requires event TYPE and trigger TEXT; and the populations differ
 (event corpora val here, the full 26,724-record test split there). Until that is resolved,
 AUC 0.83 is evidence the head ranks, NOT a prediction of how much precision training buys.
+
+### The ratio gap is ACCOUNTING, not population -- so the AUC is measured on an easier task
+
+Ran the EVAL's own Ortmann accounting on the PROBE's own data (400 val event records,
+control vs anchor 0.1, CPU, both arms chunked identically so the ratio is unaffected):
+
+| category | control | anchor 0.1 | delta |
+|---|---|---|---|
+| COR | 190 | 239 | +49 |
+| FN | 284 | 210 | -74 |
+| FP | 125 | 455 | **+330** |
+| BES+BEO+BEL+LBE+LE | 26 | 51 | +25 |
+
+74 recovered = 49 exactly correct + 25 boundary/label errors, to the unit, exactly as on
+the blind test.
+
+| view | ratio spurious : recovered gold |
+|---|---|
+| probe, decoded INSTANCES matched by anchor span | 0.96 : 1 |
+| **eval accounting, SAME data** | **4.46 : 1** |
+| eval accounting, full blind test | 3.78 : 1 |
+
+**VERDICT: accounting.** The population is not the difference -- the same records score
+4.46:1 under the eval and 0.96:1 under the probe. The probe counts decoded INSTANCES and
+calls one good when its anchor SPAN matches a gold anchor in that group; the eval counts
+trigger SPANS after formatting and dedup and requires the event TYPE and trigger TEXT to
+match. The probe's labelling is roughly 4.6x more forgiving.
+
+**CONSEQUENCE, and it downgrades the earlier reading.** AUC 0.8272 says the object head
+ranks instances well *under the probe's loose labelling*. It is NOT an estimate of the
+separation the metric actually poses, where the spurious class is ~4.6x larger per
+recovered gold. The ranking signal is real; its size against the real task is UNMEASURED.
+
+**BEFORE FUNDING A TRAINING RUN**, re-measure the AUC with eval-equivalent labelling:
+score emitted trigger spans, require type + text match, after dedup. If the AUC survives
+near 0.83 the instance-rejection experiment is well-founded; if it falls toward chance the
+head is not separating what the metric counts and the experiment is not yet justified.
