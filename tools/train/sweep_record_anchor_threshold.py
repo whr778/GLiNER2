@@ -49,7 +49,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # threshold -- configuration.py validates it and raises otherwise -- so its grid stops at
 # the anchor default of 0.5.
 AXES = {
-    "record_anchor_threshold": (0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02),
+    # Extended DOWNWARD 2026-09-29 on evidence: the first run scored 0.5/0.4/0.3/0.2
+    # and every head was still RISING at 0.2 (event_argument strict 2.2x, event_type
+    # +59% across that range). The optimum is below the old grid, so the passes belong
+    # at the bottom end. 0.4 dropped -- it sat on a smooth stretch and bought nothing.
+    "record_anchor_threshold": (0.5, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01),
     "record_field_threshold": (0.5, 0.3, 0.2, 0.1, 0.05),
     "record_temperature": (1.0, 1.5, 2.0, 3.0),
 }
