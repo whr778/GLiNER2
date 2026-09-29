@@ -26,7 +26,7 @@ Everything here is measured unless the row says otherwise.*
 
 | # | question | cost | blocked on | § / ref |
 |---|---|---|---|---|
-| O1 | **Add the Arg-C metric** (exact surface + type + role, **no** trigger). **Read the five decisions in §4c-i first** — surface-keyed, set semantics, case-insensitive, and reported as external-comparability only, never as `event_argument` | **free**, scorer-only | nothing — open since 2026-09-15, still absent from `eval_metrics.py` | §4c-i, TODO 16 |
+| ~~O1~~ | **DONE 2026-09-29** — Arg-C shipped as `eval_argc_external_*` in `gliner2/training/eval_metrics.py`, built to the five decisions in §4c-i: surface-keyed, set semantics, case-insensitive, trigger-less events included **and counted**, and deliberately NOT a head. Traced before tests on records where the model binds both arguments to the WRONG instance: **strict 0.000, Arg-C 0.800, identical predictions** — the definition changing, not the model | — | — | §4c-i, `tests/training/test_argc_metric.py` |
 | O2 | **Does the binding objective we already have move strict argument F1** on a fully-trained `event_records` base? | eb17, already bought | eb17 completing — the 0.0991/0.5884 spread was measured on a head that had **never seen an event** | §4c-i, TODO 2 |
 | O3 | **Negative-ratio sweep toward 50%** | ~$44, 3 arms × 2 epochs, A100 | nothing | TODO 17 |
 | O4 | **`record_anchor_threshold` sweep** on an event-records base | free once O2 exists | O2 | TODO 4 |

@@ -41,6 +41,17 @@ so relaxed never scores below strict):
 * **Event arguments** — strict ``(event_type, role, entity, trigger_key)``, where
   ``trigger_key`` is the mention's ``triggers`` sorted into a tuple; relaxed =
   ``(event_type, role)`` exact + entity overlap, dropping the trigger link.
+* **Arg-C** (``eval_argc_external_*``) — OneIE's argument criterion, for comparing
+  this line to the event-extraction literature and NOTHING ELSE:
+  ``(event_type, role, entity)`` lowercased, with **no trigger requirement**, and
+  trigger-less events INCLUDED (counted separately as
+  ``eval_argc_external_triggerless_{gold,pred}``). It is deliberately NOT a head
+  and never enters the ``event_*`` aggregates or the ``overall_*`` selection
+  metrics: dropping the trigger credits an argument bound to the WRONG INSTANCE
+  of the right type, so it reads far higher than ``event_argument`` strict BY
+  CONSTRUCTION on identical predictions. Quote it only inside its bracket —
+  ``event_argument_strict <= argc_external <= event_argument_relaxed`` — and
+  never as "our event-argument F1". See EVENT_ARGUMENT_DIAGNOSIS 4c-i.
 * **Event (overall)** — one combined score over event types + triggers +
   arguments: their TP/FP/FN are summed (micro is the aggregate). Per-label rows
   are namespaced ``type:``/``trigger:``/``arg:`` so the report stays honest; the
@@ -234,6 +245,10 @@ def compute_metrics(
     ety_s, ety_r = _counters(), _counters()
     et_s, et_r = _counters(), _counters()
     ea_s, ea_r = _counters(), _counters()
+    # Arg-C: EXTERNAL comparability only, never an internal head. See _gold_event_argc_set.
+    argc_c = _counters()
+    has_argc = False
+    argc_gold_triggerless = argc_pred_triggerless = 0
     has_entities = has_relations = has_classifications = has_structures = False
     has_event_types = has_event_triggers = has_event_arguments = False
     evt_jaccard = evt_exact = 0.0
@@ -298,6 +313,16 @@ def compute_metrics(
             e, c = _classify_span_errors(g_ae, p_ae, stopwords=stopwords)
             arg_err += e
             arg_conf += c
+
+        # Arg-C, scored from its OWN builders rather than projected off g_arg/p_arg --
+        # those already dropped every trigger-less event before forming a key.
+        g_argc, g_notrig = _gold_event_argc_set(gold)
+        p_argc, p_notrig = _pred_event_argc_set(pred)
+        argc_gold_triggerless += g_notrig
+        argc_pred_triggerless += p_notrig
+        if g_argc or p_argc:
+            has_argc = True
+            _tally(g_argc, p_argc, *argc_c, key=lambda x: x[1])
             j, x, n = _per_event_scores(g_arg, p_arg)
             evt_jaccard += j
             evt_exact += x
@@ -324,6 +349,27 @@ def compute_metrics(
         if present:
             metrics.update(_finalize(prefix, "strict", *strict))
             metrics.update(_finalize(prefix, "relaxed", *relaxed))
+
+    # ---- Arg-C: emitted here, and DELIBERATELY NOT a head ----
+    #
+    # It is absent from the loop above and from `primitive_heads` below ON PURPOSE. Arg-C
+    # drops the trigger, so an argument bound to the WRONG INSTANCE of the right type
+    # scores as CORRECT -- which is the very thing `event_records` exists to fix, since
+    # type keys pool 69.7% of instances. It therefore reads far higher than
+    # `event_argument` strict BY CONSTRUCTION, on identical predictions. Letting it into
+    # the aggregates would lift `head_min` -- the metric eb17 SELECTS ITS CHECKPOINT ON --
+    # for no change in the model.
+    #
+    # Its own name, `argc_external`, keeps it out of reach of anything that prefix-matches
+    # `event_`. Quote it only beside the bracket it belongs to:
+    #     event_argument_strict  <=  argc_external  <=  event_argument_relaxed
+    # and never as "our event-argument F1".
+    if has_argc:
+        metrics.update(_finalize("argc", "external", *argc_c))
+        # The denominators DIFFER from strict by exactly these, so they are reported rather
+        # than left for someone to discover from a mismatched support column.
+        metrics["eval_argc_external_triggerless_gold"] = argc_gold_triggerless
+        metrics["eval_argc_external_triggerless_pred"] = argc_pred_triggerless
     # ---- OVERALL, across heads: the metric a general-purpose BASE should be selected on ----
     #
     # There was no aggregate metric, so a base could only be selected on ONE head or on
@@ -766,6 +812,97 @@ def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, Tuple[str
             if role and entity:
                 out.add((etype, role, entity, trigger_key))
     return out
+
+
+def _gold_event_argc_set(output: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
+    """OneIE's Arg-C key over gold: ``(event_type, role, entity)``, lowercased.
+
+    EXTERNAL COMPARABILITY ONLY. OneIE: "An argument is correctly identified (Arg-I) if its
+    offsets and event type match a reference argument mention. It is correctly classified
+    (Arg-C) if its role label also matches." Offsets + type + role, and NO trigger identity.
+    Our `event_argument` strict key adds the trigger and is therefore a LOWER bound on this;
+    our relaxed drops exact spans and is an UPPER bound. See EVENT_ARGUMENT_DIAGNOSIS 4c-i.
+
+    THREE DEVIATIONS FROM OneIE, EACH DELIBERATE AND EACH RECORDED:
+
+    SURFACE, NOT OFFSETS. Our gold stores surfaces; true offsets cannot be reconstructed
+    from it. Where a surface repeats in a document, offsets would give two mentions and a
+    surface gives one key, so this is MORE LENIENT there and identical everywhere else.
+
+    TRIGGER-LESS EVENTS ARE INCLUDED, and counted. `_gold_event_argument_set` drops an
+    event with no trigger before it forms a key, which is right for a trigger-keyed metric
+    and wrong here: the whole point of Arg-C is that no trigger is required. Excluding them
+    would silently depress recall on exactly the cases the criterion is about. The count is
+    returned so the strict/Arg-C denominators are VISIBLY different rather than quietly so.
+
+    CASE-INSENSITIVE, because offsets are inherently case-agnostic.
+
+    Returns ``(keys, n_triggerless)``. A set, matching OneIE's own `args.add(...)`: with the
+    trigger dropped, the same (type, role, entity) under several instances is ONE key.
+    """
+    out: Set[Tuple[str, str, str]] = set()
+    triggerless = 0
+    events = output.get("events") or []
+    if not isinstance(events, list):
+        return out, 0
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        etype = ev.get("event_type")
+        if not isinstance(etype, str) or not etype.strip():
+            continue
+        triggers = ev.get("triggers")
+        has_trigger = bool([
+            t for t in (triggers or []) if isinstance(t, str) and t.strip()
+        ]) if isinstance(triggers, list) else False
+        for arg in ev.get("arguments") or []:
+            if not isinstance(arg, dict):
+                continue
+            role, entity = arg.get("role"), arg.get("entity")
+            if not isinstance(role, str) or not isinstance(entity, str):
+                continue
+            role, entity = role.strip(), entity.strip()
+            if not (role and entity):
+                continue
+            out.add((etype.strip().lower(), role.lower(), entity.lower()))
+            if not has_trigger:
+                triggerless += 1
+    return out, triggerless
+
+
+def _pred_event_argc_set(pred: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
+    """Arg-C key over predictions, from ``event_extraction``. See the gold twin."""
+    out: Set[Tuple[str, str, str]] = set()
+    triggerless = 0
+    block = pred.get("event_extraction") or {}
+    if not isinstance(block, dict):
+        return out, 0
+    for etype, mentions in block.items():
+        if not isinstance(etype, str) or not etype.strip() or not isinstance(mentions, list):
+            continue
+        for ev in mentions:
+            if not isinstance(ev, dict):
+                continue
+            texts = []
+            for trigger in (ev.get("triggers") or []):
+                if isinstance(trigger, dict):
+                    trigger = trigger.get("text")
+                if isinstance(trigger, str) and trigger.strip():
+                    texts.append(trigger)
+            has_trigger = bool(texts)
+            for arg in ev.get("arguments") or []:
+                if not isinstance(arg, dict):
+                    continue
+                role, entity = arg.get("role"), arg.get("entity")
+                if not isinstance(role, str) or not isinstance(entity, str):
+                    continue
+                role, entity = role.strip(), entity.strip()
+                if not (role and entity):
+                    continue
+                out.add((etype.strip().lower(), role.lower(), entity.lower()))
+                if not has_trigger:
+                    triggerless += 1
+    return out, triggerless
 
 
 def _pred_event_argument_set(pred: Dict) -> Set[Tuple[str, str, str, Tuple[str, ...]]]:
