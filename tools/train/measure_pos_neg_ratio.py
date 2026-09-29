@@ -172,10 +172,19 @@ def main() -> int:
     rec_neg: dict = defaultdict(int)
     rec_calls: dict = defaultdict(int)
 
+    rec_pos_mass: dict = defaultdict(float)
+    rec_neg_mass: dict = defaultdict(float)
+
     def bcel_spy(input, target, weight=None, size_average=None, reduce=None,
                  reduction="mean", pos_weight=None):
         frame = sys._getframe(1)
         if frame.f_code.co_filename.endswith("records.py") and target.dtype.is_floating_point:
+            # COUNTS ARE NOT THE BALANCE. `pos_weight` scales the positive TERM, so what a
+            # dose does depends on how much loss MASS sits on positives, not how many of
+            # them there are. Measure it: elementwise, split by target, then reduce exactly
+            # as the caller asked so the model being measured is unaffected.
+            ew = real_bcel(input, target, weight, size_average, reduce, "none", pos_weight)
+            hot = target > 0.5
             group, walk = None, frame
             for _ in range(6):        # the BCE is several frames below the group
                 if walk is None:
@@ -187,8 +196,10 @@ def main() -> int:
             task = getattr(getattr(group, "spec", None), "task_type", "?")
             site = f"records.py:{frame.f_lineno} [{task}]"
             rec_calls[site] += 1
-            rec_pos[site] += int((target > 0.5).sum())
-            rec_neg[site] += int((target <= 0.5).sum())
+            rec_pos[site] += int(hot.sum())
+            rec_neg[site] += int((~hot).sum())
+            rec_pos_mass[site] += float(ew[hot].sum())
+            rec_neg_mass[site] += float(ew[~hot].sum())
         return real_bcel(input, target, weight, size_average, reduce, reduction, pos_weight)
 
     F.binary_cross_entropy_with_logits = bcel_spy
@@ -267,9 +278,22 @@ def main() -> int:
             pr, nr = rec_pos[site], rec_neg[site]
             rr = (nr / pr) if pr else None
             rows.append({"call_site": site, "calls": rec_calls[site], "pos": pr, "neg": nr,
-                         "neg_per_pos": None if rr is None else round(rr, 1)})
+                         "neg_per_pos": None if rr is None else round(rr, 1),
+                         "pos_loss_mass": rec_pos_mass[site],
+                         "neg_loss_mass": rec_neg_mass[site]})
             print(f"  {site:44} {rec_calls[site]:>7,} {pr:>10,} {nr:>13,} "
                   f"{'n/a' if rr is None else f'{rr:>10.1f}'}")
+
+        # WHAT A DOSE ACTUALLY BUYS. pos_weight w scales the positive term, so the positive
+        # share of this term goes w*P / (w*P + N). Printing the curve makes the dose a
+        # choice against a number instead of a guess -- and shows where it saturates.
+        print(f"\n  positive share of the record-head loss, by pos_weight")
+        print(f"  {'call site [task]':44} " + "".join(f"{f'w={w}':>9}" for w in (1, 4, 8, 16, 32, 168)))
+        for site in sorted(rec_pos_mass, key=lambda k: -rec_neg_mass[k]):
+            P, N = rec_pos_mass[site], rec_neg_mass[site]
+            shares = [(w * P) / (w * P + N) if (w * P + N) else 0.0
+                      for w in (1, 4, 8, 16, 32, 168)]
+            print(f"  {site:44} " + "".join(f"{sh:>9.3f}" for sh in shares))
 
     print("\n[ratio] n_neg/n_pos is the TEXTBOOK pos_weight. eb17 trains every one of these")
     print("[ratio] at an effective 1.0 -- ALL of them. `struct_pos_weight: 4.0` in the config")
