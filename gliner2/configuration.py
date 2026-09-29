@@ -237,6 +237,39 @@ def normalize_architecture(value: str) -> ArchitectureName:
     return normalized
 
 
+# Config keys whose ONLY reader lives in gliner2/models/span/. They are not declared
+# on ExtractorConfig, so PretrainedConfig stores them as free attributes and a boundary
+# run accepts them in silence -- eb17-best.yaml carried `struct_loss: bce_posweight`
+# and `struct_pos_weight: 4.0` through a full training run with no reader anywhere:
+# _struct_loss_term is a METHOD of the span model, and BoundaryExtractor does not
+# inherit it. Verified 2026-09-29 by grep -- zero readers outside gliner2/models/span/.
+SPAN_ONLY_CONFIG_KEYS = frozenset({
+    "asl_clip",
+    "asl_gamma_neg",
+    "asl_gamma_pos",
+    "dice_smooth",
+    "focal_alpha",
+    "focal_gamma",
+    "struct_loss",
+    "struct_pos_weight",
+})
+
+
+def unreachable_config_keys(values: Mapping[str, Any]) -> list:
+    """Keys in a model-config mapping that this architecture has NO reader for.
+
+    Returns them sorted, or an empty list. A span config can reach all of them, so
+    this only ever reports for boundary. The point is that these keys look wired --
+    they survive a round trip through the config and read back with the value you
+    set -- while changing nothing, which makes a null result unreadable: you cannot
+    tell a treatment that did not work from one that never applied.
+    """
+    architecture = normalize_architecture(values.get("architecture") or "span")
+    if architecture == "span":
+        return []
+    return sorted(k for k in SPAN_ONLY_CONFIG_KEYS if values.get(k) is not None)
+
+
 def validate_span_head(values: Mapping[str, Any]) -> dict:
     """Validate span-head settings, filling defaults."""
     defaults = SpanHeadSettings()

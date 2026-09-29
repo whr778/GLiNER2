@@ -6,7 +6,9 @@ encoder. Guards against:
 
 * a config that no longer matches the ``TrainingConfig`` / ``ExtractorConfig``
   API (a stray or renamed field raises here),
-* a ``struct_loss`` typo that would silently fall through to plain BCE,
+* a ``struct_loss`` typo that would silently fall through to plain BCE (span only),
+* a key the configured architecture has NO reader for, which round-trips and reads
+  back unchanged while affecting nothing,
 * the YAML scalar trap where ``1e-5`` (no dot) parses as a string, not a float.
 """
 
@@ -16,6 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from gliner2.configuration import SPAN_ONLY_CONFIG_KEYS, unreachable_config_keys
 from gliner2.model import ExtractorConfig
 from gliner2.training.trainer import TrainingConfig
 
@@ -88,10 +91,15 @@ def test_config_builds(path):
             **model,
         )
         assert ec.architecture == architecture, f"{path.name}: architecture not applied"
-        assert ec.struct_loss in RECOGNIZED_STRUCT_LOSS, (
-            f"{path.name}: struct_loss={ec.struct_loss!r} is not recognized; "
-            f"it would silently train as plain BCE"
-        )
+        # struct_loss is a SPAN concept. Its only reader is _struct_loss_term in
+        # gliner2/models/span/model.py, which BoundaryExtractor does not inherit, so
+        # asserting it on a boundary config asserts nothing about that run -- this
+        # assertion passed for every boundary base while the setting was inert.
+        if architecture == "span":
+            assert ec.struct_loss in RECOGNIZED_STRUCT_LOSS, (
+                f"{path.name}: struct_loss={ec.struct_loss!r} is not recognized; "
+                f"it would silently train as plain BCE"
+            )
 
     # training.* -> TrainingConfig (a dataclass; raises on an unknown field).
     # Force precision off: bf16/fp16 are device-validated in __post_init__, and this
@@ -288,3 +296,62 @@ def test_config_relative_assets_resolve(path):
     if sw:
         assert _resolve_beside_config(sw, str(path), required=False) is not None, (
             f"{path.name}: stopword_yaml {sw!r} does not resolve from {path.parent}")
+
+
+# ---------------------------------------------------------------------------
+# Unreachable-key gate
+# ---------------------------------------------------------------------------
+
+def test_no_config_sets_a_key_its_architecture_cannot_read():
+    """No shipped config carries a setting its architecture has no reader for.
+
+    This is the regression guard. 91 boundary configs carried `struct_loss` and
+    `struct_pos_weight` -- including every eb16/eb17 base -- through full training
+    runs with no reader anywhere on the boundary path.
+    """
+    offenders = {}
+    for path in CONFIG_FILES:
+        cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        dead = unreachable_config_keys(cfg.get("model") or {})
+        if dead:
+            offenders[str(path.relative_to(CONFIG_DIR))] = dead
+    assert not offenders, f"configs set keys their architecture cannot read: {offenders}"
+
+
+def test_the_gate_rejects_a_boundary_config_carrying_a_span_only_key():
+    """The gate must be able to FAIL. This is the exact shape that shipped."""
+    assert unreachable_config_keys(
+        {"architecture": "boundary", "struct_loss": "bce_posweight",
+         "struct_pos_weight": 4.0}
+    ) == ["struct_loss", "struct_pos_weight"]
+    # ...and must NOT fire where the key is genuinely read.
+    assert unreachable_config_keys(
+        {"architecture": "span", "struct_loss": "bce_posweight",
+         "struct_pos_weight": 4.0}
+    ) == []
+    assert unreachable_config_keys({"architecture": "boundary"}) == []
+
+
+def test_span_only_keys_have_no_reader_outside_the_span_model():
+    """The KEY LIST is the claim; this checks it against the source.
+
+    If someone wires one of these into the boundary head, the list is wrong and the
+    gate would refuse a config that now works. Fails in that direction too.
+    """
+    import re
+    root = Path(__file__).resolve().parents[1] / "gliner2"
+    misplaced = {}
+    for key in SPAN_ONLY_CONFIG_KEYS:
+        pattern = re.compile(rf"\b{re.escape(key)}\b")
+        readers = [
+            str(py.relative_to(root)) for py in root.rglob("*.py")
+            if not str(py.relative_to(root)).startswith("models/span/")
+            and py.name != "configuration.py"
+            and pattern.search(py.read_text(encoding="utf-8"))
+        ]
+        if readers:
+            misplaced[key] = readers
+    assert not misplaced, (
+        "these keys are read outside gliner2/models/span/, so SPAN_ONLY_CONFIG_KEYS "
+        f"is wrong and the gate would refuse a working config: {misplaced}"
+    )

@@ -87,8 +87,6 @@ model:
       json_structures: 1.0
     enable_relations: true
     enable_records: true     # now load-bearing for STRUCTURES too, not just event edges
-  struct_loss: bce_posweight
-  struct_pos_weight: 4.0
 
 training:
   output_dir: ./out/warmstart-natural-evw40

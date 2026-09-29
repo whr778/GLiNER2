@@ -91,6 +91,7 @@ from typing import Dict, List, Set
 
 import yaml
 
+from gliner2.configuration import unreachable_config_keys
 from gliner2 import AutoExtractor
 from gliner2.inference.schema import derive_schema
 from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics, sweep_thresholds
@@ -1444,6 +1445,23 @@ def main(config_path: str) -> None:
     is_main = int(os.environ.get("LOCAL_RANK", -1)) <= 0
 
     cfg = yaml.safe_load(Path(config_path).read_text())
+
+    # Refuse a config whose keys this architecture cannot read, BEFORE any GPU spend.
+    # These keys round-trip and read back with the value you set while changing nothing,
+    # so a null result is unreadable: a treatment that did not work and one that never
+    # applied look identical. eb17-best shipped `struct_pos_weight: 4.0` through a full
+    # run with no reader anywhere on the boundary path.
+    dead_keys = unreachable_config_keys(cfg.get("model") or {})
+    if dead_keys:
+        architecture = (cfg.get("model") or {}).get("architecture") or "span"
+        raise SystemExit(
+            f"{config_path}: model config sets {len(dead_keys)} key(s) that the "
+            f"{architecture!r} architecture has no reader for: {', '.join(dead_keys)}.\n"
+            "Their only reader is _struct_loss_term in gliner2/models/span/model.py, a "
+            "method this architecture does not inherit, so they are silently inert.\n"
+            "Delete them from the config. For a per-task positive weight on boundary use "
+            "`boundary_head.task_pos_weights` (span BCE), which is live."
+        )
 
     model = _build_model(cfg["model"])
 

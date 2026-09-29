@@ -30,8 +30,6 @@ model:
   architecture: boundary     # checked against the checkpoint: warm-starting a span
                              # checkpoint here raises ArchitectureMismatchError rather
                              # than silently training the wrong architecture.
-  struct_loss: bce_posweight
-  struct_pos_weight: 4.0
 
 training:
   output_dir: ./out/joint-boundary-redocred-137k

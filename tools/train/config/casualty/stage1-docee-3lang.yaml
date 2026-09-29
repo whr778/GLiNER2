@@ -68,8 +68,6 @@ model:
   # from `encoder:` where they ARE settable, and died in 22 seconds. casualty-multilingual
   # has both heads enabled; this task simply does not supply relation or record targets,
   # so the heads stay untrained rather than needing to be removed.
-  struct_loss: bce_posweight
-  struct_pos_weight: 4.0
   sampling: {}
 training:
   output_dir: ./out/stage1-docee-3lang

@@ -245,8 +245,6 @@ model:
   # No decode_mode here. decode_mode is an EVAL-time switch selecting the greedy or
   # joint arm over ONE trained model (JOINT_IE_SCALING sec 3c); baking it into a
   # training run would make the two arms different models and void the comparison.
-  struct_loss: bce_posweight
-  struct_pos_weight: 4.0
 
 training:
   output_dir: ./out/absneg4-roles

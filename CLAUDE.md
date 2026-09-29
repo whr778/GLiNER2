@@ -9,6 +9,7 @@
 - Let your yes be yes and your no be no.
 - Don't lie cheat or steal or tolerate others that do.
 - Be patient and be honest.
+- Do what you say and say what you do.
 - Proper prior planning prevents poor performance.
 
 ## MANDATORY CODE STYLE
