@@ -26,7 +26,7 @@ Everything here is measured unless the row says otherwise.*
 
 | # | question | cost | blocked on | § / ref |
 |---|---|---|---|---|
-| O1 | **Add the Arg-C metric** (exact surface + type + role, **no** trigger) | **free**, scorer-only | nothing — open since 2026-09-15, still absent from `eval_metrics.py` | §4c-i, TODO 16 |
+| O1 | **Add the Arg-C metric** (exact surface + type + role, **no** trigger). **Read the five decisions in §4c-i first** — surface-keyed, set semantics, case-insensitive, and reported as external-comparability only, never as `event_argument` | **free**, scorer-only | nothing — open since 2026-09-15, still absent from `eval_metrics.py` | §4c-i, TODO 16 |
 | O2 | **Does the binding objective we already have move strict argument F1** on a fully-trained `event_records` base? | eb17, already bought | eb17 completing — the 0.0991/0.5884 spread was measured on a head that had **never seen an event** | §4c-i, TODO 2 |
 | O3 | **Negative-ratio sweep toward 50%** | ~$44, 3 arms × 2 epochs, A100 | nothing | TODO 17 |
 | O4 | **`record_anchor_threshold` sweep** on an event-records base | free once O2 exists | O2 | TODO 4 |
@@ -474,6 +474,55 @@ bought to answer that and has not yet. See [[TODO]] item 16; step 1 is still the
 metric, open since 2026-09-15 and confirmed missing from `eval_metrics.py` on 2026-09-22.
 
 *How this conclusion moved, including the two wrong turns taken to reach it: [[PROJECT_HISTORY]], 2026-09-22.*
+
+#### Arg-C: the five decisions that change the number, settled before it is built
+
+*Written 2026-09-29, before the scorer change, so the choices are on record rather than
+inferred afterwards from whatever the code happens to do.*
+
+The criterion is OneIE's, quoted verbatim in §4c above: **offsets + event type + role, and
+no trigger identity.** The bracket table there is the anchor -- our strict (0.1178) adds a
+requirement OneIE does not have, our relaxed (0.5783) drops one it does, and Arg-C lies
+between them uncomputed.
+
+**1. Offsets vs surfaces -- we key on SURFACE, and say so.** OneIE keys on character
+offsets; our gold stores surfaces. Where a surface occurs twice in a document, offsets give
+two distinct mentions and a surface gives one key, so surface-keying is **strictly more
+lenient there and identical everywhere else**. True offsets cannot be reconstructed from the
+gold we hold. The honest move is to key on surface and label the metric as doing so, rather
+than claim an offset parity we cannot deliver.
+
+**2. Set semantics, and this is the one that goes wrong quietly.** OneIE's scorer builds
+`args.add((arg_start, arg_end, trigger_label, role))` -- a **set**. Once the trigger is
+dropped, a model that predicts the same `(type, role, surface)` under three instances must
+count **once**, not three times. Implemented as a list, precision is distorted, and in
+which direction depends on the data rather than on anything anyone decided.
+
+**3. Case -- insensitive.** Our strict is case-sensitive; offsets are inherently
+case-agnostic, so case-insensitivity matches the criterion's spirit. It widens the gap from
+strict, and that widening is a property of the definition, not a result.
+
+**4. What it actually measures, and the reason it will look good.** Dropping the trigger
+means an argument bound to the WRONG INSTANCE of the right type scores as **correct**. That
+is exactly what the criterion permits -- and it is the thing `event_records` exists to fix,
+since type keys pool 69.7% of instances (S3). **Arg-C will therefore read substantially
+higher than strict BY CONSTRUCTION, on identical predictions.** A rise from 0.1178 to
+something in the 0.20-0.50 range is the definition changing, not the model improving.
+
+**5. Therefore it must never become the internal number.** Strict stays the metric this
+programme cares about: the EKF needs an argument bound to the right INSTANCE, not merely to
+the right event type. The risk is metric selection pressure -- once a flattering number
+exists it gets quoted, and the binding problem starts looking solved while nothing about it
+has changed. So: report Arg-C under its own explicit **external-comparability** label, never
+as `event_argument`, and always print the **bracket together** (strict / Arg-C / relaxed) so
+the spread stays visible in every table it appears in.
+
+**A correction this subsection carries forward.** "The catastrophic 0.118" overstated the
+gap against the field, and §4c already records that as an error to correct. Relaxed at
+0.578 sits roughly where OneIE's own criterion does (ACE05-E Arg-C **56.8**). The honest
+expectation is Arg-C landing in **0.20-0.50**: a real gap to the literature, and a far
+smaller one than "0.118 against 56.8" implies.
+
 
 ### 4c-ii. What OneIE would cost us — the objections, before anyone adopts it
 
