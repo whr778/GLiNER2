@@ -114,3 +114,94 @@ def test_the_metric_name_cannot_be_mistaken_for_event_argument():
     src = inspect.getsource(eval_metrics.compute_metrics)
     assert '_finalize("argc", "external"' in src
     assert 'eval_argc_external_triggerless_gold' in src
+
+
+# ---- OneIE's other three criteria: Trig-I, Trig-C, Arg-I ------------------------------
+#
+# Added 2026-09-29. The LEVELS are for citing the literature; the DIFFERENCES are the
+# reason to want them:
+#   Trig-I - Trig-C  = trigger TYPE confusion, span already correct
+#   Arg-I  - Arg-C   = ROLE confusion, span and event type already correct
+# Neither decomposition exists in `event_trigger` / `event_argument`, which report each
+# failure as a single number.
+
+from gliner2.training.eval_metrics import _gold_oneie_sets, _pred_oneie_sets  # noqa: E402
+
+# Right spans throughout; one wrong ROLE (Target -> Attacker) and one wrong event TYPE
+# (a "bombed" trigger also emitted under Death). So every failure is classification.
+_G = {"events": [
+    {"event_type": "Attack", "triggers": ["bombed"],
+     "arguments": [{"role": "Target", "entity": "the market"}]},
+    {"event_type": "Attack", "triggers": ["shelled"],
+     "arguments": [{"role": "Target", "entity": "the bridge"}]},
+    {"event_type": "Death", "triggers": [],
+     "arguments": [{"role": "Victim", "entity": "three civilians"}]},
+]}
+_P = {"event_extraction": {
+    "Attack": [
+        {"triggers": ["shelled"], "arguments": [{"role": "Target", "entity": "the market"}]},
+        {"triggers": ["bombed"], "arguments": [{"role": "Attacker", "entity": "The Bridge"}]},
+    ],
+    "Death": [{"triggers": ["bombed"],
+               "arguments": [{"role": "Victim", "entity": "three civilians"}]}],
+}}
+
+
+def _f1(gold, pred):
+    tp = len(gold & pred)
+    p = tp / len(pred) if pred else 0.0
+    r = tp / len(gold) if gold else 0.0
+    return 0.0 if p + r == 0 else 2 * p * r / (p + r)
+
+
+def _sets():
+    return _gold_oneie_sets(_G)[0], _pred_oneie_sets(_P)[0]
+
+
+def test_the_bracket_holds_by_construction():
+    """Each metric is looser than the one it refines. If this ever inverts, a key is wrong."""
+    g, p = _sets()
+    assert _f1(g["trigi"], p["trigi"]) >= _f1(g["trigc"], p["trigc"])
+    assert _f1(g["argi"], p["argi"]) >= _f1(g["argc"], p["argc"])
+
+
+def test_the_gaps_isolate_classification_error():
+    """Every span here is correct, so identification is perfect and the gaps are the
+    whole failure -- which is exactly what the decomposition is for."""
+    g, p = _sets()
+    assert _f1(g["trigi"], p["trigi"]) == 1.0, "all trigger spans were found"
+    assert _f1(g["argi"], p["argi"]) == 1.0, "all argument spans were found for the right type"
+    assert _f1(g["trigc"], p["trigc"]) < 1.0, "but one trigger got the wrong event type"
+    assert _f1(g["argc"], p["argc"]) < 1.0, "and one argument got the wrong role"
+
+
+def test_trigger_keys_have_the_right_shape():
+    g, _ = _sets()
+    assert all(len(k) == 1 for k in g["trigi"]), "Trig-I is the trigger alone"
+    assert all(len(k) == 2 for k in g["trigc"]), "Trig-C adds the event type"
+    assert all(len(k) == 2 for k in g["argi"]), "Arg-I is (event_type, entity), no role"
+    assert all(len(k) == 3 for k in g["argc"]), "Arg-C adds the role"
+
+
+def test_none_of_the_four_is_a_scored_head():
+    """All four are looser than our own metrics, so any of them in `primitive_heads` would
+    lift head_min -- eb17's checkpoint-selection metric -- for no change in the model."""
+    import inspect
+
+    from gliner2.training import eval_metrics
+
+    src = inspect.getsource(eval_metrics.compute_metrics)
+    block = src.split("primitive_heads = (", 1)[1].split("\n    )", 1)[0]
+    assert "entity" in block and "event_argument" in block, "block not parsed"
+    for name in ("argc", "argi", "trigc", "trigi"):
+        assert f'"{name}"' not in block, f"{name} leaked into primitive_heads"
+
+
+def test_all_four_emit_under_the_external_label():
+    import inspect
+
+    from gliner2.training import eval_metrics
+
+    src = inspect.getsource(eval_metrics.compute_metrics)
+    for name in ("argc", "argi", "trigc", "trigi"):
+        assert f'_finalize("{name}", "external"' in src

@@ -299,6 +299,75 @@ f1        = 2 * precision * recall / (precision + recall)
 
 ---
 
+## OneIE-comparable metrics — EXTERNAL ONLY, and never a head
+
+Four extra keys exist solely so this line can be compared with the event-extraction
+literature. **They are not our metrics, they must never be quoted as
+`event_argument`/`event_trigger`, and none of them is a scored head.**
+
+OneIE's criteria, verbatim from the paper (section 4.2) and matched in its `scorer.py`:
+
+> *"A trigger is correctly identified (**Trig-I**) if its offsets match a reference
+> trigger. It is correctly classified (**Trig-C**) if its event type also matches."*
+>
+> *"An argument is correctly identified (**Arg-I**) if its offsets and event type match a
+> reference argument mention. It is correctly classified (**Arg-C**) if its role label also
+> matches."*
+
+| key | criterion | emitted as |
+|---|---|---|
+| **Trig-I** | `(trigger)` — span alone, no event type | `eval_trigi_external_*` |
+| **Trig-C** | `(event_type, trigger)` | `eval_trigc_external_*` |
+| **Arg-I** | `(event_type, entity)` — no role | `eval_argi_external_*` |
+| **Arg-C** | `(event_type, role, entity)` — no trigger | `eval_argc_external_*` |
+
+### The DIFFERENCES are the reason to have them
+
+The levels are for citation. The gaps are diagnostics that exist nowhere else in this file,
+because `event_trigger` and `event_argument` each report their failure as a single number:
+
+- **Trig-I − Trig-C** = trigger **TYPE** confusion, with the span already correct.
+- **Arg-I − Arg-C** = **ROLE** confusion, with the span and event type already correct.
+
+Worked example (`tests/training/test_argc_metric.py`), where every span is found and the
+only errors are classification: Trig-I **1.0000** / Trig-C **0.8000** (+0.200 is type
+confusion), Arg-I **1.0000** / Arg-C **0.6667** (+0.333 is role confusion).
+
+### Three deviations from OneIE, each deliberate
+
+- **Keyed on SURFACE, not offsets.** Our gold stores surfaces and true offsets cannot be
+  reconstructed from it. Where a surface repeats in a document, offsets would give two
+  mentions and a surface gives one key — so this is *more lenient there* and identical
+  everywhere else. Stated rather than passed off as parity.
+- **Case-insensitive**, because offsets are inherently case-agnostic.
+- **Trigger-less events are INCLUDED**, and counted separately as
+  `eval_argc_external_triggerless_{gold,pred}`, so the differing denominators against our
+  own strict metric are visible rather than discovered later from a mismatched support
+  column.
+
+### Why they are quarantined
+
+Each is **looser than the metric it refines** — `Trig-I ≥ Trig-C` and `Arg-I ≥ Arg-C` *by
+construction* — and Arg-C in particular credits an argument bound to the **wrong instance**
+of the right type, which is the exact failure `event_records` exists to fix. On identical
+predictions Arg-C can read **0.800 where our strict reads 0.000**. So all four are:
+
+- absent from `primitive_heads`, and therefore from `overall_*_micro_f1`,
+  `head_macro_f1` and `head_min_f1` — the last of which is what a base **selects its
+  checkpoint on**;
+- named `*_external` so nothing prefix-matching `event_` can pick them up;
+- guarded by `tests/training/test_argc_metric.py`, fail-checked by planting each name in
+  `primitive_heads` and confirming the test fails.
+
+Quote them only inside their bracket:
+`event_argument_strict ≤ argc_external ≤ event_argument_relaxed`.
+
+**Not implemented: OneIE's `mention` metric.** It scores ACE's NAM/NOM/PRO mention-type
+annotation. `convert_ace2005.py` tracks `entity_mention_type` but uses it only to FILTER and
+never writes it to the output JSONL, so the metric would have no source and would read a
+permanent 0.0000 — indistinguishable from a real failure. It needs the converter to emit the
+field first.
+
 ## The overall `event` metric
 
 `event` is a single combined score over the three event sub-categories. Their
@@ -466,6 +535,18 @@ eval_<category>_<regime>_macro_recall
 eval_<category>_<regime>_macro_f1
 eval_<category>_<regime>_support
 eval_<category>_<regime>_classification_report   # multi-line string
+```
+
+The four OneIE-comparable keys follow the same scheme with `<regime>` fixed to
+`external`, and are the only categories that do NOT appear in any aggregate:
+
+```
+eval_trigi_external_*      # Trig-I  (trigger)
+eval_trigc_external_*      # Trig-C  (event_type, trigger)
+eval_argi_external_*       # Arg-I   (event_type, entity)
+eval_argc_external_*       # Arg-C   (event_type, role, entity)
+eval_argc_external_triggerless_gold     # integer count, not an F1
+eval_argc_external_triggerless_pred
 ```
 
 `<category>` ∈ `entity, relation, classification, event_type, event_trigger,

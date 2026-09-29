@@ -247,6 +247,8 @@ def compute_metrics(
     ea_s, ea_r = _counters(), _counters()
     # Arg-C: EXTERNAL comparability only, never an internal head. See _gold_event_argc_set.
     argc_c = _counters()
+    # Trig-I / Trig-C / Arg-I, OneIE's other event criteria. Same quarantine as Arg-C.
+    argi_c, trigc_c, trigi_c = _counters(), _counters(), _counters()
     has_argc = False
     argc_gold_triggerless = argc_pred_triggerless = 0
     has_entities = has_relations = has_classifications = has_structures = False
@@ -316,13 +318,18 @@ def compute_metrics(
 
         # Arg-C, scored from its OWN builders rather than projected off g_arg/p_arg --
         # those already dropped every trigger-less event before forming a key.
-        g_argc, g_notrig = _gold_event_argc_set(gold)
-        p_argc, p_notrig = _pred_event_argc_set(pred)
+        g_sets, g_notrig = _gold_oneie_sets(gold)
+        p_sets, p_notrig = _pred_oneie_sets(pred)
         argc_gold_triggerless += g_notrig
         argc_pred_triggerless += p_notrig
-        if g_argc or p_argc:
+        if any(g_sets.values()) or any(p_sets.values()):
             has_argc = True
-            _tally(g_argc, p_argc, *argc_c, key=lambda x: x[1])
+            # Per-label key differs per metric: Arg-C aggregates by ROLE, Arg-I by event
+            # TYPE (it has no role), and both trigger metrics by event type / the trigger.
+            _tally(g_sets["argc"], p_sets["argc"], *argc_c, key=lambda x: x[1])
+            _tally(g_sets["argi"], p_sets["argi"], *argi_c, key=lambda x: x[0])
+            _tally(g_sets["trigc"], p_sets["trigc"], *trigc_c, key=lambda x: x[0])
+            _tally(g_sets["trigi"], p_sets["trigi"], *trigi_c, key=lambda x: x[0])
             j, x, n = _per_event_scores(g_arg, p_arg)
             evt_jaccard += j
             evt_exact += x
@@ -365,7 +372,14 @@ def compute_metrics(
     #     event_argument_strict  <=  argc_external  <=  event_argument_relaxed
     # and never as "our event-argument F1".
     if has_argc:
+        # ALL FOUR stay out of `primitive_heads` below. Each is looser than the one it
+        # refines -- Trig-I >= Trig-C and Arg-I >= Arg-C BY CONSTRUCTION -- so letting any
+        # of them into the aggregates would lift `head_min`, the metric eb17 selects its
+        # checkpoint on, for no change in the model.
         metrics.update(_finalize("argc", "external", *argc_c))
+        metrics.update(_finalize("argi", "external", *argi_c))
+        metrics.update(_finalize("trigc", "external", *trigc_c))
+        metrics.update(_finalize("trigi", "external", *trigi_c))
         # The denominators DIFFER from strict by exactly these, so they are reported rather
         # than left for someone to discover from a mismatched support column.
         metrics["eval_argc_external_triggerless_gold"] = argc_gold_triggerless
@@ -814,33 +828,27 @@ def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, Tuple[str
     return out
 
 
-def _gold_event_argc_set(output: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
-    """OneIE's Arg-C key over gold: ``(event_type, role, entity)``, lowercased.
+def _gold_oneie_sets(output: Dict) -> Tuple[Dict[str, Set], int]:
+    """OneIE's four event keys over gold, in one pass. EXTERNAL COMPARABILITY ONLY.
 
-    EXTERNAL COMPARABILITY ONLY. OneIE: "An argument is correctly identified (Arg-I) if its
-    offsets and event type match a reference argument mention. It is correctly classified
-    (Arg-C) if its role label also matches." Offsets + type + role, and NO trigger identity.
-    Our `event_argument` strict key adds the trigger and is therefore a LOWER bound on this;
-    our relaxed drops exact spans and is an UPPER bound. See EVENT_ARGUMENT_DIAGNOSIS 4c-i.
+    Verbatim from the paper (section 4.2), and matched in their `scorer.py`:
 
-    THREE DEVIATIONS FROM OneIE, EACH DELIBERATE AND EACH RECORDED:
+      Trig-I  "a trigger is correctly identified if its OFFSETS match a reference trigger"
+      Trig-C  "correctly classified if its EVENT TYPE also matches"
+      Arg-I   "an argument is correctly identified if its OFFSETS AND EVENT TYPE match"
+      Arg-C   "correctly classified if its ROLE LABEL also matches"
 
-    SURFACE, NOT OFFSETS. Our gold stores surfaces; true offsets cannot be reconstructed
-    from it. Where a surface repeats in a document, offsets would give two mentions and a
-    surface gives one key, so this is MORE LENIENT there and identical everywhere else.
+    THE DIFFERENCES ARE THE POINT, not the levels. `Trig-I - Trig-C` is trigger TYPE
+    confusion with the span already right; `Arg-I - Arg-C` is ROLE confusion with the span
+    and event type already right. Neither decomposition exists in our own metrics, which
+    report each failure as one number.
 
-    TRIGGER-LESS EVENTS ARE INCLUDED, and counted. `_gold_event_argument_set` drops an
-    event with no trigger before it forms a key, which is right for a trigger-keyed metric
-    and wrong here: the whole point of Arg-C is that no trigger is required. Excluding them
-    would silently depress recall on exactly the cases the criterion is about. The count is
-    returned so the strict/Arg-C denominators are VISIBLY different rather than quietly so.
-
-    CASE-INSENSITIVE, because offsets are inherently case-agnostic.
-
-    Returns ``(keys, n_triggerless)``. A set, matching OneIE's own `args.add(...)`: with the
-    trigger dropped, the same (type, role, entity) under several instances is ONE key.
+    Three deviations from OneIE, each deliberate and each recorded in
+    EVENT_ARGUMENT_DIAGNOSIS 4c-i: keyed on SURFACE not offsets (our gold stores surfaces,
+    so this is more lenient only where a surface repeats), case-insensitive, and
+    trigger-less events INCLUDED and counted.
     """
-    out: Set[Tuple[str, str, str]] = set()
+    out = {"argc": set(), "argi": set(), "trigc": set(), "trigi": set()}
     triggerless = 0
     events = output.get("events") or []
     if not isinstance(events, list):
@@ -851,28 +859,32 @@ def _gold_event_argc_set(output: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
         etype = ev.get("event_type")
         if not isinstance(etype, str) or not etype.strip():
             continue
+        etype = etype.strip().lower()
         triggers = ev.get("triggers")
-        has_trigger = bool([
-            t for t in (triggers or []) if isinstance(t, str) and t.strip()
-        ]) if isinstance(triggers, list) else False
+        texts = [t.strip().lower() for t in (triggers or [])
+                 if isinstance(t, str) and t.strip()] if isinstance(triggers, list) else []
+        for t in texts:
+            out["trigi"].add((t,))
+            out["trigc"].add((etype, t))
         for arg in ev.get("arguments") or []:
             if not isinstance(arg, dict):
                 continue
             role, entity = arg.get("role"), arg.get("entity")
             if not isinstance(role, str) or not isinstance(entity, str):
                 continue
-            role, entity = role.strip(), entity.strip()
+            role, entity = role.strip().lower(), entity.strip().lower()
             if not (role and entity):
                 continue
-            out.add((etype.strip().lower(), role.lower(), entity.lower()))
-            if not has_trigger:
+            out["argi"].add((etype, entity))
+            out["argc"].add((etype, role, entity))
+            if not texts:
                 triggerless += 1
     return out, triggerless
 
 
-def _pred_event_argc_set(pred: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
-    """Arg-C key over predictions, from ``event_extraction``. See the gold twin."""
-    out: Set[Tuple[str, str, str]] = set()
+def _pred_oneie_sets(pred: Dict) -> Tuple[Dict[str, Set], int]:
+    """The same four keys over predictions, from ``event_extraction``."""
+    out = {"argc": set(), "argi": set(), "trigc": set(), "trigi": set()}
     triggerless = 0
     block = pred.get("event_extraction") or {}
     if not isinstance(block, dict):
@@ -880,6 +892,7 @@ def _pred_event_argc_set(pred: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
     for etype, mentions in block.items():
         if not isinstance(etype, str) or not etype.strip() or not isinstance(mentions, list):
             continue
+        etype = etype.strip().lower()
         for ev in mentions:
             if not isinstance(ev, dict):
                 continue
@@ -888,22 +901,45 @@ def _pred_event_argc_set(pred: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
                 if isinstance(trigger, dict):
                     trigger = trigger.get("text")
                 if isinstance(trigger, str) and trigger.strip():
-                    texts.append(trigger)
-            has_trigger = bool(texts)
+                    texts.append(trigger.strip().lower())
+            for t in texts:
+                out["trigi"].add((t,))
+                out["trigc"].add((etype, t))
             for arg in ev.get("arguments") or []:
                 if not isinstance(arg, dict):
                     continue
                 role, entity = arg.get("role"), arg.get("entity")
                 if not isinstance(role, str) or not isinstance(entity, str):
                     continue
-                role, entity = role.strip(), entity.strip()
+                role, entity = role.strip().lower(), entity.strip().lower()
                 if not (role and entity):
                     continue
-                out.add((etype.strip().lower(), role.lower(), entity.lower()))
-                if not has_trigger:
+                out["argi"].add((etype, entity))
+                out["argc"].add((etype, role, entity))
+                if not texts:
                     triggerless += 1
     return out, triggerless
 
+
+def _gold_event_argc_set(output: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
+    """OneIE's Arg-C key over gold: ``(event_type, role, entity)``, lowercased.
+
+    DELEGATES to :func:`_gold_oneie_sets`, which computes Arg-C alongside Trig-I/Trig-C/Arg-I
+    in one pass. Kept as a name because tests and callers use it; kept as a
+    DELEGATION because two implementations of one key is how they drift apart.
+    """
+    sets, triggerless = _gold_oneie_sets(output)
+    return sets["argc"], triggerless
+
+def _pred_event_argc_set(output: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
+    """Arg-C key over predictions, from ``event_extraction``. See the gold twin.
+
+    DELEGATES to :func:`_pred_oneie_sets`, which computes Arg-C alongside Trig-I/Trig-C/Arg-I
+    in one pass. Kept as a name because tests and callers use it; kept as a
+    DELEGATION because two implementations of one key is how they drift apart.
+    """
+    sets, triggerless = _pred_oneie_sets(output)
+    return sets["argc"], triggerless
 
 def _pred_event_argument_set(pred: Dict) -> Set[Tuple[str, str, str, Tuple[str, ...]]]:
     """Same shape as the gold argument set, sourced from ``event_extraction``.
