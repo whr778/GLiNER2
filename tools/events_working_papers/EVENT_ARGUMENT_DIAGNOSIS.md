@@ -21,6 +21,7 @@ Everything here is measured unless the row says otherwise.*
 | S10 | **All four NER↔argument linking options are CLOSED** | shared pool −0.0745; typed margin w_S 0.00003; predicted types −0.074; roles→entities −0.0300 | §4k |
 | S11 | Absent negatives: the lever is **real but dead** | +0.0376 argument at **−0.1977** classification; scoping to roles lost the gain (−0.1027) and recovered 15% of the cost | §4i, [[EXPERIMENT_CATALOG]] |
 | S12 | Blind-test row count is inflated by the **config**, not the corpora | duplicates are a config artefact, handled correctly | §4j |
+| S13 | The anchor supervision gate is **NOT** the recall floor — REFUTED the day it was proposed | **0 of 357** gold records dropped (100% trained) on a fully-trained event-records base | §4f-i |
 
 ### Open — cheapest first, because that is the order to do them in
 
@@ -524,6 +525,76 @@ expectation is Arg-C landing in **0.20-0.50**: a real gap to the literature, and
 smaller one than "0.118 against 56.8" implies.
 
 
+#### The PAPER against the REPO: three beam widths, and an objective trained on gold
+
+*Read 2026-09-29 from the paper PDF (`blender.cs.illinois.edu/paper/jointiesentence2020.pdf`,
+10pp) and the mirrored source (`GerlinGreen/OneIE`, branch `main`). Everything below is
+quoted from one or the other, not inferred.*
+
+**THREE BEAM WIDTHS EXIST AND NO TWO AGREE.** Before anyone cites "OneIE decodes at θ=10":
+
+| source | beam width |
+|---|---:|
+| paper §4.2 — *"we set βv and βe to 2 and set θ to 10"* | **10** |
+| `config/example.json` — `"beam_size": 20` | **20** |
+| `config.py:33` — `kwargs.pop('beam_size', 5)` | **5** |
+
+Two more in the same comparison: the paper trains **80 epochs at BERT lr 5e-5**; the shipped
+config says `"max_epoch": 60` and `"bert_learning_rate": 1e-5`. βv/βe, the 1e-3 head lr, the
+0.4 FFN dropout and the 150/600 hidden sizes all match. **The caveat is real and cannot be
+resolved from outside: `example.json` is an EXAMPLE, and nothing proves it produced Table 3.
+It is simply the only config shipped, so it is what a reproducer runs.**
+
+**THE ROLE OBJECTIVE IS TRAINED ON GOLD, AND EVALUATED END-TO-END.** `scores()` takes its
+candidates from `graphs_to_node_idxs(graphs)` where `graphs` is `batch.graphs` -- the GOLD
+graph. The role classifier therefore only ever sees **gold entity spans x gold trigger
+spans**. `use_entity_type` sharpens it: at train time the pair representation is
+concatenated with the **gold one-hot entity type**, at predict time with the **predicted
+softmax** (`model.py:700-707`). The objective never faces a wrong candidate; the reported
+Arg-C does.
+
+**THE ROLE TARGET IS THE PADDED CROSS-PRODUCT, AND THE LOSS IS UNMASKED.**
+
+```python
+role_idxs = [0] * max_trigger_num * max_entity_num   # 0 == null role
+for i, j, role in self.roles:
+    role_idxs[i * max_entity_num + j] = role
+```
+
+`role_mask` is built beside it and IS used -- but only in `compute_graph_score`
+(`model.py:856`), for ranking beam candidates. The training loss is
+`self.role_criteria(role_type_scores, batch.role_type_idxs)` with **no mask and no
+`ignore_index`**, so batch-padding slots are labelled null and trained as null.
+`role_criteria` is a plain `CrossEntropyLoss()` summed **unweighted** beside four sibling
+classification losses and two CRF log-likelihoods -- no task weighting anywhere.
+
+**AND AN IDIOM THAT READS BACKWARDS.** `"global_features": []` in the shipped config does
+not disable global features; `if k in self.global_features or not self.global_features`
+(`model.py:585`) makes an EMPTY list mean **all of them**.
+
+**What matches exactly:** the scorer. `args.add((arg_start, arg_end, trigger_label, role))`
+is a set, Arg-I keys on offsets + event type, Arg-C adds the role -- precisely the criterion
+§4c quotes, and precisely the semantics our `eval_argc_external_*` implements.
+
+#### What that changes for this programme
+
+*Their dense null supervision is our absent-negatives lever, obtained free.* Every
+non-argument (trigger, entity) pair is a null-class negative BY CONSTRUCTION. This project
+configures that by hand and priced it at **+0.0376 event_argument for -0.1977
+classification** (S11). OneIE pays nothing for it because its role head is separate; ours
+shares a head with classification, which is exactly where our cost lands.
+
+*Their `valid_patterns` are our Option 2.* `resource/valid_patterns/event_role.json`
+(event -> allowed roles) and `role_entity.json` (role -> allowed entity types) are the
+TypedRole map built here and measured at w_S 0.00003 -- closed (S10).
+
+*The teacher-forcing asymmetry is the open one.* Their 56.8 Arg-C is end-to-end, but the
+OBJECTIVE behind it never sees a wrong candidate. Ours is anchor-seeded on structure the
+model itself produced. That is an architectural difference the paper does not discuss, and
+it is a plausible partial explanation for the distance between their argument numbers and
+ours under any like-for-like criterion.
+
+
 ### 4c-ii. What OneIE would cost us — the objections, before anyone adopts it
 
 §4c calls span-tagged triggers "the other road". It is a road with tolls, and they are
@@ -824,6 +895,60 @@ Two reasons to expect the gap to persist, and they matter more than the trend:
 erase it, and matching the incumbent's relaxed recall would mean adopting its over-emission —
 the precise behaviour the strict metric exists to penalise.** The comparison to watch at the
 end of the run is strict F1 at each model's own calibrated point, not relaxed recall.
+
+---
+
+## 4f-i. THE ANCHOR SUPERVISION GATE: proposed, measured, REFUTED (2026-09-29)
+
+**A fourth candidate for the recall floor, killed by its own measurement in under an hour.
+Recorded because the null is the finding.**
+
+THE HYPOTHESIS, and it was a good one. Reading OneIE's source showed it trains its role
+classifier on the GOLD graph -- `scores()` draws candidates from
+`graphs_to_node_idxs(batch.graphs)` -- so every gold argument supervises, always. Ours is
+the inverse: `compute_group_loss` in natural mode resolves each gold record's anchor against
+the MODEL'S OWN candidate spans and, on a miss, `continue`s. No object loss, no field loss,
+no gradient. Events compile as natural mode with the TRIGGER as the anchor
+(`processing/records.py:70`), so a missed trigger would discard that instance's ENTIRE
+argument supervision -- a self-reinforcing loop that would have explained the recall floor
+§4f attributes to undertraining, and that §4f's three cleared candidates did not cover.
+
+THE MEASUREMENT. `tools/train/probe_anchor_gate.py` on
+`whr778/gliner2-eb16-eventrecords-tr` (fully trained, `event_records=True`,
+`max_gold_per_query=256`), 800 samples from a seeded 5,000-record subsample of eb17-best's
+own train mix:
+
+| outcome | n | share |
+|---|---:|---:|
+| **trained** | **357** | **100.0%** |
+| anchor NOT proposed | 0 | 0.0% |
+| proposed, not seeded | 0 | 0.0% |
+| no gold anchor | 0 | 0.0% |
+
+Zero. By the rule of three, 0/357 puts the true rate **under ~1%** at 95%.
+
+WHY IT IS ZERO, AND THE DISTINCTION IS THE USEFUL PART. **Candidate PROPOSAL is not
+prediction.** The incumbent decodes `event_trigger` at F1 ~0.36, which invited the
+assumption that it fails to propose two-thirds of triggers. It does not: the gold trigger is
+essentially always IN the candidate set; what the model gets wrong is selecting and scoring
+it afterwards. The gate sits at proposal, so it never fires.
+
+THE SAMPLE DID CONTAIN EVENTS, checked rather than assumed -- 601 of the 5,000 records carry
+events (12.0%) against 210 carrying json_structures (4.2%), with 2,594 gold event instances,
+so the 357 are predominantly event records rather than structures.
+
+**CONSEQUENCE: do not build the gold-anchor rescue.** It would inject gold spans to fix a
+gate that drops nothing, buying a train/test mismatch for no gain -- the same mismatch this
+document criticises in OneIE's own training (§4c-i). The recall floor remains where §4f put
+it, and this is now a fourth cleared candidate rather than an open lever.
+
+A NOTE ON THE INSTRUMENT. The first run was on MPS and was discarded UNREAD, for two
+independent reasons: `mps_flash_attn` re-JITs per sequence shape and the probe crawled, and
+-- the one that matters -- MPS `torch.gather` on int64 corrupts packed candidate keys on
+long Chinese documents, which is exactly `field_spans`, and four of this config's corpora
+(cmnee, duee, chfinann, docee_zh) are long Chinese documents. A corrupted key reads as
+"anchor not proposed", so MPS would have inflated precisely the number under test and
+produced a confident false positive. Scored on CPU.
 
 ---
 
