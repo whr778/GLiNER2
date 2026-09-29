@@ -82,6 +82,33 @@ def load(path, n):
 long_rows = load(longset, int(maxdocs))
 print(f"[win] {len(long_rows)} long docs; window {WIN_TOK} tokens = {WIN_WORDS} words", flush=True)
 
+# THE CONVERSION IS THE WEAK POINT, SO MEASURE IT RATHER THAN ARGUE ABOUT IT.
+# extract_long chunks by WORDS; the window is configured in TOKENS. At a fixed word
+# count the realised token window moves with tokenisation density, and past the MODEL's
+# max_len (not the training window) text is silently truncated. Print both so the arms
+# are readable, and say plainly how much would truncate.
+import json as _json
+from transformers import AutoTokenizer as _AT
+_tok = _AT.from_pretrained(ckpt)
+_model_max = int(_json.loads(Path(ckpt, "config.json").read_text()).get("max_len") or 8192)
+_r = []
+for _row in long_rows[:80]:
+    _t = _row.get("input") or _row.get("text") or ""
+    _w = len(_t.split())
+    if _w:
+        _r.append(len(_tok(_t, add_special_tokens=False)["input_ids"]) / _w)
+_r.sort()
+if _r:
+    _med, _p90, _mx = _r[len(_r)//2], _r[int(len(_r)*.9)], _r[-1]
+    _trunc = sum(1 for x in _r if WIN_WORDS * x > _model_max)
+    print(f"[win] tokens/word: median {_med:.3f} p90 {_p90:.3f} max {_mx:.3f}")
+    print(f"[win] realised window: {WIN_WORDS*_med:.0f} tok at median, {WIN_WORDS*_p90:.0f} at p90 "
+          f"(training window {WIN_TOK}, MODEL cap {_model_max})")
+    print(f"[win] chunks that would TRUNCATE against the model cap: {_trunc}/{len(_r)} "
+          f"({_trunc/len(_r)*100:.1f}%)")
+    print("[win] A vs B share this window exactly and differ ONLY in overlap, so that "
+          "comparison is unaffected by the conversion. C differs in both.", flush=True)
+
 ARMS = [("A_win_ov0", WIN_WORDS, 0), ("B_win_ov64", WIN_WORDS, 64), ("C_200_ov50", 200, 50)]
 HEADS = ("entity", "event_trigger", "event_argument", "event_type", "structure", "relation")
 
