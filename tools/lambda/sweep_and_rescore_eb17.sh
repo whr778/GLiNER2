@@ -31,6 +31,20 @@ OUT=$HOME/out_sweep
 mkdir -p "$OUT"
 source tools/lambda/_publish.sh
 
+# tools/train/eval.py WRITES its metrics into the checkpoint dir, so it needs a local
+# path: `Path("whr778/gliner2-eb17-best").is_dir()` is False and it refuses with
+# "[eval] no checkpoint directory". The sweep stage loads the same id from the Hub
+# happily, so the two stages disagreed and the 2026-09-29 run paid for a full sweep and
+# then produced no blind-test numbers at all. Resolve ONCE here and give both stages the
+# same local directory.
+case "$CKPT" in
+  /*|./*|../*) CKPT_DIR=$CKPT ;;
+  *) CKPT_DIR=$($PY -c "from huggingface_hub import snapshot_download; print(snapshot_download('$CKPT'))") \
+       || { echo "[sweep+rescore] FATAL: could not fetch $CKPT"; exit 1; } ;;
+esac
+[ -d "$CKPT_DIR" ] || { echo "[sweep+rescore] FATAL: checkpoint is not a directory: $CKPT_DIR"; exit 1; }
+echo "[sweep+rescore] checkpoint resolved to $CKPT_DIR"
+
 echo "[sweep+rescore] ===== START $(date -u) ====="
 echo "[sweep+rescore] checkpoint $CKPT  config $CFG"
 $PY - <<'PROV' | tee "$OUT/provenance.txt"
@@ -70,13 +84,22 @@ echo "[sweep+rescore] sweep exit ${PIPESTATUS[0]}"
 # test_metrics.json and the ONLY difference is the code.
 echo "[sweep+rescore] --- blind-test re-score (current code) $(date -u) ---"
 timeout 7200 $PY tools/train/eval.py \
-  --config "$CFG" --split test --checkpoint "$CKPT" \
+  --config "$CFG" --split test --checkpoint "$CKPT_DIR" \
   --batch-size 8 2>&1 | tee "$OUT/rescore.log"
 echo "[sweep+rescore] rescore exit ${PIPESTATUS[0]}"
 
-for f in out/eb17-best/test_metrics.json test_metrics.json; do
+for f in out/eb17-best/test_metrics.json test_metrics.json "$CKPT_DIR/test_metrics.json"; do
   [ -f "$f" ] && cp "$f" "$OUT/test_metrics_rescored.json" && break
 done
+# A NAMED-BUT-NEVER-WRITTEN ARTEFACT IS A FAILED JOB. The 2026-09-29 run published four
+# files and returned clean while the re-score had produced nothing, because `publish`
+# skips a file that is not there. Say it loudly, in the log, before the box goes away.
+if [ ! -f "$OUT/test_metrics_rescored.json" ]; then
+  echo "[sweep+rescore] *** RE-SCORE PRODUCED NO METRICS -- this job FAILED its second"
+  echo "[sweep+rescore] *** stage. The sweep above is still valid; the blind test is NOT"
+  echo "[sweep+rescore] *** scored. See rescore.log."
+  RESCORE_FAILED=1
+fi
 
 # METRICS ARE THE FINDING AND THEY ARE KILOBYTES. Publish them before anything else can
 # fail, and verify against the Hub's own file list rather than a clean return.
@@ -87,3 +110,5 @@ publish "$DEST" \
   "$OUT/record_gate_sweep_val.json" "$OUT/test_metrics_rescored.json" \
   || echo "[sweep+rescore] *** PUBLISH FAILED ***"
 echo "[sweep+rescore] ===== END $(date -u) ====="
+[ -n "${RESCORE_FAILED:-}" ] && exit 2
+exit 0
