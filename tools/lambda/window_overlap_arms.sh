@@ -109,15 +109,40 @@ if _r:
     print("[win] A vs B share this window exactly and differ ONLY in overlap, so that "
           "comparison is unaffected by the conversion. C differs in both.", flush=True)
 
-ARMS = [("A_win_ov0", WIN_WORDS, 0), ("B_win_ov64", WIN_WORDS, 64), ("C_200_ov50", 200, 50)]
+# FOUR ARMS NOW, and two things changed since the first run -- so this is NOT comparable
+# with it. Both changes were forced by what that run taught:
+#
+#   GLOBAL_DECODE IS ON. It was off, and it is the document-level assembler ("cluster event
+#   mentions across windows, union arguments"). Without it events could only ever be found
+#   INSIDE one window, so every event number in the first run was structurally floored --
+#   event_argument came back 0.0000/0.0000/0.0013, which is not weak signal, it is a
+#   configuration that cannot do the task.
+#
+#   PROPOSAL WIDTH IS WIDE. start_top_k 16 admits 16 start positions against ~262 gold
+#   mentions per 4096-token window; gold coverage there is 8.1%, so arm A's 3.7% entity
+#   recall sat under a ceiling it could never cross. WIDE lifts coverage to 18.7%.
+#   candidate_budget stays at 384 = training_candidate_budget, because decoding wider than
+#   the model trained is refused, and the illegal 2048 buys ~1 point anyway.
+#
+# Arm D is the control that converts the coverage finding into an F1 finding: same window
+# and overlap as A, proposal width AS SHIPPED. A - D is the width effect on metrics.
+WIDE = {"start_top_k": 128, "end_top_k": 128, "candidate_budget": 384,
+        "boundary_top_k_alpha": 0.05, "boundary_top_k_max": 512}
+ARMS = [("A_win_ov0_wide", WIN_WORDS, 0, WIDE),
+        ("B_win_ov64_wide", WIN_WORDS, 64, WIDE),
+        ("C_200_ov50_wide", 200, 50, WIDE),
+        ("D_win_ov0_shipped", WIN_WORDS, 0, {})]
 HEADS = ("entity", "event_trigger", "event_argument", "event_type", "structure", "relation")
 
 def run(rows, label):
     res = {}
-    for name, cs, ov in ARMS:
-        print(f"[win] {label} arm {name}: chunk_size={cs} overlap={ov}", flush=True)
+    for name, cs, ov, wide in ARMS:
+        print(f"[win] {label} arm {name}: chunk_size={cs} overlap={ov} "
+              f"global_decode=True width={'WIDE' if wide else 'SHIPPED'}", flush=True)
         m = evaluate_checkpoint(ckpt, rows, batch_size=int(batch), threshold=0.3,
-                                chunk_size=cs, chunk_overlap=ov) or {}
+                                chunk_size=cs, chunk_overlap=ov,
+                                global_decode=True,
+                                boundary_overrides=dict(wide) or None) or {}
         res[name] = m
         Path(f"{out}/{label}_{name}.json").write_text(json.dumps(m, indent=2), encoding="utf-8")
     return res
@@ -129,7 +154,7 @@ print(f"  {'head':18} " + "".join(f"{n:>14}" for n, _, _ in ARMS))
 moved = 0
 for h in HEADS:
     key = f"eval_{h}_strict_micro_f1"
-    vals = [long_res[n].get(key) for n, _, _ in ARMS]
+    vals = [long_res[n].get(key) for n, _, _, _ in ARMS]
     if not any(isinstance(v, (int, float)) for v in vals):
         continue
     spread = max(v for v in vals if v is not None) - min(v for v in vals if v is not None)
@@ -149,10 +174,10 @@ print(f"[win] {moved} of {len(HEADS)} heads moved -- the arms reached the decode
 # numbers comparable with published OneIE-style work; the corpus heads are ours.
 ONEIE = (("trigi", "Trig-I"), ("trigc", "Trig-C"), ("argi", "Arg-I"), ("argc", "Arg-C"))
 print(f"\n[win] === OneIE criteria (external), micro F1 by arm ===")
-print(f"  {'metric':18} " + "".join(f"{n:>14}" for n, _, _ in ARMS))
+print(f"  {'metric':18} " + "".join(f"{n[:13]:>14}" for n, _, _, _ in ARMS))
 for key, label in ONEIE:
     k = f"eval_{key}_external_micro_f1"
-    vals = [long_res[n].get(k) for n, _, _ in ARMS]
+    vals = [long_res[n].get(k) for n, _, _, _ in ARMS]
     if not any(isinstance(v, (int, float)) for v in vals):
         print(f"  {label:18} " + "  not emitted on this corpus")
         continue
@@ -164,7 +189,7 @@ for key, label in ONEIE:
 # relaxed event_argument: event_argument_strict <= argc_external <= event_argument_relaxed.
 # Outside that, the two accountings disagree and the OneIE column is not trustworthy.
 print()
-for name, _, _ in ARMS:
+for name, _, _, _ in ARMS:
     m = long_res[name]
     lo = m.get("eval_event_argument_strict_micro_f1")
     hi = m.get("eval_event_argument_relaxed_micro_f1")
