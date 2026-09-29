@@ -161,9 +161,23 @@ def main() -> int:
             continue
         print(f"[sweep] === {axis} (span threshold held at {span_thr}) ===", flush=True)
         for value in AXES[axis]:
+            overrides = {axis: value}
+            # THE DEAD SETTING STILL GATES THE LIVE ONE. `record_anchor_proposal_threshold`
+            # is read by NOTHING (no decoder, no loss -- verified 2026-09-29), which is why
+            # it was dropped from AXES. But `validate_boundary_head` still enforces
+            # proposal <= anchor, so sweeping the anchor below its 0.2 default raises
+            #   ValueError: record_anchor_proposal_threshold (0.2) must be <= (0.1)
+            # and kills the run mid-sweep. That is exactly what happened on the first A100
+            # attempt: four rows scored, then dead at 0.1. The OLD tool clamped this; I
+            # removed the axis and lost the clamp with it.
+            #
+            # Setting it EQUAL to the anchor is safe precisely because it is dead code --
+            # it satisfies the validator and can change nothing else.
+            if axis == "record_anchor_threshold":
+                overrides["record_anchor_proposal_threshold"] = value
             m = evaluate_checkpoint(
                 args.checkpoint, records, batch_size=args.batch_size, threshold=span_thr,
-                boundary_overrides={axis: value},
+                boundary_overrides=overrides,
             ) or {}
             row = _row(m, axis, value)
             rows.append(row)
