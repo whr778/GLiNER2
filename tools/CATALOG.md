@@ -39,6 +39,8 @@ is not a result without a noise floor beside it. Measured floors:
 
 ### 1a. Does the gold actually reach the model?
 
+**`tools/train/probe_anchor_gate.py`** — the share of gold records that train NOTHING because the model never proposed their anchor. `compute_group_loss` resolves the gold anchor against the model's OWN candidate spans and skips the record on a miss; events anchor on the TRIGGER, so a missed trigger discards that instance's entire argument supervision. Refuses to report if the gate was never reached.
+
 | instrument | the question, and what it found |
 |---|---|
 | `data/measure_surface_alignment.py` | **How much gold never aligns, and why.** A mention is supervision only if its surface aligns to the TOKENIZED text; a miss decodes to `(-1,-1)` and is skipped with no error. `surface in text` is the WRONG test — on docee it says 100.00% where the real path says 99.19%. Mix-wide **1.34%** never aligns; worst `bio_ner_relations` **4.77%**. Splits the loss by what would fix it: EXTENDABLE (repair), SUBTOKEN (**never** repair — changes the referent), RUNON, TOKENIZATION, ABSTRACTIVE. `--fail-over` gates a launch. |
