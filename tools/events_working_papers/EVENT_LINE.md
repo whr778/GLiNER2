@@ -527,3 +527,45 @@ agreed value should be the training window, at least until emission scales.
 behaviour at length, or attention dilution -- is unmeasured, and C wins here on F1 while
 LOSING precision (0.199 vs 0.353), so "smaller is better" is a recall trade, not a free
 win. A/B-vs-C also varies window AND overlap together; only A-vs-B is clean.
+
+### CORRECTION: that was an ENTITY result, and events want the OPPOSITE window
+
+The section above concluded "window size is everything" and that the training window is
+the wrong uniform value. That generalised an ENTITY measurement onto events the run never
+had the signal to judge: `event_argument` came back 0.0000 / 0.0000 / 0.0013 across the
+three arms -- noise. The run adjudicated entities only.
+
+Measured on cc_news_long (300 docs, 3,392 events, 11.3/doc, 1.55 per 1k words), trigger to
+argument distance in WORDS:
+
+| | value |
+|---|---|
+| median | **446** |
+| mean | 1,333 |
+| p90 | 4,112 |
+| max | 15,782 |
+
+| window | argument links inside | **whole events fitting** |
+|---|---|---|
+| 200 words (arm C) | 42.0% | **30.5%** |
+| 384 words (library default) | 48.4% | 36.6% |
+| 2730 words (arms A/B) | 81.4% | **74.8%** |
+
+**A 200-word window cannot see 69.5% of events.** The median argument sits 446 words from
+its trigger, more than twice that window, so arm C is CUTTING event structure, not merely
+trading precision for recall. Its nominal event edge (0.0013 vs 0.0000) is noise and must
+not be read as a win.
+
+**THE REAL SHAPE IS A TENSION, NOT A SINGLE ANSWER.** Entities are LOCAL and emission-bound,
+so small windows help them (recall 3.7% -> 11.0%). Events are LONG-RANGE, so small windows
+destroy them. No single window optimises both, which is a different objection to the
+uniform-window policy than the one made above: not that the training window is too large,
+but that one value cannot serve both tasks.
+
+The EKF pipeline's 200-word band is well matched to ITS job -- casualty figures, which are
+local and entity-like -- and would be a poor choice for long-range event structure.
+
+**COVERAGE CAVEAT.** 2,074 of 7,472 arguments (27.8%) and 347 triggers do not appear
+verbatim and are excluded, so the distances describe ~72% of argument links. If the missing
+surfaces are systematically abstractive the distribution shifts, though not enough to bring
+30.5% near 100%.
