@@ -56,7 +56,7 @@ shutil.copy(p, '$LONGSET')" || { echo '[win] FATAL: no long set'; exit 2; }
 fi
 
 $PY - "$CFG" "$CKPT" "$LONGSET" "$MAXDOCS" "$BATCH" "$OUT" <<'PYEOF' 2>&1 | tee "$OUT/arms.log"
-import json, sys
+import json, os, sys
 from pathlib import Path
 sys.path.insert(0, "tools/train")
 import yaml
@@ -137,6 +137,17 @@ ARMS = [("A_win_ov0_wide", WIN_WORDS, 0, WIDE),
         ("B_win_ov64_wide", WIN_WORDS, 64, WIDE),
         ("D_win_ov0_shipped", WIN_WORDS, 0, {}),
         ("C_200_ov50_wide", 200, 50, WIDE)]
+
+# ARMS_ONLY=D,B runs a SUBSET. An arm here costs ~56 min at WIDE on 300 long docs (14x the
+# 4 min at shipped width, not the 8x I projected), so re-running a whole grid to get one
+# missing control is most of a GPU-hour wasted. Names match on their leading letter.
+_only = [x.strip().upper() for x in os.environ.get("ARMS_ONLY", "").split(",") if x.strip()]
+if _only:
+    ARMS = [a for a in ARMS if a[0].split("_")[0].upper() in _only]
+    print(f"[win] ARMS_ONLY={_only} -> running {[a[0] for a in ARMS]}", flush=True)
+    if not ARMS:
+        print("[win] *** ARMS_ONLY matched NO arm -- refusing to run a job with no arms ***")
+        raise SystemExit(2)
 HEADS = ("entity", "event_trigger", "event_argument", "event_type", "structure", "relation")
 
 def run(rows, label):
