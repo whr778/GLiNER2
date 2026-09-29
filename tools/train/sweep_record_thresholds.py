@@ -111,17 +111,39 @@ def score_all_thresholds(model, records: List[dict], batch_size: int,
                 record_anchor_proposal_threshold=min(
                     thr, base_settings.record_anchor_proposal_threshold),
             )
-            result_at[thr] = original(self, *a, **kw)
+            # THRESHOLD=None IS THE WHOLE FIX. `_decode_records` does
+            #   record_threshold = float(threshold) if threshold is not None
+            #                      else settings.record_anchor_threshold
+            # so forwarding the caller's threshold makes every row of this grid the SAME
+            # point -- the settings we just replaced are never read, and the sweep is flat
+            # while looking like a result. `d407a2e` (2026-08-17) introduced that
+            # precedence; this tool predates it and was silently broken by it.
+            # Measured 2026-09-29: unpatched 0.5 vs 0.02 is byte-identical; with
+            # threshold=None the same record decodes 219 -> 1465 characters.
+            result_at[thr] = original(self, *a, **{**kw, "threshold": None})
         self.boundary_settings = base_settings
         for thr in grid:
             per_threshold[thr].append(result_at[thr])
         return result_at[grid[0]]
 
     engine._decode_records = multi_decode
+    # PROGRESS, because this printed NOTHING until the whole pass finished. On CPU that is
+    # 10-20 minutes of silence in which a stall is indistinguishable from work, and there
+    # was no way to answer "how long left?" -- asked, and unanswerable, 2026-09-29.
+    import time as _time
+    _t0 = _time.time()
+    _total = len(texts)
     try:
-        for i in range(0, len(texts), batch_size):
+        for i in range(0, _total, batch_size):
             model.batch_extract(texts[i:i + batch_size], schemas[i:i + batch_size],
                                 batch_size=batch_size, threshold=0.5)
+            done = min(i + batch_size, _total)
+            if done % (batch_size * 10) == 0 or done == _total:
+                el = _time.time() - _t0
+                rate = done / el if el > 0 else 0.0
+                eta = (_total - done) / rate if rate > 0 else 0.0
+                print(f"[record-sweep] {done}/{_total} records  {rate:.1f} rec/s  "
+                      f"eta {eta / 60:.1f} min", flush=True)
     finally:
         engine._decode_records = original
         model.boundary_settings = base_settings
@@ -165,9 +187,13 @@ def main() -> int:
         records = records[:args.limit]
     print(f"[record-sweep] {len(records)} structure-bearing test records", flush=True)
 
+    # `attn_implementation` was a from_pretrained kwarg when this tool was written and is
+    # not one now -- it raises TypeError, naming the accepted set. Second instance of
+    # tool/code drift in this file, after the threshold precedence. The eager intent is
+    # preserved off CUDA by _load_encoder's own degrade chain, which lands on eager when
+    # FA2 and sdpa are unavailable.
     model = AutoExtractor.from_pretrained(
         str(args.checkpoint),
-        attn_implementation="eager",          # CPU/MPS have no FA2
         **({"map_location": args.device} if args.device else {}),
     )
     model.eval()
