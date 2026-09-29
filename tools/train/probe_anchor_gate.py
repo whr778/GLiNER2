@@ -45,6 +45,10 @@ def main() -> int:
     ap.add_argument("--config", required=True)
     ap.add_argument("--checkpoint", required=True)
     ap.add_argument("--max-batches", type=int, default=200)
+    ap.add_argument("--max-records", type=int, default=0,
+                    help="subsample BEFORE chunking; 0 = every record. The probe only "
+                         "consumes --max-batches x --batch-size samples, so loading and "
+                         "chunking 201k records to score 800 of them is pure setup cost.")
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--device", default=None, help="default: the model's own choice")
     ap.add_argument("--out", default=None, help="write the stats as JSON here too")
@@ -69,6 +73,14 @@ def main() -> int:
                 rec.setdefault("_corpus", p.name.split(".")[0])
                 records.append(rec)
     print(f"[gate] {len(records):,} train records from {len(files)} files", flush=True)
+    if args.max_records and len(records) > args.max_records:
+        # SUBSAMPLE WITH A SEED, and shuffle first: the file order is by corpus, so a head
+        # slice would measure one corpus and report it as the mix.
+        import random
+        random.Random(int(train_cfg.get("seed", 42))).shuffle(records)
+        records = records[: args.max_records]
+        print(f"[gate] subsampled -> {len(records):,} (seeded shuffle, not a head slice)",
+              flush=True)
 
     model = AutoExtractor.from_pretrained(args.checkpoint, map_location=args.device)
     proc = model.processor
