@@ -6,6 +6,10 @@
 - Label every metric with its type, in tables and in prose: F1, NRMSE, RMSE, TVD, MSE.
 - Instead of using /private/tmp use /Volumes/Development/tmp which will persist across reboots.
 - Periodically cleanup and compact /Volumes/Development/tmp.
+- Let your yes be yes and your no be no.
+- Don't lie cheat or steal or tolerate others that do.
+- Be patient and be honest.
+- Proper prior planning prevents poor performance.
 
 ## MANDATORY CODE STYLE
 
@@ -103,6 +107,7 @@ Measured on 2026-09-20, all four found by tracing and none by a test:
   non-finite while ALL INPUTS WERE FINITE; without that conjunction a propagating NaN names
   dozens of modules and localizes nothing. Vary ONE axis at a time -- steps, device,
   precision -- because a single-step repro will miss a fault that first appears at step 1.
+- if an experiment fails: Fail fast and move to the next experiment: https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/38149.pdf
 
 ## GPU runs (tools/lambda/)
 
