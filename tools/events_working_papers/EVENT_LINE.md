@@ -411,3 +411,37 @@ recovered gold. The ranking signal is real; its size against the real task is UN
 score emitted trigger spans, require type + text match, after dedup. If the AUC survives
 near 0.83 the instance-rejection experiment is well-founded; if it falls toward chance the
 head is not separating what the metric counts and the experiment is not yet justified.
+
+### CORRECTION: the 4.46 vs 0.96 comparison was a marginal ratio against an absolute one
+
+The section above compared the eval's **DELTA** ratio (new FP per recovered FN, control ->
+0.1) with the probe's **ABSOLUTE** ratio (spurious instances / good instances at 0.1).
+Those are not the same quantity and the "4.6x more forgiving" conclusion drawn from it is
+withdrawn. Measured properly on the SAME 400 val event records at anchor 0.1:
+
+| quantity | value |
+|---|---|
+| eval trigger predictions (COR 239 + FP 455 + partials 51) | 745 |
+| probe decoded instances | 759 |
+| **predictions per instance** | **0.98** |
+| eval absolute FP : COR | 1.90 : 1 |
+| probe absolute spurious : good | 0.96 : 1 |
+| probe AUC on these records | 0.8351 |
+
+**Three causes, correctly apportioned.** POPULATION: not a cause, these are the same
+records. GRANULARITY: not a cause either -- 745 predictions from 759 instances is ~1:1, so
+one decoded instance yields about one trigger prediction. STRICTNESS: real, and about
+**2x** -- the probe calls 388 instances good where the eval counts 239 correct, and the
+eval finds 455 FP where the probe finds 371 spurious. The headline 4.6x was mostly an
+artifact of the mismatched comparison.
+
+**WHAT THIS CHANGES FOR THE DECISION.** The ~1:1 granularity is the useful finding: the
+unit the intervention operates on (reject a whole instance) maps almost exactly onto the
+unit the metric counts (a trigger prediction), so an instance-level gate translates
+directly into trigger precision. AUC 0.8351 is measured with a positive class ~1.6x more
+generous than the eval's COR, so it overstates -- but by around 2x in class balance, not
+by 4.6x, and the ranking signal at 0.835 has margin above chance to absorb that.
+
+**STILL WORTH DOING BEFORE A TRAINING RUN**, now a small change rather than a rebuild:
+label each instance by whether the eval counts its trigger as COR, and re-run the AUC.
+That removes the last estimate from the chain.
