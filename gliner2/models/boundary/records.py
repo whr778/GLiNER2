@@ -23,6 +23,7 @@ global decoder implemented below.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -39,6 +40,8 @@ from gliner2.models.boundary.validation import (
 )
 from gliner2.processing.records import FieldCardinality, RecordFieldSpec, RecordSpec
 from gliner2.processing.targets import RecordTarget, TargetCapacityError
+
+logger = logging.getLogger(__name__)
 from gliner2.training.matching import (
     build_dense_record_matching_cost,
     linear_sum_assignment,
@@ -1340,6 +1343,68 @@ def compute_dense_batch_loss(
     return {"object_loss": object_loss, "field_loss": field_loss}
 
 
+# --- the natural-mode anchor supervision gate -------------------------------------------
+#
+# WHY THIS IS COUNTED. `compute_group_loss` in natural mode resolves each gold record's
+# anchor against the model's OWN candidate spans. A record whose anchor was not proposed
+# is skipped ENTIRELY -- and silently, until this counter existed. For events the anchor is
+# the trigger, so every missed trigger discards that instance's whole argument supervision,
+# which is a self-reinforcing loop: propose few triggers -> train on few events -> keep
+# proposing few triggers.
+#
+# It is the FOURTH candidate for the recall floor. EVENT_ARGUMENT_DIAGNOSIS 4f cleared three
+# (no capacity caps, per-role cardinality at 7.5%, the mention-path skip_sample) and
+# concluded "undertraining, nothing structural capping it". This is not a capacity cap; it
+# is a supervision gate, and 4f's search did not cover it.
+#
+# NO GPU SYNC HERE, deliberately: `cols` and `seed_to_inst` are plain Python lists/dicts, so
+# nothing is copied off the device. That is the mistake `_note_negative_queries` made -- it
+# called int() on a tensor every step -- and it is not repeated.
+#
+# Reported as SHARES, because the absolute count is meaningless without its denominator:
+# "12,000 skipped" says nothing until you know whether 13,000 or 1,300,000 were seen.
+_ANCHOR_GATE = {"trained": 0, "anchor_not_proposed": 0, "anchor_not_seeded": 0,
+                "no_gold_anchor": 0}
+_ANCHOR_GATE_CALLS = 0
+
+
+def _note_anchor_gate(outcome: str) -> None:
+    """Tally one gold record's fate at the anchor gate, and report with backoff."""
+    global _ANCHOR_GATE_CALLS
+    _ANCHOR_GATE[outcome] += 1
+    _ANCHOR_GATE_CALLS += 1
+    n = _ANCHOR_GATE_CALLS
+    if n in (1000, 10000, 50000) or (n > 50000 and n % 250000 == 0):
+        total = max(n, 1)
+        logger.info(
+            "anchor gate over %d gold records: trained %.1f%%, anchor NOT PROPOSED %.1f%%, "
+            "proposed but not seeded %.1f%%, no gold anchor %.1f%% -- a record that does "
+            "not train contributes NO argument supervision at all",
+            n,
+            100.0 * _ANCHOR_GATE["trained"] / total,
+            100.0 * _ANCHOR_GATE["anchor_not_proposed"] / total,
+            100.0 * _ANCHOR_GATE["anchor_not_seeded"] / total,
+            100.0 * _ANCHOR_GATE["no_gold_anchor"] / total,
+        )
+
+
+def anchor_gate_stats() -> Dict[str, float]:
+    """Snapshot of the gate, as counts plus shares. For probes and tests."""
+    total = max(_ANCHOR_GATE_CALLS, 1)
+    out = {f"{k}_n": v for k, v in _ANCHOR_GATE.items()}
+    out.update({f"{k}_share": v / total for k, v in _ANCHOR_GATE.items()})
+    out["seen"] = _ANCHOR_GATE_CALLS
+    return out
+
+
+def reset_anchor_gate() -> None:
+    """Zero the gate. Probes call this so one run's numbers are its own."""
+    global _ANCHOR_GATE_CALLS
+    for k in _ANCHOR_GATE:
+        _ANCHOR_GATE[k] = 0
+    _ANCHOR_GATE_CALLS = 0
+
+
 def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]) -> Dict[str, torch.Tensor]:
     """Compute object and field-assignment losses for one record group."""
     device = group.object_logits.device
@@ -1357,10 +1422,21 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
         for record in records:
             aft = record.field_for_query(anchor_qid)
             if aft is None or not aft.values:
+                _note_anchor_gate("no_gold_anchor")
                 continue
+            # THE SUPERVISION GATE. The gold anchor is resolved against the MODEL'S OWN
+            # candidate spans, so a record whose anchor the model did not propose trains
+            # NOTHING -- not the anchor, not any of its fields. For events the anchor is
+            # the TRIGGER (processing/records.py:70), so a missed trigger silently discards
+            # that instance's entire argument supervision. See _note_anchor_gate.
             cols = _resolve_value_cols(aft.values[0], span_indices[anchor_f_idx])
-            if not cols or (inst := seed_to_inst.get(cols[0] - 1)) is None:
+            if not cols:
+                _note_anchor_gate("anchor_not_proposed")
                 continue
+            if (inst := seed_to_inst.get(cols[0] - 1)) is None:
+                _note_anchor_gate("anchor_not_seeded")
+                continue
+            _note_anchor_gate("trained")
             field_loss = field_loss + _instance_field_loss(group, inst, record, span_indices)
             n += 1
         return {
