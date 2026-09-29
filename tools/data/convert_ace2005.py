@@ -14,8 +14,16 @@ For each ``.apf.xml`` / ``.sgm`` pair the converter emits one record::
          "relations": [{"ORG-AFF.Employment": {"head": "John Smith", "tail": "UN"}}],
          "events":    [{"event_type": "Conflict.Attack",
                         "triggers": ["attacked"],
-                        "arguments": [{"role": "Attacker", "entity": "John Smith"}]}]
+                        "arguments": [{"role": "Attacker", "entity": "John Smith"}]}],
+         "mention_types": {"John Smith": "NAM", "the president": "NOM"}
      }}
+
+``mention_types`` records ACE's NAM/NOM/PRO mention type per kept surface. It is
+EMITTED but nothing scores it yet: OneIE reports a `mention` metric for this, and
+this project has no mention-type head to predict one, so a metric over it would
+read a permanent 0.0000 and be indistinguishable from a real failure. The field
+is kept so the annotation is not thrown away at the converter -- which is where
+it used to die, collected only to drive ``mention_filter``.
 
 Relations are resolved through their ``<relation_mention_argument>``
 REFIDs: the converter walks the entity-mention table once, then looks up
@@ -205,6 +213,7 @@ def parse_apf(
     # entity_mention_text holds only the kept (allowed + in-text) mentions and
     # drives entities + relations.
     entity_mention_text: Dict[str, str] = {}   # kept mention_id -> surface
+    mention_types_out: Dict[str, str] = {}     # kept surface -> NAM | NOM | PRO
     entity_mention_type: Dict[str, str] = {}   # every entity mention_id -> m_type
     filtered_mids: Set[str] = set()            # mentions removed by the filter
     entities_by_type: Dict[str, List[str]] = {}
@@ -228,6 +237,12 @@ def parse_apf(
                 stats["filtered_mentions"] += 1
                 continue
             entity_mention_text[mid] = span_text
+            # KEEP the ACE mention type (NAM/NOM/PRO) instead of discarding it. It was
+            # collected only to FILTER, and never written out, so it died at the converter
+            # -- which is why OneIE's `mention` metric has no source here. Surface-keyed
+            # like everything else, so a surface appearing as both NAM and NOM keeps the
+            # FIRST; that ambiguity is inherent to surface-keying, not new here.
+            mention_types_out.setdefault(span_text, m_type)
             bucket = entities_by_type.setdefault(full_type, [])
             if span_text not in bucket:
                 bucket.append(span_text)
@@ -322,6 +337,8 @@ def parse_apf(
         output["relations"] = relations_out
     if events_out:
         output["events"] = events_out
+    if mention_types_out:
+        output["mention_types"] = mention_types_out
 
     if not output:
         return None
