@@ -15,12 +15,13 @@ Everything here is measured unless the row says otherwise.*
 | S4 | `event_records: true` was never configured before 2026-09-15 | `event_records` appeared 0× in every base config | §3 |
 | S5 | The record head **works**, on a 40%-trained checkpoint | **5/12** multi-instance, **0/12** pooled, precision **1.3–1.7×** | §4e |
 | S6 | Its low recall is **undertraining**, not a missing mechanism | +41% in one epoch, nothing structural capping it | §4f |
-| S7 | Threshold is **not** the lever | moves recall 48.8%→29.4% never-proposed, **zero** F1 | §4d |
+| S7 | Threshold is **not** the lever — **but see S14: that sweep moved BOTH gates at once.** The record gate has never been swept independently | moves recall 48.8%→29.4% never-proposed, **zero** F1 | §4d, §4f-ii |
 | S8 | `event_type` precision is **1.0000 by construction** | real full-menu precision **0.5521**; quote it as recall | §4h |
 | S9 | The argument→trigger binding **IS trained** (`record_loss_weight` 1.0, anchor-seeded) — and OneIE's metric is **looser** than ours, not tighter | their key drops the trigger span; ours keeps it | §4c-i |
 | S10 | **All four NER↔argument linking options are CLOSED** | shared pool −0.0745; typed margin w_S 0.00003; predicted types −0.074; roles→entities −0.0300 | §4k |
 | S11 | Absent negatives: the lever is **real but dead** | +0.0376 argument at **−0.1977** classification; scoping to roles lost the gain (−0.1027) and recovered 15% of the cost | §4i, [[EXPERIMENT_CATALOG]] |
 | S12 | Blind-test row count is inflated by the **config**, not the corpora | duplicates are a config artefact, handled correctly | §4j |
+| S14 | **`record_anchor_threshold` is DEAD on every eval path** — the SPAN threshold drives record decode, so one number has always gated both | 0.5 vs 0.02 → **byte-identical** output; forcing settings to win gives **219 → 1465 chars** on the same record | §4f-ii |
 | S13 | The anchor supervision gate is **NOT** the recall floor — REFUTED the day it was proposed | **0 of 362 EVENT** records dropped (100% trained) on a fully-trained event-records base | §4f-i |
 
 ### Open — cheapest first, because that is the order to do them in
@@ -30,7 +31,7 @@ Everything here is measured unless the row says otherwise.*
 | ~~O1~~ | **DONE 2026-09-29** — Arg-C shipped as `eval_argc_external_*` in `gliner2/training/eval_metrics.py`, built to the five decisions in §4c-i: surface-keyed, set semantics, case-insensitive, trigger-less events included **and counted**, and deliberately NOT a head. Traced before tests on records where the model binds both arguments to the WRONG instance: **strict 0.000, Arg-C 0.800, identical predictions** — the definition changing, not the model | — | — | §4c-i, `tests/training/test_argc_metric.py` |
 | O2 | **Does the binding objective we already have move strict argument F1** on a fully-trained `event_records` base? | eb17, already bought | eb17 completing — the 0.0991/0.5884 spread was measured on a head that had **never seen an event** | §4c-i, TODO 2 |
 | O3 | **Negative-ratio sweep toward 50%** | ~$44, 3 arms × 2 epochs, A100 | nothing | TODO 17 |
-| O4 | **`record_anchor_threshold` sweep** on an event-records base | free once O2 exists | O2 | TODO 4 |
+| O4 | **Decouple the record gate from the span gate, THEN sweep it.** Rewritten 2026-09-29: the old premise (that this is a config sweep) is false — S14 shows the key is never read. Needs a decode-path change, or the `_force_settings_to_win` interception in `sweep_record_anchor_threshold.py` | free (interception exists) | eb17 finishing | §4f-ii, TODO 4 |
 | O5 | **Classification collapse** (−0.1977 on absneg2, 96% `docee_event`) | free to re-read | may already be explained: docee trained at a **59-label** menu against 60 elsewhere until 2026-09-22 | TODO 3, 14 |
 
 **If you do one thing: O1.** It costs nothing, it has been open for a week, and until it
@@ -955,6 +956,68 @@ long Chinese documents, which is exactly `field_spans`, and four of this config'
 (cmnee, duee, chfinann, docee_zh) are long Chinese documents. A corrupted key reads as
 "anchor not proposed", so MPS would have inflated precisely the number under test and
 produced a confident false positive. Scored on CPU.
+
+---
+
+## 4f-ii. THE RECORD GATE IS THE SPAN GATE (2026-09-29)
+
+**One number has always driven both, and nothing in this document knew it.**
+
+`_decode_records` resolves its threshold as
+
+```python
+record_threshold = float(threshold) if threshold is not None \
+                   else settings.record_anchor_threshold
+```
+
+and `_extract_from_batch` takes `threshold` as a REQUIRED positional, so every eval path
+supplies one and **`record_anchor_threshold` is never consulted**. Introduced by `d407a2e`,
+2026-08-17.
+
+MEASURED, not inferred. eb16-eventrecords-tr, one real casie val record, span threshold
+fixed at 0.3:
+
+| record_anchor_threshold | output |
+|---|---|
+| 0.5 | 219 chars |
+| 0.02 | 219 chars — **byte-identical** |
+
+With the precedence forced back to the settings (`_force_settings_to_win`):
+
+| record_anchor_threshold | output |
+|---|---|
+| 0.5 | 219 chars |
+| 0.02 | **1465 chars — 6.7x more** |
+
+### What this does and does NOT overturn
+
+**S7 needs RESTATING, not retracting.** "Threshold is not the lever" swept the span
+threshold — which, unknown to that experiment, was simultaneously the record gate. So S7 is
+a valid result about moving BOTH gates together, and says nothing about moving the record
+gate alone. That remains untested.
+
+**O4's premise was false.** It was written as a config sweep. The key is never read, so a
+sweep of it through the ordinary eval path is guaranteed flat for a reason that has nothing
+to do with the model. It is now a decode-path change first.
+
+**TODO 4 contains a misattribution.** It records the sweep as "FLAT (1 record at every
+threshold), so the probe does not engage that checkpoint's record head". Flat is exactly
+what this bug produces; the checkpoint's engagement was never the question.
+
+**`tools/train/sweep_record_thresholds.py` cannot work on current code.** It patches
+`boundary_settings` and then forwards the caller's threshold into the original, so its grid
+collapses to one point.
+
+**NEEDS RE-VERIFICATION, and this is deliberately not called a retraction.** The catalog
+records a record-threshold sweep on 2026-08-23 producing structure **0.1119 at threshold
+0.1** against 0.076 at 0.5 — dated AFTER `d407a2e` introduced the precedence, so by the
+reading above it should have been flat, and it was not. That contradiction is unresolved.
+Either the tool engaged a path that bypassed the precedence, or something changed between.
+**Until someone re-runs it under the interception, treat 0.1119 and the JOINT_IE_SCALING
+"at record threshold" row as UNVERIFIED rather than wrong.** Not measured is not refuted.
+
+**Unaffected:** S13 (training-time gate), S1/S2/S3 (gold-side structure), S9/S10/S11
+(objective and linking). None of them read a record decode threshold.
 
 ---
 
