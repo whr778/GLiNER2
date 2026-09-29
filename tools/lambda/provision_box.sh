@@ -106,11 +106,30 @@ $SSH ubuntu@$IP true 2>/dev/null || terminate_and_die "ssh never came up"
 
 # ECC PRE-FLIGHT. A faulty A10 with 126 uncorrected errors cost a relaunch on 2026-09-16;
 # it trains, it just produces nonsense.
-ECC=$($SSH ubuntu@$IP 'nvidia-smi --query-gpu=ecc.errors.uncorrected.volatile.total --format=csv,noheader' 2>/dev/null | tr -d ' ')
-echo "[prov] ECC uncorrected: ${ECC:-unknown}"
+ECC_Q='nvidia-smi --query-gpu=ecc.errors.uncorrected.volatile.total --format=csv,noheader'
+ECC=$($SSH ubuntu@$IP "$ECC_Q" 2>/dev/null | tr -d ' ')
+# An EMPTY answer means the QUERY failed, not that the card is clean, and the old `case`
+# treated "" and "[N/A]" identically to 0 -- so on any card that does not report ECC, and
+# on any transient ssh blip, this gate PASSED VACUOUSLY and printed something that read
+# like a clean bill of health. Seen on an A10, 2026-09-29: "[prov] ECC uncorrected: [N/A]".
+# Retry once before concluding anything, then say which of the three happened.
+if [ -z "$ECC" ]; then
+  sleep 5
+  ECC=$($SSH ubuntu@$IP "$ECC_Q" 2>/dev/null | tr -d ' ')
+fi
 case "$ECC" in
-  0|"[N/A]"|"") : ;;
-  *) terminate_and_die "$ECC uncorrected ECC errors -- not training on this card";;
+  0)
+    echo "[prov] ECC uncorrected: 0 -- VERIFIED CLEAN" ;;
+  "[N/A]")
+    echo "[prov] ECC uncorrected: [N/A] -- *** NOT VERIFIABLE on this card. The gate did" \
+         "NOT pass, it did not run. A faulty card trains and produces nonsense, so treat" \
+         "unexplained garbage on this box as a hardware hypothesis. ***" ;;
+  "")
+    echo "[prov] ECC uncorrected: *** QUERY FAILED TWICE -- ECC IS UNKNOWN, NOT CLEAN." \
+         "Continuing, because a transient ssh blip must not cost a launch, but nothing" \
+         "here has checked this card. ***" ;;
+  *)
+    terminate_and_die "$ECC uncorrected ECC errors -- not training on this card" ;;
 esac
 
 # CREDENTIALS. Written by heredoc, verified on the box, and the exit status is CHECKED --

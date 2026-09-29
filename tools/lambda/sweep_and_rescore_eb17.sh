@@ -43,10 +43,21 @@ PROV
 
 # ---- 1. the sweep, on VALIDATION ----------------------------------------------------
 echo "[sweep+rescore] --- record-gate sweep (VALIDATION) $(date -u) ---"
+# SUBSAMPLE FOR SHAPE. The sweep is 19 full eval passes (7 anchor + 5 field + 4
+# temperature + 3 span). eb17's own per-epoch eval over the full 19,286-record val split
+# took ~15 min on an A100, so 19 of them is ~4.75h -- against a JOB_TIMEOUT of 5h, with the
+# re-score still to run after it. The first attempt at this job was launched without a cap
+# and would have timed out mid-sweep having spent the money and produced neither result.
+#
+# A seeded 4,000-record subsample answers the SHAPE question -- does the optimum sit near
+# 0.1 or near 0.5 -- in ~3 min a pass. The shipped threshold must then be confirmed on the
+# FULL split at the chosen value, which is one more pass, not nineteen.
+SWEEP_MAX_RECORDS=${SWEEP_MAX_RECORDS:-4000}
 timeout 7200 $PY tools/train/sweep_record_anchor_threshold.py \
   --config "$CFG" --checkpoint "$CKPT" \
   --axes record_anchor_threshold,record_field_threshold,record_temperature \
   --span-thresholds 0.3,0.1,0.05 \
+  --max-records "$SWEEP_MAX_RECORDS" \
   --batch-size 8 --out "$OUT/record_gate_sweep_val.json" 2>&1 | tee "$OUT/sweep.log"
 echo "[sweep+rescore] sweep exit ${PIPESTATUS[0]}"
 
