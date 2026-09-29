@@ -735,7 +735,18 @@ _STRUCTURAL_BOUNDARY_KEYS = frozenset({
 # decorative override happens.
 _EVAL_TIME_BOUNDARY_KEYS = ("decode_mode", "joint_beam_width", "abstention_threshold",
                             "record_anchor_threshold", "record_anchor_threshold_wins",
-                            "record_anchor_proposal_threshold")
+                            "record_anchor_proposal_threshold",
+                            # PROPOSAL WIDTH is an operating point: it adds and removes no
+                            # tensors and is read at decode. It is also the binding
+                            # constraint on long documents -- gold coverage at a 4096
+                            # window is 8.1% at the shipped 16/16/128 and 18.7% at
+                            # 128/128/384 with boundary_top_k_alpha on, measured with
+                            # ProposalStats.gold_hit_without_injection. `candidate_budget`
+                            # must stay <= training_candidate_budget and
+                            # validate_boundary_head enforces that, so decoding wider than
+                            # the model trained is refused rather than silently allowed.
+                            "candidate_budget", "start_top_k", "end_top_k",
+                            "boundary_top_k_alpha", "boundary_top_k_max")
 
 
 

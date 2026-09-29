@@ -1280,7 +1280,14 @@ def evaluate_checkpoint(
         head = getattr(model, "boundary_head", None)
         if head is not None:
             head.settings = settings
-        print(f"[eval] boundary_head overrides applied: {boundary_overrides}")
+        # Settings DERIVED at construction do not follow the assignments above. The
+        # proposer builds its ProposalSettings in __init__ and re-reads its own copy each
+        # forward, so without this a candidate_budget / start_top_k override validates,
+        # prints, and changes nothing.
+        from gliner2.models.boundary.model import resync_derived_settings
+        n_resynced = resync_derived_settings(model, settings)
+        print(f"[eval] boundary_head overrides applied: {boundary_overrides}"
+              f"  (resynced {n_resynced} proposer(s))")
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
     metrics = compute_metrics(
         model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,

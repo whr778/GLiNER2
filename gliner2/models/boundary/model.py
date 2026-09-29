@@ -156,6 +156,32 @@ def proposal_settings_from_head(settings: BoundaryHeadSettings) -> ProposalSetti
     )
 
 
+def resync_derived_settings(model, settings: BoundaryHeadSettings) -> int:
+    """Push a rebuilt ``BoundaryHeadSettings`` into the settings DERIVED from it.
+
+    `__init__` builds `ProposalSettings` once (``proposal_settings_from_head`` above), and
+    the proposer's forward re-reads its own frozen copy. So assigning
+    ``model.boundary_settings`` after ``from_pretrained`` updates the head and leaves the
+    PROPOSER on the values it was constructed with -- an override that validates, prints,
+    and changes nothing. Measured 2026-09-29: `candidate_budget` and `start_top_k` overrides
+    were decorative for exactly this reason.
+
+    Returns how many proposers were resynced, so a caller can refuse rather than assume.
+    """
+    fresh = proposal_settings_from_head(settings)
+    n = 0
+    for module in model.modules():
+        current = getattr(module, "settings", None)
+        # TYPE, not duck-typing: BoundaryHeadSettings ALSO carries `candidate_budget`, so a
+        # hasattr check matches the head's own settings and rebuilding it with
+        # ProposalSettings fields raises on the first unexpected keyword.
+        if type(current) is not ProposalSettings:
+            continue
+        module.settings = fresh
+        n += 1
+    return n
+
+
 def _typed_margin_mask(
     indices: torch.LongTensor,
     allowed_bits: Optional[torch.Tensor],

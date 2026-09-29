@@ -227,3 +227,106 @@ def test_the_override_reaches_boundary_settings_on_a_real_config():
     settings = BoundaryHeadSettings(**merged)
     assert settings.record_anchor_threshold_wins is True
     assert settings.record_anchor_threshold == 0.1
+
+
+# ---------------------------------------------------------------------------
+# Proposal width: derived settings do not follow an assignment to the head
+# ---------------------------------------------------------------------------
+
+def test_proposal_width_keys_survive_the_eval_time_filter():
+    """`candidate_budget` and the top-k knobs are operating points, not structure.
+
+    They are the binding constraint on long documents: gold coverage at a 4096-token
+    window is 8.1% at the shipped 16/16/128 and 18.7% at 128/128/384 with
+    `boundary_top_k_alpha` on, measured with ProposalStats.gold_hit_without_injection.
+    Filtered out, an override prints and changes nothing.
+    """
+    from train import _EVAL_TIME_BOUNDARY_KEYS, _STRUCTURAL_BOUNDARY_KEYS
+
+    required = ("candidate_budget", "start_top_k", "end_top_k",
+                "boundary_top_k_alpha", "boundary_top_k_max")
+    missing = [k for k in required if k not in _EVAL_TIME_BOUNDARY_KEYS]
+    assert not missing, f"{missing} would be dropped from boundary overrides in silence"
+    assert not [k for k in required if k in _STRUCTURAL_BOUNDARY_KEYS]
+
+
+def test_resync_reaches_the_proposer_and_a_bare_assignment_does_not():
+    """THE POINT OF THE HELPER, and it fails if the helper stops working.
+
+    `ProposalSettings` is built in `__init__` and the proposer re-reads its own frozen
+    copy every forward, so assigning `boundary_settings` leaves the proposer where it
+    was constructed. That is how a validated, printed override changes nothing.
+    """
+    import dataclasses
+
+    from gliner2.configuration import BoundaryHeadSettings
+    from gliner2.models.boundary.model import (
+        ProposalSettings, proposal_settings_from_head, resync_derived_settings,
+    )
+
+    class FakeProposer:
+        def __init__(self, settings):
+            self.settings = settings
+
+    class FakeModel:
+        def __init__(self, proposer, head_settings):
+            self._p = proposer
+            self.boundary_settings = head_settings
+
+        def modules(self):
+            return [self, self._p]
+
+    shipped = BoundaryHeadSettings()
+    proposer = FakeProposer(proposal_settings_from_head(shipped))
+    model = FakeModel(proposer, shipped)
+    assert proposer.settings.start_top_k == shipped.start_top_k
+
+    wider = dataclasses.replace(shipped, start_top_k=128, end_top_k=128,
+                                candidate_budget=384, boundary_top_k_alpha=0.05)
+
+    # A bare assignment to the head is the trap: the proposer does not move.
+    model.boundary_settings = wider
+    assert proposer.settings.start_top_k == shipped.start_top_k, (
+        "the proposer moved without a resync, so this test no longer guards anything"
+    )
+
+    n = resync_derived_settings(model, wider)
+    assert n == 1
+    assert proposer.settings.start_top_k == 128
+    assert proposer.settings.candidate_budget == 384
+    assert proposer.settings.boundary_top_k_alpha == 0.05
+
+
+def test_resync_leaves_the_head_settings_object_alone():
+    """BoundaryHeadSettings also has `candidate_budget`, so a hasattr filter would match
+    it and raise rebuilding it with ProposalSettings fields. Type check, not duck-typing.
+    """
+    from gliner2.configuration import BoundaryHeadSettings
+    from gliner2.models.boundary.model import resync_derived_settings
+
+    class HoldsHeadSettings:
+        def __init__(self):
+            self.settings = BoundaryHeadSettings()
+
+    holder = HoldsHeadSettings()
+
+    class M:
+        def modules(self):
+            return [holder]
+
+    assert resync_derived_settings(M(), BoundaryHeadSettings(start_top_k=64)) == 0
+    assert isinstance(holder.settings, BoundaryHeadSettings)
+
+
+def test_decoding_wider_than_training_is_refused():
+    """The invariant the config relies on: train wider than you decode."""
+    import pytest as _pytest
+
+    from gliner2.configuration import validate_boundary_head
+
+    ok = validate_boundary_head({"candidate_budget": 384,
+                                 "training_candidate_budget": 384})
+    assert ok["candidate_budget"] == 384
+    with _pytest.raises(ValueError, match="training_candidate_budget"):
+        validate_boundary_head({"candidate_budget": 2048,
+                                "training_candidate_budget": 384})
