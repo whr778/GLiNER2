@@ -28,7 +28,7 @@
 # 4. `eval.global_decode: true`. Document-level events: cross-window assembly at eval,
 #    checkpoint selection, threshold sweep and blind test alike (all read this one key).
 #
-# 5. `eval.eval_by_language: true`. Safe since lumi-language-id-2 3.0.0 stopped filing
+# 5. `eval.eval_by_language: true`. Safe since lumi-language-id-2 3.0.x stopped filing
 #    Chinese as und/jpn; the operating point must be read per language, because the pooled
 #    event_argument number is 88.4% CMNEE.
 #
@@ -427,7 +427,7 @@ eval:
   batch_size: 2
   threshold: 0.3
   threshold_sweep: true
-  eval_by_language: true    # eb18: lumi 3.0.0 reads Chinese correctly
+  eval_by_language: true    # eb18: lumi 3.0.1 reads Chinese correctly
   global_decode: true       # eb18: document-level event assembly
 
 # Unified label space, shared with every model warm-started from this base so they
