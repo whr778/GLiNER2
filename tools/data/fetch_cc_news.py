@@ -55,13 +55,29 @@ def load_keys(paths: List[Path]) -> Set[str]:
     return keys
 
 
+def local_shards() -> List[str]:
+    """The dataset's parquet shards on disk, downloading (resumably) any not yet cached.
+
+    Streaming from the Hub holds one HTTP read open per shard; on a flaky connection
+    that read times out and the retry path fails on an already-closed client, killing
+    the run. Reading downloaded files removes the network from the collection loop.
+    """
+    from huggingface_hub import hf_hub_download
+    return [hf_hub_download(DATASET, f"plain_text/train-0000{i}-of-00005.parquet",
+                            repo_type="dataset") for i in range(5)]
+
+
 def collect(count: int, min_chars: int, max_chars: int, seed: int,
-            buffer_size: int, out: Path, exclude: Optional[Set[str]] = None) -> dict:
+            buffer_size: int, out: Path, exclude: Optional[Set[str]] = None,
+            local: bool = False) -> dict:
     """Stream, filter and deduplicate until `count` documents are written."""
     from datasets import load_dataset
     from lumi_language_id import detect_language
 
-    ds = load_dataset(DATASET, split="train", streaming=True)
+    if local:
+        ds = load_dataset("parquet", data_files=local_shards(), split="train", streaming=True)
+    else:
+        ds = load_dataset(DATASET, split="train", streaming=True)
     if seed is not None:
         ds = ds.shuffle(seed=seed, buffer_size=buffer_size)
 
@@ -123,6 +139,9 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=0,
                     help="shuffle seed; the raw stream is ordered by crawl")
     ap.add_argument("--buffer-size", type=int, default=10000)
+    ap.add_argument("--local", action="store_true",
+                    help="read the parquet shards from disk (downloaded if missing) instead of "
+                         "streaming from the Hub")
     ap.add_argument("--exclude", type=Path, nargs="*", default=[],
                     help="JSONL corpora already collected; their documents are skipped "
                          "so a second pull EXTENDS the first instead of repeating it")
@@ -134,7 +153,7 @@ def main() -> int:
               f"({', '.join(str(p) for p in args.exclude)})")
     print(f"streaming {DATASET} -> {args.out} (target {args.count:,})")
     stats = collect(args.count, args.min_chars, args.max_chars,
-                    args.seed, args.buffer_size, args.out, exclude)
+                    args.seed, args.buffer_size, args.out, exclude, local=args.local)
     print(f"\nwrote {stats['written']:,} documents to {args.out}")
     for k in ("seen", "empty", "too_short", "too_long",
               "not_english", "duplicate", "already_held"):

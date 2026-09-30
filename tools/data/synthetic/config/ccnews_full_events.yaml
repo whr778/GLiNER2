@@ -1,0 +1,45 @@
+# Synthetic base-training data generation config.
+# Override any of these at the CLI (--provider, --model, --count, --tasks, --out).
+
+provider:
+  provider: openai        # openai | anthropic | mock
+  model: gpt-4o           # e.g. gpt-4o, gpt-4.1-mini, claude-sonnet-5, claude-haiku-4.5
+  temperature: 0.9        # OpenAI only; current Claude models reject sampling params
+  max_tokens: 4096        # cap on document + all-task annotations (needs ~2500 for 5 tasks)
+
+generation:
+  count: 1000             # documents to generate (CLI --count overrides)
+  tasks:                  # which task types to annotate per document
+    - entities
+    - relations
+    - events
+    - classifications
+    - structures
+  min_words: 180          # target document length (words)
+  max_words: 320
+  domains: []             # [] = rotate all built-in domains; or list a subset
+  # Per-document label sampling. The pools in schema_spec.py are far larger than any
+  # one document uses; sampling a subset keeps the prompt (and so the input cost) near
+  # its old size while the vocabulary seen across the corpus grows ~5x. Varying the set
+  # per document is also what teaches span-to-type-description matching instead of a
+  # fixed vocabulary. Remove this block to send the whole ontology every time.
+  #
+  # Entities are deliberately absent: they get the WHOLE pool, because offering a
+  # subset made the model file spans under the nearest listed type. Their negatives
+  # are minted after annotation instead -- see entity_negatives.
+  sample_per_doc:
+    relations: 10         # of 72
+    events: 56            # of 56 -- FULL menu: with 6 of 56 the annotator never labelled an unoffered type (0 of 5,116 events), so most events went unrecorded
+    classifications: 3    # of 12
+    structures: 2         # of 14
+  entity_negatives: 12    # absent types seeded as {type: []} per document
+  sample_seed: 0          # per-document subsets are reproducible from this
+
+split:
+  ratios: [0.8, 0.1, 0.1] # train / val / test (CLI --split-ratios overrides)
+  seed: 42
+
+cost:                     # per-record token assumptions for --estimate
+  est_input_tokens: 1950  # system + prompt; +321 since entities send all 125 types
+  est_output_tokens: 2800 # document + all-5-task JSON; entity spans went ~8 -> ~24
+                          # per record once the full ontology was on offer
