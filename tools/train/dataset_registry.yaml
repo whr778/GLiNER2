@@ -141,6 +141,10 @@ jsonl_dirs:
   scaling_joint: whr778/scaling-joint
   scaling: whr778/scaling
 
+# `provenance` says who wrote the GOLD: human | distant (aligned to a KB) | llm_real (LLM
+# labels over real text) | llm_synthetic (LLM wrote text and labels). A {head: value} map
+# when heads differ (cmnee_ner: human events, LLM entities). Absent means unverified, and
+# scripts/dataset_metrics.py reports it as `unknown` rather than guessing.
 datasets:
   # --- NER ---
   nuner_full:
@@ -250,6 +254,7 @@ datasets:
   # --- Relation extraction ---
   sentence_rex:
     name: sentence_rex
+    provenance: distant
     tasks: Relation extraction
     license: Apache-2.0
     hf_id: knowledgator/sentence_rex
@@ -294,6 +299,7 @@ datasets:
     description: "Korean relation extraction; 6 entity types, 29 relation types."
   biored:
     name: BioRED
+    provenance: human
     tasks: NER + relations (biomedical)
     license: NLM / NCBI
     hf_jsonl: whr778/biored
@@ -302,6 +308,7 @@ datasets:
     description: "Biomedical document-level NER + RE from NCBI BioC; 6 entity types, 8 relation types."
   scierc:
     name: SciERC
+    provenance: human
     tasks: NER + relations (scientific)
     license: research use (AI2)
     source_url: http://nlp.cs.washington.edu/sciIE/
@@ -367,6 +374,7 @@ datasets:
   # --- Event extraction (manual download) ---
   wikievents:
     name: WikiEvents
+    provenance: human
     tasks: NER + event extraction
     license: see source
     source_url: https://github.com/raspberryice/gen-arg
@@ -375,6 +383,7 @@ datasets:
     description: "KAIROS-ontology event extraction co-trained with typed entity mentions; 49 event types, 57 argument roles."
   rams:
     name: RAMS
+    provenance: human
     tasks: Event extraction (trigger + args)
     license: see source
     hf_jsonl: whr778/rams
@@ -383,6 +392,7 @@ datasets:
     description: "Multi-sentence event extraction with triggers and typed arguments; 139 event types, 65 argument roles."
   maven:
     name: MAVEN
+    provenance: human
     tasks: Event detection (trigger)
     license: see source
     hf_jsonl: whr778/maven
@@ -398,6 +408,7 @@ datasets:
     description: "MAVEN trigger detection reframed as entity detection: each of the 168 event types is an entity label whose spans are the triggers."
   casie:
     name: CASIE
+    provenance: human
     tasks: Event extraction (cybersecurity)
     license: see source
     hf_jsonl: whr778/casie
@@ -406,12 +417,14 @@ datasets:
     description: "Cybersecurity event extraction co-trained with typed entity mentions; 5 event types, 26 argument roles."
   cmnee:
     name: CMNEE
+    provenance: human
     tasks: Event extraction (Chinese military)
     license: see source
     source_url: https://github.com/2086482524/CMNEE
     hf_jsonl: whr778/cmnee
   cmnee_ner:
     name: CMNEE with DERIVED entity gold (Haiku-4.5), events preserved
+    provenance: {events: human, entities: llm_real}
     tasks: NER + event extraction on the SAME documents
     license: see source (derived from CMNEE)
     source_url: local (tools/data/annotate_entities_zh.py over data/cmnee)
@@ -423,6 +436,7 @@ datasets:
     # typing a role by a role-derived label is circular.
   duee_ner:
     name: DuEE with DERIVED entity gold (Haiku-4.5), events preserved
+    provenance: {events: human, entities: llm_real}
     tasks: NER + event extraction on the SAME documents
     license: see source (derived from DuEE)
     source_url: local (tools/data/annotate_entities_zh.py over data/duee)
@@ -467,6 +481,7 @@ datasets:
     description: "Chinese military news event extraction; 8 event types, 11 argument roles."
   docee:
     name: DocEE
+    provenance: human
     tasks: Event extraction (doc-level)
     # NO license is declared anywhere: no LICENSE file in the repo, GitHub reports none,
     # and the data ships via a Google Drive link. That is MORE restrictive than a
@@ -480,6 +495,7 @@ datasets:
     description: "Document-level event extraction; one event per document mapped to role-typed entities and document classification. SPLITS ARE REPAIRED: upstream normal_setting overlaps itself (56 train/val, 12 train/test, 26 val/test documents, plus 84 duplicates inside one split) and the converter honours it 1:1, so dedupe_splits.py runs after conversion with precedence test > val > train. 21,842 / 2,721 / 2,744 after repair, from 21,966 / 2,748 / 2,771."
   chfinann:
     name: ChFinAnn
+    provenance: distant
     tasks: Event extraction (Chinese financial, doc-level)
     license: MIT
     hf_jsonl: whr778/chfinann
@@ -527,6 +543,7 @@ datasets:
       the binary corpus can be rebuilt without paying for annotation again."
   duee:
     name: DuEE 1.0
+    provenance: human
     tasks: Event extraction (Chinese, trigger + args)
     license: see source
     hf_id: nlhappy/DuEE
@@ -536,6 +553,7 @@ datasets:
     description: "Sentence-level Chinese event extraction (65 event types, 121 roles) via the no-login HuggingFace mirror; train + val only, no test."
   mendeley_ed:
     name: Event Detection Dataset (Mendeley)
+    provenance: human
     tasks: Event detection (trigger)
     license: cc-by-4.0
     source_url: https://data.mendeley.com/datasets/7d54rvzxkr/1
@@ -697,6 +715,7 @@ datasets:
     description: "NCBI Disease corpus; disease mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   synthetic_sonnet5_1k:
     name: Synthetic Sonnet-5 multi-task
+    provenance: llm_synthetic
     tasks: multi-task IE (NER, relations, classification, events)
     license: see source
     hf_id: null
@@ -706,6 +725,7 @@ datasets:
     description: "Locally generated synthetic multi-task IE corpus (1,882 records) covering entities, relations, text classification, document-level events, and json_structures; produced with Claude Sonnet 5. Narrow original ontology, so entity types are clean (96% purity on repeated surfaces) but the corpus carries no negatives."
   synthetic_haiku45_5k:
     name: Synthetic Haiku-4.5 multi-task 5K
+    provenance: llm_synthetic
     tasks: multi-task IE (NER, relations, classification, events, structures)
     license: see source
     hf_id: null
@@ -733,6 +753,7 @@ datasets:
     # are not separable here, so read the tail deciles as thinner, not absent.
   cc_news_haiku45:
     name: CC-News real text, Haiku-4.5 annotations
+    provenance: llm_real
     tasks: multi-task IE (NER, relations, classification, events, structures)
     license: see source
     hf_id: vblagoje/cc_news
@@ -756,6 +777,7 @@ datasets:
       synthetic, where they are guaranteed by construction."
   synthetic_haiku45_5k_coerced:
     name: Synthetic Haiku-4.5 multi-task 5K (coerced entity types)
+    provenance: llm_synthetic
     tasks: multi-task IE (NER, relations, classification, events, structures)
     license: see source
     hf_id: null
@@ -885,6 +907,7 @@ datasets:
     description: "TEST SPLIT ONLY, and a control rather than training data -- never put it in data.corpora. The casualty_loc_split test streams rebuilt with --focal-position last, so the focal snippet sits at the END of each document and everything else is unchanged. It pairs with the ordinary test split document for document: same 2,873 documents, same 7,058 instances, identical gold, only the snippet order differs. A model that learned 'report the first paragraph' scores near zero here; a model that learned event identity does not. Score the 2,168 documents that actually reordered -- the remaining 705 are single-snippet (k=0) and are byte-identical to the ordinary test split, so including them dilutes the contrast."
   casualty_events:
     name: Multi-event casualty corpus, EVENTS form
+    provenance: llm_real
     tasks: event extraction (trigger + typed arguments, multi-instance)
     license: see source
     hf_id: null
@@ -1182,6 +1205,7 @@ datasets:
     description: "29,079 adjudicated rows from 30,000 requests (30,000 succeeded, 0 errored; 921 unusable, dropped not repaired). Turkish text, ENGLISH DocEE labels -- the shape DocEE-zh already ships -- so en/tr/zh share ONE label space with no translation step. Three disjoint arms by first-match: tr_disaster 11,591 / tr_casualty 7,290 / tr_general 10,198, against 12,000/7,500/10,500 requested. Excludes both pilots by group key, so no document was bought twice. THE DISASTER CUE IS THE FINDING: core-disaster yield 11.2% (tr_disaster) vs 0.6% (tr_casualty) vs 0.8% (tr_general), a 14-19x advantage, because build_turkish_candidates.CUE selects for DEATH (oldu/yarali/olum) and not for disaster -- the first pilot's cued arm came back led by Armed Conflict and Famous Person - Death with six Earthquakes in 238 docs. Pilot projections held within ~30% on most types (Air Crash 114->107, Armed Conflict 1223->1129, Droughts 85->80, Fire 370->417) and several beat them (Earthquakes 199->317, Storm 142->244, Road Crash 569->888). CORRECTS A PILOT-SCALE CONCLUSION: types called absent for geographic reasons are present at trace level -- Tsunamis 7, Volcano Eruption 16, Train Collisions 30, Riot 124, Insect Disaster 10. Those zeros were small-sample artifacts of 1,055 documents. Directionally the geography claim holds (0.02-0.05%), but a trace non-zero base rate is materially more useful to a regional-profile PRIOR than a hard zero needing invented smoothing. `none` rate 16.9%, consistent with both pilots (14.8%, 16.7%): DocEE's taxonomy genuinely misses ~1 in 6 Turkish news stories. Combine with turkish_event_type_pilots (1,055 rows, same label space, same prompt, disjoint) for 30,134 total."
   turkish_event:
     name: turkish_event (Turkish DocEE, type + per-type argument roles, joined)
+    provenance: llm_real
     tasks: classification (docee_event, 59 + none) + entities (340 roles)
     license: inherits umutertugrul/turkish-news-1.8M-tokenized; publisher copyright, TEXT NOT REDISTRIBUTABLE
     source_url: annotate_event_type.py + annotate_event_entities.py, joined by merge_turkish_event.py
