@@ -67,7 +67,10 @@
 #     stockmark_jpn's 8 Japanese labels are translated to 8 DISTINCT English labels. Gates on all
 #     113 voters and on eb18: 0 variant clusters, 0 labels lost, map closed, 0 non-ASCII targets,
 #     the only cross-script entries are the 8 translations.
-# P5. GPU smoke: 768-candidate budget step time and memory, measured before the full run.
+# P5. CLOSED 2026-09-30 -- MEASURED on 1x A100-SXM4-40GB, 200 steps (eb18_smoke on the Hub):
+#     9.0 samples/s, peak 18,899 of 40,960 MiB, 0 truncating batches, 0 non-finite losses,
+#     GPU util ~37% (input-bound). 236,135 windows x 5 epochs = ~36.4h of TRAINING alone,
+#     which exceeds event_base_run.sh's default 20h JOB_TIMEOUT -- raise it at launch.
 # P6. The purchased cc_news data must be pushed to a PRIVATE Hub repo (verified against the
 #     Hub's file list) and registered in tools/train/dataset_registry.yaml with `hf_jsonl`
 #     and `provenance: llm_real`, so `_fetch_if_missing` resolves it on a fresh box.
