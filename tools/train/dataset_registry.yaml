@@ -751,6 +751,23 @@ datasets:
     # front-loaded -- 28.8% of spans in the opening decile tapering to ~6% in the last --
     # which is consistent with news leads being denser AND with some attenuation; the two
     # are not separable here, so read the tail deciles as thinner, not absent.
+  synthetic_events_capped:
+    name: Synthetic multi-task slice, capped by event-argument gold (eb18's 60/40 ratio)
+    provenance: llm_synthetic
+    tasks: multi-task IE (NER, relations, classification, events, structures)
+    license: see source
+    hf_id: null
+    hf_jsonl: whr778/synthetic_events_capped
+    source_url: local (tools/data/build_capped_slice.py over synthetic_sonnet5_1k + synthetic_haiku45_5k train)
+    language: [en]
+    description: "TRAIN ONLY. 4,727 whole documents (3,449 synthetic_haiku45_5k + 1,278
+      synthetic_sonnet5_1k) holding 24,819 event-argument gold, the cap that keeps eb18's
+      LLM-annotated English at 60 real-text : 40 synthetic-text in ARGUMENT GOLD (real text:
+      cc_news_haiku45 10,148 + cc_news_events_haiku45 27,066 = 37,214; x 40/60 = 24,809) --
+      the ratio Fastino used. Pooled, seeded (seed 0) shuffle taking whole documents until the
+      cap, so the two generators keep their natural mix (they differ ~11x in arguments per
+      document) and event-free documents stay in. Reproducible:
+      `build_capped_slice.py --cap 24809 --seed 0`."
   cc_news_events_haiku45:
     name: CC-News real text, Haiku-4.5 entities + events with the FULL 56-type event menu
     provenance: llm_real

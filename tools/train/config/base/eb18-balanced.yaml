@@ -474,6 +474,7 @@ data:
   - data/wikievents
   - data/cc_news_haiku45
   - data/cc_news_events_haiku45   # 2026-09-30 purchase: full 56-type event menu, 27,066 train args
+  - data/synthetic_events_capped  # 24,819 args: the 60/40 real-text:synthetic cap (Fastino ratio)
 
   # TRAIN ONLY. An added corpus silently brings its own TEST split too, and two arms scored
   # on different denominators is not a comparison -- `compare_runs.py` refuses it, and that
@@ -486,7 +487,7 @@ data:
   # overlapping 2,721), so scoring on them would move the blind test AND change entity support.
   # The `event_files` entries below keep val/test on the ORIGINAL cmnee/duee files and have had
   # their `train` key removed, or the entity-less train would come straight back in.
-  train_only: [docee_zh, cmnee_ner, duee_ner, rams, wikievents, cc_news_haiku45, cc_news_events_haiku45]
+  train_only: [docee_zh, cmnee_ner, duee_ner, rams, wikievents, cc_news_haiku45, cc_news_events_haiku45, synthetic_events_capped]
 
   # cmnee_ner's gold is NOT exhaustive within an offered label -- probed at 4.23 missed per
   # document against 13.0 annotated, i.e. 32.4%. It is declared PARTIAL so it contributes
