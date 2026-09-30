@@ -657,3 +657,39 @@ long-document training mix, not a config change.
 **WHAT THIS SETTLES.** The earlier "entities want small windows, events want large" tension
 is an artefact: arm C won by getting 16x more independent budgets. Raising the budget
 recovers half of that for free at eval/inference time, and the remainder needs training.
+
+### AMENDMENT: lifting the cap is NET HARMFUL at every threshold tried
+
+Item 1 raised gold coverage at a 4096-token window from 8.1% to 18.7% and I presented
+that as recovering half the long-document loss. It does not. Measured on 60 cc_news_long
+docs, global_decode on, the model's own window, one variable per row:
+
+| arm | entity P | entity R | **entity F1** | FP per COR |
+|---|---|---|---|---|
+| **S03 shipped / t 0.3** | **0.3551** | 0.0366 | **0.0664** | **0.77** |
+| W03 wide / t 0.3 | 0.0113 | 0.0426 | 0.0179 | 70 |
+| W05 wide / t 0.5 | 0.0099 | 0.0350 | 0.0155 | 79 |
+| W07 wide / t 0.7 | 0.0090 | 0.0295 | 0.0138 | 86 |
+| W09 wide / t 0.9 | 0.0090 | 0.0253 | 0.0133 | 88 |
+
+**No WIDE arm beats the incumbent at ANY threshold.** The width buys +0.0060 entity recall
+for -0.3438 precision, and it gets WORSE as the threshold rises: from t 0.3 to 0.7 the
+threshold removed 14% of false positives while destroying 31% of correct ones, so FP per
+COR climbs 70 -> 86. The extra candidates are scored ABOVE the marginal correct ones --
+the confidence ordering is inverted on exactly the candidates the wider proposal admits.
+
+**SO THE CAP WAS DOING REAL WORK.** The low threshold WAS compensating for the cap, but the
+compensation is not recoverable: the discrimination needed to exploit the extra coverage
+does not exist. Coverage is an upper bound on reachable recall and the model cannot
+approach it. Item 1 is a coverage result with no metric behind it.
+
+**DO NOT QUOTE `event_type` FROM THAT TABLE.** It reads 0.3851 -> 0.9982, which is a gold-
+menu artefact: under a menu built from each document's own gold, `event_type` precision is
+pinned at 1.0000 by construction, so F1 = 2R/(1+R) and emitting MORE instances raises it
+mechanically with no precision penalty available. The wider proposal emits more instances.
+
+**CONVERGES WITH THE SCORER FINDING.** Only 50.3% of gold starts rank into a top-k with 4x
+the room needed; raising capacity just admits more candidates the scorer mis-ranks. No
+configuration fixes that, which leaves the long-document training mix as the only lever --
+and its hypothesis is now better supported, since the scorer has barely seen 4096 tokens of
+real content (median training document 457 tokens).
