@@ -640,6 +640,41 @@ def transform_record(record: Dict, fns: Dict) -> Dict:
     return rec
 
 
+def _corpus_of(path: str) -> str:
+    """Corpus name of a split file: `data/nuner_full.train.jsonl` -> `nuner_full`."""
+    return Path(path).name.split(".")[0]
+
+
+def labels_passthrough(cfg: Dict) -> Set[str]:
+    """Corpora whose labels reach the model exactly as written, never mapped.
+
+    Zero-shot corpora (Pile-NER's ~328k type definitions, NuNER's ~200k labels) exist to
+    teach open-vocabulary types, so the taxonomy map must not touch them: measured on
+    20,000 NuNER records it renamed 9.8% of label uses (person -> Person, City -> city).
+    A name matching no corpus in the config is refused, like `train_only`, because a typo
+    would silently protect nothing.
+    """
+    data = cfg.get("data") or {}
+    names = set(data.get("labels_passthrough") or ())
+    if names:
+        known = ({Path(c).name for c in data.get("corpora") or []}
+                 | set((data.get("event_files") or {})))
+        unknown = sorted(names - known)
+        if unknown:
+            raise SystemExit(f"[labels] labels_passthrough names corpora this config does "
+                             f"not load: {unknown}. A typo here would silently map them.")
+    return names
+
+
+def read_transformed(paths: List[str], fns: Dict, passthrough: Set[str]) -> List[Dict]:
+    """Read records, applying the label map except to corpora in `passthrough`."""
+    records: List[Dict] = []
+    for p in paths:
+        batch = _read_records([p])
+        records += batch if _corpus_of(p) in passthrough else [transform_record(r, fns) for r in batch]
+    return records
+
+
 def _read_records(paths: List[str]) -> List[Dict]:
     records: List[Dict] = []
     for p in paths:
@@ -1264,7 +1299,7 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         + _event_split(data.get("event_files") or {}, suffix), suffix)
     fns = _category_fns(load_labels_cfg(cfg, config_path))
     if fns:
-        split_data = [transform_record(r, fns) for r in _read_records(split_data)]
+        split_data = read_transformed(split_data, fns, labels_passthrough(cfg))
     if not split_data:
         print(f"[eval] config has no {split} split; nothing to score.")
         return {}
@@ -1554,10 +1589,13 @@ def main(config_path: str) -> None:
 
     # Optional per-category label transforms, applied identically to train/val/test.
     fns = _category_fns(load_labels_cfg(cfg, config_path))
+    passthrough = labels_passthrough(cfg)
     if fns:
-        train_data = [transform_record(r, fns) for r in _read_records(train_data)]
-        eval_data = [transform_record(r, fns) for r in _read_records(eval_data)]
-        test_data = [transform_record(r, fns) for r in _read_records(test_data)]
+        train_data = read_transformed(train_data, fns, passthrough)
+        eval_data = read_transformed(eval_data, fns, passthrough)
+        test_data = read_transformed(test_data, fns, passthrough)
+        if passthrough:
+            print(f"[labels] passthrough (labels NOT mapped): {sorted(passthrough)}")
         print(f"[labels] transforms: {', '.join(sorted(fns))}; "
               f"transformed {len(train_data)}/{len(eval_data)}/{len(test_data)} train/val/test records")
 

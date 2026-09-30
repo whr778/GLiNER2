@@ -216,10 +216,12 @@ def collect_config(cfg_path: str, lang=None) -> Dict[str, Dict[str, Dict[str, An
     """Return ``{corpus: {split: metrics}}`` for a training config, label map applied."""
     cfg = yaml.safe_load(Path(cfg_path).read_text(encoding="utf-8"))
     fns = T._category_fns(T.load_labels_cfg(cfg, cfg_path))
+    passthrough = T.labels_passthrough(cfg)
     out: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
     for split, paths in config_paths(cfg).items():
         for p in paths:
-            out[corpus_key(Path(p))][split] = scan_file(Path(p), fns, lang)
+            mapped = None if T._corpus_of(p) in passthrough else fns
+            out[corpus_key(Path(p))][split] = scan_file(Path(p), mapped, lang)
     return out
 
 

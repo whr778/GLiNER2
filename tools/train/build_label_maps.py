@@ -130,12 +130,20 @@ def inputs_to_files(args: list[str]) -> list[str]:
 
 
 def config_files(config_path: str) -> list[str]:
+    """A config's split files, minus corpora it declares `labels_passthrough`.
+
+    A passthrough corpus is never mapped, so it must never DRIVE the map either: NuNER's
+    ~200k open-vocabulary labels would otherwise vote on the taxonomy's spellings.
+    """
     cfg = yaml.safe_load(open(config_path, encoding="utf-8"))["data"]
+    passthrough = set(cfg.get("labels_passthrough") or ())
     files = []
     for base in cfg.get("corpora") or []:
-        files += [f"{base}.{split}.jsonl" for split in ("train", "val", "test")]
-    for entry in (cfg.get("event_files") or {}).values():
-        files += list(entry.values())
+        if Path(base).name not in passthrough:
+            files += [f"{base}.{split}.jsonl" for split in ("train", "val", "test")]
+    for name, entry in (cfg.get("event_files") or {}).items():
+        if name not in passthrough:
+            files += list(entry.values())
     return [f for f in sorted(set(files)) if Path(f).exists()]
 
 
