@@ -270,9 +270,9 @@ def provenance(registry: Dict, corpus: str, head: str) -> str:
 def dominant_language(m: Dict[str, Any]) -> str:
     """The corpus's most common DETERMINED language.
 
-    ``und`` is skipped: lumi returns it on plainly Chinese text below its confidence
-    floor (a DuEE news sentence at 0.49), which filed 24,859 Chinese argument gold
-    under ``und`` when language was apportioned per record.
+    ``und`` is skipped because it names no language. lumi 2.0.0 returned it on
+    plainly Chinese text and filed 24,859 Chinese argument gold under ``und``; 3.0.0
+    fixed that, but short text can still be legitimately ``und``.
     """
     known = [k for k, _ in m["languages"].most_common() if k != "und"]
     return known[0] if known else "?"
