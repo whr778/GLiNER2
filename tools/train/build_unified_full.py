@@ -11,11 +11,13 @@ Roles, passed to `build_label_maps.build`:
 
 * voters     -- taxonomy corpora; they form clusters and pick winners;
 * canonical  -- eb17-best's taxonomy corpora; the base's spellings win (standing rule);
-* followers  -- excluded but TRAINED corpora; a spelling folding onto a voter label maps to it,
-               and a cluster found only among followers collapses to its majority spelling
-               (fold-only, so it cannot merge two concepts);
-* zero-shot  -- Pile-NER, NuNER and their replay; left out entirely, kept raw by configs
-               through `data.labels_passthrough`.
+* followers  -- non-taxonomy corpora a config TRAINS under this map (FOLLOWERS); a spelling
+               folding onto a voter label maps to it, and a cluster found only among
+               followers collapses to its majority spelling (fold-only);
+* open-vocab -- Pile-NER, NuNER, gliner_multilingual, knowledgator_gliner (ZERO_SHOT); left
+               out entirely, kept raw by configs through `data.labels_passthrough`;
+* translated -- a taxonomy corpus's non-English labels (TRANSLATIONS), mapped to English
+               and kept distinct within their corpus.
 
     uv run python tools/train/build_unified_full.py
 """
@@ -32,7 +34,23 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_label_maps as B  # noqa: E402
 
-ZERO_SHOT = {"pile_ner_def", "nuner_full", "replay_pile30"}
+# Open-vocabulary corpora: their free-text (and multilingual) labels ARE the lesson, so the
+# map never touches them and configs keep them raw via data.labels_passthrough. The two
+# multilingual ones were followers until 2026-09-30; their own spelling clusters put
+# thousands of non-English entries (`eigenschap`, `meio de comunicação`) into the map.
+ZERO_SHOT = {"pile_ner_def", "nuner_full", "replay_pile30",
+             "gliner_multilingual", "knowledgator_gliner"}
+# Non-taxonomy corpora a config actually TRAINS under this map (eb18 trains paraloq_json).
+# Other excluded corpora are neither mapped nor mapping: including them only bloated the
+# map (gliclass alone added ~44k classification entries).
+FOLLOWERS = {"paraloq_json"}
+# Labels a taxonomy corpus carries in another language, translated to English and kept
+# DISTINCT within their corpus (translation must never merge two of its labels).
+TRANSLATIONS = {"entities": {
+    "人名": "Person", "法人名": "Company", "地名": "Location", "イベント名": "Event",
+    "製品名": "Product", "施設名": "Facility", "政治的組織名": "Political Organization",
+    "その他の組織名": "Organization",
+}}
 PLACEHOLDER = re.compile(r"^e_\d+$")
 BASE_CONFIG = "tools/train/config/base/eb17-best.yaml"
 OUT = Path("tools/train/config/labels/unified-full.yaml")
@@ -76,9 +94,13 @@ def main():
     voters, excluded = classify()
     base = {f.split("/")[-1].split(".")[0] for f in B.config_files(BASE_CONFIG)}
     canonical = sorted(base & set(voters))
-    followers = sorted(set(excluded) - ZERO_SHOT)
+    followers = sorted(FOLLOWERS & set(excluded))
     files = lambda names: [f for n in names for f in split_files(n)]
     maps, _ = B.build(files(voters), files(canonical), files(followers))
+    for category, table in TRANSLATIONS.items():
+        m = maps[category]
+        for source, english in table.items():
+            m[source] = m.get(english, english)     # the English label's FINAL spelling
     print(f"voters {len(voters)} | canonical {len(canonical)} | followers {len(followers)} | "
           f"excluded {len(excluded)}")
     for name, reasons in sorted(excluded.items()):
@@ -89,7 +111,7 @@ def main():
               f"# voters = {len(voters)} TAXONOMY corpora of data/; canonical = eb17-best's taxonomy\n"
               "# corpora (the base's spellings win); followers = trained non-taxonomy corpora, mapped\n"
               "# onto a voter spelling of the same fold, and their own fold-only clusters collapsed.\n"
-              "# Zero-shot corpora (pile_ner_def, nuner_full, replay_pile30) are not mapped: configs\n"
+              "# Open-vocabulary corpora (Pile-NER, NuNER, gliner_multilingual, knowledgator) are not mapped: configs\n"
               "# keep them raw with data.labels_passthrough. Supersedes labels/unified.yaml (built\n"
               "# 2026-09-02 from 19 corpora) for NEW lines; the configs on unified.yaml are untouched.\n")
     block = {"labels": {c: {"rollup": False, "separator": ".", "map": m} for c, m in maps.items()}}
