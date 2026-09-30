@@ -1124,11 +1124,22 @@ def compute_dense_group_loss(
     scalar_nll = -torch.logsumexp(
         logp[:, None].masked_fill(~target[None], MASK_LOGIT), -1
     )
-    list_nll = F.binary_cross_entropy_with_logits(
+    # Mean over each field's REAL candidates only. A plain `.mean(-1)` averaged over
+    # the padded pool width, scaling the list-field loss by n_real / n_padded
+    # (fastino-ai/GLiNER2#180); the sparse path means over real candidates.
+    membership = group.field_membership.to(device=device, dtype=group.object_logits.dtype)
+    if membership.shape[-1] > n_cands_logits:
+        membership = membership[..., :n_cands_logits]
+    elif membership.shape[-1] < n_cands_logits:
+        membership = torch.cat(
+            [membership, membership.new_zeros(*membership.shape[:-1],
+                                              n_cands_logits - membership.shape[-1])], -1)
+    list_bce = F.binary_cross_entropy_with_logits(
         group.assign_logits[:, None, :, 1:].expand(-1, count, -1, -1),
         gold[None].expand(ni, -1, -1, -1).to(group.object_logits.dtype),
         reduction="none",
-    ).mean(-1)
+    )
+    list_nll = (list_bce * membership).sum(-1) / membership.sum(-1).clamp_min(1)
     field_nll = torch.where(
         scalar[None, None], scalar_nll, list_nll
     ).mean(-1)
