@@ -333,6 +333,50 @@ Worked example (`tests/training/test_argc_metric.py`), where every span is found
 only errors are classification: Trig-I **1.0000** / Trig-C **0.8000** (+0.200 is type
 confusion), Arg-I **1.0000** / Arg-C **0.6667** (+0.333 is role confusion).
 
+### What each one counts, and what it is good and bad for
+
+Every prediction and every gold item is reduced to its key (table above). A predicted key
+that is also a gold key is a **true positive**; a predicted key with no gold match is a
+**false positive**; a gold key never predicted is a **false negative**. Precision = TP /
+(TP + FP), recall = TP / (TP + FN). So what a metric FORGIVES is exactly what its key
+leaves out.
+
+| metric | a hit needs | it forgives | good for | blind to |
+|---|---|---|---|---|
+| **Trig-I** | the trigger span | the event type | "did it find where events are mentioned?" -- the cleanest recall signal for triggers | calling an attack a meeting still counts as found |
+| **Trig-C** | trigger span + event type | nothing about the trigger | the literature's standard trigger number; matches our `event_trigger` strict up to case and surface keying | says nothing about arguments |
+| **Arg-I** | argument span + event type | the role | "did it find the participants of the right kind of event?" | swapping Attacker and Victim still counts as found |
+| **Arg-C** | argument span + event type + role | **which event instance** the argument belongs to | comparability with published OneIE-style work | crediting an argument attached to the WRONG event of the right type -- the exact failure `event_records` exists to fix, and the one the EKF cannot tolerate |
+
+**Strengths, taken together.** They are the only numbers here that line up with published
+event-extraction results, and their GAPS isolate one error each: Trig-I - Trig-C is type
+confusion, Arg-I - Arg-C is role confusion, and Arg-C - `event_argument` strict is
+**binding** error (right participant, right role, wrong event instance).
+
+**Weaknesses, taken together.** Each is looser than the metric it refines, so it reads
+HIGHER without the model being better; keyed on surface, a repeated mention counts once;
+and pooled over corpora they inherit the pool's language mix -- on eb17's blind test the
+argument gold is 88.4% Chinese CMNEE, while English arguments score 0.0000. **Never quote
+one without a per-corpus or per-language column beside it.**
+
+**Measured on eb17-best's blind test** (20,717 records, re-scored 2026-09-29 at the shipped
+operating point, micro):
+
+| | Precision | Recall | F1 |
+|---|--:|--:|--:|
+| Trig-I | 0.7512 | 0.4261 | 0.5438 |
+| Trig-C | 0.6675 | 0.4037 | 0.5031 |
+| Arg-I | 0.6122 | 0.1233 | 0.2052 |
+| Arg-C | 0.6053 | 0.1217 | 0.2027 |
+| ours: `event_argument` strict | | | 0.1752 |
+| ours: `event_argument` relaxed | | | 0.2288 |
+
+Read through the gaps: Trig-I - Trig-C = **0.041** (type confusion is small), Arg-I - Arg-C =
+**0.003** (role confusion is negligible), Arg-C - strict = **0.028** (some binding error).
+The dominant failure is none of these -- it is argument **recall**, 0.12 at every level of
+matching. The bracket `strict 0.1752 <= Arg-C 0.2027 <= relaxed 0.2288` holds, which is the
+check that the two accountings agree.
+
 ### Three deviations from OneIE, each deliberate
 
 - **Keyed on SURFACE, not offsets.** Our gold stores surfaces and true offsets cannot be

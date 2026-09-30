@@ -250,3 +250,23 @@ def test_no_oneie_metrics_means_no_table():
     from model_card import _oneie_table
 
     assert _oneie_table({"eval_entity_strict_micro_f1": 0.5}, "t") == ""
+
+
+def test_oneie_table_says_not_measured_when_event_metrics_predate_it():
+    """A card with event results but no OneIE keys must say so, not silently drop the table."""
+    from model_card import _oneie_table
+    out = _oneie_table({"eval_event_argument_strict_micro_f1": 0.18}, "OneIE criteria (blind test)")
+    assert "Not measured for this checkpoint" in out
+
+
+def test_oneie_table_absent_without_event_metrics():
+    """Runs with no event heads at all have nothing to say about OneIE."""
+    from model_card import _oneie_table
+    assert _oneie_table({"eval_entity_strict_micro_f1": 0.5}, "OneIE criteria") == ""
+
+
+def test_arg_i_criterion_names_the_event_type():
+    """Arg-I keys on (event_type, entity); describing it as span-only understates it."""
+    from model_card import ONEIE_CRITERIA
+    note = dict((k, n) for k, _, n in ONEIE_CRITERIA)["argi"]
+    assert "event type" in note

@@ -359,8 +359,8 @@ def _license_section(verdict: LicenseVerdict, base_name, base_license) -> str:
 ONEIE_CRITERIA = (
     ("trigi", "Trig-I", "trigger span identified, type ignored"),
     ("trigc", "Trig-C", "trigger span AND event type both correct"),
-    ("argi", "Arg-I", "argument span identified, role ignored"),
-    ("argc", "Arg-C", "argument span AND role both correct"),
+    ("argi", "Arg-I", "argument span AND event type correct, role ignored"),
+    ("argc", "Arg-C", "argument span, event type AND role all correct (trigger not required)"),
 )
 
 
@@ -376,6 +376,12 @@ def _oneie_table(metrics: Dict[str, Any], title: str) -> str:
     present = [(k, lbl, note) for k, lbl, note in ONEIE_CRITERIA
                if f"eval_{k}_external_micro_f1" in metrics]
     if not present:
+        # A run with event results but no OneIE keys predates the metric. Say so: a table
+        # that silently vanishes reads the same as "not applicable", and eb17's published
+        # card lost it exactly this way.
+        if "eval_event_argument_strict_micro_f1" in metrics:
+            return (f"### {title}\n\n_Not measured for this checkpoint: these metrics "
+                    "predate the OneIE criteria (added 2026-09-29)._\n")
         return ""
     rows = [f"### {title}", "",
             "OneIE's own criteria, for comparison with published work using them. "
@@ -504,6 +510,8 @@ def build_model_card(
     threshold: Optional[float] = None,
     threshold_calibrated: bool = False,
     limitations: Optional[str] = None,
+    oneie_metrics: Optional[Dict[str, Any]] = None,
+    oneie_source: Optional[str] = None,
 ) -> str:
     """Render a complete MODEL_CARD.md as a Markdown string.
 
@@ -594,7 +602,11 @@ def build_model_card(
 
     blind = _metrics_table(test_metrics or {}, "Blind test (held-out test splits)")
     val = _metrics_table(eval_metrics or {}, "Best checkpoint (validation)")
-    blind_oneie = _oneie_table(test_metrics or {}, "OneIE criteria (blind test)")
+    # `oneie_metrics` lets a card carry OneIE numbers from a LATER re-score of the same
+    # checkpoint (the training-time test predates the metric); `oneie_source` names it.
+    blind_oneie = (_oneie_table(oneie_metrics, f"OneIE criteria (blind test, {oneie_source})")
+                   if oneie_metrics else
+                   _oneie_table(test_metrics or {}, "OneIE criteria (blind test)"))
     val_oneie = _oneie_table(eval_metrics or {}, "OneIE criteria (validation)")
     if blind:
         parts += [blind, ""]
