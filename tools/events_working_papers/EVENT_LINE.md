@@ -693,3 +693,37 @@ the room needed; raising capacity just admits more candidates the scorer mis-ran
 configuration fixes that, which leaves the long-document training mix as the only lever --
 and its hypothesis is now better supported, since the scorer has barely seen 4096 tokens of
 real content (median training document 457 tokens).
+
+### The anchor optimum is NOT a cap artefact
+
+Two full anchor sweeps on the same validation split, shipped vs WIDE proposal width, no
+global_decode (matching how the original pick was made). `event_argument_strict`:
+
+| anchor | SHIPPED | WIDE | delta |
+|---|---|---|---|
+| 0.5 | 0.0342 | 0.0005 | -0.0337 |
+| 0.3 | 0.0551 | 0.0006 | -0.0545 |
+| 0.2 | 0.0756 | 0.0006 | -0.0750 |
+| **0.1** | **0.0966** | 0.0007 | **-0.0959** |
+| 0.05 | 0.0853 | 0.0006 | -0.0847 |
+| 0.02 | 0.0529 | 0.0006 | -0.0523 |
+| 0.01 | 0.0317 | 0.0005 | -0.0312 |
+
+**THE CONTROL REPRODUCED BIT-FOR-BIT.** The shipped arm returns the published curve exactly
+-- optimum 0.0966 at anchor 0.1, entity flat at 0.5115 across all seven points -- through a
+day that changed the config gate, S14's flag, the resync helper and the eval windowing
+default. So the harness is intact and the WIDE arm is interpretable.
+
+**THE OPTIMUM DOES NOT MOVE: 0.1 either way.** The low anchor was NOT compensating for the
+proposal cap, so the +0.0579 event_argument blind-test win stands on its own terms.
+
+**BUT DO NOT READ WIDE'S ARGMAX AS AN OPTIMUM.** Its curve is FLAT at 0.0005-0.0007 across
+the whole range, so "optimum at 0.1" is noise. What the column says is that the wider
+proposal destroys the event head at EVERY anchor -- 138x worse at 0.1 -- which matches the
+entity result rather than complicating it.
+
+**THE OVERRIDE WAS CONFIRMED LIVE FROM INSIDE THE RUN**, which earlier attempts could not
+establish: `[eval] boundary_head overrides applied: {'record_anchor_threshold': 0.01,
+'record_anchor_threshold_wins': True, 'start_top_k': 128, 'end_top_k': 128, ...}`. The
+eval-time allowlist and `resync_derived_settings` both work; the earlier silence was stdout
+block-buffering through tee, not a decorative override.
