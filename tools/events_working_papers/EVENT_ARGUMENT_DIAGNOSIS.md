@@ -23,21 +23,22 @@ Everything here is measured unless the row says otherwise.*
 | S12 | Blind-test row count is inflated by the **config**, not the corpora | duplicates are a config artefact, handled correctly | §4j |
 | S14 | **`record_anchor_threshold` is DEAD on every eval path** — the SPAN threshold drives record decode, so one number has always gated both | 0.5 vs 0.02 → **byte-identical** output; forcing settings to win gives **219 → 1465 chars** on the same record | §4f-ii |
 | S13 | The anchor supervision gate is **NOT** the recall floor — REFUTED the day it was proposed | **0 of 362 EVENT** records dropped (100% trained) on a fully-trained event-records base | §4f-i |
+| S15 | **English arguments are UNDER-LEARNED, not blocked** (2026-09-30) | on CASIE's own TRAINING docs eb17 emits 0 arguments at 0.3, 782 at 0.01 with 14 right; data 100% verbatim; gold reachable CASIE 25.3% vs CMNEE 87.9% | EVENT_LINE 2026-09-30 |
 
 ### Open — cheapest first, because that is the order to do them in
 
 | # | question | cost | blocked on | § / ref |
 |---|---|---|---|---|
-| ~~O1~~ | **DONE 2026-09-29** — Arg-C shipped as `eval_argc_external_*` in `gliner2/training/eval_metrics.py`, built to the five decisions in §4c-i: surface-keyed, set semantics, case-insensitive, trigger-less events included **and counted**, and deliberately NOT a head. Traced before tests on records where the model binds both arguments to the WRONG instance: **strict 0.000, Arg-C 0.800, identical predictions** — the definition changing, not the model | — | — | §4c-i, `tests/training/test_argc_metric.py` |
-| O2 | **Does the binding objective we already have move strict argument F1** on a fully-trained `event_records` base? | eb17, already bought | eb17 completing — the 0.0991/0.5884 spread was measured on a head that had **never seen an event** | §4c-i, TODO 2 |
+| ~~O1~~ | **DONE 2026-09-29** — Arg-C shipped as `eval_argc_external_*` in `gliner2/training/eval_metrics.py`, built to the five decisions in §4c-i: surface-keyed, set semantics, case-insensitive, trigger-less events included **and counted**, and deliberately NOT a head. Traced before tests on records where the model binds both arguments to the WRONG instance: **strict 0.000, Arg-C 0.800, identical predictions** — the definition changing, not the model. **MEASURED on eb17-best's blind test (20,717 records, `whr778/gliner2-run-logs`, 2026-09-29), micro F1:** shipped record gate — Trig-I 0.5438, Trig-C 0.5031, Arg-I 0.2052, **Arg-C 0.2027** against our strict 0.1752; record anchor 0.1 — Trig-I 0.5615, Trig-C 0.4415, Arg-I 0.3247, **Arg-C 0.3182** against strict 0.2331. Arg-C sits above strict both times, as §4c predicted. Pooled: argument gold is 88.4% CMNEE, and English arguments score 0.0000 (S15) | — | — | §4c-i, `tests/training/test_argc_metric.py` |
+| ~~O2~~ | **ANSWERED 2026-09-30 — for Chinese yes, for English no.** On the fully-trained `event_records` base eb17, strict argument F1 is 0.1752 (0.2331 at anchor 0.1) against the incumbent's 0.0991 — but that pool is 88.4% CMNEE (0.2019 alone), while WikiEvents, CASIE and RAMS score **0.0000**. The English zero is under-learning, not a failed objective (S15) | — | — | EVENT_LINE 2026-09-30, TODO 16, 21 |
 | O3 | **Negative-ratio sweep toward 50%** | ~$44, 3 arms × 2 epochs, A100 | nothing | TODO 17 |
-| O4 | **Decouple the record gate from the span gate, THEN sweep it.** Rewritten 2026-09-29: the old premise (that this is a config sweep) is false — S14 shows the key is never read. Needs a decode-path change, or the `_force_settings_to_win` interception in `sweep_record_anchor_threshold.py` | free (interception exists) | eb17 finishing | §4f-ii, TODO 4 |
+| ~~O4~~ | **DONE 2026-09-29.** The record gate is decoupled behind the opt-in `record_anchor_threshold_wins` flag (default off; checkpoints carry an explicit 0.5); swept on validation, optimum **0.1**, unchanged at the lifted proposal cap; blind test **+0.0579** event_argument strict, reproduced bit-for-bit. A CMNEE result (S15, O2) | — | — | §4f-ii, EVENT_LINE 2026-09-29 |
 | O5 | **Classification collapse** (−0.1977 on absneg2, 96% `docee_event`) | free to re-read | may already be explained: docee trained at a **59-label** menu against 60 elsewhere until 2026-09-22 | TODO 3, 14 |
 
-**If you do one thing: O1.** It costs nothing, it has been open for a week, and until it
-exists every comparison between this line and the literature is unsupported in both
-directions. **If you do two: O1 then O2** — O2 is already paid for and it is the question
-S9 leaves open.
+**Updated 2026-09-30: O1, O2 and O4 are closed.** The next step is not a new objective but
+**eb18-balanced** (TODO 21): English event supervision, 128 proposals per query, lossless gold
+capacity and `global_decode`. After it trains, read argument recall on CASIE's TRAINING
+documents — that is what separates a data problem from a defect.
 
 ---
 
@@ -389,7 +390,9 @@ Our two metrics bracket that criterion; neither equals it:
 - **relaxed drops a requirement OneIE does have** (exact spans; ours accepts
   `New York City` ↔ `New York`), so 0.5783 is an UPPER bound.
 
-**The OneIE-comparable figure lies between them and we do not currently compute it.**
+**The OneIE-comparable figure lies between them.** *(Written before it existed. Computed since
+2026-09-29 as `eval_argc_external_*` — O1; eb17's blind-test Arg-C is 0.2027 at the shipped
+record gate and 0.3182 at anchor 0.1, against strict 0.1752 / 0.2331.)*
 
 ### What follows from that
 
@@ -400,7 +403,7 @@ Our two metrics bracket that criterion; neither equals it:
 2. **Measuring trigger-level binding is still right FOR US.** The EKF needs a figure bound
    to the right event instance, not merely to the right event type — so strict is the
    metric this programme actually cares about, even though it is not the field's.
-3. **ACTION: add an Arg-C metric** — exact surface, type + role, no trigger requirement. It
+3. **DONE 2026-09-29 (O1).** ~~**ACTION: add an Arg-C metric**~~ — exact surface, type + role, no trigger requirement. It
    is a scorer change, costs no GPU, and is the only way this line can be compared to the
    event-extraction literature at all.
 4. **The "catastrophic 0.118" framing overstated the gap against the field**, and that is my
