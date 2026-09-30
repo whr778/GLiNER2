@@ -50,11 +50,19 @@
 #     (46%); LLM-annotated real 37,214 : synthetic 24,819 = 60:40; train/val/test disjoint.
 # P2. Threshold / checkpoint selection still maximizes strict F1. The agreed rule is MAX
 #     RECALL AT PRECISION >= X; X is unset and the selection code does not exist yet.
-# P3. Validation windowing: eval documents are chunked with the training STRIDE (overlapping
-#     windows, ~186 extra of 19,472). Whether gold in an overlap is double-counted is
-#     untraced.
-# P4. Label gate: the added corpora's event types and roles must be closed under
-#     labels/unified.yaml (zero variant clusters, zero lost uses) before launch.
+# P3. CLOSED 2026-09-30 -- MEASURED, NEGLIGIBLE. Validation is chunked with the training
+#     stride, so a surface repeated across windows is counted per window: of 20,088 val
+#     records 141 exceed one window (-> 423 windows), inflating val ENTITY gold by +812
+#     (+0.90%) and EVENT gold by 0 -- no long val document carries events. The same fact
+#     means global_decode cannot act during checkpoint selection here. Blind test and
+#     threshold sweep read whole documents and are unaffected. Not fixed: changing the
+#     trainer's eval path is not worth a 0.9% entity effect.
+# P4. CLOSED 2026-09-30. The shared labels/unified.yaml (68 configs, generated 2026-09-02)
+#     is STALE: under it eb17 itself keeps 147 variant clusters, eb18 155. Regenerating it
+#     in place would move the label space of every eb17-derived model, so eb18 gets its own
+#     labels/unified-eb18.yaml (build_label_maps.py over eb18, --canonical eb17-best: the
+#     base's spellings win, per the standing rule; majority mode is not closed -- PER->Person
+#     vs person). Gate on eb18: 0 variant clusters, 0 lost uses, map closed.
 # P5. GPU smoke: 768-candidate budget step time and memory, measured before the full run.
 # P6. The purchased cc_news data must be pushed to a PRIVATE Hub repo (verified against the
 #     Hub's file list) and registered in tools/train/dataset_registry.yaml with `hf_jsonl`
@@ -443,7 +451,7 @@ eval:
 
 # Unified label space, shared with every model warm-started from this base so they
 # all present the same labels. Generated -- see the file header to regenerate.
-labels_file: labels/unified.yaml
+labels_file: labels/unified-eb18.yaml   # eb18 line: regenerated 2026-09-30, base (eb17) spellings canonical
 
 data:
   # Relation corpora warm the relation head; the event corpora cannot.
