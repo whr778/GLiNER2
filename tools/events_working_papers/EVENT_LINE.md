@@ -764,3 +764,59 @@ that the intervention is affordable and its effect is unmeasured.
 **CORRECTION TO AN EARLIER FRAMING.** "Median training document is 457 tokens" is true and
 misleading: those 1.18% of long records carry **8.36% of all training tokens**. The record
 count understates long-document presence by ~7x.
+
+## The event_argument headline is a CHINESE-CORPUS number (2026-09-30)
+
+**THE QUESTION THAT EXPOSED IT.** Event arguments read 0.0000 in every long-document arm,
+even with global_decode on. Before a long-document training mix, I set out to establish
+whether events are decodable on long documents at all. The question was mis-posed.
+
+**WHAT A TRACE SHOWED.** On cc_news_long the model emits NO arguments -- 0 predicted
+argument keys against 95 gold over six documents -- and its few triggers are wrong (0 of 7
+exact or even overlapping; `said, "` is a malformed span). Then:
+
+- truncating the SAME documents to ~350 words still yielded 0 arguments, so it is not length;
+- `batch_extract` and `batch_extract_long` both yield 0 on short RAMS docs, so it is not the
+  long-document code path;
+- the real entry point, `evaluate_checkpoint`, also yields 0 on those docs, so it is not my
+  harness.
+
+**PER CORPUS, 25 documents each, `evaluate_checkpoint`, eb17-best, threshold 0.3:**
+
+| corpus | argument gold | event_argument strict | trigger strict |
+|---|---|---|---|
+| WikiEvents | 515 | **0.0000** | 0.0159 |
+| CASIE | 588 | **0.0000** | 0.0403 |
+| RAMS | 56 | **0.0000** | 0.0938 |
+| **CMNEE** (Chinese) | 169 | **0.2019** | **0.7143** |
+
+0 matches on 1,159 English argument gold across three corpora. At even 1% true recall that
+would be ~12 matches, so this is not sampling noise.
+
+**AND THE BLIND TEST IS COMPOSED ALMOST ENTIRELY OF THE ONE THAT WORKS.** Argument gold in the
+eb17-best test split, by corpus:
+
+| corpus | argument gold | share | text |
+|---|---|---|---|
+| **cmnee** | **18,414** | **88.4%** | Chinese |
+| casie | 2,413 | 11.6% | English |
+
+Only two corpora carry argument gold at all; WikiEvents and RAMS contribute none to the test
+split. So `event_argument` on the blind test -- 0.1843 at training time, 0.1752 re-scored,
+and the recorded **+0.0579 anchor-0.1 win** -- is a measurement of **CMNEE argument
+extraction**, with an English minority that scores zero.
+
+**WHAT THIS DOES NOT SAY.** It does not say the +0.0579 is wrong: it is real, validated, and
+reproduced bit-for-bit. It says what it is a result ABOUT. Nor does it touch the EKF casualty
+pipeline, which extracts through record structures rather than `event_argument` and has its
+own held-out measurements.
+
+**WHAT IT DOES SAY.** English event argument extraction is not demonstrated anywhere in this
+programme's current metrics, and cc_news_long's zero is explained by that before any of the
+cap, window or type-vocabulary findings are needed. Those findings stand on their own; they
+are simply not why events read zero.
+
+**THE MEASUREMENT FIX IS CHEAP AND OVERDUE.** `eval_by_language: false` in eb17 hid this, and
+the blind-test JSON carries no per-label argument breakdown. Any event_argument number should
+be reported per corpus, or at minimum per language, beside the aggregate -- otherwise a
+headline built 88% from one corpus is read as a general capability.
