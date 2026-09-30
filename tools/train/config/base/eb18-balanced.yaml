@@ -16,8 +16,10 @@
 #
 # 2. `start_top_k`/`end_top_k: 16 -> 128`. At the 4,096 training window only 21.5% of gold
 #    was reachable before injection at 16; 38.2% at 128 (probe_candidate_coverage.py,
-#    seeded, 150 docs / 10 corpora). `candidate_pool: per_query` stays: shared at 128/768
-#    reaches 15.8% -- same gold STARTS, but one pool per window keeps under half the spans.
+#    seeded, 150 docs / 10 corpora). `candidate_pool: per_query` stays: shared was A/B'd on
+#    2026-09-21 and REFUTED (entity -0.0745, catalog "candidate_pool A/B, attempt 2") -- the
+#    inherited note below that calls it "NEVER A/B'd" is stale -- and at 128/768 it reaches
+#    15.8%: same gold STARTS, but one pool per window keeps under half the spans.
 #
 # 3. `max_gold_per_query: 256 -> 768`, `training_candidate_budget: 384 -> 768`,
 #    `on_capacity_exceeded: skip_sample -> truncate_with_warning`. The true max over the full
@@ -300,7 +302,7 @@ model:
     candidate_budget: 384            # inference width; <= training_candidate_budget
     start_top_k: 128                 # eb18: 21.5% -> 38.2% gold reachable at 4,096
     end_top_k: 128
-    candidate_pool: per_query        # shared reaches 15.8% at 128/768; A/B it separately
+    candidate_pool: per_query        # shared REFUTED 2026-09-21 (entity -0.0745); reaches 15.8% at 128/768
     enable_relations: true   # load-bearing: relations decode as edges in the beam
     enable_records: true     # load-bearing: events decode as trigger + role edges
     # THE CHANGE. Off in eb16-rebuild-tr and in every other config/base/ file, which is why

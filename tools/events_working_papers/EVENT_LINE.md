@@ -854,3 +854,95 @@ oversampling cannot build a long-document regime, and supply is the binding cons
 cc_news_long's 689 documents against 859 existing long records would roughly double the
 pool. Long documents are rarer in the real mix because its Chinese corpora are short,
 sentence-level records.
+
+## English arguments are UNDER-LEARNED, not broken -- and what eb18 changes (2026-09-30)
+
+**The question.** eb17 scores 0.0000 on English event arguments (WikiEvents, CASIE, RAMS) while
+CMNEE scores 0.2019. Before buying English data, establish whether the English path is
+BLOCKED (a defect data cannot fix) or merely UNDER-TRAINED.
+
+**Traced on CASIE's own TRAINING documents** (eb17-best, `batch_extract`, whole documents, no
+windowing -- CASIE's longest document is ~1,700 tokens, under one 4,096 window, so neither the
+window nor `global_decode` is involved):
+
+| threshold | mentions | arguments | correct strict | correct ignoring trigger | gold |
+|---|---|---|---|---|---|
+| 0.3 | 4 | 0 | 0 | 0 | 69 |
+| 0.1 | 20 | 18 | 0 | 2 | 69 |
+| 0.03 | 63 | 152 | 0 | 7 | 69 |
+| 0.01 | 127 | 782 | 2 | 14 | 69 |
+
+CMNEE, same code, emits and matches arguments (5 of 10, 1 of 3 on the first docs). CASIE's
+arguments ARE scored -- lowering the threshold releases them -- but far below 0.3 and ranked
+near-randomly (`dominate` offered as a Place and a Victim). The data is clean: 100% of CASIE,
+CMNEE and RAMS triggers and arguments occur verbatim in their documents. **Verdict: English
+arguments are under-learned.** Contributing: English arguments are 17% of training argument
+gold (17,817 vs 85,540), all from CASIE's 798 documents, and are longer (2.25 words mean vs
+CMNEE's 1.03). The check that distinguishes data from defect after eb18 trains: argument
+recall on CASIE's TRAINING documents. If it stays near zero with 2-3x the English
+supervision, something other than data is wrong.
+
+### Reachability: how much gold can the proposer even offer?
+
+`probe_candidate_coverage.py`, now SEEDED (training-mode preprocessing randomly drops labels,
+so unseeded gold totals drifted 8,620-8,921 on identical data) and with dropout off. Gold
+reachable before injection, 150 training docs from 10 corpora:
+
+| arm | 1,024 tokens | 4,096 tokens (training window) | gold starts found @4,096 |
+|---|---|---|---|
+| per_query, start/end_top_k 16 (eb17) | 27.0% | 21.5% | 15.6% |
+| per_query, 128 | 51.4% | 38.2% | 39.4% |
+| shared, 64 starts / 384 spans (default) | 17.1% | 12.4% | 27.7% |
+| shared, 128 / 768 | 22.1% | 15.8% | 39.8% |
+
+Every arm scored the identical gold set (8,976 / 8,926) -- the seeding gate. Per corpus at
+1,024 tokens: **CMNEE 87.9%, DocEE 58.6%, cc_news 38.8%, CASIE 25.3%** -- the same language
+split as the scores. So the ceiling is mostly the BOUNDARY SCORER ranking English gold
+poorly, not only the cap: even at 128 starts per query, only 39.4% of gold starts rank in.
+
+**CORRECTION to "The cap" above.** That section says the cap is "invisible on our normal
+corpora -- at 483 median tokens a window holds ~11 gold against a budget of 128". The budget
+compared was the TOTAL candidate budget; the binding limit is 16 STARTS PER QUERY. Measured
+through the real collator, 20.2% of gold spans sit in queries holding more than 16.
+
+**shared cannot be reach-matched at sensible size.** At 128/768 it finds the same gold starts
+as per_query 128 but keeps under half the spans: one pool per window versus up to ~384 slots
+per query. Zeroing its untrained pairing layer moved nothing (12.4 -> 12.8%).
+
+### CORRECTION: shared WAS A/B'd, on 2026-09-21
+
+I told the user today that `candidate_pool: shared` had "never been A/B'd", repeating a stale
+comment in `eb17-best.yaml`. It was: **attempt 2 (catalog, 2026-09-21), REFUTED, entity
+-0.0745**, still -0.0435 after 4 epochs, events within noise. That verdict stands for entities:
+#180 (below) lives in the shared RECORD loss, not the mention path the entity head uses. Only
+the event heads could move in a rerun, now that #180 is fixed. What `shared` is, from the code
+(`pool.py`): one deduplicated span pool per encoded SEQUENCE ("once per document" in upstream's
+terms -- under our sliding window that is one WINDOW), scored by every query. It is not
+document-level; `global_decode` is the only cross-window mechanism.
+
+### Gold capacity: the true maximum is 619
+
+Full training mix, 231,094 samples, 1.2M queries, training-time dropping OFF (it would
+undercount): max gold spans per query **619** (WikiEvents); at the current cap 256, **11
+samples (0.005%)** overflow and `skip_sample` drops each whole -- 9 of WikiEvents' 200 train
+docs. eb17's own comment records why that is worse than wasteful: an emptied gold mask is
+POSITIVE supervision to abstain (`abstention_loss`). At 768 nothing overflows.
+
+### The annotation menu was binding
+
+The Aug-2026 cc_news annotation offered each document a seeded random **6 of 56** event types.
+Reconstructing each document's offered set from its seed: **5,116 of 5,116 recorded events
+fall inside the offered 6, zero outside** -- and the check could fail, because the validator
+accepts all 56 types. So cc_news's "sparse events" (18.4% of documents, 0.64 arguments per
+document) was the menu, not the news. The new purchase offers all 56 (verified: 56/doc vs
+6/doc). Pilot batch `msgbatch_01134CegRtA7QfdcbxPZkC34` (300 docs) measures the true yield.
+
+### Decisions recorded for eb18-balanced (`tools/train/config/base/eb18-balanced.yaml`)
+
+- **Recall-first operating point** (user): select the threshold and checkpoint as the MAXIMUM
+  RECALL AT PRECISION >= X, not strict F1. X unset; the selection code does not exist yet.
+- **Balance on argument gold**, ~50/50 eng/zho; human gold kept whole; LLM-annotated English at
+  60 real-text : 40 synthetic-text (user's ratio). Supply of real-text English is binding.
+- `global_decode: true`, `per_query` at start/end_top_k 128, gold capacity 768 with
+  `truncate_with_warning`, `eval_by_language: true`. The config lists six pending items and is
+  not launchable until they close.

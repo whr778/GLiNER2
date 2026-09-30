@@ -3,6 +3,15 @@
 **Status:** FILED 2026-09-29 as https://github.com/fastino-ai/GLiNER2/issues/180,
 alongside PR #155 and issue #156. Filed as an ISSUE, not a PR -- see "Why not a PR" below.
 
+**FIXED LOCALLY 2026-09-30 (426a38d)**, upstream still open. `compute_dense_group_loss` now
+means the list-field BCE over `group.field_membership` instead of the padded pool width. On
+the test fixture (10 real spans of 64) the dense `field_loss` went 0.863781 -> 1.016330,
+identical to the sparse path; `test_dense_and_sparse_record_losses_agree_on_identical_input`
+lost its strict xfail marker and now passes; boundary suite 392 passed, 6 skipped.
+Consequence for past evidence: the 2026-09-21 `candidate_pool` A/B trained its shared arms
+WITH this bug, so its event-head deltas are confounded; its entity verdict (-0.0745) is not,
+because the entity head does not use the record loss.
+
 **Affects:** `boundary_head.candidate_pool: "shared"` only. The default `"per_query"`
 routes to `compute_group_loss` and is unaffected.
 
