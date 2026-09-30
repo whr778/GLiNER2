@@ -406,6 +406,69 @@ predictions Arg-C can read **0.800 where our strict reads 0.000**. So all four a
 Quote them only inside their bracket:
 `event_argument_strict ≤ argc_external ≤ event_argument_relaxed`.
 
+## Comparing the regimes: strict, relaxed, fair and OneIE
+
+Four accountings score the same predictions. They differ only in what the matching KEY keeps,
+so a gap between two of them measures exactly the requirement one drops. Read from the code
+(`eval_metrics.py`: `_gold_event_*_set`, `_items_*`, and the fair block that feeds
+`_classify_span_errors`), not from the prose above.
+
+**What each one requires, per head**
+
+| head | regime | event type | role | trigger link | span match | near-miss handling |
+|---|---|---|---|---|---|---|
+| entity | strict | -- | label exact | -- | exact | a wrong label is 1 FP + 1 FN |
+| entity | relaxed | -- | label exact | -- | any overlap = full TP | same |
+| entity | fair | -- | label, matched across labels | -- | exact, or HALF credit on a boundary error | charged once |
+| trigger | strict | exact | -- | -- | exact | 1 FP + 1 FN |
+| trigger | relaxed | exact | -- | -- | any overlap = full TP | same |
+| trigger | fair | matched across types | -- | -- | exact or half credit | charged once |
+| trigger | Trig-C | exact | -- | -- | exact, case-insensitive | 1 FP + 1 FN |
+| trigger | Trig-I | **dropped** | -- | -- | exact, case-insensitive | -- |
+| argument | strict | exact | exact | **required** | exact | 1 FP + 1 FN |
+| argument | relaxed | exact | exact | dropped | any overlap = full TP | same |
+| argument | Arg-C | exact | exact | dropped | exact, case-insensitive | 1 FP + 1 FN |
+| argument | Arg-I | exact | **dropped** | dropped | exact, case-insensitive | -- |
+| argument | fair | **dropped** | matched across roles | dropped | exact or half credit | charged once |
+
+**Which orderings hold by construction, and which do not.**
+
+- Arguments: `strict <= Arg-C` always -- Arg-C is strict minus the trigger requirement. `Arg-C
+  <= Arg-I` always -- Arg-I also drops the role. `Arg-C <= relaxed` in practice (relaxed keeps
+  every Arg-C requirement except exactness), which is why the model card prints it as a
+  sanity bound that can fail.
+- **Fair is NOT ordered against the others on arguments.** It is the only accounting that
+  drops the EVENT TYPE (its key is `(role, entity)` per record), so it can read above relaxed
+  and Arg-C; and it gives HALF credit where relaxed gives full, so it can also read below.
+  It answers a different question -- "did the right participant get the right role, ignoring
+  which event?" -- not "strict with partial credit".
+- Triggers: `Trig-C <= Trig-I` always. `Trig-C` and strict key on the same pair and differ
+  only by case and surface keying, so they track each other.
+- Entities have no OneIE counterpart here (OneIE's entity metric scores ACE mention types,
+  which our data does not carry -- see below).
+
+**Measured on eb17-best's blind test** (20,717 records, re-scored 2026-09-29 at the shipped
+operating point), micro F1:
+
+| head | strict | relaxed | fair | OneIE -C | OneIE -I |
+|---|--:|--:|--:|--:|--:|
+| entity | 0.5736 | 0.6431 | 0.6300 | -- | -- |
+| event trigger | 0.5024 | 0.5079 | 0.5140 | 0.5031 | 0.5438 |
+| event argument | 0.1752 | 0.2288 | 0.2356 | 0.2027 | 0.2052 |
+
+Reading it:
+
+- **Entities** lose 0.07 to boundaries (strict -> relaxed); fair recovers most of it
+  (0.6300), because it gives half credit on a boundary error and charges a label swap once.
+- **Triggers** barely move across strict, relaxed, fair and Trig-C (0.50-0.51): trigger
+  errors are not boundary or near-miss errors. Trig-I sits 0.04 higher, so what remains is
+  mostly type confusion.
+- **Arguments** move most, and the gaps name the cause: strict -> Arg-C is +0.028 (binding:
+  right participant and role, wrong event instance), Arg-C -> Arg-I only +0.003 (roles are
+  rarely confused), and every accounting stays near 0.2. The failure is RECALL (strict
+  recall 0.11) that no accounting forgives. Pooled over corpora, and 88.4% of the argument
+  gold is Chinese CMNEE; English arguments score 0.0000 under all of them.
+
 **Not implemented: OneIE's `mention` metric.** It scores ACE's NAM/NOM/PRO mention-type
 annotation. `convert_ace2005.py` tracks `entity_mention_type` but uses it only to FILTER and
 never writes it to the output JSONL, so the metric would have no source and would read a
