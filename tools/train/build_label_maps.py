@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 import sys
+import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -72,7 +73,14 @@ def style_rank(label: str, count: int, prefer_snake: bool = False):
 
 
 def fold(label: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", label.lower())
+    """Case- and separator-insensitive form, in ANY script.
+
+    It kept only `[a-z0-9]` until 2026-09-30, so every non-Latin label -- Korean, Japanese,
+    Chinese, Cyrillic, accented Latin -- folded to "" and they all looked like one label:
+    the follower pass mapped Korean `학교` and Russian `Портал` onto Japanese `イベント名`.
+    Unicode letters and digits are kept now; only punctuation, separators and case go.
+    """
+    return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", label).casefold())
 
 
 def labels_by_category(record: dict) -> list[tuple[str, str]]:
@@ -158,7 +166,7 @@ def scan(paths):
     return uses
 
 
-def build(inputs, canonical=None):
+def build(inputs, canonical=None, followers=None):
     """Return {category: {variant: winner}}.
 
     ``canonical`` names the corpora whose spellings WIN. The base's label space is the
@@ -171,6 +179,7 @@ def build(inputs, canonical=None):
         inputs = [inputs]
     canon = (scan(inputs_to_files(canonical)) if canonical
              else {c: Counter() for c in CATEGORIES})
+    follow = scan(inputs_to_files(followers)) if followers else None
     uses = {c: Counter() for c in CATEGORIES}
     for path in inputs_to_files(inputs):
         for line in Path(path).open(encoding="utf-8"):
@@ -217,6 +226,37 @@ def build(inputs, canonical=None):
             raise ValueError(
                 f"{category}: {len(unresolved)} entries whose target is itself remapped, "
                 f"e.g. {dict(list(unresolved.items())[:3])} -- the map is not closed")
+        if follow:
+            # FOLLOWERS are trained but are not taxonomies (schema field names, invented
+            # labels): they never form a cluster or pick a winner, but a spelling of theirs
+            # that folds onto a VOTER label is mapped to that label's final spelling, so
+            # `jobTitle` from paraloq_json cannot survive beside the taxonomy's `job title`.
+            final = {}
+            for label in uses[category]:
+                if fold(label):
+                    final.setdefault(fold(label), mapping.get(label, label))
+            for label in follow[category]:
+                key = fold(label)
+                target = final.get(key) if key else None
+                if target and label != target and key not in EXCLUDE:
+                    mapping.setdefault(label, target)
+            # A cluster that exists ONLY among followers (paraloq_json's `zipCode` /
+            # `zip_code` / `ZipCode`) has no voter spelling to follow; collapse it to its
+            # most frequent spelling. Fold-only, so every member is the same string -- this
+            # cannot merge two concepts, which is the risk the voter/follower split guards.
+            orphans = defaultdict(list)
+            for label in follow[category]:
+                key = fold(label)
+                if key and key not in final and key not in EXCLUDE:
+                    orphans[key].append(label)
+            for variants in orphans.values():
+                if len(variants) < 2:
+                    continue
+                winner = min(variants, key=lambda v: style_rank(v, follow[category][v],
+                                                                category == "structures"))
+                for variant in variants:
+                    if variant != winner:
+                        mapping.setdefault(variant, winner)
         maps[category] = dict(sorted(mapping.items(), key=lambda kv: -uses[category][kv[0]]))
     return maps, uses
 
