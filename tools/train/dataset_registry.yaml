@@ -751,6 +751,29 @@ datasets:
     # front-loaded -- 28.8% of spans in the opening decile tapering to ~6% in the last --
     # which is consistent with news leads being denser AND with some attenuation; the two
     # are not separable here, so read the tail deciles as thinner, not absent.
+  cc_news_events_haiku45:
+    name: CC-News real text, Haiku-4.5 entities + events with the FULL 56-type event menu
+    provenance: llm_real
+    tasks: NER + event extraction (trigger + typed arguments)
+    license: see source (cc_news licence unknown, publisher copyright -- PRIVATE only)
+    hf_id: vblagoje/cc_news
+    hf_jsonl: whr778/cc_news_events_haiku45
+    source_url: https://huggingface.co/datasets/vblagoje/cc_news
+    language: [en]
+    description: "8,260 REAL English news documents (6,562 train / 803 val / 895 test),
+      annotated 2026-09-30 by claude-haiku-4-5 via the Batch API (pilot
+      msgbatch_01134CegRtA7QfdcbxPZkC34 + main msgbatch_01FXUYcK4CWa3bwwbV9MHLci, $26.25
+      real). Built for eb18-balanced's English event supervision. THE DIFFERENCE FROM
+      cc_news_haiku45 is the event menu: that corpus offered each document a random 6 of 56
+      event types and the annotator never labelled an unoffered type (0 of 5,116 events), so
+      it reads 0.64 arguments per document; this one offers all 56
+      (tools/data/synthetic/config/ccnews_full_events.yaml) and reads 3.37 in the pilot and
+      33,538 argument gold overall (27,066 train / 3,164 val / 3,308 test). Documents drawn
+      seeded from a fresh 59,996-document pool deduplicated against every earlier annotated
+      cc_news file; check_leakage.py: 0 within-corpus and 0 cross-corpus overlap across 412
+      files (control: it flags cmnee_ner vs cmnee at 99.9%). 40 of 8,000 main requests were
+      dropped by the validator (24 empty, 16 parse errors). Train-only in eb18, so its
+      val/test serve as an English real-news eval column."
   cc_news_haiku45:
     name: CC-News real text, Haiku-4.5 annotations
     provenance: llm_real
