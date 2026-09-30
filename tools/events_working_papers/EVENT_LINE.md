@@ -727,3 +727,40 @@ establish: `[eval] boundary_head overrides applied: {'record_anchor_threshold': 
 'record_anchor_threshold_wins': True, 'start_top_k': 128, 'end_top_k': 128, ...}`. The
 eval-time allowlist and `resync_derived_settings` both work; the earlier silence was stdout
 block-buffering through tee, not a decorative override.
+
+## Item 3 priced: oversampling is a modest lever, supply is the binding constraint
+
+The scorer ranks within a window, so exposure is measured in FULL-WIDTH WINDOWS, not
+records and not raw tokens. Under `sliding_window: true, max_len: 4096, window_stride:
+3072`, measured on the real training mix (79,182 records, 6,000 sampled):
+
+| oversample of docs > 4096 tok | full-width windows | **% of windows** | % of tokens | compute/epoch |
+|---|---|---|---|---|
+| **1x (today)** | 2,336 | **2.90%** | 10.0% | 1.00x |
+| 2x | 3,682 | 4.5% | 18.2% | 1.10x |
+| 5x | 7,720 | 8.7% | 35.8% | 1.40x |
+| **10x** | 14,451 | **14.4%** | 52.7% | **1.90x** |
+| 20x | 27,912 | 22.9% | 69.1% | 2.91x |
+
+**TOKEN SHARE AND WINDOW SHARE DIVERGE, AND WINDOW SHARE IS THE ONE THAT MATTERS.** At 10x,
+long documents are 52.7% of TOKENS but only 14.4% of WINDOWS -- a long document yields a
+few large windows while a short one yields a single small window. Quoting the token share
+would overstate the exposure by ~3.7x.
+
+**OVERSAMPLING ALONE CANNOT REACH A BALANCED MIX.** Full-width windows hit 50% only at
+**153x** (16.3x compute per epoch, each of 937 documents seen 153 times). That is
+memorisation, not training.
+
+**SUPPLY IS THE BINDING CONSTRAINT**: 937 of 79,182 records (1.18%) exceed 4096 tokens, and
+you cannot reweight past that. `cc_news_long` adds 689 documents, taking the pool to ~1,626
+-- a 73% increase that roughly doubles what oversampling can reach.
+
+**SO ITEM 3 IS: 10x oversampling PLUS cc_news_long, ~2x compute, for maybe 20-25% full-width
+windows against 2.90% today.** Whether that moves a scorer currently ranking 50.3% of gold
+starts is UNKNOWN -- there is no dose-response curve for long-context exposure, and this
+programme's head-init curves have knees rather than being linear, so the honest position is
+that the intervention is affordable and its effect is unmeasured.
+
+**CORRECTION TO AN EARLIER FRAMING.** "Median training document is 457 tokens" is true and
+misleading: those 1.18% of long records carry **8.36% of all training tokens**. The record
+count understates long-document presence by ~7x.
