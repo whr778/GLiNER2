@@ -48,8 +48,10 @@
 #     user option A) are wired in; RAMS is rams_merged (below). Measured by
 #     scripts/dataset_metrics.py --config: train argument gold eng 101,093 (54%) : zho 85,540
 #     (46%); LLM-annotated real 37,214 : synthetic 24,819 = 60:40; train/val/test disjoint.
-# P2. Threshold / checkpoint selection still maximizes strict F1. The agreed rule is MAX
-#     RECALL AT PRECISION >= X; X is unset and the selection code does not exist yet.
+# P2. CLOSED 2026-09-30 -- DECIDED, NO NEW CODE. eval.threshold stays 0.3 and selection stays
+#     strict F1. The eb17 sweep (tools/train/pr_sweep_results/) showed a per-head "max recall
+#     at <= 5% wrong facts" rule cannot be set from eb17: arguments never reach 5% with
+#     support. eb17 is let go as a threshold source; revisit the rule on eb18's own validation.
 # P3. CLOSED 2026-09-30 -- MEASURED, NEGLIGIBLE. Validation is chunked with the training
 #     stride, so a surface repeated across windows is counted per window: of 20,088 val
 #     records 141 exceed one window (-> 423 windows), inflating val ENTITY gold by +812
