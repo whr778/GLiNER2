@@ -30,6 +30,11 @@
 # 4. `eval.global_decode: true`. Document-level events: cross-window assembly at eval,
 #    checkpoint selection, threshold sweep and blind test alike (all read this one key).
 #
+# 6. `data/rams` -> `data/rams_merged`. RAMS stores one event per example, so 840 passages
+#    repeat with a different event per copy; trained as-is each copy teaches the passage's
+#    other events are ABSENT. Merged per passage (tools/data/merge_rams_passages.py): 6,322
+#    records, 0 repeated texts, n/a catch-alls collapsed into their specific subtype.
+#
 # 5. `eval.eval_by_language: true`. Safe since lumi-language-id-2 3.0.x stopped filing
 #    Chinese as und/jpn; the operating point must be read per language, because the pooled
 #    event_argument number is 88.4% CMNEE.
@@ -38,9 +43,11 @@
 # PENDING -- this config is NOT launchable until each is closed
 # ---------------------------------------------------------------------------------------
 #
-# P1. The cc_news full-menu purchase (pilot msgbatch_01134CegRtA7QfdcbxPZkC34) and a capped
-#     synthetic slice (6,765 args, the 60/40 real-text:synthetic-text split) are not in
-#     `data:` yet. Target: ~50/50 eng/zho by ARGUMENT gold.
+# P1. CLOSED 2026-09-30. cc_news_events_haiku45 (8,260 docs, 27,066 train args, $26.25) and
+#     synthetic_events_capped (24,819 args, the 60/40 real:synthetic cap -- the Fastino ratio,
+#     user option A) are wired in; RAMS is rams_merged (below). Measured by
+#     scripts/dataset_metrics.py --config: train argument gold eng 101,093 (54%) : zho 85,540
+#     (46%); LLM-annotated real 37,214 : synthetic 24,819 = 60:40; train/val/test disjoint.
 # P2. Threshold / checkpoint selection still maximizes strict F1. The agreed rule is MAX
 #     RECALL AT PRECISION >= X; X is unset and the selection code does not exist yet.
 # P3. Validation windowing: eval documents are chunked with the training STRIDE (overlapping
@@ -470,7 +477,7 @@ data:
   # through under Chinese names.
   - data/docee_zh
   # eb18: English event supervision, TRAIN ONLY (see header 1).
-  - data/rams
+  - data/rams_merged              # RAMS with repeated passages merged (840 split multi-event passages)
   - data/wikievents
   - data/cc_news_haiku45
   - data/cc_news_events_haiku45   # 2026-09-30 purchase: full 56-type event menu, 27,066 train args
@@ -487,7 +494,7 @@ data:
   # overlapping 2,721), so scoring on them would move the blind test AND change entity support.
   # The `event_files` entries below keep val/test on the ORIGINAL cmnee/duee files and have had
   # their `train` key removed, or the entity-less train would come straight back in.
-  train_only: [docee_zh, cmnee_ner, duee_ner, rams, wikievents, cc_news_haiku45, cc_news_events_haiku45, synthetic_events_capped]
+  train_only: [docee_zh, cmnee_ner, duee_ner, rams_merged, wikievents, cc_news_haiku45, cc_news_events_haiku45, synthetic_events_capped]
 
   # cmnee_ner's gold is NOT exhaustive within an offered label -- probed at 4.23 missed per
   # document against 13.0 annotated, i.e. 32.4%. It is declared PARTIAL so it contributes

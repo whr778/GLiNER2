@@ -381,6 +381,22 @@ datasets:
     hf_jsonl: whr778/wikievents
     language: [en]
     description: "KAIROS-ontology event extraction co-trained with typed entity mentions; 49 event types, 57 argument roles."
+  rams_merged:
+    name: RAMS, one record per passage (events of repeated passages unioned)
+    provenance: human
+    tasks: Event extraction (trigger + args)
+    license: see source
+    hf_jsonl: whr778/rams_merged
+    source_url: local (tools/data/merge_rams_passages.py over data/rams.train.jsonl)
+    language: [en]
+    description: "TRAIN ONLY, derived from rams.train. RAMS annotates one event per example, so
+      840 of its 6,322 passages repeat (1,847 records) with a DIFFERENT event in each copy;
+      trained as-is every copy teaches that the passage's other events are absent. Merged to
+      6,322 records, 0 repeated texts: events unioned per passage; a specific subtype and its
+      own catch-all (`x.y.hide` vs `x.y.n/a`) on one trigger collapse to the specific event
+      with arguments unioned; genuinely different types on one trigger stay separate events.
+      Trigger gold 7,329 -> 6,864, argument gold 16,991 -> 16,555 (duplicated gold removed).
+      Built for eb18-balanced, 2026-09-30."
   rams:
     name: RAMS
     provenance: human
