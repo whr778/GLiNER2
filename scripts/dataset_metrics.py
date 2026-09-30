@@ -189,14 +189,21 @@ def scan_file(path: Path, fns: Optional[Dict] = None,
     return m
 
 
-def collect(data_dir: Path, wanted: List[str], lang=None) -> Dict[str, Dict[str, Dict[str, Any]]]:
-    """Return ``{dataset: {split: metrics}}`` for every matching file."""
+def load_label_fns(path: str) -> Dict:
+    """Label transforms from a unified-map file (``labels:`` block, or the bare categories)."""
+    block = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    return T._category_fns(block.get("labels", block))
+
+
+def collect(data_dir: Path, wanted: List[str], lang=None,
+            fns: Optional[Dict] = None) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Return ``{dataset: {split: metrics}}`` for every matching file, label-mapped if ``fns``."""
     out: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
     for path in sorted(data_dir.glob("*.jsonl")):
         dataset, split = parse_name(path)
         if wanted and dataset not in wanted:
             continue
-        out[dataset][split] = scan_file(path, lang=lang)
+        out[dataset][split] = scan_file(path, fns, lang)
     return out
 
 
@@ -212,10 +219,20 @@ def config_paths(cfg: Dict) -> Dict[str, List[str]]:
     }
 
 
-def collect_config(cfg_path: str, lang=None) -> Dict[str, Dict[str, Dict[str, Any]]]:
-    """Return ``{corpus: {split: metrics}}`` for a training config, label map applied."""
+def collect_config(cfg_path: str, lang=None, labels: Optional[str] = None
+                   ) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Return ``{corpus: {split: metrics}}`` for a training config.
+
+    Labels are mapped with the config's own map (as training sees them) unless ``labels``
+    names another map file, or is ``"none"`` for the raw labels.
+    """
     cfg = yaml.safe_load(Path(cfg_path).read_text(encoding="utf-8"))
-    fns = T._category_fns(T.load_labels_cfg(cfg, cfg_path))
+    if labels == "none":
+        fns = None
+    elif labels:
+        fns = load_label_fns(labels)
+    else:
+        fns = T._category_fns(T.load_labels_cfg(cfg, cfg_path))
     passthrough = T.labels_passthrough(cfg)
     out: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
     for split, paths in config_paths(cfg).items():
@@ -501,15 +518,19 @@ def main(argv=None) -> None:
     p.add_argument("--data-dir", default="data", help="Directory of *.jsonl corpora (default: data).")
     p.add_argument("--config", help="Measure a training config's resolved splits, label map applied.")
     p.add_argument("--lang", action="store_true", help="Detect each record's language (~1 ms/record).")
+    p.add_argument("--labels", help="Label map to apply before counting: a unified-map YAML, or "
+                                    "'none' for raw labels. Default: raw in glob mode, the "
+                                    "config's own map in --config mode. Passthrough corpora stay raw.")
     p.add_argument("--top", type=int, default=0, help="Cap each distribution to its top-N labels (0 = all).")
     p.add_argument("--json", dest="json_out", help="Write metrics as JSON here instead of a text report.")
     args = p.parse_args(argv)
 
     lang = T._detect_lang if args.lang else None
     if args.config:
-        data = collect_config(args.config, lang)
+        data = collect_config(args.config, lang, args.labels)
     else:
-        data = collect(Path(args.data_dir), args.datasets, lang)
+        fns = load_label_fns(args.labels) if args.labels and args.labels != "none" else None
+        data = collect(Path(args.data_dir), args.datasets, lang, fns)
     if not data:
         raise SystemExit(f"No matching *.jsonl in {args.data_dir}.")
 

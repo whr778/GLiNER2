@@ -102,3 +102,12 @@ def test_config_paths_honours_train_only(tmp_path, monkeypatch):
     paths = dm.config_paths(cfg)
     assert paths["train"] == ["data/a.train.jsonl", "data/b.train.jsonl"]
     assert paths["test"] == ["data/a.test.jsonl"]
+
+
+def test_labels_option_maps_before_counting(tmp_path):
+    f = tmp_path / "x.train.jsonl"
+    _write(f, [{"input": "Ada .", "output": {"entities": {"person": ["Ada"]}}}])
+    m = tmp_path / "map.yaml"
+    m.write_text("labels:\n  entities:\n    map:\n      person: Person\n", encoding="utf-8")
+    assert list(dm.collect(tmp_path, [], fns=dm.load_label_fns(str(m)))["x"]["train"]["entities"]) == ["Person"]
+    assert list(dm.collect(tmp_path, [])["x"]["train"]["entities"]) == ["person"]
