@@ -26,10 +26,47 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+
+def apply_pool_overrides(model, args) -> bool:
+    """Switch the candidate pool and size the shared pool, printing what took effect.
+
+    `candidate_pool` is read from the head's settings on every forward, but the shared
+    builder's sizes are fixed at construction, so they are set on the builder itself.
+    """
+    import dataclasses
+    import torch
+    from gliner2.configuration import BoundaryHeadSettings
+    heads = [m for m in model.modules() if isinstance(getattr(m, "settings", None), BoundaryHeadSettings)]
+    builders = [m for m in model.modules() if type(m).__name__ == "DocumentCandidatePool"]
+    if not heads or not builders:
+        print(f"[cov] *** found {len(heads)} head(s), {len(builders)} pool builder(s) -- "
+              "the override would be DECORATIVE. Refusing. ***")
+        return False
+    if args.pool:
+        for h in heads:
+            h.settings = dataclasses.replace(h.settings, candidate_pool=args.pool)
+    for b in builders:
+        if args.pool_boundary_top_k:
+            b.pool_boundary_top_k = args.pool_boundary_top_k
+        if args.pool_size:
+            b.pool_size = args.pool_size
+        if args.zero_compat:
+            with torch.no_grad():
+                for proj in (b.start_projection, b.end_projection):
+                    proj.weight.zero_()
+                    proj.bias.zero_()
+    b = builders[0]
+    print(f"[cov] POOL: candidate_pool={heads[0].settings.candidate_pool} "
+          f"pool_boundary_top_k={b.pool_boundary_top_k} pool_size={b.pool_size} "
+          f"min_pool_per_query={b.min_pool_per_query} "
+          f"compat_weight_abs_sum={float(b.start_projection.weight.abs().sum()):.3f}", flush=True)
+    return True
 
 
 def main() -> int:
@@ -58,6 +95,17 @@ def main() -> int:
                          "clamped to [base_k, k_max]. The mechanism EXISTS and ships "
                          "DISABLED at alpha=0.0. -1 leaves it alone.")
     ap.add_argument("--top-k-max", type=int, default=0)
+    ap.add_argument("--pool", choices=("per_query", "shared"), default=None,
+                    help="switch candidate_pool at runtime (the head reads it every forward)")
+    ap.add_argument("--pool-boundary-top-k", type=int, default=0)
+    ap.add_argument("--pool-size", type=int, default=0)
+    ap.add_argument("--zero-compat", action="store_true",
+                    help="zero the shared pool's pairing projections, which are untrained in "
+                         "per_query checkpoints, so ranking uses trained boundary scores only")
+    ap.add_argument("--max-gold", type=int, default=0,
+                    help="gold cap for the probe only (0 = config value); a sample over the "
+                         "cap would raise, and dropping it would bias coverage")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -74,6 +122,14 @@ def main() -> int:
         if len(raw) >= args.max_records:
             break
     model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").train()
+    # train() is needed for the gold-coverage stats, but it also turns dropout ON, which
+    # randomly perturbs the scores and understates what inference can reach.
+    n_dropout = 0
+    for m in model.modules():
+        if isinstance(m, torch.nn.Dropout):
+            m.eval()
+            n_dropout += 1
+    print(f"[cov] dropout disabled in {n_dropout} module(s)", flush=True)
     proc = model.processor
     print(f"[cov] {len(raw)} docs from {args.data}; candidate_budget={budget}", flush=True)
 
@@ -123,15 +179,25 @@ def main() -> int:
                   f"end_top_k={eff.end_top_k} candidate_budget={eff.candidate_budget} "
                   f"alpha={eff.boundary_top_k_alpha} k_max={eff.boundary_top_k_max}", flush=True)
 
+    if args.pool or args.pool_boundary_top_k or args.pool_size or args.zero_compat:
+        if not apply_pool_overrides(model, args):
+            return 1
+
     rows = []
     print(f"\n  {'window':>8} {'gold':>10} {'in candidates':>15} {'coverage':>10} "
           f"{'gold/window':>12}   boundary coverage")
     for win in [int(w) for w in args.windows.split(",")]:
+        # Training-mode preprocessing randomly drops entities, labels and structure fields
+        # (processor.py `remove_entity_prob` and friends), so an unseeded run scores a
+        # different set of queries each time: gold totals drifted 8,620-8,921 on identical
+        # data. Seeding per window gives every arm the same queries.
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
         recs = chunk_records(raw, tokenizer=proc.tokenizer, window_size=win,
                              stride=win, show_progress=False)
         coll = ExtractorCollator(
             proc, is_training=True, max_len=win, architecture="boundary",
-            max_gold_per_query=int(head.get("max_gold_per_query", 32)),
+            max_gold_per_query=args.max_gold or int(head.get("max_gold_per_query", 32)),
             error_policy="skip", event_records=bool(head.get("event_records", False)))
         dl = DataLoader(ExtractorDataset(data=recs, max_samples=-1, shuffle=False,
                                          seed=42, validate=False),
