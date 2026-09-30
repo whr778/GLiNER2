@@ -52,6 +52,8 @@
 # P6. The purchased cc_news data must be pushed to a PRIVATE Hub repo (verified against the
 #     Hub's file list) and registered in tools/train/dataset_registry.yaml with `hf_jsonl`
 #     and `provenance: llm_real`, so `_fetch_if_missing` resolves it on a fresh box.
+#     GATE: `tools/data/restore_from_hf.py --config <this file> --dry-run` must list it
+#     as mirrored, not UNRECOVERABLE (baseline 2026-09-30: all 76 files eb18 reads).
 #
 # ---------------------------------------------------------------------------------------
 # eb17-best's own history follows unchanged, for provenance.
