@@ -820,3 +820,37 @@ are simply not why events read zero.
 the blind-test JSON carries no per-label argument breakdown. Any event_argument number should
 be reported per corpus, or at minimum per language, beside the aggregate -- otherwise a
 headline built 88% from one corpus is read as a general capability.
+
+### CORRECTION: the census and oversampling pricing measured the wrong population
+
+"Item 3 priced" above, and the corpus length table in the a9725ac commit message, were
+computed on the 8 EVENT FILES ONLY (79,182 records). The scripts read `data.train_files`,
+which eb17-best.yaml does not have -- its keys are `corpora`, `train_only`,
+`partial_annotation`, `event_files` -- so the training corpora were silently empty. Every
+number in that section is withdrawn. "Median training document 457 tokens", repeated all
+day, was `cc_news_haiku45`'s median, not the training mix's.
+
+Re-measured with train.py:1549's own resolution (`_split_files(corpora, "train",
+train_only) + _event_split(event_files, "train")`), 18 files, 202,211 records. **The gate
+that makes this trustworthy: the sample yields 1.0061 windows per record against the
+training run's own logged 201,072 -> 202,469 = 1.0069.**
+
+| | withdrawn | **corrected** |
+|---|---|---|
+| median document | 457 / 596 | **362 tokens** (p90 1,362, p99 3,158, max 18,012) |
+| records > 4096 tok | 1.18% | **0.43%** (859 records) |
+| tokens in docs > 4096 | 8.36% | **4.93%** |
+| full-width windows today | 2.90% | **1.24%** |
+
+| oversample docs > 4096 | % windows full-width | % tokens long | compute/epoch |
+|---|---|---|---|
+| 1x | 1.24% | 6.0% | 1.00x |
+| 5x | 3.63% | 24.1% | 1.24x |
+| 10x | 6.36% | 38.9% | 1.54x |
+| 20x | 11.11% | 56.0% | 2.14x |
+
+50% full-width windows needs **415x** (not 153x). **THE CONCLUSION SURVIVES AND SHARPENS:**
+oversampling cannot build a long-document regime, and supply is the binding constraint.
+cc_news_long's 689 documents against 859 existing long records would roughly double the
+pool. Long documents are rarer in the real mix because its Chinese corpora are short,
+sentence-level records.
