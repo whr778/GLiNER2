@@ -57,9 +57,11 @@ export default function Home() {
     let cancelled = false;
     setSchemaLoading(true); // disable extraction until this model's schema resolves
     (async () => {
-      const shipped = await getModelSchema(m);
+      const { schema: shipped, inferenceDefaults } = await getModelSchema(m);
       if (cancelled) return;
       setSchemaLoading(false); // network resolved; the schema apply below is synchronous
+      // Decode the way this model was evaluated; the user can still move the controls.
+      if (inferenceDefaults) setOptions((o) => ({ ...o, ...inferenceDefaults }));
       if (shipped && Object.keys(shipped).length > 0) {
         // Open-vocab task types ship as an `open_vocab` marker; scaffold them into
         // empty fields the user can fill (pruned back out at extract time).
@@ -188,6 +190,16 @@ export default function Home() {
                 <div className="hint" style={{ marginBottom: 8 }}>
                   Ran on <span className="mono">{resp.device}</span>
                   {resp.device.startsWith("mps") && " (Apple Silicon GPU)"}
+                </div>
+              )}
+              {resp.label_map_applied && Object.keys(resp.label_map_applied).length > 0 && (
+                <div className="hint" style={{ marginBottom: 8 }}>
+                  Labels sent in this model&apos;s trained spelling:{" "}
+                  <span className="mono">
+                    {Object.values(resp.label_map_applied)
+                      .flatMap((m) => Object.entries(m).map(([a, b]) => `${a} -> ${b}`))
+                      .join(", ")}
+                  </span>
                 </div>
               )}
               <ResultView text={resp.text} result={resp.result} schema={usedSchema} />

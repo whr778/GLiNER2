@@ -899,6 +899,13 @@ class ExtractorConfig(PretrainedConfig):
         # recommended default ontology, not a constraint. Ships in config.json so
         # it travels with the checkpoint (disk + HF Hub).
         default_schema: Mapping[str, Any] = None,
+        # The label transform training applied, ``{category: {rollup, separator, map}}``.
+        # Labels are an INPUT to the model, so a consumer must send the spellings it
+        # trained on; ``gliner2.inference.label_map.apply_label_map`` replays it.
+        label_map: Mapping[str, Any] = None,
+        # The inference settings the model was evaluated with: ``threshold``,
+        # ``chunk_size``, ``chunk_overlap``, ``global_decode``.
+        inference_defaults: Mapping[str, Any] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -912,6 +919,8 @@ class ExtractorConfig(PretrainedConfig):
         self.token_pooling = token_pooling
         self.max_len = max_len
         self.default_schema = dict(default_schema) if default_schema else None
+        self.label_map = dict(label_map) if label_map else None
+        self.inference_defaults = dict(inference_defaults) if inference_defaults else None
         # Transformers may serialize its reserved attention field as null;
         # treat that as this extractor's documented default.
         self.attn_implementation = str(attn_implementation or "sdpa")

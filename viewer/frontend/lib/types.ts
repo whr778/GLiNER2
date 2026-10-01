@@ -48,4 +48,10 @@ export const DEFAULT_OPTIONS: ExtractOptions = {
   device: "auto",
 };
 
-export type ExtractResponse = { text: string; result: ExtractionResult; device?: string };
+export type ExtractResponse = {
+  text: string;
+  result: ExtractionResult;
+  device?: string;
+  // {category: {label sent: the model's trained spelling}} for labels the backend rewrote.
+  label_map_applied?: Record<string, Record<string, string>>;
+};

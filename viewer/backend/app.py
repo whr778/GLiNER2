@@ -154,14 +154,11 @@ def _declare_records(input_schema: Dict[str, Any]) -> Dict[str, Any]:
 @app.post("/extract")
 def extract(req: ExtractRequest) -> Dict[str, Any]:
     from gliner2.inference.global_decode import GlobalDecodeConfig
+    from gliner2.inference.label_map import apply_label_map
     from gliner2.inference.schema import Schema
 
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text is empty")
-    try:
-        schema = Schema.from_dict(_declare_records(req.input_schema))
-    except Exception as e:  # noqa: BLE001 - surface schema errors to the client
-        raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
 
     # Strip stray whitespace/newlines (a trailing \r from a shell pipeline makes
     # os.path.isdir False -> gliner2 treats it as an HF id -> cryptic
@@ -178,6 +175,13 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
                 "paths) or a HuggingFace repo id 'namespace/name'."
             ),
         ) from e
+    # Labels are an INPUT: send the spellings this model trained on (its config.label_map).
+    input_schema, label_map_applied = apply_label_map(
+        req.input_schema, getattr(model.config, "label_map", None))
+    try:
+        schema = Schema.from_dict(_declare_records(input_schema))
+    except Exception as e:  # noqa: BLE001 - surface schema errors to the client
+        raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
     try:
         result = model.batch_extract_long(
             [req.text],
@@ -193,7 +197,8 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
     except Exception as e:  # noqa: BLE001 - surface extraction errors to the client
         raise HTTPException(status_code=500, detail=f"extraction failed: {e}") from e
     device = str(next(model.parameters()).device)
-    return {"text": req.text, "result": result, "device": device}
+    return {"text": req.text, "result": result, "device": device,
+            "label_map_applied": label_map_applied}
 
 
 @app.post("/import-url")
@@ -240,7 +245,9 @@ def model_schema(model: str) -> Dict[str, Any]:
     from gliner2.configuration import ExtractorConfig
 
     cfg = ExtractorConfig.from_pretrained(model)
-    return {"model": model, "schema": getattr(cfg, "default_schema", None)}
+    return {"model": model, "schema": getattr(cfg, "default_schema", None),
+            "inference_defaults": getattr(cfg, "inference_defaults", None),
+            "has_label_map": bool(getattr(cfg, "label_map", None))}
 
 
 @app.post("/models")

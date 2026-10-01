@@ -32,6 +32,11 @@ bash viewer/viewer.sh logs       # tail both logs (Ctrl-C to quit)
 Then open **http://localhost:3000**, pick a schema preset (or edit the schema
 JSON), enter text, and click **Extract**.
 
+Selecting a model loads the decode settings it was evaluated with (`inference_defaults`
+in its `config.json`), and `/extract` rewrites schema labels to the spellings the model
+trained on (`label_map`), listing each rewrite under the results. Checkpoints saved
+before 2026-10-01 carry neither, and run as typed.
+
 Choose the model (blank uses `fastino/gliner2-base-v1`):
 
 ```bash

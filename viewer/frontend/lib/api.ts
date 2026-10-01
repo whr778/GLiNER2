@@ -56,17 +56,22 @@ export async function getModels(): Promise<ModelEntry[]> {
   return body.models ?? [];
 }
 
-// The schema a model ships in its config (default_schema), or null if it has
-// none / can't be read. Null on failure by design: the caller falls back to
-// corpus-name matching, so a missing endpoint or bad model id degrades quietly.
-export async function getModelSchema(model: string): Promise<Record<string, any> | null> {
+// What a model ships in its config: the schema it trained on (default_schema) and
+// the decode settings it was evaluated with (inference_defaults). Nulls on failure
+// by design: the caller falls back to corpus-name matching and the current options.
+export type ModelInfo = {
+  schema: Record<string, any> | null;
+  inferenceDefaults: Partial<ExtractOptions> | null;
+};
+
+export async function getModelSchema(model: string): Promise<ModelInfo> {
   try {
     const res = await fetch(`${API_BASE}/model-schema?model=${encodeURIComponent(model)}`);
-    if (!res.ok) return null;
+    if (!res.ok) return { schema: null, inferenceDefaults: null };
     const body = await res.json();
-    return body.schema ?? null;
+    return { schema: body.schema ?? null, inferenceDefaults: body.inference_defaults ?? null };
   } catch {
-    return null;
+    return { schema: null, inferenceDefaults: null };
   }
 }
 

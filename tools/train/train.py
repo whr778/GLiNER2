@@ -1588,7 +1588,8 @@ def main(config_path: str) -> None:
         _split_files(corpora, "test", train_only) + _event_split(event_files, "test"), "test")
 
     # Optional per-category label transforms, applied identically to train/val/test.
-    fns = _category_fns(load_labels_cfg(cfg, config_path))
+    labels_cfg = load_labels_cfg(cfg, config_path)
+    fns = _category_fns(labels_cfg)
     passthrough = labels_passthrough(cfg)
     if fns:
         train_data = read_transformed(train_data, fns, passthrough)
@@ -1653,6 +1654,19 @@ def main(config_path: str) -> None:
     global_decode_config = ev["global_decode_config"]
     eval_stopwords = ev["stopwords"]
     metric_sweep_cfg = ev["metric_sweep"]
+
+    # Ship the label transform and the eval settings in config.json, beside default_schema:
+    # labels are an INPUT, so a consumer (viewer, pipeline) must replay the map training
+    # applied, and decode the way this model was evaluated.
+    model.config.label_map = {
+        cat: {k: block[k] for k in ("rollup", "separator", "map") if k in block}
+        for cat, block in labels_cfg.items() if cat in fns and isinstance(block, dict)} or None
+    model.config.inference_defaults = {
+        "threshold": eval_thr, "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap, "global_decode": bool(global_decode)}
+    if is_main:
+        print(f"[config] label_map for {sorted(model.config.label_map or {})} and "
+              f"inference_defaults {model.config.inference_defaults} -> config.json")
 
     # metric_sweep: sweep the decision threshold each epoch and select the best
     # checkpoint at its own best threshold. Needed when the loss (bce_posweight)
