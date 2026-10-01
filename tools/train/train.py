@@ -601,6 +601,18 @@ def _category_fns(labels_cfg: Dict) -> Dict:
     return fns
 
 
+def checkpoint_fields(labels_cfg: Dict, ev: Dict):
+    """``(label_map, inference_defaults)`` for config.json: the label transform training
+    applied and the decode settings it evaluated with. One definition, shared by training
+    and ``backfill_model_config.py``, so a backfilled checkpoint matches a trained one."""
+    fns = _category_fns(labels_cfg)
+    label_map = {cat: {k: block[k] for k in ("rollup", "separator", "map") if k in block}
+                 for cat, block in labels_cfg.items() if cat in fns and isinstance(block, dict)}
+    defaults = {"threshold": ev["threshold"], "chunk_size": ev["chunk_size"],
+                "chunk_overlap": ev["chunk_overlap"], "global_decode": bool(ev["global_decode"])}
+    return label_map or None, defaults
+
+
 def _transform_container(container: Dict, fns: Dict) -> Dict:
     """Apply each category's fn to its label-bearing fields in a gold/schema dict."""
     out = dict(container)
@@ -1658,12 +1670,7 @@ def main(config_path: str) -> None:
     # Ship the label transform and the eval settings in config.json, beside default_schema:
     # labels are an INPUT, so a consumer (viewer, pipeline) must replay the map training
     # applied, and decode the way this model was evaluated.
-    model.config.label_map = {
-        cat: {k: block[k] for k in ("rollup", "separator", "map") if k in block}
-        for cat, block in labels_cfg.items() if cat in fns and isinstance(block, dict)} or None
-    model.config.inference_defaults = {
-        "threshold": eval_thr, "chunk_size": chunk_size,
-        "chunk_overlap": chunk_overlap, "global_decode": bool(global_decode)}
+    model.config.label_map, model.config.inference_defaults = checkpoint_fields(labels_cfg, ev)
     if is_main:
         print(f"[config] label_map for {sorted(model.config.label_map or {})} and "
               f"inference_defaults {model.config.inference_defaults} -> config.json")
