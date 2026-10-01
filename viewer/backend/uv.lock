@@ -841,7 +841,7 @@ requires-dist = [
     { name = "kernels", specifier = ">=0.16,<0.17" },
     { name = "langcodes", marker = "extra == 'local'" },
     { name = "langcodes", extras = ["data"] },
-    { name = "lumi-language-id-2" },
+    { name = "lumi-language-id-2", specifier = ">=3.0.1" },
     { name = "lxml", specifier = ">=6.1.3" },
     { name = "mps-flash-attn", marker = "sys_platform == 'darwin'", specifier = ">=0.6.1" },
     { name = "numpy" },
@@ -1219,7 +1219,7 @@ wheels = [
 
 [[package]]
 name = "lumi-language-id-2"
-version = "2.0.0"
+version = "3.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fasttext-numpy2" },
@@ -1227,9 +1227,9 @@ dependencies = [
     { name = "langcodes" },
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/ec/094a5b183efdf5c4c7997b890721ce820250a2a8e1d44e06c3c2c28f43fa/lumi_language_id_2-2.0.0.tar.gz", hash = "sha256:8c12ef1d9d1f81e813fe3021de55d4c58870228dc20d3608159bb12675306efa", size = 850265, upload-time = "2026-06-24T12:33:58.067Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/e2/8089d14befee82972bec406f33e8a1f04f8f898c88cf0d16a17ab52dc52f/lumi_language_id_2-3.0.1.tar.gz", hash = "sha256:e7854e3f31505b6e0f6a227544b4a110cc80039cad5f742a01b64f097a50cf7b", size = 1075689, upload-time = "2026-09-30T12:34:41.514Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a1/8c/50ad428d5a097878d03a527bf00c774181c6931c4a3fc404c048497123c4/lumi_language_id_2-2.0.0-py3-none-any.whl", hash = "sha256:964e610aa49eff1316af95fee1652a5e0284d4e9f171850a22139fe73da3b8c9", size = 788848, upload-time = "2026-06-24T12:33:56.01Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/41/7b311b9e5b4a048b4667f62fd76b007b4382334f9abe98d1f67dc622968e/lumi_language_id_2-3.0.1-py3-none-any.whl", hash = "sha256:db31d165532b611e493ea216a2fb3d8bbbe995698e8cdaf608180dfff97d7065", size = 800643, upload-time = "2026-09-30T12:34:40.164Z" },
 ]
 
 [[package]]
