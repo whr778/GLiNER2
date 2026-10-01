@@ -728,11 +728,13 @@ def decode_group(
         return []
     if temperature <= 0:
         raise ValueError("temperature must be > 0")
-    obj_prob = torch.sigmoid(group.object_logits.detach() / temperature)
+    # Every tensor read below is ONE `.tolist()`: `float(t[i])` on a device tensor syncs per
+    # element, which made decode ~half of eval time on a GPU device (measured 2026-10-01).
+    obj_prob = torch.sigmoid(group.object_logits.detach() / temperature).tolist()
     select_thr = object_threshold if group.spec.mode == "anchorless" else anchor_threshold
-    order = sorted(range(ni), key=lambda i: (-float(obj_prob[i]), i))
+    order = sorted(range(ni), key=lambda i: (-obj_prob[i], i))
     selected_instances = [
-        inst for inst in order if float(obj_prob[inst]) >= select_thr
+        inst for inst in order if obj_prob[inst] >= select_thr
     ]
 
     # Exclusive fields are a global assignment problem: greedily letting the
@@ -777,12 +779,13 @@ def decode_group(
             cost = torch.cat((candidate_cost, absent_cost), dim=-1)
             rows, cols = linear_sum_assignment(cost)
             assignments = {int(row): int(col) for row, col in zip(rows, cols)}
+            candidate_probs_list = candidate_probs.tolist()
             for row, inst in enumerate(selected_instances):
                 col = assignments.get(row, candidate_count + row)
                 if col >= candidate_count:
                     scalar_choices[(inst, f_idx)] = None
                     continue
-                probability = float(candidate_probs[row, col])
+                probability = candidate_probs_list[row][col]
                 if probability < field_threshold and fspec.allows_absent:
                     scalar_choices[(inst, f_idx)] = None
                     continue
@@ -790,18 +793,18 @@ def decode_group(
         else:
             if candidate_count == 0:
                 continue
-            probabilities = torch.sigmoid(logits[:, 1:])
-            for cand_idx in range(candidate_count):
-                probability, row = probabilities[:, cand_idx].max(dim=0)
-                if float(probability) >= field_threshold:
+            best_prob, best_row = torch.sigmoid(logits[:, 1:]).max(dim=0)
+            for cand_idx, (probability, row) in enumerate(zip(best_prob.tolist(), best_row.tolist())):
+                if probability >= field_threshold:
                     list_owners[(f_idx, cand_idx)] = (
-                        selected_instances[int(row)],
-                        float(probability),
+                        selected_instances[row],
+                        probability,
                     )
 
     records: List[DecodedRecord] = []
+    field_spans = [spans.tolist() for spans in group.field_spans]
     for inst in selected_instances:
-        rec = DecodedRecord(score=float(obj_prob[inst]))
+        rec = DecodedRecord(score=obj_prob[inst])
         anchor_field_idx = None
         if group.spec.mode == "natural":
             anchor_field_idx = group.field_query_ids.index(group.spec.anchor_query_id)
@@ -811,7 +814,7 @@ def decode_group(
 
         for f_idx, fspec in enumerate(group.field_specs):
             qid = fspec.query_id
-            spans_tensor = group.field_spans[f_idx]
+            spans = field_spans[f_idx]
             logits_row = group.assign_logits[f_idx][inst].detach() / temperature
             if anchor_field_idx is not None and f_idx == anchor_field_idx:
                 if rec.anchor_span is not None:
@@ -825,14 +828,12 @@ def decode_group(
                     if choice is None:
                         continue
                     cand_idx, probability = choice
-                    span = (
-                        int(spans_tensor[cand_idx, 0]),
-                        int(spans_tensor[cand_idx, 1]),
-                    )
+                    span = (spans[cand_idx][0], spans[cand_idx][1])
                     rec.fields.setdefault(qid, []).append(span)
                     rec.field_scores.setdefault(qid, []).append(probability)
                     continue
                 probs = torch.softmax(logits_row, dim=-1)
+                probs_list = probs.tolist()
                 chosen = None
                 for col in torch.argsort(probs, descending=True).tolist():
                     if col == 0:
@@ -844,17 +845,17 @@ def decode_group(
                     break
                 if chosen is None or chosen == 0:
                     continue
-                if float(probs[chosen]) < field_threshold and fspec.allows_absent:
+                if probs_list[chosen] < field_threshold and fspec.allows_absent:
                     continue
                 cand_idx = chosen - 1
-                span = (int(spans_tensor[cand_idx, 0]), int(spans_tensor[cand_idx, 1]))
+                span = (spans[cand_idx][0], spans[cand_idx][1])
                 rec.fields.setdefault(qid, []).append(span)
-                rec.field_scores.setdefault(qid, []).append(float(probs[chosen]))
+                rec.field_scores.setdefault(qid, []).append(probs_list[chosen])
             else:
                 cand_logits = logits_row[1:]
                 if cand_logits.numel() == 0:
                     continue
-                probs = torch.sigmoid(cand_logits)
+                probs = torch.sigmoid(cand_logits).tolist()
                 selected: List[Tuple[int, int]] = []
                 selected_scores: List[float] = []
                 for cand_idx in range(cand_logits.shape[0]):
@@ -864,10 +865,10 @@ def decode_group(
                             continue
                         probability = owner[1]
                     else:
-                        probability = float(probs[cand_idx])
+                        probability = probs[cand_idx]
                         if probability < field_threshold:
                             continue
-                    span = (int(spans_tensor[cand_idx, 0]), int(spans_tensor[cand_idx, 1]))
+                    span = (spans[cand_idx][0], spans[cand_idx][1])
                     selected.append(span)
                     selected_scores.append(probability)
                 if selected:
