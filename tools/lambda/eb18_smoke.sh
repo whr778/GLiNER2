@@ -20,6 +20,7 @@ export GLINER2_STRICT_ATTN=1   # an sdpa fallback would make the timing meaningl
 PY=./.venv/bin/python
 STEPS=${STEPS:-200}
 NUM_WORKERS=${NUM_WORKERS:-}   # empty = the config's own value
+PROFILE=${PROFILE:-}           # non-empty = py-spy the MAIN process for 120s from step 30
 DEST=${DEST:-eb18_smoke}
 SRC=tools/train/config/base/eb18-balanced.yaml
 OUT=$HOME/smoke
@@ -55,16 +56,38 @@ SMI=$!
 # so the count is 2 + live workers (the `timeout` wrapper also carries train.py). The trainer never logs its effective value.
 ( while true; do pgrep -fc "tools/train/train.py"; sleep 15; done ) > "$OUT/procs.txt" 2>&1 &
 PROCS=$!
+# PROFILE. 37% GPU utilisation with 4 or 12 workers alike means the GPU waits on the MAIN
+# process. --idle keeps blocked samples, so a CPU-GPU sync shows as the Python line that
+# forces it. The main PID is the child of THIS script's `timeout 5400` -- the outer
+# box_run timeout and the wrapper also carry train.py on their command lines.
+PROF=
+if [ -n "$PROFILE" ]; then
+  uv pip install --python "$PY" -q py-spy
+  (
+    for _ in $(seq 240); do
+      s=$(tr '\r' '\n' < "$OUT/eb18.log" 2>/dev/null | grep -aoE "\| *[0-9]+/$STEPS \[" | tail -1 | grep -oE "[0-9]+" | head -1)
+      [ "${s:-0}" -ge 30 ] && break
+      sleep 10
+    done
+    T=$(pgrep -n -f "^timeout 5400"); M=$(pgrep -P "$T")
+    echo "[profile] step ${s:-none}: attaching to main pid $M ($(ps -o comm= -p $M)) $(date -u)"
+    sudo "$PWD/.venv/bin/py-spy" record --pid "$M" --idle --rate 50 --duration 120 --format raw -o "$OUT/pyspy.raw.txt"
+    echo "[profile] py-spy rc=$? $(date -u)"
+  ) > "$OUT/profile.log" 2>&1 &
+  PROF=$!
+fi
 
 echo "[smoke] === training eb18, $STEPS steps  $(date -u) ==="
 start=$(date +%s)
 timeout 5400 $PY -u tools/train/train.py --config "$cfg" 2>&1 | tee "$OUT/eb18.log" | tail -3
 rc=${PIPESTATUS[0]}
-kill $SMI $PROCS
+kill $SMI $PROCS $PROF 2>/dev/null
 echo "[smoke] === done rc=$rc after $(( $(date +%s) - start ))s ==="
 
 RESCUE=0
-publish "$DEST" "$OUT/eb18.log" "$OUT/gpu.csv" "$OUT/procs.txt" "$cfg" || RESCUE=1
+FILES=("$OUT/eb18.log" "$OUT/gpu.csv" "$OUT/procs.txt" "$cfg")
+[ -n "$PROFILE" ] && FILES+=("$OUT/profile.log" "$OUT/pyspy.raw.txt")   # missing = a FAILED profile
+publish "$DEST" "${FILES[@]}" || RESCUE=1
 
 echo
 echo "================ eb18 SMOKE RESULT ================"
