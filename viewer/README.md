@@ -188,7 +188,8 @@ you can point the viewer at data/models anywhere. `GLINER2_MODEL` still override
 The combobox merges three sources: the server default, anything auto-discovered
 under `models_root` (`**/best`), and a saved registry at
 `viewer/backend/models.json` (git-ignored, written by the Model Manager UI and
-by `POST /models`).
+by `POST /models`). `uv run python sync_hub_models.py --write` (in `viewer/backend/`) adds every
+GLiNER2 checkpoint published under an owner (default `whr778`), keeping existing labels.
 
 `viewer/backend/models.example.json` holds the **76 published checkpoints** —
 every `whr778/*` model on the Hub plus the Fastino bases. Copy it to seed the
