@@ -73,6 +73,8 @@
 #     which exceeds event_base_run.sh's default 20h JOB_TIMEOUT -- raise it at launch.
 #     num_workers 12 is a NULL (9.0 samples/s, 35.4% util, 12 workers proven live): the GPU
 #     waits on the main process, not the loader. num_workers stays 4.
+#     PROFILED + FIXED 2026-10-01 (8537a17): per-element GPU syncs in the record loss were ~40%
+#     of the step. Like-for-like 8.3 -> 13.7 samples/s (+65%); ~22-24h of training projected.
 # P6. The purchased cc_news data must be pushed to a PRIVATE Hub repo (verified against the
 #     Hub's file list) and registered in tools/train/dataset_registry.yaml with `hf_jsonl`
 #     and `provenance: llm_real`, so `_fetch_if_missing` resolves it on a fresh box.
