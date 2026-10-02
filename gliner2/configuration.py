@@ -61,6 +61,20 @@ class BoundaryHeadSettings:
     boundary_negative_weight: float = 1.0
     boundary_marginal_loss: str = "bce"  # "bce" | "asymmetric_focal"
     loss_reduction: str = "global"  # "global" | "per_query" | "sum"
+    # ABSENT-QUERY REDUCTION for the start/end boundary loss. A query with no gold (an
+    # injected negative, or a menu label the document lacks) adds cells to the `global`
+    # denominator, so every gold-bearing cell is scaled by pi_P = N_P / (N_P + N_A):
+    # measured mean 0.713 (p10 0.493, p90 0.887) over eb18's mix with negatives on, 0.862
+    # off (tools/train/measure_absent_dilution.py). "pooled" is that historical behaviour.
+    # "separate" averages each group over its OWN cells:
+    #     L = present_loss_scale * mean_P + absent_loss_weight * mean_A
+    # so the gold-bearing term no longer depends on how many labels were injected.
+    # present_loss_scale exists for the matched-LR CONTROL arm: "separate" alone also
+    # raises the present gradient by ~1/pi_P, and setting it to the measured mean pi_P
+    # isolates the decoupling from that step-size change. Training-only; sizes nothing.
+    absent_reduction: str = "pooled"  # "pooled" | "separate"
+    absent_loss_weight: float = 1.0
+    present_loss_scale: float = 1.0
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -353,6 +367,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             values.get("boundary_marginal_loss", d.boundary_marginal_loss)
         ),
         "loss_reduction": str(values.get("loss_reduction", d.loss_reduction)),
+        "absent_reduction": str(values.get("absent_reduction", d.absent_reduction)),
+        "absent_loss_weight": float(values.get("absent_loss_weight", d.absent_loss_weight)),
+        "present_loss_scale": float(values.get("present_loss_scale", d.present_loss_scale)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),
@@ -619,6 +636,16 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             "boundary_head.loss_reduction must be 'global', 'per_query', or "
             f"'sum', got "
             f"{result['loss_reduction']!r}"
+        )
+    if result["absent_reduction"] not in ("pooled", "separate"):
+        raise ValueError(
+            "boundary_head.absent_reduction must be 'pooled' or 'separate', got "
+            f"{result['absent_reduction']!r}"
+        )
+    if result["absent_loss_weight"] < 0 or result["present_loss_scale"] <= 0:
+        raise ValueError(
+            "boundary_head.absent_loss_weight must be >= 0 and present_loss_scale > 0, got "
+            f"{result['absent_loss_weight']} / {result['present_loss_scale']}"
         )
     if (
         result["boundary_focal_gamma_positive"] < 0

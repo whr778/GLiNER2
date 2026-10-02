@@ -851,12 +851,24 @@ class BoundaryHead(nn.Module):
                 capture=capture,
             )
 
-        start_loss = _marginal_loss(
-            marginals.start_logits, start_targets, boundary_keep,
+        absent_cells = boundary_keep & ~targets.mention_mask.any(-1).unsqueeze(-1)
+
+        def _boundary_loss(logits, tgt, capture_as=None):
+            """Start/end loss; `separate` averages present and absent queries over their own cells."""
+            if self.settings.absent_reduction == "pooled":
+                return _marginal_loss(logits, tgt, boundary_keep, capture_as)
+            present = _marginal_loss(logits, tgt, boundary_keep & ~absent_cells, capture_as)
+            absent = _marginal_loss(logits, tgt, absent_cells)
+            return (self.settings.present_loss_scale * present
+                    + self.settings.absent_loss_weight * absent)
+
+        _note_absent_cells(self.settings.absent_reduction, boundary_keep.sum(), absent_cells.sum())
+        start_loss = _boundary_loss(
+            marginals.start_logits, start_targets,
             capture_as="start" if want_task_losses else None,
         )
-        end_loss = _marginal_loss(
-            marginals.end_logits, end_targets, boundary_keep,
+        end_loss = _boundary_loss(
+            marginals.end_logits, end_targets,
             capture_as="end" if want_task_losses else None,
         )
 
@@ -1348,6 +1360,30 @@ def _note_negative_queries(available: "torch.Tensor", selected: "torch.Tensor") 
                     "cumulative over %d batches (0 available means the schema carries no "
                     "absent labels)",
                     int(_NEGATIVE_QUERY_SEEN), int(_NEGATIVE_QUERY_SELECTED), n)
+
+
+_ABSENT_CELLS = 0
+_KEPT_CELLS = 0
+_ABSENT_CELL_CALLS = 0
+
+
+def _note_absent_cells(mode: str, kept: "torch.Tensor", absent: "torch.Tensor") -> None:
+    """Report the boundary-loss reduction ACTUALLY executed and the live absent share.
+
+    Logged from the loss itself, after the cells exist, so a `separate` arm whose config never
+    reached the head prints `pooled` and the A/B gate fails. Same on-device accumulation and
+    backoff as `_note_negative_queries`: no host sync except on a batch that logs.
+    """
+    global _ABSENT_CELLS, _KEPT_CELLS, _ABSENT_CELL_CALLS
+    _ABSENT_CELLS = _ABSENT_CELLS + absent
+    _KEPT_CELLS = _KEPT_CELLS + kept
+    _ABSENT_CELL_CALLS += 1
+    n = _ABSENT_CELL_CALLS
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        kept_total = max(int(_KEPT_CELLS), 1)
+        logger.info("boundary absent_reduction=%s: absent share of boundary cells %.3f "
+                    "(pi_P %.3f), cumulative over %d batches",
+                    mode, int(_ABSENT_CELLS) / kept_total, 1 - int(_ABSENT_CELLS) / kept_total, n)
 
 
 class BoundaryExtractorModel(BaseExtractorModel):
