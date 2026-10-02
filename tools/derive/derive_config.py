@@ -57,17 +57,18 @@ def run_gpu_stages(args, model_info: dict, corpus: dict, event_records: bool) ->
     from gliner2.training.eval_metrics import load_with_overrides
     ev = eval_settings(model_info)
     boundary = model_info["architecture"] == "boundary"
+    pool = model_info["boundary_head"].get("candidate_pool", "per_query")
     cap = corpus["gold_capacity"]["recommended_cap"]
     out = {"eval_settings": ev}
     if boundary:
         out["reachability"] = G.reachability(args.model, args.corpus, model_info["label_map"], event_records,
                                              cap, ev["window"], (16, 32, 64, 128), args.out, args.reach_records,
-                                             args.device)
+                                             args.device, pool)
     records = G.val_records(args.corpus, model_info["label_map"], args.max_val)
     model = load_with_overrides(args.model).to(args.device).eval()
     has_records = boundary and (event_records or corpus["heads"]["val"]["structure_records"] > 0)
     out.update(G.operating_points(model, records, ev["window"], ev["global_decode"], ev["threshold"],
-                                  has_records, args.batch_size))
+                                  has_records, args.batch_size, pool))
     out["val_records_used"] = len(records)
     return out
 
