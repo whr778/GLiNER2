@@ -140,6 +140,30 @@ cp "$OUTDIR/eval_metrics.json" "$HOME/eval_metrics.json" 2>/dev/null \
 publish "$DEST" "$HOME/test_metrics.json" $EXTRA "$LOG" \
         "$HOME/heartbeat.log" "$CFG" || RESCUE=1
 
+# 3. OPTIONAL TRIGGER-MISS PROBE (PROBE=1), AFTER the model AND the metrics are published,
+# so a timeout during the probe can cost only the probe. Non-fatal by design: a
+# probe failure must never cost the run its checkpoint or its metrics. It first TRACES on 2 docs
+# per corpus (printed for reading), then runs the full sample. PROBE_BASE=1 also probes the
+# warm-start base, so one box of an A/B carries the baseline.
+PROBE_FILES=""
+if [ "${PROBE:-0}" = "1" ] && [ -d "$OUTDIR/best" ]; then
+  for target in ${PROBE_BASE:+base} arm; do
+    ck="$OUTDIR/best"; [ "$target" = "base" ] && ck="${PROBE_BASE_CKPT:?PROBE_BASE needs PROBE_BASE_CKPT}"
+    echo "[base] probe $target ($ck): trace on 2 docs/corpus"
+    timeout 1800 $PY -u tools/train/probe_trigger_misses.py --checkpoint "$ck" --config "$CFG" \
+        --device cuda --per-corpus 2 2>&1 | tee -a "$HOME/probe.log" | grep -a "^\[probe\]" | tail -40
+    echo "[base] probe $target: full run"
+    timeout ${PROBE_TIMEOUT:-5400} $PY -u tools/train/probe_trigger_misses.py --checkpoint "$ck" --config "$CFG" \
+        --device cuda --per-corpus ${PROBE_PER_CORPUS:-200} --out "$HOME/trigger_misses_$target.json" \
+        2>&1 | tee -a "$HOME/probe.log" | grep -a "^\[probe\]" | tail -60 \
+      || echo "[base] probe $target failed (non-fatal)"
+    [ -f "$HOME/trigger_misses_$target.json" ] && PROBE_FILES="$PROBE_FILES $HOME/trigger_misses_$target.json"
+  done
+  PROBE_FILES="$PROBE_FILES $HOME/probe.log"
+fi
+
+[ -n "$PROBE_FILES" ] && { publish "$DEST" $PROBE_FILES || echo "[base] probe publish failed (non-fatal)"; }
+
 echo "[base] ===== DONE $(date -u) rc=$rc ====="
 if [ "$RESCUE" -ne 0 ]; then
   echo "[base] *** SOMETHING DID NOT PUBLISH -- holding the box for rescue ***"

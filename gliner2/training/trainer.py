@@ -234,6 +234,7 @@ class TrainingConfig:
     debug: bool = False
     max_train_samples: int = -1
     max_eval_samples: int = -1
+    max_samples_seed: int = 42   # seed of the RANDOM draw behind the two caps (sliding-window path)
     validate_data: bool = True
     max_len: Optional[int] = None
     # GIST. `guide_scores` is a JSONL cache from tools/train/precompute_guide_scores.py;
@@ -1752,11 +1753,18 @@ class ExtractorTrainer:
         from gliner2.training.chunking import chunk_records
         records = DataLoader_Factory.load(
             data=data,
-            max_samples=max_samples,
+            max_samples=-1,
             shuffle=False,  # reshuffled after chunking
             seed=self.config.seed,
             validate=self.config.validate_data if is_train else False,
         )
+        # THE CAP IS A RANDOM DRAW, NOT A PREFIX. `load(shuffle=False)` slices the first N
+        # records in FILE order, so on eb18's mix a 30k cap was 100% sentence_rex -- a
+        # relation corpus with no events -- and every arm of a fast event A/B would have
+        # trained on zero event data. The draw has its OWN seed so arms that differ in
+        # `seed` still train on the identical subset.
+        if max_samples > 0 and len(records) > max_samples:
+            records = random.Random(self.config.max_samples_seed).sample(records, max_samples)
         window_size = int(self.config.max_len or 512)
         stride = int(self.config.window_stride or window_size)
         split = "train" if is_train else "eval"
