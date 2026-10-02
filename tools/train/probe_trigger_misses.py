@@ -90,10 +90,14 @@ def main() -> None:
     ap.add_argument("--per-corpus", type=int, default=200)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--decode", default=None,
+                    help="JSON decode settings overriding the checkpoint's inference_defaults; pin these to "
+                         "compare runs, e.g. eb18's: "
+                         '\'{"threshold": 0.3, "chunk_size": 4096, "chunk_overlap": 0, "global_decode": true}\'')
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))
     model = load_with_overrides(args.checkpoint, map_location=args.device).to(args.device).eval()
-    defaults = model.config.inference_defaults
+    defaults = {**(model.config.inference_defaults or {}), **(json.loads(args.decode) if args.decode else {})}
     base = {k: model.config.boundary_head.get(k) for k in OPEN}
     print(f"[probe] inference_defaults {defaults} | normal gates {base}")
     rows = Counter()
