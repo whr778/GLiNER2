@@ -57,6 +57,10 @@ def main() -> None:
                         "eval blocks on a device sync per batch (model.py:1108, "
                         "keep.nonzero), so a larger batch amortises the same stall over "
                         "more documents.")
+    p.add_argument("--record-field-threshold", dest="record_field_threshold", type=float,
+                   help="Override boundary_head.record_field_threshold AND turn on "
+                        "record_field_threshold_wins: the ARGUMENT gate, separate from the "
+                        "record (instance) gate. Off, fields use the record gate (TODO 22).")
     p.add_argument("--record-anchor-threshold", dest="record_anchor_threshold", type=float,
                    help="Override boundary_head.record_anchor_threshold AND turn on "
                         "record_anchor_threshold_wins, which is what makes it reachable: "
@@ -91,6 +95,9 @@ def main() -> None:
         overrides["menu_negatives"] = args.menu_negatives
     if args.threshold is not None:
         overrides["threshold"] = args.threshold
+    if args.record_field_threshold is not None:
+        overrides["record_field_threshold"] = args.record_field_threshold
+        overrides["record_field_threshold_wins"] = True
     if args.record_anchor_threshold is not None:
         overrides["record_anchor_threshold"] = args.record_anchor_threshold
         overrides["record_anchor_threshold_wins"] = True

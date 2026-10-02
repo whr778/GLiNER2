@@ -194,6 +194,15 @@ def resolve_record_threshold(settings, threshold) -> float:
     return float(threshold)
 
 
+def resolve_record_field_threshold(settings, record_threshold: float) -> float:
+    """Which threshold gates record FIELDS (event arguments): the record gate, unless
+    ``record_field_threshold_wins`` makes ``record_field_threshold`` real (TODO 22).
+    OFF by default, so every measured checkpoint decodes bit-identically."""
+    if getattr(settings, "record_field_threshold_wins", False):
+        return float(settings.record_field_threshold)
+    return float(record_threshold)
+
+
 class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
     """Boundary architecture with the shared public extraction runtime.
 
@@ -1897,6 +1906,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         # existing checkpoints (which all carry an explicit 0.5) keep the exact decode
         # they were measured with.
         record_threshold = resolve_record_threshold(settings, threshold)
+        field_threshold = resolve_record_field_threshold(settings, record_threshold)
         metadata = metadata or {}
         query_states_i = core["query_states"][sample_index]
         out: Dict[str, Any] = {}
@@ -2031,7 +2041,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     and (
                         not fspec.allows_absent
                         or candidate_probability
-                        >= record_threshold
+                        >= field_threshold
                     )
                     and (
                         configured_threshold is None
@@ -2110,7 +2120,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                             choices,
                             "str" if is_scalar else "list",
                             field_metadata.get("threshold"),
-                            record_threshold,
+                            field_threshold,
                             offset,
                             include_confidence,
                             preferred_choices=preferred_choices,
@@ -2148,7 +2158,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     choices,
                     "str" if is_scalar else "list",
                     field_metadata.get("threshold"),
-                    record_threshold,
+                    field_threshold,
                     offset,
                     include_confidence,
                     include_spans=include_spans,
@@ -2164,7 +2174,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             decoded = decode_group(
                 group,
                 anchor_threshold=record_threshold,
-                field_threshold=record_threshold,
+                field_threshold=field_threshold,
                 object_threshold=record_threshold,
                 temperature=settings.record_temperature,
             )

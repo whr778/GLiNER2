@@ -13,6 +13,8 @@ the default model.
 
 from __future__ import annotations
 
+import threading
+
 import logging
 from typing import Any, Dict, Optional
 
@@ -91,6 +93,10 @@ class Options(BaseModel):
     beam_width: int = 8
     model: Optional[str] = None
     device: Optional[str] = None  # auto | cpu | mps | cuda (unavailable -> auto)
+    # TODO 19/22: the record (instance) gate and the argument (field) gate, separate from
+    # the span threshold. None = the model's own setting (its checkpoint config).
+    record_threshold: Optional[float] = None
+    argument_threshold: Optional[float] = None
 
 
 class ExtractRequest(BaseModel):
@@ -151,6 +157,32 @@ def _declare_records(input_schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
+_GATE_LOCK = threading.Lock()
+
+
+def _gate_overrides(options: "Options") -> Dict[str, Any]:
+    """Boundary-head overrides for this request's record and argument gates (TODO 19/22)."""
+    ov: Dict[str, Any] = {}
+    if options.record_threshold is not None:
+        ov.update(record_anchor_threshold=options.record_threshold,
+                  record_anchor_proposal_threshold=options.record_threshold,
+                  record_anchor_threshold_wins=True)
+    if options.argument_threshold is not None:
+        ov.update(record_field_threshold=options.argument_threshold, record_field_threshold_wins=True)
+    return ov
+
+
+def _apply_gates(model, gates: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply gates to a boundary model; return the overrides that restore its prior state."""
+    current = getattr(model.config, "boundary_head", None)
+    if not gates or not current:
+        return {}
+    from gliner2.training.eval_metrics import apply_boundary_overrides
+    restore = {k: current.get(k) for k in gates if k in current}
+    apply_boundary_overrides(model, gates)
+    return restore
+
+
 @app.post("/extract")
 def extract(req: ExtractRequest) -> Dict[str, Any]:
     from gliner2.inference.global_decode import GlobalDecodeConfig
@@ -182,18 +214,26 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
         schema = Schema.from_dict(_declare_records(input_schema))
     except Exception as e:  # noqa: BLE001 - surface schema errors to the client
         raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
+    gates = _gate_overrides(req.options)
     try:
-        result = model.batch_extract_long(
-            [req.text],
-            schema,
-            threshold=req.options.threshold,
-            chunk_size=req.options.chunk_size,
-            chunk_overlap=req.options.chunk_overlap,
-            include_spans=True,
-            include_confidence=True,
-            global_decode=req.options.global_decode,
-            global_decode_config=GlobalDecodeConfig(beam_width=req.options.beam_width),
-        )[0]
+        # The cached model is shared across requests: apply this request's gates, extract,
+        # and restore, under one lock so a concurrent request never sees another's gates.
+        with _GATE_LOCK:
+            restore = _apply_gates(model, gates)
+            try:
+                result = model.batch_extract_long(
+                    [req.text],
+                    schema,
+                    threshold=req.options.threshold,
+                    chunk_size=req.options.chunk_size,
+                    chunk_overlap=req.options.chunk_overlap,
+                    include_spans=True,
+                    include_confidence=True,
+                    global_decode=req.options.global_decode,
+                    global_decode_config=GlobalDecodeConfig(beam_width=req.options.beam_width),
+                )[0]
+            finally:
+                _apply_gates(model, restore)
     except Exception as e:  # noqa: BLE001 - surface extraction errors to the client
         raise HTTPException(status_code=500, detail=f"extraction failed: {e}") from e
     device = str(next(model.parameters()).device)
@@ -245,7 +285,13 @@ def model_schema(model: str) -> Dict[str, Any]:
     from gliner2.configuration import ExtractorConfig
 
     cfg = ExtractorConfig.from_pretrained(model)
+    bh = getattr(cfg, "boundary_head", None) or {}
     return {"model": model, "schema": getattr(cfg, "default_schema", None),
+            # The model's own gates; None means "follows the span threshold".
+            "record_defaults": {
+                "record_threshold": bh.get("record_anchor_threshold") if bh.get("record_anchor_threshold_wins") else None,
+                "argument_threshold": bh.get("record_field_threshold") if bh.get("record_field_threshold_wins") else None,
+                "boundary": bool(bh)},
             "inference_defaults": getattr(cfg, "inference_defaults", None),
             "has_label_map": bool(getattr(cfg, "label_map", None))}
 

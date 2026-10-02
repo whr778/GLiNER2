@@ -32,6 +32,10 @@ bash viewer/viewer.sh logs       # tail both logs (Ctrl-C to quit)
 Then open **http://localhost:3000**, pick a schema preset (or edit the schema
 JSON), enter text, and click **Extract**.
 
+Options also carry two gates for boundary models: the **record gate** (which event/record
+instances exist) and the **argument gate** (which arguments fill them). Unchecked, both follow
+the threshold.
+
 Selecting a model loads the decode settings it was evaluated with (`inference_defaults`
 in its `config.json`), and `/extract` rewrites schema labels to the spellings the model
 trained on (`label_map`), listing each rewrite under the results. Checkpoints saved

@@ -783,6 +783,8 @@ _STRUCTURAL_BOUNDARY_KEYS = frozenset({
 _EVAL_TIME_BOUNDARY_KEYS = ("decode_mode", "joint_beam_width", "abstention_threshold",
                             "record_anchor_threshold", "record_anchor_threshold_wins",
                             "record_anchor_proposal_threshold",
+                            # The ARGUMENT gate (TODO 22): read at decode, sizes nothing.
+                            "record_field_threshold", "record_field_threshold_wins",
                             # PROPOSAL WIDTH is an operating point: it adds and removes no
                             # tensors and is read at decode. It is also the binding
                             # constraint on long documents -- gold coverage at a 4096

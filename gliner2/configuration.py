@@ -191,6 +191,12 @@ class BoundaryHeadSettings:
     # with this flag off the two decode arms disagree, and with it on they agree.
     record_anchor_threshold_wins: bool = False
     record_field_threshold: float = 0.5     # list-field / null decision cutoff
+    # The ARGUMENT knob (TODO 22). With it OFF, every field gate (decode_group's
+    # field_threshold, the absent-able field filter, choice fields) uses the RECORD gate,
+    # exactly as every checkpoint was measured -- `record_field_threshold` was a dead
+    # setting of the S14 class. ON makes it real, so arguments get their own operating
+    # point while the anchor/object (instance) gate stays where it is.
+    record_field_threshold_wins: bool = False
     record_loss_weight: float = 1.0
     # Per-task rebalancing of the span losses (start/end/pair), keyed by task
     # type: "entities" | "relations" | "events" | "json_structures". Absent keys
@@ -537,6 +543,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "record_field_threshold": float(
             values.get("record_field_threshold", d.record_field_threshold)
+        ),
+        "record_field_threshold_wins": bool(
+            values.get("record_field_threshold_wins", d.record_field_threshold_wins)
         ),
         "record_loss_weight": float(
             values.get("record_loss_weight", d.record_loss_weight)

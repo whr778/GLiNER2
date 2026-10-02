@@ -57,11 +57,17 @@ export default function Home() {
     let cancelled = false;
     setSchemaLoading(true); // disable extraction until this model's schema resolves
     (async () => {
-      const { schema: shipped, inferenceDefaults } = await getModelSchema(m);
+      const { schema: shipped, inferenceDefaults, recordDefaults } = await getModelSchema(m);
       if (cancelled) return;
       setSchemaLoading(false); // network resolved; the schema apply below is synchronous
       // Decode the way this model was evaluated; the user can still move the controls.
-      if (inferenceDefaults) setOptions((o) => ({ ...o, ...inferenceDefaults }));
+      // Record/argument gates start at the model's own values (null = follow threshold).
+      setOptions((o) => ({
+        ...o,
+        ...(inferenceDefaults ?? {}),
+        record_threshold: recordDefaults?.record_threshold ?? null,
+        argument_threshold: recordDefaults?.argument_threshold ?? null,
+      }));
       if (shipped && Object.keys(shipped).length > 0) {
         // Open-vocab task types ship as an `open_vocab` marker; scaffold them into
         // empty fields the user can fill (pruned back out at extract time).

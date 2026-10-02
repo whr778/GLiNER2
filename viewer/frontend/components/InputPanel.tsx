@@ -201,6 +201,33 @@ export default function InputPanel({ text, setText, options, setOptions, loading
             onChange={(e) => set("threshold", parseFloat(e.target.value))}
           />
         </div>
+        {(["record_threshold", "argument_threshold"] as const).map((key) => {
+          const label = key === "record_threshold" ? "Record (instance) gate" : "Argument gate";
+          const value = options[key];
+          return (
+            <div className="field" key={key}>
+              <label>
+                <input
+                  type="checkbox" style={{ width: "auto", marginRight: 6 }}
+                  checked={value != null}
+                  onChange={(e) => set(key, e.target.checked ? options.threshold : null)}
+                />
+                {label}: {value != null ? value.toFixed(2) : "follows threshold"}
+              </label>
+              {value != null && (
+                <input
+                  type="range" min={0} max={1} step={0.05}
+                  value={value}
+                  onChange={(e) => set(key, parseFloat(e.target.value))}
+                />
+              )}
+            </div>
+          );
+        })}
+        <div className="hint">
+          Boundary models only. The record gate decides which event/record instances exist; the
+          argument gate decides which arguments fill them. Unchecked, both follow the threshold.
+        </div>
         <div className="field row">
           <input
             id="gd" type="checkbox"

@@ -36,6 +36,10 @@ export type ExtractOptions = {
   beam_width: number;
   model?: string | null;
   device?: string; // auto | cpu | mps | cuda
+  // Boundary models: the record (instance) gate and the argument (field) gate. null =
+  // the model's own setting, which by default follows `threshold`.
+  record_threshold?: number | null;
+  argument_threshold?: number | null;
 };
 
 export const DEFAULT_OPTIONS: ExtractOptions = {
@@ -46,6 +50,8 @@ export const DEFAULT_OPTIONS: ExtractOptions = {
   beam_width: 8,
   model: null,
   device: "auto",
+  record_threshold: null,
+  argument_threshold: null,
 };
 
 export type ExtractResponse = {

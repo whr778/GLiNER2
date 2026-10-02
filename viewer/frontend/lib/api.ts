@@ -62,16 +62,21 @@ export async function getModels(): Promise<ModelEntry[]> {
 export type ModelInfo = {
   schema: Record<string, any> | null;
   inferenceDefaults: Partial<ExtractOptions> | null;
+  recordDefaults: { record_threshold: number | null; argument_threshold: number | null; boundary: boolean } | null;
 };
 
 export async function getModelSchema(model: string): Promise<ModelInfo> {
   try {
     const res = await fetch(`${API_BASE}/model-schema?model=${encodeURIComponent(model)}`);
-    if (!res.ok) return { schema: null, inferenceDefaults: null };
+    if (!res.ok) return { schema: null, inferenceDefaults: null, recordDefaults: null };
     const body = await res.json();
-    return { schema: body.schema ?? null, inferenceDefaults: body.inference_defaults ?? null };
+    return {
+      schema: body.schema ?? null,
+      inferenceDefaults: body.inference_defaults ?? null,
+      recordDefaults: body.record_defaults ?? null,
+    };
   } catch {
-    return { schema: null, inferenceDefaults: null };
+    return { schema: null, inferenceDefaults: null, recordDefaults: null };
   }
 }
 
