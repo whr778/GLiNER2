@@ -83,13 +83,30 @@ concept it already knows. Each corpus label gets one status:
 | `unlisted` | no counterpart, but the category is open-vocabulary in the base, which keeps no full inventory | not necessarily new; check |
 | `open_vocab` / `open_vocab_code_like` | the base carries no label inventory (e.g. fastino models) | give code-like labels (`PER.Individual`, `Vulnerable_System`) a natural-language name |
 
+### `<name>.labels.yaml`
+
+A ready `labels_file` for the fine-tuning config:
+
+1. the **base checkpoint's own `label_map`**, unchanged (so the fine-tune presents the spellings
+   the base trained on);
+2. the corpus's own spelling clusters (`build_label_maps.build`: case/punctuation folds plus the
+   hand-pinned `SYNONYMS`, e.g. `PERSON -> Person`) -- where a cluster contains a spelling the
+   base knows, **the base spelling wins**, never the corpus majority;
+3. corpus labels that only *fold* onto a base spelling (e.g. `QUANTITY` vs `Quantity`) appear
+   as **commented PROPOSED lines**, not active: confirm each by reading the surfaces it tags in
+   `labels_review.md`, then move the line into the map.
+
+The map is closed (no target is itself a key). Reference it as `labels_file:` and keep **no**
+inline `labels:` block in the config -- an empty one silently overrides the file. For a base
+with no label map (fastino), the file holds only the corpus's own clusters.
+
 ## Roadmap
 
 | stage | needs | measures | config value | built |
 |---|---|---|---|---|
 | 1 model probe | CPU | architecture, encoder, limits, label inventory | — | ✅ |
 | 2 corpus probe | CPU | heads, lengths, hygiene, gold capacity | windows, capacity, metric | ✅ |
-| 3 label review | CPU | label status per category | label map additions | ✅ |
+| 3 label review + labels file | CPU | label status per category; `<name>.labels.yaml` | `labels_file` | ✅ |
 | 4 reachability | GPU | gold reachable at several `start_top_k` (`probe_candidate_coverage.py`) | `start_top_k` / `end_top_k` | — |
 | 5 zero-shot baseline | GPU | the base's own scores on **val** before training | the "did training help" control | — |
 | 6 operating points | GPU | span threshold and record-gate sweeps on **val** | eval `threshold`, `record_anchor_threshold` | — |

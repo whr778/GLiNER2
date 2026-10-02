@@ -17,7 +17,8 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from corpus_probe import probe_corpus  # noqa: E402
+from corpus_probe import probe_corpus, split_paths  # noqa: E402
+from labels_file import build_labels, write_labels_file  # noqa: E402
 from label_review import review  # noqa: E402
 from model_probe import probe_model  # noqa: E402
 
@@ -98,6 +99,8 @@ def main() -> None:
     (args.out / f"{name}.calibration.json").write_text(
         json.dumps(calib, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
     write_review(args.out / f"{name}.labels_review.md", name, labels)
+    block, proposals = build_labels([str(p) for p in split_paths(args.corpus).values()], model_info, labels)
+    write_labels_file(args.out / f"{name}.labels.yaml", name, args.model, block, proposals)
 
     u = corpus["uniqueness"]
     dups = {s: u[f"{s}_records"] - u[f"{s}_unique_inputs"] for s in ("train", "val", "test")}
@@ -107,7 +110,10 @@ def main() -> None:
     print(f"[derive] split hygiene: duplicates {dups} overlap {overlap}"
           + ("  *** NOT CLEAN ***" if any(dups.values()) or any(overlap.values()) else "  clean"))
     print(f"[derive] gold capacity: {corpus['gold_capacity']}")
-    print(f"[derive] wrote {args.out / (name + '.calibration.json')} and {name}.labels_review.md")
+    n_map = {c: len(b["map"]) for c, b in block.items()}
+    print(f"[derive] labels_file: map entries {n_map}, proposals awaiting review "
+          f"{ {c: len(v) for c, v in proposals.items()} }")
+    print(f"[derive] wrote {args.out / (name + '.calibration.json')}, {name}.labels_review.md, {name}.labels.yaml")
 
 
 if __name__ == "__main__":
