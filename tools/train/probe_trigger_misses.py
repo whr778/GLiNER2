@@ -46,13 +46,19 @@ CJK = re.compile(r"[㐀-鿿]")
 def val_docs(cfg: dict, config: str, per_corpus: int, seed: int):
     """{corpus: [(text, events-only output)]} from each corpus's val split, events only."""
     fns = T._category_fns(T.load_labels_cfg(cfg, config))
+    # EXACTLY train.py's validation files (train_only excluded), and a missing file is an error.
+    # The first version took any `<corpus>.val.jsonl` present on disk: it probed train_only corpora
+    # and silently skipped absent files, so two machines probed different corpus sets.
     data = cfg["data"]
-    paths = {Path(p).name: f"{p}.val.jsonl" for p in data.get("corpora") or []}
-    paths.update({n: s["val"] for n, s in (data.get("event_files") or {}).items() if isinstance(s, dict) and s.get("val")})
+    files = T._dedupe_paths(T._split_files(data.get("corpora") or [], "val", set(data.get("train_only") or ()))
+                            + T._event_split(data.get("event_files") or {}, "val"), "val")
+    missing = [f for f in files if not Path(f).is_file()]
+    if missing:
+        raise SystemExit(f"[probe] validation files missing (fetch them first): {missing}")
+    paths = {f.removesuffix(".val.jsonl").removeprefix("data/"): f for f in files}   # by PATH: some corpora have two val files
+    print(f"[probe] validation files ({len(paths)}): {sorted(paths)}")
     out = {}
     for name, path in sorted(paths.items()):
-        if not Path(path).is_file():
-            continue
         recs = [T.transform_record(json.loads(l), fns) for l in open(path, encoding="utf-8") if l.strip()]
         recs = [(r["input"], {"events": r["output"]["events"]}) for r in recs if r["output"].get("events")]
         if recs:
