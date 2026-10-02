@@ -3,8 +3,9 @@
 Point it at a pre-split corpus and a pretrained GLiNER2 checkpoint; it measures what a
 fine-tuning config needs and writes the evidence. One run per (corpus, base model) pair.
 
-**Status (2026-10-02):** stages 1–3 run today (CPU only). Stages 4–7 (GPU calibrations and
-the YAML writer) are not built yet — see [Roadmap](#roadmap).
+**Status (2026-10-02):** stages 1–6 run (`--gpu` adds 4–6; `--device cpu` works for small
+corpora and sdpa bases, FlashAttention-2 bases need CUDA). Stage 7, the YAML writer, is not
+built yet — see [Roadmap](#roadmap).
 
 ## Requirements
 
@@ -21,6 +22,17 @@ uv run python tools/derive/derive_config.py \
     --model whr778/gliner2-eb18-balanced \
     --out derived/
 ```
+
+Add `--gpu` for stages 4–6 (reachability, zero-shot baseline, sweeps) on the **val** split:
+
+```bash
+uv run python tools/derive/derive_config.py --corpus /path/to/ace2005_v3 \
+    --model whr778/gliner2-eb18-balanced --out derived/ --gpu --device cuda
+```
+
+`--max-val N` caps validation records (default: all), `--reach-records` sizes the reachability
+probe (default 40), `--batch-size` the eval batch (default 2). Operating points measured on a
+base are a **starting point**: re-sweep on validation after fine-tuning.
 
 `--model` takes a Hub id (`fastino/gliner2.5-multi-v1`, `fastino/gliner2-base-v1`,
 `whr778/gliner2-eb17-best`, …) or a local checkpoint directory (`out/my-run/best`).
@@ -107,9 +119,9 @@ with no label map (fastino), the file holds only the corpus's own clusters.
 | 1 model probe | CPU | architecture, encoder, limits, label inventory | — | ✅ |
 | 2 corpus probe | CPU | heads, lengths, hygiene, gold capacity | windows, capacity, metric | ✅ |
 | 3 label review + labels file | CPU | label status per category; `<name>.labels.yaml` | `labels_file` | ✅ |
-| 4 reachability | GPU | gold reachable at several `start_top_k` (`probe_candidate_coverage.py`) | `start_top_k` / `end_top_k` | — |
-| 5 zero-shot baseline | GPU | the base's own scores on **val** before training | the "did training help" control | — |
-| 6 operating points | GPU | span threshold and record-gate sweeps on **val** | eval `threshold`, `record_anchor_threshold` | — |
+| 4 reachability | GPU | gold in the candidate set: the as-built pool, then `per_query` at `start_top_k` 16–128 (`start_top_k` does nothing under a `shared` pool, e.g. gliner2.5) | `start_top_k`, `candidate_pool` | ✅ |
+| 5 zero-shot baseline | GPU | the base's own scores on **val** before training | the "did training help" control | ✅ |
+| 6 operating points | GPU | span threshold and record-gate sweeps on **val** | eval `threshold`, `record_anchor_threshold` | ✅ |
 | 7 YAML writer | — | — | the config, every value annotated with its source | — |
 
 Policy values (exact replay ~30% of the mix, warm-start learning rates, negatives on,
