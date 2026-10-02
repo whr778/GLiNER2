@@ -26,6 +26,16 @@ case "$ARM" in control|control2|identity|idsep) ;;
 EXP=p2fast
 CFG=tools/train/config/ab/$EXP-$ARM.yaml
 
+# THE BOX MUST RUN THIS COMMIT. provision_box.sh defaults BRANCH to merge/main-20260805; the
+# first p2fast launch inherited that, cloned a branch without these configs, and all four
+# runners died on FileNotFoundError. Pass the branch AND the commit; the provisioner refuses
+# a clone that does not match. Refuse here if the commit is not on origin yet.
+export BRANCH=$(git rev-parse --abbrev-ref HEAD)
+export EXPECT_COMMIT=$(git rev-parse --short=12 HEAD)
+git fetch -q origin "$BRANCH" && [ "$(git rev-parse --short=12 "origin/$BRANCH")" = "$EXPECT_COMMIT" ] \
+  || { echo "[$EXP] *** REFUSING TO LAUNCH -- $EXPECT_COMMIT is not origin/$BRANCH; push first ***"; exit 5; }
+[ -f "$CFG" ] || { echo "[$EXP] *** REFUSING TO LAUNCH -- $CFG missing ***"; exit 6; }
+
 uv run python tools/train/check_corpora_fetchable.py --config "$CFG" --offline \
   || { echo "[$EXP] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
 uv run python tools/train/check_label_menus.py --config "$CFG" \

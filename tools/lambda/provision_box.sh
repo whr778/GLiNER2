@@ -26,6 +26,10 @@ JOB=${JOB:?job command required}
 CFG=${CFG:-}
 CKPT=${CKPT:-}
 BRANCH=${BRANCH:-merge/main-20260805}
+# THE EXACT COMMIT THE LAUNCHER MEANT. Without it a box silently runs whatever $BRANCH holds:
+# 2026-10-02 p2fast launched 4 A100s onto the DEFAULT branch, which lacked the arm configs,
+# and every runner then sat in its rescue hold. Set => the clone must match or the box dies.
+EXPECT_COMMIT=${EXPECT_COMMIT:-}
 KEY=${KEY:-$HOME/.ssh/id_ed25519}
 JOB_TIMEOUT=${JOB_TIMEOUT:-14400}
 HARD_DEADLINE=${HARD_DEADLINE:-18000}
@@ -165,6 +169,10 @@ cd ~ && rm -rf gliner2
 git clone -q https://github.com/whr778/GLiNER2.git gliner2
 cd gliner2 && git checkout -q $BRANCH
 echo "[prov] repo at \$(git log --oneline -1)"
+if [ -n "$EXPECT_COMMIT" ] && [ "\$(git rev-parse --short=12 HEAD)" != "$EXPECT_COMMIT" ]; then
+  echo "[prov] *** box is at \$(git rev-parse --short=12 HEAD), launcher expected $EXPECT_COMMIT ***"
+  exit 1
+fi
 SETUP
 
 # STOP 4: arm the box-side idle guard BEFORE the bootstrap, so every laptop-side failure
