@@ -80,6 +80,7 @@ def probe_corpus(base: str, tokenizer, event_records: bool) -> Dict[str, Any]:
         "heads": {s: heads(m) for s, m in scans.items()},
         "uniqueness": dm.uniqueness({"corpus": scans}),
         "labels": labels(scans["train"]),
+        "labels_by_split": {s: labels(m) for s, m in scans.items()},
         "lengths": {s: lengths(p, tokenizer) for s, p in paths.items()},
         "gold_capacity": {"recommended_cap": cap or 32, "pct_groups_over_32": round(pct_over_32, 3),
                           "largest_group": biggest, "sampled_docs": sgc.SAMPLE,

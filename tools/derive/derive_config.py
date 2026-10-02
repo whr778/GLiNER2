@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from corpus_probe import probe_corpus, split_paths  # noqa: E402
 from labels_file import build_labels, write_labels_file  # noqa: E402
+from data_health import run_checks, write_report  # noqa: E402
 from label_review import review  # noqa: E402
 from model_probe import probe_model  # noqa: E402
 
@@ -83,6 +84,9 @@ def main() -> None:
     ap.add_argument("--max-val", type=int, default=0, help="cap validation records (0 = all)")
     ap.add_argument("--reach-records", type=int, default=40, help="val records for the reachability probe")
     ap.add_argument("--batch-size", type=int, default=2)
+    ap.add_argument("--siblings", nargs="*", default=[],
+                    help="extra split bases to check for shared documents (same-directory corpora are always checked)")
+    ap.add_argument("--align-records", type=int, default=2000, help="records per split for the alignment check (0 = all)")
     args = ap.parse_args()
 
     from transformers import AutoTokenizer
@@ -96,6 +100,10 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     calib = {"model": {k: v for k, v in model_info.items() if k not in ("label_map", "boundary_head")},
              "corpus": corpus, "label_review": labels}
+    health = run_checks(args.corpus, split_paths(args.corpus), corpus, args.model,
+                        eval_settings(model_info)["window"], args.siblings, args.align_records)
+    calib["data_health"] = health
+    write_report(args.out / f"{name}.data_health.md", name, health)
     if args.gpu:
         calib["gpu"] = run_gpu_stages(args, model_info, corpus, event_records)
     (args.out / f"{name}.calibration.json").write_text(
@@ -112,6 +120,18 @@ def main() -> None:
     print(f"[derive] split hygiene: duplicates {dups} overlap {overlap}"
           + ("  *** NOT CLEAN ***" if any(dups.values()) or any(overlap.values()) else "  clean"))
     print(f"[derive] gold capacity: {corpus['gold_capacity']}")
+    sev = Counter(f["severity"] for f in health["findings"])
+    print(f"[derive] data health: {dict(sev) or 'no findings'}"
+          + ("  *** BLOCKED -- DO NOT TRAIN; see " + name + ".data_health.md ***" if health["blocked"] else ""))
+    m = health["measured"]
+    tv = {k: v for k, v in m.get("tvd", {}).items() if v is not None}
+    print(f"[derive]   measured: max TVD {max(tv.values()) if tv else None} over {len(tv)} split pairs; "
+          f"unaligned % {m.get('unaligned_pct')}; siblings checked {len(m['siblings_checked'])}")
+    for f in health["findings"]:
+        if f["severity"] != "INFO":
+            print(f"  {f['severity']:5} {f['check']}: {f['message']}")
+            if f["fix"]:
+                print(f"        fix: {f['fix']}")
     n_map = {c: len(b["map"]) for c, b in block.items()}
     print(f"[derive] labels_file: map entries {n_map}, proposals awaiting review "
           f"{ {c: len(v) for c, v in proposals.items()} }")

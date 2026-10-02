@@ -61,6 +61,33 @@ Output names are `<corpus-dir-name>__<model-name>`. Give each permutation its ow
 **`*** NOT CLEAN ***` means stop**: duplicate inputs inside a split, or the same document in
 two splits. Fix the corpus before training; a contaminated test set is not a measurement.
 
+## Data health — read this first
+
+Every run checks the splits before anything else and prints each finding with its evidence and
+the command that fixes it; `<name>.data_health.md` has the full report. Severities:
+
+| severity | means | checks |
+|---|---|---|
+| **BLOCK** | no trustworthy measurement is possible — **do not train** (stage 7 will refuse to write a config) | duplicates inside val/test; any train/val/test overlap |
+| **WARN** | numbers will be biased or noisy | train duplicates; documents shared with a **sibling** corpus; label shift (TVD > 0.15, STRONG > 0.30) per category and split pair; labels in val/test unseen in train; labels with < 10 gold in val/test; > 1% gold that never aligns to the tokenized text |
+| **INFO** | worth knowing | a split with no gold; train p90 longer than the window |
+
+Typical fixes it prints:
+
+```bash
+uv run python tools/data/dedupe_splits.py <base> --dry-run      # contamination / duplicates (test > val > train)
+uv run python tools/data/check_leakage.py --pattern '<dir>/*.jsonl' --focus <name>   # sibling overlap
+uv run python tools/data/measure_surface_alignment.py --checkpoint <model> --files <split>.jsonl
+```
+
+**Siblings** are every other `<base>.{train,val,test}.jsonl` in the same directory — put the
+12 ACE permutations side by side and each run checks itself against the other 11. Add more with
+`--siblings <base> ...`. `--align-records N` caps the alignment check per split (default 2000).
+
+The JSON's `data_health.measured` records what every check measured (max TVD per split pair,
+unaligned % per split, siblings checked), so a check that found nothing is visibly a check
+that ran.
+
 ## Outputs
 
 ### `<name>.calibration.json`
