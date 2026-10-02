@@ -1038,6 +1038,13 @@ class BoundaryHead(nn.Module):
             proposal_gold = pooled.gold_mask
             proposal_valid = loss_valid
             proposal_query_axis, proposal_candidate_axis = 2, 1
+        # `labels` was built on these same candidates in this same orientation, so span
+        # identity replaces "was injected" element for element (see `proposal_gold`).
+        identity_gold = (labels > 0.5) & proposal_valid
+        if proposal_gold is not None:
+            _note_proposal_gold(self.settings.proposal_gold, proposal_gold.sum(), identity_gold.sum())
+        if self.settings.proposal_gold == "identity":
+            proposal_gold = identity_gold
         if (
             proposal_logits is not None
             and proposal_gold is not None
@@ -1384,6 +1391,30 @@ def _note_absent_cells(mode: str, kept: "torch.Tensor", absent: "torch.Tensor") 
         logger.info("boundary absent_reduction=%s: absent share of boundary cells %.3f "
                     "(pi_P %.3f), cumulative over %d batches",
                     mode, int(_ABSENT_CELLS) / kept_total, 1 - int(_ABSENT_CELLS) / kept_total, n)
+
+
+_PROPOSAL_INJECTED = 0
+_PROPOSAL_IDENTITY = 0
+_PROPOSAL_GOLD_CALLS = 0
+
+
+def _note_proposal_gold(mode: str, injected: "torch.Tensor", identity: "torch.Tensor") -> None:
+    """Report which proposal-loss gold definition EXECUTED, and how far the two disagree.
+
+    `identity - injected` is the number of gold candidates the historical definition trains
+    as negatives. Accumulated on device and read back only on a batch that logs, with the
+    same backoff as `_note_negative_queries`.
+    """
+    global _PROPOSAL_INJECTED, _PROPOSAL_IDENTITY, _PROPOSAL_GOLD_CALLS
+    _PROPOSAL_INJECTED = _PROPOSAL_INJECTED + injected
+    _PROPOSAL_IDENTITY = _PROPOSAL_IDENTITY + identity
+    _PROPOSAL_GOLD_CALLS += 1
+    n = _PROPOSAL_GOLD_CALLS
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        logger.info("proposal_gold=%s: gold candidates by injection %d, by span identity %d "
+                    "(%d identity-gold trained as negatives under 'injected'), cumulative over %d batches",
+                    mode, int(_PROPOSAL_INJECTED), int(_PROPOSAL_IDENTITY),
+                    int(_PROPOSAL_IDENTITY) - int(_PROPOSAL_INJECTED), n)
 
 
 class BoundaryExtractorModel(BaseExtractorModel):

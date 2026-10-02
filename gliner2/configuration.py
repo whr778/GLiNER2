@@ -75,6 +75,16 @@ class BoundaryHeadSettings:
     absent_reduction: str = "pooled"  # "pooled" | "separate"
     absent_loss_weight: float = 1.0
     present_loss_scale: float = 1.0
+    # WHICH CANDIDATES ARE GOLD IN proposal_loss. "injected" (historical) flags only the
+    # copies gold injection added this step; a gold span the proposer found by itself but
+    # injection did not sample stays in the denominator as a NEGATIVE -- while pair, rerank
+    # and soft-IoU label the same candidate POSITIVE by span identity. Injection anneals
+    # 1.0 -> 0.25 after the first 15% of steps (trainer defaults), so the contradiction is
+    # live for most of a run: measured on a real eb18 CASIE batch, 0 of 26 gold candidates
+    # contradicted at p_inj 1.0, 22 of 26 at 0.25, and the loss is exactly 0 at 0.0.
+    # "identity" uses the pair labels (span identity against the query's gold), so the four
+    # candidate losses agree. Training-only; sizes nothing.
+    proposal_gold: str = "injected"  # "injected" | "identity"
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -370,6 +380,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "absent_reduction": str(values.get("absent_reduction", d.absent_reduction)),
         "absent_loss_weight": float(values.get("absent_loss_weight", d.absent_loss_weight)),
         "present_loss_scale": float(values.get("present_loss_scale", d.present_loss_scale)),
+        "proposal_gold": str(values.get("proposal_gold", d.proposal_gold)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),
@@ -641,6 +652,11 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError(
             "boundary_head.absent_reduction must be 'pooled' or 'separate', got "
             f"{result['absent_reduction']!r}"
+        )
+    if result["proposal_gold"] not in ("injected", "identity"):
+        raise ValueError(
+            "boundary_head.proposal_gold must be 'injected' or 'identity', got "
+            f"{result['proposal_gold']!r}"
         )
     if result["absent_loss_weight"] < 0 or result["present_loss_scale"] <= 0:
         raise ValueError(
