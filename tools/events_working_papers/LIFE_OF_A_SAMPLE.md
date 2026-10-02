@@ -343,7 +343,25 @@ Shares are mean (min, max). Single-term groups (classifier, record_decoder, rela
 
 Every other term is unchanged to the third decimal. Fix #2 does what its equation says, on a budget too small to be likely to move a score: under 0.4% of the encoder's direction.
 
-**Still to run:** a late-training state (p_inj 0.25, soft-IoU 0, consistency 1), which is where eb18 spent most of its steps. That is also the state in which the proposal-gold contradiction (2.7) is live.
+### Late-training state: the contradicted term dominates
+
+**Setup:** p_inj 0.25, soft-IoU 0, consistency 1. This is where eb18 spent most of its steps. Both modes ran on the same 8 seeded batches, with residual 0.0 on all of them. Values are mean (min, max).
+
+| term | boundary_head, injected (eb18) | boundary_head, identity (fix) | encoder, injected (eb18) | encoder, identity (fix) |
+|---|---:|---:|---:|---:|
+| proposal | **0.590** (0.372, 0.828) | 0.304 (0.121, 0.440) | **0.491** (0.272, 0.688) | 0.304 (0.207, 0.402) |
+| rerank_listwise | 0.223 | 0.367 | 0.243 | 0.350 |
+| pair | 0.172 | 0.291 | 0.105 | 0.131 |
+| count | 0.013 | 0.034 | 0.087 | 0.108 |
+| record_field | 0.0008 | 0.0056 | 0.0006 | 0.0014 |
+| start / end | 0.0003 / 0.0003 | 0.0007 / 0.0007 | 0.0018 / 0.0017 | 0.0023 / 0.0022 |
+
+**What this shows:**
+- In eb18's late state, the proposal loss set **59% of the boundary head's update direction and 49% of the encoder's**. At p_inj 0.25 that term labels most naturally found gold as negatives (14 of 16 in the 2.7 trace).
+- Early (p_inj 1.0) it was about a quarter of the update. The contradiction grows into the dominant term exactly when injection anneals.
+- Under `proposal_gold: identity` the proposal share returns to 0.30, close to its early level, and rerank and pair regain theirs.
+
+This is mechanism, not outcome: the Phase 2 fast A/B (catalog, `p2fast`) measures whether it moves scores.
 
 ---
 
