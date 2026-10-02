@@ -1109,10 +1109,11 @@ def _blind_test_by_language(
     chunk_overlap: int = 128,
     global_decode: bool = False,
     global_decode_config=None,
+    boundary_overrides: Dict = None,
 ) -> Dict:
     """Run the blind test per language then over all data; return aggregate metrics."""
     from collections import defaultdict
-    from gliner2 import AutoExtractor
+    from gliner2.training.eval_metrics import load_with_overrides
     from gliner2.training.metrics import compute_metrics, _print_micro_report
     from gliner2.training.trainer import ExtractorDataset
 
@@ -1151,7 +1152,7 @@ def _blind_test_by_language(
               f"(still scored in the combined pass)")
 
     print(f"\n[blind test] Loading {best} for per-language evaluation...")
-    model = AutoExtractor.from_pretrained(str(best))
+    model = load_with_overrides(best, boundary_overrides)
 
     per_lang: Dict[str, Dict] = {}
     for lang in sorted(by_lang):

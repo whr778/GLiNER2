@@ -1222,6 +1222,47 @@ def _items_argument(s):
     return sorted(((et, role), (ent,), role) for et, role, ent in triples)
 
 
+def load_with_overrides(checkpoint_dir, boundary_overrides: Dict[str, Any] = None, map_location=None):
+    """Load a checkpoint and apply eval-time ``boundary_head`` overrides to the BUILT model.
+
+    Shared by :func:`evaluate_checkpoint` and the per-language blind test, which loaded its
+    own model and had no override path at all -- `eval.py` on a config with both
+    `eval_by_language` and boundary-head eval keys died with a TypeError (2026-10-02).
+    """
+    # Imported here so this module stays importable without a model checkout.
+    # AutoExtractor, not GLiNER2: GLiNER2 IS the span class and hardcodes the span
+    # head, so loading a boundary checkpoint died on `config.max_width` (a span-only
+    # field) AFTER training had fully completed and saved -- losing only the blind
+    # test, but marking the whole job failed.
+    from gliner2 import AutoExtractor
+
+    model = AutoExtractor.from_pretrained(str(checkpoint_dir), map_location=map_location)
+    if boundary_overrides:
+        # `from_pretrained` builds boundary_settings from the CHECKPOINT's config inside
+        # __init__, so a plain setattr lands too late and is silently dropped. Rebuild the
+        # settings and sync the HEAD's own reference, exactly as the training path does.
+        # This is what makes decode_mode ("greedy" | "joint") an eval-time switch over ONE
+        # trained model, which is the only way the two arms are the same model.
+        from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
+        merged = dict(getattr(model.config, "boundary_head", None) or {})
+        merged.update(boundary_overrides)
+        model.config.boundary_head = merged
+        settings = BoundaryHeadSettings(**validate_boundary_head(merged))
+        model.boundary_settings = settings
+        head = getattr(model, "boundary_head", None)
+        if head is not None:
+            head.settings = settings
+        # Settings DERIVED at construction do not follow the assignments above. The
+        # proposer builds its ProposalSettings in __init__ and re-reads its own copy each
+        # forward, so without this a candidate_budget / start_top_k override validates,
+        # prints, and changes nothing.
+        from gliner2.models.boundary.model import resync_derived_settings
+        n_resynced = resync_derived_settings(model, settings)
+        print(f"[eval] boundary_head overrides applied: {boundary_overrides}"
+              f"  (resynced {n_resynced} proposer(s))")
+    return model
+
+
 def evaluate_checkpoint(
     checkpoint_dir,
     test_data,
@@ -1256,38 +1297,9 @@ def evaluate_checkpoint(
         under ``eval_<category>_…``. Empty if the test set has no records
         with usable gold structure.
     """
-    # Imported here so this module stays importable without a model checkout.
-    # AutoExtractor, not GLiNER2: GLiNER2 IS the span class and hardcodes the span
-    # head, so loading a boundary checkpoint died on `config.max_width` (a span-only
-    # field) AFTER training had fully completed and saved -- losing only the blind
-    # test, but marking the whole job failed.
-    from gliner2 import AutoExtractor
     from gliner2.training.trainer import ExtractorDataset
 
-    model = AutoExtractor.from_pretrained(str(checkpoint_dir), map_location=map_location)
-    if boundary_overrides:
-        # `from_pretrained` builds boundary_settings from the CHECKPOINT's config inside
-        # __init__, so a plain setattr lands too late and is silently dropped. Rebuild the
-        # settings and sync the HEAD's own reference, exactly as the training path does.
-        # This is what makes decode_mode ("greedy" | "joint") an eval-time switch over ONE
-        # trained model, which is the only way the two arms are the same model.
-        from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
-        merged = dict(getattr(model.config, "boundary_head", None) or {})
-        merged.update(boundary_overrides)
-        model.config.boundary_head = merged
-        settings = BoundaryHeadSettings(**validate_boundary_head(merged))
-        model.boundary_settings = settings
-        head = getattr(model, "boundary_head", None)
-        if head is not None:
-            head.settings = settings
-        # Settings DERIVED at construction do not follow the assignments above. The
-        # proposer builds its ProposalSettings in __init__ and re-reads its own copy each
-        # forward, so without this a candidate_budget / start_top_k override validates,
-        # prints, and changes nothing.
-        from gliner2.models.boundary.model import resync_derived_settings
-        n_resynced = resync_derived_settings(model, settings)
-        print(f"[eval] boundary_head overrides applied: {boundary_overrides}"
-              f"  (resynced {n_resynced} proposer(s))")
+    model = load_with_overrides(checkpoint_dir, boundary_overrides, map_location)
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
     metrics = compute_metrics(
         model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,

@@ -37,6 +37,8 @@ snapshot_download('$1', local_dir='$dir')" >&2 || return 1
 
 run_pass() {  # name repo config outdir threshold gd-flag
   local name=$1 repo=$2 cfg=$3 outdir=$4 thr=$5 gd=$6
+  # PASSES="p3-... p4-..." re-runs only the named passes (published ones are not re-bought).
+  if [ -n "${PASSES:-}" ] && [[ " $PASSES " != *" $name "* ]]; then return; fi
   local ckpt; ckpt=$(fetch "$repo") || { echo "[rescore] *** fetch failed: $repo ***"; FAILED=1; return; }
   rm -f "$outdir/test_metrics.json"
   echo "[rescore] ===== $name  $repo  threshold=$thr  $gd  $(date -u) ====="
