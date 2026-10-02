@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from corpus_probe import probe_corpus, split_paths  # noqa: E402
 from labels_file import build_labels, write_labels_file  # noqa: E402
 from data_health import run_checks, write_report  # noqa: E402
+import emit_config  # noqa: E402
 from label_review import review  # noqa: E402
 from model_probe import probe_model  # noqa: E402
 
@@ -99,6 +100,7 @@ def main() -> None:
     name = run_name(args.corpus, args.model)
     args.out.mkdir(parents=True, exist_ok=True)
     calib = {"model": {k: v for k, v in model_info.items() if k not in ("label_map", "boundary_head")},
+             "checkpoint_boundary_head": model_info["boundary_head"],
              "corpus": corpus, "label_review": labels}
     health = run_checks(args.corpus, split_paths(args.corpus), corpus, args.model,
                         eval_settings(model_info)["window"], args.siblings, args.align_records)
@@ -136,6 +138,12 @@ def main() -> None:
     print(f"[derive] labels_file: map entries {n_map}, proposals awaiting review "
           f"{ {c: len(v) for c, v in proposals.items()} }")
     print(f"[derive] wrote {args.out / (name + '.calibration.json')}, {name}.labels_review.md, {name}.labels.yaml")
+    if health["blocked"]:
+        print(f"[derive] *** NO CONFIG WRITTEN: data health BLOCKS -- fix {name}.data_health.md first ***")
+        return
+    config, comments, warnings = emit_config.build(name, args.model, args.corpus, calib)
+    emit_config.write(args.out / f"{name}.yaml", name, args.model, config, comments, warnings)
+    print(f"[derive] wrote {args.out / (name + '.yaml')} ({len(warnings)} warning(s) in its header)")
 
 
 if __name__ == "__main__":

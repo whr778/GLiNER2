@@ -3,9 +3,9 @@
 Point it at a pre-split corpus and a pretrained GLiNER2 checkpoint; it measures what a
 fine-tuning config needs and writes the evidence. One run per (corpus, base model) pair.
 
-**Status (2026-10-02):** stages 1–6 run (`--gpu` adds 4–6; `--device cpu` works for small
-corpora and sdpa bases, FlashAttention-2 bases need CUDA). Stage 7, the YAML writer, is not
-built yet — see [Roadmap](#roadmap).
+**Status (2026-10-02):** all 7 stages run (`--gpu` adds 4–6; `--device cpu` works for small
+corpora and sdpa bases, FlashAttention-2 bases need CUDA). Stage 7 writes `<name>.yaml` unless
+data health BLOCKs.
 
 ## Requirements
 
@@ -139,6 +139,26 @@ The map is closed (no target is itself a key). Reference it as `labels_file:` an
 inline `labels:` block in the config -- an empty one silently overrides the file. For a base
 with no label map (fastino), the file holds only the corpus's own clusters.
 
+### `<name>.yaml` — the config
+
+Written only when data health has no BLOCK. Every value carries an inline comment:
+`measured` (with the number it came from), `checkpoint` (the base's own) or `policy` (a
+standing default). The header lists every warning: **no replay** (the base's training data is
+not here — add an exact ~30% replay slice if you have it), each data-health WARN, and any
+threshold picked on the grid edge. Measured decisions:
+
+| key | rule |
+|---|---|
+| `max_gold_per_query`, `training_candidate_budget` | stage 2 gold capacity (budget >= cap) |
+| `start_top_k` / `end_top_k` | smallest k reaching 95% of the best `per_query` coverage (stage 4) |
+| `candidate_pool` | a `shared` base switches to `per_query` only if its val scores under `per_query` are at least as good (stage 6 companion) |
+| `record_anchor_threshold` (+ `_wins`) | stage 6 record-gate pick on the base |
+| `eval.threshold` | stage 6 span pick on the base |
+
+Structural keys are never written (the run would refuse them). Batch size is **policy, not
+measured** for your GPU. Base-measured thresholds are starting points: `threshold_sweep: true`
+re-picks on validation after fine-tuning.
+
 ## Roadmap
 
 | stage | needs | measures | config value | built |
@@ -149,7 +169,7 @@ with no label map (fastino), the file holds only the corpus's own clusters.
 | 4 reachability | GPU | gold in the candidate set: the as-built pool, then `per_query` at `start_top_k` 16–128 (`start_top_k` does nothing under a `shared` pool, e.g. gliner2.5) | `start_top_k`, `candidate_pool` | ✅ |
 | 5 zero-shot baseline | GPU | the base's own scores on **val** before training | the "did training help" control | ✅ |
 | 6 operating points | GPU | span threshold and record-gate sweeps on **val** | eval `threshold`, `record_anchor_threshold` | ✅ |
-| 7 YAML writer | — | — | the config, every value annotated with its source | — |
+| 7 YAML writer | — | — | `<name>.yaml`, every value annotated measured / checkpoint / policy; refused on BLOCK | ✅ |
 
 Policy values (exact replay ~30% of the mix, warm-start learning rates, negatives on,
 `validate_data: true`, no inline `labels:` block) will be written by stage 7 as marked
