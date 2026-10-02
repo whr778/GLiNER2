@@ -17,7 +17,10 @@ mkdir -p "$OUT"
 source tools/lambda/_publish.sh
 FAILED=0
 
-for model in whr778/gliner2-eb18-balanced fastino/gliner2.5-multi-v1 fastino/gliner2-base-v1; do
+# MODELS=a,b re-runs only those bases; COMMA-separated because provision_box.sh starts JOB
+# inside `bash -lc '...'`, where quotes or a space-separated list would break the string.
+MODELS=${MODELS:-whr778/gliner2-eb18-balanced,fastino/gliner2.5-multi-v1,fastino/gliner2-base-v1}
+for model in ${MODELS//,/ }; do
   name=casie__${model##*/}
   echo "[derive-test] ===== $model  $(date -u) ====="
   timeout 3000 $PY -u tools/derive/derive_config.py --corpus data/casie --model "$model" \

@@ -61,7 +61,8 @@ def run_gpu_stages(args, model_info: dict, corpus: dict, event_records: bool) ->
     out = {"eval_settings": ev}
     if boundary:
         out["reachability"] = G.reachability(args.model, args.corpus, model_info["label_map"], event_records,
-                                             cap, ev["window"], (16, 32, 64, 128), args.out, args.reach_records)
+                                             cap, ev["window"], (16, 32, 64, 128), args.out, args.reach_records,
+                                             args.device)
     records = G.val_records(args.corpus, model_info["label_map"], args.max_val)
     model = load_with_overrides(args.model).to(args.device).eval()
     has_records = boundary and (event_records or corpus["heads"]["val"]["structure_records"] > 0)

@@ -106,6 +106,9 @@ def main() -> int:
                     help="gold cap for the probe only (0 = config value); a sample over the "
                          "cap would raise, and dropping it would bias coverage")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--device", default="cpu",
+                    help="cuda for checkpoints on flash_attention_2: the kernels FA2 op is CUDA-only "
+                         "and raises NotImplementedError on CPU (eb18, 2026-10-02)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -121,7 +124,7 @@ def main() -> int:
             raw.append(T.transform_record(json.loads(line), fns))
         if len(raw) >= args.max_records:
             break
-    model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").train()
+    model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").to(args.device).train()
     # train() is needed for the gold-coverage stats, but it also turns dropout ON, which
     # randomly perturbs the scores and understates what inference can reach.
     n_dropout = 0
@@ -208,7 +211,7 @@ def main() -> int:
             if i >= args.max_batches:
                 break
             with torch.no_grad():
-                model(batch)
+                model(batch.to(args.device))
             for m in holders:
                 st = getattr(m, "_last_proposal_stats", None)
                 if st is None or st.gold_total is None:

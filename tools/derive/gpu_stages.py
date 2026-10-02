@@ -39,7 +39,7 @@ def val_records(base: str, label_map: Dict, max_records: int) -> List[Dict]:
 
 
 def reachability(model: str, base: str, label_map: Dict, event_records: bool, cap: int,
-                 window: int, ks: tuple, out_dir: Path, max_records: int) -> Dict[int, Dict]:
+                 window: int, ks: tuple, out_dir: Path, max_records: int, device: str) -> Dict[int, Dict]:
     """Share of gold in the candidate set before injection, per start/end_top_k."""
     cfg_path = out_dir / "probe_config.yaml"
     cfg_path.write_text(yaml.safe_dump({
@@ -53,7 +53,7 @@ def reachability(model: str, base: str, label_map: Dict, event_records: bool, ca
                         "--config", str(cfg_path), "--checkpoint", model,
                         "--data", f"{base}.val.jsonl", "--windows", f"{window // 2},{window}",
                         "--max-records", str(max_records), "--start-top-k", str(k),
-                        "--end-top-k", str(k), "--max-gold", str(cap), "--out", str(out)],
+                        "--end-top-k", str(k), "--max-gold", str(cap), "--device", device, "--out", str(out)],
                        check=True)
         rows = json.loads(out.read_text(encoding="utf-8"))
         result[k] = next(r for r in rows if r["window"] == window)
