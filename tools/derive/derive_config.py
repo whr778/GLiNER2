@@ -40,11 +40,46 @@ def write_review(path: Path, name: str, rows_by_cat: dict) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def eval_settings(model_info: dict) -> dict:
+    """Window, global_decode and default threshold, each with where it came from."""
+    d = model_info.get("inference_defaults") or {}
+    span = model_info["architecture"] == "span"
+    window = d.get("chunk_size") or (min(model_info["max_len"], 512) - 128 if span else min(model_info["max_len"], 4096))
+    return {"window": window, "global_decode": d.get("global_decode", True),
+            "threshold": d.get("threshold", 0.5),
+            "source": "checkpoint inference_defaults" if d else
+                      "default: window=max_len-128 (span) or min(max_len,4096); global_decode on; threshold 0.5"}
+
+
+def run_gpu_stages(args, model_info: dict, corpus: dict, event_records: bool) -> dict:
+    import gpu_stages as G
+    from gliner2.training.eval_metrics import load_with_overrides
+    ev = eval_settings(model_info)
+    boundary = model_info["architecture"] == "boundary"
+    cap = corpus["gold_capacity"]["recommended_cap"]
+    out = {"eval_settings": ev}
+    if boundary:
+        out["reachability"] = G.reachability(args.model, args.corpus, model_info["label_map"], event_records,
+                                             cap, ev["window"], (16, 32, 64, 128), args.out, args.reach_records)
+    records = G.val_records(args.corpus, model_info["label_map"], args.max_val)
+    model = load_with_overrides(args.model).to(args.device).eval()
+    has_records = boundary and (event_records or corpus["heads"]["val"]["structure_records"] > 0)
+    out.update(G.operating_points(model, records, ev["window"], ev["global_decode"], ev["threshold"],
+                                  has_records, args.batch_size))
+    out["val_records_used"] = len(records)
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--corpus", required=True, help="split base: <base>.{train,val,test}.jsonl")
     ap.add_argument("--model", required=True, help="Hub id or local checkpoint dir")
     ap.add_argument("--out", type=Path, default=Path("derived"))
+    ap.add_argument("--gpu", action="store_true", help="also run stages 4-6 (reachability, baseline, sweeps)")
+    ap.add_argument("--device", default="cuda", help="device for stages 5-6")
+    ap.add_argument("--max-val", type=int, default=0, help="cap validation records (0 = all)")
+    ap.add_argument("--reach-records", type=int, default=40, help="val records for the reachability probe")
+    ap.add_argument("--batch-size", type=int, default=2)
     args = ap.parse_args()
 
     from transformers import AutoTokenizer
@@ -58,6 +93,8 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     calib = {"model": {k: v for k, v in model_info.items() if k not in ("label_map", "boundary_head")},
              "corpus": corpus, "label_review": labels}
+    if args.gpu:
+        calib["gpu"] = run_gpu_stages(args, model_info, corpus, event_records)
     (args.out / f"{name}.calibration.json").write_text(
         json.dumps(calib, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
     write_review(args.out / f"{name}.labels_review.md", name, labels)
