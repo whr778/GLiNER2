@@ -42,7 +42,7 @@ Variant **E0** (parameter-free fallback): $z_i = a_i + \alpha(\bar e_i - c)$ wit
 ## 3. Training target
 
 Per natural event group:
-- **Positives:** the instances seeded by a gold trigger. This is the same set the field loss trains, so a gold trigger that is neither proposed nor injected gives no positive.
+- **Positives:** EVERY instance seeded by ANY alternative of a gold trigger value (section 7). That is wider than the field loss's single instance per record. A gold trigger mention that is neither proposed nor injected gives no positive.
 - **Negatives:** the K highest-scoring false instances. This reuses `_negative_instances`, which skips any span overlapping a gold trigger, so boundary variants are not trained as "no event". Absent-type groups (no gold) contribute negatives only.
 - **Loss:** BCE on $z_i$, with positives and negatives **averaged separately** and summed. That keeps class balance, and repeats the `absent_reduction` dilution lesson: neither side enters the other's denominator.
 
@@ -96,7 +96,30 @@ $\phi_i$ is only useful if argument evidence separates gold from false instances
   - argument-evidence AUC;
   - **every other head** (collateral).
 
-## 7. Open items
+## 7. Forward compatibility with linking (event coreference)
+
+Coreference data exists outside this environment (ACE2005 and others), and linking will be needed in the extractor later. The existence head must not have to change when linking lands. Traced on a real mendeley_ed multi-trigger event ("remote", "anxieties", "rising" → one `Event`):
+
+| Level | What happens today |
+|---|---|
+| Span (trigger query `mention_mask`) | all 3 mentions are gold; the trigger score learns each |
+| Record target | ONE `RecordTarget`; its anchor is ONE value with **3 span alternatives**, `[(10,11), (15,16), (18,19)]` |
+| Record loss (`compute_group_loss`) | resolves the alternatives to cols [1, 2, 3] but trains **only** `cols[0]` → instance 0 |
+| Negative instances (B(i)) | the overlap guard uses **all** alternatives, so the other mentions are never trained as negatives |
+
+**The data model already carries the cluster.** The alternatives of a gold anchor value are exactly the coreferent trigger mentions of one event. Linking supervision therefore needs no new target format: two instances are coreferent iff their seeds resolve to alternatives of the same `RecordTarget` anchor.
+
+Decisions fixed now, so linking stays an addition:
+1. **Existence is per MENTION.** Positives are **every** instance seeded by **any** alternative of a gold anchor, not only `cols[0]`. Linking will then connect positives; it never redefines them.
+2. **$\phi_i$ and $h_i$ are exposed** per instance, so a pairwise linking head can score $(i, j)$ from them (argument overlap is the strongest event-coreference feature).
+3. **Arguments currently train on one mention's instance.** Under linking they belong to the **event**. Which mention carries them is deferred: e.g. the highest-scoring mention, or all mentions with a shared target. That decision belongs to the linking design, not this one.
+
+Ordering, to stay incremental:
+1. p3arg (argument evidence trained).
+2. Existence head (per mention).
+3. Linking, once argument evidence separates gold from false and coreference data is available to validate on.
+
+## 8. Open items
 
 - **Warm-start loading of the new parameters.** `from_pretrained` must accept a checkpoint without `existence_head` keys and keep their zero init. That needs checking before E1; E0 avoids it.
 - **The trigger field** (identity map, P(ABSENT) = 0) is left untouched. Existence lives in $z$, not in that field.
