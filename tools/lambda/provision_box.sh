@@ -29,6 +29,8 @@ BRANCH=${BRANCH:-merge/main-20260805}
 # THE EXACT COMMIT THE LAUNCHER MEANT. Without it a box silently runs whatever $BRANCH holds:
 # 2026-10-02 p2fast launched 4 A100s onto the DEFAULT branch, which lacked the arm configs,
 # and every runner then sat in its rescue hold. Set => the clone must match or the box dies.
+# Checked out BY COMMIT (detached), not the branch head: a push made after launch would otherwise
+# move the head under any box still waiting for capacity and fail it (p3arg, 2026-10-04).
 EXPECT_COMMIT=${EXPECT_COMMIT:-}
 KEY=${KEY:-$HOME/.ssh/id_ed25519}
 JOB_TIMEOUT=${JOB_TIMEOUT:-14400}
@@ -167,7 +169,7 @@ $SSH ubuntu@$IP "bash -s" <<SETUP || terminate_and_die "repo checkout failed"
 set -e
 cd ~ && rm -rf gliner2
 git clone -q https://github.com/whr778/GLiNER2.git gliner2
-cd gliner2 && git checkout -q $BRANCH
+cd gliner2 && git checkout -q ${EXPECT_COMMIT:-$BRANCH}
 echo "[prov] repo at \$(git log --oneline -1)"
 if [ -n "$EXPECT_COMMIT" ] && [ "\$(git rev-parse --short=12 HEAD)" != "$EXPECT_COMMIT" ]; then
   echo "[prov] *** box is at \$(git rev-parse --short=12 HEAD), launcher expected $EXPECT_COMMIT ***"
