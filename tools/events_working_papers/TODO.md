@@ -539,13 +539,21 @@ produced 106 observations is identified.
   words**, and the configs' comments say "word window". Measured, and not where expected.
 - **We cannot compare event arguments to the literature** because we do not compute the
   metric the literature reports.
-- **ON HOLD 2026-10-04 -- the trigger-anchored argument line, while design C is explored.** Built and
-  committed, all opt-in: `proposal_gold: identity` (p2fast null, right direction), `absent_reduction`,
-  `record_negative_instances` (K=8: precision +0.12, recall -0.016), `record_role_hard_negatives` (p3arg:
-  argument recall +0.016*, F1 +0.023* -- the eb19 base candidate). Next steps parked: retune negatives
-  (smaller K / weight) on top of hard; decode-time pooling (boundary share only, 14-26%); existence head
-  (`EXISTENCE_HEAD_SPEC.md`, precondition failed: argument evidence still AUC ~0.5 below the gate);
-  offset-anchored mentions. Resume from the 2026-10-04 catalog rows.
+- **RESUMED 2026-10-04 -- the trigger-anchored argument line** (briefly held for design C). Built, opt-in:
+  `proposal_gold: identity` (p2fast null, right direction), `absent_reduction`, `record_negative_instances`
+  (K=8: precision +0.12, recall -0.016), `record_role_hard_negatives` (p3arg: argument recall +0.016*,
+  F1 +0.023* -- the eb19 base candidate). Next: eb19 recipe; retune negatives (smaller K / weight) on top
+  of hard -- false triggers are 52-74% of wrong-trigger attachments; decode-time pooling (boundary share
+  14-26%); existence head ON HOLD (`EXISTENCE_HEAD_SPEC.md` section 5: argument evidence still AUC ~0.5).
+- **PARKED -- design C (events as slots: anchorless records).** The structural fix for the shared root cause
+  (event identity = a trigger mention). Found 2026-10-04: events are hard-wired natural
+  (`processing/records.py` `_event_record_cfg`); anchorless = 32 learned slots, one attention layer,
+  `object_head` + Hungarian matching on EVERY slot, trigger becomes an ordinary (list) field; eb18 never
+  trained a single anchorless/latent group, so the slot heads are at random init. Anchorless was A/B'd ONCE
+  (0ca9447, 2026-08-10, casualty STRUCTURES not events, 9-doc probe): natural 7/9 instances, anchorless
+  1/9, cause never established. **Resume with a free diagnostic first:** switch to let events run
+  anchorless, trace one real event batch (Hungarian assignment, object vs field loss, slot divergence),
+  then a one-document two-event overfit on CPU. No GPU until that passes.
 - **Matryoshka representations (added 2026-10-04, explore AFTER the argument fix lands).**
   [Matryoshka loss](https://sbert.net/examples/sentence_transformer/training/matryoshka/README.html)
   trains nested prefixes of an embedding (e.g. 768 -> 256 -> 64) so a truncated prefix still works.
