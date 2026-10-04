@@ -112,7 +112,7 @@ Coreference data exists outside this environment (ACE2005 and others), and linki
 Decisions fixed now, so linking stays an addition:
 1. **Existence is per MENTION.** Positives are **every** instance seeded by **any** alternative of a gold anchor, not only `cols[0]`. Linking will then connect positives; it never redefines them.
 2. **$\phi_i$ and $h_i$ are exposed** per instance, so a pairwise linking head can score $(i, j)$ from them (argument overlap is the strongest event-coreference feature).
-3. **Arguments currently train on one mention's instance.** Under linking they belong to the **event**. Which mention carries them is deferred: e.g. the highest-scoring mention, or all mentions with a shared target. That decision belongs to the linking design, not this one.
+3. **Arguments currently train on one mention's instance** -- INFERRED from the code (the field loss trains the `cols[0]` instance, role fields included), NOT traced: the traced event (mendeley_ed) has no arguments, and no local corpus with arguments has multi-trigger events. ACE2005 with coreference would be the first data to exercise this path; trace one real multi-mention ACE event with arguments before designing linking. Under linking, arguments belong to the **event**. Which mention carries them is deferred: e.g. the highest-scoring mention, or all mentions with a shared target. That decision belongs to the linking design, not this one.
 
 Ordering, to stay incremental:
 1. p3arg (argument evidence trained).
