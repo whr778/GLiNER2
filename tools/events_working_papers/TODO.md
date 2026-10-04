@@ -539,6 +539,20 @@ produced 106 observations is identified.
   words**, and the configs' comments say "word window". Measured, and not where expected.
 - **We cannot compare event arguments to the literature** because we do not compute the
   metric the literature reports.
+- **Matryoshka representations (added 2026-10-04, explore AFTER the argument fix lands).**
+  [Matryoshka loss](https://sbert.net/examples/sentence_transformer/training/matryoshka/README.html)
+  trains nested prefixes of an embedding (e.g. 768 -> 256 -> 64) so a truncated prefix still works.
+  The owner's prior: nearly all of a full embedding's signal fits in 64 dimensions. Two possible
+  payoffs here, to be measured separately:
+  1. *Speed of queries.* Encode a document once, cache its span/candidate states at 64 dims, and
+     score many label menus by cheap dot products (the "full taxonomy" deployment case). Note the
+     encoder dominates compute, so truncating head dims alone buys little; the win is in reuse.
+  2. *Signal concentration.* Forcing the label/query and candidate states into a shared 64-dim
+     prefix may regularise the many-label heads.
+  **Measure first, before training anything:** the effective rank (PCA spectrum) of eb18's query
+  states and candidate states on real batches. If 64 components already hold ~all the variance,
+  truncation may need little or no retraining; if not, Matryoshka training is the lever.
+  Trigger: after event_argument is fixed, so an argument regression is not confounded with it.
 
 ## 8. Tracked, not dropped — the beam-aware / structured loss (Phase B)
 
