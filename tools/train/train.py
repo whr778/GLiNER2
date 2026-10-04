@@ -855,6 +855,13 @@ def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
         head.use_inside_evidence = settings.use_inside_evidence
         head.pair_scorer.use_inside_evidence = settings.use_inside_evidence
 
+    # THE JUNCTION ADDS PARAMETERS, so a checkpoint saved without it cannot simply be loaded into a
+    # model built with it (strict load). On a warm start the loaded head gets the junction ADDED here,
+    # zero-initialised -- scores unchanged at step 0 -- and before the trainer builds its optimizer.
+    decoder = getattr(model, "record_decoder", None)
+    if decoder is not None and settings.record_link_mode == "junction":
+        decoder.enable_link()
+
 
 def _auto_negative_pools(cfg: dict, config_path, output_dir: str) -> str:
     """Derive the negative-label pools from THIS config's corpora, and refuse gaps.

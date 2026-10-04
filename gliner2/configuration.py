@@ -103,6 +103,16 @@ class BoundaryHeadSettings:
     # P 0.000-0.038 while the loss read 0.004-0.07. K > 0 averages over the gold candidates plus
     # the K highest-scoring WRONG ones, for gold and negative instances alike. 0 = historical.
     record_role_hard_negatives: int = 0
+    # THE TRIGGER x ARGUMENT JUNCTION (JUNCTION_LAYER_SPEC.md). "additive" (default, historical): the
+    # assignment is P (trigger x candidate) + R (role x candidate, the SAME for every trigger) -- measured
+    # role fit with no join (junction AUC 0.56-0.61, pair term below chance in-row). "junction" adds a
+    # learned, role-gated bilinear link + geometry per (instance, candidate), zero-initialised (bit-
+    # identical at step 0). The COLUMN loss trains "which trigger owns this gold argument": a softmax over
+    # the gold trigger and the K hardest false triggers in that argument's column -- R is identical down a
+    # column, so only the link can lower it, and it never pushes role fit down (the p4neg recall trap).
+    record_link_mode: str = "additive"  # "additive" | "junction"
+    record_link_column_weight: float = 0.0
+    record_link_column_negatives: int = 8
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -402,6 +412,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_negative_instances": int(values.get("record_negative_instances", d.record_negative_instances)),
         "record_negative_weight": float(values.get("record_negative_weight", d.record_negative_weight)),
         "record_role_hard_negatives": int(values.get("record_role_hard_negatives", d.record_role_hard_negatives)),
+        "record_link_mode": str(values.get("record_link_mode", d.record_link_mode)),
+        "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
+        "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),
@@ -674,6 +687,14 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             "boundary_head.absent_reduction must be 'pooled' or 'separate', got "
             f"{result['absent_reduction']!r}"
         )
+    if result["record_link_mode"] not in ("additive", "junction"):
+        raise ValueError(f"boundary_head.record_link_mode must be 'additive' or 'junction', got {result['record_link_mode']!r}")
+    if result["record_link_column_weight"] < 0 or result["record_link_column_negatives"] < 1:
+        raise ValueError("boundary_head.record_link_column_weight must be >= 0 and record_link_column_negatives >= 1")
+    if result["record_link_column_weight"] > 0 and result["record_link_mode"] != "junction":
+        raise ValueError("boundary_head.record_link_column_weight needs record_link_mode: junction")
+    if result["record_link_mode"] == "junction" and result.get("candidate_pool") == "shared":
+        raise ValueError("boundary_head.record_link_mode: junction is implemented for candidate_pool: per_query only")
     if result["record_role_hard_negatives"] < 0:
         raise ValueError("boundary_head.record_role_hard_negatives must be >= 0")
     if result["record_role_hard_negatives"] > 0 and result.get("candidate_pool") == "shared":

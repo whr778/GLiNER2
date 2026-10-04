@@ -246,6 +246,53 @@ class DenseRecordBatchOutput:
     group_mask: torch.BoolTensor         # [B,R]
 
 
+class LinkJunction(nn.Module):
+    """The trigger x argument JUNCTION: a learned link per (instance, candidate) pair, read per role.
+
+    The additive assignment score is P (trigger x candidate) + R (role x candidate), and R is the
+    same for every trigger. Measured: R does all the work (row AUC 0.948) while P barely separates
+    the gold trigger from a false one (junction AUC 0.56-0.61) -- role fit with no join. This adds
+    a gated bilinear link, role-gated so role and pair identity INTERACT, plus geometry (relative
+    order, log distance). `v` and `geom_q` are zero-initialised: the term is exactly 0
+    until it learns, so a warm start is bit-identical at step 0 (JUNCTION_LAYER_SPEC.md).
+    """
+
+    def __init__(self, hidden_size: int, dim: int, geom_dim: int = 16) -> None:
+        super().__init__()
+        self.dim = dim
+        self.u = nn.Linear(hidden_size, dim)
+        self.v = nn.Linear(hidden_size, dim)
+        self.gate = nn.Linear(hidden_size, dim)
+        # CONTINUOUS geometry (order, log distance), as SparseRelationScorer does -- no lookup table,
+        # no bucket cap. The boundary architecture forbids embedding TABLES here (test_invariants.py).
+        self.geom = nn.Linear(2, geom_dim)
+        self.geom_q = nn.Linear(hidden_size, geom_dim)
+        for layer in (self.v, self.geom_q):
+            nn.init.zeros_(layer.weight)
+            nn.init.zeros_(layer.bias)
+
+    def _geometry(self, inst_spans: torch.Tensor, cand_spans: torch.Tensor) -> torch.Tensor:
+        """[Ni, Cf, 2]: (candidate after the trigger, log1p distance between span centres)."""
+        inst_mid = (inst_spans[:, 0] + inst_spans[:, 1]).float() / 2
+        cand_mid = (cand_spans[:, 0] + cand_spans[:, 1]).float() / 2
+        delta = cand_mid[None, :] - inst_mid[:, None]
+        return torch.stack([(delta > 0).float(), torch.log1p(delta.abs())], dim=-1)
+
+    def forward(self, inst_states, field_query_states, field_cand_states, inst_spans, field_spans) -> List[torch.Tensor]:
+        u = self.u(inst_states)                                    # [Ni, D]
+        out = []
+        for f, cand in enumerate(field_cand_states):
+            if cand.shape[0] == 0:
+                out.append(None)
+                continue
+            gate = torch.sigmoid(self.gate(field_query_states[f]))   # [D]
+            bilinear = (u * gate) @ self.v(cand).t() / math.sqrt(self.dim)          # [Ni, Cf]
+            feats = self._geometry(inst_spans, field_spans[f]).to(cand.dtype)
+            geo = self.geom(feats) @ self.geom_q(field_query_states[f])
+            out.append(bilinear + geo)
+        return out
+
+
 class RecordHead(nn.Module):
     """Unified natural / latent / anchorless instance formation head.
 
@@ -254,11 +301,14 @@ class RecordHead(nn.Module):
     :class:`RecordSpec` objects and the boundary candidate batch.
     """
 
-    def __init__(self, hidden_size: int, record_dim: int, instance_queries: int) -> None:
+    def __init__(self, hidden_size: int, record_dim: int, instance_queries: int, link: bool = False) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.record_dim = record_dim
         self.instance_queries = instance_queries
+        # The trigger x argument junction (record_link_mode: junction). Built only when on, so
+        # every existing checkpoint still loads strictly; `enable_link` adds it to a loaded model.
+        self.link = LinkJunction(hidden_size, record_dim) if link else None
 
         self.inst_proj = nn.Linear(hidden_size, record_dim)
         self.field_proj = nn.Linear(hidden_size, record_dim)
@@ -272,6 +322,16 @@ class RecordHead(nn.Module):
         self.q_proj = nn.Linear(hidden_size, record_dim)
         self.k_proj = nn.Linear(hidden_size, record_dim)
         self.v_proj = nn.Linear(hidden_size, hidden_size)
+
+    def enable_link(self) -> None:
+        """Add the junction to an already-built head (a warm start from a checkpoint without it).
+
+        Zero-initialised, so the loaded model's scores are unchanged until it trains. Call before
+        the optimizer is built, or the new parameters are never updated.
+        """
+        if self.link is None:
+            ref = next(self.parameters())
+            self.link = LinkJunction(self.hidden_size, self.record_dim).to(device=ref.device, dtype=ref.dtype)
 
     # ------------------------------------------------------------------ utils
     def _assign_logits(
@@ -659,6 +719,10 @@ class RecordHead(nn.Module):
                 instance_spans.append(None)
 
         assign_logits = self._assign_logits(inst_states, fq, field_cand_states)
+        if self.link is not None and spec.mode == "natural" and inst_states.shape[0] > 0:
+            link = self.link(inst_states, fq, field_cand_states, anchor_spans, field_spans)
+            assign_logits = [a if l is None else torch.cat([a[:, :1], a[:, 1:] + l], dim=-1)
+                             for a, l in zip(assign_logits, link)]
 
         return RecordGroupOutput(
             spec=spec,
@@ -1489,8 +1553,61 @@ def _negative_role_loss(group: RecordGroupOutput, inst: int, hard_k: int = 0) ->
     return sum(_list_field_bce(row, [], hard_k) for row in rows) / len(rows)
 
 
+_COLUMN_TERMS = 0
+_COLUMN_WINS = 0
+_COLUMN_PAIRS = 0
+_COLUMN_CALLS = 0
+
+
+def _note_link_columns(terms: int, wins: int, pairs: int) -> None:
+    """In-run junction gate: share of (gold trigger, false trigger) pairs where gold wins the column."""
+    global _COLUMN_TERMS, _COLUMN_WINS, _COLUMN_PAIRS, _COLUMN_CALLS
+    _COLUMN_TERMS += terms
+    _COLUMN_WINS += wins
+    _COLUMN_PAIRS += pairs
+    _COLUMN_CALLS += 1
+    n = _COLUMN_CALLS
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        logger.info("junction column loss: %d gold-argument columns trained; gold trigger beats false trigger "
+                    "in %.3f of %d pairs (junction AUC, cumulative over %d natural groups)",
+                    _COLUMN_TERMS, _COLUMN_WINS / max(_COLUMN_PAIRS, 1), _COLUMN_PAIRS, n)
+
+
+def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int):
+    """(sum of column terms, n terms, wins, pairs): which trigger owns each gold argument."""
+    af = group.field_query_ids.index(anchor_qid)
+    seed_to_inst = {s[1]: i for i, s in enumerate(group.instance_seed) if s is not None and s[0] == af}
+    owners = []
+    for rec in records:
+        a = rec.field_for_query(anchor_qid)
+        cols = _resolve_value_cols(a.values[0], span_indices[af]) if a is not None and a.values else []
+        insts = sorted({seed_to_inst[c - 1] for c in cols if (c - 1) in seed_to_inst})
+        if insts:
+            owners.append((rec, insts))
+    gold_all = {i for _, insts in owners for i in insts}
+    false = _negative_instances(group, records, anchor_qid, gold_all, k)
+    total, terms, wins, pairs = group.object_logits.new_zeros(()), 0, 0, 0
+    if not false:
+        return total, 0, 0, 0
+    for rec, insts in owners:
+        for f, fspec in enumerate(group.field_specs):
+            if fspec.cardinality.is_scalar:
+                continue
+            cols, _ = _field_target_cols(fspec, rec, span_indices[f])
+            for c in sorted(set(cols)):
+                column = group.assign_logits[f][:, c]
+                pos, neg = column[insts], column[false]
+                total = total - (torch.logsumexp(pos, 0) - torch.logsumexp(torch.cat([pos, neg]), 0))
+                terms += 1
+                best = pos.detach().max()
+                wins += int((neg.detach() < best).sum())
+                pairs += len(false)
+    return total, terms, wins, pairs
+
+
 def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget],
-                       negative_instances: int = 0, role_hard_negatives: int = 0) -> Dict[str, torch.Tensor]:
+                       negative_instances: int = 0, role_hard_negatives: int = 0,
+                       column_negatives: int = 0) -> Dict[str, torch.Tensor]:
     """Compute object and field-assignment losses for one record group.
 
     ``negative_instances`` > 0 (natural mode) also trains that many of the highest-scoring
@@ -1546,6 +1663,14 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
                                            for i in negatives) / len(negatives)
                 out["negative_count"] = len(negatives)
             _note_negative_instances(len(negatives))
+        if column_negatives > 0:
+            # The JUNCTION's training signal, returned separately with its own count (never in the
+            # gold field denominator). R is identical down a column, so only the link can lower it.
+            col, terms, wins, pairs = _column_loss(group, records, anchor_qid, span_indices, column_negatives)
+            if terms:
+                out["column_loss"] = col / terms
+                out["column_count"] = terms
+            _note_link_columns(terms, wins, pairs)
         return out
 
     count = len(records)

@@ -1517,6 +1517,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 self.hidden_size,
                 settings.record_dim,
                 settings.record_instance_queries,
+                link=settings.record_link_mode == "junction",
             )
         if self.enable_relations:
             self.relation_pair_generator = TypedRelationPairGenerator(
@@ -2479,6 +2480,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
         field_count = 0
         neg_total = torch.zeros((), device=device)
         neg_count = 0
+        col_total = torch.zeros((), device=device)
+        col_count = 0
         record_specs = getattr(batch, "record_specs", ())
         per_sample_records = targets.records  # List[List[RecordTarget]]
         packed_records = getattr(targets, "record_targets", None)
@@ -2567,6 +2570,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
                         opts = {k: v for k, v in (
                             ("negative_instances", self.boundary_settings.record_negative_instances),
                             ("role_hard_negatives", self.boundary_settings.record_role_hard_negatives),
+                            ("column_negatives", self.boundary_settings.record_link_column_negatives
+                             if self.boundary_settings.record_link_column_weight > 0 else 0),
                         ) if v}
                         losses = compute_group_loss(group, recs, **opts)
                 except (TargetCapacityError, ValueError, IndexError):
@@ -2584,12 +2589,18 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 if "negative_count" in losses:
                     neg_total = neg_total + losses["negative_loss"] * losses["negative_count"]
                     neg_count += losses["negative_count"]
+                if "column_count" in losses:
+                    col_total = col_total + losses["column_loss"] * losses["column_count"]
+                    col_count += losses["column_count"]
 
         obj = obj_total / max(object_count, 1)
         field = field_total / max(field_count, 1)
         if neg_count:
             # Negative instances: their OWN mean, weighted, never in the gold denominator.
             field = field + self.boundary_settings.record_negative_weight * neg_total / neg_count
+        if col_count:
+            # The junction column loss: its OWN mean, weighted, never in the gold denominator.
+            field = field + self.boundary_settings.record_link_column_weight * col_total / col_count
         return {"object": obj, "field": field, "total": weight * (obj + field)}
 
     def score_candidates(
