@@ -50,6 +50,12 @@ def confidences(node) -> list:
     return []
 
 
+def relaxed(etype: str, text: str, gold: set) -> bool:
+    """Same type and one trigger text contains the other: a boundary variant of a gold trigger."""
+    t = text.lower()
+    return any(gt == etype and (t in g.lower() or g.lower() in t) for gt, g in gold)
+
+
 def auc(pos: list, neg: list) -> float:
     """P(gold evidence > false evidence), ties half: the separation the gate could exploit."""
     if not pos or not neg:
@@ -89,34 +95,40 @@ def main() -> None:
                    for r in docs]
         preds = model.batch_extract_long([r["input"] for r in docs], schemas, batch_size=2, threshold=f,
                                          chunk_size=4096, chunk_overlap=0, global_decode=True, include_confidence=True)
-        for r, pred in zip(docs, preds):
+        for d, (r, pred) in enumerate(zip(docs, preds)):
             gold = _gold_event_trigger_set({"events": r["output"]["events"]})
             for etype, insts in (pred.get("event_extraction") or {}).items():
                 for inst in insts:
                     for trig in inst.get("triggers") or []:
                         arg_conf = sorted(confidences(inst.get("arguments")), reverse=True)
-                        rows.append({"corpus": name, "type": etype, "trigger_conf": trig["confidence"],
-                                     "gold": (etype, trig["text"].strip()) in gold, "arg_conf": arg_conf})
+                        text = trig["text"].strip()
+                        rows.append({"corpus": name, "doc": d, "type": etype, "trigger": text,
+                                     "trigger_conf": trig["confidence"], "gold": (etype, text) in gold,
+                                     "relaxed_gold": relaxed(etype, text, gold), "arg_conf": arg_conf})
         print(f"[evidence] {name}: {len(docs)} docs, {sum(1 for x in rows if x['corpus'] == name)} trigger candidates "
               f"(roles offered for {len(roles)} types)", flush=True)
-    report(rows)
+    report(rows, "gold")
+    report(rows, "relaxed_gold")
+    strict_false = [r for r in rows if not r["gold"]]
+    print(f"[evidence] of {len(strict_false)} strict-false candidates, {sum(r['relaxed_gold'] for r in strict_false)} "
+          f"are boundary variants of a gold trigger (relaxed-gold)")
     if args.out:
         Path(args.out).write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
 
 
-def report(rows: list) -> None:
+def report(rows: list, key: str = "gold") -> None:
     feats = {"max_arg": lambda r: r["arg_conf"][0] if r["arg_conf"] else 0.0,
              "n_args>=0.5": lambda r: sum(c >= 0.5 for c in r["arg_conf"]),
              "sum_top3": lambda r: sum(r["arg_conf"][:3])}
     for corpus in sorted({r["corpus"] for r in rows}) + ["ALL"]:
         sub = [r for r in rows if corpus in ("ALL", r["corpus"])]
-        print(f"[evidence] --- {corpus}")
+        print(f"[evidence] --- {corpus} ({key})")
         print(f"[evidence] {'trigger band':14s} {'gold':>5s} {'false':>6s} | " +
               " | ".join(f"{k}: gold/false mean, AUC" for k in feats))
         for lo, hi in BANDS:
             band = [r for r in sub if lo <= r["trigger_conf"] < hi]
-            g = [r for r in band if r["gold"]]
-            n = [r for r in band if not r["gold"]]
+            g = [r for r in band if r[key]]
+            n = [r for r in band if not r[key]]
             cells = []
             for k, fn in feats.items():
                 gv, nv = [fn(r) for r in g], [fn(r) for r in n]
