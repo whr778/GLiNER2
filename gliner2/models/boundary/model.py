@@ -2564,9 +2564,11 @@ class BoundaryExtractorModel(BaseExtractorModel):
                         )
                         # The keyword only when ON, so the default call is exactly the historical
                         # (group, recs) -- spies and contracts written against it keep working.
-                        k_neg = self.boundary_settings.record_negative_instances
-                        losses = (compute_group_loss(group, recs, negative_instances=k_neg)
-                                  if k_neg else compute_group_loss(group, recs))
+                        opts = {k: v for k, v in (
+                            ("negative_instances", self.boundary_settings.record_negative_instances),
+                            ("role_hard_negatives", self.boundary_settings.record_role_hard_negatives),
+                        ) if v}
+                        losses = compute_group_loss(group, recs, **opts)
                 except (TargetCapacityError, ValueError, IndexError):
                     continue
                 group_object_count = int(losses.get("object_count", 1))

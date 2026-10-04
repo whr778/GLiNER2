@@ -98,6 +98,11 @@ class BoundaryHeadSettings:
     # diluted. 0 = off (bit-identical). per_query pool only.
     record_negative_instances: int = 0
     record_negative_weight: float = 1.0
+    # UNDILUTED ROLE LOSS. A list (role) field's BCE averaged over every candidate (up to 768)
+    # divides a missed gold argument's surprisal by ~768: traced on eb18, gold arguments sat at
+    # P 0.000-0.038 while the loss read 0.004-0.07. K > 0 averages over the gold candidates plus
+    # the K highest-scoring WRONG ones, for gold and negative instances alike. 0 = historical.
+    record_role_hard_negatives: int = 0
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -396,6 +401,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "proposal_gold": str(values.get("proposal_gold", d.proposal_gold)),
         "record_negative_instances": int(values.get("record_negative_instances", d.record_negative_instances)),
         "record_negative_weight": float(values.get("record_negative_weight", d.record_negative_weight)),
+        "record_role_hard_negatives": int(values.get("record_role_hard_negatives", d.record_role_hard_negatives)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),
@@ -668,6 +674,10 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             "boundary_head.absent_reduction must be 'pooled' or 'separate', got "
             f"{result['absent_reduction']!r}"
         )
+    if result["record_role_hard_negatives"] < 0:
+        raise ValueError("boundary_head.record_role_hard_negatives must be >= 0")
+    if result["record_role_hard_negatives"] > 0 and result.get("candidate_pool") == "shared":
+        raise ValueError("boundary_head.record_role_hard_negatives is implemented for candidate_pool: per_query only")
     if result["record_negative_instances"] < 0 or result["record_negative_weight"] < 0:
         raise ValueError("boundary_head.record_negative_instances and record_negative_weight must be >= 0")
     if result["record_negative_instances"] > 0 and result.get("candidate_pool") == "shared":

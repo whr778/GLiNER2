@@ -925,7 +925,14 @@ def _scalar_field_nll(logits_row: torch.Tensor, target_cols) -> torch.Tensor:
     return -torch.logsumexp(logp[idx], dim=-1)
 
 
-def _list_field_bce(logits_row: torch.Tensor, positive_cols) -> torch.Tensor:
+def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0) -> torch.Tensor:
+    """BCE over a list field's candidates.
+
+    ``hard_k`` = 0 (historical): the mean over EVERY candidate (up to the 768 budget), which
+    divides a missed gold argument's surprisal by ~768 -- traced on eb18, gold arguments at
+    P 0.000-0.038 scored a loss of 0.004-0.07. ``hard_k`` > 0: the mean over the gold candidates
+    plus the ``hard_k`` highest-scoring wrong ones, so the loss reports the errors that matter.
+    """
     cand_logits = logits_row[1:]
     if cand_logits.numel() == 0:
         return logits_row.new_zeros(())
@@ -935,6 +942,13 @@ def _list_field_bce(logits_row: torch.Tensor, positive_cols) -> torch.Tensor:
         idx = col - 1
         if 0 <= idx < n:
             target[idx] = 1.0
+    if hard_k > 0:
+        wrong = cand_logits.detach().masked_fill(target > 0, float("-inf"))
+        k = min(hard_k, int((target == 0).sum()))
+        keep = target > 0
+        if k > 0:
+            keep = keep.index_fill(0, torch.topk(wrong, k).indices, True)
+        return F.binary_cross_entropy_with_logits(cand_logits[keep], target[keep], reduction="mean")
     return F.binary_cross_entropy_with_logits(cand_logits, target, reduction="mean")
 
 
@@ -953,7 +967,7 @@ def _field_target_cols(fspec, record: RecordTarget, span_to_idx):
     return cols, False
 
 
-def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices) -> torch.Tensor:
+def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices, hard_k: int = 0) -> torch.Tensor:
     total = group.object_logits.new_zeros(())
     n_fields = 0
     for f_idx, fspec in enumerate(group.field_specs):
@@ -961,7 +975,7 @@ def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices) -
         row = group.assign_logits[f_idx][inst]
         total = total + (
             _scalar_field_nll(row, cols)
-            if is_scalar else _list_field_bce(row, cols)
+            if is_scalar else _list_field_bce(row, cols, hard_k)
         )
         n_fields += 1
     return total / max(n_fields, 1)
@@ -1461,7 +1475,7 @@ def _negative_instances(group: RecordGroupOutput, records, anchor_qid: int, trai
     return picked
 
 
-def _negative_role_loss(group: RecordGroupOutput, inst: int) -> torch.Tensor:
+def _negative_role_loss(group: RecordGroupOutput, inst: int, hard_k: int = 0) -> torch.Tensor:
     """ROLE fields only, empty target: "none of these candidates is your argument".
 
     The scalar trigger field is skipped on purpose. Trained only on gold, every instance points
@@ -1472,11 +1486,11 @@ def _negative_role_loss(group: RecordGroupOutput, inst: int) -> torch.Tensor:
     rows = [group.assign_logits[f][inst] for f, fs in enumerate(group.field_specs) if not fs.cardinality.is_scalar]
     if not rows:
         return group.object_logits.new_zeros(())
-    return sum(_list_field_bce(row, []) for row in rows) / len(rows)
+    return sum(_list_field_bce(row, [], hard_k) for row in rows) / len(rows)
 
 
 def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget],
-                       negative_instances: int = 0) -> Dict[str, torch.Tensor]:
+                       negative_instances: int = 0, role_hard_negatives: int = 0) -> Dict[str, torch.Tensor]:
     """Compute object and field-assignment losses for one record group.
 
     ``negative_instances`` > 0 (natural mode) also trains that many of the highest-scoring
@@ -1513,7 +1527,7 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
                 _note_anchor_gate("anchor_not_seeded", group.spec.task_type)
                 continue
             _note_anchor_gate("trained", group.spec.task_type)
-            field_loss = field_loss + _instance_field_loss(group, inst, record, span_indices)
+            field_loss = field_loss + _instance_field_loss(group, inst, record, span_indices, role_hard_negatives)
             n += 1
             trained.add(inst)
         out = {
@@ -1528,7 +1542,8 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
             # gold field loss (traced: 0.0173 -> 0.0099, record gradient halved).
             negatives = _negative_instances(group, records, anchor_qid, trained, negative_instances)
             if negatives:
-                out["negative_loss"] = sum(_negative_role_loss(group, i) for i in negatives) / len(negatives)
+                out["negative_loss"] = sum(_negative_role_loss(group, i, role_hard_negatives)
+                                           for i in negatives) / len(negatives)
                 out["negative_count"] = len(negatives)
             _note_negative_instances(len(negatives))
         return out
@@ -1574,7 +1589,7 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
     ]
     for row, col in valid_pairs:
         field_loss = field_loss + _instance_field_loss(
-            group, row, records[col], span_indices
+            group, row, records[col], span_indices, role_hard_negatives
         )
     return {
         "object_loss": object_loss,
