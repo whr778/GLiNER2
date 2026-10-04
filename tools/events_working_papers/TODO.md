@@ -539,6 +539,13 @@ produced 106 observations is identified.
   words**, and the configs' comments say "word window". Measured, and not where expected.
 - **We cannot compare event arguments to the literature** because we do not compute the
   metric the literature reports.
+- **ON HOLD 2026-10-04 -- the trigger-anchored argument line, while design C is explored.** Built and
+  committed, all opt-in: `proposal_gold: identity` (p2fast null, right direction), `absent_reduction`,
+  `record_negative_instances` (K=8: precision +0.12, recall -0.016), `record_role_hard_negatives` (p3arg:
+  argument recall +0.016*, F1 +0.023* -- the eb19 base candidate). Next steps parked: retune negatives
+  (smaller K / weight) on top of hard; decode-time pooling (boundary share only, 14-26%); existence head
+  (`EXISTENCE_HEAD_SPEC.md`, precondition failed: argument evidence still AUC ~0.5 below the gate);
+  offset-anchored mentions. Resume from the 2026-10-04 catalog rows.
 - **Matryoshka representations (added 2026-10-04, explore AFTER the argument fix lands).**
   [Matryoshka loss](https://sbert.net/examples/sentence_transformer/training/matryoshka/README.html)
   trains nested prefixes of an embedding (e.g. 768 -> 256 -> 64) so a truncated prefix still works.

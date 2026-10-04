@@ -47,6 +47,8 @@ def main() -> None:
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--decode", default=None, help="JSON decode settings overriding inference_defaults")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--classify", action="store_true",
+                    help="classify right-(type, role, entity)-wrong-trigger predictions: boundary / sibling / false trigger")
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))
     fns = T._category_fns(T.load_labels_cfg(cfg, args.config))
@@ -66,6 +68,8 @@ def main() -> None:
         for i, (g, p) in enumerate(zip(gold_outs, preds)):
             gk = {(i,) + k for k in _gold_event_argument_set(g)}
             pk = {(i,) + k for k in _pred_event_argument_set(p)}
+            if args.classify:
+                classify(gk, pk, c)
             gu = {k[:4] for k in gk}
             pu = {k[:4] for k in pk}
             c["gold_k"] += len(gk); c["pred_k"] += len(pk); c["tp_k"] += len(gk & pk)
@@ -73,6 +77,36 @@ def main() -> None:
         totals.update(c)
         report(name, c)
     report("ALL", totals)
+
+
+def classify(gk: set, pk: set, c: Counter) -> None:
+    """For predictions right on (type, role, entity) but wrong on trigger_key: which kind of wrong?
+
+    boundary : the predicted trigger contains / is contained in a gold trigger of that type
+    sibling  : the predicted trigger IS another gold event's trigger of that type
+    false    : neither -- a non-gold trigger instance claimed the argument
+    """
+    gold_by_ure = {}
+    for k in gk:
+        gold_by_ure.setdefault(k[:4], set()).add(k)
+    gold_triggers = {}
+    for k in gk:
+        gold_triggers.setdefault((k[0], k[1]), set()).update(k[4])
+    gold_keys_by_type = {}
+    for k in gk:
+        gold_keys_by_type.setdefault((k[0], k[1]), set()).add(k[4])
+    for k in pk - gk:
+        if k[:4] not in gold_by_ure:
+            continue
+        c["wrong_trigger"] += 1
+        pred = [t.lower() for t in k[4]]
+        golds = [t.lower() for t in gold_triggers.get((k[0], k[1]), ())]
+        if k[4] in gold_keys_by_type.get((k[0], k[1]), set()):
+            c["sibling"] += 1
+        elif any(a in b or b in a for a in pred for b in golds):
+            c["boundary"] += 1
+        else:
+            c["false_trigger"] += 1
 
 
 def report(name: str, c: Counter) -> None:
@@ -84,6 +118,11 @@ def report(name: str, c: Counter) -> None:
     pu, ru, fu = three(c["tp_u"], c["pred_u"], c["gold_u"])
     print(f"[gap] {name:15s} gold {c['gold_k']:5d} | KEYED (today) P {pk:.4f} R {rk:.4f} F1 {fk:.4f} | "
           f"UNKEYED (type, role, entity) P {pu:.4f} R {ru:.4f} F1 {fu:.4f} | recall gap {ru - rk:+.4f}")
+    if c["wrong_trigger"]:
+        w = c["wrong_trigger"]
+        print(f"[gap] {name:15s} wrong-trigger predictions {w}: boundary {c['boundary']} ({100 * c['boundary'] / w:.0f}%) | "
+              f"sibling gold {c['sibling']} ({100 * c['sibling'] / w:.0f}%) | false trigger {c['false_trigger']} "
+              f"({100 * c['false_trigger'] / w:.0f}%)")
 
 
 if __name__ == "__main__":
