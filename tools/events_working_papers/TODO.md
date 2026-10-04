@@ -546,6 +546,10 @@ produced 106 observations is identified.
   retune TESTED 2026-10-04 p4neg: net NEGATIVE at K=2/4/8@0.25 -- dropped; false triggers 52-74% of wrong-trigger
   attachments remain open); decode-time pooling (boundary share
   14-26%) -- TESTED 2026-10-04, NEGATIVE, dropped; existence head ON HOLD (`EXISTENCE_HEAD_SPEC.md` section 5: argument evidence still AUC ~0.5).
+- **NEXT -- the junction layer (`JUNCTION_LAYER_SPEC.md`), eb19 HELD until it has a fast-A/B result.**
+  The trigger->argument score is role fit with no join (junction AUC 0.56-0.61; pair term below chance
+  in-row). Gated bilinear trigger x argument link + geometry, zero-init (bit-identical at step 0), trained by
+  a COLUMN loss (which trigger owns this gold argument) that only the link term can lower. Gate: junction AUC.
 - **PARKED -- design C (events as slots: anchorless records).** The structural fix for the shared root cause
   (event identity = a trigger mention). Found 2026-10-04: events are hard-wired natural
   (`processing/records.py` `_event_record_cfg`); anchorless = 32 learned slots, one attention layer,
