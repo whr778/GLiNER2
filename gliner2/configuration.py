@@ -85,6 +85,19 @@ class BoundaryHeadSettings:
     # "identity" uses the pair labels (span identity against the query's gold), so the four
     # candidate losses agree. Training-only; sizes nothing.
     proposal_gold: str = "injected"  # "injected" | "identity"
+    # NEGATIVE INSTANCES FOR THE RECORD HEAD (natural mode). The field loss trains ONLY the
+    # instance each gold trigger seeds: measured 65 of 60,390 instance hypotheses (0.11%) get
+    # any argument loss, and the object loss is zero -- a false trigger candidate is never told
+    # "these are not your arguments", so argument evidence on false triggers is uncalibrated
+    # (gold-vs-false AUC ~0.5 below the gate, reversed in CMNEE). This trains the K highest-
+    # scoring FALSE instances per group on their ROLE fields only ("no candidate is your
+    # argument"), skipping any whose span overlaps a gold trigger (boundary variants). The
+    # trigger field is NOT trained here: it learned an identity map (P(ABSENT) = 0.0000 on every
+    # instance), so an ABSENT target is a ~30-nat error that would make it an existence head.
+    # Own mean, added as `record_negative_weight * mean_negative`, so gold records are not
+    # diluted. 0 = off (bit-identical). per_query pool only.
+    record_negative_instances: int = 0
+    record_negative_weight: float = 1.0
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -381,6 +394,8 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "absent_loss_weight": float(values.get("absent_loss_weight", d.absent_loss_weight)),
         "present_loss_scale": float(values.get("present_loss_scale", d.present_loss_scale)),
         "proposal_gold": str(values.get("proposal_gold", d.proposal_gold)),
+        "record_negative_instances": int(values.get("record_negative_instances", d.record_negative_instances)),
+        "record_negative_weight": float(values.get("record_negative_weight", d.record_negative_weight)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),
@@ -653,6 +668,10 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
             "boundary_head.absent_reduction must be 'pooled' or 'separate', got "
             f"{result['absent_reduction']!r}"
         )
+    if result["record_negative_instances"] < 0 or result["record_negative_weight"] < 0:
+        raise ValueError("boundary_head.record_negative_instances and record_negative_weight must be >= 0")
+    if result["record_negative_instances"] > 0 and result.get("candidate_pool") == "shared":
+        raise ValueError("boundary_head.record_negative_instances is implemented for candidate_pool: per_query only")
     if result["proposal_gold"] not in ("injected", "identity"):
         raise ValueError(
             "boundary_head.proposal_gold must be 'injected' or 'identity', got "

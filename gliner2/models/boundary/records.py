@@ -1429,8 +1429,60 @@ def reset_anchor_gate() -> None:
     _ANCHOR_GATE_CALLS = 0
 
 
-def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]) -> Dict[str, torch.Tensor]:
-    """Compute object and field-assignment losses for one record group."""
+_NEGATIVE_INSTANCES = 0
+_NEGATIVE_CALLS = 0
+
+
+def _note_negative_instances(trained: int) -> None:
+    """Cumulative count of negative instances actually trained, with the usual log backoff."""
+    global _NEGATIVE_INSTANCES, _NEGATIVE_CALLS
+    _NEGATIVE_INSTANCES += trained
+    _NEGATIVE_CALLS += 1
+    n = _NEGATIVE_CALLS
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        logger.info("record negative instances: %d trained on role fields, cumulative over %d natural groups",
+                    _NEGATIVE_INSTANCES, n)
+
+
+def _negative_instances(group: RecordGroupOutput, records, anchor_qid: int, trained: set, k: int) -> List[int]:
+    """The k highest-scoring instances that are NOT gold: not trained, seeded, no overlap with a gold trigger."""
+    gold_spans = [(int(s[0]), int(s[1])) for r in records
+                  if (a := r.field_for_query(anchor_qid)) is not None and a.values for s in a.values[0]]
+    picked = []
+    for i in torch.argsort(group.object_logits.detach(), descending=True).tolist():
+        if len(picked) >= k:
+            break
+        span = group.instance_spans[i] if i < len(group.instance_spans) else None
+        if i in trained or group.instance_seed[i] is None or span is None:
+            continue
+        if any(span[0] < ge and gs < span[1] for gs, ge in gold_spans):
+            continue
+        picked.append(i)
+    return picked
+
+
+def _negative_role_loss(group: RecordGroupOutput, inst: int) -> torch.Tensor:
+    """ROLE fields only, empty target: "none of these candidates is your argument".
+
+    The scalar trigger field is skipped on purpose. Trained only on gold, every instance points
+    its trigger field at its own seed with certainty (P(ABSENT) = 0.0000 on real batches), so an
+    ABSENT target there is a ~30-nat error that turns the field into an existence classifier --
+    existence is a separate mechanism, built where the gate can see argument evidence.
+    """
+    rows = [group.assign_logits[f][inst] for f, fs in enumerate(group.field_specs) if not fs.cardinality.is_scalar]
+    if not rows:
+        return group.object_logits.new_zeros(())
+    return sum(_list_field_bce(row, []) for row in rows) / len(rows)
+
+
+def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget],
+                       negative_instances: int = 0) -> Dict[str, torch.Tensor]:
+    """Compute object and field-assignment losses for one record group.
+
+    ``negative_instances`` > 0 (natural mode) also trains that many of the highest-scoring
+    FALSE instances on their ROLE fields (no candidate is theirs), returned as ``negative_loss``
+    (mean over the group's negatives) and ``negative_count`` for a separate batch mean.
+    """
     device = group.object_logits.device
     zero = torch.zeros((), device=device)
     span_indices = [_span_index(spans) for spans in group.field_spans]
@@ -1442,7 +1494,7 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
             seed[1]: i for i, seed in enumerate(group.instance_seed)
             if seed is not None and seed[0] == anchor_f_idx
         }
-        field_loss, n = zero, 0
+        field_loss, n, trained = zero, 0, set()
         for record in records:
             aft = record.field_for_query(anchor_qid)
             if aft is None or not aft.values:
@@ -1463,12 +1515,23 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
             _note_anchor_gate("trained", group.spec.task_type)
             field_loss = field_loss + _instance_field_loss(group, inst, record, span_indices)
             n += 1
-        return {
+            trained.add(inst)
+        out = {
             "object_loss": zero,
             "field_loss": field_loss / max(n, 1),
             "object_count": 0,
             "field_count": n * len(group.field_specs),
         }
+        if negative_instances > 0:
+            # Returned SEPARATELY and averaged on their own in the batch, so negatives never enter
+            # the gold denominator -- folding an absent type's near-zero loss into it diluted the
+            # gold field loss (traced: 0.0173 -> 0.0099, record gradient halved).
+            negatives = _negative_instances(group, records, anchor_qid, trained, negative_instances)
+            if negatives:
+                out["negative_loss"] = sum(_negative_role_loss(group, i) for i in negatives) / len(negatives)
+                out["negative_count"] = len(negatives)
+            _note_negative_instances(len(negatives))
+        return out
 
     count = len(records)
     if count == 0:

@@ -2477,6 +2477,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
         field_total = torch.zeros((), device=device)
         object_count = 0
         field_count = 0
+        neg_total = torch.zeros((), device=device)
+        neg_count = 0
         record_specs = getattr(batch, "record_specs", ())
         per_sample_records = targets.records  # List[List[RecordTarget]]
         packed_records = getattr(targets, "record_targets", None)
@@ -2560,7 +2562,10 @@ class BoundaryExtractorModel(BaseExtractorModel):
                         group = self.record_decoder.forward_group(
                             spec, query_states_i, candidates, i
                         )
-                        losses = compute_group_loss(group, recs)
+                        losses = compute_group_loss(
+                            group, recs,
+                            negative_instances=self.boundary_settings.record_negative_instances,
+                        )
                 except (TargetCapacityError, ValueError, IndexError):
                     continue
                 group_object_count = int(losses.get("object_count", 1))
@@ -2573,9 +2578,15 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 )
                 object_count += group_object_count
                 field_count += group_field_count
+                if "negative_count" in losses:
+                    neg_total = neg_total + losses["negative_loss"] * losses["negative_count"]
+                    neg_count += losses["negative_count"]
 
         obj = obj_total / max(object_count, 1)
         field = field_total / max(field_count, 1)
+        if neg_count:
+            # Negative instances: their OWN mean, weighted, never in the gold denominator.
+            field = field + self.boundary_settings.record_negative_weight * neg_total / neg_count
         return {"object": obj, "field": field, "total": weight * (obj + field)}
 
     def score_candidates(
