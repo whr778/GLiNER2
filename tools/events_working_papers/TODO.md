@@ -544,7 +544,7 @@ produced 106 observations is identified.
   (K=8: precision +0.12, recall -0.016), `record_role_hard_negatives` (p3arg: argument recall +0.016*,
   F1 +0.023* -- the eb19 base candidate). Next: eb19 recipe; retune negatives (smaller K / weight) on top
   of hard -- false triggers are 52-74% of wrong-trigger attachments; decode-time pooling (boundary share
-  14-26%); existence head ON HOLD (`EXISTENCE_HEAD_SPEC.md` section 5: argument evidence still AUC ~0.5).
+  14-26%) -- TESTED 2026-10-04, NEGATIVE, dropped; existence head ON HOLD (`EXISTENCE_HEAD_SPEC.md` section 5: argument evidence still AUC ~0.5).
 - **PARKED -- design C (events as slots: anchorless records).** The structural fix for the shared root cause
   (event identity = a trigger mention). Found 2026-10-04: events are hard-wired natural
   (`processing/records.py` `_event_record_cfg`); anchorless = 32 learned slots, one attention layer,
