@@ -127,6 +127,19 @@ else
   echo "[base] no $OUTDIR/final to push"
 fi
 
+# 1c. OPTIONAL PER-EPOCH CHECKPOINTS (PUSH_EPOCHS=1), each to its own private repo. Non-fatal:
+# they are the diagnostic curve (e.g. the trigger-miss probe per epoch), never the deliverable.
+# Needs save_total_limit >= num_epochs in the config, or the trainer has deleted the early ones.
+if [ "${PUSH_EPOCHS:-0}" = "1" ]; then
+  for ck in "$OUTDIR"/checkpoint-epoch-*; do
+    [ -d "$ck" ] || continue
+    echo "[base] pushing $(basename "$ck") (diagnostic, non-fatal)"
+    $PY -u tools/train/push_to_hub.py --checkpoint "$ck" --repo-id "$REPO-$(basename "$ck")" --private \
+        --commit-message "per-epoch checkpoint, for the per-epoch curve" 2>&1 | tail -2 \
+      || echo "[base] $(basename "$ck") push failed; continuing"
+  done
+fi
+
 # 2. METRICS AND LOGS, whatever happened to the model.
 cp "$OUTDIR/test_metrics.json" "$HOME/test_metrics.json" 2>/dev/null || echo "[base] no test_metrics.json"
 # eval_metrics.json is OPTIONAL -- train.py writes test_metrics.json and val_metrics.json,
