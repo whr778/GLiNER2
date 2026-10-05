@@ -963,6 +963,62 @@ checkpoint was **-0.115** against v1 -- because v1's own number rose by 0.116 un
 current scorer. The provisional read was reported before the matched run finished, and it
 was wrong. Wait for the matched table.
 
+## Trigger -> argument link diagnostics: ownership AUC and the DET of the argument gate
+
+These are DIAGNOSTICS of the record head, not heads and not selection metrics. They answer
+two different questions about one event argument, and each needs its own measure.
+`tools/train/measure_junction_det.py` computes both, per corpus, on the TRAIN and VAL splits
+separately (see `JUNCTION_LAYER_SPEC.md`).
+
+| question | what decode does (`records.decode_group`, list fields) | the right measure |
+|---|---|---|
+| **Ownership** -- which trigger owns this argument? | exclusive allocation: the argument goes to the instance with the highest score in its COLUMN | **per-column AUC** (gold trigger vs the K hardest false triggers on the SAME argument) and **top-1** (the gold trigger holds the column max). One gold per column and no threshold, so a DET does not apply |
+| **Detection** -- does this argument survive the gate? | one global threshold on the column max of sigmoid(assign logit) | **DET curve** on the pooled column-max scores, with the operating point marked |
+
+**Pooling is wrong for ownership and right for detection.** Per column, the role term R
+(`field_proj(r_f) . cand_proj(a_j)`) is identical for every trigger, so it cancels and only
+pair identity is measured. Pooling scores across columns mixes R back in: the first junction
+AUC was reported POOLED as 0.609 when the per-column value was 0.631. Detection, by contrast,
+IS pooled at decode -- one threshold over every column -- so the DET is pooled on purpose.
+
+**Why a DET, not an AUC, for detection.** A DET plots the same miss / false-alarm trade-off
+as an ROC, on normal-deviate (probit) axes. It holds no information the ROC lacks, but:
+
+- it stretches the low-error tails, where the operating point sits, instead of a corner;
+- curves of roughly Gaussian scores become near-straight lines, so epochs and corpora
+  compare by eye;
+- it shows CROSSINGS. An AUC averages over every threshold and can stay flat while the
+  region that matters degrades -- a plausible shape for overfitting (confidently wrong at
+  the top of the score range while the average holds).
+
+**Two views of detection.**
+
+| view | column max taken over | what it isolates |
+|---|---|---|
+| **scorer** | every instance row | the argument scorer and the junction, independent of trigger selection |
+| **decode** | only the instances decode SELECTS (anchor score >= the gate) | the end-to-end gate; arguments whose owner is never selected score 0 and show as a straight diagonal: undecodable at ANY threshold |
+
+`correct_at_op` is the end-to-end hit: the column max clears the gate AND its owner is the
+gold trigger.
+
+**The overfitting signature.** Run both splits on each epoch checkpoint. Overfitting reads as
+the TRAIN curve still moving toward the origin while the VAL curve stalls or bends away in the
+low-false-alarm region, and as train ownership AUC rising while val ownership AUC flattens.
+The in-run junction AUC (`records.py` `_note_link_columns`) cannot show this: it is computed
+on TRAINING batches, and against the model's OWN hardest false triggers, which get harder as
+the model improves -- a flat in-run value can mean the junction is keeping pace.
+
+**Read it per corpus.** Argument gold is dominated by CMNEE (88.4%), so a pooled number is a
+Chinese number. CASIE is the only English corpus with both a train and a val split.
+
+    uv run python tools/train/measure_junction_det.py --checkpoint <checkpoint-epoch-N> \
+        --out /Volumes/Development/tmp/junction_det/epochN
+
+Forwards are training-shaped (dropout off, no_grad) because only that path builds record
+groups with gold, and gold injection stays at 1.0, so every number is CONDITIONAL on the gold
+trigger being an instance. The tool refuses duplicate documents within a split (`casie.val`
+and `scaling_joint/casie.val` are byte-identical) and any VAL document also found in training.
+
 ## TVD — comparing two corpora, not two predictions
 
 Everything above scores a **prediction against its gold**. TVD answers a different
