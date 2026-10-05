@@ -54,6 +54,11 @@ so a scorer can join prediction to gold line by line. Choose the menu:
 uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
     --input data/casie.test.jsonl --gold-schema --output casie_test.preds.jsonl
 
+# ... with gold in the model's spellings, built exactly as eval builds it
+uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
+    --input data/docfee.test.jsonl --gold-schema \
+    --labels-file tools/train/config/labels/unified-full.yaml --output docfee_test.preds.jsonl
+
 # the checkpoint's FULL shipped schema (see the over-firing caution below)
 uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
     --input data/casie.test.jsonl --model-schema --tasks events --output casie_test.full.preds.jsonl
@@ -66,6 +71,7 @@ Each line of the predictions file:
 | `input` | the document text |
 | `output` | **the model's prediction** |
 | `gold` | the input record's own `output` (its gold labels), passed through unchanged |
+| `gold_mapped` | only with `--labels-file`: the same gold with its labels transformed exactly as training transforms them, so its spellings match the predictions' (`Company Name` -> `CompanyName`). Score against THIS. |
 
 Note the naming: in a training record `output` IS the gold; here it is the prediction, and the
 gold moves to `gold`. A category with no predictions may be absent rather than empty: under
@@ -90,6 +96,7 @@ ONCE: pick settings on the validation split first.
 | `--threshold`, `--chunk-size`, `--chunk-overlap`, `--global-decode` / `--no-global-decode` | override the checkpoint |
 | `--include-confidence`, `--include-spans` | add scores and character offsets |
 | `--gold-schema` | each `.jsonl` record gets the schema of its own gold labels, as eval scores it |
+| `--labels-file <unified YAML>` | add `gold_mapped`, and with `--gold-schema` build each schema from the mapped gold (eval's path). Warns if the file's map differs from the checkpoint's `label_map` -- usually the wrong file for that model |
 | `--output preds.jsonl` | write `{input, output, gold}` per record as JSONL instead of printing |
 
 Each decode setting resolves in this order:

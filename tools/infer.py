@@ -55,6 +55,28 @@ def _gold_schema(record: Dict[str, Any]) -> Dict[str, Any]:
     return _schema_from_gold(record.get("output") or {})
 
 
+def _labels_file(path: str):
+    """(category label fns, the file's labels block) from a unified labels YAML, as train.py builds them."""
+    import sys
+    import yaml
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "train"))
+    import train as T
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    block = data.get("labels", data)
+    return T._category_fns(block), block, T.transform_record
+
+
+def _map_mismatch(block: Dict[str, Any], label_map: Dict[str, Any]) -> Dict[str, int]:
+    """Per category, how many map entries differ between a labels file and a checkpoint's label_map."""
+    out = {}
+    for cat in set(block) | set(label_map or {}):
+        a, b = (block.get(cat) or {}).get("map") or {}, ((label_map or {}).get(cat) or {}).get("map") or {}
+        diff = sum(1 for k in set(a) | set(b) if a.get(k) != b.get(k))
+        if diff:
+            out[cat] = diff
+    return out
+
+
 def _model_schema(config, tasks: str = None) -> Dict[str, Any]:
     """The checkpoint's shipped schema, minus the ``open_vocab`` marker, optionally narrowed
     to ``tasks`` (comma-separated: entities, relations, events, classifications, structures)."""
@@ -109,6 +131,11 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p.add_argument("--gold-schema", action="store_true",
                    help="Each .jsonl record gets the schema of its OWN gold labels, as eval scores it. "
                         "Excludes every other schema option.")
+    p.add_argument("--labels-file",
+                   help="A unified labels YAML (e.g. tools/train/config/labels/unified-full.yaml). Adds "
+                        "`gold_mapped` -- the gold with labels transformed as training does -- to every "
+                        "--output line, and with --gold-schema builds each schema from that mapped gold, "
+                        "exactly eval's path.")
     p.add_argument("--output", help="Write predictions here as JSONL, one line per input record: "
                                     "{input, output: prediction, gold: the record's output}. "
                                     "Written as it goes. Default: print a JSON array.")
@@ -178,10 +205,21 @@ def main(argv: List[str] = None) -> None:
             rewrites.setdefault(cat, {}).update(m)
         return out
 
+    fns = transform = None
+    if args.labels_file:
+        fns, block, transform = _labels_file(args.labels_file)
+        diff = _map_mismatch(block, getattr(model.config, "label_map", None))
+        print(f"[infer] labels file {args.labels_file}: "
+              + (f"DIFFERS from the checkpoint's label_map (entries per category: {diff}) -- "
+                 "is this the file the model trained with?" if diff else "matches the checkpoint's label_map"))
+    gold_mapped = [transform(r, fns).get("output") for r in records] if fns is not None else None
+
     if args.gold_schema:
         if args.model_schema or args.schema_json or args.entities or args.events:
             raise SystemExit("--gold-schema excludes --model-schema, --schema-json, --entities and --events.")
-        schemas = [mapped(_gold_schema(r)) for r in records]
+        # With a labels file this is eval's path exactly: transform the gold, then build the schema.
+        schemas = ([_gold_schema({"output": g}) for g in gold_mapped] if gold_mapped is not None
+                   else [mapped(_gold_schema(r)) for r in records])
         empty = sum(1 for sc in schemas if not sc)
         print(f"[infer] gold schema per record: {len(records)} records, {empty} with no gold labels (predicted as {{}})")
     else:
@@ -213,9 +251,11 @@ def main(argv: List[str] = None) -> None:
     with open(args.output, "w", encoding="utf-8") as f:
         for start in range(0, len(records), step):
             chunk = records[start:start + step]
-            for rec, pred in zip(chunk, predict(chunk, schemas[start:start + step])):
-                f.write(json.dumps({"input": rec["input"], "output": pred, "gold": rec.get("output")},
-                                   ensure_ascii=False) + "\n")
+            for i, (rec, pred) in enumerate(zip(chunk, predict(chunk, schemas[start:start + step]))):
+                row = {"input": rec["input"], "output": pred, "gold": rec.get("output")}
+                if gold_mapped is not None:
+                    row["gold_mapped"] = gold_mapped[start + i]
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
             f.flush()
             print(f"[infer] {min(start + step, len(records))}/{len(records)} records -> {args.output}", flush=True)
 

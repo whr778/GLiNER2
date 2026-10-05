@@ -129,7 +129,7 @@ class _StubModel:
 
     def batch_extract_long(self, texts, schemas, **kw):
         self.calls.append(len(texts))
-        return [{"echo": t, "schema": sorted(s)} for t, s in zip(texts, schemas)]
+        return [{"echo": t, "schema": sorted(s), "schema_full": s} for t, s in zip(texts, schemas)]
 
 
 class TestOutputJsonl:
@@ -166,3 +166,27 @@ class TestOutputJsonl:
     def test_gold_schema_refuses_other_schema_options(self, tmp_path, monkeypatch):
         with pytest.raises(SystemExit):
             self._run(tmp_path, monkeypatch, "--gold-schema", "--entities", "Person")
+
+
+class TestLabelsFile:
+    LABELS = "labels:\n  entities:\n    rollup: false\n    separator: .\n    map:\n      Company Name: CompanyName\n"
+    RECS = [{"input": "a", "output": {"entities": {"Company Name": ["Acme"], "Person": ["Bo"]}}}]
+
+    def _run(self, tmp_path, monkeypatch, *argv):
+        (tmp_path / "labels.yaml").write_text(self.LABELS, encoding="utf-8")
+        return TestOutputJsonl._run(self, tmp_path, monkeypatch,
+                                    "--labels-file", str(tmp_path / "labels.yaml"), *argv)
+
+    def test_gold_mapped_carries_the_transformed_labels_and_gold_stays_raw(self, tmp_path, monkeypatch):
+        rows, _ = self._run(tmp_path, monkeypatch, "--gold-schema")
+        assert rows[0]["gold"] == self.RECS[0]["output"]
+        assert rows[0]["gold_mapped"]["entities"] == {"CompanyName": ["Acme"], "Person": ["Bo"]}
+
+    def test_gold_schema_is_built_from_the_mapped_gold(self, tmp_path, monkeypatch):
+        rows, _ = self._run(tmp_path, monkeypatch, "--gold-schema")
+        assert set(rows[0]["output"]["schema_full"]["entities"]) == {"CompanyName", "Person"}
+
+    def test_mismatch_counts_differing_entries(self):
+        block = {"entities": {"map": {"a": "A", "b": "B"}}}
+        assert infer._map_mismatch(block, {"entities": {"map": {"a": "A", "b": "X"}}}) == {"entities": 1}
+        assert infer._map_mismatch(block, {"entities": {"map": {"a": "A", "b": "B"}}}) == {}
