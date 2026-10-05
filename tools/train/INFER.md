@@ -59,6 +59,19 @@ uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
     --input data/casie.test.jsonl --model-schema --tasks events --output casie_test.full.preds.jsonl
 ```
 
+Each line of the predictions file:
+
+| key | contents |
+|---|---|
+| `input` | the document text |
+| `output` | **the model's prediction** |
+| `gold` | the input record's own `output` (its gold labels), passed through unchanged |
+
+Note the naming: in a training record `output` IS the gold; here it is the prediction, and the
+gold moves to `gold`. A category with no predictions may be absent rather than empty: under
+`--gold-schema` a document with no predicted relation has no `relation_extraction` key, so a
+scorer should read a missing key as "no predictions".
+
 A record with no gold labels under `--gold-schema` is written with `"output": {}` and not decoded.
 `--docs-per-write` (default 64) sets how many documents are decoded per flush. Score a blind test
 ONCE: pick settings on the validation split first.
