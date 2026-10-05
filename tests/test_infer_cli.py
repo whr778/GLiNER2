@@ -3,6 +3,7 @@
 import argparse
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -27,7 +28,8 @@ class TestReadTexts:
 
 class TestBuildSchema:
     def _args(self, **kw):
-        ns = argparse.Namespace(entities=None, events=None, schema_json=None)
+        ns = argparse.Namespace(entities=None, events=None, schema_json=None,
+                                model_schema=False, tasks=None)
         for k, v in kw.items():
             setattr(ns, k, v)
         return ns
@@ -60,4 +62,57 @@ class TestParseArgs:
             ["--model", "m", "--input", "hi", "--entities", "a", "--global-decode"]
         )
         assert ns.global_decode is True
-        assert ns.chunk_size == 384 and ns.chunk_overlap == 128 and ns.beam_width == 8
+        assert ns.beam_width == 8
+        assert ns.threshold is None and ns.chunk_size is None and ns.chunk_overlap is None
+
+    def test_unset_global_decode_is_none(self):
+        ns = infer._parse_args(["--model", "m", "--input", "hi", "--entities", "a"])
+        assert ns.global_decode is None
+
+
+SHIPPED = {"open_vocab": ["entities"], "events": {"Attack": ["Target"]},
+           "relations": ["works_for"], "classifications": [{"task": "t", "labels": ["a"]}]}
+
+
+def _model(inference_defaults=None, default_schema=None, max_len=None):
+    return SimpleNamespace(config=SimpleNamespace(
+        inference_defaults=inference_defaults, default_schema=default_schema, max_len=max_len))
+
+
+class TestModelSchema:
+    def test_drops_open_vocab_marker(self):
+        assert "open_vocab" not in infer._model_schema(_model(default_schema=SHIPPED).config)
+
+    def test_tasks_narrow_it(self):
+        assert infer._model_schema(_model(default_schema=SHIPPED).config, "events") == {
+            "events": {"Attack": ["Target"]}}
+
+    def test_cli_entities_fill_the_open_vocab(self):
+        args = argparse.Namespace(entities="Person", events=None, schema_json=None,
+                                  model_schema=True, tasks="events")
+        assert infer._build_schema(args, _model(default_schema=SHIPPED).config) == {
+            "events": {"Attack": ["Target"]}, "entities": ["Person"]}
+
+    def test_no_shipped_schema_errors(self):
+        with pytest.raises(SystemExit):
+            infer._model_schema(_model().config)
+
+
+class TestDecodeSettings:
+    STORED = {"threshold": 0.3, "chunk_size": 4096, "chunk_overlap": 0, "global_decode": True}
+
+    def _args(self, *argv):
+        return infer._parse_args(["--model", "m", "--input", "hi", "--entities", "a", *argv])
+
+    def test_checkpoint_defaults_fill_unset_flags(self):
+        assert infer._decode_settings(self._args(), _model(self.STORED)) == self.STORED
+
+    def test_explicit_flags_win(self):
+        got = infer._decode_settings(
+            self._args("--threshold", "0.5", "--chunk-size", "200", "--no-global-decode"),
+            _model(self.STORED))
+        assert got == {"threshold": 0.5, "chunk_size": 200, "chunk_overlap": 0, "global_decode": False}
+
+    def test_no_stored_defaults_falls_back(self):
+        got = infer._decode_settings(self._args(), _model(max_len=600))
+        assert got == {"threshold": 0.5, "chunk_size": 400, "chunk_overlap": 0, "global_decode": False}

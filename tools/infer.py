@@ -12,6 +12,14 @@ Examples:
       --input data/wikievents.test.jsonl \
       --events '{"Attack": ["Attacker", "Target", "Place"]}' \
       --global-decode --chunk-size 384 --chunk-overlap 128 --include-spans
+
+  uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
+      --input document.txt --model-schema --tasks events --entities Person,Location
+
+Like the viewer: --model-schema starts from the schema the checkpoint ships (config.json
+default_schema), every decode setting not passed falls back to the checkpoint's
+inference_defaults, and the checkpoint's label_map is applied to the schema. See
+tools/train/INFER.md.
 """
 
 from __future__ import annotations
@@ -37,18 +45,43 @@ def _read_texts(inp: str) -> List[str]:
     return [inp]
 
 
-def _build_schema(args: argparse.Namespace) -> Dict[str, Any]:
-    """Assemble a raw schema dict from CLI options."""
+def _model_schema(config, tasks: str = None) -> Dict[str, Any]:
+    """The checkpoint's shipped schema, minus the ``open_vocab`` marker, optionally narrowed
+    to ``tasks`` (comma-separated: entities, relations, events, classifications, structures)."""
+    shipped = dict(getattr(config, "default_schema", None) or {})
+    if not shipped:
+        raise SystemExit("--model-schema: this checkpoint ships no default_schema.")
+    shipped.pop("open_vocab", None)
+    if tasks:
+        keep = {t.strip() for t in tasks.split(",") if t.strip()}
+        shipped = {k: v for k, v in shipped.items() if k in keep}
+    return shipped
+
+
+def _build_schema(args: argparse.Namespace, config=None) -> Dict[str, Any]:
+    """Assemble a raw schema dict from CLI options; --entities/--events add to --model-schema."""
     if args.schema_json:
         return json.loads(Path(args.schema_json).read_text(encoding="utf-8"))
-    schema: Dict[str, Any] = {}
+    schema: Dict[str, Any] = _model_schema(config, args.tasks) if args.model_schema else {}
     if args.entities:
         schema["entities"] = [e.strip() for e in args.entities.split(",") if e.strip()]
     if args.events:
         schema["events"] = json.loads(args.events)
     if not schema:
-        raise SystemExit("Provide --entities, --events, or --schema-json.")
+        raise SystemExit("Provide --entities, --events, --schema-json, or --model-schema.")
     return schema
+
+
+def _decode_settings(args: argparse.Namespace, model) -> Dict[str, Any]:
+    """Each setting: the flag if passed, else the checkpoint's inference_defaults, else the
+    script's fallback (threshold 0.5, the model's own window, overlap 0, no global decode)."""
+    stored = getattr(model.config, "inference_defaults", None) or {}
+    pick = lambda name, fallback: (getattr(args, name) if getattr(args, name) is not None
+                                   else stored.get(name, fallback))
+    return {"threshold": pick("threshold", 0.5),
+            "chunk_size": resolve_model_window(model, pick("chunk_size", 0)),
+            "chunk_overlap": pick("chunk_overlap", 0),
+            "global_decode": bool(pick("global_decode", False))}
 
 
 def _parse_args(argv: List[str] = None) -> argparse.Namespace:
@@ -58,19 +91,27 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                    help="Literal text, a .txt file, or a .jsonl with an 'input' field per line.")
     p.add_argument("--entities", help="Comma-separated entity types.")
     p.add_argument("--events", help='JSON mapping event type -> [roles], e.g. \'{"Attack":["Target"]}\'.')
-    p.add_argument("--schema-json", help="Path to a full schema JSON (overrides --entities/--events).")
-    p.add_argument("--global-decode", action="store_true",
-                   help="OneIE-style document-level event assembly across windows.")
-    p.add_argument("--chunk-size", type=int, default=0,
-                   help="Word window for long docs. 0 = the MODEL's own configured window, "
-                        "which is the default: one window everywhere.")
-    p.add_argument("--chunk-overlap", type=int, default=0,
-                   help="Word overlap. 0 by default: the stride is a TRAINING device and "
-                        "double-counts spans anywhere else.")
+    p.add_argument("--schema-json", help="Path to a full schema JSON (overrides every other schema option).")
+    p.add_argument("--model-schema", action="store_true",
+                   help="Start from the schema the checkpoint ships (config.json default_schema).")
+    p.add_argument("--tasks", help="With --model-schema: keep only these task types, comma-separated "
+                                   "(entities, relations, events, classifications, structures).")
+    p.add_argument("--no-label-map", action="store_true",
+                   help="Send labels as typed instead of through the checkpoint's label_map.")
+    p.add_argument("--global-decode", action=argparse.BooleanOptionalAction, default=None,
+                   help="OneIE-style document-level event assembly across windows. "
+                        "Default: the checkpoint's inference_defaults, else off.")
+    p.add_argument("--chunk-size", type=int, default=None,
+                   help="Word window for long docs. Default: the checkpoint's inference_defaults, "
+                        "else 0 = the MODEL's own configured window: one window everywhere.")
+    p.add_argument("--chunk-overlap", type=int, default=None,
+                   help="Word overlap. Default: the checkpoint's inference_defaults, else 0: the "
+                        "stride is a TRAINING device and double-counts spans anywhere else.")
     p.add_argument("--beam-width", type=int, default=8, help="Global-decode beam width.")
     p.add_argument("--include-spans", action="store_true")
     p.add_argument("--include-confidence", action="store_true")
-    p.add_argument("--threshold", type=float, default=0.5)
+    p.add_argument("--threshold", type=float, default=None,
+                   help="Span threshold. Default: the checkpoint's inference_defaults, else 0.5.")
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args(argv)
 
@@ -102,22 +143,27 @@ def resolve_model_window(model, requested=None, *, tokens_per_word: float = 1.5)
 def main(argv: List[str] = None) -> None:
     args = _parse_args(argv)
 
-    from gliner2 import GLiNER2
+    # AutoExtractor, not GLiNER2: GLiNER2 IS the span class, so a boundary checkpoint
+    # died on `config.max_width` -- the same defect the viewer and eval already fixed.
+    from gliner2 import AutoExtractor
     from gliner2.inference.global_decode import GlobalDecodeConfig
+    from gliner2.inference.label_map import apply_label_map
 
     texts = _read_texts(args.input)
-    schema = _build_schema(args)
-    model = GLiNER2.from_pretrained(args.model)
-    chunk_size = resolve_model_window(model, args.chunk_size)
-    print(f"[infer] window {chunk_size} words (model max_len "
-          f"{getattr(model.config, 'max_len', '?')} tokens), overlap {args.chunk_overlap}")
+    model = AutoExtractor.from_pretrained(args.model)
+    schema = _build_schema(args, model.config)
+    if not args.no_label_map:
+        schema, rewrites = apply_label_map(schema, getattr(model.config, "label_map", None))
+        print(f"[infer] label_map rewrites: {json.dumps(rewrites, ensure_ascii=False) if rewrites else 'none'}")
+    decode = _decode_settings(args, model)
+    print(f"[infer] schema {', '.join(f'{k}={len(v)}' for k, v in schema.items())} | decode {decode} "
+          f"(model max_len {getattr(model.config, 'max_len', '?')} tokens; "
+          f"checkpoint inference_defaults {getattr(model.config, 'inference_defaults', None)})")
 
     results = model.batch_extract_long(
         texts, schema,
-        batch_size=args.batch_size, threshold=args.threshold,
-        chunk_size=chunk_size, chunk_overlap=args.chunk_overlap,
+        batch_size=args.batch_size, **decode,
         include_spans=args.include_spans, include_confidence=args.include_confidence,
-        global_decode=args.global_decode,
         global_decode_config=GlobalDecodeConfig(beam_width=args.beam_width),
     )
     print(json.dumps(results, ensure_ascii=False, indent=2))
