@@ -30,11 +30,11 @@ import train as T  # noqa: E402
 import yaml  # noqa: E402
 
 
-def load_records(cfg, config, per_corpus, seed):
-    """({corpus: sampled records}, {corpus: total train records})."""
+def load_records(cfg, config, per_corpus, seed, split="train"):
+    """({corpus: sampled records}, {corpus: total records}) from one split; val excludes train_only."""
     data = cfg["data"]
-    files = T._dedupe_paths(T._split_files(data.get("corpora") or [], "train", set(data.get("train_only") or ()))
-                            + T._event_split(data.get("event_files") or {}, "train"), "train")
+    files = T._dedupe_paths(T._split_files(data.get("corpora") or [], split, set(data.get("train_only") or ()))
+                            + T._event_split(data.get("event_files") or {}, split), split)
     fns = T._category_fns(T.load_labels_cfg(cfg, config_path=config))
     sampled, totals = {}, {}
     for f in files:
@@ -42,7 +42,7 @@ def load_records(cfg, config, per_corpus, seed):
         if not p.is_file():
             continue
         lines = [l for l in p.open(encoding="utf-8") if l.strip()]
-        name = p.name.split(".")[0]
+        name = str(p.relative_to("data")).split(".")[0] if p.is_relative_to("data") else p.name.split(".")[0]   # by PATH: casie and scaling_joint/casie are two files
         totals[name] = len(lines)
         recs = [T.transform_record(json.loads(l), fns) for l in random.Random(seed).sample(lines, min(per_corpus, len(lines)))]
         for r in recs:

@@ -130,6 +130,7 @@ Repository = "https://github.com/fastino-ai/GLiNER2"
 [dependency-groups]
 dev = [
     "datasets>=2.14",
+    "matplotlib>=3.11.2",
     "pytest>=7.0",
     "pytest-timeout>=2.1",
 ]
