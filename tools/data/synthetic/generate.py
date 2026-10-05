@@ -42,6 +42,7 @@ from prompts import (  # noqa: E402
     ANNOTATE_SYSTEM, SYSTEM, WRITE_SYSTEM, build_annotate_prompt, build_user_prompt,
     build_write_prompt,
 )
+from annotation import rules as guideline_rules  # noqa: E402
 from providers import REFUSAL_MARK, ProviderConfig, build_provider  # noqa: E402
 from schema_spec import ALL_TASKS, DOMAINS, ENTITY_TYPES, sample_labels  # noqa: E402
 from validate import build_record, parse_reply  # noqa: E402
@@ -194,6 +195,14 @@ def main() -> int:
         """
         return {**(labels or {}), "entities": ENTITY_TYPES}
 
+    # OPT-IN: append named GUIDELINES.md rule blocks to the annotate system prompt. This
+    # generator never read GUIDELINES.md (measured 2026-10-05), so earlier purchases ran
+    # without them; listing them in a config keeps those runs reproducible.
+    named = gen_cfg.get("guidelines") or []
+    annotate_system = ANNOTATE_SYSTEM + (" " + guideline_rules(*named) if named else "")
+    if named:
+        print(f"[guidelines] appended to the annotate system prompt: {', '.join(named)}")
+
     def _jobs():
         """Yield (system, user_prompt, text_override, base_output, labels, index)."""
         if annotate:
@@ -202,7 +211,7 @@ def main() -> int:
                     break
                 base = None if args.annotate_replace else gold
                 lab = _labels_for(i)
-                yield (ANNOTATE_SYSTEM, build_annotate_prompt(text, tasks, _asked(lab),
+                yield (annotate_system, build_annotate_prompt(text, tasks, _asked(lab),
                                                               gen_cfg.get("exhaustive_events", False)),
                        text, base, lab, i)
         elif write_only:

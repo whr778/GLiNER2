@@ -1,9 +1,19 @@
 # Annotator guidelines
 
 **This file is the source, not a description of the source.** `annotation/__init__.py`
-reads the blocks below and injects them verbatim into every annotator's system prompt. What
-you review here is byte-for-byte what the model is sent — there is no second copy in Python
-to drift away from it. Edit this file to change annotator behaviour.
+reads the blocks below and injects them verbatim into the system prompt of the annotators that
+call `rules(...)`: `annotate_event_type`, `annotate_casualty`, `annotate_event_entities`,
+`annotate_gate`, `annotate_multitask`, `annotate_long_news`. What you review here is
+byte-for-byte what THOSE models are sent. Edit this file to change their behaviour.
+
+**`tools/data/synthetic/generate.py` did NOT read this file until 2026-10-05**, and still does
+only when its config lists blocks under `generation.guidelines`. It produced
+`cc_news_haiku45`, `cc_news_events_haiku45` and the synthetic corpora with its own rules in
+`synthetic/prompts.py`, including a paraphrased copy of `uncertain_field` -- the drift this file
+exists to prevent. Measured the same day on 50 cc_news docs, adding `json_only`, `verbatim`,
+`no_inference`, `minority` and `ambiguity` left Haiku-vs-Sonnet event agreement unchanged
+(events F1 0.397 -> 0.402, arguments 0.311 -> 0.300): the disagreement is WHICH events exist
+and their type, which nothing here addresses (EXPERIMENT_CATALOG 2026-10-05).
 
 Rationale, evidence and the review policy are in
 `tools/events_working_papers/LABEL_SPACE_COLLAPSE.md`. Kept here: the rules themselves and
@@ -187,8 +197,11 @@ and stays legible there.
 
 ## Review policy for machine-annotated batches
 
-Not yet implemented — recorded here so the gate is defined before it is built, and so the
-next increment has a specification rather than an intention.
+Partly implemented: `tools/data/compare_annotators.py` (2026-10-05) measures two annotators on
+the same documents per unit (events, keyed / unkeyed arguments, entities) and prices the batch
+from real usage. Still missing: a DIFFERENT-family second annotator (the 2026-10-05 samples were
+Haiku vs Sonnet, one family), chance correction where it is defined (span F1 is the standard for
+span agreement; κ needs a bounded negative set), and the marginals beside it.
 
 A batch is **not** fit to train on merely because it parsed. Before a machine-annotated
 corpus is used:
