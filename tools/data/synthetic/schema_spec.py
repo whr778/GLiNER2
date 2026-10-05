@@ -171,6 +171,109 @@ EVENT_ONTOLOGY = {
     "Sport.Compete": ["Competitor", "Competition", "Result", "Place", "Time"],
 }
 
+# DRAFT 2026-10-05, FOR REVIEW -- NOT YET IN ANY PROMPT. One line of meaning per event type, plus
+# the boundary against its nearest sibling ("Not: ..."). Measured the same day: Haiku and Sonnet
+# agree on events at F1 ~0.40 but on the arguments of a SHARED event at ~0.70, so the
+# disagreement is which events exist and their type, and the menu gave the annotator bare names.
+# Several types overlap by construction (Demonstrate/Protest, LaunchProduct/Tech.Release, the
+# money transfers, Attack/Tech.Breach, Elect/Vote, the movements); each boundary below is a
+# DECISION, flagged for review, not a fact about the data.
+EVENT_DEFINITIONS = {
+    "Conflict.Attack": "A physical act of violence or armed force against people, places or property. "
+                       "Not: a cyberattack (Tech.Breach), a threat that is not carried out, or a verbal attack.",
+    "Conflict.Demonstrate": "A public gathering, march or rally to express a view. "
+                            "Not: a labour stoppage (Business.Strike). REVIEW: same concept as Government.Protest.",
+    "Conflict.Ceasefire": "Parties to an armed conflict agree to stop or pause fighting. "
+                          "Not: a trade or diplomatic agreement with no fighting (Contact.Negotiate).",
+    "Life.Die": "A person dies, from any cause. Not: a death that is only feared or projected.",
+    "Life.Injure": "A person is physically harmed but not killed. "
+                   "Not: property damage, or harm that is only threatened.",
+    "Life.BeBorn": "A person is born. Not: the founding of an organisation (Business.StartOrg).",
+    "Life.Marry": "Two people marry. Not: an engagement or a business partnership.",
+    "Life.Divorce": "A marriage legally ends. Not: a separation of business partners.",
+    "Life.Evacuate": "People are moved out of a place to escape danger. "
+                     "Not: routine travel (Movement.Transport) or permanent relocation (Movement.Migrate).",
+    "Movement.Transport": "Someone moves people or goods from one place to another. "
+                          "Not: emergency evacuation (Life.Evacuate) or forced removal (Movement.Deport).",
+    "Movement.Migrate": "People relocate to live somewhere else, by their own choice. "
+                        "Not: forced removal (Movement.Deport) or a short trip (Movement.Arrive).",
+    "Movement.Deport": "An authority forcibly removes a person from a country or place. "
+                       "Not: a voluntary move (Movement.Migrate) or an arrest (Justice.Arrest).",
+    "Movement.Arrive": "A person or vehicle reaches a destination. "
+                       "Not: the act of moving someone else (Movement.Transport).",
+    "Transaction.TransferMoney": "Money passes from one party to another as payment, investment or transfer. "
+                                 "Not: a gift (Transaction.Donate), a loan (Transaction.Lend), or research funding (Research.Fund).",
+    "Transaction.TransferOwnership": "Ownership of an asset or company changes hands, usually by sale or acquisition. "
+                                     "Not: two companies combining as equals (Business.MergeOrg).",
+    "Transaction.Donate": "Money or goods are given without expecting return. "
+                          "Not: a paid transfer (Transaction.TransferMoney) or a grant for research (Research.Fund).",
+    "Transaction.Lend": "Money is lent on the expectation of repayment. "
+                        "Not: a payment or investment (Transaction.TransferMoney).",
+    "Business.StartOrg": "A company, organisation or venture is founded. "
+                         "Not: a new product (Business.LaunchProduct) or a new office of an existing company.",
+    "Business.MergeOrg": "Two or more organisations combine into one. "
+                         "Not: one buying another outright (Transaction.TransferOwnership).",
+    "Business.DeclareBankruptcy": "An organisation formally declares it cannot pay its debts. "
+                                  "Not: closing for other reasons (Business.EndOrg).",
+    "Business.EndOrg": "An organisation ceases to exist or shuts down. "
+                       "Not: a formal insolvency filing (Business.DeclareBankruptcy) or job cuts (Business.Layoff).",
+    "Business.LaunchProduct": "A company makes a new physical product or service available. "
+                              "Not: a software or version release (Tech.Release), or a pre-order page or announcement of a future launch.",
+    "Business.Layoff": "An employer dismisses workers, usually in numbers. "
+                       "Not: one person leaving a role (Personnel.EndPosition).",
+    "Business.Strike": "Workers stop work collectively to press demands. "
+                       "Not: a public protest that is not a work stoppage (Conflict.Demonstrate).",
+    "Personnel.StartPosition": "A person takes up a job or role. "
+                               "Not: winning an election (Personnel.Elect) or being proposed for a role (Personnel.Nominate).",
+    "Personnel.EndPosition": "A person leaves a job or role, by resigning, retiring or being fired. "
+                             "Not: mass job cuts (Business.Layoff).",
+    "Personnel.Elect": "A person is chosen for a position by a vote. "
+                       "Not: a vote on a proposal or law (Government.Vote).",
+    "Personnel.Nominate": "A person is proposed or named for a position that is not yet theirs. "
+                          "Not: taking up the position (Personnel.StartPosition).",
+    "Contact.Meet": "People meet in person. Not: a remote call or message (Contact.Communicate).",
+    "Contact.Communicate": "Someone conveys information to someone else, by speech, writing or call. "
+                           "Not: every reporting verb ('said', 'told reporters') -- only a communication the text is about.",
+    "Contact.Negotiate": "Parties bargain toward an agreement. "
+                         "Not: a meeting with no bargaining (Contact.Meet), or an agreed ceasefire (Conflict.Ceasefire).",
+    "Justice.Arrest": "Authorities detain a person. Not: a charge without detention (Justice.ChargeIndict).",
+    "Justice.ChargeIndict": "A person or organisation is formally accused of a crime. "
+                            "Not: a civil lawsuit (Justice.Sue) or an arrest (Justice.Arrest).",
+    "Justice.TrialHearing": "A court holds a trial or hearing. Not: the verdict's penalty (Justice.Sentence).",
+    "Justice.Sentence": "A court imposes a punishment such as prison time. "
+                        "Not: a monetary penalty alone (Justice.Fine).",
+    "Justice.Sue": "A party files a civil lawsuit against another. Not: a criminal charge (Justice.ChargeIndict).",
+    "Justice.Acquit": "A defendant is found not guilty. Not: charges simply being dropped before trial.",
+    "Justice.Appeal": "A party asks a higher court to review a decision.",
+    "Justice.Fine": "An authority orders a party to pay a monetary penalty. "
+                    "Not: a sanction between states or bodies (Government.Sanction).",
+    "Disaster.NaturalDisaster": "A natural hazard occurs: earthquake, flood, storm, wildfire, drought. "
+                                "Not: an accident caused by people or machines (Disaster.Accident).",
+    "Disaster.Accident": "An unintended crash, collision, fire or failure caused by people or machines. "
+                         "Not: a deliberate attack (Conflict.Attack) or a natural hazard (Disaster.NaturalDisaster).",
+    "Disaster.Outbreak": "A disease spreads among people or animals. Not: one patient's diagnosis (Medical.Diagnose).",
+    "Disaster.Rescue": "People are saved from danger by rescuers. "
+                       "Not: a planned evacuation (Life.Evacuate).",
+    "Medical.Diagnose": "A patient is found to have a condition. Not: an outbreak across a population (Disaster.Outbreak).",
+    "Medical.Treat": "A patient receives medical treatment.",
+    "Research.Publish": "A work is published: a paper, book, article or story. Not: a product release (Tech.Release).",
+    "Research.Discover": "Researchers find something new. Not: publishing a known result (Research.Publish).",
+    "Research.Fund": "Money is granted for research. Not: a commercial payment (Transaction.TransferMoney).",
+    "Tech.Release": "A software product, version or technology is released. "
+                    "Not: a physical product launch (Business.LaunchProduct).",
+    "Tech.Breach": "Unauthorised access to computer systems or data: a hack, intrusion or data leak. "
+                   "Not: a physical attack (Conflict.Attack).",
+    "Government.EnactLaw": "A government passes or brings a law or regulation into force. "
+                           "Not: a vote that does not enact anything (Government.Vote).",
+    "Government.Vote": "A body or electorate votes on a proposal. Not: electing a person (Personnel.Elect).",
+    "Government.Sanction": "A state or international body imposes penalties on another state, body or person. "
+                           "Not: a court's fine (Justice.Fine).",
+    "Government.Protest": "Public opposition directed at a government or policy. "
+                          "REVIEW: same concept as Conflict.Demonstrate -- merge one into the other, or keep this only for protests whose Target is named.",
+    "Award.ReceiveAward": "A person or organisation is given an award or prize.",
+    "Sport.Compete": "Competitors take part in a sporting contest. Not: a business competition.",
+}
+
 # =============================================================================
 # CLASSIFICATION — 3 tasks -> 12
 # =============================================================================
