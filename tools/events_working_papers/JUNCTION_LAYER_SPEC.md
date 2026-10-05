@@ -1,6 +1,6 @@
 # Junction layer: trigger x argument links for natural-mode events
 
-**Status:** spec, 2026-10-04. Nothing built. eb19 is HELD until this has a fast-A/B result.
+**Status:** BUILT (21f357e) and A/B'd 2026-10-04 (p5link): argument F1 +0.035*, per-column junction AUC 0.58 -> 0.74 / 0.77, English arguments move for the first time. Going into eb19.
 
 ## 1. Why: the assignment has no join
 
@@ -15,8 +15,10 @@ $$s_{ijf} = \underbrace{\mathrm{inst\_proj}(t_i)\cdot\mathrm{cand\_proj}(a_j)}_{
 | Readout | eb18 | p3arg-hard |
 |---|---|---|
 | Variance across triggers vs across candidates | 18.7 vs 44.1 | 4.3 vs 12.8 |
-| **Junction AUC:** gold vs false trigger, same gold argument | **0.609** | **0.560** |
-| Gold argument vs rest of its row: R only / P only / P + R | 0.948 / **0.398** / 0.946 | 0.948 / **0.371** / 0.939 |
+| **Junction AUC (per column):** gold vs false trigger, same gold argument | **0.631** | **0.576** |
+| Gold argument vs rest of its row (per row): R only / P only / P + R | 0.947 / **0.405** / 0.948 | 0.953 / **0.371** / 0.954 |
+
+*Corrected 2026-10-05: first reported as 0.609 / 0.560 etc. from a POOLED AUC (all gold vs all false scores across columns); the per-column / per-row values above are the measure the text describes. Conclusions unchanged.*
 
 **The assignment is role fit with no join.** This one fact explains three findings we couldn't explain:
 - argument evidence cannot separate gold from false triggers (AUC ~0.5);
@@ -78,7 +80,7 @@ Settings, all opt-in with defaults that are bit-identical:
 
 ## 6. Gates, measured from inside the run
 
-- **Junction AUC** (gold vs false trigger, same gold argument) logged every N steps from the training forward, with the usual backoff. It must **rise clearly** (target >= 0.8 from 0.56-0.61) or the layer is not learning the join, whatever the blind test says.
+- **Junction AUC** (gold vs false trigger, same gold argument) logged every N steps from the training forward, with the usual backoff. It must **rise clearly** (target >= 0.8 from 0.58-0.63, per column) or the layer is not learning the join, whatever the blind test says.
 - **Row AUCs** by P, R and the link term: shows which term carries the separation.
 - **Step 0:** with $V$ and $w$ zero-initialised, $s_{ijf}$ must equal `additive` exactly (a test that can fail).
 - **Proof line:** the cumulative count of column-loss terms and false triggers used, so an arm that never trained the column is visible.

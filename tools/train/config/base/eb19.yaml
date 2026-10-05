@@ -10,6 +10,10 @@
 #                                   contradiction that trained naturally found gold as NEGATIVES once injection
 #                                   annealed (16% of gold candidates in p2fast's controls). p2fast: null on
 #                                   scores, triggers moved below-gate -> found. LIFE_OF_A_SAMPLE.md 2.7.
+#   record_link_mode: junction      a learned role-gated trigger x argument link (zero-init), trained by a COLUMN
+#   record_link_column_weight: 0.3  loss (which trigger owns each gold argument): p5link argument F1 +0.035*,
+#                                   English arguments 0.0016 -> 0.0275, per-column junction AUC 0.58 -> 0.77.
+#                                   Built FROM SCRATCH here, so the link trains from step 0 with the heads.
 #   num_epochs: 9                   eb18's LR ran out at epoch 5 with the selection metric still rising.
 #   save_total_limit: 12            keep EVERY epoch; the runner pushes them (PUSH_EPOCHS=1) for a per-epoch
 #                                   trigger-miss probe: does more training lift gold triggers over the gate?
@@ -359,6 +363,8 @@ model:
     event_records: true
     record_role_hard_negatives: 8   # eb19
     proposal_gold: identity   # eb19
+    record_link_mode: junction   # eb19
+    record_link_column_weight: 0.3   # eb19
   # No decode_mode here. decode_mode is an EVAL-time switch selecting the greedy or
   # joint arm over ONE trained model (JOINT_IE_SCALING sec 3c); baking it into a
   # training run would make the two arms different models and void the comparison.

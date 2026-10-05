@@ -13,8 +13,10 @@ event batches (natural groups with gold), reports:
 
   spread      std of P vs std of R over role-field cells
   specificity per argument candidate, variance ACROSS TRIGGERS (P only) vs ACROSS CANDIDATES
-  junction    AUC: gold trigger vs false trigger scoring the SAME gold argument (R cancels: pure P)
-  row         AUC: gold argument vs other candidates in the gold trigger's row, by P, by R, by P+R
+  junction    PER-COLUMN AUC: gold trigger vs each false trigger scoring the SAME gold argument (R cancels),
+              by pure P and by the model's full score (incl. a junction link term)
+  row         PER-ROW AUC: gold argument vs each other candidate in the gold trigger's row, by P, by R, by P+R
+  (2026-10-05: the first version POOLED all gold vs all false scores across columns/rows; corrected.)
 
     uv run python tools/train/measure_assign_decomposition.py --checkpoint whr778/gliner2-eb18-balanced
 """
@@ -135,6 +137,14 @@ def collect(group, records, parts, k_false, stats) -> None:
     if not gold_insts:
         return
     false_insts = R._negative_instances(group, records, aq, set(gold_insts), k_false)
+    # ALIGNMENT GATE: the captured P/R must be THIS group's -- matched by call order, so a skipped
+    # loss call would shift every later group. Compare against the group's own logits.
+    for f, part in enumerate(parts):
+        if part is None or group.field_specs[f].cardinality.is_scalar:
+            continue
+        full = group.assign_logits[f].detach()[:, 1:]
+        ok = part[0].shape == full.shape and float((part[0] + part[1][None, :] - full).abs().max()) < 1e-3
+        stats["aligned"].append(ok)
     for f, fs in enumerate(group.field_specs):
         if fs.cardinality.is_scalar or parts[f] is None:
             continue
@@ -150,31 +160,36 @@ def collect(group, records, parts, k_false, stats) -> None:
             if not gold_j:
                 continue
             other = [j for j in range(P.shape[1]) if j not in gold_j]
+            full = group.assign_logits[f].detach()
+            other = [j for j in range(P.shape[1]) if j not in gold_j]
             for j in gold_j:
-                stats["junction_gold"].append(float(P[inst, j]))
-                stats["junction_false"].extend(float(P[i, j]) for i in false_insts)
-                stats["row_gold_P"].append(float(P[inst, j]))
-                stats["row_gold_R"].append(float(Rr[j]))
-                stats["row_gold_T"].append(float(P[inst, j] + Rr[j]))
-            sample = other if len(other) <= 64 else random.Random(inst).sample(other, 64)
-            stats["row_other_P"].extend(float(P[inst, j]) for j in sample)
-            stats["row_other_R"].extend(float(Rr[j]) for j in sample)
-            stats["row_other_T"].extend(float(P[inst, j] + Rr[j]) for j in sample)
+                # PER COLUMN: the gold trigger vs the false triggers scoring the SAME argument.
+                for key, col in (("P", P[:, j]), ("full", full[:, 1 + j])):
+                    g = float(col[inst])
+                    for i in false_insts:
+                        stats[f"col_{key}_wins"].append(1.0 if g > float(col[i]) else 0.5 if g == float(col[i]) else 0.0)
+                # PER ROW: the gold argument vs the other candidates in the gold trigger's row.
+                for key, row in (("P", P[inst]), ("R", Rr), ("T", P[inst] + Rr)):
+                    g = float(row[j])
+                    for o in other:
+                        stats[f"row_{key}_wins"].append(1.0 if g > float(row[o]) else 0.5 if g == float(row[o]) else 0.0)
 
 
 def report(name: str, s) -> None:
     mean = lambda v: statistics.mean(v) if v else float("nan")
-    print(f"[decomp] {name}: {len(s['P_std'])} role fields, {len(s['junction_gold'])} gold arguments, "
-          f"{len(s['junction_false'])} false-trigger comparisons")
+    print(f"[decomp] {name}: {len(s['P_std'])} role fields")
     print(f"[decomp] GATE         max |P + R - model assign logit| = {max(s['decomp_err']) if s['decomp_err'] else float('nan'):.2e}")
     print(f"[decomp] spread       std(P) {mean(s['P_std']):.3f} | std(R) {mean(s['R_std']):.3f}")
     print(f"[decomp] specificity  variance across TRIGGERS (P) {mean(s['var_across_triggers']):.3f} | "
           f"across CANDIDATES (column means) {mean(s['var_across_candidates']):.3f}")
-    print(f"[decomp] junction     AUC gold-trigger vs false-trigger on the SAME gold argument (pure P): "
-          f"{auc(s['junction_gold'], s['junction_false']):.3f}")
-    print(f"[decomp] row          AUC gold argument vs other candidates in the gold row: by P "
-          f"{auc(s['row_gold_P'], s['row_other_P']):.3f} | by R {auc(s['row_gold_R'], s['row_other_R']):.3f} | "
-          f"by P+R {auc(s['row_gold_T'], s['row_other_T']):.3f}")
+    m = lambda k: sum(s[k]) / len(s[k]) if s[k] else float("nan")
+    al = s["aligned"]
+    print(f"[decomp] ALIGNMENT    captured P+R equals the group's own logits in {sum(al)} of {len(al)} role fields "
+          f"(must be ALL on an additive model; a junction model adds the link, so 0 there is expected)")
+    print(f"[decomp] junction     PER-COLUMN AUC, gold vs false trigger on the SAME gold argument: pure P {m('col_P_wins'):.3f} | "
+          f"full score (incl. link) {m('col_full_wins'):.3f}  [{len(s['col_P_wins'])} pairs]")
+    print(f"[decomp] row          PER-ROW AUC, gold argument vs other candidates in the gold row: by P {m('row_P_wins'):.3f} | "
+          f"by R {m('row_R_wins'):.3f} | by P+R {m('row_T_wins'):.3f}  [{len(s['row_P_wins'])} pairs]")
 
 
 if __name__ == "__main__":
