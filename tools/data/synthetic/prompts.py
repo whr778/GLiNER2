@@ -104,7 +104,21 @@ _NEAREST_TYPE_RULE = (
 )
 
 
-def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None) -> List[str]:
+# Measured 2026-10-05: on the same 50 cc_news docs Haiku 4.5 and Sonnet 5.5 agreed on only 31-40%
+# of arguments, mostly because each labelled a DIFFERENT defensible subset of the document's
+# events (both found events in about the same number of docs). Nothing above asks for every
+# event, and the nearest-type rule pushes toward omission. Opt-in, so earlier purchases reproduce.
+_EXHAUSTIVE_EVENTS = (
+    "Annotate EVERY event the document reports whose type is in this list -- not only the "
+    "main one. Include events mentioned briefly or in passing, earlier or planned events the "
+    "document refers to, and every separate occurrence: two attacks are two events. Go through "
+    "the document sentence by sentence before answering. Give each event its arguments from "
+    "the allowed roles wherever the text names them."
+)
+
+
+def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None,
+                       exhaustive_events: bool = False) -> List[str]:
     """The per-task label sets + output-key instructions (shared by both modes).
 
     ``labels`` carries this document's SAMPLED subset of each pool (see
@@ -140,6 +154,8 @@ def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None
             _event_ontology_lines(labels.get("events")),
             _NEAREST_TYPE_RULE,
         ]
+        if exhaustive_events:
+            sections.append(_EXHAUSTIVE_EVENTS)
     if "classifications" in tasks:
         sections += [
             'classifications: list of {"task","labels"} where labels is the chosen '
@@ -222,7 +238,8 @@ def build_user_prompt(domain: str, tasks: List[str], min_words: int, max_words: 
 
 
 def build_annotate_prompt(text: str, tasks: List[str],
-                          labels: Optional[Dict[str, Any]] = None) -> str:
+                          labels: Optional[Dict[str, Any]] = None,
+                          exhaustive_events: bool = False) -> str:
     """Assemble the user prompt to annotate EXISTING ``text`` (no text generation)."""
     sections: List[str] = [
         "Annotate the DOCUMENT below for the tasks listed. Do NOT rewrite, "
@@ -230,7 +247,7 @@ def build_annotate_prompt(text: str, tasks: List[str],
         "states. Use ONLY the label sets below.",
         "",
     ]
-    sections += _task_instructions(tasks, labels)
+    sections += _task_instructions(tasks, labels, exhaustive_events)
     sections += [
         "",
         "Do NOT include a \"text\" key. Every annotated span must be copied "
