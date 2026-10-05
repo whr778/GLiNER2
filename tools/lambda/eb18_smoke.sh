@@ -92,13 +92,14 @@ publish "$DEST" "${FILES[@]}" || RESCUE=1
 echo
 echo "================ eb18 SMOKE RESULT ================"
 echo "  rc=$rc"
-echo "  $(grep -aoE "train_samples_per_second[^,}]*" "$OUT/eb18.log" | tail -1)"
-echo "  $(grep -aoE "train_runtime[^,}]*" "$OUT/eb18.log" | tail -1)"
-echo "  peak memory.used: $(awk -F', ' 'NR>1{gsub(/ MiB/,"",$2); if($2>m)m=$2} END{print m" MiB"}' "$OUT/gpu.csv")"
+# The losses and the rate live on the PROGRESS BAR (carriage-return separated); this log has no
+# 'loss': dicts, so the earlier greps read 0 loss lines and a non-finite count that could not fail.
+BAR=$(tr '\r' '\n' < "$OUT/eb18.log" | grep -aoE "loss=[^,]+, lr=[^,]+, samples/s=[^,]+")
+echo "  last progress: $(echo "$BAR" | tail -1)"
+echo "  peak memory.used: $(awk -F', ' 'NR>1{gsub(/ MiB/,"",$2); if($2+0>m+0)m=$2+0} END{print m" MiB"}' "$OUT/gpu.csv")"
 echo "  batches that truncated gold: $(grep -ac "on_capacity_exceeded='truncate_with_warning'" "$OUT/eb18.log")"
-echo "  non-finite loss lines: $(grep -aE "'loss': " "$OUT/eb18.log" | grep -ciE "nan|inf")"
+echo "  non-finite loss readings: $(echo "$BAR" | grep -cE "loss=(NaN|Inf)") of $(echo "$BAR" | grep -c .) (the total must be > 0, or nothing was read)"
 echo "  max train.py processes (2 + workers): $(sort -n "$OUT/procs.txt" | tail -1)"
-echo "  loss lines: $(grep -acE "'loss': " "$OUT/eb18.log")"
 echo "==================================================="
 
 if [ "$RESCUE" -ne 0 ]; then
