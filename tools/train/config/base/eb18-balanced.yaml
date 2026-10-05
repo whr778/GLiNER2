@@ -320,7 +320,7 @@ model:
     # of 89,392 (doc, label) query groups: 0.789% exceed 32, 0.037% exceed 128, 0.011%
     # exceed 256. 256 matches the established value so warm-started comparisons stay
     # like-for-like. training_candidate_budget must be >= it; 384 is the casie pair and is
-    # sufficient -- the casualty configs' 1024 is far beyond the constraint and costs
+    # sufficient -- configs' 1024 is far beyond the constraint and costs
     # throughput (6.4x the enumeration of the 160 default) for no additional coverage here.
     # candidate_budget is deliberately LEFT at its 128 default: that is an inference-width
     # decision, and the casualty precedent likewise trains wider than it decodes.
