@@ -51,3 +51,12 @@ def test_config_round_trips_label_map_and_inference_defaults(tmp_path):
     back = ExtractorConfig.from_pretrained(tmp_path)
     assert back.label_map == LABEL_MAP
     assert back.inference_defaults == {"threshold": 0.3, "global_decode": True}
+
+
+def test_relations_in_eval_gold_form_map_their_keys():
+    gold_form = [{"org.member_of": {"head": "", "tail": ""}}, {"works_for": {"head": "", "tail": ""}},
+                 {"org.founder": {"head": "", "tail": ""}}]
+    schema, applied = apply_label_map({"relations": gold_form}, LABEL_MAP)
+    assert schema["relations"] == [{"Organization": {"head": "", "tail": ""}},
+                                   {"works_for": {"head": "", "tail": ""}}]   # rolled up, mapped, deduped
+    assert applied == {"relations": {"org.member_of": "Organization", "org.founder": "Organization"}}

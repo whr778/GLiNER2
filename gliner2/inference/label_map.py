@@ -27,13 +27,21 @@ def label_fn(block: Mapping[str, Any]) -> Callable[[str], str]:
 
 
 def _labels(value, fn):
-    """Map a list (order-preserving dedup) or the keys of a dict."""
+    """Map a list (order-preserving dedup) or the keys of a dict.
+
+    A list item may itself be a ``{label: spec}`` dict -- the form eval's
+    ``_schema_from_gold`` gives relations (``[{"founded_by": {"head": "", "tail": ""}}]``);
+    its key is mapped and its spec kept. Calling ``fn`` on the dict raised TypeError
+    (unhashable) for every relation corpus under ``infer.py --gold-schema``.
+    """
     if isinstance(value, dict):
         return {fn(k): v for k, v in value.items()}
-    out = []
+    out, seen = [], set()
     for label in value:
-        new = fn(label)
-        if new not in out:
+        new = {fn(k): v for k, v in label.items()} if isinstance(label, dict) else fn(label)
+        key = tuple(new) if isinstance(new, dict) else new
+        if key not in seen:
+            seen.add(key)
             out.append(new)
     return out
 
