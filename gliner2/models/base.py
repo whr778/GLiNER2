@@ -94,18 +94,21 @@ _MPS_FLASH_ENABLED = False
 
 
 def _enable_mps_flash_attention() -> None:
-    """Swap in Metal FlashAttention for SDPA. MPS only, and only once.
+    """Swap in Metal FlashAttention for SDPA -- OPT-IN (GLINER2_MPS_FLASH_ATTN=1). MPS only, once.
 
-    Measured on mmBERT, 3 alternating rounds of 15 extracts each: 75.7 -> 70.7 ms with
-    non-overlapping ranges (73-78 against 70-71), and lower variance. The import lives
-    here rather than at module scope because the package is Mac-only -- CUDA and CPU
-    never touch it. Unavailable is a warning, not an error, matching how the encoder
-    handles an attention backend it cannot get.
+    OFF BY DEFAULT since 2026-10-05: it does not apply padding exactly. On 5 real CASIE docs,
+    the 3 PADDED ones decoded differently alone than batched beside longer docs; CPU, and MPS
+    with stock SDPA, were identical either way. So with it on, a batched prediction depends on
+    which documents share its batch. The speed it buys (75.7 -> 70.7 ms per extract on mmBERT;
+    ~28% on few-label classification) is not worth a result that moves with the batch.
+    The import lives here because the package is Mac-only -- CUDA and CPU never touch it.
     """
     global _MPS_FLASH_ENABLED
     if _MPS_FLASH_ENABLED:
         return
     _MPS_FLASH_ENABLED = True
+    if os.environ.get("GLINER2_MPS_FLASH_ATTN") != "1":
+        return
     try:
         from mps_flash_attn import replace_sdpa
     except ImportError as exc:
