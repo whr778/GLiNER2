@@ -3,16 +3,21 @@
 **Only outstanding work lives here.** Everything resolved, refuted or superseded is in
 [[EXPERIMENT_CATALOG]] (what was run, newest first) and [[PROJECT_HISTORY]]
 (narrative, including [the full pre-2026-09-21 TODO](PROJECT_HISTORY.md#todo-archive-2026-09-21)
-preserved verbatim). Last rewritten 2026-09-21.
+preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the new rows 24-28 refreshed 2026-10-05.
 
 ## Outstanding, at a glance
 
 | # | item | why it matters | state | next action |
 |---|---|---|---|---|
+| 24 | **eb19 base run** | first base with the junction, hard role negatives and identity proposal gold; the base everything warm-starts from next | **RUNNING** since 2026-10-05 10:55 UTC, ~40 h (section 1) | read it per corpus, then decide on the next argument lever |
+| 25 | **Library ignores the checkpoint's `inference_defaults` and `label_map`** | `model.extract*()` runs threshold 0.5 / chunk 384 / overlap 64 / no global decode and raw labels, not what the eval measured (0.3 / 4096 / 0 / global, mapped). Only the viewer and now `infer.py` (c8bb693) apply them | **SPEC 2026-10-05** (`CHECKPOINT_DEFAULTS_SPEC.md`), not built. Every stored map is closed, so applying it twice is a no-op | build per the spec's six gates; upstream checkpoints must stay bit-identical |
+| 26 | **Offset-anchored mentions** | gold triggers and arguments are STRINGS, so every occurrence of a surface is marked gold; pollutes the junction's gold links and the anchor gate | open (`JUNCTION_LAYER_SPEC.md` section 8) | carry character offsets from the converters through to the record targets |
+| 27 | **Coreference: ACE's converter discards it** | `convert_ace2005.py` emits one event per `event_mention` (a one-trigger list), so one attack mentioned 3 times becomes 3 events; entity mentions go into per-TYPE lists with the entity ID (E1) dropped. The format already holds event clusters (`triggers` is a list); entity clusters need a new field | open; ACE lives in the owner's office environment. The $100 annotation offer is NOT needed for the junction | (1) merge an ACE event's mentions into one record; (2) add an entity-cluster field; (3) decide `--no-subtypes` vs subtypes by reading what the labels tag (subtyped `PER.Individual` does not hit the `PER -> Person` synonym) |
+| 28 | **Duplicate (role, entity) arguments in decode output** | seen once on p5link-junc_w03 with the link zeroed: `Attacker: NetProspex` and `Attacker: attackers` each emitted twice on one CASIE doc | ONE document, not yet a claim; source unknown (chunk merge or two mentions of one string) | count duplicates over a validation slice before chasing |
 | 23 | **Full event menu over-fires** | the viewer (and `infer.py --model-schema`) sends the checkpoint's whole shipped menu by default, and no score we report covers that: eval offers each document only its OWN gold types (`_schema_from_gold`) | **MEASURED 2026-10-05, one document** (p5link-junc_w03, a 743-char CASIE article, threshold 0.3): 320-type menu -> **225 types fired, 773 instances**, `Cyber.Phishing` alone 18; the same article with a one-type menu -> 0. Warned in `tools/train/INFER.md` | measure on a validation slice: event_trigger / event_type precision at gold-only vs full menu (and menus of 10/50/320) on the final base; then decide between a menu-size-aware threshold, training with larger negative menus, or a type gate before decode |
-| 21 | **eb18-balanced: English event supervision + reach + capacity + global_decode** | eb17's English arguments score 0.0000 because they are under-learned (17% of argument gold, one 798-doc corpus) and 78.5% of gold is unreachable at 16 starts per query | **CONFIG BUILT 2026-09-30 (7149c2a), NOT LAUNCHABLE.** Pending: P1 cc_news full-menu purchase (pilot `msgbatch_01134CegRtA7QfdcbxPZkC34` running) + capped synthetic slice; P2 recall-at-precision>=X selection (X unset, code missing); P3 validation-window double counting (untraced); P4 label gate on the new corpora; P5 GPU smoke of the 768 budget; P6 Hub persistence + registry for the purchase | close P1-P6 in order, then launch; after training, read argument recall on CASIE's TRAINING docs to tell data from defect |
+| 21 | ~~**eb18-balanced: English event supervision + reach + capacity + global_decode**~~ **DONE** | eb17's English arguments scored 0.0000 (under-learned; 78.5% of gold unreachable at 16 starts) | **RAN 2026-10-01, ~$44**, best epoch 4, threshold settled at 0.3 on measurement; P1-P6 closed. PROVISIONAL base: its LR ran out at epoch 5 with the metric still rising, so its scores steer fix DIRECTION only | superseded by eb19 (section 1, 9 epochs) |
 | 1 | ~~**absneg4: absent pool scoped to event roles**~~ **CLOSED -- NEGATIVE** | the last hope for the only lever that ever moved `event_argument` | **DONE 2026-09-22, ~$34.** Scoping LOSES the gain (`event_argument` -0.1027 vs absneg2-treatment, recall 0.1481 -> 0.0681, below control) while recovering only 15% of the classification collapse | none. The lever is dead: the gain depends on the unscoped pool and the -0.1977 classification cost is inseparable from it |
-| 2 | **eb17-best: the warm-start base** | folds in every measured lesson; the base everything warm-starts from | **UNBLOCKED 2026-09-22 — the crash is FOUND and FIXED.** `validate_data: true` made `sanitize()` strip a structure field the `record_metadata` anchor named, leaving a declaration pointing at nothing. eb17 is the first base to set that flag, which is why only it crashed. `sanitize()` is now metadata-aware | relaunch. Note it now also gets: corpora in sync (60-label docee), chunked records carrying `record_metadata`, `negative_pools: auto` (was leaving 23.6% of records with none), `partial_annotation` actually reaching the trainer, and an LR that anneals to 0 |
+| 2 | ~~**eb17-best: the warm-start base**~~ **DONE** | folded in every measured lesson to its date | **RAN after the 2026-09-22 crash fix** (`sanitize()` made metadata-aware); blind test strict argument F1 0.1752 (0.2331 at anchor 0.1); superseded as the base by eb18 then eb19 | none |
 | 3 | **classification collapses under interventions it never targets** | −0.1977 on absneg2, −0.403 on warm cells, −0.1492 before that; blocks shipping negatives | ROOT CAUSE NARROWED: 96% is `docee_event` alone | see whether (1) spares it; else isolate docee |
 | 4 | ~~**`record_anchor_threshold` defaults to 0.5**~~ **CONFIRMED + REACHABLE; the gate is the TRIGGER score, and it IS trained (verified 2026-10-02)** | arguments and instances decode through the record gate | `record_anchor_threshold_wins` (3117569) makes the gate reachable; eb17 blind test 0.1752 -> 0.2331 at 0.1. **CORRECTION of 142de4d** ("the gate we tune is the object head: untrained"): in `natural` mode `forward_group` sets `object_logits = anchor_logits`, the anchor query's `candidates.pair_logits` -- the TRIGGER span score; `object_head` is used only in `anchorless`. `object_loss = zero` there because no separate head exists, not because the gate is unsupervised: boundary_preprocessing adds a MentionTarget for every field of every instance, the trigger included, and a real eb18 batch with event_records on shows the trigger query carrying its gold spans (3 for 'races'). Every event in cmnee/casie/cc_news_events/rams_merged/wikievents has a trigger (100.0%). So the 0.83 AUC measured a TRAINED score, and 'train the object head' (option A) is unnecessary | the record gate IS the trigger threshold: tune it with the argument gate (#22) as a 2-D sweep on VALIDATION on the final base; the lever beneath it is trigger detection itself |
 | 5 | **Cross-event contamination** | 6 of 86 audited Helene `dead` observations belong to OTHER events | **keying root cause FIXED at source; both anchors turn out to ALREADY EXIST as `--scope-filter`/`--event-year`; the cached artefact is IRREPRODUCIBLE** | do NOT overwrite the cache; re-score `--scope-filter` on corrected labels |
@@ -26,7 +31,7 @@ preserved verbatim). Last rewritten 2026-09-21.
 | 14 | **docee trained at a 59-label menu on every GPU run** | `docee_event` is **96% of the classification collapse** (item 3), and until today docee offered 59 labels (no `none`) while docee_zh and turkish_event offered 60 -- for the SAME task, inside one run | **FOUND + FIXED 2026-09-22.** HF and local are now identical; the menu gate resolves the trainer's real file list and fails on the shipped data (`sizes=[59,60,60]`) | re-read item 3 against this: the collapse may be a menu inconsistency, not an intervention side-effect |
 | 15 | **1.34% of gold surfaces never align** | a mention that misses the tokenized path is dropped with no error; `surface in text` reports these corpora as clean | **MEASURED 2026-09-22** with `tools/data/measure_surface_alignment.py`. bio_ner_relations 4.77%, paraloq_json 3.31%, chfinann 3.03%, biored 2.56% | repair only the EXTENDABLE 8.2%; SUBTOKEN must NOT be extended (changes the referent); TOKENIZATION 37.7% is a splitter question, and it is the largest bucket |
 | 17 | **Upstream main has 4 fixes we do not have — DEFERRED, not rejected** | two touch the record head and eval-loss, which are exactly what eb17 exercises | **ANALYSED 2026-09-22, deliberately not merged.** Merge base `3c913c7` (PR #141); 12 commits since, 7 substantive, one of them OURS (`9d54ecb`, PR #155, already here). Cherry-pick tested: `e1007d4` (classification decoding on node-budget exhaustion) and `d9b26b2` (choice/enum record fields collapsing to one document-wide answer) apply **CLEAN**; `f619651` (TypeError in `build_boundary_batch_metadata` for fallback records under eval-loss -- a fabricated `(0,0)` mention, and **we run eval-loss**) and `a7a69c3` (warn on fallback substitution) each conflict in **ONE trivial hunk** -- the `_create_fallback_record` docstring plus a ruff one-lining of `dummy_tokens`; resolution is take-theirs, and they must be applied in order since the second rewrites the first's docstring | Take all four as cherry-picks AFTER eb17 lands -- not a merge. **SKIP `7b400b7`**, a pure ruff pass touching runtime.py (625), processor.py (407), schema.py (93): ~1,100 lines of reformatting against files we rewrote, for zero behaviour. Also read `a7a69c3`'s OPEN ITEM: it says the fallback record omits `schema_special_positions`, so the layout declares a query the encoder builds no marker for, and the record is loss-neutral only BY ACCIDENT -- relevant because `error_policy: skip` is what creates fallback records in our configs |
-| 16 | **EVENT ARGUMENTS: does the binding objective we ALREADY have work?** | strict argument F1 requires the argument to attach to the right trigger; we train that binding through the record head (`record_loss_weight` 1.0, instances seeded from the ANCHOR) | **STEPS 1-2 DONE, row was stale (re-verified in code 2026-10-01).** (1) Arg-C shipped as `eval_argc_external_*` (`56de584`; Trig-I/Trig-C/Arg-I in `cd8def7`), quarantined from the `event_*` heads. (2) ANSWERED on eb17, an `event_records: true` base (EVENT_ARGUMENT_DIAGNOSIS O2): strict argument F1 **0.1752** (0.2331 at anchor 0.1) vs the incumbent's 0.0991 -- **yes for Chinese** (CMNEE 0.2019, 88.4% of the pool), **no for English** (WikiEvents, CASIE, RAMS 0.0000), diagnosed as UNDER-LEARNING (S15), which eb18 (#21) is built to fix | **(3) waits on eb18:** read strict argument F1 PER CORPUS off eb18's blind test. ONLY IF English is still at the floor with balanced supervision, consider a pairwise role objective (the pair set is quadratic over candidates) |
+| 16 | **EVENT ARGUMENTS: does the binding objective we ALREADY have work?** | strict argument F1 requires the argument to attach to the right trigger; we train that binding through the record head (`record_loss_weight` 1.0, instances seeded from the ANCHOR) | **STEPS 1-2 DONE, row was stale (re-verified in code 2026-10-01).** (1) Arg-C shipped as `eval_argc_external_*` (`56de584`; Trig-I/Trig-C/Arg-I in `cd8def7`), quarantined from the `event_*` heads. (2) ANSWERED on eb17, an `event_records: true` base (EVENT_ARGUMENT_DIAGNOSIS O2): strict argument F1 **0.1752** (0.2331 at anchor 0.1) vs the incumbent's 0.0991 -- **yes for Chinese** (CMNEE 0.2019, 88.4% of the pool), **no for English** (WikiEvents, CASIE, RAMS 0.0000), diagnosed as UNDER-LEARNING (S15), which eb18 (#21) is built to fix | **(3) eb18 read 2026-10-02/04:** the headline is still CMNEE (88.4% of argument gold); English arguments ~0.0016. The pairwise objective this row anticipated was BUILT as the junction layer (`JUNCTION_LAYER_SPEC.md`): p5link moved English to 0.0215 / 0.0275. Next: read eb19's blind test PER CORPUS -- never quote the headline without the English column |
 | 22 | ~~**ARGUMENT threshold: make `record_field_threshold` reachable**~~ **BUILT 2026-10-02** | arguments were recall-starved at every measured operating point, and the one record knob moved instances and arguments together | `record_field_threshold_wins` (opt-in) routes all five field-gate sites (decode_group, the absent-able field filter, both choice-field calls) through `record_field_threshold`; anchor/object stay on the record gate. Eval-time key; `eval.py --record-field-threshold`. **Traced on eb18, 24 real val docs:** default and anchor-0.1 arms BIT-IDENTICAL to before; argument gate 0.1/0.05 keeps instances at 81 and trigger/type unchanged while argument F1 0.0678 -> 0.0916 / 0.1043 -- beats the old single knob (anchor 0.1: 0.0755, 231 instances, P 0.168). PROVISIONAL (eb18 under-trained, 24 docs) | sweep it per head on VALIDATION on the final base, then score the blind test once with a same-commit control |
 | 18 | **Viewer: the model list was 50 behind -- DONE 2026-10-01** | it is how models are chosen, so a missing checkpoint is invisible rather than broken | `viewer/backend/sync_hub_models.py` adds every published GLiNER2 extractor (config.json `model_type: extractor`), keeps hand-written labels, reports but never deletes vanished entries. Run 2026-10-01: 125 on the Hub, 76 listed -> **49 added** (incl. eb17-best), 0 gone, 2 skipped -- `gliner2-eb16-composed` and `gliner2-warmstart-137k-realsynth-replay30-repaired` are EMPTY repos (only .gitattributes: created, never pushed) | re-run after each publish (eb18 when it lands); decide whether to delete the 2 empty repos |
 | 19 | ~~**Viewer: one slider silently drives TWO gates**~~ **DONE 2026-10-02** | a user lowering `threshold` also loosened RECORD decode | The viewer has a **record (instance) gate** and an **argument gate**, each unchecked = follows the threshold, pre-set from the checkpoint's own `boundary_head` when it carries `*_wins`. Applied per request under a lock and restored after, so the cached model is never left changed. Traced over HTTP on eb18 x a CMNEE val doc: defaults (5 instances, 8 args) -> argument 0.05 (5, 10) -> defaults (5, 8) | the browser click path is type-checked, not clicked |
@@ -37,55 +42,23 @@ preserved verbatim). Last rewritten 2026-09-21.
 
 ## 1. In flight
 
-**absneg4 (`absneg4-roles.yaml`)** — `absent_negatives_scope: roles` excludes the event ANCHOR
-query from the absent pool. absneg2 showed the two halves of the `events` bucket move in
-opposite directions: `event_argument` recall +0.0329 against `event_type` recall −0.0818 and
-`event_trigger` −0.0468. The Ortmann decomposition says the argument gain is **754 gold
-arguments leaving "never found"**, which happened DESPITE fewer instances — so it does not
-depend on the suppression.
-
-Read it against **both** absneg2 arms (same operating point, same 20,602-record test set):
-vs `absneg2-control`, is pooling better than none? vs `absneg2-treatment`, did scoping remove
-the collateral? **A null is informative** — it would mean the argument gain did depend on
-instance suppression, and the lever is dead.
+**eb19 base run -- RUNNING since 2026-10-05 10:55 UTC** (Lambda A100 SXM4 us-west-2, instance
+947794f7, commit 81be5a0, 132,831 steps = 9 epochs, ~40 h, ~$80; hard deadline ~16:50 UTC 10-07).
+eb18 + `record_role_hard_negatives: 8` + `proposal_gold: identity` + the junction (column weight
+0.3). The from-scratch smoke was CLEAN (catalog 2026-10-05). Early readings: junction AUC by window
+0.575 -> 0.639 -> 0.691 -> 0.737 (still in warmup); anchor gate 99.8% trained at 10k records,
+matching eb18. When it lands: difference the anchor-gate lines into windows (eb18 missed 0.5-1.2%
+of triggers once injection annealed), read per-corpus argument F1 with the English column, check
+`inference_defaults.threshold` against the sweep and backfill if it moved, replace the catalog row.
 
 ## 2. Ready to launch
 
-**eb17-best** (`tools/train/config/base/eb17-best.yaml`) — vanilla mmBERT → the warm-start
-base. Four changes against `eb16-eventrecords-tr`, each forced by a measurement and all
-documented in the file: task-metric selection instead of `eval_loss`, threshold 0.3, the split
-gate on, and **label negatives added**. That last is the substantive one: no base this project
-has trained has ever had a single absent query (0 in 574 measured), so `null_loss`,
-`count_loss`, `negative_query_ratio` and `abstention_loss`'s entire positive class have been
-supervised on an empty set in every model to date.
+Nothing queued. eb17-best (2026-09-21) and eb18-balanced (2026-10-01) both ran; see the catalog.
 
-**LAUNCHED 2026-09-21 20:31 UTC without waiting for absneg4, deliberately.** The earlier plan
-held it back because `absent_negatives_in_denominator` is a base-level decision — but that
-setting is ABSENT from eb17 (defaults off), so absneg4's verdict cannot invalidate it either
-way. If absneg4 is positive, eb17 becomes the clean one-variable CONTROL for a follow-up;
-baking a setting that cost classification −0.1977 into a general base is the aggressive
-choice, not the safe one. Waiting would have cost a full day.
-
-**On 1x H100 PCIe (us-west-3), not an A100** — `gpu_1x_a100_sxm4` had no capacity, and H100
-PCIe at $3.29/hr is roughly cost-neutral (~$29 against ~$28) for ~5h less wall clock.
-`batch_size` 4 → 8 with grad-accum 4 → 2, so the EFFECTIVE batch stays 16 and the recipe is
-unchanged — `batch_size` is PER-GPU, the one axis where a card swap silently becomes a
-different experiment. `num_workers` 0 → 4 (the 0 was an MPS constraint, not a CUDA one) and
-`pin_memory` follows.
-
-**WATCH FOR THIS AND DO NOT MISREAD IT:** `__getitem__` runs in FORKED workers, so the
-injector's counters live in the child and `composition_line()` reads the parent's. A
-`[composition] ... 0/0 records` line under `num_workers > 0` is an artefact of forking, **NOT**
-evidence that negatives failed. The guard that still works is `ExtractorTrainer._wired`, which
-refuses to start when negatives are configured and the dataset carries no injector — it runs
-in the parent at dataset construction.
-
-Selection is on `eval_overall_strict_head_min_f1`, the first run to use it.
-
-**Selection now has an aggregate.** `eval_overall_{strict,relaxed}_{micro_f1, head_macro_f1,
-head_min_f1}` landed 2026-09-21. `head_min_f1` is the interesting one for a base: it cannot be
-improved by trading one head away, which is the failure mode this programme keeps hitting.
-Consider it for `metric_for_best` in place of entity F1.
+**Standing note, still true:** `__getitem__` runs in FORKED workers, so the injector's counters
+live in the child and `composition_line()` reads the parent's. A `[composition] ... 0/0 records`
+line under `num_workers > 0` is an artefact of forking, NOT evidence that negatives failed. The
+guard that works is `ExtractorTrainer._wired`, which runs in the parent.
 
 ## 3. P0 — blocks the next experiment
 
@@ -550,7 +523,7 @@ produced 106 observations is identified.
 - **DONE 2026-10-05 -- the junction layer (`JUNCTION_LAYER_SPEC.md`, built 21f357e, A/B p5link).** The trigger->argument
   score was role fit with a weak join (per-column junction AUC 0.58-0.63; pair term below chance in-row). The junction
   + column loss lifts it to 0.74 / 0.77 and gives argument F1 +0.035* (English arguments move for the first time).
-  Going into eb19 at column weight 0.3.
+  In eb19 at column weight 0.3 -- RUNNING since 2026-10-05.
 - **PARKED -- design C (events as slots: anchorless records).** The structural fix for the shared root cause
   (event identity = a trigger mention). Found 2026-10-04: events are hard-wired natural
   (`processing/records.py` `_event_record_cfg`); anchorless = 32 learned slots, one attention layer,
