@@ -1,6 +1,7 @@
 """Tests for the tools/infer.py CLI helpers (no model load)."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -116,3 +117,52 @@ class TestDecodeSettings:
     def test_no_stored_defaults_falls_back(self):
         got = infer._decode_settings(self._args(), _model(max_len=600))
         assert got == {"threshold": 0.5, "chunk_size": 400, "chunk_overlap": 0, "global_decode": False}
+
+
+class _StubModel:
+    """batch_extract_long echoes each text's schema keys, so ordering and chunking are checkable."""
+    def __init__(self):
+        self.config = SimpleNamespace(inference_defaults={"threshold": 0.3, "chunk_size": 64,
+                                                          "chunk_overlap": 0, "global_decode": False},
+                                      label_map=None, default_schema=None, max_len=None)
+        self.calls = []
+
+    def batch_extract_long(self, texts, schemas, **kw):
+        self.calls.append(len(texts))
+        return [{"echo": t, "schema": sorted(s)} for t, s in zip(texts, schemas)]
+
+
+class TestOutputJsonl:
+    RECS = [{"input": "a", "output": {"entities": {"Person": ["a"]}}},
+            {"input": "b", "output": {}},
+            {"input": "c", "output": {"events": [{"event_type": "Attack", "triggers": ["c"], "arguments": []}]}}]
+
+    def _run(self, tmp_path, monkeypatch, *argv):
+        src = tmp_path / "in.jsonl"
+        src.write_text("".join(json.dumps(r) + "\n" for r in self.RECS), encoding="utf-8")
+        stub = _StubModel()
+        import gliner2
+        monkeypatch.setattr(gliner2.AutoExtractor, "from_pretrained", staticmethod(lambda *a, **k: stub))
+        out = tmp_path / "preds.jsonl"
+        infer.main(["--model", "m", "--input", str(src), "--output", str(out), *argv])
+        return [json.loads(l) for l in out.read_text(encoding="utf-8").splitlines()], stub
+
+    def test_one_line_per_record_in_order_with_gold(self, tmp_path, monkeypatch):
+        rows, _ = self._run(tmp_path, monkeypatch, "--gold-schema")
+        assert [r["input"] for r in rows] == ["a", "b", "c"]
+        assert [r["gold"] for r in rows] == [r["output"] for r in self.RECS]
+
+    def test_gold_schema_is_per_record_and_empty_gold_is_not_decoded(self, tmp_path, monkeypatch):
+        rows, stub = self._run(tmp_path, monkeypatch, "--gold-schema")
+        assert rows[0]["output"]["schema"] == ["entities"]
+        assert rows[1]["output"] == {}
+        assert rows[2]["output"]["schema"] == ["events"]
+        assert sum(stub.calls) == 2
+
+    def test_written_in_chunks(self, tmp_path, monkeypatch):
+        _, stub = self._run(tmp_path, monkeypatch, "--entities", "Person", "--docs-per-write", "2")
+        assert stub.calls == [2, 1]
+
+    def test_gold_schema_refuses_other_schema_options(self, tmp_path, monkeypatch):
+        with pytest.raises(SystemExit):
+            self._run(tmp_path, monkeypatch, "--gold-schema", "--entities", "Person")

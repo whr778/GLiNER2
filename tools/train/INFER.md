@@ -45,6 +45,24 @@ uv run python tools/infer.py --model whr778/gliner2-eb18-balanced --input docs.j
 uv run python tools/infer.py --model whr778/gliner2-eb18-balanced --input document.txt --schema-json schema.json
 ```
 
+**5. A blind-test set to a predictions file.** `--output` writes JSONL as it goes, one line per
+input record: `{"input", "output": the prediction, "gold": the record's own output}`, in input order,
+so a scorer can join prediction to gold line by line. Choose the menu:
+
+```bash
+# each document offered only its OWN gold labels -- what eval scores
+uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
+    --input data/casie.test.jsonl --gold-schema --output casie_test.preds.jsonl
+
+# the checkpoint's FULL shipped schema (see the over-firing caution below)
+uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
+    --input data/casie.test.jsonl --model-schema --tasks events --output casie_test.full.preds.jsonl
+```
+
+A record with no gold labels under `--gold-schema` is written with `"output": {}` and not decoded.
+`--docs-per-write` (default 64) sets how many documents are decoded per flush. Score a blind test
+ONCE: pick settings on the validation split first.
+
 `--input` also accepts a literal string or a `.txt` file (one document).
 
 ## Options
@@ -58,6 +76,8 @@ uv run python tools/infer.py --model whr778/gliner2-eb18-balanced --input docume
 | `--no-label-map` | send labels exactly as typed |
 | `--threshold`, `--chunk-size`, `--chunk-overlap`, `--global-decode` / `--no-global-decode` | override the checkpoint |
 | `--include-confidence`, `--include-spans` | add scores and character offsets |
+| `--gold-schema` | each `.jsonl` record gets the schema of its own gold labels, as eval scores it |
+| `--output preds.jsonl` | write `{input, output, gold}` per record as JSONL instead of printing |
 
 Each decode setting resolves in this order:
 1. the flag;
@@ -71,4 +91,8 @@ Checkpoints from before 63eb320 store no defaults and no label map, so they use 
 - **Don't send the whole event menu.** On one 743-character CASIE article, the full shipped menu (320 event types) fired **225 types and 773 instances**. The same article with a one-type menu gave 0. Eval only ever offers each document its own gold types, so no reported score covers the full-menu case. Use `--tasks` and `--events` to send the types you mean.
 - **Structures need record metadata on boundary models.** Without `mode`/`anchor`, a structure decodes to `{}` with no error. The viewer adds them for you, and `infer.py` does not, so put `"mode": "natural", "anchor": "<first field>"` in your `--schema-json`.
 - **The stored threshold is the eval setting, not a sweep result.** If a run's validation sweep chose a different threshold, check that the checkpoint was backfilled (`backfill_model_config.py`).
+- **On Apple silicon (MPS), batched results depend on the batch.** The `mps-flash-attn` SDPA patch
+  does not apply padding exactly: measured 2026-10-05, 3 of 5 CASIE docs decoded differently alone
+  than when batched with longer docs, while CPU and stock SDPA on MPS were identical either way. Until
+  that is resolved, produce a blind-test file on CPU or with `--batch-size 1` on MPS.
 - **Use `AutoExtractor`, not `GLiNER2`, in your own code.** `GLiNER2` is the span class, and a boundary checkpoint fails to load with `'ExtractorConfig' object has no attribute 'max_width'`. `infer.py` had this defect until 2026-10-05.

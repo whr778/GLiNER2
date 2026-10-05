@@ -16,6 +16,9 @@ Examples:
   uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
       --input document.txt --model-schema --tasks events --entities Person,Location
 
+  uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
+      --input data/casie.test.jsonl --gold-schema --output preds.jsonl
+
 Like the viewer: --model-schema starts from the schema the checkpoint ships (config.json
 default_schema), every decode setting not passed falls back to the checkpoint's
 inference_defaults, and the checkpoint's label_map is applied to the schema. See
@@ -30,19 +33,26 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-def _read_texts(inp: str) -> List[str]:
-    """A literal string, a ``.txt`` file (one document), or a ``.jsonl`` file
-    (one document per line, read from the ``input`` field)."""
+def _read_records(inp: str) -> List[Dict[str, Any]]:
+    """A literal string, a ``.txt`` file (one document), or a ``.jsonl`` file (one record per
+    line; its ``input`` is the text and its ``output``, if any, the gold)."""
     path = Path(inp)
     if path.is_file():
         if path.suffix == ".jsonl":
-            return [
-                json.loads(line)["input"]
-                for line in path.read_text(encoding="utf-8").splitlines()
-                if line.strip()
-            ]
-        return [path.read_text(encoding="utf-8")]
-    return [inp]
+            return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [{"input": path.read_text(encoding="utf-8")}]
+    return [{"input": inp}]
+
+
+def _read_texts(inp: str) -> List[str]:
+    """The document texts of ``_read_records``."""
+    return [r["input"] for r in _read_records(inp)]
+
+
+def _gold_schema(record: Dict[str, Any]) -> Dict[str, Any]:
+    """The schema eval offers this record: only its OWN gold labels (`eval_metrics._schema_from_gold`)."""
+    from gliner2.training.eval_metrics import _schema_from_gold
+    return _schema_from_gold(record.get("output") or {})
 
 
 def _model_schema(config, tasks: str = None) -> Dict[str, Any]:
@@ -96,6 +106,14 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                    help="Start from the schema the checkpoint ships (config.json default_schema).")
     p.add_argument("--tasks", help="With --model-schema: keep only these task types, comma-separated "
                                    "(entities, relations, events, classifications, structures).")
+    p.add_argument("--gold-schema", action="store_true",
+                   help="Each .jsonl record gets the schema of its OWN gold labels, as eval scores it. "
+                        "Excludes every other schema option.")
+    p.add_argument("--output", help="Write predictions here as JSONL, one line per input record: "
+                                    "{input, output: prediction, gold: the record's output}. "
+                                    "Written as it goes. Default: print a JSON array.")
+    p.add_argument("--docs-per-write", type=int, default=64,
+                   help="With --output: documents decoded per flush to the file.")
     p.add_argument("--no-label-map", action="store_true",
                    help="Send labels as typed instead of through the checkpoint's label_map.")
     p.add_argument("--global-decode", action=argparse.BooleanOptionalAction, default=None,
@@ -149,24 +167,57 @@ def main(argv: List[str] = None) -> None:
     from gliner2.inference.global_decode import GlobalDecodeConfig
     from gliner2.inference.label_map import apply_label_map
 
-    texts = _read_texts(args.input)
+    records = _read_records(args.input)
     model = AutoExtractor.from_pretrained(args.model)
-    schema = _build_schema(args, model.config)
-    if not args.no_label_map:
-        schema, rewrites = apply_label_map(schema, getattr(model.config, "label_map", None))
-        print(f"[infer] label_map rewrites: {json.dumps(rewrites, ensure_ascii=False) if rewrites else 'none'}")
+    label_map = None if args.no_label_map else getattr(model.config, "label_map", None)
+    rewrites: Dict[str, Dict[str, str]] = {}
+
+    def mapped(schema):
+        out, applied = apply_label_map(schema, label_map)
+        for cat, m in applied.items():
+            rewrites.setdefault(cat, {}).update(m)
+        return out
+
+    if args.gold_schema:
+        if args.model_schema or args.schema_json or args.entities or args.events:
+            raise SystemExit("--gold-schema excludes --model-schema, --schema-json, --entities and --events.")
+        schemas = [mapped(_gold_schema(r)) for r in records]
+        empty = sum(1 for sc in schemas if not sc)
+        print(f"[infer] gold schema per record: {len(records)} records, {empty} with no gold labels (predicted as {{}})")
+    else:
+        schema = mapped(_build_schema(args, model.config))
+        schemas = [schema] * len(records)
+        print(f"[infer] schema {', '.join(f'{k}={len(v)}' for k, v in schema.items())}")
+    print(f"[infer] label_map rewrites: {json.dumps(rewrites, ensure_ascii=False) if rewrites else 'none'}")
     decode = _decode_settings(args, model)
-    print(f"[infer] schema {', '.join(f'{k}={len(v)}' for k, v in schema.items())} | decode {decode} "
-          f"(model max_len {getattr(model.config, 'max_len', '?')} tokens; "
+    print(f"[infer] decode {decode} (model max_len {getattr(model.config, 'max_len', '?')} tokens; "
           f"checkpoint inference_defaults {getattr(model.config, 'inference_defaults', None)})")
 
-    results = model.batch_extract_long(
-        texts, schema,
-        batch_size=args.batch_size, **decode,
-        include_spans=args.include_spans, include_confidence=args.include_confidence,
-        global_decode_config=GlobalDecodeConfig(beam_width=args.beam_width),
-    )
-    print(json.dumps(results, ensure_ascii=False, indent=2))
+    def predict(recs, scs):
+        keep = [i for i, sc in enumerate(scs) if sc]
+        got = model.batch_extract_long(
+            [recs[i]["input"] for i in keep], [scs[i] for i in keep],
+            batch_size=args.batch_size, **decode,
+            include_spans=args.include_spans, include_confidence=args.include_confidence,
+            global_decode_config=GlobalDecodeConfig(beam_width=args.beam_width),
+        ) if keep else []
+        out = [{} for _ in recs]
+        for i, r in zip(keep, got):
+            out[i] = r
+        return out
+
+    if not args.output:
+        print(json.dumps(predict(records, schemas), ensure_ascii=False, indent=2))
+        return
+    step = max(1, args.docs_per_write)
+    with open(args.output, "w", encoding="utf-8") as f:
+        for start in range(0, len(records), step):
+            chunk = records[start:start + step]
+            for rec, pred in zip(chunk, predict(chunk, schemas[start:start + step])):
+                f.write(json.dumps({"input": rec["input"], "output": pred, "gold": rec.get("output")},
+                                   ensure_ascii=False) + "\n")
+            f.flush()
+            print(f"[infer] {min(start + step, len(records))}/{len(records)} records -> {args.output}", flush=True)
 
 
 if __name__ == "__main__":
