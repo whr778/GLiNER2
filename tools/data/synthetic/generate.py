@@ -300,7 +300,9 @@ def main() -> int:
     for key in sorted(stats):
         print(f"  {key}: {stats[key]}")
     print(summary)
-    return 0
+    # A run that wrote nothing FAILED: 50 of 50 batch requests errored on 2026-10-05 and this
+    # still returned 0, so any caller gating on the exit code saw a success.
+    return 0 if written else 1
 
 
 if __name__ == "__main__":

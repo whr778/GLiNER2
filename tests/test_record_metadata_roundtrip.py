@@ -235,6 +235,10 @@ def test_event_records_puts_events_on_the_record_head():
     from tests.models.boundary.test_joint_records import _model_with_mode
 
     model = _model_with_mode("greedy")
+    # Schema dropout OFF: remove_events_prob 0.2 dropped this batch's only event type on
+    # 7 of 40 seeds, failing the test intermittently (the trainer documents three earlier
+    # false readings of exactly this kind). This test is about structure, not augmentation.
+    model.processor.sampling_config.remove_events_prob = 0.0
     text = "bombed the market and shelled the depot"
     gold = {"events": [
         {"event_type": "attack", "triggers": ["bombed"],

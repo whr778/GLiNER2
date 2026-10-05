@@ -19,6 +19,8 @@ PRICES = {
     "gpt-4.1-nano": (0.10, 0.40),
     "gpt-4o-mini": (0.15, 0.60),
     # Anthropic
+    "claude-opus-5-5": (4.00, 20.00),   # platform.claude.com pricing page, 2026-10-05
+    "claude-sonnet-5-5": (2.00, 10.00),  # platform.claude.com pricing page, 2026-10-05
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),  # no bare alias exists for 4.5

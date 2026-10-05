@@ -194,12 +194,12 @@ class AnthropicProvider(LLMProvider):
 
     def _params(self, system: str, user: str) -> dict:
         # Current Claude models (Sonnet 5, Opus 4.7/4.8) reject temperature/top_p
-        # with a 400; thinking is disabled so the reply is a single JSON pass that
+        # with a 400; thinking is turned off so the reply is a single JSON pass that
         # stays within max_tokens and keeps per-doc cost predictable for bulk runs.
         return dict(
             model=self.cfg.model,
             max_tokens=self.cfg.max_tokens,
-            thinking={"type": "disabled"},
+            thinking={"type": THINKING_OFF.get(self.cfg.model, "disabled")},
             system=system,
             messages=[{"role": "user", "content": user}],
         )
@@ -264,6 +264,13 @@ class AnthropicProvider(LLMProvider):
                 errored += 1
         print(f"[batch] {batch_id} ended: {len(out)} succeeded, {errored} errored/expired")
         return out
+
+
+# How each model turns thinking OFF, where it is not {"type": "disabled"}. Measured, not assumed:
+# claude-sonnet-5-5 rejects "disabled" with a 400 naming "between_tools" (batch
+# msgbatch_01JDptpUcww9hkJRURcBYzBf, 2026-10-05: 50 of 50 errored); Haiku 4.5 accepts
+# "disabled" (every purchase to date). Add a model only after seeing its own answer.
+THINKING_OFF = {"claude-sonnet-5-5": "between_tools"}
 
 
 # A refusal is an HTTP 200 with stop_reason == "refusal" and (pre-output) empty content,
