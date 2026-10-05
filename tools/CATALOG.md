@@ -1,7 +1,8 @@
 # The tools catalog
 
-Every executable under `tools/` — **239 scripts** — and what each one is for. Compiled
-2026-09-22 from the tools' own docstrings.
+Every executable under `tools/` — **287 scripts** — and what each one is for. Compiled
+2026-09-22 from the tools' own docstrings; the 49 scripts added since were catalogued
+2026-10-05, including the new `tools/derive`.
 
 **How to read it.** The tools divide into two kinds, and the division matters more than the
 directory they live in:
@@ -25,13 +26,17 @@ is not a result without a noise floor beside it. Measured floors:
 
 | directory | scripts | what lives there |
 |---|---:|---|
-| [`tools/data`](#2-toolsdata--corpus-construction) | 98 | converters, annotators, repairs, label space, Hub mirrors |
+| [`tools/data`](#2-toolsdata--corpus-construction) | 105 | converters, annotators, repairs, label space, Hub mirrors |
+| [`tools/train`](#3-toolstrain--training-probing-scoring) | 66 | training, probes, sweeps, scoring, model cards |
 | [`tools/ekf_showcase`](#5-toolsekf_showcase--textnormaltracking) | 55 | the disaster-tracking research line end to end |
-| [`tools/train`](#3-toolstrain--training-probing-scoring) | 45 | training, probes, sweeps, scoring, model cards |
-| [`tools/lambda`](#4-toolslambda--gpu-runs-that-stop-themselves) | 25 | GPU runs that provision, publish and terminate |
-| [`tools/data/synthetic`](#21-toolsdatasynthetic) | 8 | LLM generation of base-training data |
+| [`tools/lambda`](#4-toolslambda--gpu-runs-that-stop-themselves) | 38 | GPU runs that provision, publish and terminate |
+| [`tools/derive`](#3a-toolsderive--derive-a-fine-tuning-config-from-measurement) | 8 | measure a corpus against a base and write the config |
+| [`tools/data/synthetic`](#21-toolsdatasynthetic) | 7 | LLM generation of base-training data |
 | [`tools/prototypes`](#6-toolsprototypes--architecture-spikes) | 4 | architecture spikes on toy harnesses |
 | [`tools`](#7-tools-root) | 3 | inference CLI and import-surface diffing |
+
+Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py` is in
+`tools/train`); a few more scripts sit deeper, which makes the 287.
 
 ---
 
@@ -49,6 +54,12 @@ is not a result without a noise floor beside it. Measured floors:
 | `data/check_leakage.py` | Does any corpus share input text with another, or across its own splits? The standing contamination gate. |
 | `data/event_multiplicity.py` | Prices event-instance multiplicity against the KEY a decoder uses to address instances — the quantitative case for `event_records`. |
 | `train/size_gold_capacity.py` | Sizes `max_gold_per_query` from a config's OWN corpora, rather than a default that silently truncates. |
+| `train/trace_sample_life.py` | **The life of one training sample**: every stage on the REAL pipeline, printed, ending in its gradient. The trace behind `events_working_papers/LIFE_OF_A_SAMPLE.md`. |
+| `train/measure_record_supervision.py` | How many trigger candidates the record head actually SUPERVISES, counted on real training batches. |
+| `train/trace_anchor_raise.py` | Reproduces a record-spec raise on the REAL data path with no GPU and no training (eb17-best and its smoke both died in a DataLoader worker). |
+| `data/measure_event_normalisation.py` | Is the event gold trigger-keyed or event-keyed? The two measurements that price design C (normalised events). |
+| `data/trace_absent_event_negatives.py` | Traces absent-event negatives exactly as training injects them and tests whether "absent" is true; `data/adjudicate_absent_events.py` has Claude adjudicate a RANDOM sample of them. |
+| `data/measure_casualty_gold_coverage.py` | Per paragraph of casualty_docee: covered by gold, and if not, why (collision vs unique toll). `data/trace_casualty_gold_gap.py` traces each paragraph to its source snippet's ground truth -- the root cause that `rebuild_casualty_docee.py` fixed. |
 
 ### 1b. Will this config train at all? (pre-launch gates)
 
@@ -74,6 +85,18 @@ is not a result without a noise floor beside it. Measured floors:
 | `train/probe_predicted_entity_types.py` | Does the model's OWN predicted type carry signal about argument correctness? |
 | `train/cuda_attn_probe.py` | What attention path actually loads on CUDA, and does it produce NaN. |
 | `train/debug_shared_pool_nan.py` | Localizes the non-finite that kills `candidate_pool: shared`. |
+| `train/probe_trigger_misses.py` | **Where do gold triggers go missing?** Every gold trigger split into found / below the gate / wrong type / never decoded, per corpus and language, on train.py's own validation list. |
+| `train/trace_argument_evidence.py` | Do a trigger's ARGUMENTS vouch for it? Argument evidence of gold vs false trigger candidates ("the King of Sweden"). Measured ~0.5 AUC on eb18, which put the existence head on hold. |
+| `train/measure_assign_decomposition.py` | Is trigger -> argument assignment a JUNCTION or ROLE FIT? Splits the assign logit into P (pair) + R (role); per-column and per-row AUCs. Found role fit with a weak join (per-column 0.631 on eb18), which motivated the junction layer. |
+| `train/measure_junction_det.py` | **Is the junction overfitting?** Ownership (per-column AUC, top-1) and the DET of the argument gate (scorer and decode views), TRAIN vs VAL per corpus family, on any checkpoint. See `METRICS.md`, "Trigger -> argument link diagnostics". |
+| `train/measure_argument_key_gap.py` | Where does argument recall live? The same predictions scored WITH and WITHOUT the trigger key (`--classify` splits wrong-trigger arguments into boundary / sibling / false trigger). |
+| `train/probe_candidate_coverage.py` | Why emission stops scaling with the window: gold COVERAGE by candidates under `candidate_budget`. |
+| `train/probe_object_score_separation.py` | Does the object score already separate good instances from spurious ones? `train/reconcile_trigger_ratio.py` explains why this probe and the blind test disagree (0.96:1 vs 3.78:1). |
+| `train/reliability_curve.py` | Is the model under-confident, or is a low threshold genuinely trading precision away? The question a threshold sweep cannot answer. |
+| `train/measure_gradient_shares.py` | Which loss terms drive the update: gradient share per term on real training micro-batches. |
+| `train/measure_absent_dilution.py` | How much ABSENT queries dilute the boundary loss, on real training batches with no model. Its `load_records(split=)` is the shared sampler the other measure tools use. |
+| `train/measure_pos_neg_ratio.py` | The per-task negative:positive ratio the boundary BCE actually sees, before anyone sets `pos_weight`. |
+| `train/eval_decode_pooling.py` | Decode-time pooling of same-type instances on boundary-variant triggers, rescored. Tested 2026-10-04: NEGATIVE (F1 -0.001 to -0.004). |
 
 ### 1d. Measure the ceiling BEFORE spending on the treatment
 
@@ -98,6 +121,8 @@ is not a result without a noise floor beside it. Measured floors:
 | `train/sweep_preservation.py` | Several checkpoints on ONE held-out set, each at its own best threshold. |
 | `train/sweep_entity_typed_arguments.py` | Can predicted entity types improve argument precision? |
 | `data/compare_label_distributions.py` | Generated corpora against a real-text reference. |
+| `train/sweep_record_anchor_threshold.py` | Sweeps the RECORD decode gates on VALIDATION; records decode at their own gates, not the span threshold. |
+| `train/pr_sweep_results/pr_sweep.py` | Precision / recall over a threshold grid for eb17-best: pooled, CASIE val and CMNEE val separately. Results beside it. |
 
 ---
 
@@ -126,9 +151,16 @@ a document must learn to reject), `build_role_type_map.py`, `build_turkish_pool.
 
 **Repairs** — `repair_turkish_surfaces.py` (lemmatised gold, **refusing unsafe repairs**),
 `repair_casualty_anchors.py`, `repair_contradicted_negatives.py`, `dedupe_splits.py`,
-`stamp_record_metadata.py`, `stamp_field_cardinality.py`, `interleave_splits.py`.
+`stamp_record_metadata.py`, `stamp_field_cardinality.py`, `interleave_splits.py`,
+`rebuild_casualty_docee.py` (v2, with the `_standalone` fix the v1 build predated),
+`merge_rams_passages.py` (one record per passage; RAMS stores one event per example).
 
-**Label space** — `build_label_maps.py` (in `train/`), `apply_label_map.py`,
+**Slices** — `build_capped_slice.py`: a seeded slice of whole documents, capped by
+event-argument gold, holding LLM-annotated data at a fixed real : synthetic ratio.
+
+**Label space** — `build_unified_full.py` (in `train/`; writes `labels/unified-full.yaml` over
+every TAXONOMY corpus in `data/`, the base's spellings canonical -- what eb18/eb19 use),
+`build_label_maps.py` (in `train/`; the older `labels/unified.yaml`), `apply_label_map.py`,
 `translate_labels.py`, `unify_docee_menus.py`, `unify_classification_labels.py`,
 `split_withdrawal_collision.py`.
 
@@ -149,13 +181,32 @@ construction), `cost.py` (token-and-price model), `ab_generation.sh`.
 (re-runs the post-training tail), `save_or_die.py` (gets a checkpoint off the machine or
 refuses to let it die quietly), `push_to_hub.py`, `model_card.py`, `backfill_schema.py`,
 `refresh_structure_metrics.py`, `update_dose_cards.py`, `precompute_guide_scores.py`,
-`make_nan_probe_configs.py`.
+`make_nan_probe_configs.py`, `backfill_model_config.py` (adds `label_map` +
+`inference_defaults` to a checkpoint published before 2026-10-01; re-run when a sweep moves
+the threshold), `build_unified_full.py` (the label map, see section 2).
+How to run a trained checkpoint is in [`train/INFER.md`](train/INFER.md).
 
 **Mix builders** — `build_137k_replay.py`, `build_scaling_mix.py`,
 `build_joint_scaling_mix.py`, `build_warmstart_mix.py`, `build_turkish_dose_mix.py`,
 `build_zh_multitask_mix.py`, `build_casualty_multilingual.py`, `build_loc_control.py`.
 
 Probes, sweeps, gates and measures are in [section 1](#1-instruments--the-things-that-measure).
+
+---
+
+## 3a. `tools/derive` — derive a fine-tuning config from measurement
+
+Point it at a pre-split corpus and a pretrained checkpoint; it measures what a fine-tuning
+config needs and writes the evidence, one run per (corpus, base) pair. `README.md` there is
+the entry point. `derive_config.py` drives 7 stages (`--gpu` adds 4–6 on the VALIDATION split):
+`model_probe.py` (describe a base from its config.json alone -- span vs boundary, label map),
+`corpus_probe.py` (per-head gold and label measurements, composed from existing tools),
+`data_health.py` (each finding with severity, evidence and the fixing command; a BLOCK stops
+stage 7), `label_review.py` (the corpus's labels against what the base was trained to read),
+`labels_file.py` (the base's label map plus the new corpus), `gpu_stages.py`
+(reachability, zero-shot baseline, operating points), `emit_config.py` (stage 7: the config,
+every value annotated with its source). `lambda/derive_config_gpu_test.sh` runs stages 1–6
+on GPU against three structurally different bases.
 
 ---
 
@@ -176,6 +227,22 @@ Probes, sweeps, gates and measures are in [section 1](#1-instruments--the-things
 `negatives_verdict.sh`, `dose_sweep.sh`, `dose_curve_box.sh`,
 `event_threshold_sweep.sh`, `base_reference.sh`, `rescore_blind_test.sh`,
 `throughput_smoke.sh`, `pool_nan_debug.sh`, `pool_fp32_probe.sh`, `score_pool.py`.
+
+**Base runs and their smokes** — `eb18_smoke.sh`, `eb19_smoke.sh` + `eb19_smoke_launch.sh`
+(the recipe from scratch before the base is bought: loss health from the progress bar, the
+in-run junction gate, speed, memory), `eb19_launch.sh`. Launchers pin `EXPECT_COMMIT`, and
+`provision_box.sh` refuses a box at any other commit. Per-epoch checkpoints (`PUSH_EPOCHS=1`)
+are pushed AFTER `train.py` exits, not as each epoch ends -- to read an epoch mid-run, copy it
+off the box.
+
+**Fast A/Bs** — `fast_ab_launch.sh` (any family: `EXP=<family> ARM=<arm>`, one box per arm,
+configs `train/config/ab/<EXP>-<ARM>.yaml`), `p2fast_ab_launch.sh` (its first instance).
+
+**Operating-point jobs** — `sweep_and_rescore_eb17.sh` (record-gate sweep on validation),
+`blind_test_record_anchor.sh` (the blind test ONCE at the picked point),
+`anchor_sweep_wide.sh` (does the optimum move once the proposal cap is lifted?),
+`width_threshold_arms.sh`, `window_overlap_arms.sh` (where window/overlap CAN matter:
+`cc_news_long`), `rescore_eb17_eb18.sh` (the first like-for-like eb17 vs eb18 delta).
 
 **`run_tests_cuda.sh`** — runs the TEST SUITE on a real CUDA box, then terminates it.
 `resolve_device` picks cuda -> mps -> cpu, so a laptop run never takes the cuda branch:
@@ -228,7 +295,10 @@ total, or another event's?), `scope_gate_test.py`, `gate_threshold_sweep.py`,
 
 ## 7. `tools` root
 
-`infer.py` — command-line inference, with optional document-level global decoding.
+`infer.py` — command-line inference, with optional document-level global decoding. Loads
+boundary checkpoints (`AutoExtractor`; `GLiNER2` is the span class), takes the checkpoint's own
+schema (`--model-schema --tasks ...`), and applies its `inference_defaults` and `label_map`
+like the viewer. Examples and cautions in [`train/INFER.md`](train/INFER.md).
 `import_surface.py` / `compare_surface.py` — snapshot and diff a package's public import
 surface, for verifying a refactor removed only what it meant to.
 
