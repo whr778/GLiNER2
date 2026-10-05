@@ -3,7 +3,8 @@
 #
 #   bash tools/lambda/eb19_launch.sh
 #
-# eb18's recipe + record_role_hard_negatives 8 + proposal_gold identity, 9 epochs (see the config header).
+# eb18's recipe + record_role_hard_negatives 8 + proposal_gold identity + the junction (column weight 0.3),
+# 9 epochs (see the config header).
 # Measured on eb18 (A100): ~4.2 h per epoch incl. validation -> ~38 h train + ~1.2 h sweep/blind test +
 # per-epoch pushes. Stops: JOB_TIMEOUT 50 h (whole job), HARD_DEADLINE 54 h, terminate on the normal path.
 # Model first, then metrics, then (non-fatal) every checkpoint-epoch-N to whr778/gliner2-eb19-checkpoint-epoch-N
