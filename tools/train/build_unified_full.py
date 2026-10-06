@@ -19,10 +19,13 @@ Roles, passed to `build_label_maps.build`:
 * translated -- a taxonomy corpus's non-English labels (TRANSLATIONS), mapped to English
                and kept distinct within their corpus.
 
-    uv run python tools/train/build_unified_full.py
+    uv run python tools/train/build_unified_full.py                       # -> labels/unified-full.yaml
+    uv run python tools/train/build_unified_full.py --output /path/x.yaml  # anywhere else
+    uv run python tools/train/build_unified_full.py --v2 [--output ...]   # -> labels/unified-full-v2.yaml
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -90,7 +93,7 @@ def classify():
     return voters, excluded
 
 
-def main():
+def main(out: Path = OUT):
     voters, excluded = classify()
     base = {f.split("/")[-1].split(".")[0] for f in B.config_files(BASE_CONFIG)}
     canonical = sorted(base & set(voters))
@@ -115,9 +118,9 @@ def main():
               "# keep them raw with data.labels_passthrough. Supersedes labels/unified.yaml (built\n"
               "# 2026-09-02 from 19 corpora) for NEW lines; the configs on unified.yaml are untouched.\n")
     block = {"labels": {c: {"rollup": False, "separator": ".", "map": m} for c, m in maps.items()}}
-    OUT.write_text(header + yaml.safe_dump(block, allow_unicode=True, sort_keys=False,
+    out.write_text(header + yaml.safe_dump(block, allow_unicode=True, sort_keys=False,
                                            default_flow_style=False), encoding="utf-8")
-    print(f"wrote {OUT}")
+    print(f"wrote {out}")
 
 
 # PINNED MERGES for the NEXT base, applied on top of a committed map -- never by regenerating it, which
@@ -155,4 +158,11 @@ def derive_v2(src: Path = V2_FROM, out: Path = V2_OUT) -> dict:
 
 
 if __name__ == "__main__":
-    derive_v2() if "--v2" in sys.argv else main()
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--v2", action="store_true", help=f"derive {V2_OUT.name} from {V2_FROM.name} + MERGES")
+    ap.add_argument("--output", type=Path, help=f"where to write (default {OUT}, or {V2_OUT} with --v2)")
+    args = ap.parse_args()
+    if args.v2:
+        derive_v2(out=args.output or V2_OUT)
+    else:
+        main(out=args.output or OUT)
