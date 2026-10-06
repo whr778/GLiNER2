@@ -148,3 +148,41 @@ either.
   it adds nothing to the pair score. Revisit only for cross-type coreference, which is out of scope.
 - Argument coreference ("Smith" ... "the CEO" ... "he") stays string-matched. The head-span rule
   gives the annotator's chosen surface; argument clusters are a separate, later problem.
+
+## 9. Build results, 2026-10-06 (CPU; the A/B waits for eb19)
+
+**Built (opt-in, default off):**
+- `TriggerLink`: built only when `record_coref_link` is on, initialised from `inst_proj`, with
+  `enable_coref_link()` for warm starts.
+- `RecordGroupOutput.coref_logits`.
+- The pair loss `_coref_link_loss` (own mean, `record_coref_link_weight`), with the in-run log line
+  "coref link: N mention pairs trained ... pair AUC".
+- The decode mode `record_merge_coreferent: link` (`record_coref_link_threshold`).
+- The metric keys `event_cluster_*` and `event_cluster_argument_*`.
+
+**Deviations from sections 2 and 3:**
+- **Pair geometry is distance only.** The same-sentence and lemma flags need the document text,
+  which the record head does not see.
+- **The `coref_link_corpora` allow-list is not built.** Records carry no corpus name. For the A/B,
+  mendeley_ed (whose multi-trigger lists are keyword sets, not coreference) is left OUT of the
+  training data in EVERY arm, so the arms still differ only in the treatment.
+
+**Gates, traced on real data:**
+
+| gate | result |
+|---|---|
+| 1 | link off == the code before this change, every loss term; link on at weight 0 == off |
+| 2 | at weight 0.3, 428 mention pairs trained over 21 groups on 8 real docs; logged in-run. Init pair AUC 0.811, but that includes the easier false-trigger negatives (the hard-negative-only prior is 0.709) |
+| 6 | a 3-mention gold event found through its 2nd mention with every argument right scores `event_cluster` 1.0 / `event_cluster_argument` 1.0, while today's `event_argument` scores **0.0** (its key is the whole trigger set). A prediction sharing no mention scores 0.0 on both. |
+
+**Gates 3-5 need a TRAINED link.** At init, with threshold 0.5 on 15 val docs, the link
+over-merges: 61 -> 26 events, merged clusters right 2, fusing different events 3, absorbing
+non-gold triggers 11 (precision 2/16 = 12.5%, against the 0.8 bar). At 0.99 and above it merges
+nothing.
+
+**Found and fixed:** `record_merge_coreferent: link` on a checkpoint WITHOUT the module, set
+through eval overrides, merged nothing at every threshold with no error. Decode now raises.
+
+**Finding for the existing metric.** Against coreferent gold, today's `event_argument` scores a
+fully correct event found through a non-first mention as ALL misses. Once cc_news_events_sonnet55_v2
+enters training and eval, read arguments on `event_cluster_argument_*`, not `event_argument_*`.

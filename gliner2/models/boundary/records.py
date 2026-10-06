@@ -205,6 +205,8 @@ class RecordGroupOutput:
     # instance; None entries for anchorless learned queries.
     instance_seed: List[Optional[Tuple[int, int]]]
     instance_spans: List[Optional[Tuple[int, int]]]
+    # [Ni, Ni] trigger x trigger coreference logits (record_coref_link, natural mode); None when off.
+    coref_logits: Optional[torch.Tensor] = None
 
     @property
     def num_instances(self) -> int:
@@ -244,6 +246,37 @@ class DenseRecordBatchOutput:
     modes: torch.LongTensor              # [B,R]
     anchor_fields: torch.LongTensor      # [B,R]
     group_mask: torch.BoolTensor         # [B,R]
+
+
+class TriggerLink(nn.Module):
+    """Trigger x trigger COREFERENCE link: are instances i and j mentions of ONE event? (COREFERENT_LINK_SPEC.md)
+
+    s_ij = <W t_i, W t_j> / sqrt(d) + w * log1p(token distance) + b, symmetric. Reads instance states
+    only -- the argument-score rows separate coreferent pairs at AUC 0.468 (below chance), because the
+    role term is identical for every trigger; the inst_proj states already sit at 0.709 untrained, so W
+    is initialised FROM inst_proj (``init_from``). Nothing else reads it: with it off or on, every other
+    loss and score is unchanged. Text features (same sentence, lemma) are not available to the record
+    head and are not used.
+    """
+
+    def __init__(self, hidden_size: int, dim: int) -> None:
+        super().__init__()
+        self.dim = dim
+        self.w = nn.Linear(hidden_size, dim)
+        self.dist = nn.Linear(1, 1)
+        nn.init.zeros_(self.dist.weight)
+        nn.init.zeros_(self.dist.bias)
+
+    def init_from(self, proj: nn.Linear) -> None:
+        with torch.no_grad():
+            self.w.weight.copy_(proj.weight)
+            self.w.bias.copy_(proj.bias)
+
+    def forward(self, inst_states: torch.Tensor, inst_spans: torch.Tensor) -> torch.Tensor:
+        z = self.w(inst_states)                                                  # [Ni, D]
+        mid = (inst_spans[:, 0] + inst_spans[:, 1]).float() / 2
+        dist = torch.log1p((mid[:, None] - mid[None, :]).abs()).unsqueeze(-1)  # [Ni, Ni, 1]
+        return z @ z.t() / math.sqrt(self.dim) + self.dist(dist).squeeze(-1)
 
 
 class LinkJunction(nn.Module):
@@ -301,7 +334,8 @@ class RecordHead(nn.Module):
     :class:`RecordSpec` objects and the boundary candidate batch.
     """
 
-    def __init__(self, hidden_size: int, record_dim: int, instance_queries: int, link: bool = False) -> None:
+    def __init__(self, hidden_size: int, record_dim: int, instance_queries: int, link: bool = False,
+                 coref: bool = False) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.record_dim = record_dim
@@ -314,6 +348,11 @@ class RecordHead(nn.Module):
         self.field_proj = nn.Linear(hidden_size, record_dim)
         self.cand_proj = nn.Linear(hidden_size, record_dim)
         self.null_embed = nn.Parameter(torch.randn(record_dim) * 0.02)
+        # The trigger x trigger coreference link (record_coref_link). Built only when on, like the junction.
+        self.coref = None
+        if coref:
+            self.coref = TriggerLink(hidden_size, record_dim)
+            self.coref.init_from(self.inst_proj)
 
         self.object_head = nn.Linear(hidden_size, 1)
         self.latent_seed_head = nn.Linear(hidden_size, 1)
@@ -332,6 +371,14 @@ class RecordHead(nn.Module):
         if self.link is None:
             ref = next(self.parameters())
             self.link = LinkJunction(self.hidden_size, self.record_dim).to(device=ref.device, dtype=ref.dtype)
+
+    def enable_coref_link(self) -> None:
+        """Add the coreference link to an already-built head (a warm start), initialised from inst_proj.
+        Call before the optimizer is built, or its parameters are never updated."""
+        if self.coref is None:
+            ref = next(self.parameters())
+            self.coref = TriggerLink(self.hidden_size, self.record_dim).to(device=ref.device, dtype=ref.dtype)
+            self.coref.init_from(self.inst_proj)
 
     # ------------------------------------------------------------------ utils
     def _assign_logits(
@@ -723,6 +770,9 @@ class RecordHead(nn.Module):
             link = self.link(inst_states, fq, field_cand_states, anchor_spans, field_spans)
             assign_logits = [a if l is None else torch.cat([a[:, :1], a[:, 1:] + l], dim=-1)
                              for a, l in zip(assign_logits, link)]
+        coref_logits = None
+        if self.coref is not None and spec.mode == "natural" and inst_states.shape[0] > 0:
+            coref_logits = self.coref(inst_states, anchor_spans)
 
         return RecordGroupOutput(
             spec=spec,
@@ -735,6 +785,7 @@ class RecordHead(nn.Module):
             field_cand_logits=field_cand_logits,
             instance_seed=instance_seed,
             instance_spans=instance_spans,
+            coref_logits=coref_logits,
         )
 
 
@@ -785,7 +836,8 @@ def decode_group(
     field_threshold: float = 0.5,
     object_threshold: float = 0.5,
     temperature: float = 1.0,
-    merge_coreferent: bool = False,
+    merge_coreferent: str = "off",
+    coref_threshold: float = 0.5,
 ) -> List[DecodedRecord]:
     """Decode one record group into a list of :class:`DecodedRecord`.
 
@@ -809,9 +861,19 @@ def decode_group(
         inst for inst in order if obj_prob[inst] >= select_thr
     ]
     coref_members: Dict[int, List[int]] = {}
-    if merge_coreferent and group.spec.mode == "natural" and len(selected_instances) > 1:
-        selected_instances, coref_members = _merge_coreferent_instances(
-            group, selected_instances, field_threshold, temperature)
+    merge_coreferent = {True: "args", False: "off"}.get(merge_coreferent, merge_coreferent)
+    if merge_coreferent != "off" and group.spec.mode == "natural" and len(selected_instances) > 1:
+        if merge_coreferent == "link":
+            # A merge the setting promises and the model cannot do must fail LOUDLY: traced 2026-10-06,
+            # eval overrides set `link` on a checkpoint without the module, coref_logits stayed None and
+            # every threshold "merged" nothing -- a gate that could not fail.
+            if group.coref_logits is None:
+                raise ValueError("record_merge_coreferent: link, but this model has no coreference link "
+                                 "(record_coref_link was off when it was built)")
+            selected_instances, coref_members = _merge_by_link(group, selected_instances, coref_threshold)
+        elif merge_coreferent == "args":
+            selected_instances, coref_members = _merge_coreferent_instances(
+                group, selected_instances, field_threshold, temperature)
 
     # Exclusive fields are a global assignment problem: greedily letting the
     # highest-object instance claim its favorite candidate can force later
@@ -973,6 +1035,28 @@ def decode_group(
             )
         )
     return records
+
+
+def _merge_by_link(group: RecordGroupOutput, selected: List[int], threshold: float):
+    """(representatives, {representative: members}) -- single linkage on sigmoid(coref_logits) >= threshold."""
+    prob = torch.sigmoid(group.coref_logits.detach()).tolist()
+    parent = {i: i for i in selected}
+    def root(i):
+        while parent[i] != i:
+            i = parent[i]
+        return i
+    for a_pos, a in enumerate(selected):
+        for b in selected[a_pos + 1:]:
+            if prob[a][b] >= threshold and root(a) != root(b):
+                parent[root(b)] = root(a)
+    reps, members = [], {}
+    for inst in selected:
+        r = root(inst)
+        if r == inst:
+            reps.append(inst)
+        else:
+            members.setdefault(r, []).append(inst)
+    return reps, members
 
 
 def _merge_coreferent_instances(group: RecordGroupOutput, selected: List[int], field_threshold: float,
@@ -1618,6 +1702,56 @@ def _note_link_columns(terms: int, wins: int, pairs: int) -> None:
                     _COLUMN_TERMS, _COLUMN_WINS / max(_COLUMN_PAIRS, 1), _COLUMN_PAIRS, n)
 
 
+def _coref_link_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int):
+    """(summed BCE, n pairs, wins, ranked pairs) over trigger-mention pairs: same gold record = 1,
+    different gold records = 0 (the hard negatives), a gold mention vs the k hardest false triggers = 0.
+    ``wins/ranked`` is the in-run AUC: positive pairs scoring above negative pairs that share a mention."""
+    af = group.field_query_ids.index(anchor_qid)
+    seed = {s[1]: i for i, s in enumerate(group.instance_seed) if s is not None and s[0] == af}
+    owner = {}
+    for ri, rec in enumerate(records):
+        a = rec.field_for_query(anchor_qid)
+        for c in _resolve_value_cols(a.values[0], span_indices[af]) if a is not None and a.values else []:
+            if (c - 1) in seed:
+                owner.setdefault(seed[c - 1], ri)
+    gold = sorted(owner)
+    false = _negative_instances(group, records, anchor_qid, set(gold), k)
+    logits = group.coref_logits
+    pos, neg = [], []
+    for x, i in enumerate(gold):
+        for j in gold[x + 1:]:
+            (pos if owner[i] == owner[j] else neg).append((i, j))
+        neg.extend((i, f) for f in false)
+    if not pos and not neg:
+        return logits.new_zeros(()), 0, 0, 0
+    idx = pos + neg
+    target = logits.new_tensor([1.0] * len(pos) + [0.0] * len(neg))
+    scores = torch.stack([logits[i, j] for i, j in idx])
+    loss = F.binary_cross_entropy_with_logits(scores, target, reduction="sum")
+    wins = ranked = 0
+    if pos and neg:
+        p, n = scores[:len(pos)].detach(), scores[len(pos):].detach()
+        wins = int((p[:, None] > n[None, :]).sum())
+        ranked = p.numel() * n.numel()
+    return loss, len(idx), wins, ranked
+
+
+_CPAIR = {"pairs": 0, "wins": 0, "ranked": 0, "calls": 0}
+
+
+def _note_coref_pairs(n_pairs: int, wins: int, ranked: int) -> None:
+    """In-run proof the coreference link trains, and its pair AUC on the training batch, with backoff."""
+    _CPAIR["pairs"] += n_pairs
+    _CPAIR["wins"] += wins
+    _CPAIR["ranked"] += ranked
+    _CPAIR["calls"] += 1
+    n = _CPAIR["calls"]
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        logger.info("coref link: %d mention pairs trained; coreferent pairs outscore non-coreferent in %.3f of %d "
+                    "(pair AUC, cumulative over %d natural groups)",
+                    _CPAIR["pairs"], _CPAIR["wins"] / max(_CPAIR["ranked"], 1), _CPAIR["ranked"], n)
+
+
 _COREF = {"records": 0, "owners": 0, "calls": 0}
 
 
@@ -1666,7 +1800,8 @@ def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indice
 
 def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget],
                        negative_instances: int = 0, role_hard_negatives: int = 0,
-                       column_negatives: int = 0, coreferent_ownership: bool = False) -> Dict[str, torch.Tensor]:
+                       column_negatives: int = 0, coreferent_ownership: bool = False,
+                       coref_negatives: int = 0) -> Dict[str, torch.Tensor]:
     """Compute object and field-assignment losses for one record group.
 
     ``negative_instances`` > 0 (natural mode) also trains that many of the highest-scoring
@@ -1737,6 +1872,12 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
                 out["column_loss"] = col / terms
                 out["column_count"] = terms
             _note_link_columns(terms, wins, pairs)
+        if coref_negatives > 0 and group.coref_logits is not None:
+            loss, n_pairs, wins, pairs = _coref_link_loss(group, records, anchor_qid, span_indices, coref_negatives)
+            if n_pairs:
+                out["coref_loss"] = loss / n_pairs
+                out["coref_count"] = n_pairs
+            _note_coref_pairs(n_pairs, wins, pairs)
         return out
 
     count = len(records)

@@ -243,6 +243,10 @@ def compute_metrics(
     cls_s, cls_r = _counters(), _counters()
     st_s, st_r = _counters(), _counters()
     ety_s, ety_r = _counters(), _counters()
+    # Event identity by CLUSTER (COREFERENT_LINK_SPEC.md section 5): a predicted event matches a gold
+    # event of the same type sharing ANY trigger mention. New keys; no existing key changes.
+    ecl_s, ecla_s = _counters(), _counters()
+    has_event_clusters = False
     et_s, et_r = _counters(), _counters()
     ea_s, ea_r = _counters(), _counters()
     # Arg-C: EXTERNAL comparability only, never an internal head. See _gold_event_argc_set.
@@ -303,6 +307,11 @@ def compute_metrics(
             trig_err += e
             trig_conf += c
 
+        g_cl, p_cl = _gold_event_clusters(gold), _pred_event_clusters(pred)
+        if g_cl or p_cl:
+            has_event_clusters = True
+            _tally_event_clusters(g_cl, p_cl, ecl_s, ecla_s)
+
         g_arg, p_arg = _gold_event_argument_set(gold), _pred_event_argument_set(pred)
         if g_arg or p_arg:
             has_event_arguments = True
@@ -356,6 +365,9 @@ def compute_metrics(
         if present:
             metrics.update(_finalize(prefix, "strict", *strict))
             metrics.update(_finalize(prefix, "relaxed", *relaxed))
+    if has_event_clusters:
+        metrics.update(_finalize("event_cluster", "strict", *ecl_s))
+        metrics.update(_finalize("event_cluster_argument", "strict", *ecla_s))
 
     # ---- Arg-C: emitted here, and DELIBERATELY NOT a head ----
     #
@@ -776,6 +788,75 @@ def _pred_event_trigger_set(pred: Dict) -> Set[Tuple[str, str]]:
                 if isinstance(trigger, str) and trigger.strip():
                     out.add((etype, trigger.strip()))
     return out
+
+
+def _event_cluster(etype, triggers, arguments):
+    trig = {(t.get("text") if isinstance(t, dict) else t).strip().casefold() for t in triggers or []
+            if isinstance(t if not isinstance(t, dict) else t.get("text"), str) and (t.get("text") if isinstance(t, dict) else t).strip()}
+    args = set()
+    for a in arguments or []:
+        if isinstance(a, dict) and isinstance(a.get("role"), str):
+            ent = a.get("entity")
+            ent = ent.get("text") if isinstance(ent, dict) else ent
+            if isinstance(ent, str) and ent.strip():
+                args.add((a["role"], ent.strip().casefold()))
+    return (etype.strip(), trig, args) if trig else None
+
+
+def _gold_event_clusters(output: Dict) -> List[Tuple[str, set, set]]:
+    """One entry per gold EVENT: (type, its trigger mentions, its (role, entity) arguments)."""
+    out = []
+    for ev in output.get("events") or [] if isinstance(output.get("events"), list) else []:
+        if isinstance(ev, dict) and isinstance(ev.get("event_type"), str):
+            c = _event_cluster(ev["event_type"], ev.get("triggers"), ev.get("arguments"))
+            if c:
+                out.append(c)
+    return out
+
+
+def _pred_event_clusters(pred: Dict) -> List[Tuple[str, set, set]]:
+    """One entry per predicted event, from the ``event_extraction`` block."""
+    out = []
+    block = pred.get("event_extraction") or {}
+    for etype, mentions in (block.items() if isinstance(block, dict) else []):
+        for ev in mentions if isinstance(mentions, list) else []:
+            if isinstance(ev, dict) and isinstance(etype, str):
+                c = _event_cluster(etype, ev.get("triggers"), ev.get("arguments"))
+                if c:
+                    out.append(c)
+    return out
+
+
+def _tally_event_clusters(gold: list, pred: list, ev: Tuple[Counter, Counter, Counter],
+                          arg: Tuple[Counter, Counter, Counter]) -> None:
+    """Match each predicted event to an unmatched gold event of the same type sharing a trigger mention
+    (largest overlap first), then score arguments WITHIN matched events by (role, entity). Unmatched
+    predicted events are FPs with all their arguments; unmatched gold events are FNs likewise."""
+    tp, fp, fn = ev
+    atp, afp, afn = arg
+    used = set()
+    for etype, ptrig, pargs in pred:
+        best = max((j for j, (gt, gtrig, _) in enumerate(gold) if j not in used and gt == etype and gtrig & ptrig),
+                   key=lambda j: len(gold[j][1] & ptrig), default=None)
+        if best is None:
+            fp[etype] += 1
+            for role, _ in pargs:
+                afp[role] += 1
+            continue
+        used.add(best)
+        tp[etype] += 1
+        gargs = gold[best][2]
+        for role, _ in pargs & gargs:
+            atp[role] += 1
+        for role, _ in pargs - gargs:
+            afp[role] += 1
+        for role, _ in gargs - pargs:
+            afn[role] += 1
+    for j, (etype, _, gargs) in enumerate(gold):
+        if j not in used:
+            fn[etype] += 1
+            for role, _ in gargs:
+                afn[role] += 1
 
 
 def _gold_event_type_set(output: Dict) -> Set[Tuple[str]]:

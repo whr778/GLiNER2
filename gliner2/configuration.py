@@ -110,6 +110,13 @@ class BoundaryHeadSettings:
     # a 3-mention event weighs the same as a 1-mention one. The junction column loss already took
     # every mention as a positive. False = historical (bit-identical).
     record_coreferent_ownership: bool = False
+    # THE COREFERENCE LINK (COREFERENT_LINK_SPEC.md, 3b-ii): a trigger x trigger score trained on gold
+    # clusters -- same record = 1, different same-type records = 0, a gold mention vs the K hardest
+    # false triggers = 0 -- its OWN mean, weighted. Decode reads it with record_merge_coreferent: link.
+    record_coref_link: bool = False
+    record_coref_link_weight: float = 0.0
+    record_coref_link_negatives: int = 4
+    record_coref_link_threshold: float = 0.5      # decode: merge same-type instances at sigmoid(s) >= this
     # THE TRIGGER x ARGUMENT JUNCTION (JUNCTION_LAYER_SPEC.md). "additive" (default, historical): the
     # assignment is P (trigger x candidate) + R (role x candidate, the SAME for every trigger) -- measured
     # role fit with no join (junction AUC 0.56-0.61, pair term below chance in-row). "junction" adds a
@@ -259,7 +266,7 @@ class BoundaryHeadSettings:
     # DECODE: one event per coreferent cluster (COREFERENT_OWNERSHIP_SPEC 3b-i). Same-type selected
     # instances that score a shared argument candidate above the field gate merge, unioning triggers.
     # Eval-time, opt-in; False is bit-identical.
-    record_merge_coreferent: bool = False
+    record_merge_coreferent: str = "off"   # "off" | "args" (3b-i, traced NEGATIVE) | "link" (3b-ii)
     record_loss_weight: float = 1.0
     # Per-task rebalancing of the span losses (start/end/pair), keyed by task
     # type: "entities" | "relations" | "events" | "json_structures". Absent keys
@@ -424,6 +431,10 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_negative_weight": float(values.get("record_negative_weight", d.record_negative_weight)),
         "record_role_hard_negatives": int(values.get("record_role_hard_negatives", d.record_role_hard_negatives)),
         "record_coreferent_ownership": bool(values.get("record_coreferent_ownership", d.record_coreferent_ownership)),
+        "record_coref_link": bool(values.get("record_coref_link", d.record_coref_link)),
+        "record_coref_link_weight": float(values.get("record_coref_link_weight", d.record_coref_link_weight)),
+        "record_coref_link_negatives": int(values.get("record_coref_link_negatives", d.record_coref_link_negatives)),
+        "record_coref_link_threshold": float(values.get("record_coref_link_threshold", d.record_coref_link_threshold)),
         "record_link_mode": str(values.get("record_link_mode", d.record_link_mode)),
         "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
@@ -621,7 +632,8 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_field_threshold_wins": bool(
             values.get("record_field_threshold_wins", d.record_field_threshold_wins)
         ),
-        "record_merge_coreferent": bool(values.get("record_merge_coreferent", d.record_merge_coreferent)),
+        "record_merge_coreferent": {True: "args", False: "off"}.get(values.get("record_merge_coreferent", d.record_merge_coreferent),
+                                                                 values.get("record_merge_coreferent", d.record_merge_coreferent)),
         "record_loss_weight": float(
             values.get("record_loss_weight", d.record_loss_weight)
         ),
@@ -710,6 +722,14 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError("boundary_head.record_link_mode: junction is implemented for candidate_pool: per_query only")
     if result["record_role_hard_negatives"] < 0:
         raise ValueError("boundary_head.record_role_hard_negatives must be >= 0")
+    if result["record_merge_coreferent"] not in ("off", "args", "link"):
+        raise ValueError(f"boundary_head.record_merge_coreferent must be off/args/link, got {result['record_merge_coreferent']!r}")
+    if result["record_coref_link_weight"] > 0 and not result["record_coref_link"]:
+        raise ValueError("boundary_head.record_coref_link_weight needs record_coref_link: true")
+    if result["record_merge_coreferent"] == "link" and not result["record_coref_link"]:
+        raise ValueError("boundary_head.record_merge_coreferent: link needs record_coref_link: true")
+    if result["record_coref_link"] and result.get("candidate_pool") == "shared":
+        raise ValueError("boundary_head.record_coref_link is implemented for candidate_pool: per_query only")
     if result["record_coreferent_ownership"] and result.get("candidate_pool") == "shared":
         raise ValueError("boundary_head.record_coreferent_ownership is implemented for candidate_pool: per_query only")
     if result["record_role_hard_negatives"] > 0 and result.get("candidate_pool") == "shared":

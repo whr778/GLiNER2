@@ -2178,6 +2178,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 object_threshold=record_threshold,
                 temperature=settings.record_temperature,
                 merge_coreferent=settings.record_merge_coreferent,
+                coref_threshold=settings.record_coref_link_threshold,
             )
             instances = []
             record_anchors = [record.anchor_span for record in decoded]

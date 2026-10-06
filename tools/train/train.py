@@ -861,6 +861,10 @@ def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
     decoder = getattr(model, "record_decoder", None)
     if decoder is not None and settings.record_link_mode == "junction":
         decoder.enable_link()
+    # Same for the coreference link (COREFERENT_LINK_SPEC.md): added on a warm start, initialised from
+    # inst_proj, before the optimizer exists. Nothing else reads it, so every other score is unchanged.
+    if decoder is not None and settings.record_coref_link:
+        decoder.enable_coref_link()
 
 
 def _auto_negative_pools(cfg: dict, config_path, output_dir: str) -> str:

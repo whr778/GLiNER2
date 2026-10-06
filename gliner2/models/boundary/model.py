@@ -1518,6 +1518,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 settings.record_dim,
                 settings.record_instance_queries,
                 link=settings.record_link_mode == "junction",
+                coref=settings.record_coref_link,
             )
         if self.enable_relations:
             self.relation_pair_generator = TypedRelationPairGenerator(
@@ -2482,6 +2483,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
         neg_count = 0
         col_total = torch.zeros((), device=device)
         col_count = 0
+        coref_total = torch.zeros((), device=device)
+        coref_count = 0
         record_specs = getattr(batch, "record_specs", ())
         per_sample_records = targets.records  # List[List[RecordTarget]]
         packed_records = getattr(targets, "record_targets", None)
@@ -2571,6 +2574,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
                             ("negative_instances", self.boundary_settings.record_negative_instances),
                             ("role_hard_negatives", self.boundary_settings.record_role_hard_negatives),
                             ("coreferent_ownership", self.boundary_settings.record_coreferent_ownership),
+                            ("coref_negatives", self.boundary_settings.record_coref_link_negatives
+                             if self.boundary_settings.record_coref_link_weight > 0 else 0),
                             ("column_negatives", self.boundary_settings.record_link_column_negatives
                              if self.boundary_settings.record_link_column_weight > 0 else 0),
                         ) if v}
@@ -2593,6 +2598,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 if "column_count" in losses:
                     col_total = col_total + losses["column_loss"] * losses["column_count"]
                     col_count += losses["column_count"]
+                if "coref_count" in losses:
+                    coref_total = coref_total + losses["coref_loss"] * losses["coref_count"]
+                    coref_count += losses["coref_count"]
 
         obj = obj_total / max(object_count, 1)
         field = field_total / max(field_count, 1)
@@ -2602,6 +2610,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
         if col_count:
             # The junction column loss: its OWN mean, weighted, never in the gold denominator.
             field = field + self.boundary_settings.record_link_column_weight * col_total / col_count
+        if coref_count:
+            # The coreference link loss: its OWN mean, weighted, never in the gold denominator.
+            field = field + self.boundary_settings.record_coref_link_weight * coref_total / coref_count
         return {"object": obj, "field": field, "total": weight * (obj + field)}
 
     def score_candidates(
