@@ -789,6 +789,20 @@ datasets:
       cap, so the two generators keep their natural mix (they differ ~11x in arguments per
       document) and event-free documents stay in. Reproducible:
       `build_capped_slice.py --cap 24809 --seed 0`."
+  cc_news_events_sonnet55_v2:
+    name: CC-News real text, Sonnet 5.5 v2 recipe -- all five tasks, 55-type event menu with definitions, coreferent triggers
+    provenance: llm_real
+    tasks: NER + event extraction (coreferent triggers + typed arguments) + relations + classification + structures
+    license: see source (cc_news licence unknown, publisher copyright -- PRIVATE only)
+    hf_id: vblagoje/cc_news
+    hf_jsonl: whr778/cc_news_events_sonnet55_v2
+    source_url: https://huggingface.co/datasets/vblagoje/cc_news
+    language: [en]
+    notes: "Bought 2026-10-06, $89.21 (ENGLISH_ANNOTATION_SPEC section 8). 5,600 docs, seed 20261006, 0 overlap
+      with 2.78M data/ docs. train 4,597 = ONE Sonnet run; val 500 / test 500 = 2-of-3 VOTE over three runs
+      (tools/data/vote_annotations.py). Single-run agreement on the eval docs: events F1 0.797-0.806.
+      25-27% of events list >1 coreferent trigger -- do not train before TODO #29 (coreferent ownership).
+      Government.Protest is merged into Conflict.Demonstrate in this corpus's ontology."
   cc_news_events_haiku45:
     name: CC-News real text, Haiku-4.5 entities + events with the FULL 56-type event menu
     provenance: llm_real
