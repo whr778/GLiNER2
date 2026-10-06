@@ -909,6 +909,8 @@ class ExtractorTrainer:
         self.global_step = 0
         self.epoch = 0
         self.best_metric = float('inf') if not config.greater_is_better else float('-inf')
+        self.best_epoch = None
+        self.best_step = None
         self.patience_counter = 0
         self.train_metrics_history = []
         self.eval_metrics_history = []
@@ -1153,6 +1155,8 @@ class ExtractorTrainer:
             "epoch": self.epoch,
             "global_step": self.global_step,
             "best_metric": self.best_metric,
+            "best_epoch": self.best_epoch,
+            "best_step": self.best_step,
             "patience_counter": self.patience_counter,
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict() if self.scheduler is not None else None,
@@ -1173,6 +1177,8 @@ class ExtractorTrainer:
             self.scheduler.load_state_dict(state["scheduler"])
         self.global_step = int(state.get("global_step", 0))
         self.best_metric = state.get("best_metric", self.best_metric)
+        self.best_epoch = state.get("best_epoch", self.best_epoch)
+        self.best_step = state.get("best_step", self.best_step)
         self.patience_counter = int(state.get("patience_counter", 0))
         if state.get("torch_rng") is not None:
             torch.set_rng_state(state["torch_rng"])
@@ -2531,6 +2537,8 @@ class ExtractorTrainer:
             "total_time_seconds": total_time,
             "samples_per_second": samples_seen / total_time,
             "best_metric": self.best_metric,
+            "best_epoch": self.best_epoch,
+            "best_step": self.best_step,
             "train_metrics_history": self.train_metrics_history,
             "eval_metrics_history": self.eval_metrics_history,
         }
@@ -2638,6 +2646,12 @@ class ExtractorTrainer:
 
         if is_best:
             self.best_metric = metric_value
+            self.best_epoch, self.best_step = self.epoch + 1, self.global_step
+            model_cfg = getattr(getattr(self.model, "module", self.model), "config", None)
+            if model_cfg is not None:
+                model_cfg.selected_checkpoint = {"epoch": self.best_epoch, "step": self.best_step,
+                                                 "metric": self.config.metric_for_best,
+                                                 "value": float(metric_value)}
             if self.config.save_best:
                 self._save_checkpoint("best")
             logger.info(f"New best {self.config.metric_for_best}: {self.best_metric:.4f}")

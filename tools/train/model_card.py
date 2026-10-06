@@ -457,6 +457,18 @@ def _metrics_table(metrics: Dict[str, Any], title: str) -> str:
     return "\n".join(rows)
 
 
+def selected_checkpoint_text(results, config) -> str:
+    """'epoch 4 of 5 (step 59,036), <metric> = 0.1069' -- which checkpoint best/ is, or '—'."""
+    r = results or {}
+    epoch, step = r.get("best_epoch"), r.get("best_step")
+    if epoch is None:
+        return "—"
+    total = getattr(config, "num_epochs", None)
+    value = r.get("best_metric")
+    return (f"epoch {epoch}" + (f" of {total}" if total else "") + f" (step {step:,})"
+            + (f", {getattr(config, 'metric_for_best', 'metric')} = {value:.4f}" if value is not None else ""))
+
+
 def _training_section(config, cfg, results, generated_at) -> str:
     m = cfg.get("model") or {}
     arch = []
@@ -483,6 +495,7 @@ def _training_section(config, cfg, results, generated_at) -> str:
         f"| Precision | {'bf16' if getattr(config, 'bf16', False) else 'fp16' if getattr(config, 'fp16', False) else 'fp32'} |",
         f"| Max grad norm | {getattr(config, 'max_grad_norm', '—')} |",
         f"| Best-checkpoint metric | {getattr(config, 'metric_for_best', '—')} |",
+        f"| Selected checkpoint | {selected_checkpoint_text(results, config)} |",
         f"| Seed | {getattr(config, 'seed', '—')} |",
     ]
     if arch:

@@ -18,6 +18,11 @@
 # description (one-sentence qualitative summary for the model card).
 
 base_models:
+  whr778/gliner2-eb18-balanced:
+    name: gliner2-eb18-balanced
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/base/eb18-balanced.yaml, 5 epochs, best epoch 4),
+      pushed to the Hub; the warm-start base of the 2026-10 fast A/Bs (p2fast..p5link)
   whr778/gliner2-joint-boundary-mmbert-137k:
     name: gliner2-joint-boundary-mmbert-137k
     license: derived from jhu-clsp/mmBERT-base

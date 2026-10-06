@@ -1008,6 +1008,9 @@ class ExtractorConfig(PretrainedConfig):
         # The inference settings the model was evaluated with: ``threshold``,
         # ``chunk_size``, ``chunk_overlap``, ``global_decode``.
         inference_defaults: Mapping[str, Any] = None,
+        # Which checkpoint `best/` is: ``{epoch, step, metric, value}`` stamped by the trainer
+        # when it saves a new best. Without it the selected epoch lived only in the training log.
+        selected_checkpoint: Mapping[str, Any] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -1023,6 +1026,7 @@ class ExtractorConfig(PretrainedConfig):
         self.default_schema = dict(default_schema) if default_schema else None
         self.label_map = dict(label_map) if label_map else None
         self.inference_defaults = dict(inference_defaults) if inference_defaults else None
+        self.selected_checkpoint = dict(selected_checkpoint) if selected_checkpoint else None
         # Transformers may serialize its reserved attention field as null;
         # treat that as this extractor's documented default.
         self.attn_implementation = str(attn_implementation or "sdpa")
