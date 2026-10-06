@@ -1,6 +1,6 @@
 # Coreferent triggers: every mention of an event owns its arguments
 
-**Status:** SPEC 2026-10-06, not built. Priority: before the English v2 annotations, or with them
+**Status:** 3a BUILT + traced 2026-10-06 (opt-in `record_coreferent_ownership`); 3b-i BUILT, traced NEGATIVE, left off; 3b-ii is next. See section 7. Priority: before the English v2 annotations, or with them
 (`ENGLISH_ANNOTATION_SPEC.md`). Those annotations list every coreferent trigger per event.
 
 ## 1. What happens today (traced, not read)
@@ -105,3 +105,32 @@ Human English coreference clusters, rather than LLM ones:
 - **MAVEN-ERE**: MAVEN's own documents with event coreference, temporal, causal and subevent
   relations. Unverified here (licence and format not yet checked), but it would pair with MAVEN,
   which we already train on, and is worth checking first.
+
+## 7. Results, 2026-10-06
+
+**3a, training ownership: BUILT, opt-in `record_coreferent_ownership`.**
+- Traced on 42 real event records from cc_news_events_sonnet55_v2 (101 trigger mentions): before,
+  59 of 101 seeded mentions got no role targets.
+- With the flag on, every seeded mention owns its record (33 records through 75 mentions in the
+  after-trace), averaged per record.
+- With the flag off, every loss term is bit-identical to before the change.
+- Boundary suite 424 passed. Tests are mutation-checked (sum-not-mean, first-mention-only).
+
+**Formatting fix (with 3b-i).** The trigger is a scalar field, so `_format_field` kept ONE span of a
+merged record; each mention is now formatted (`engine.py`). A one-span trigger is unchanged.
+
+**3b-i, decode merge on a shared high-scoring argument: NEGATIVE, left OFF.** Traced on 15 real
+multi-trigger val docs with p5link-junc_w03:
+- events went 61 -> 49;
+- of the 6 multi-trigger events produced, 0 were a correct gold cluster, 1 merged different gold
+  events, and 5 absorbed non-gold triggers ('Cancel', 'winner', 'earthquake' as one Sport.Compete;
+  'arrested' + 'charged').
+
+Root cause: the assignment score is dominated by the ROLE term R, identical for every trigger
+(measured 2026-10-04). Any two same-type instances clear the gate on the same plausible
+candidates, so "shares a high-scoring argument" is true for unrelated events. The heuristic cannot
+work on this score shape.
+
+**Next: 3b-ii, a learned trigger x trigger link.** Its precondition is now met:
+cc_news_events_sonnet55_v2 train carries 3,760 multi-mention gold clusters. Per section 3b, 3a must
+not ship (be turned on in a training config) before a working 3b.

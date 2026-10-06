@@ -103,6 +103,13 @@ class BoundaryHeadSettings:
     # P 0.000-0.038 while the loss read 0.004-0.07. K > 0 averages over the gold candidates plus
     # the K highest-scoring WRONG ones, for gold and negative instances alike. 0 = historical.
     record_role_hard_negatives: int = 0
+    # COREFERENT OWNERSHIP (COREFERENT_OWNERSHIP_SPEC.md, TODO #29). An event's trigger value carries
+    # every coreferent mention as span alternatives, but the role loss trained only the FIRST seeded
+    # mention (cols[0]): traced on cc_news_events_sonnet55_v2, 59 of 101 seeded mentions got no role
+    # targets. True trains the record's role targets on EVERY seeded mention, averaged per record so
+    # a 3-mention event weighs the same as a 1-mention one. The junction column loss already took
+    # every mention as a positive. False = historical (bit-identical).
+    record_coreferent_ownership: bool = False
     # THE TRIGGER x ARGUMENT JUNCTION (JUNCTION_LAYER_SPEC.md). "additive" (default, historical): the
     # assignment is P (trigger x candidate) + R (role x candidate, the SAME for every trigger) -- measured
     # role fit with no join (junction AUC 0.56-0.61, pair term below chance in-row). "junction" adds a
@@ -249,6 +256,10 @@ class BoundaryHeadSettings:
     # setting of the S14 class. ON makes it real, so arguments get their own operating
     # point while the anchor/object (instance) gate stays where it is.
     record_field_threshold_wins: bool = False
+    # DECODE: one event per coreferent cluster (COREFERENT_OWNERSHIP_SPEC 3b-i). Same-type selected
+    # instances that score a shared argument candidate above the field gate merge, unioning triggers.
+    # Eval-time, opt-in; False is bit-identical.
+    record_merge_coreferent: bool = False
     record_loss_weight: float = 1.0
     # Per-task rebalancing of the span losses (start/end/pair), keyed by task
     # type: "entities" | "relations" | "events" | "json_structures". Absent keys
@@ -412,6 +423,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_negative_instances": int(values.get("record_negative_instances", d.record_negative_instances)),
         "record_negative_weight": float(values.get("record_negative_weight", d.record_negative_weight)),
         "record_role_hard_negatives": int(values.get("record_role_hard_negatives", d.record_role_hard_negatives)),
+        "record_coreferent_ownership": bool(values.get("record_coreferent_ownership", d.record_coreferent_ownership)),
         "record_link_mode": str(values.get("record_link_mode", d.record_link_mode)),
         "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
@@ -609,6 +621,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_field_threshold_wins": bool(
             values.get("record_field_threshold_wins", d.record_field_threshold_wins)
         ),
+        "record_merge_coreferent": bool(values.get("record_merge_coreferent", d.record_merge_coreferent)),
         "record_loss_weight": float(
             values.get("record_loss_weight", d.record_loss_weight)
         ),
@@ -697,6 +710,8 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError("boundary_head.record_link_mode: junction is implemented for candidate_pool: per_query only")
     if result["record_role_hard_negatives"] < 0:
         raise ValueError("boundary_head.record_role_hard_negatives must be >= 0")
+    if result["record_coreferent_ownership"] and result.get("candidate_pool") == "shared":
+        raise ValueError("boundary_head.record_coreferent_ownership is implemented for candidate_pool: per_query only")
     if result["record_role_hard_negatives"] > 0 and result.get("candidate_pool") == "shared":
         raise ValueError("boundary_head.record_role_hard_negatives is implemented for candidate_pool: per_query only")
     if result["record_negative_instances"] < 0 or result["record_negative_weight"] < 0:

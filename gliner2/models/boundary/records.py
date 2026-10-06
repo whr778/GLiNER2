@@ -785,8 +785,16 @@ def decode_group(
     field_threshold: float = 0.5,
     object_threshold: float = 0.5,
     temperature: float = 1.0,
+    merge_coreferent: bool = False,
 ) -> List[DecodedRecord]:
-    """Decode one record group into a list of :class:`DecodedRecord`."""
+    """Decode one record group into a list of :class:`DecodedRecord`.
+
+    ``merge_coreferent`` (natural mode, COREFERENT_OWNERSHIP_SPEC 3b-i): selected instances that
+    score a shared argument candidate at >= ``field_threshold`` BEFORE exclusive allocation are one
+    event. The strongest keeps its row, the others contribute only their trigger spans. Read
+    before allocation on purpose: exclusive allocation gives each candidate to ONE instance, so
+    two mentions of one event never share a DECODED argument.
+    """
     ni = group.num_instances
     if ni == 0:
         return []
@@ -800,6 +808,10 @@ def decode_group(
     selected_instances = [
         inst for inst in order if obj_prob[inst] >= select_thr
     ]
+    coref_members: Dict[int, List[int]] = {}
+    if merge_coreferent and group.spec.mode == "natural" and len(selected_instances) > 1:
+        selected_instances, coref_members = _merge_coreferent_instances(
+            group, selected_instances, field_threshold, temperature)
 
     # Exclusive fields are a global assignment problem: greedily letting the
     # highest-object instance claim its favorite candidate can force later
@@ -884,6 +896,11 @@ def decode_group(
                 if rec.anchor_span is not None:
                     rec.fields.setdefault(qid, []).append(rec.anchor_span)
                     rec.field_scores.setdefault(qid, []).append(rec.score)
+                for member in coref_members.get(inst, []):
+                    span = group.instance_spans[member]
+                    if span is not None and span not in rec.fields.get(qid, []):
+                        rec.fields.setdefault(qid, []).append(span)
+                        rec.field_scores.setdefault(qid, []).append(obj_prob[member])
                 continue
 
             if fspec.cardinality.is_scalar:
@@ -956,6 +973,34 @@ def decode_group(
             )
         )
     return records
+
+
+def _merge_coreferent_instances(group: RecordGroupOutput, selected: List[int], field_threshold: float,
+                                temperature: float):
+    """(representatives in selection order, {representative: other members}) -- union of instances that
+    score at least one shared list-field candidate at >= field_threshold."""
+    high = {}
+    for inst in selected:
+        high[inst] = {(f, c) for f, fs in enumerate(group.field_specs) if not fs.cardinality.is_scalar
+                      for c, p in enumerate(torch.sigmoid(group.assign_logits[f][inst, 1:].detach() / temperature).tolist())
+                      if p >= field_threshold}
+    parent = {i: i for i in selected}
+    def root(i):
+        while parent[i] != i:
+            i = parent[i]
+        return i
+    for a_pos, a in enumerate(selected):
+        for b in selected[a_pos + 1:]:
+            if high[a] & high[b] and root(a) != root(b):
+                parent[root(b)] = root(a)
+    reps, members = [], {}
+    for inst in selected:                                   # selected is already strongest-first
+        r = root(inst)
+        if r == inst:
+            reps.append(inst)
+        else:
+            members.setdefault(r, []).append(inst)
+    return reps, members
 
 
 def derive_count(records: List[DecodedRecord]) -> int:
@@ -1573,6 +1618,20 @@ def _note_link_columns(terms: int, wins: int, pairs: int) -> None:
                     _COLUMN_TERMS, _COLUMN_WINS / max(_COLUMN_PAIRS, 1), _COLUMN_PAIRS, n)
 
 
+_COREF = {"records": 0, "owners": 0, "calls": 0}
+
+
+def _note_coreferent_owners(owners: int) -> None:
+    """In-run proof the treatment applied: records trained and mentions owning them, with backoff."""
+    _COREF["records"] += 1
+    _COREF["owners"] += owners
+    _COREF["calls"] += 1
+    n = _COREF["calls"]
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        logger.info("coreferent ownership: %d records trained through %d seeded mentions (%.2f per record)",
+                    _COREF["records"], _COREF["owners"], _COREF["owners"] / max(_COREF["records"], 1))
+
+
 def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int):
     """(sum of column terms, n terms, wins, pairs): which trigger owns each gold argument."""
     af = group.field_query_ids.index(anchor_qid)
@@ -1607,7 +1666,7 @@ def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indice
 
 def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget],
                        negative_instances: int = 0, role_hard_negatives: int = 0,
-                       column_negatives: int = 0) -> Dict[str, torch.Tensor]:
+                       column_negatives: int = 0, coreferent_ownership: bool = False) -> Dict[str, torch.Tensor]:
     """Compute object and field-assignment losses for one record group.
 
     ``negative_instances`` > 0 (natural mode) also trains that many of the highest-scoring
@@ -1640,13 +1699,20 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
             if not cols:
                 _note_anchor_gate("anchor_not_proposed", group.spec.task_type)
                 continue
-            if (inst := seed_to_inst.get(cols[0] - 1)) is None:
+            # One owner (historical: the first seeded mention) or, with coreferent_ownership, EVERY
+            # seeded mention, averaged so the record's weight does not grow with its mention count.
+            owners = (sorted({seed_to_inst[c - 1] for c in cols if (c - 1) in seed_to_inst}) if coreferent_ownership
+                      else [i for i in [seed_to_inst.get(cols[0] - 1)] if i is not None])
+            if not owners:
                 _note_anchor_gate("anchor_not_seeded", group.spec.task_type)
                 continue
             _note_anchor_gate("trained", group.spec.task_type)
-            field_loss = field_loss + _instance_field_loss(group, inst, record, span_indices, role_hard_negatives)
+            field_loss = field_loss + sum(_instance_field_loss(group, i, record, span_indices, role_hard_negatives)
+                                          for i in owners) / len(owners)
             n += 1
-            trained.add(inst)
+            trained.update(owners)
+            if coreferent_ownership:
+                _note_coreferent_owners(len(owners))
         out = {
             "object_loss": zero,
             "field_loss": field_loss / max(n, 1),

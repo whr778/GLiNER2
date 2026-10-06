@@ -2177,6 +2177,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 field_threshold=field_threshold,
                 object_threshold=record_threshold,
                 temperature=settings.record_temperature,
+                merge_coreferent=settings.record_merge_coreferent,
             )
             instances = []
             record_anchors = [record.anchor_span for record in decoded]
@@ -2186,6 +2187,17 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 # scalar -> str/None, list -> list[str] (possibly empty).
                 for fspec in spec.fields:
                     spans = rec.fields.get(fspec.query_id, [])
+                    if (spec.mode == "natural" and fspec.query_id == spec.anchor_query_id
+                            and len(spans) > 1):
+                        # COREFERENT TRIGGERS (record_merge_coreferent): the anchor is a scalar
+                        # field, so formatting it whole keeps ONE span -- the merged record's other
+                        # mentions vanished (traced: 61 -> 49 events, 0 with >1 trigger). Format
+                        # each mention and keep them all; one span formats exactly as before.
+                        scores = rec.field_scores.get(fspec.query_id) or [None] * len(spans)
+                        values = [_format_field([sp], fspec, spec.task_name, [sc], record_index, record_anchors)
+                                  for sp, sc in zip(spans, scores)]
+                        inst[fspec.name] = [v for v in values if v]
+                        continue
                     value = _format_field(
                         spans,
                         fspec,

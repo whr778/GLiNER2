@@ -2570,6 +2570,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                         opts = {k: v for k, v in (
                             ("negative_instances", self.boundary_settings.record_negative_instances),
                             ("role_hard_negatives", self.boundary_settings.record_role_hard_negatives),
+                            ("coreferent_ownership", self.boundary_settings.record_coreferent_ownership),
                             ("column_negatives", self.boundary_settings.record_link_column_negatives
                              if self.boundary_settings.record_link_column_weight > 0 else 0),
                         ) if v}
