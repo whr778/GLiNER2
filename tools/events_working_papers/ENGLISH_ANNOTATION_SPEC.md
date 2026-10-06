@@ -101,7 +101,7 @@ The same discipline as `cc_news_events_haiku45`:
 **Decided (user, 2026-10-06):**
 - Recipe D, all five tasks.
 - Stability bar 0.85 events F1.
-- Reporting verbs ('said', 'told', 'talked', 'chatted') ARE Contact.Communicate events.
+- EVERY reporting verb is a Contact.Communicate event: the user's examples (said, chatted, talked) were examples, not the list.
 
 Measured consequence of the reporting-verb decision, for the pilot to watch:
 - the unused pool averages 4.0 reporting verbs per doc (79% of docs have one);

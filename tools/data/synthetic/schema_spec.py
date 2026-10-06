@@ -233,8 +233,10 @@ EVENT_DEFINITIONS = {
                           "Not: taking up the position (Personnel.StartPosition).",
     "Contact.Meet": "People meet in person. Not: a remote call or message (Contact.Communicate).",
     "Contact.Communicate": "Someone conveys information to someone else, by speech, writing or call -- "
-                           "including reporting verbs: 'said', 'told', 'talked', 'chatted' are each a Communicate event. "
-                           "Not: a face-to-face meeting as such (Contact.Meet). DECIDED 2026-10-06 (user).",
+                           "and EVERY reporting verb is a Communicate event, not only these examples: said, says, told, "
+                           "talked, chatted, spoke, announced, stated, added, wrote, reported, claimed, explained, noted, "
+                           "replied, asked, warned, confirmed, denied. "
+                           "Not: a face-to-face meeting as such (Contact.Meet). DECIDED 2026-10-06 (user): all reporting verbs.",
     "Contact.Negotiate": "Parties bargain toward an agreement. "
                          "Not: a meeting with no bargaining (Contact.Meet), or an agreed ceasefire (Conflict.Ceasefire).",
     "Justice.Arrest": "Authorities detain a person. Not: a charge without detention (Justice.ChargeIndict).",
