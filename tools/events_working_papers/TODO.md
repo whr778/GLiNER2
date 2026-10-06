@@ -3,14 +3,14 @@
 **Only outstanding work lives here.** Everything resolved, refuted or superseded is in
 [[EXPERIMENT_CATALOG]] (what was run, newest first) and [[PROJECT_HISTORY]]
 (narrative, including [the full pre-2026-09-21 TODO](PROJECT_HISTORY.md#todo-archive-2026-09-21)
-preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the new rows 24-28 refreshed 2026-10-05.
+preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the new rows 24-28 refreshed 2026-10-05; section 1 and rows 24/29 refreshed 2026-10-06.
 
 ## Outstanding, at a glance
 
 | # | item | why it matters | state | next action |
 |---|---|---|---|---|
-| 29 | **Coreferent triggers: only the first mention owns the arguments** | the record loss seeds the gold instance on `cols[0]`; other mentions are protected from being false triggers but own nothing, and at decode one event can emit twice with split arguments | **3a BUILT (opt-in, traced: 59/101 mentions were unowned); 3b-i decode merge traced NEGATIVE (role-fit scores fuse unrelated events); 3b-ii learned link SPECCED (`COREFERENT_LINK_SPEC.md`): argument rows separate coreferent pairs at AUC 0.468 (below chance), instance states at 0.709 untrained.** Was dormant (0.8% of 151,758 training events have >1 trigger, all mendeley_ed keyword sets) -- live once the English v2 annotations list coreferent triggers | build 3a (every mention owns, opt-in) WITH 3b(i) (argument-overlap merge at decode) and a cluster-aware event metric, before or with the v2 purchase |
-| 24 | **eb19 base run** | first base with the junction, hard role negatives and identity proposal gold; the base everything warm-starts from next | **RUNNING** since 2026-10-05 10:55 UTC, ~40 h (section 1) | read it per corpus, then decide on the next argument lever |
+| 29 | **Coreferent triggers: only the first mention owns the arguments** | the record loss seeded the gold instance on `cols[0]`; other mentions owned nothing, and at decode one event can emit once per mention | **3a BUILT (opt-in; traced: 59/101 mentions were unowned); 3b-i decode merge NEGATIVE (0/6 right); 3b-ii coreference link BUILT (TriggerLink, pair loss, `link` decode, `event_cluster_*` metric; gates 1/2/6 pass, 3-5 need a trained link); `infer.py --merge-coreferent link --coref-threshold` (ea6e5e5). eb20 trains 3a + the link with the merge OFF -- RUNNING at the office; in-run pair AUC 0.873 cumulative at 5,000 groups vs 0.811 at init.** Live now: sonnet55 lists every coreferent trigger (25-27% of events) | after eb20: gate 3 (val pair AUC, hard negatives only, >= 0.85 vs prior 0.709); pick `record_coref_link_threshold` on sonnet55 VAL against gates 4-5 (merge precision >= 0.8, distinct-event fusion < 5%); then the blind test once, arguments on `event_cluster_argument_*` |
+| 24 | **eb19 base run** | first base with the junction, hard role negatives and identity proposal gold; the base everything warm-starts from next | **RUNNING, STOPPED BY HAND after epoch 7 of 9 (user, 2026-10-06)**; selection metric 0.0769 / 0.1186 / - / 0.1655 / **0.1893** at epochs 2-6 (eb18 best 0.1069); per-epoch DET: CASIE val ownership AUC 0.746 at epoch 6 with a 0.098 train gap (section 1) | post-training on the box: val sweep, blind test once, card; backfill `selected_checkpoint` (noting the hand stop); read per corpus with the English column, then decide on the next argument lever |
 | 25 | **Library ignores the checkpoint's `inference_defaults` and `label_map`** | `model.extract*()` runs threshold 0.5 / chunk 384 / overlap 64 / no global decode and raw labels, not what the eval measured (0.3 / 4096 / 0 / global, mapped). Only the viewer and now `infer.py` (c8bb693) apply them | **SPEC 2026-10-05** (`CHECKPOINT_DEFAULTS_SPEC.md`), not built. Every stored map is closed, so applying it twice is a no-op | build per the spec's six gates; upstream checkpoints must stay bit-identical |
 | 26 | **Offset-anchored mentions** | gold triggers and arguments are STRINGS, so every occurrence of a surface is marked gold; pollutes the junction's gold links and the anchor gate | open (`JUNCTION_LAYER_SPEC.md` section 8) | carry character offsets from the converters through to the record targets |
 | 27 | **Coreference: ACE's converter discards it** | `convert_ace2005.py` emits one event per `event_mention` (a one-trigger list), so one attack mentioned 3 times becomes 3 events; entity mentions go into per-TYPE lists with the entity ID (E1) dropped. The format already holds event clusters (`triggers` is a list); entity clusters need a new field | open; ACE lives in the owner's office environment. The $100 annotation offer is NOT needed for the junction | (1) merge an ACE event's mentions into one record; (2) add an entity-cluster field; (3) decide `--no-subtypes` vs subtypes by reading what the labels tag (subtyped `PER.Individual` does not hit the `PER -> Person` synonym) |
@@ -43,14 +43,25 @@ preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the
 
 ## 1. In flight
 
-**eb19 base run -- RUNNING since 2026-10-05 10:55 UTC** (Lambda A100 SXM4 us-west-2, instance
-947794f7, commit 81be5a0, 132,831 steps = 9 epochs, ~40 h, ~$80; hard deadline ~16:50 UTC 10-07).
-eb18 + `record_role_hard_negatives: 8` + `proposal_gold: identity` + the junction (column weight
-0.3). The from-scratch smoke was CLEAN (catalog 2026-10-05). Early readings: junction AUC by window
-0.575 -> 0.639 -> 0.691 -> 0.737 (still in warmup); anchor gate 99.8% trained at 10k records,
-matching eb18. When it lands: difference the anchor-gate lines into windows (eb18 missed 0.5-1.2%
-of triggers once injection annealed), read per-corpus argument F1 with the English column, check
-`inference_defaults.threshold` against the sweep and backfill if it moved, replace the catalog row.
+**eb19 base run -- RUNNING since 2026-10-05 10:55 UTC, STOPPED BY HAND after epoch 7 of 9** (user,
+2026-10-06; Lambda A100 SXM4 us-west-2, instance 947794f7, commit 81be5a0). eb18 + `record_role_hard_negatives: 8`
++ `proposal_gold: identity` + the junction (column weight 0.3). A detached waiter SIGKILLs only `train.py` once
+`checkpoint-epoch-7` is saved (~18:00 UTC 10-06). The runner then pushes `best/` (best of epochs 1-7) and every
+epoch, and HOLDS, because `test_metrics.json` is never written. Then, on the box:
+- train.py's own post-training path, with `train()` skipped: the val sweep, the blind test once, `test_metrics.json`, the card;
+- re-push `best/`, publish the metrics and logs, and verify both against the Hub file list;
+- backfill `selected_checkpoint`, noting the hand stop;
+- kill the runner's hold so the box terminates itself, and confirm.
+
+There is no `-final` repo (the trainer writes `final/` only at the end of its schedule). When it lands:
+- difference the anchor-gate lines into windows;
+- read per-corpus argument F1 with the English column;
+- check `inference_defaults.threshold` against the sweep. eb18 settled at 0.3 on measurement, so report rather than auto-change.
+
+**eb20 base run -- RUNNING at the user's office** (`eb20.yaml`, 227bcad): eb19 + coreferent ownership
++ the coreference link (weight 0.3, unmeasured), merge OFF, + cc_news_events_sonnet55_v2 train, labels
+`unified-full-v2.yaml`. The treatment is live in-run (pair AUC 0.873 cumulative at 5,000 groups vs 0.811 at init). After it:
+TODO #29's gates 3-5 on sonnet55 val with `infer.py --merge-coreferent link`.
 
 ## 2. Ready to launch
 

@@ -1,6 +1,6 @@
 # English event annotation with Sonnet 5.5: spec and price
 
-**Status:** SPEC 2026-10-06, not bought. Budget remaining for annotation: ~$98.
+**Status:** BOUGHT 2026-10-06, $89.21 against $89.45 approved (section 8): `whr778/cc_news_events_sonnet55_v2`, private, restore proven; train 4,597 single-run, val/test 500/500 voted 2-of-3. Wired into eb20 as TRAIN ONLY, after TODO #29's ownership and link were built. Sections 1-7 are the spec as written before purchase.
 
 ## 1. Why
 

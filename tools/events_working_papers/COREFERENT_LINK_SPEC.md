@@ -1,6 +1,6 @@
 # Learned trigger x trigger link: one event per coreferent cluster at decode
 
-**Status:** SPEC 2026-10-06, not built. This is `COREFERENT_OWNERSHIP_SPEC.md` 3b-ii. It replaces
+**Status:** BUILT 2026-10-06 (section 9), opt-in; eb20 trains it at the user's office (section 10). Gates 3-5 wait for the trained link. This is `COREFERENT_OWNERSHIP_SPEC.md` 3b-ii. It replaces
 3b-i, the merge on shared high-scoring arguments, which traced NEGATIVE.
 
 ## 1. Why (measured)
@@ -186,3 +186,24 @@ through eval overrides, merged nothing at every threshold with no error. Decode 
 **Finding for the existing metric.** Against coreferent gold, today's `event_argument` scores a
 fully correct event found through a non-first mention as ALL misses. Once cc_news_events_sonnet55_v2
 enters training and eval, read arguments on `event_cluster_argument_*`, not `event_argument_*`.
+
+## 10. eb20 and inference, 2026-10-06
+
+**eb20 trains 3a + the link, merge OFF** (`tools/train/config/base/eb20.yaml`, link weight 0.3, unmeasured),
+on the user's office GPU instead of the Lambda fast A/B of section 7.6. That A/B is not run.
+
+**Gate 2 in a full run.** `coref link: ... pair AUC` read **0.873** cumulative over ~50,000 ranked pairs
+at 5,000 natural groups. At init it was 0.811 on the same mix, so the link is learning. This is NOT gate 3:
+- it is training batches, cumulative from step 0, so it understates the current link;
+- it includes the easier false-trigger negatives, so it overstates the hard-negative score.
+
+Gate 3 is read on val, hard negatives only, against the 0.709 prior.
+
+**Inference.** `tools/infer.py --merge-coreferent link --coref-threshold T` (ea6e5e5) applies the merge
+through `apply_boundary_overrides`, the eval path. Traced on the init link:
+- 28 events / 0 multi-trigger become 14 / 8;
+- the merge survives global decode (45 events either way);
+- the merge runs INSIDE each window, so mentions in different windows of a long document are not joined;
+- `link` on a checkpoint without the module refuses.
+
+Pick T on `cc_news_events_sonnet55_v2` val against gates 4-5, then score the blind test once (`tools/train/INFER.md`).

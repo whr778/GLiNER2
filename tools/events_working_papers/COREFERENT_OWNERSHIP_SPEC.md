@@ -1,6 +1,6 @@
 # Coreferent triggers: every mention of an event owns its arguments
 
-**Status:** 3a BUILT + traced 2026-10-06 (opt-in `record_coreferent_ownership`); 3b-i BUILT, traced NEGATIVE, left off; 3b-ii is next. See section 7. Priority: before the English v2 annotations, or with them
+**Status:** 3a BUILT + traced 2026-10-06 (opt-in `record_coreferent_ownership`); 3b-i BUILT, traced NEGATIVE, left off; 3b-ii BUILT (`COREFERENT_LINK_SPEC.md`). eb20 trains 3a + 3b-ii, merge off until its threshold is picked. See section 7. Priority: before the English v2 annotations, or with them
 (`ENGLISH_ANNOTATION_SPEC.md`). Those annotations list every coreferent trigger per event.
 
 ## 1. What happens today (traced, not read)
