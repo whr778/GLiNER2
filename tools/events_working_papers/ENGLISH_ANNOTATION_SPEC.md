@@ -119,3 +119,75 @@ reporting verb only when a Recipient or Topic is named.
    - repeated mentions;
    - argument extent;
    - partial type fit.
+
+## 8. Purchase plan (2026-10-06, for approval -- NOT submitted)
+
+**Gate outcome.** The pilot measured voted stability at events F1 0.857 (mean of 10 splits) and
+0.836 on the pre-registered split, against a bar of 0.85. The user accepted it, because no
+instruction lever moved agreement:
+- type merges: confusions are only 1.7%;
+- exhaustiveness;
+- GUIDELINES;
+- named-argument rules.
+
+The residual is ambiguity about peripheral events, which 2-of-3 voting filters.
+
+**Recipe:**
+- `ccnews_english_v2.yaml`, Sonnet 5.5, Batch API, recipe D (all five tasks);
+- the GUIDELINES `events` block, including the 2026-10-06 named/nominal-participant rule;
+- event definitions and coreferent triggers.
+
+**Price** is measured, not estimated: **$11.77 per 1,000 docs per run**. Spent so far ~$5.32;
+remaining ~$94.70.
+
+| set | docs | runs | cost | becomes |
+|---|---|---|---|---|
+| **Eval** (held out) | 1,000 | 3, voted 2-of-3 | $35.31 | val 500 / test 500 (test BLIND); the most stable gold, ~2,700 events |
+| **Train** | 4,600 | 1 | $54.14 | train; ~12,600 events, ~26,000 arguments at the pilot's rates |
+| Reserve | | | ~$5.25 | resubmits of errored/expired requests; never spent silently |
+| **Total** | 5,600 | | **$89.45** | |
+
+**Why this split, not all voted:**
+- 2,500 docs x 3 = $88.30 would give voted train gold of only ~2,000 docs.
+- English is volume-limited: the data-scaling curve had no plateau at 100k.
+- Single-run train gold is the same quality as every LLM corpus we train on (self-agreement ~0.79,
+  above the old recipe's ~0.71).
+- The VOTED set goes where a wrong label costs the most: the score we read.
+
+**Steps:**
+1. **Select the documents.** 5,600 seeded draws from the 51,646 unused pool docs (pool minus the
+   8,300 earlier and the 50 pilot docs). Then:
+   - run `check_leakage.py` against every corpus in `data/`;
+   - check zero overlap with the cc_news, cc_news_events and pilot sets;
+   - record the seed.
+2. **Submit 4 batches:** eval runs 1-3 (1,000 each) and train (4,600), with batch ids written to
+   disk before polling. Recover with `fetch_batch`; never resubmit.
+3. **Check usage against the plan.** Read the real usage from the results. Stop and report if any
+   batch costs more than 10% over $11.77 per 1k.
+4. **Vote the eval set** with `vote_annotations.py` (events, arguments, entities, relations,
+   classifications, structures).
+5. **Split:**
+   - eval -> val/test 50/50, seeded;
+   - train stays train;
+   - uniqueness verified across all three, and test blind.
+6. **Unify labels** through `unified-full.yaml`. Check:
+   - zero variant clusters;
+   - zero lost uses;
+   - the map is closed.
+7. **Publish:**
+   - private Hub repo (verified against the Hub file list);
+   - registry entry (`provenance: llm_real`);
+   - restore dry-run;
+   - catalog row with the eval's 3-run agreement report and label marginals.
+
+**Before TRAINING on it (not before buying):**
+- **TODO #29 (`COREFERENT_OWNERSHIP_SPEC.md`).** 25% of the pilot's events carry >1 coreferent
+  trigger, and today only the first mention owns the arguments.
+- **Label map.** For the next base, map `Government.Protest` -> `Conflict.Demonstrate` (merged
+  2026-10-06; the existing Haiku gold uses both, 102 vs 111). eb19 and its warm starts keep eb19's
+  own label file.
+
+**Optional saving, not counted:** prompt caching. The static prefix is ~5k of the 7.5k input
+tokens, but caching needs the per-doc sampled menus moved after a cache breakpoint, and hit rates
+inside a batch are best-effort. It is worth a separate small test only if a second purchase
+follows.
