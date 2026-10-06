@@ -87,7 +87,7 @@ import sys
 import os
 from pathlib import Path
 from pprint import pprint
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 
 import yaml
 
@@ -685,6 +685,42 @@ def read_transformed(paths: List[str], fns: Dict, passthrough: Set[str]) -> List
         batch = _read_records([p])
         records += batch if _corpus_of(p) in passthrough else [transform_record(r, fns) for r in batch]
     return records
+
+
+def coref_calibration_data(cfg: Dict, config_path: str) -> Tuple[List[str], List[Dict]]:
+    """(files, records) for the coreference threshold sweep: the VAL split of each corpus in
+    ``eval.coref_calibration``, labels transformed exactly as training transforms them. The
+    corpora may be train_only -- coreferent gold is what matters, not the in-run eval set."""
+    corpora = (cfg.get("eval") or {}).get("coref_calibration") or []
+    files = [f"{c}.val.jsonl" for c in corpora]
+    fns = _category_fns(load_labels_cfg(cfg, config_path))
+    records = read_transformed(files, fns, labels_passthrough(cfg)) if fns else _read_records(files)
+    return files, records
+
+
+def check_coref_calibration(cfg: Dict) -> None:
+    """Refuse at STARTUP a coref calibration that could only fail after training."""
+    corpora = (cfg.get("eval") or {}).get("coref_calibration") or []
+    if not corpora:
+        return
+    if not ((cfg.get("model") or {}).get("boundary_head") or {}).get("record_coref_link"):
+        raise SystemExit("[coref sweep] eval.coref_calibration needs model.boundary_head.record_coref_link: "
+                         "true -- there is no link to calibrate, and it would fail AFTER training.")
+    for c in corpora:
+        if _fetch_if_missing(f"{c}.val.jsonl") is ABSENT_SPLIT:
+            raise SystemExit(f"[coref sweep] {c} has no val split to calibrate on.")
+    print(f"[coref sweep] after training: merge threshold calibrated on {corpora} val")
+
+
+def calibrate_coref(best: Path, cfg: Dict, config_path: str, batch_size: int, decode: Dict) -> None:
+    """Sweep the coreference merge threshold on the calibration val set and write the gated choice
+    into ``best/config.json`` (``gliner2.training.coref_calibration``)."""
+    from gliner2 import AutoExtractor
+    from gliner2.training import coref_calibration as CC
+    files, records = coref_calibration_data(cfg, config_path)
+    print(f"\n[coref sweep] {best} over {len(records)} records from {files}, grid {CC.COREF_THRESHOLD_GRID}")
+    rows = CC.sweep(AutoExtractor.from_pretrained(str(best)), records, decode, batch_size=batch_size)
+    CC.write(best, rows, *CC.choose(rows), source=files)
 
 
 def _read_records(paths: List[str]) -> List[Dict]:
@@ -1606,6 +1642,7 @@ def main(config_path: str) -> None:
                 f"A typo here would silently protect nothing."
             )
         print(f"[data] train_only (excluded from val and test): {sorted(train_only)}")
+    check_coref_calibration(cfg)
     train_data = _dedupe_paths(
         _split_files(corpora, "train", train_only) + _event_split(event_files, "train"), "train")
     eval_data = _dedupe_paths(
@@ -1772,6 +1809,9 @@ def main(config_path: str) -> None:
         chunk_size=chunk_size, chunk_overlap=chunk_overlap,
         global_decode=global_decode, global_decode_config=global_decode_config,
     )
+    # BEFORE the blind test, so the test scores the merge setting that ships in config.json.
+    if (cfg.get("eval") or {}).get("coref_calibration"):
+        calibrate_coref(best, cfg, config_path, eval_bs, dict(threshold=eval_thr, **gd_kwargs))
     test_metrics = _run_blind_test(best, test_data, eval_bs, eval_thr, eval_by_language, gd_kwargs)
 
     if test_metrics:

@@ -111,11 +111,14 @@ Checkpoints from before 63eb320 store no defaults and no label map, so they use 
 
 One event is often mentioned several times ("Rebels **attacked** the base ... The **assault**
 killed four"). A checkpoint trained with `record_coref_link` (eb20) carries a learned trigger x
-trigger link that can merge those mentions into one event. It is OFF unless you ask for it, because
-eb20 trained with `record_merge_coreferent: off` and its threshold has not been picked yet.
+trigger link that can merge those mentions into one event. Training picks the merge threshold on
+validation at the end (`eval.coref_calibration`, or `tools/train/calibrate_coref_threshold.py --write`
+for a checkpoint already trained) and writes it into `best/config.json` ONLY if the merges pass the
+gates; the table is in `best/coref_threshold_sweep.json`. `infer.py` with no flag uses that stored
+setting: `link` + the picked threshold, or `off` if nothing passed. The flags below override it.
 
 ```bash
-# pick the threshold on VAL: run a few, score each, keep the best
+# by hand, overriding the stored default -- pick on VAL, never on test
 uv run tools/infer.py --model out/eb20/best \
     --input data/cc_news_events_sonnet55_v2.val.jsonl --gold-schema \
     --labels-file tools/train/config/labels/unified-full-v2.yaml \

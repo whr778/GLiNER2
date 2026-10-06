@@ -10,8 +10,12 @@
 #                                       and is NOT measured for this loss. Built from scratch here.
 #   record_merge_coreferent: (unset)    decode merge stays OFF in training/validation: its threshold is
 #                                       unpicked, and turning it on would change per-epoch selection.
-#                                       Pick it AFTER training on cc_news_events_sonnet55_v2 VAL (voted
-#                                       clusters), then backfill -- gates 3-5 of COREFERENT_LINK_SPEC.
+#                                       Picked AFTER training on cc_news_events_sonnet55_v2 VAL (voted
+#                                       clusters) -- gates 3-5 of COREFERENT_LINK_SPEC -- by
+#   eval.coref_calibration              train.py's coref sweep (gliner2/training/coref_calibration.py):
+#                                       grid 0.5-0.95 incl. 0.85, before the blind test; writes link +
+#                                       threshold into best/config.json only if >= 20 merges, precision
+#                                       >= 0.8, fusion < 5% and event_cluster F1 >= off. Else stays off.
 #   data/cc_news_events_sonnet55_v2     4,597 English docs, 13,855 events, 3,760 with coreferent triggers
 #                                       (the link's only cluster supervision). TRAIN ONLY, so the
 #                                       aggregated blind test stays eb19's: score its voted val/test
@@ -520,6 +524,7 @@ eval:
   threshold_sweep: true
   eval_by_language: true    # eb18: lumi 3.0.1 reads Chinese correctly
   global_decode: true       # eb18: document-level event assembly
+  coref_calibration: [data/cc_news_events_sonnet55_v2]   # eb20: pick the merge threshold on its voted val
 
 # Unified label space, shared with every model warm-started from this base so they
 # all present the same labels. Generated -- see the file header to regenerate.

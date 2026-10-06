@@ -207,3 +207,44 @@ through `apply_boundary_overrides`, the eval path. Traced on the init link:
 - `link` on a checkpoint without the module refuses.
 
 Pick T on `cc_news_events_sonnet55_v2` val against gates 4-5, then score the blind test once (`tools/train/INFER.md`).
+
+## 11. Calibration at the end of training, 2026-10-06
+
+The threshold is picked on VAL once, after training, by `gliner2/training/coref_calibration.py`, through
+either entry point:
+- `train.py`, when `eval.coref_calibration` names corpora (eb20: `data/cc_news_events_sonnet55_v2`). It runs
+  after the decision-threshold sweep and BEFORE the blind test, so the test scores the setting that ships;
+- `tools/train/calibrate_coref_threshold.py --write`, for a checkpoint already trained.
+
+**Grid:** 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, beside an `off` row.
+
+**Eligible only if all four hold:**
+- at least 20 merges;
+- merge precision >= 0.8;
+- fusion < 5%;
+- `event_cluster` F1 >= off.
+
+The best eligible threshold by `event_cluster` F1 is written into `best/config.json` (`record_merge_coreferent:
+link` and `record_coref_link_threshold`). If none is eligible, the merge stays `off`. The whole table always
+goes to `best/coref_threshold_sweep.json`. `infer.py` uses the stored setting unless its flags override it.
+
+**Two defects found by the trace before anything was written** (p5link with the link at init, 40 sonnet55 val docs):
+1. **The gate passed on ONE merge.** At 0.7, "merge precision 1.000" rested on a single merged event. That is
+   the gate-that-admits-nothing failure, so a minimum of 20 merges is required.
+2. **Merges of a repeated word were invisible.** Triggers are casefolded into a set, so `["meeting", "meeting"]`
+   counts as one mention. At 0.7, 91 -> 79 events showed only 1 merge, and 5 once counted from the raw
+   trigger list.
+
+**Deviation from section 6, gate 5.** The spec's pair-based fusion (gold hard-negative pairs merged) had ONE
+pair on 40 docs, so a single merge swung it between 0 and 1. The gate instead uses fusion = the share of
+merges joining different gold events, which rests on the same >= 20 merges. The pair figure is reported as
+`pair_fusion`, with its support.
+
+**At init the calibration refuses, correctly:**
+- 0.5: 24 merges, 8 right (33%);
+- 0.6: 20 merges, 40% right;
+- 0.7: 5 merges, 4 right, but below 20 merges;
+- 0.8 and above: nothing merges.
+
+So the merge stays `off`. A written `link 0.7` was shown to reload and to become `infer.py`'s no-flag default.
+
