@@ -34,7 +34,7 @@ Before purchase:
 
 | component | state |
 |---|---|
-| Tasks | `entities, events`: the full 56-type event menu and the whole entity pool (`ccnews_full_events.yaml`) |
+| Tasks | **DECIDED: recipe D, all five tasks**: entities (whole pool), the full 56-type event menu, relations, classifications, structures |
 | Event definitions | `schema_spec.EVENT_DEFINITIONS` (56 types, one line each plus a "Not: ..." boundary). **DRAFT, awaiting review.** |
 | Events section in GUIDELINES.md | what counts as an event, one record per occurrence, trigger extent, argument extent. **Blocked on 4 user decisions.** |
 | GUIDELINES blocks | `json_only, verbatim, no_inference, minority, ambiguity`. Measured null on agreement but harmless; kept for conduct. |
@@ -77,7 +77,7 @@ Run C six times on the same 50 cc_news docs (not from the existing set). Measure
    against runs 4-6. That number is the reproducibility of the gold the eval would score against.
 3. **Price:** real output tokens and the cache hit rate.
 
-Stop rule:
+Stop rule. **The bar is FIXED at 0.85 events F1 (user, 2026-10-06), before any pilot result:**
 
 | result | decision |
 |---|---|
@@ -96,16 +96,26 @@ The same discipline as `cc_news_events_haiku45`:
 - private Hub repo, registry entry (`provenance: llm_real`), restorable;
 - `compare_annotators.py` agreement report, plus label marginals, in the catalog row.
 
-## 7. Open decisions (user)
+## 7. Decisions
 
-1. The definitions' flagged boundaries:
-   - Demonstrate/Protest merge;
-   - announced or planned events count, or not;
-   - reporting verbs under Contact.Communicate.
-2. The events-section questions:
+**Decided (user, 2026-10-06):**
+- Recipe D, all five tasks.
+- Stability bar 0.85 events F1.
+- Reporting verbs ('said', 'told', 'talked', 'chatted') ARE Contact.Communicate events.
+
+Measured consequence of the reporting-verb decision, for the pilot to watch:
+- the unused pool averages 4.0 reporting verbs per doc (79% of docs have one);
+- Haiku's existing gold had Communicate at 8.2% of events, ~1.7 events per doc;
+- Communicate could therefore become ~70% of events, at about +$1 per 1k output.
+
+The pilot reports Communicate's share. A middle option, if it swamps the other types: count a
+reporting verb only when a Recipient or Topic is named.
+
+**Open:**
+1. Demonstrate/Protest merge.
+2. Whether announced or planned events count.
+3. The events-section questions:
    - event status;
    - repeated mentions;
    - argument extent;
    - partial type fit.
-3. The stability bar for the stop rule (proposed: two independent votes agree at >= 0.85 events F1).
-4. Tasks: entities+events only (recipe C), or all five (recipe D).
