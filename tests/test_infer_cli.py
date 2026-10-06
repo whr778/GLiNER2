@@ -190,3 +190,55 @@ class TestLabelsFile:
         block = {"entities": {"map": {"a": "A", "b": "B"}}}
         assert infer._map_mismatch(block, {"entities": {"map": {"a": "A", "b": "X"}}}) == {"entities": 1}
         assert infer._map_mismatch(block, {"entities": {"map": {"a": "A", "b": "B"}}}) == {}
+
+
+class _BoundaryStub(_StubModel):
+    """A boundary-shaped stub: records the coreference settings IN FORCE when decode runs."""
+    def __init__(self, coref_link=True):
+        super().__init__()
+        from gliner2.configuration import BoundaryHeadSettings
+        self.config.boundary_head = {"record_coref_link": coref_link}
+        self.boundary_settings = BoundaryHeadSettings(record_coref_link=coref_link)
+        self.seen = None
+
+    def modules(self):
+        return []
+
+    def batch_extract_long(self, texts, schemas, **kw):
+        s = self.boundary_settings
+        self.seen = (s.record_merge_coreferent, s.record_coref_link_threshold)
+        return super().batch_extract_long(texts, schemas, **kw)
+
+
+class TestCoreferentMerge:
+    def _run(self, tmp_path, monkeypatch, stub, *argv):
+        src = tmp_path / "in.jsonl"
+        src.write_text(json.dumps({"input": "a", "output": {}}) + "\n", encoding="utf-8")
+        import gliner2
+        monkeypatch.setattr(gliner2.AutoExtractor, "from_pretrained", staticmethod(lambda *a, **k: stub))
+        infer.main(["--model", "m", "--input", str(src), "--entities", "Person",
+                    "--output", str(tmp_path / "p.jsonl"), *argv])
+        return stub
+
+    def test_flags_are_the_settings_decode_runs_with(self, tmp_path, monkeypatch):
+        stub = self._run(tmp_path, monkeypatch, _BoundaryStub(),
+                         "--merge-coreferent", "link", "--coref-threshold", "0.7")
+        assert stub.seen == ("link", 0.7)
+        assert stub.config.boundary_head["record_merge_coreferent"] == "link"
+
+    def test_no_flags_keep_the_checkpoint_settings(self, tmp_path, monkeypatch):
+        stub = self._run(tmp_path, monkeypatch, _BoundaryStub())
+        assert stub.seen == ("off", 0.5)
+
+    def test_link_on_a_checkpoint_without_the_link_refuses(self, tmp_path, monkeypatch):
+        with pytest.raises(ValueError, match="record_coref_link"):
+            self._run(tmp_path, monkeypatch, _BoundaryStub(coref_link=False), "--merge-coreferent", "link")
+
+    def test_overrides_only_name_what_was_passed(self):
+        args = infer._parse_args(["--model", "m", "--input", "x", "--coref-threshold", "0.6"])
+        assert infer._coref_overrides(args) == {"record_coref_link_threshold": 0.6}
+        assert infer._coref_overrides(infer._parse_args(["--model", "m", "--input", "x"])) == {}
+
+    def test_unknown_mode_is_refused(self):
+        with pytest.raises(SystemExit):
+            infer._parse_args(["--model", "m", "--input", "x", "--merge-coreferent", "union"])

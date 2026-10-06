@@ -298,7 +298,8 @@ total, or another event's?), `scope_gate_test.py`, `gate_threshold_sweep.py`,
 `infer.py` — command-line inference, with optional document-level global decoding. Loads
 boundary checkpoints (`AutoExtractor`; `GLiNER2` is the span class), takes the checkpoint's own
 schema (`--model-schema --tasks ...`), and applies its `inference_defaults` and `label_map`
-like the viewer. Examples and cautions in [`train/INFER.md`](train/INFER.md).
+like the viewer. `--merge-coreferent link --coref-threshold` merges coreferent trigger mentions
+on checkpoints trained with the link (eb20+). Examples and cautions in [`train/INFER.md`](train/INFER.md).
 `import_surface.py` / `compare_surface.py` — snapshot and diff a package's public import
 surface, for verifying a refactor removed only what it meant to.
 

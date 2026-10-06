@@ -157,8 +157,25 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p.add_argument("--include-confidence", action="store_true")
     p.add_argument("--threshold", type=float, default=None,
                    help="Span threshold. Default: the checkpoint's inference_defaults, else 0.5.")
+    p.add_argument("--merge-coreferent", choices=["off", "args", "link"], default=None,
+                   help="Merge same-type events whose triggers are coreferent mentions of one event. "
+                        "`link` needs a checkpoint trained with record_coref_link (eb20+) and raises "
+                        "otherwise. Default: the checkpoint's record_merge_coreferent.")
+    p.add_argument("--coref-threshold", type=float, default=None,
+                   help="With --merge-coreferent link: merge when sigmoid(link score) >= this. Pick it "
+                        "on VAL. Default: the checkpoint's record_coref_link_threshold.")
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args(argv)
+
+
+def _coref_overrides(args: argparse.Namespace) -> Dict[str, Any]:
+    """The boundary_head overrides the coreference flags ask for; empty keeps the checkpoint's."""
+    out = {}
+    if args.merge_coreferent is not None:
+        out["record_merge_coreferent"] = args.merge_coreferent
+    if args.coref_threshold is not None:
+        out["record_coref_link_threshold"] = args.coref_threshold
+    return out
 
 
 
@@ -193,10 +210,17 @@ def main(argv: List[str] = None) -> None:
     from gliner2 import AutoExtractor
     from gliner2.inference.global_decode import GlobalDecodeConfig
     from gliner2.inference.label_map import apply_label_map
+    from gliner2.training.eval_metrics import apply_boundary_overrides
 
     records = _read_records(args.input)
     model = AutoExtractor.from_pretrained(args.model)
-    label_map = None if args.no_label_map else getattr(model.config, "label_map", None)
+    # Decode reads the merge from boundary_settings, so it is applied the way eval applies overrides.
+    apply_boundary_overrides(model, _coref_overrides(args))
+    s = getattr(model, "boundary_settings", None)
+    if s is not None:
+        print(f"[infer] coreferent merge {s.record_merge_coreferent} (link threshold "
+              f"{s.record_coref_link_threshold}, link {'trained' if s.record_coref_link else 'absent'})")
+    label_map =None if args.no_label_map else getattr(model.config, "label_map", None)
     rewrites: Dict[str, Dict[str, str]] = {}
 
     def mapped(schema):

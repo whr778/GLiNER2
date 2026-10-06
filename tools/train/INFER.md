@@ -98,6 +98,7 @@ ONCE: pick settings on the validation split first.
 | `--gold-schema` | each `.jsonl` record gets the schema of its own gold labels, as eval scores it |
 | `--labels-file <unified YAML>` | add `gold_mapped`, and with `--gold-schema` build each schema from the mapped gold (eval's path). Warns if the file's map differs from the checkpoint's `label_map` -- usually the wrong file for that model |
 | `--output preds.jsonl` | write `{input, output, gold}` per record as JSONL instead of printing |
+| `--merge-coreferent off\|link`, `--coref-threshold` | merge mentions of one event (see below); default: the checkpoint's setting |
 
 Each decode setting resolves in this order:
 1. the flag;
@@ -105,6 +106,41 @@ Each decode setting resolves in this order:
 3. 0.5, the model's own window, overlap 0, global off.
 
 Checkpoints from before 63eb320 store no defaults and no label map, so they use step 3 and labels as typed.
+
+## Coreferent triggers (eb20 and later)
+
+One event is often mentioned several times ("Rebels **attacked** the base ... The **assault**
+killed four"). A checkpoint trained with `record_coref_link` (eb20) carries a learned trigger x
+trigger link that can merge those mentions into one event. It is OFF unless you ask for it, because
+eb20 trained with `record_merge_coreferent: off` and its threshold has not been picked yet.
+
+```bash
+# pick the threshold on VAL: run a few, score each, keep the best
+uv run tools/infer.py --model out/eb20/best \
+    --input data/cc_news_events_sonnet55_v2.val.jsonl --gold-schema \
+    --labels-file tools/train/config/labels/unified-full-v2.yaml \
+    --merge-coreferent link --coref-threshold 0.7 --output sonnet55_val.t07.jsonl
+
+# then score the blind test ONCE at the picked threshold (same flags, .test.jsonl)
+```
+
+- **Off (default):** one event per mention. "attacked" and "assault" come out as two events.
+- **`link`:** same-type events whose link score clears `--coref-threshold` become one event, and
+  every mention is listed in its `triggers`. The log prints `[infer] coreferent merge link
+  (link threshold 0.7, link trained)` -- check it.
+- **`link` on a checkpoint without the link raises** (`record_merge_coreferent: link needs
+  record_coref_link: true`), rather than silently merging nothing.
+- **The merge runs inside each window.** Mentions in different windows of a long document are not
+  joined by the link. Global decode keeps merged events (traced 2026-10-06: 45 events either way,
+  14 vs 13 multi-trigger).
+- **An untrained link over-merges.** At init, threshold 0.5 halved the events (28 -> 14) and fused
+  "met" with "told". Do not use `link` until the threshold is picked on val against the gates in
+  `tools/events_working_papers/COREFERENT_LINK_SPEC.md` section 6: merge precision >= 0.8, and under 5% of
+  distinct events fused.
+- **Score arguments with `event_cluster_argument_*`**, not `event_argument_*`. The old key is the
+  whole trigger set, so a correct event found through a non-first mention scores as a miss.
+  `args` mode (merge on shared arguments) is kept for the record only: it traced NEGATIVE, 0 of 6
+  merges right.
 
 ## Cautions (measured)
 
