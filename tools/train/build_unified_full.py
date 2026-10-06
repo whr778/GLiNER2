@@ -120,5 +120,39 @@ def main():
     print(f"wrote {OUT}")
 
 
+# PINNED MERGES for the NEXT base, applied on top of a committed map -- never by regenerating it, which
+# would also pull in every corpus added since and move far more than the merge. The base's own map
+# file stays byte-identical, so models warm-started from it keep its vocabulary (labels rule).
+# Government.Protest -> Conflict.Demonstrate: one concept under two names, used near-equally for it in
+# the Haiku gold (102 vs 111) and merged in the annotation ontology on 2026-10-06 (user).
+MERGES = {"events": {"Government.Protest": "Conflict.Demonstrate"}}
+V2_FROM = Path("tools/train/config/labels/unified-full.yaml")
+V2_OUT = Path("tools/train/config/labels/unified-full-v2.yaml")
+
+
+def derive_v2(src: Path = V2_FROM, out: Path = V2_OUT) -> dict:
+    """Write ``out`` = ``src`` + MERGES, keeping the map CLOSED: an existing entry whose target is a
+    merged-away label is re-pointed at the merge's target, and no target may itself be a key."""
+    doc = yaml.safe_load(src.read_text(encoding="utf-8"))
+    for cat, merges in MERGES.items():
+        block = doc["labels"].setdefault(cat, {"rollup": False, "separator": ".", "map": {}})
+        m = block.setdefault("map", {}) or {}
+        for k, v in list(m.items()):
+            if v in merges:
+                m[k] = merges[v]
+        m.update(merges)
+        block["map"] = m
+        stray = sorted({v for v in m.values() if v in m})
+        if stray:
+            raise SystemExit(f"[v2] {cat} map not closed: targets that are keys {stray}")
+    header = (f"# Unified label space v2 -- DERIVED by tools/train/build_unified_full.py --v2 from {src.name}\n"
+              f"# plus the pinned MERGES only: {MERGES}. {src.name} is unchanged; eb19 and its warm\n"
+              "# starts keep it. Use this file for the NEXT base.\n")
+    out.write_text(header + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, default_flow_style=False),
+                   encoding="utf-8")
+    print(f"wrote {out}")
+    return doc
+
+
 if __name__ == "__main__":
-    main()
+    derive_v2() if "--v2" in sys.argv else main()

@@ -1,0 +1,474 @@
+# Unified label space v2 -- DERIVED by tools/train/build_unified_full.py --v2 from unified-full.yaml
+# plus the pinned MERGES only: {'events': {'Government.Protest': 'Conflict.Demonstrate'}}. unified-full.yaml is unchanged; eb19 and its warm
+# starts keep it. Use this file for the NEXT base.
+labels:
+  entities:
+    rollup: false
+    separator: .
+    map:
+      person: Person
+      location: Location
+      LOC: Location
+      PER: Person
+      ORG: Organization
+      TIME: Time
+      organization: Organization
+      date: Date
+      Protein: protein
+      money: Money
+      cardinal: CARDINAL
+      DATE: Date
+      CHEMICAL: chemical
+      company: Company
+      facility: Facility
+      duration: Duration
+      age: Age
+      GENE: Gene
+      time: Time
+      product: Product
+      quantity: Quantity
+      occupation: Occupation
+      educational institution: educational_institution
+      PERSON: Person
+      Gene_or_gene_product: GeneOrGeneProduct
+      nationality: Nationality
+      Company Name: CompanyName
+      event: Event
+      measurement: Measurement
+      region: Region
+      disease: Disease
+      cell_type: CellType
+      law: Law
+      crime: Crime
+      regulatory body: Regulatory Body
+      award: Award
+      military rank: Military_Rank
+      ORGANISATION: Organization
+      military unit: Military_Unit
+      publication: Publication
+      frequency: Frequency
+      medication: Medication
+      ethnic group: Ethnic Group
+      regulation: Regulation
+      software: Software
+      vehicle: Vehicle
+      film: Film
+      organism: Organism
+      symptom: Symptom
+      language: Language
+      operating system: Operating System
+      weapon: Weapon
+      book: Book
+      hardware component: Hardware Component
+      anatomical structure: Anatomical Structure
+      currency: Currency
+      gene: Gene
+      financial instrument: Financial Instrument
+      vessel: Vessel
+      vaccine: Vaccine
+      witness: Witness
+      natural disaster: Natural Disaster
+      database: Database
+      medical procedure: Medical Procedure
+      programming language: programming_language
+      diagnosis: Diagnosis
+      mineral: Mineral
+      aircraft: Aircraft
+      POSITION: Position
+      pathogen: Pathogen
+      ACTIVITY: Activity
+      Chemical: chemical
+      MONEY: Money
+      cell_line: CellLine
+      PERCENTAGE: Percentage
+      Species: species
+      QUANTITY: Quantity
+      ORDINAL: ordinal
+      GROUP: Group
+      FUNCTION: Function
+      PRODUCT: Product
+      Cell: cell
+      PHENOTYPE: Phenotype
+      DISORDER: Disorder
+      LOCATION: Location
+      PROJECT: Project
+      ORGANIZATION: Organization
+      ANATOMICAL STRUCTURE: Anatomical Structure
+      EVENT: Event
+      FACILITY: Facility
+      MEDICAL PROCEDURE: Medical Procedure
+      Cellular_component: Cellular Component
+      Environment: environment
+      ORGANISM: Organism
+      DISEASE: Disease
+      Start Date: StartDate
+      LAW: Law
+      LANGUAGE: Language
+      End Date: EndDate
+      Areas Affected: Areas affected
+      FAC: Facility
+      Start_Date: StartDate
+      GENES: Genes
+      Economic loss: Economic Loss
+      Mutation: mutation
+      Art: ART
+      Amino_acid: amino-acid
+      ORGANIZATIONS: Organizations
+      Intellectual Property: INTELLECTUAL PROPERTY
+      End_Date: EndDate
+      Clinical Trial: clinical trial
+      Temperature: temperature
+      Time Period: Time_Period
+      metric: Metric
+      Military Unit: Military_Unit
+      group: Group
+      process: Process
+      Cell Type: CellType
+      Protein_complex: protein-complex
+      method: Method
+      Programming Language: programming_language
+      task: Task
+      concept: Concept
+      Model: model
+      mathematical object: mathematical_object
+      component: Component
+      Drug: drug
+      Cell Line: CellLine
+      project: Project
+      Agent: agent
+      website: Website
+      Framework: framework
+      spacecraft: Spacecraft
+      Error Type: error_type
+      technique: Technique
+      output: Output
+      statistical measure: Statistical Measure
+      Dataset: dataset
+      mathematical property: mathematical_property
+      Software Component: software_component
+      Physical Quantity: physical_quantity
+      Physical System: physical_system
+      element: Element
+      Instrument: instrument
+      Mathematical Structure: mathematical_structure
+      Mathematical Concept: mathematical_concept
+      mathematical concept: mathematical_concept
+      Mathematical Result: mathematical_result
+      Scientific Concept: scientific_concept
+      Scientific Instrument: scientific_instrument
+      tissue: Tissue
+      Chemical Compound: chemical_compound
+      Celestial Body: celestial_body
+      Brand: brand
+      Organization_Other: Organization_other
+      name: Name
+      city: City
+      state: State
+      bloodPressure: Blood Pressure
+      compensation: Compensation
+      category: Category
+      year: Year
+      industry: Industry
+      intellectualProperty: INTELLECTUAL PROPERTY
+      events: EVENTS
+      startTime: Start Time
+      endTime: End Time
+      platform: Platform
+      position: Position
+      source: Source
+      number: Number
+      contact: CONTACT
+      effectiveDate: Effective Date
+      startDate: StartDate
+      endDate: EndDate
+      manufacturer: Manufacturer
+      country: Country
+      cost: Cost
+      modelNumber: model number
+      education: Education
+      genre: Genre
+      role: Role
+      level: Level
+      service: Service
+      eventType: Event Type
+      version: Version
+      unit: Unit
+      condition: Condition
+      value: Value
+      procedure: Procedure
+      insurance: Insurance
+      postalCode: postal code
+      definition: Definition
+      softwareVersion: Software Version
+      methods: Methods
+      text: Text
+      symptoms: Symptoms
+      sponsor: Sponsor
+      locations: LOCATIONS
+      score: Score
+      start_date: StartDate
+      end_date: EndDate
+      term: Term
+      jobTitle: job title
+      interestRate: interest rate
+      agreementName: Agreement Name
+      percentage: Percentage
+      pressure: Pressure
+      back: Back
+      companyName: CompanyName
+      bandages: Bandages
+      medium: Medium
+      style: Style
+      damage: Damage
+      health: Health
+      section: Section
+      action: Action
+      art_movement: Art Movement
+      media: Media
+      season: Season
+      host: Host
+      building: Building
+      purpose: Purpose
+      team: Team
+      field: Field
+      classification: Classification
+      patch: Patch
+      format: Format
+      material: Material
+      products: PRODUCTS
+      Address: address
+      goal: Goal
+      street_address: streetAddress
+      StreetAddress: streetAddress
+      zip_code: zipCode
+      zipcode: zipCode
+      ZipCode: zipCode
+      phone_number: phoneNumber
+      PhoneNumber: phoneNumber
+      Email: email
+      Height: height
+      order_id: orderId
+      orderID: orderId
+      Description: description
+      customer_id: customerId
+      order_date: orderDate
+      order_status: orderStatus
+      totalAmount: total_amount
+      item_id: itemId
+      ItemID: itemId
+      product_id: productId
+      productID: productId
+      unit_price: unitPrice
+      trackingNumber: tracking_number
+      estimated_delivery_date: estimatedDeliveryDate
+      card_number: cardNumber
+      purchase_date: purchaseDate
+      serial_number: serialNumber
+      Title: title
+      business_name: businessName
+      referral_source: referralSource
+      departure_time: departureTime
+      expiration_date: expirationDate
+      Notes: notes
+      deviceModel: device_model
+      os_name: osName
+      os_version: osVersion
+      app_version: appVersion
+      user_id: userId
+      ip_address: ipAddress
+      Length: length
+      Width: width
+      line_number: lineNumber
+      TestName: testName
+      provider_id: providerId
+      approval_status: approvalStatus
+      additional_info: additionalInfo
+      room_number: roomNumber
+      device_manufacturer: deviceManufacturer
+      plan_id: planId
+      store_id: storeId
+      created_at: createdAt
+      updated_at: updatedAt
+      AdditionalNotes: additionalNotes
+      image_url: imageUrl
+      customer_name: customerName
+      last_updated: lastUpdated
+      total_price: totalPrice
+      num_reviews: numReviews
+      total_cost: totalCost
+      plan_name: planName
+      plan_owner: planOwner
+      employee_id: employeeId
+      employeeID: employeeId
+      reporting_frequency: reportingFrequency
+      overall_rating: overallRating
+      seat_number: seatNumber
+      app_name: appName
+      birth_year: birthYear
+      project_id: projectId
+      device_id: deviceId
+      due_date: dueDate
+      file_name: fileName
+      warranty_expiration_date: warrantyExpirationDate
+      responsible_person: responsiblePerson
+      InspectionDate: inspectionDate
+      estimated-time: estimatedTime
+      documentName: DocumentName
+      DocumentType: documentType
+      documentDate: DocumentDate
+      testResult: TestResult
+      人名: Person
+      法人名: Company
+      地名: Location
+      イベント名: Event
+      製品名: Product
+      施設名: Facility
+      政治的組織名: Political Organization
+      その他の組織名: Organization
+  relations:
+    rollup: false
+    separator: .
+    map:
+      part of: PART-OF
+      member_of: member of
+      produced_by: produced by
+      part_of: PART-OF
+      regulated_by: regulated by
+      designed_by: designed by
+      named_after: named after
+      capital_of: capital of
+      Bind: bind
+      convicted_of: convicted of
+  events:
+    rollup: false
+    separator: .
+    map:
+      location: Location
+      place: Place
+      Defendant: defendant
+      recipient: Recipient
+      participant: Participant
+      communicator: Communicator
+      artifact: Artifact
+      victim: Victim
+      attacker: Attacker
+      Giver: giver
+      Death: death
+      destination: Destination
+      crime: Crime
+      Origin: origin
+      Instrument: instrument
+      money: Money
+      Proposal: proposal
+      vehicle: Vehicle
+      prosecutor: Prosecutor
+      Detainee: detainee
+      law: Law
+      Killer: killer
+      voter: Voter
+      deceased: Deceased
+      demonstrator: Demonstrator
+      Investigator: investigator
+      Jailer: jailer
+      JudgeCourt: judgecourt
+      Transporter: transporter
+      Injurer: injurer
+      Employee: employee
+      ObservedEntity: observedentity
+      Observer: observer
+      Beneficiary: beneficiary
+      result: Result
+      Destroyer: destroyer
+      CrashObject: crashobject
+      Damager: damager
+      Preventer: preventer
+      Contact.ThreatenCoerce.Broadcast: contact.threatencoerce.broadcast
+      PlaceOfEmployment: placeofemployment
+      Contact.ThreatenCoerce.Correspondence: contact.threatencoerce.correspondence
+      DamagerDestroyer: damagerdestroyer
+      ArtifactMoney: artifactmoney
+      Government.Protest: Conflict.Demonstrate
+  classifications:
+    rollup: false
+    separator: .
+    map: {}
+  structures:
+    rollup: false
+    separator: .
+    map:
+      asteroid.name: asteroid_name
+      policyholder: policy_holder
+      asteroid.designation: asteroid_designation
+      discovery.date: discovery_date
+      asteroid.type: asteroid_type
+      person.name: person_name
+      product.name: product_name
+      asteroid.discovery.date: asteroid.discovery_date
+      product.description: product_description
+      discovery.observatory: discovery_observatory
+      event.date: event_date
+      product.type: product_type
+      hotel.name: hotel_name
+      physical_characteristics.observations.0.telescope.type: physical_characteristics.observations.0.telescope_type
+      company.name: company_name
+      icd10code: icd10_code
+      asteroid.number: asteroid_number
+      article.title: article_title
+      event.name: event_name
+      movie.title: movie_title
+      source.name: source_name
+      publicationDate: publication_date
+      articleTitle: article_title
+      asteroid.discovery.year: asteroid.discovery_year
+      scientificName: scientific_name
+      areasforimprovement: areas_for_improvement
+      album.title: album_title
+      firm.name: firm_name
+      place.name: place_name
+      region.name: regionName
+      product.model: product_model
+      study.title: studyTitle
+      treatment.type: treatment_type
+      policytype: policy_type
+      targetAudience: target_audience
+      programName: program_name
+      person name: person_name
+      discovery.location: discovery_location
+      stockstatus: stock_status
+      device model: device_model
+      registration.benefits: registration_benefits
+      vehicle model: vehicle_model
+      enrollmentstatus: enrollment_status
+      actor.name: actor_name
+      problemDescription: problem_description
+      address.street: address_street
+      username: user_name
+      vehicle.make: vehicle_make
+      observations.observation_period.years: observations.observation_period_years
+      document.date: document_date
+      vehicle.year: vehicle_year
+      game title: game_title
+      target audience: target_audience
+      review.date: review_date
+      physical_characteristics.observations.0.telescope.location: physical_characteristics.observations.0.telescope_location
+      currentstatus: current_status
+      project.name: project_name
+      performancerating: performance_rating
+      restaurant.name: restaurant_name
+      death.location: death_location
+      transfertype: transfer_type
+      Food: food
+      address.city: address_city
+      cc: CC
+      contact.phone: contact_phone
+      population.year: populationYear
+      disease.name: disease_name
+      player id: player_id
+      payment method: payment_method
+      team.name: team_name
+      vehicle.model: vehicle_model
+      orbital_characteristics.orbital_period.years: orbital_characteristics.orbital_period_years
+      description.length: description_length
+      eventtype: event_type
+      contact.email: contact_email
+      reviewstatus: review_status
