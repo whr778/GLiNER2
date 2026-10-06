@@ -104,7 +104,7 @@ RELATION_TYPES = [
 EVENT_ONTOLOGY = {
     # conflict and life (9) — existing, kept verbatim
     "Conflict.Attack": ["Attacker", "Target", "Instrument", "Place", "Time"],
-    "Conflict.Demonstrate": ["Demonstrator", "Place", "Time"],
+    "Conflict.Demonstrate": ["Demonstrator", "Target", "Place", "Time"],   # absorbs Government.Protest (2026-10-06)
     "Conflict.Ceasefire": ["Party", "Mediator", "Place", "Time"],
     "Life.Die": ["Victim", "Agent", "Instrument", "Place", "Time"],
     "Life.Injure": ["Victim", "Agent", "Instrument", "Place", "Time"],
@@ -165,7 +165,6 @@ EVENT_ONTOLOGY = {
     "Government.EnactLaw": ["Agent", "Law", "Place", "Time"],
     "Government.Vote": ["Voter", "Proposal", "Result", "Place", "Time"],
     "Government.Sanction": ["Agent", "Target", "Reason", "Time"],
-    "Government.Protest": ["Demonstrator", "Target", "Place", "Time"],
     # award and sport (2)
     "Award.ReceiveAward": ["Recipient", "Award", "Awarder", "Place", "Time"],
     "Sport.Compete": ["Competitor", "Competition", "Result", "Place", "Time"],
@@ -181,8 +180,9 @@ EVENT_ONTOLOGY = {
 EVENT_DEFINITIONS = {
     "Conflict.Attack": "A physical act of violence or armed force against people, places or property. "
                        "Not: a cyberattack (Tech.Breach), a threat that is not carried out, or a verbal attack.",
-    "Conflict.Demonstrate": "A public gathering, march or rally to express a view. "
-                            "Not: a labour stoppage (Business.Strike). REVIEW: same concept as Government.Protest.",
+    "Conflict.Demonstrate": "A public gathering, march, rally or protest to express a view, including public "
+                            "opposition to a government or policy (its Target). "
+                            "Not: a labour stoppage (Business.Strike). Government.Protest merged into this type (user, 2026-10-06).",
     "Conflict.Ceasefire": "Parties to an armed conflict agree to stop or pause fighting. "
                           "Not: a trade or diplomatic agreement with no fighting (Contact.Negotiate).",
     "Life.Die": "A person dies, from any cause. Not: a death that is only feared or projected.",
@@ -271,8 +271,6 @@ EVENT_DEFINITIONS = {
     "Government.Vote": "A body or electorate votes on a proposal. Not: electing a person (Personnel.Elect).",
     "Government.Sanction": "A state or international body imposes penalties on another state, body or person. "
                            "Not: a court's fine (Justice.Fine).",
-    "Government.Protest": "Public opposition directed at a government or policy. "
-                          "REVIEW: same concept as Conflict.Demonstrate -- merge one into the other, or keep this only for protests whose Target is named.",
     "Award.ReceiveAward": "A person or organisation is given an award or prize.",
     "Sport.Compete": "Competitors take part in a sporting contest. Not: a business competition.",
 }

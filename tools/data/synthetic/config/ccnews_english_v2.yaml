@@ -1,0 +1,41 @@
+# English event annotation v2 -- the ENGLISH_ANNOTATION_SPEC recipe D, every decision of 2026-10-06.
+# Run with --provider anthropic --model claude-sonnet-5-5 --batch, and the CLI task list
+# entities,relations,events,classifications,structures.
+#
+# Versus ccnews_full_events.yaml:
+# - the GUIDELINES.md `events` block: asserted and reported events only; one record per event
+#   with EVERY coreferent trigger; head spans; label only when the definition fits;
+# - every event type's definition beside its roles (schema_spec.EVENT_DEFINITIONS);
+# - a "triggers" list per event instead of a single "trigger";
+# - Government.Protest merged into Conflict.Demonstrate (55 types).
+
+provider:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  max_tokens: 8192        # all five tasks + coreferent trigger lists; 4096 risks truncating long docs
+
+generation:
+  count: 50
+  tasks:
+    - entities
+    - relations
+    - events
+    - classifications
+    - structures
+  min_words: 180
+  max_words: 320
+  domains: []
+  sample_per_doc:
+    relations: 10         # of 72
+    events: 55            # of 55 -- the FULL menu (Government.Protest merged into Conflict.Demonstrate)
+    classifications: 3    # of 12
+    structures: 2         # of 14
+  entity_negatives: 12
+  sample_seed: 0
+  guidelines: [json_only, verbatim, no_inference, minority, ambiguity, events]
+  event_definitions: true
+  event_coreference: true
+
+split:
+  ratios: [0.8, 0.1, 0.1]
+  seed: 42

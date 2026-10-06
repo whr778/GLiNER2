@@ -119,9 +119,19 @@ def _events(text: str, items: Any, stats: Counter) -> List[Dict[str, Any]]:
         if not isinstance(it, dict):
             continue
         etype = it.get("event_type")
-        trigger = _in(text, it.get("trigger"))
+        # COREFERENT TRIGGERS: "triggers" lists every mention of the one event (the opt-in
+        # `event_coreference` prompt); "trigger" is the single-mention form earlier configs ask
+        # for. Each mention is kept only if verbatim; the record survives if any one is.
+        raw = it.get("triggers") if isinstance(it.get("triggers"), list) else [it.get("trigger")]
+        triggers = []
+        for t in raw:
+            span = _in(text, t)
+            if span is not None and span not in triggers:
+                triggers.append(span)
+            elif span is None and t:
+                stats["triggers_dropped"] += 1
         allowed = EVENT_ONTOLOGY.get(etype)
-        if allowed is None or trigger is None:
+        if allowed is None or not triggers:
             stats["events_dropped"] += 1
             continue
         roles = set(allowed)
@@ -138,8 +148,9 @@ def _events(text: str, items: Any, stats: Counter) -> List[Dict[str, Any]]:
             seen.add((role, entity))
             args.append({"role": role, "entity": entity})
             stats["arguments_kept"] += 1
-        out.append({"event_type": etype, "triggers": [trigger], "arguments": args})
+        out.append({"event_type": etype, "triggers": triggers, "arguments": args})
         stats["events_kept"] += 1
+        stats["coreferent_triggers"] += len(triggers) - 1
     return out
 
 

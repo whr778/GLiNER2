@@ -181,6 +181,29 @@ one never using it is probably not reading carefully).
 
 ---
 
+## Events
+
+Added 2026-10-06. On the same 50 cc_news docs, Haiku and Sonnet agreed on events at F1 ~0.40,
+and Sonnet agreed with ITSELF at 0.68. Given a shared event, their arguments agreed at ~0.70.
+So the disagreement is which events exist and their type, and the prompt had nothing on it. Each
+rule below is a decision the user made for that reason (`ENGLISH_ANNOTATION_SPEC.md` section 7).
+Type definitions live with the ontology (`synthetic/schema_spec.EVENT_DEFINITIONS`), not here.
+
+<!-- rule: events -->
+Annotate an event only when the document asserts it happened or is happening, including events it
+reports or attributes to a source ("police said he was arrested"). Do not annotate negated events
+("no one was injured"), hypothetical or conditional events ("could attack"), or future and
+planned events ("will launch next month"). An announcement of a future event is not that event.
+Give each real-world event ONE record, and list in "triggers" every word or phrase in the
+document that refers to that same event ("attacked" ... "the assault" ... "it"). Do not make a
+second record for a repeated mention. For arguments, give the head of the phrase: the shortest
+span that fully names it, without articles ("bank", not "the bank"), and keep numbers with their
+units ("$3 million", "27 people"). Label an event only when the type's definition fits it. If no
+listed type fits, leave it out and name the type you considered in "uncertain_types".
+<!-- end -->
+
+---
+
 ## What is deliberately NOT here
 
 - **Task ontologies and label lists.** They belong with the task, in its own annotator, and

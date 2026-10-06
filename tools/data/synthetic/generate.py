@@ -212,7 +212,9 @@ def main() -> int:
                 base = None if args.annotate_replace else gold
                 lab = _labels_for(i)
                 yield (annotate_system, build_annotate_prompt(text, tasks, _asked(lab),
-                                                              gen_cfg.get("exhaustive_events", False)),
+                                                              gen_cfg.get("exhaustive_events", False),
+                                                              gen_cfg.get("event_coreference", False),
+                                                              gen_cfg.get("event_definitions", False)),
                        text, base, lab, i)
         elif write_only:
             # STAGE 1 of the two-stage path: the writer never sees the ontology, so it

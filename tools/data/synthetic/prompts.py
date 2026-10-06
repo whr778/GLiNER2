@@ -16,7 +16,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from schema_spec import (
-    CLASSIFICATION_TASKS, ENTITY_TYPES, EVENT_ONTOLOGY, MULTI_LABEL_TASKS,
+    CLASSIFICATION_TASKS, ENTITY_TYPES, EVENT_DEFINITIONS, EVENT_ONTOLOGY, MULTI_LABEL_TASKS,
     RELATION_TYPES, STRUCTURE_TEMPLATES,
 )
 
@@ -61,10 +61,12 @@ _UNCERTAINTY = [
 ]
 
 
-def _event_ontology_lines(subset: Optional[List[str]] = None) -> str:
+def _event_ontology_lines(subset: Optional[List[str]] = None, definitions: bool = False) -> str:
+    """One line per event type: its roles, plus its definition when ``definitions`` is on."""
     keys = subset or list(EVENT_ONTOLOGY)
     return "\n".join(
         f"  - {etype}: roles = {', '.join(EVENT_ONTOLOGY[etype])}"
+        + (f"\n      {EVENT_DEFINITIONS[etype]}" if definitions and etype in EVENT_DEFINITIONS else "")
         for etype in keys if etype in EVENT_ONTOLOGY
     )
 
@@ -118,7 +120,8 @@ _EXHAUSTIVE_EVENTS = (
 
 
 def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None,
-                       exhaustive_events: bool = False) -> List[str]:
+                       exhaustive_events: bool = False, event_coreference: bool = False,
+                       event_definitions: bool = False) -> List[str]:
     """The per-task label sets + output-key instructions (shared by both modes).
 
     ``labels`` carries this document's SAMPLED subset of each pool (see
@@ -146,12 +149,20 @@ def _task_instructions(tasks: List[str], labels: Optional[Dict[str, Any]] = None
             _NEAREST_TYPE_RULE,
         ]
     if "events" in tasks:
+        # event_coreference (opt-in, 2026-10-06): one record per real-world event with EVERY
+        # mention in "triggers". The record format has carried a trigger LIST since 4436653;
+        # only this prompt and validate.py still asked for one.
+        head = ('events: list of {"event_type","triggers","arguments"} where triggers lists EVERY '
+                'word or phrase in the text that refers to this one event, and arguments '
+                'is a list of {"role","entity"}. Event types and their allowed roles:'
+                if event_coreference else
+                'events: list of {"event_type","trigger","arguments"} where arguments '
+                'is a list of {"role","entity"}. The trigger is the single word/phrase '
+                "in the text that most directly evokes the event. Event types and their "
+                "allowed roles:")
         sections += [
-            'events: list of {"event_type","trigger","arguments"} where arguments '
-            'is a list of {"role","entity"}. The trigger is the single word/phrase '
-            "in the text that most directly evokes the event. Event types and their "
-            "allowed roles:",
-            _event_ontology_lines(labels.get("events")),
+            head,
+            _event_ontology_lines(labels.get("events"), definitions=event_definitions),
             _NEAREST_TYPE_RULE,
         ]
         if exhaustive_events:
@@ -239,7 +250,8 @@ def build_user_prompt(domain: str, tasks: List[str], min_words: int, max_words: 
 
 def build_annotate_prompt(text: str, tasks: List[str],
                           labels: Optional[Dict[str, Any]] = None,
-                          exhaustive_events: bool = False) -> str:
+                          exhaustive_events: bool = False, event_coreference: bool = False,
+                          event_definitions: bool = False) -> str:
     """Assemble the user prompt to annotate EXISTING ``text`` (no text generation)."""
     sections: List[str] = [
         "Annotate the DOCUMENT below for the tasks listed. Do NOT rewrite, "
@@ -247,7 +259,7 @@ def build_annotate_prompt(text: str, tasks: List[str],
         "states. Use ONLY the label sets below.",
         "",
     ]
-    sections += _task_instructions(tasks, labels, exhaustive_events)
+    sections += _task_instructions(tasks, labels, exhaustive_events, event_coreference, event_definitions)
     sections += [
         "",
         "Do NOT include a \"text\" key. Every annotated span must be copied "
