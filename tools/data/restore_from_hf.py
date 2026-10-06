@@ -57,11 +57,21 @@ def plan(registry):
     """Return [(repo, path_in_repo, local_path)] for everything the registry can restore."""
     from huggingface_hub import HfApi
     api = HfApi(token=os.environ.get("HF_TOKEN"))
+    # PROVE THE TOKEN FIRST. The Hub answers a private repo the token cannot see with "not
+    # found", so a missing or wrong-account token made every private mirror look ABSENT: traced
+    # 2026-10-06, `--config eb20.yaml --force` printed "0 files mirrored | 0 to download" and filed
+    # cc_news_events_sonnet55_v2 under "not on the Hub ... expected" -- a failure that read as a no-op.
+    try:
+        who = api.whoami()["name"]
+    except Exception as exc:  # noqa: BLE001 -- any auth failure is fatal here, and its text is the diagnosis
+        raise SystemExit(f"*** HF token rejected ({type(exc).__name__}: {exc}). Export HF_TOKEN for an account "
+                         f"that can read the private mirrors; nothing was planned.")
+    print(f"HF account: {who}")
     jobs, unrecoverable = [], []
     for directory, repo in (registry.get("jsonl_dirs") or {}).items():
         names = repo_files(api, repo)
         if names is None:
-            unrecoverable.append(f"{directory}/ (repo {repo} does not exist)")
+            unrecoverable.append(f"{directory}/ (repo {repo} not found -- absent, or private and invisible to this token)")
             continue
         for name in names:
             jobs.append((repo, name, DATA / directory / name))
@@ -82,7 +92,7 @@ def plan(registry):
             continue
         names = repo_files(api, repo)
         if names is None:
-            unrecoverable.append(f"{key} (repo {repo} does not exist)")
+            unrecoverable.append(f"{key} (repo {repo} not found -- absent, or private and invisible to this token)")
             continue
         for name in names:
             if SLICE.search(name):
@@ -132,11 +142,15 @@ def main():
             for a in gaps:
                 print(f"   {a}")
         if never:
-            print(f"not on the Hub, and not on disk ({len(never)}) -- nothing to restore; "
-                  f"expected where a corpus has no such split:")
+            print(f"not visible on the Hub, and not on disk ({len(never)}) -- nothing to restore. Expected only "
+                  f"where a corpus has no such split; a WHOLE corpus listed here means its repo is absent or "
+                  f"private to another account (check `HF account:` above):")
             for a in never:
                 print(f"   {a}")
 
+    if not jobs:
+        raise SystemExit("*** no mirrored file is visible to this token for this request -- that is a token or "
+                         "access problem, not an empty restore. Check `HF account:` above.")
     todo = [j for j in jobs if args.force or not j[2].exists()]
     print(f"{len(jobs)} files mirrored | {len(jobs) - len(todo)} already local | "
           f"{len(todo)} to download")
