@@ -302,8 +302,9 @@ like the viewer. `--merge-coreferent link --coref-threshold` merges coreferent t
 on checkpoints trained with the link (eb20+). Examples and cautions in [`train/INFER.md`](train/INFER.md).
 `train/calibrate_coref_threshold.py` — pick a trained checkpoint's coreference merge threshold on val
 (grid 0.5-0.95) and, with `--write`, store it in its config.json only if the merges pass the gates
-(>= 20 merges, precision >= 0.8, fusion < 5%, event_cluster F1 >= off). train.py runs the same sweep
-when `eval.coref_calibration` is set.
+(>= 20 merges, precision >= 0.8, fusion < 5%, cluster + argument F1 >= off, and on the one-trigger
+`--control` corpora no F1 loss and fusion < 5%). train.py runs the same sweep when
+`eval.coref_calibration` is set, and scores the blind test again with the merge off if it ships.
 `import_surface.py` / `compare_surface.py` — snapshot and diff a package's public import
 surface, for verifying a refactor removed only what it meant to.
 

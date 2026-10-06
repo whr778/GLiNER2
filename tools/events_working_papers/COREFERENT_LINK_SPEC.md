@@ -248,3 +248,20 @@ merges joining different gold events, which rests on the same >= 20 merges. The 
 
 So the merge stays `off`. A written `link 0.7` was shown to reload and to become `infer.py`'s no-flag default.
 
+**Control set and second blind test (added 2026-10-06 at the user's request).** The calibration gold
+(sonnet55) is the ONLY coreferent gold, but a shipped merge also decodes CMNEE, DuEE and MAVEN, whose gold is
+one trigger per event. So:
+- **A control.** `eval.coref_control` (eb20: `data/cmnee` + `data/maven` val; 0 multi-trigger events, 593 / 345
+  docs repeat a type, 0 docs overlap eb20 train) is decoded at every threshold. Eligible only if control cluster
+  and argument F1 >= off AND control fusion < 5%. Startup refuses a control that lists multi-trigger events.
+- **Why fusion and not F1 alone (traced, init link, 20 CMNEE + 4 MAVEN val docs).** The cluster metric matches on
+  ANY shared trigger, so a fused event collects the pooled arguments of several gold events. At 0.5, 30 of 62
+  control merges were fusions, yet control argument F1 ROSE 0.2134 -> 0.2417 and event F1 0.5403 -> 0.5405. An
+  F1-only control would have passed. The same effect lifted calibration F1 0.364 -> 0.402 at 33% merge
+  precision: `F1 >= off` is a guard, not evidence. The merge gates carry the decision.
+- **The link merges far more on the control than on the calibration set:** 62 merges against 24 at 0.5.
+- **A second blind test.** When the merge ships, train.py scores the same test again with it OFF, stored under
+  `test_metrics["coref_merge_off"]`, so eb20 stays comparable with eb19. Traced: with `link 0.5` stored, cluster
+  F1 is 0.3846 as shipped vs 0.3125 off, and the OLD strict `event_argument` falls 0.0253 -> 0.0000 under the
+  untrained merge.
+

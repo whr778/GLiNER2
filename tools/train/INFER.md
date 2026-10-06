@@ -114,7 +114,9 @@ killed four"). A checkpoint trained with `record_coref_link` (eb20) carries a le
 trigger link that can merge those mentions into one event. Training picks the merge threshold on
 validation at the end (`eval.coref_calibration`, or `tools/train/calibrate_coref_threshold.py --write`
 for a checkpoint already trained) and writes it into `best/config.json` ONLY if the merges pass the
-gates; the table is in `best/coref_threshold_sweep.json`. `infer.py` with no flag uses that stored
+gates -- on the coreferent calibration set AND on one-trigger control corpora (CMNEE, MAVEN), where a merge
+can only cost; the table is in `best/coref_threshold_sweep.json`. If it ships, the blind test is also
+scored with the merge off (`test_metrics["coref_merge_off"]`). `infer.py` with no flag uses that stored
 setting: `link` + the picked threshold, or `off` if nothing passed. The flags below override it.
 
 ```bash

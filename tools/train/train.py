@@ -687,40 +687,61 @@ def read_transformed(paths: List[str], fns: Dict, passthrough: Set[str]) -> List
     return records
 
 
-def coref_calibration_data(cfg: Dict, config_path: str) -> Tuple[List[str], List[Dict]]:
-    """(files, records) for the coreference threshold sweep: the VAL split of each corpus in
-    ``eval.coref_calibration``, labels transformed exactly as training transforms them. The
-    corpora may be train_only -- coreferent gold is what matters, not the in-run eval set."""
-    corpora = (cfg.get("eval") or {}).get("coref_calibration") or []
-    files = [f"{c}.val.jsonl" for c in corpora]
+def coref_calibration_data(cfg: Dict, config_path: str) -> Tuple[List[str], List[Dict], List[str], List[Dict]]:
+    """(files, records, control_files, control_records) for the coreference threshold sweep: the VAL
+    split of each corpus in ``eval.coref_calibration`` (coreferent gold; may be train_only) and of each
+    in ``eval.coref_control`` (one trigger per event, where a merge can only cost), labels transformed
+    exactly as training transforms them."""
+    ev = cfg.get("eval") or {}
     fns = _category_fns(load_labels_cfg(cfg, config_path))
-    records = read_transformed(files, fns, labels_passthrough(cfg)) if fns else _read_records(files)
-    return files, records
+    passthrough = labels_passthrough(cfg)
+
+    def read(corpora):
+        files = [f"{c}.val.jsonl" for c in corpora or []]
+        return files, (read_transformed(files, fns, passthrough) if fns else _read_records(files))
+
+    return (*read(ev.get("coref_calibration")), *read(ev.get("coref_control")))
 
 
-def check_coref_calibration(cfg: Dict) -> None:
+def check_coref_calibration(cfg: Dict, config_path: str = "") -> None:
     """Refuse at STARTUP a coref calibration that could only fail after training."""
-    corpora = (cfg.get("eval") or {}).get("coref_calibration") or []
+    ev = cfg.get("eval") or {}
+    corpora = ev.get("coref_calibration") or []
     if not corpora:
         return
     if not ((cfg.get("model") or {}).get("boundary_head") or {}).get("record_coref_link"):
         raise SystemExit("[coref sweep] eval.coref_calibration needs model.boundary_head.record_coref_link: "
                          "true -- there is no link to calibrate, and it would fail AFTER training.")
-    for c in corpora:
+    for c in corpora + (ev.get("coref_control") or []):
         if _fetch_if_missing(f"{c}.val.jsonl") is ABSENT_SPLIT:
             raise SystemExit(f"[coref sweep] {c} has no val split to calibrate on.")
-    print(f"[coref sweep] after training: merge threshold calibrated on {corpora} val")
+    if ev.get("coref_control"):
+        from gliner2.training.coref_calibration import multi_trigger_events
+        n = multi_trigger_events(coref_calibration_data(cfg, config_path)[3])
+        if n:
+            raise SystemExit(f"[coref sweep] eval.coref_control has {n} gold events with several triggers; "
+                             "a control must be one trigger per event, or a right merge reads as a cost.")
+    print(f"[coref sweep] after training: merge threshold calibrated on {corpora} val, "
+          f"control {ev.get('coref_control') or 'NONE -- the merge is unchecked on one-trigger corpora'}")
 
 
 def calibrate_coref(best: Path, cfg: Dict, config_path: str, batch_size: int, decode: Dict) -> None:
-    """Sweep the coreference merge threshold on the calibration val set and write the gated choice
-    into ``best/config.json`` (``gliner2.training.coref_calibration``)."""
+    """Sweep the coreference merge threshold on the calibration val set (gated also on the control
+    set) and write the choice into ``best/config.json`` (``gliner2.training.coref_calibration``)."""
     from gliner2 import AutoExtractor
     from gliner2.training import coref_calibration as CC
-    files, records = coref_calibration_data(cfg, config_path)
-    print(f"\n[coref sweep] {best} over {len(records)} records from {files}, grid {CC.COREF_THRESHOLD_GRID}")
-    rows = CC.sweep(AutoExtractor.from_pretrained(str(best)), records, decode, batch_size=batch_size)
-    CC.write(best, rows, *CC.choose(rows), source=files)
+    files, records, cfiles, control = coref_calibration_data(cfg, config_path)
+    print(f"\n[coref sweep] {best} over {len(records)} records from {files}, control {len(control)} from "
+          f"{cfiles}, grid {CC.COREF_THRESHOLD_GRID}")
+    rows = CC.sweep(AutoExtractor.from_pretrained(str(best)), records, decode, batch_size=batch_size,
+                    control=control or None)
+    CC.write(best, rows, *CC.choose(rows), source=files, control=cfiles)
+
+
+def merge_shipped(best: Path) -> bool:
+    """True when best/config.json decodes with the coreference merge on."""
+    bh = json.loads((Path(best) / "config.json").read_text(encoding="utf-8")).get("boundary_head") or {}
+    return bh.get("record_merge_coreferent", "off") not in ("off", False, None)
 
 
 def _read_records(paths: List[str]) -> List[Dict]:
@@ -1642,7 +1663,7 @@ def main(config_path: str) -> None:
                 f"A typo here would silently protect nothing."
             )
         print(f"[data] train_only (excluded from val and test): {sorted(train_only)}")
-    check_coref_calibration(cfg)
+    check_coref_calibration(cfg, config_path)
     train_data = _dedupe_paths(
         _split_files(corpora, "train", train_only) + _event_split(event_files, "train"), "train")
     eval_data = _dedupe_paths(
@@ -1813,6 +1834,13 @@ def main(config_path: str) -> None:
     if (cfg.get("eval") or {}).get("coref_calibration"):
         calibrate_coref(best, cfg, config_path, eval_bs, dict(threshold=eval_thr, **gd_kwargs))
     test_metrics = _run_blind_test(best, test_data, eval_bs, eval_thr, eval_by_language, gd_kwargs)
+    if test_metrics and merge_shipped(best):
+        # The shipped merge changes event identity, so these numbers are not comparable with a base that
+        # decoded one event per mention. Score the SAME test once more with the merge off, beside them.
+        print("\n[blind test] coreference merge ships in config.json: scoring again with it OFF (comparable to eb19)")
+        test_metrics["coref_merge_off"] = _run_blind_test(
+            best, test_data, eval_bs, eval_thr, eval_by_language,
+            dict(gd_kwargs, boundary_overrides={"record_merge_coreferent": "off"}))
 
     if test_metrics:
         # The runners publish THIS file, so it is the one an A/B verdict is read from.

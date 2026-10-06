@@ -15,7 +15,11 @@
 #   eval.coref_calibration              train.py's coref sweep (gliner2/training/coref_calibration.py):
 #                                       grid 0.5-0.95 incl. 0.85, before the blind test; writes link +
 #                                       threshold into best/config.json only if >= 20 merges, precision
-#                                       >= 0.8, fusion < 5% and event_cluster F1 >= off. Else stays off.
+#                                       >= 0.8, fusion < 5%, and cluster + argument F1 >= off on the
+#   eval.coref_control                  calibration set AND on CMNEE + MAVEN val (one trigger per event,
+#                                       where the merge ships but can only cost). Else stays off. If it
+#                                       ships, the blind test is scored twice: as shipped, and with the
+#                                       merge OFF under test_metrics["coref_merge_off"] (eb19-comparable).
 #   data/cc_news_events_sonnet55_v2     4,597 English docs, 13,855 events, 3,760 with coreferent triggers
 #                                       (the link's only cluster supervision). TRAIN ONLY, so the
 #                                       aggregated blind test stays eb19's: score its voted val/test
@@ -525,6 +529,7 @@ eval:
   eval_by_language: true    # eb18: lumi 3.0.1 reads Chinese correctly
   global_decode: true       # eb18: document-level event assembly
   coref_calibration: [data/cc_news_events_sonnet55_v2]   # eb20: pick the merge threshold on its voted val
+  coref_control: [data/cmnee, data/maven]   # eb20: one trigger per event (0 multi-trigger, 593 / 345 docs repeat a type): a merge there can only cost
 
 # Unified label space, shared with every model warm-started from this base so they
 # all present the same labels. Generated -- see the file header to regenerate.

@@ -14,9 +14,13 @@ GOLD = [("Attack", {"attacked", "assault"}, set()), ("Attack", {"shelling"}, set
         ("Meet", {"meeting"}, set())]
 
 
-def _row(merged=30, right=27, fused=0, f1=0.5):
-    return {"merged": merged, "right": right, "fused": fused, "event_cluster_f1": f1,
-            "merge_precision": right / merged if merged else None, "fusion": fused / merged if merged else 0.0}
+def _row(merged=30, right=27, fused=0, f1=0.5, arg=0.3, control=None):
+    r = {"merged": merged, "right": right, "fused": fused, "event_cluster_f1": f1, "event_cluster_argument_f1": arg,
+         "merge_precision": right / merged if merged else None, "fusion": fused / merged if merged else 0.0}
+    if control is not None:
+        r["control"] = {"event_cluster_f1": control[0], "event_cluster_argument_f1": control[1],
+                        "fusion": control[2] if len(control) > 2 else 0.0}
+    return r
 
 
 class TestMergeQuality:
@@ -62,6 +66,34 @@ class TestChoose:
     def test_worse_than_off_is_not_eligible(self):
         rows = {"off": _row(0, 0, f1=0.50), "0.8": _row(f1=0.49)}
         assert CC.choose(rows)[0] is None
+
+
+    def test_argument_f1_below_off_is_not_eligible(self):
+        rows = {"off": _row(0, 0, f1=0.40, arg=0.30), "0.8": _row(f1=0.45, arg=0.29)}
+        assert CC.choose(rows)[0] is None
+
+    def test_control_regression_is_not_eligible(self):
+        rows = {"off": _row(0, 0, f1=0.40, control=(0.60, 0.20)), "0.8": _row(f1=0.45, control=(0.59, 0.20))}
+        assert CC.choose(rows)[0] is None
+
+    def test_control_argument_regression_is_not_eligible(self):
+        rows = {"off": _row(0, 0, f1=0.40, control=(0.60, 0.20)), "0.8": _row(f1=0.45, control=(0.60, 0.19))}
+        assert CC.choose(rows)[0] is None
+
+    def test_control_unchanged_passes(self):
+        rows = {"off": _row(0, 0, f1=0.40, control=(0.60, 0.20)), "0.8": _row(f1=0.45, control=(0.60, 0.20))}
+        assert CC.choose(rows)[0] == 0.8
+
+
+    def test_control_fusion_is_not_eligible_even_when_f1_rises(self):
+        rows = {"off": _row(0, 0, f1=0.40, control=(0.54, 0.21)), "0.5": _row(f1=0.45, control=(0.55, 0.24, 0.48))}
+        assert CC.choose(rows)[0] is None
+
+
+class TestMultiTrigger:
+    def test_counts_events_with_several_triggers(self):
+        recs = [{"output": {"events": [{"triggers": ["a"]}, {"triggers": ["b", "c"]}]}}, {"output": {}}]
+        assert CC.multi_trigger_events(recs) == 1
 
 
 class TestWrite:
