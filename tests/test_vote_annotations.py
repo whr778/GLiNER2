@@ -29,3 +29,11 @@ def test_event_found_in_one_run_is_dropped():
 def test_agreement_is_one_on_identical_and_lower_on_a_missing_event():
     assert V.event_agreement([{"events": [A, DIE]}], [{"events": [A, DIE]}])["events_f1"] == 1.0
     assert V.event_agreement([{"events": [A, DIE]}], [{"events": [A]}])["events_f1"] < 1.0
+
+
+def test_structures_vote_by_name_and_anchor_value():
+    meta = {"person_profile": {"mode": "natural", "anchor": "name"}}
+    run = lambda role: {"json_structures": [{"person_profile": {"name": "Elena Krylova", "role": role}}], "record_metadata": meta}
+    out, md = V.vote_structures([run("spokeswoman"), run("spokeswoman"), run("aide")], need=2)
+    assert out == [{"person_profile": {"name": "Elena Krylova", "role": "spokeswoman"}}] and md == meta
+    assert V.vote_structures([run("x"), {"json_structures": []}, {}], need=2) == ([], {})

@@ -7,7 +7,9 @@ runs, so a shared mention, not identical lists, is the identity. Voting (``--min
   events     kept when found in >= min runs; triggers = mentions listed by >= min of them (at
              least the most-listed one); arguments = (role, entity) given by >= min of them
   entities, relations, classification labels: kept when given by >= min runs
-  structures: not voted (dropped) -- the pilot's gate is on events
+  json_structures: an instance is the same across runs when its name and ANCHOR value (from
+             record_metadata) match; kept when found in >= min runs, each field value kept when
+             >= min of them give it; record_metadata carried for the kept names
 
 ``--compare A B`` scores two voted files against each other at the EVENT level (the spec's
 stability bar, ENGLISH_ANNOTATION_SPEC section 5) and for arguments.
@@ -56,6 +58,31 @@ def vote_events(runs: List[List[dict]], need: int) -> List[dict]:
     return out
 
 
+def vote_structures(outputs: List[dict], need: int):
+    """(json_structures, record_metadata) voted across runs, keyed by (name, anchor value)."""
+    meta: Dict[str, dict] = {}
+    for o in outputs:
+        meta.update(o.get("record_metadata") or {})
+    groups: Dict[tuple, List[dict]] = {}
+    for o in outputs:
+        seen = set()
+        for inst in o.get("json_structures") or []:
+            for name, fields in inst.items():
+                anchor = (meta.get(name) or {}).get("anchor")
+                key = (name, f(fields.get(anchor)) if anchor else json.dumps(fields, sort_keys=True))
+                if key not in seen:
+                    seen.add(key)
+                    groups.setdefault(key, []).append(fields)
+    out, names = [], set()
+    for (name, _), insts in groups.items():
+        if len(insts) < need:
+            continue
+        vals = Counter((k, json.dumps(v, sort_keys=True)) for fs in insts for k, v in fs.items())
+        out.append({name: {k: json.loads(v) for (k, v), n in vals.items() if n >= need}})
+        names.add(name)
+    return out, {n: meta[n] for n in names if n in meta}
+
+
 def vote_record(outputs: List[dict], need: int) -> dict:
     voted: dict = {"events": vote_events([o.get("events") or [] for o in outputs], need)}
     ents = Counter((t, s) for o in outputs for t, ss in (o.get("entities") or {}).items() for s in set(ss or []))
@@ -72,6 +99,7 @@ def vote_record(outputs: List[dict], need: int) -> dict:
         if n >= need:
             tasks.setdefault(task, []).append(lab)
     voted["classifications"] = [{"task": t, "labels": ls} for t, ls in tasks.items()]
+    voted["json_structures"], voted["record_metadata"] = vote_structures(outputs, need)
     return voted
 
 

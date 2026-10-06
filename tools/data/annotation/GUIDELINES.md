@@ -198,7 +198,10 @@ Give each real-world event ONE record, and list in "triggers" every word or phra
 document that refers to that same event ("attacked" ... "the assault" ... "it"). Do not make a
 second record for a repeated mention. For arguments, give the head of the phrase: the shortest
 span that fully names it, without articles ("bank", not "the bank"), and keep numbers with their
-units ("$3 million", "27 people"). Label an event only when the type's definition fits it. If no
+units ("$3 million", "27 people"). An argument is never a bare pronoun: when the event's sentence
+says "he" or "they", give the named or nominal mention it refers to ("John Smith", "the CEO",
+"police"). An event needs at least one such named or nominal participant; an event with no
+participant at all is left out. Label an event only when the type's definition fits it. If no
 listed type fits, leave it out and name the type you considered in "uncertain_types".
 <!-- end -->
 
