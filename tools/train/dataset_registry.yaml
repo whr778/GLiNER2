@@ -802,7 +802,11 @@ datasets:
       with 2.78M data/ docs. train 4,597 = ONE Sonnet run; val 500 / test 500 = 2-of-3 VOTE over three runs
       (tools/data/vote_annotations.py). Single-run agreement on the eval docs: events F1 0.797-0.806.
       25-27% of events list >1 coreferent trigger -- do not train before TODO #29 (coreferent ownership).
-      Government.Protest is merged into Conflict.Demonstrate in this corpus's ontology."
+      Government.Protest is merged into Conflict.Demonstrate in this corpus's ontology.
+      2026-10-07: val/test classifications RE-VOTED (tools/data/repair_voted_classifications.py): the first
+      vote kept only the winning label as the menu and no true_label, so classification gold was void.
+      Now voted per task across runs asked the SAME menu (2-of-3); 35 val / 47 test tasks with no
+      same-menu majority dropped. Every other field unchanged."
   cc_news_events_haiku45:
     name: CC-News real text, Haiku-4.5 entities + events with the FULL 56-type event menu
     provenance: llm_real

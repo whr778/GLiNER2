@@ -83,6 +83,35 @@ def vote_structures(outputs: List[dict], need: int):
     return out, {n: meta[n] for n in names if n in meta}
 
 
+def vote_classifications(outputs: List[dict], need: int) -> List[dict]:
+    """Vote each classification task only across runs that were asked the SAME question.
+
+    Runs draw a task's label subset independently -- on the English v2 eval set only 645 of 1,000 docs
+    got identical menus in all three runs (one run offered sentiment [positive, negative], another
+    [negative, neutral]) -- so a label one run was never offered must not be outvoted by runs that were.
+    The task's most common menu needs >= ``need`` runs; ``labels`` is that menu (the question) and
+    ``true_label`` the labels >= ``need`` of those runs chose (the answer). Otherwise the task is dropped:
+    there is no gold for it. The vote this replaces wrote the winners as ``labels`` and no ``true_label``,
+    which left a one-label menu and no answer key (2026-10-07).
+    """
+    by_task: Dict[str, list] = {}
+    for o in outputs:
+        for c in o.get("classifications") or []:
+            if isinstance(c, dict) and c.get("task") and c.get("labels"):
+                by_task.setdefault(c["task"], []).append(c)
+    out = []
+    for task, cs in by_task.items():
+        key = lambda c: (tuple(c["labels"]), bool(c.get("multi_label")))
+        (menu, multi), n = Counter(key(c) for c in cs).most_common(1)[0]
+        if n < need:
+            continue
+        chosen = Counter(lab for c in cs if key(c) == (menu, multi) for lab in set(c.get("true_label") or []))
+        true = [lab for lab in menu if chosen[lab] >= need]
+        if true:
+            out.append({"task": task, "labels": list(menu), "true_label": true, "multi_label": multi})
+    return out
+
+
 def vote_record(outputs: List[dict], need: int) -> dict:
     voted: dict = {"events": vote_events([o.get("events") or [] for o in outputs], need)}
     ents = Counter((t, s) for o in outputs for t, ss in (o.get("entities") or {}).items() for s in set(ss or []))
@@ -92,13 +121,7 @@ def vote_record(outputs: List[dict], need: int) -> dict:
             voted["entities"].setdefault(t, []).append(s)
     rels = Counter(json.dumps(r, sort_keys=True) for o in outputs for r in {json.dumps(x, sort_keys=True): x for x in o.get("relations") or []}.values())
     voted["relations"] = [json.loads(k) for k, n in rels.items() if n >= need]
-    labs = Counter((c.get("task"), lab) for o in outputs for c in o.get("classifications") or []
-                   for lab in set(c.get("true_label") or c.get("labels") or []))
-    tasks: Dict[str, list] = {}
-    for (task, lab), n in labs.items():
-        if n >= need:
-            tasks.setdefault(task, []).append(lab)
-    voted["classifications"] = [{"task": t, "labels": ls} for t, ls in tasks.items()]
+    voted["classifications"] = vote_classifications(outputs, need)
     voted["json_structures"], voted["record_metadata"] = vote_structures(outputs, need)
     return voted
 
