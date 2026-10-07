@@ -351,8 +351,14 @@ class DataLoader_Factory:
                 sanitize_warnings, is_valid = example.sanitize()
                 
                 if is_valid:
-                    # Replace record with sanitized version
-                    records[i] = example.to_dict()
+                    # Replace record with sanitized version, KEEPING its provenance: `to_dict`
+                    # rebuilds input/output only, so `_corpus` was dropped here and the negatives
+                    # injector saw corpus=None in every validated run -- `negative_gold_free_dims`
+                    # never fired and partial_annotation went unread (menuref A/B, 2026-10-07).
+                    sanitized = example.to_dict()
+                    if "_corpus" in record:
+                        sanitized["_corpus"] = record["_corpus"]
+                    records[i] = sanitized
                     valid_indices.append(i)
                     if sanitize_warnings:
                         # Record was sanitized but still valid

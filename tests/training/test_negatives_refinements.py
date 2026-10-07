@@ -71,3 +71,12 @@ def test_read_transformed_tags_the_corpus(tmp_path):
     f = tmp_path / "mycorp.train.jsonl"
     f.write_text(json.dumps({"input": "x", "output": {}}) + "\n")
     assert T.read_transformed([str(f)], {}, set())[0]["_corpus"] == "mycorp"
+
+
+def test_validation_keeps_the_corpus_tag():
+    """DataLoader_Factory.load(validate=True) rebuilt records via to_dict and dropped `_corpus`, so the
+    injector saw corpus=None in every validated run and gold-free negatives never fired."""
+    from gliner2.training.trainer import DataLoader_Factory
+    rec = {"input": "Ann met Bob.", "output": {"entities": {"person": ["Ann"]}}, "_corpus": "news"}
+    out = DataLoader_Factory.load(data=[rec], max_samples=-1, shuffle=False, seed=1, validate=True)
+    assert out[0]["_corpus"] == "news"
