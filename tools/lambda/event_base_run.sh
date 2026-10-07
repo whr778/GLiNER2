@@ -68,6 +68,10 @@ echo "[base] config $CFG -> $REPO"
 publish "$DEST" "$HOME/START.txt" "$CFG" || echo "[base] start marker did not publish (continuing)"
 
 # A heartbeat so a 14-hour run is legible from outside without attaching to tmux.
+# The FIRST line is written now: heartbeat.log is a required publish artefact, and the loop's first
+# write is 15 min in, so a job shorter than that (menudose control, 14 min) reported it "never
+# written" and held the box for rescue -- an hour of idle A100 on 2026-10-07.
+echo "[hb] $(date -u) start" >> "$HOME/heartbeat.log"
 ( while sleep 900; do
     echo "[hb] $(date -u) gpu=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader | tr -d ' ') $(tr '\r' '\n' < "$LOG" 2>/dev/null | grep -aoE '[0-9]+/[0-9]+ \[[^]]*\]' | tail -1)"
   done ) >> "$HOME/heartbeat.log" 2>&1 &

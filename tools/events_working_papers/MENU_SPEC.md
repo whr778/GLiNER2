@@ -1,6 +1,6 @@
 # Menus: score, calibrate and train against the question production asks
 
-**Status:** STEP 1 BUILT 2026-10-07 (section 7); steps 2-4 not run. Was SPEC 2026-10-07. Decisions so far are the user's (section 3). This is
+**Status:** STEP 1 BUILT and STEP 3 (dose A/B) RUN 2026-10-07 -- POSITIVE (section 8). Step 2 skipped by the user (the control arm is the baseline). Was SPEC 2026-10-07. Decisions so far are the user's (section 3). This is
 TODO #23 (full menu over-fires) turned into a plan. The plan is cheapest-first: step 2 is free,
 and the GPU A/B (step 3) runs only if step 2 shows a material gap.
 
@@ -203,4 +203,36 @@ It is a separate change.
 
 **eb21:** carries `eval.app_menus` and `eval.menu: app:news55` (an extra `by_menu` blind-test pass only). It
 does NOT set `calibration_menu`: that changes the operating point, and step 2 decides it.
+
+## 8. Step 3 result: the dose A/B, 2026-10-07
+
+Warm from eb19, one pass over `cc_news_events_sonnet55_v2` train, a fixed threshold of 0.5, and a single
+control (user). The treatment was proven in the loss: 96,310 absent queries available over 200 batches
+against the control's 14,011.
+
+**Strict P / R / F1 on the 500 voted test docs, control -> treatment:**
+
+| head | NEWS menu (production) | GOLD menu |
+|---|---|---|
+| event_type | P 0.118 -> **0.917**, R 0.783 -> 0.409, F1 0.205 -> **0.566** | F1 0.798 -> 0.785 |
+| event_trigger | P 0.096 -> **0.712**, R 0.457 -> 0.304, F1 0.158 -> **0.426** | F1 0.521 -> 0.511 |
+| entity | P 0.322 -> **0.553**, R 0.493 -> 0.425, F1 0.389 -> **0.481** | F1 0.476 -> 0.533 |
+| event_cluster | F1 0.142 -> 0.373 | F1 0.425 -> 0.428 |
+| event_argument | P 0.073 -> 0.307, R 0.124 -> 0.054, F1 0.092 -> 0.092 | F1 0.102 -> 0.121 |
+
+**Reading:**
+- The training dose is the over-firing lever. The news-menu gains are 10-20x the +/-0.02 single-run floor.
+  There is no cost under the gold menu, and entity even improves.
+- Recall falls under the news menu at a threshold chosen for an over-firing model. **Next:** re-pick the
+  threshold with `eval.calibration_menu: app:news55` on sonnet55 val, then score the test once.
+- Arguments: precision up, recall down, F1 flat.
+- The pair loss samples a capped number of absent queries (~6,460 in both arms), so the extra negatives act
+  mainly through the boundary loss.
+- Still open (section 4 build):
+  - event-free documents get no event negatives in either arm;
+  - the menu size is fixed at 20, not variable;
+  - there is no per-document cap;
+  - there are no hard negatives.
+
+  The next base can take the dose as is, and the rest can be A/B'd on top.
 
