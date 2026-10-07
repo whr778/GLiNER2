@@ -1,0 +1,233 @@
+token	uses	verdict	decision
+LOC	109085	acronym (kept)	
+PER	106344	acronym (kept)	
+ORG	105122	acronym (kept)	
+TIME	99244	word -> Time	
+MISC	85517	acronym (kept)	
+NUM	41867	acronym (kept)	
+CARDINAL	20025	word -> Cardinal	
+DATE	18155	word -> Date	
+CHEMICAL	14499	word -> Chemical	
+GENE	12219	word -> Gene	
+GPE	10975	acronym (kept)	
+PS	9998	acronym (kept)	
+SO	9036	acronym (kept)	
+GGP	8953	acronym (kept)	
+PERSON	8269	word -> Person	
+QT	8106	acronym (kept)	
+DNA	6835	acronym (kept)	
+DT	6209	acronym (kept)	
+OG	5759	acronym (kept)	
+ORGANISATION	5379	acronym (kept)	
+POH	4614	acronym (kept)	
+LC	4528	acronym (kept)	
+POSITION	4397	word -> Position	
+ACTIVITY	3913	word -> Activity	
+CL	3855	acronym (kept)	
+CHEBI	3838	acronym (kept)	
+DAT	3755	acronym (kept)	
+MONEY	3585	word -> Money	
+PERCENTAGE	3162	word -> Percentage	
+QUANTITY	2879	word -> Quantity	
+GO	2868	acronym (kept)	
+ORDINAL	2811	word -> Ordinal	
+NORP	2753	acronym (kept)	
+INTELLECTUAL	2752	word -> Intellectual	
+PROPERTY	2675	word -> Property	
+GROUP	2635	word -> Group	
+FUNCTION	2570	word -> Function	
+PRODUCT	2323	word -> Product	
+PHENOTYPE	2264	word -> Phenotype	
+DISORDER	2100	word -> Disorder	
+CHEMICALS	2097	word -> Chemicals	
+PPI	2065	acronym (kept)	
+FOR	2003	acronym (kept)	
+LOCATION	1897	word -> Location	
+RNA	1885	acronym (kept)	
+AND	1813	acronym (kept)	
+TI	1717	acronym (kept)	
+USED	1690	word -> Used	
+PROJECT	1571	word -> Project	
+ORGANIZATION	1569	word -> Organization	
+ANATOMICAL	1550	word -> Anatomical	
+STRUCTURE	1550	word -> Structure	
+EVENT	1525	word -> Event	
+FACILITY	1510	word -> Facility	
+PRODUCTS	1457	word -> Products	
+MEDICAL	1449	word -> Medical	
+PROCEDURE	1449	word -> Procedure	
+ART	1411	acronym (kept)	
+ORGANISM	1125	word -> Organism	
+DISEASE	965	word -> Disease	
+CLINICAL	962	word -> Clinical	
+DRUG	962	word -> Drug	
+GEOGRAPHICAL	949	word -> Geographical	
+AREAS	949	word -> Areas	
+CVE	866	acronym (kept)	
+CELLS	831	word -> Cells	
+THEIR	831	word -> Their	
+COMPONENTS	831	word -> Components	
+LAW	780	acronym (kept)	
+PII	666	acronym (kept)	
+OF	650	acronym (kept)	
+BODY	566	word -> Body	
+SUBSTANCE	566	word -> Substance	
+SIGNALING	522	word -> Signaling	
+MOLECULES	522	word -> Molecules	
+CONJUNCTION	400	word -> Conjunction	
+REGULATION	386	word -> Regulation	
+OR	386	acronym (kept)	
+NOH	377	acronym (kept)	
+EVALUATE	313	word -> Evaluate	
+LANGUAGE	298	word -> Language	
+HYPONYM	298	word -> Hyponym	
+MVP	294	acronym (kept)	
+CNS	220	acronym (kept)	
+HIV	212	acronym (kept)	
+FAC	206	acronym (kept)	
+EGF	188	acronym (kept)	
+WEA	188	acronym (kept)	
+PART	179	word -> Part	
+ORGANISMS	178	word -> Organisms	
+GENES	178	word -> Genes	
+MISCELLANEOUS	176	word -> Miscellaneous	
+FEATURE	173	word -> Feature	
+COMPARE	166	word -> Compare	
+NAD	158	acronym (kept)	
+CH	156	acronym (kept)	
+NADP	154	acronym (kept)	
+ADAGE	152	word -> Adage	
+DISORDERS	151	word -> Disorders	
+FINDINGS	151	word -> Findings	
+PHENOTYPES	151	word -> Phenotypes	
+CONTACT	144	word -> Contact	
+VEH	141	acronym (kept)	
+XY	114	acronym (kept)	
+TV	100	acronym (kept)	
+IUCN	96	acronym (kept)	
+II	88	acronym (kept)	
+NH	84	acronym (kept)	
+DEPRECATED	83	word -> Deprecated	
+TDP	78	acronym (kept)	
+GM	64	acronym (kept)	
+USD	64	acronym (kept)	
+US	63	acronym (kept)	
+TGF	62	acronym (kept)	
+ORGANIZATIONS	53	word -> Organizations	
+COM	51	acronym (kept)	
+VAL	50	acronym (kept)	
+LOCATIONS	43	word -> Locations	
+GUI	39	acronym (kept)	
+GPI	38	acronym (kept)	
+VII	32	acronym (kept)	
+IX	32	acronym (kept)	
+III	30	acronym (kept)	
+CPU	30	acronym (kept)	
+ID	27	acronym (kept)	
+GTP	26	acronym (kept)	
+SRS	26	acronym (kept)	
+CXC	26	acronym (kept)	
+TTL	25	acronym (kept)	
+MM	25	acronym (kept)	
+ICD	24	acronym (kept)	
+CCN	20	acronym (kept)	
+CDC	20	acronym (kept)	
+ADP	18	acronym (kept)	
+AM	18	acronym (kept)	
+PM	18	acronym (kept)	
+HH	17	acronym (kept)	
+XIII	16	acronym (kept)	
+XI	14	acronym (kept)	
+XII	14	acronym (kept)	
+ABS	14	acronym (kept)	
+YYYY	14	acronym (kept)	
+INF	13	acronym (kept)	
+HDL	12	acronym (kept)	
+VIII	12	acronym (kept)	
+MON	12	acronym (kept)	
+EUR	12	acronym (kept)	
+IP	12	acronym (kept)	
+CC	11	acronym (kept)	
+BOD	11	acronym (kept)	
+URL	11	acronym (kept)	
+CPT	11	acronym (kept)	
+SKU	11	acronym (kept)	
+RMA	11	acronym (kept)	
+USSR	10	acronym (kept)	
+NADPH	10	acronym (kept)	
+ADAM	10	word -> Adam	
+ROOT	10	word -> Root	
+MHI	9	acronym (kept)	
+LDL	8	acronym (kept)	
+STAT	8	acronym (kept)	
+OSI	8	acronym (kept)	
+VBD	8	acronym (kept)	
+DD	8	acronym (kept)	
+EBITDA	8	acronym (kept)	
+CEO	7	acronym (kept)	
+EVENTS	6	word -> Events	
+NON	6	acronym (kept)	
+HUMAN	6	word -> Human	
+CBP	6	acronym (kept)	
+JPY	5	acronym (kept)	
+JFK	5	acronym (kept)	
+LAX	5	acronym (kept)	
+NN	5	acronym (kept)	
+IN	5	acronym (kept)	
+RP	5	acronym (kept)	
+GMP	4	acronym (kept)	
+GABA	4	acronym (kept)	
+ADAMTS	4	acronym (kept)	
+UI	4	acronym (kept)	
+CRM	4	acronym (kept)	
+SID	4	acronym (kept)	
+WTS	4	acronym (kept)	
+ECG	4	acronym (kept)	
+NNP	4	acronym (kept)	
+CD	4	acronym (kept)	
+JJ	4	acronym (kept)	
+BTC	4	acronym (kept)	
+ETH	4	acronym (kept)	
+SOL	4	acronym (kept)	
+CAD	4	acronym (kept)	
+GH	4	acronym (kept)	
+NNN	4	acronym (kept)	
+SAM	4	acronym (kept)	
+AI	4	acronym (kept)	
+SGD	3	acronym (kept)	
+DRA	3	acronym (kept)	
+XML	3	acronym (kept)	
+EBC	3	acronym (kept)	
+WAT	3	acronym (kept)	
+SS	3	acronym (kept)	
+VB	3	acronym (kept)	
+LRB	3	acronym (kept)	
+HMGB	2	acronym (kept)	
+REM	2	acronym (kept)	
+ACTH	2	acronym (kept)	
+KCNQ	2	acronym (kept)	
+AAA	2	acronym (kept)	
+CRISPR	2	acronym (kept)	
+AMP	2	acronym (kept)	
+LIM	2	acronym (kept)	
+GT	2	acronym (kept)	
+AT	2	acronym (kept)	
+TOR	2	acronym (kept)	
+UNESCO	2	word -> Unesco	
+RRB	2	acronym (kept)	
+USPTO	2	acronym (kept)	
+CV	2	acronym (kept)	
+XXXX	2	acronym (kept)	
+DJB	2	acronym (kept)	
+ZIP	2	acronym (kept)	
+VBP	2	acronym (kept)	
+VBN	2	acronym (kept)	
+PR	2	acronym (kept)	
+GRI	1	acronym (kept)	
+UNGC	1	acronym (kept)	
+SASB	1	acronym (kept)	
+GBP	1	acronym (kept)	
+FAQ	1	acronym (kept)	
+GPU	1	acronym (kept)	
+WWF	1	acronym (kept)	
+ICTV	1	acronym (kept)	
