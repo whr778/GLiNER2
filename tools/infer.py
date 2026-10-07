@@ -62,7 +62,9 @@ def _labels_file(path: str):
     sys.path.insert(0, str(Path(__file__).resolve().parent / "train"))
     import train as T
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    block = data.get("labels", data)
+    block = dict(data.get("labels", data))
+    if data.get("style"):
+        block["style"] = data["style"]
     return T._category_fns(block), block, T.transform_record
 
 
@@ -220,11 +222,12 @@ def main(argv: List[str] = None) -> None:
     if s is not None:
         print(f"[infer] coreferent merge {s.record_merge_coreferent} (link threshold "
               f"{s.record_coref_link_threshold}, link {'trained' if s.record_coref_link else 'absent'})")
-    label_map =None if args.no_label_map else getattr(model.config, "label_map", None)
+    label_map = None if args.no_label_map else getattr(model.config, "label_map", None)
+    label_style = None if args.no_label_map else getattr(model.config, "label_style", None)
     rewrites: Dict[str, Dict[str, str]] = {}
 
     def mapped(schema):
-        out, applied = apply_label_map(schema, label_map)
+        out, applied = apply_label_map(schema, label_map, label_style)
         for cat, m in applied.items():
             rewrites.setdefault(cat, {}).update(m)
         return out

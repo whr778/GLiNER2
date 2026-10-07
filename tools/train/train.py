@@ -387,12 +387,13 @@ def _write_model_card(
 # Label transforms (optional ``labels`` config section)
 # ---------------------------------------------------------------------------
 
-def _label_fn(rollup: bool, separator: str, mapping: Dict[str, str]):
-    """Roll a label up to its parent (first ``separator`` segment) then remap it."""
+def _label_fn(rollup: bool, separator: str, mapping: Dict[str, str], style=None):
+    """Roll a label up to its parent (first ``separator`` segment), remap it, then style it."""
     def fn(label: str) -> str:
         if rollup and separator in label:
             label = label.split(separator, 1)[0]
-        return mapping.get(label, label)
+        label = mapping.get(label, label)
+        return style(label) if style else label
     return fn
 
 
@@ -570,8 +571,12 @@ def load_labels_cfg(cfg: Dict, config_path: str = "") -> Dict:
     ref = cfg.get("labels_file")
     if ref:
         path = _resolve_beside_config(ref, config_path, required=True)
-        shared = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        shared = shared.get("labels", shared)
+        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        shared = dict(doc.get("labels", doc))
+        # A label STYLE (LABEL_STYLE_SPEC.md) sits beside `labels:` in the file and travels with it,
+        # so every reader of this config -- training, eval, calibration -- styles the same way.
+        if doc.get("style"):
+            shared["style"] = doc["style"]
     merged = dict(shared)
     merged.update(cfg.get("labels") or {})
     return merged
@@ -582,7 +587,8 @@ def _category_fns(labels_cfg: Dict) -> Dict:
 
     Each category (``entities``, ``relations``, ``events``, ``classifications``)
     has its own ``rollup`` / ``separator`` / ``map``. A category with neither an
-    active rollup nor a map is skipped. ``events`` covers both event types and
+    active rollup nor a map is skipped -- unless the labels carry a ``style``, which then
+    applies to EVERY label of every category, after the map. ``events`` covers both event types and
     argument roles; the ``entities`` fn also applies to ``entity_descriptions``.
     """
     if any(k in labels_cfg for k in ("rollup", "separator", "map")):
@@ -590,14 +596,16 @@ def _category_fns(labels_cfg: Dict) -> Dict:
             "labels: uses the removed flat form. Nest rollup/separator/map under a "
             f"category, one of {LABEL_CATEGORIES}."
         )
+    from gliner2.inference.label_style import styler
+    style = styler(labels_cfg.get("style"))
     fns: Dict = {}
     for cat in LABEL_CATEGORIES:
         block = labels_cfg.get(cat) or {}
         rollup = bool(block.get("rollup", False))
         separator = block.get("separator", ".")
         mapping = block.get("map") or {}
-        if rollup or mapping:
-            fns[cat] = _label_fn(rollup, separator, mapping)
+        if rollup or mapping or style:
+            fns[cat] = _label_fn(rollup, separator, mapping, style)
     return fns
 
 
@@ -1752,6 +1760,7 @@ def main(config_path: str) -> None:
     # labels are an INPUT, so a consumer (viewer, pipeline) must replay the map training
     # applied, and decode the way this model was evaluated.
     model.config.label_map, model.config.inference_defaults = checkpoint_fields(labels_cfg, ev)
+    model.config.label_style = labels_cfg.get("style")
     if is_main:
         print(f"[config] label_map for {sorted(model.config.label_map or {})} and "
               f"inference_defaults {model.config.inference_defaults} -> config.json")

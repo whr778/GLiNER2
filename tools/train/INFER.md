@@ -107,6 +107,13 @@ Each decode setting resolves in this order:
 
 Checkpoints from before 63eb320 store no defaults and no label map, so they use step 3 and labels as typed.
 
+## Label style (checkpoints trained on unified-full-v3)
+
+A checkpoint whose config.json carries `label_style` (LABEL_STYLE_SPEC.md) gets every label you send restyled
+before the map applies, including labels the map never saw: `military rank` -> `Military_Rank`,
+`person` -> `Person`, and structure names and fields too. The `[infer] label_map rewrites` line shows each change.
+`--no-label-map` turns off both the map and the style. Older checkpoints are unchanged.
+
 ## Scoring a predictions file like the blind test
 
 `tools/train/score_predictions.py` scores an `infer.py --output` file with the blind test's own scorer

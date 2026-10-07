@@ -22,6 +22,7 @@ Roles, passed to `build_label_maps.build`:
     uv run python tools/train/build_unified_full.py                       # -> labels/unified-full.yaml
     uv run python tools/train/build_unified_full.py --output /path/x.yaml  # anywhere else
     uv run python tools/train/build_unified_full.py --v2 [--output ...]   # -> labels/unified-full-v2.yaml
+    uv run python tools/train/build_unified_full.py --v3 [--output ...]   # -> labels/unified-full-v3.yaml
 """
 from __future__ import annotations
 
@@ -160,9 +161,13 @@ def derive_v2(src: Path = V2_FROM, out: Path = V2_OUT) -> dict:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--v2", action="store_true", help=f"derive {V2_OUT.name} from {V2_FROM.name} + MERGES")
+    ap.add_argument("--v3", action="store_true", help="derive unified-full-v3.yaml: Title_Snake (LABEL_STYLE_SPEC.md)")
     ap.add_argument("--output", type=Path, help=f"where to write (default {OUT}, or {V2_OUT} with --v2)")
     args = ap.parse_args()
-    if args.v2:
+    if args.v3:
+        import label_style_v3
+        label_style_v3.derive_v3(out=args.output or label_style_v3.OUT)
+    elif args.v2:
         derive_v2(out=args.output or V2_OUT)
     else:
         main(out=args.output or OUT)

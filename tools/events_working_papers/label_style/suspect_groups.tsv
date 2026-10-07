@@ -1,105 +1,105 @@
 category	group	reason	spelling	kind	uses	corpora	proposed	example	decision
-entities	gene	ALL-CAPS beside other casing	GENE		10255	bc2gm 10255	Gene	bc2gm: S - 100 | HMB - 45	
-entities	gene	ALL-CAPS beside other casing	gene		5139	cc_news_haiku45 2127; cc_news_events_haiku45 903; synthetic_haiku45_5k_coerced 567	Gene	cc_news_haiku45: ApoE-4 | Apolipoprotein E	
-entities	gene	ALL-CAPS beside other casing	Gene		55	bio_ner_relations 53; text2json 2	Gene	bio_ner_relations: RAD51 | RAD52	
-entities	chemical	ALL-CAPS beside other casing	CHEMICAL		14499	bc4chemd 14499	Chemical	bc4chemd: haloperidol | aflatoxin	
-entities	chemical	ALL-CAPS beside other casing	chemical		6506	cc_news_haiku45 2225; cc_news_events_haiku45 943; synthetic_events_capped 724	Chemical	cc_news_haiku45: helium | Sodium cumenesulfonate	
-entities	chemical	ALL-CAPS beside other casing	Chemical		3590	bc5cdr 3010; bionlp11id 562; text2json 18	Chemical	bc5cdr: Naloxone | clonidine	
-entities	disease	ALL-CAPS beside other casing	Disease		13790	pubmed_abstracts_ner 5392; ncbi_disease 3948; bc5cdr 2661	Disease	pubmed_abstracts_ner: syndrome | syndrome	
-entities	disease	ALL-CAPS beside other casing	disease		7590	cc_news_haiku45 2665; cc_news_events_haiku45 1088; synthetic_haiku45_5k 1031	Disease	cc_news_haiku45: cholera | depression	
-entities	disease	ALL-CAPS beside other casing	DISEASE		965	kaznerd 965	Disease	kaznerd: Коронавирустың | коронавирусқа	
-entities	organism	ALL-CAPS beside other casing	organism		5373	cc_news_haiku45 2119; cc_news_events_haiku45 875; synthetic_haiku45_5k 593	Organism	cc_news_haiku45: H3N2 strain | bark beetles	
-entities	organism	ALL-CAPS beside other casing	Organism		3563	bionlp11id 2171; bionlp13cg 1364; text2json 28	Organism	bionlp11id: group A streptococci | streptococci	
-entities	organism	ALL-CAPS beside other casing	ORGANISM		1125	biomed_ner 1125	Organism	biomed_ner: Weed | seed	
-entities	phenotype	ALL-CAPS beside other casing	PHENOTYPE		2264	biomed_ner 2264	Phenotype	biomed_ner: genetic heterogeneity | metastatic	
-entities	phenotype	ALL-CAPS beside other casing	Phenotype		224	pubmed_abstracts_ner 148; bio_ner_relations 76	Phenotype	pubmed_abstracts_ner: penetrance | penetrance	
-entities	location	ALL-CAPS beside other casing	location		126857	masakhaner 43742; cc_news_haiku45 16503; cc_news_events_haiku45 6565	Location	masakhaner: Mali | Mali	
-entities	location	ALL-CAPS beside other casing	Location		49297	turkish_event 13653; docee 12407; cmnee_ner 9610	Location	turkish_event: Washington | Ayn el Arab (Kobani)	
-entities	location	ALL-CAPS beside other casing	LOCATION		1897	kaznerd 1500; biomed_ner 397	Location	kaznerd: Каспий | Жайық	
-entities	activity	ALL-CAPS beside other casing	ACTIVITY		3913	biomed_ner 3913	Activity	biomed_ner: biosolarization | Biosolarization	
-entities	activity	ALL-CAPS beside other casing	Activity		35	text2json 34; duee_ner 1	Activity	text2json: Aquaculture | Aquaculture	
-entities	function	ALL-CAPS beside other casing	FUNCTION		2570	biomed_ner 2570	Function	biomed_ner: microbial activity | translocation	
-entities	function	ALL-CAPS beside other casing	Function		4	text2json 4	Function	text2json: Joint stabilization | Balance maintenance	
-entities	intellectualproperty	ALL-CAPS beside other casing	INTELLECTUAL PROPERTY		2675	biomed_ner 2675	Intellectual_Property	biomed_ner: data | report	
-entities	intellectualproperty	ALL-CAPS beside other casing	Intellectual Property		46	pubmed_abstracts_ner 46	Intellectual_Property	pubmed_abstracts_ner: Copyright | Copyright	
-entities	intellectualproperty	ALL-CAPS beside other casing	intellectualProperty		1	paraloq_json 1	Intellectual_Property	paraloq_json: All intellectual property developed during the cou	
-entities	organization	ALL-CAPS beside other casing	organization		99205	masakhaner 34560; cc_news_haiku45 12148; cc_news_events_haiku45 4813	Organization	masakhaner: Afiriki tɔnba ( OYIYA ) | Afiriki Kelenyatɔn ( IYA )	
-entities	organization	ALL-CAPS beside other casing	Organization		23413	cmnee_ner 13123; duee_ner 7311; casie 787	Organization	cmnee_ner: 俄罗斯联邦航天局 | 安全局	
-entities	organization	ALL-CAPS beside other casing	ORGANIZATION		1569	biomed_ner 1569	Organization	biomed_ner: Society of Chemical Industry. | facilities	
-entities	anatomicalstructure	ALL-CAPS beside other casing	anatomical structure		5333	cc_news_haiku45 2092; cc_news_events_haiku45 903; cc_news_events_sonnet55_v2 657	Anatomical_Structure	cc_news_haiku45: right arm | right elbow	
-entities	anatomicalstructure	ALL-CAPS beside other casing	ANATOMICAL STRUCTURE		1550	biomed_ner 1550	Anatomical_Structure	biomed_ner: tumor tissue | tissue samples	
-entities	anatomicalstructure	ALL-CAPS beside other casing	Anatomical Structure		4	text2json 4	Anatomical_Structure	text2json: 	
-entities	group	ALL-CAPS beside other casing	GROUP		2635	biomed_ner 2635	Group	biomed_ner: patients | patients.	
-entities	group	ALL-CAPS beside other casing	Group		86	text2json 86	Group	text2json: students who are deaf or hard of hearing | families	
-entities	group	ALL-CAPS beside other casing	group		22	text2json 22	Group	text2json: human raters | human raters	
-entities	disorder	ALL-CAPS beside other casing	DISORDER		2100	biomed_ner 2100	Disorder	biomed_ner: metastatic castration-resistant prostate cancer: | metastatic castration-resistant prostate cancer	
-entities	disorder	ALL-CAPS beside other casing	Disorder		10	text2json 10	Disorder	text2json: Classic autism | Classic autism	
-entities	medicalprocedure	ALL-CAPS beside other casing	medical procedure		5139	cc_news_haiku45 2123; cc_news_events_haiku45 841; cc_news_events_sonnet55_v2 602	Medical_Procedure	cc_news_haiku45: lower back surgery | herniated disk removed	
-entities	medicalprocedure	ALL-CAPS beside other casing	MEDICAL PROCEDURE		1449	biomed_ner 1449	Medical_Procedure	biomed_ner: biopsies | treatment	
-entities	medicalprocedure	ALL-CAPS beside other casing	Medical Procedure		10	text2json 10	Medical_Procedure	text2json: Pelvic exam | Ultrasound exam of the pelvis	
-entities	product	ALL-CAPS beside other casing	Product		15390	cmnee_ner 12472; duee_ner 2876; text2json 42	Product	cmnee_ner: 陆军作战人员信息网络战术系统 | WIN-T系统	
-entities	product	ALL-CAPS beside other casing	product		10885	cc_news_haiku45 3641; cc_news_events_haiku45 1692; synthetic_events_capped 1458	Product	cc_news_haiku45: Commodore 64 | NES	
-entities	product	ALL-CAPS beside other casing	PRODUCT		2323	biomed_ner 1781; kaznerd 542	Product	biomed_ner: CellSearch | private facilities	
-entities	person	ALL-CAPS beside other casing	person		145827	masakhaner 52073; cc_news_haiku45 17433; cc_news_events_haiku45 7213	Person	masakhaner: Abudarahamani Sisoko | Bubu Sise	
-entities	person	ALL-CAPS beside other casing	Person		11172	duee_ner 5665; cmnee_ner 3471; casie 881	Person	duee_ner: 达达 | 郭台铭	
-entities	person	ALL-CAPS beside other casing	PERSON		8269	kaznerd 7887; biomed_ner 382	Person	kaznerd: Жандос Жұмабек | Ерболат Әбіш	
-entities	event	ALL-CAPS beside other casing	event		9454	cc_news_haiku45 3582; cc_news_events_sonnet55_v2 2040; cc_news_events_haiku45 1390	Event	cc_news_haiku45: Watergate | 58th Presidential Inauguration	
-entities	event	ALL-CAPS beside other casing	Event		6706	duee_ner 2704; cmnee_ner 2180; mendeley_ner 1732	Event	duee_ner: 世界女排联赛 | 暴雨	
-entities	event	ALL-CAPS beside other casing	EVENT		1525	kaznerd 1285; biomed_ner 240	Event	kaznerd: Отан қорғаушылар мерекесі | Жеңіс күніне	
-entities	money	ALL-CAPS beside other casing	money		20289	cc_news_haiku45 5912; synthetic_events_capped 3685; synthetic_haiku45_5k 3684	Money	cc_news_haiku45: $100 | $1.1 billion	
-entities	money	ALL-CAPS beside other casing	Money		5008	cmnee_ner 3578; duee_ner 1058; casie 186	Money	cmnee_ner: 20亿美元 | 56亿美元	
-entities	money	ALL-CAPS beside other casing	MONEY		3585	kaznerd 3499; biomed_ner 86	Money	kaznerd: 94000000000 теңге | он мың бес жүз теңге	
-entities	language	ALL-CAPS beside other casing	language		5345	cc_news_haiku45 2143; cc_news_events_haiku45 927; synthetic_haiku45_5k 586	Language	cc_news_haiku45: Arabic | Greek	
-entities	language	ALL-CAPS beside other casing	LANGUAGE		298	kaznerd 271; biomed_ner 27	Language	kaznerd: қазақ | Орысша	
-entities	language	ALL-CAPS beside other casing	Language		17	text2json 16; cmnee_ner 1	Language	text2json: American Sign Language | American Sign Language	
-entities	products	ALL-CAPS beside other casing	PRODUCTS		475	biomed_ner 475	Products	biomed_ner: tablets | drugs	
-entities	products	ALL-CAPS beside other casing	products		1	paraloq_json 1	Products	paraloq_json: Product A | Product B	
-entities	genes	ALL-CAPS beside other casing	Genes		314	pubmed_abstracts_ner 314	Genes	pubmed_abstracts_ner: transgenes | transgenes	
-entities	genes	ALL-CAPS beside other casing	GENES		178	biomed_ner 178	Genes	biomed_ner: beta 1 -selective (cardioselective) adrenoceptor | xanthine oxidase	
-entities	organizations	ALL-CAPS beside other casing	Organizations		116	pubmed_abstracts_ner 116	Organizations	pubmed_abstracts_ner: societies | societies	
-entities	organizations	ALL-CAPS beside other casing	ORGANIZATIONS		53	biomed_ner 53	Organizations	biomed_ner: USP | USP	
-entities	locations	ALL-CAPS beside other casing	LOCATIONS		43	biomed_ner 43	Locations	biomed_ner: Pharmacy | a pharmacy	
-entities	locations	ALL-CAPS beside other casing	locations		1	paraloq_json 1	Locations	paraloq_json: Anytown Hospital | Big City Medical Center	
-entities	events	ALL-CAPS beside other casing	EVENTS		6	biomed_ner 6	Events	biomed_ner: fog | drought.	
-entities	events	ALL-CAPS beside other casing	events		1	paraloq_json 1	Events	paraloq_json: insolvency | force majeure	
-entities	time	ALL-CAPS beside other casing	TIME		99244	docred 93891; redocred 3703; kaznerd 1650	Time	docred: 2013 | August 16 , 2013	
-entities	time	ALL-CAPS beside other casing	time		11125	cc_news_haiku45 4340; cc_news_events_haiku45 1847; synthetic_haiku45_5k 1478	Time	cc_news_haiku45: 7 p.m. | 9 p.m.	
-entities	time	ALL-CAPS beside other casing	Time		3047	duee_ner 692; casie 617; casie_typed 617	Time	duee_ner: 上午10时许 | 10时50分许	
-entities	cardinal	ALL-CAPS beside other casing	CARDINAL		20025	kaznerd 20025	Cardinal	kaznerd: сегіз жүз | мыңға жуық	
-entities	cardinal	ALL-CAPS beside other casing	cardinal		19738	cc_news_haiku45 7317; synthetic_haiku45_5k 4084; cc_news_events_haiku45 3077	Cardinal	cc_news_haiku45: 22-9 | 22-6	
-entities	date	ALL-CAPS beside other casing	date		92174	masakhaner 27322; cc_news_haiku45 13786; cc_news_events_haiku45 5779	Date	masakhaner: feburuyekalo san 2022 | Feburuyekalo san 2022	
-entities	date	ALL-CAPS beside other casing	Date		53334	docee 14445; docee_zh 14315; cmnee_ner 10914	Date	docee: Sunday | Friday	
-entities	date	ALL-CAPS beside other casing	DATE		18155	kaznerd 18155	Date	kaznerd: Биылдыққа | жыл соңына дейін	
-entities	quantity	ALL-CAPS beside other casing	quantity		11521	cc_news_haiku45 2606; synthetic_events_capped 2022; cc_news_events_sonnet55_v2 1929	Quantity	cc_news_haiku45: 40 million | 20 million	
-entities	quantity	ALL-CAPS beside other casing	Quantity		8685	cmnee_ner 5522; duee_ner 3153; text2json 10	Quantity	cmnee_ner: 2门 | 18发	
-entities	quantity	ALL-CAPS beside other casing	QUANTITY		2879	kaznerd 2879	Quantity	kaznerd: жүз екі мың шаршы метр | жиырма бес метр	
-entities	facility	ALL-CAPS beside other casing	facility		15455	cc_news_haiku45 5662; cc_news_events_haiku45 2432; cc_news_events_sonnet55_v2 2042	Facility	cc_news_haiku45: Royal Adelaide | FISA Court	
-entities	facility	ALL-CAPS beside other casing	Facility		4352	cmnee_ner 3585; duee_ner 761; text2json 6	Facility	cmnee_ner: 五角大楼 | 普列谢茨克航天中心	
-entities	facility	ALL-CAPS beside other casing	FACILITY		1510	kaznerd 1510	Facility	kaznerd: Ұлттық академиялық кітапханада | Алматы бір – Шамалған – Ұзынағаш	
-entities	ordinal	ALL-CAPS beside other casing	ordinal		7425	cc_news_haiku45 2813; cc_news_events_haiku45 1282; synthetic_events_capped 769	Ordinal	cc_news_haiku45: first | No. 4	
-entities	ordinal	ALL-CAPS beside other casing	ORDINAL		2811	kaznerd 2811	Ordinal	kaznerd: бірінші | 1-інші	
-entities	law	ALL-CAPS beside other casing	law		6748	cc_news_haiku45 2551; cc_news_events_haiku45 1095; cc_news_events_sonnet55_v2 789	Law	cc_news_haiku45: 1967 Abortion Act | Every Student Succeeds Act	
-entities	law	ALL-CAPS beside other casing	LAW		394	kaznerd 394	LAW	kaznerd: Еуразиялық экономикалық одақ туралы шартқа | Біріккен Ұлттар Ұйымының Бала құқықтары туралы кон	
-entities	law	ALL-CAPS beside other casing	Law		22	text2json 20; duee_ner 2	Law	text2json: General Mining Act (1872) | Organic Act (1897)	
-entities	project	ALL-CAPS beside other casing	PROJECT		1571	kaznerd 1571	Project	kaznerd: Жас маман | ашық бюджеттердің интерактивті картасы	
-entities	project	ALL-CAPS beside other casing	Project		15	text2json 8; cmnee_ner 7	Project	text2json: Loess Plateau Watershed Rehabilitation Project | Forest Landscape Restoration Initiative	
-entities	project	ALL-CAPS beside other casing	project		6	text2json 6	Project	text2json: BOCCE project | BOCCE project	
-entities	percentage	ALL-CAPS beside other casing	PERCENTAGE		3162	kaznerd 3162	Percentage	kaznerd: жиырма бес – отыз пайызға | 25 – 30 пайызға	
-entities	percentage	ALL-CAPS beside other casing	Percentage		1	cmnee_ner 1	Percentage	cmnee_ner: 40%	
-entities	percentage	ALL-CAPS beside other casing	percentage		1	paraloq_json 1	Percentage	paraloq_json: 5	
-entities	position	ALL-CAPS beside other casing	POSITION		4397	kaznerd 4397	Position	kaznerd: Мемлекет басшысы | Қазақстан Республикасы Президентінің	
-entities	position	ALL-CAPS beside other casing	Position		1774	docee 1070; turkish_event 704	Position	docee: Catholic priests | president	
-entities	position	ALL-CAPS beside other casing	position		5	paraloq_json 5	Position	paraloq_json: 1 | Software Engineer	
-entities	art	ALL-CAPS beside other casing	ART		1411	kaznerd 1411	ART	kaznerd: Қорытынды жаңалықтар | Армандастар	
-entities	art	ALL-CAPS beside other casing	Art		92	pubmed_abstracts_ner 92	Art	pubmed_abstracts_ner: human body | human body	
-entities	contact	ALL-CAPS beside other casing	CONTACT		144	kaznerd 144	Contact	kaznerd: плюс 77061002424 | 1414	
-entities	contact	ALL-CAPS beside other casing	contact		5	paraloq_json 5	Contact	paraloq_json: John Smith | Jane Doe	
-relations	partof	ALL-CAPS beside other casing	part of		32218	docred 28840; redocred 3005; professorbob_re 240	Part_Of	docred: {'head': 'Canada', 'tail': 'North America'} | {'head': 'Belize', 'tail': 'Central America'}	
-relations	partof	ALL-CAPS beside other casing	part_of		1972	cc_news_haiku45 1023; synthetic_haiku45_5k 276; synthetic_events_capped 227	Part_Of	cc_news_haiku45: {'head': 'Anthem', 'tail': 'Blue Cross-Blue Shield'} | {'head': 'Socceroos', 'tail': 'Australia'}	
-relations	partof	ALL-CAPS beside other casing	PART-OF		179	scierc 179	Part_OF	scierc: {'head': 'intrinsic object structure', 'tail': 'particle-fil | {'head': 'Graph unification', 'tail': 'unification-based gra	
-events	competition	role+type	Competition	role+type	4432	maven 3167; cc_news_events_haiku45 647; cc_news_events_sonnet55_v2 462	Competition	maven: type, trigger ['challenged'] | type, trigger ['competition']	
-events	proposal	role+type	Proposal	role	283	cc_news_events_haiku45 150; cc_news_events_sonnet55_v2 63; cc_news_haiku45 50	Proposal	cc_news_events_haiku45: role, governorship election in Government.Vote | role, if five superior court judges are select in Government.Vote	
-events	proposal	role+type	proposal	type	255	duee 86; duee_typed 86; duee_ner 83	Proposal	duee: type, trigger ['求婚'] | type, trigger ['求婚']	
-events	award	role+type	Award	role+type	1804	cc_news_events_haiku45 448; synthetic_sonnet5_1k 217; synthetic_events_capped 190	Award	cc_news_events_haiku45: role, Murray McPherson Award for 2018 in Award.ReceiveAward | role, Hall of Fame in Award.ReceiveAward	
-structures	cc	ALL-CAPS beside other casing	CC		5	text2json 5	CC	text2json: field of record: and | field of record: and	
-structures	cc	ALL-CAPS beside other casing	cc		3	text2json 3	Cc	text2json: field of record: ['and', 'or'] | field of record: ['and', 'or']	
+entities	gene	ALL-CAPS beside other casing	GENE		10255	bc2gm 10255	Gene	bc2gm: S - 100 | HMB - 45	merge
+entities	gene	ALL-CAPS beside other casing	gene		5139	cc_news_haiku45 2127; cc_news_events_haiku45 903; synthetic_haiku45_5k_coerced 567	Gene	cc_news_haiku45: ApoE-4 | Apolipoprotein E	merge
+entities	gene	ALL-CAPS beside other casing	Gene		55	bio_ner_relations 53; text2json 2	Gene	bio_ner_relations: RAD51 | RAD52	merge
+entities	chemical	ALL-CAPS beside other casing	CHEMICAL		14499	bc4chemd 14499	Chemical	bc4chemd: haloperidol | aflatoxin	merge
+entities	chemical	ALL-CAPS beside other casing	chemical		6506	cc_news_haiku45 2225; cc_news_events_haiku45 943; synthetic_events_capped 724	Chemical	cc_news_haiku45: helium | Sodium cumenesulfonate	merge
+entities	chemical	ALL-CAPS beside other casing	Chemical		3590	bc5cdr 3010; bionlp11id 562; text2json 18	Chemical	bc5cdr: Naloxone | clonidine	merge
+entities	disease	ALL-CAPS beside other casing	Disease		13790	pubmed_abstracts_ner 5392; ncbi_disease 3948; bc5cdr 2661	Disease	pubmed_abstracts_ner: syndrome | syndrome	merge
+entities	disease	ALL-CAPS beside other casing	disease		7590	cc_news_haiku45 2665; cc_news_events_haiku45 1088; synthetic_haiku45_5k 1031	Disease	cc_news_haiku45: cholera | depression	merge
+entities	disease	ALL-CAPS beside other casing	DISEASE		965	kaznerd 965	Disease	kaznerd: Коронавирустың | коронавирусқа	merge
+entities	organism	ALL-CAPS beside other casing	organism		5373	cc_news_haiku45 2119; cc_news_events_haiku45 875; synthetic_haiku45_5k 593	Organism	cc_news_haiku45: H3N2 strain | bark beetles	merge
+entities	organism	ALL-CAPS beside other casing	Organism		3563	bionlp11id 2171; bionlp13cg 1364; text2json 28	Organism	bionlp11id: group A streptococci | streptococci	merge
+entities	organism	ALL-CAPS beside other casing	ORGANISM		1125	biomed_ner 1125	Organism	biomed_ner: Weed | seed	merge
+entities	phenotype	ALL-CAPS beside other casing	PHENOTYPE		2264	biomed_ner 2264	Phenotype	biomed_ner: genetic heterogeneity | metastatic	merge
+entities	phenotype	ALL-CAPS beside other casing	Phenotype		224	pubmed_abstracts_ner 148; bio_ner_relations 76	Phenotype	pubmed_abstracts_ner: penetrance | penetrance	merge
+entities	location	ALL-CAPS beside other casing	location		126857	masakhaner 43742; cc_news_haiku45 16503; cc_news_events_haiku45 6565	Location	masakhaner: Mali | Mali	merge
+entities	location	ALL-CAPS beside other casing	Location		49297	turkish_event 13653; docee 12407; cmnee_ner 9610	Location	turkish_event: Washington | Ayn el Arab (Kobani)	merge
+entities	location	ALL-CAPS beside other casing	LOCATION		1897	kaznerd 1500; biomed_ner 397	Location	kaznerd: Каспий | Жайық	merge
+entities	activity	ALL-CAPS beside other casing	ACTIVITY		3913	biomed_ner 3913	Activity	biomed_ner: biosolarization | Biosolarization	merge
+entities	activity	ALL-CAPS beside other casing	Activity		35	text2json 34; duee_ner 1	Activity	text2json: Aquaculture | Aquaculture	merge
+entities	function	ALL-CAPS beside other casing	FUNCTION		2570	biomed_ner 2570	Function	biomed_ner: microbial activity | translocation	merge
+entities	function	ALL-CAPS beside other casing	Function		4	text2json 4	Function	text2json: Joint stabilization | Balance maintenance	merge
+entities	intellectualproperty	ALL-CAPS beside other casing	INTELLECTUAL PROPERTY		2675	biomed_ner 2675	Intellectual_Property	biomed_ner: data | report	merge
+entities	intellectualproperty	ALL-CAPS beside other casing	Intellectual Property		46	pubmed_abstracts_ner 46	Intellectual_Property	pubmed_abstracts_ner: Copyright | Copyright	merge
+entities	intellectualproperty	ALL-CAPS beside other casing	intellectualProperty		1	paraloq_json 1	Intellectual_Property	paraloq_json: All intellectual property developed during the cou	merge
+entities	organization	ALL-CAPS beside other casing	organization		99205	masakhaner 34560; cc_news_haiku45 12148; cc_news_events_haiku45 4813	Organization	masakhaner: Afiriki tɔnba ( OYIYA ) | Afiriki Kelenyatɔn ( IYA )	merge
+entities	organization	ALL-CAPS beside other casing	Organization		23413	cmnee_ner 13123; duee_ner 7311; casie 787	Organization	cmnee_ner: 俄罗斯联邦航天局 | 安全局	merge
+entities	organization	ALL-CAPS beside other casing	ORGANIZATION		1569	biomed_ner 1569	Organization	biomed_ner: Society of Chemical Industry. | facilities	merge
+entities	anatomicalstructure	ALL-CAPS beside other casing	anatomical structure		5333	cc_news_haiku45 2092; cc_news_events_haiku45 903; cc_news_events_sonnet55_v2 657	Anatomical_Structure	cc_news_haiku45: right arm | right elbow	merge
+entities	anatomicalstructure	ALL-CAPS beside other casing	ANATOMICAL STRUCTURE		1550	biomed_ner 1550	Anatomical_Structure	biomed_ner: tumor tissue | tissue samples	merge
+entities	anatomicalstructure	ALL-CAPS beside other casing	Anatomical Structure		4	text2json 4	Anatomical_Structure	text2json: 	merge
+entities	group	ALL-CAPS beside other casing	GROUP		2635	biomed_ner 2635	Group	biomed_ner: patients | patients.	merge
+entities	group	ALL-CAPS beside other casing	Group		86	text2json 86	Group	text2json: students who are deaf or hard of hearing | families	merge
+entities	group	ALL-CAPS beside other casing	group		22	text2json 22	Group	text2json: human raters | human raters	merge
+entities	disorder	ALL-CAPS beside other casing	DISORDER		2100	biomed_ner 2100	Disorder	biomed_ner: metastatic castration-resistant prostate cancer: | metastatic castration-resistant prostate cancer	merge
+entities	disorder	ALL-CAPS beside other casing	Disorder		10	text2json 10	Disorder	text2json: Classic autism | Classic autism	merge
+entities	medicalprocedure	ALL-CAPS beside other casing	medical procedure		5139	cc_news_haiku45 2123; cc_news_events_haiku45 841; cc_news_events_sonnet55_v2 602	Medical_Procedure	cc_news_haiku45: lower back surgery | herniated disk removed	merge
+entities	medicalprocedure	ALL-CAPS beside other casing	MEDICAL PROCEDURE		1449	biomed_ner 1449	Medical_Procedure	biomed_ner: biopsies | treatment	merge
+entities	medicalprocedure	ALL-CAPS beside other casing	Medical Procedure		10	text2json 10	Medical_Procedure	text2json: Pelvic exam | Ultrasound exam of the pelvis	merge
+entities	product	ALL-CAPS beside other casing	Product		15390	cmnee_ner 12472; duee_ner 2876; text2json 42	Product	cmnee_ner: 陆军作战人员信息网络战术系统 | WIN-T系统	merge
+entities	product	ALL-CAPS beside other casing	product		10885	cc_news_haiku45 3641; cc_news_events_haiku45 1692; synthetic_events_capped 1458	Product	cc_news_haiku45: Commodore 64 | NES	merge
+entities	product	ALL-CAPS beside other casing	PRODUCT		2323	biomed_ner 1781; kaznerd 542	Product	biomed_ner: CellSearch | private facilities	merge
+entities	person	ALL-CAPS beside other casing	person		145827	masakhaner 52073; cc_news_haiku45 17433; cc_news_events_haiku45 7213	Person	masakhaner: Abudarahamani Sisoko | Bubu Sise	merge
+entities	person	ALL-CAPS beside other casing	Person		11172	duee_ner 5665; cmnee_ner 3471; casie 881	Person	duee_ner: 达达 | 郭台铭	merge
+entities	person	ALL-CAPS beside other casing	PERSON		8269	kaznerd 7887; biomed_ner 382	Person	kaznerd: Жандос Жұмабек | Ерболат Әбіш	merge
+entities	event	ALL-CAPS beside other casing	event		9454	cc_news_haiku45 3582; cc_news_events_sonnet55_v2 2040; cc_news_events_haiku45 1390	Event	cc_news_haiku45: Watergate | 58th Presidential Inauguration	merge
+entities	event	ALL-CAPS beside other casing	Event		6706	duee_ner 2704; cmnee_ner 2180; mendeley_ner 1732	Event	duee_ner: 世界女排联赛 | 暴雨	merge
+entities	event	ALL-CAPS beside other casing	EVENT		1525	kaznerd 1285; biomed_ner 240	Event	kaznerd: Отан қорғаушылар мерекесі | Жеңіс күніне	merge
+entities	money	ALL-CAPS beside other casing	money		20289	cc_news_haiku45 5912; synthetic_events_capped 3685; synthetic_haiku45_5k 3684	Money	cc_news_haiku45: $100 | $1.1 billion	merge
+entities	money	ALL-CAPS beside other casing	Money		5008	cmnee_ner 3578; duee_ner 1058; casie 186	Money	cmnee_ner: 20亿美元 | 56亿美元	merge
+entities	money	ALL-CAPS beside other casing	MONEY		3585	kaznerd 3499; biomed_ner 86	Money	kaznerd: 94000000000 теңге | он мың бес жүз теңге	merge
+entities	language	ALL-CAPS beside other casing	language		5345	cc_news_haiku45 2143; cc_news_events_haiku45 927; synthetic_haiku45_5k 586	Language	cc_news_haiku45: Arabic | Greek	merge
+entities	language	ALL-CAPS beside other casing	LANGUAGE		298	kaznerd 271; biomed_ner 27	Language	kaznerd: қазақ | Орысша	merge
+entities	language	ALL-CAPS beside other casing	Language		17	text2json 16; cmnee_ner 1	Language	text2json: American Sign Language | American Sign Language	merge
+entities	products	ALL-CAPS beside other casing	PRODUCTS		475	biomed_ner 475	Products	biomed_ner: tablets | drugs	merge
+entities	products	ALL-CAPS beside other casing	products		1	paraloq_json 1	Products	paraloq_json: Product A | Product B	merge
+entities	genes	ALL-CAPS beside other casing	Genes		314	pubmed_abstracts_ner 314	Genes	pubmed_abstracts_ner: transgenes | transgenes	merge
+entities	genes	ALL-CAPS beside other casing	GENES		178	biomed_ner 178	Genes	biomed_ner: beta 1 -selective (cardioselective) adrenoceptor | xanthine oxidase	merge
+entities	organizations	ALL-CAPS beside other casing	Organizations		116	pubmed_abstracts_ner 116	Organizations	pubmed_abstracts_ner: societies | societies	merge
+entities	organizations	ALL-CAPS beside other casing	ORGANIZATIONS		53	biomed_ner 53	Organizations	biomed_ner: USP | USP	merge
+entities	locations	ALL-CAPS beside other casing	LOCATIONS		43	biomed_ner 43	Locations	biomed_ner: Pharmacy | a pharmacy	merge
+entities	locations	ALL-CAPS beside other casing	locations		1	paraloq_json 1	Locations	paraloq_json: Anytown Hospital | Big City Medical Center	merge
+entities	events	ALL-CAPS beside other casing	EVENTS		6	biomed_ner 6	Events	biomed_ner: fog | drought.	merge
+entities	events	ALL-CAPS beside other casing	events		1	paraloq_json 1	Events	paraloq_json: insolvency | force majeure	merge
+entities	time	ALL-CAPS beside other casing	TIME		99244	docred 93891; redocred 3703; kaznerd 1650	Time	docred: 2013 | August 16 , 2013	merge
+entities	time	ALL-CAPS beside other casing	time		11125	cc_news_haiku45 4340; cc_news_events_haiku45 1847; synthetic_haiku45_5k 1478	Time	cc_news_haiku45: 7 p.m. | 9 p.m.	merge
+entities	time	ALL-CAPS beside other casing	Time		3047	duee_ner 692; casie 617; casie_typed 617	Time	duee_ner: 上午10时许 | 10时50分许	merge
+entities	cardinal	ALL-CAPS beside other casing	CARDINAL		20025	kaznerd 20025	Cardinal	kaznerd: сегіз жүз | мыңға жуық	merge
+entities	cardinal	ALL-CAPS beside other casing	cardinal		19738	cc_news_haiku45 7317; synthetic_haiku45_5k 4084; cc_news_events_haiku45 3077	Cardinal	cc_news_haiku45: 22-9 | 22-6	merge
+entities	date	ALL-CAPS beside other casing	date		92174	masakhaner 27322; cc_news_haiku45 13786; cc_news_events_haiku45 5779	Date	masakhaner: feburuyekalo san 2022 | Feburuyekalo san 2022	merge
+entities	date	ALL-CAPS beside other casing	Date		53334	docee 14445; docee_zh 14315; cmnee_ner 10914	Date	docee: Sunday | Friday	merge
+entities	date	ALL-CAPS beside other casing	DATE		18155	kaznerd 18155	Date	kaznerd: Биылдыққа | жыл соңына дейін	merge
+entities	quantity	ALL-CAPS beside other casing	quantity		11521	cc_news_haiku45 2606; synthetic_events_capped 2022; cc_news_events_sonnet55_v2 1929	Quantity	cc_news_haiku45: 40 million | 20 million	merge
+entities	quantity	ALL-CAPS beside other casing	Quantity		8685	cmnee_ner 5522; duee_ner 3153; text2json 10	Quantity	cmnee_ner: 2门 | 18发	merge
+entities	quantity	ALL-CAPS beside other casing	QUANTITY		2879	kaznerd 2879	Quantity	kaznerd: жүз екі мың шаршы метр | жиырма бес метр	merge
+entities	facility	ALL-CAPS beside other casing	facility		15455	cc_news_haiku45 5662; cc_news_events_haiku45 2432; cc_news_events_sonnet55_v2 2042	Facility	cc_news_haiku45: Royal Adelaide | FISA Court	merge
+entities	facility	ALL-CAPS beside other casing	Facility		4352	cmnee_ner 3585; duee_ner 761; text2json 6	Facility	cmnee_ner: 五角大楼 | 普列谢茨克航天中心	merge
+entities	facility	ALL-CAPS beside other casing	FACILITY		1510	kaznerd 1510	Facility	kaznerd: Ұлттық академиялық кітапханада | Алматы бір – Шамалған – Ұзынағаш	merge
+entities	ordinal	ALL-CAPS beside other casing	ordinal		7425	cc_news_haiku45 2813; cc_news_events_haiku45 1282; synthetic_events_capped 769	Ordinal	cc_news_haiku45: first | No. 4	merge
+entities	ordinal	ALL-CAPS beside other casing	ORDINAL		2811	kaznerd 2811	Ordinal	kaznerd: бірінші | 1-інші	merge
+entities	law	ALL-CAPS beside other casing	law		6748	cc_news_haiku45 2551; cc_news_events_haiku45 1095; cc_news_events_sonnet55_v2 789	Law	cc_news_haiku45: 1967 Abortion Act | Every Student Succeeds Act	merge
+entities	law	ALL-CAPS beside other casing	LAW		394	kaznerd 394	LAW	kaznerd: Еуразиялық экономикалық одақ туралы шартқа | Біріккен Ұлттар Ұйымының Бала құқықтары туралы кон	merge
+entities	law	ALL-CAPS beside other casing	Law		22	text2json 20; duee_ner 2	Law	text2json: General Mining Act (1872) | Organic Act (1897)	merge
+entities	project	ALL-CAPS beside other casing	PROJECT		1571	kaznerd 1571	Project	kaznerd: Жас маман | ашық бюджеттердің интерактивті картасы	merge
+entities	project	ALL-CAPS beside other casing	Project		15	text2json 8; cmnee_ner 7	Project	text2json: Loess Plateau Watershed Rehabilitation Project | Forest Landscape Restoration Initiative	merge
+entities	project	ALL-CAPS beside other casing	project		6	text2json 6	Project	text2json: BOCCE project | BOCCE project	merge
+entities	percentage	ALL-CAPS beside other casing	PERCENTAGE		3162	kaznerd 3162	Percentage	kaznerd: жиырма бес – отыз пайызға | 25 – 30 пайызға	merge
+entities	percentage	ALL-CAPS beside other casing	Percentage		1	cmnee_ner 1	Percentage	cmnee_ner: 40%	merge
+entities	percentage	ALL-CAPS beside other casing	percentage		1	paraloq_json 1	Percentage	paraloq_json: 5	merge
+entities	position	ALL-CAPS beside other casing	POSITION		4397	kaznerd 4397	Position	kaznerd: Мемлекет басшысы | Қазақстан Республикасы Президентінің	merge
+entities	position	ALL-CAPS beside other casing	Position		1774	docee 1070; turkish_event 704	Position	docee: Catholic priests | president	merge
+entities	position	ALL-CAPS beside other casing	position		5	paraloq_json 5	Position	paraloq_json: 1 | Software Engineer	merge
+entities	art	ALL-CAPS beside other casing	ART		1411	kaznerd 1411	ART	kaznerd: Қорытынды жаңалықтар | Армандастар	merge
+entities	art	ALL-CAPS beside other casing	Art		92	pubmed_abstracts_ner 92	Art	pubmed_abstracts_ner: human body | human body	merge
+entities	contact	ALL-CAPS beside other casing	CONTACT		144	kaznerd 144	Contact	kaznerd: плюс 77061002424 | 1414	merge
+entities	contact	ALL-CAPS beside other casing	contact		5	paraloq_json 5	Contact	paraloq_json: John Smith | Jane Doe	merge
+relations	partof	ALL-CAPS beside other casing	part of		32218	docred 28840; redocred 3005; professorbob_re 240	Part_Of	docred: {'head': 'Canada', 'tail': 'North America'} | {'head': 'Belize', 'tail': 'Central America'}	merge
+relations	partof	ALL-CAPS beside other casing	part_of		1972	cc_news_haiku45 1023; synthetic_haiku45_5k 276; synthetic_events_capped 227	Part_Of	cc_news_haiku45: {'head': 'Anthem', 'tail': 'Blue Cross-Blue Shield'} | {'head': 'Socceroos', 'tail': 'Australia'}	merge
+relations	partof	ALL-CAPS beside other casing	PART-OF		179	scierc 179	Part_OF	scierc: {'head': 'intrinsic object structure', 'tail': 'particle-fil | {'head': 'Graph unification', 'tail': 'unification-based gra	merge
+events	competition	role+type	Competition	role+type	4432	maven 3167; cc_news_events_haiku45 647; cc_news_events_sonnet55_v2 462	Competition	maven: type, trigger ['challenged'] | type, trigger ['competition']	merge
+events	proposal	role+type	Proposal	role	283	cc_news_events_haiku45 150; cc_news_events_sonnet55_v2 63; cc_news_haiku45 50	Proposal	cc_news_events_haiku45: role, governorship election in Government.Vote | role, if five superior court judges are select in Government.Vote	merge
+events	proposal	role+type	proposal	type	255	duee 86; duee_typed 86; duee_ner 83	Proposal	duee: type, trigger ['求婚'] | type, trigger ['求婚']	keep apart: Marriage_Proposal
+events	award	role+type	Award	role+type	1804	cc_news_events_haiku45 448; synthetic_sonnet5_1k 217; synthetic_events_capped 190	Award	cc_news_events_haiku45: role, Murray McPherson Award for 2018 in Award.ReceiveAward | role, Hall of Fame in Award.ReceiveAward	merge
+structures	cc	ALL-CAPS beside other casing	CC		5	text2json 5	CC	text2json: field of record: and | field of record: and	merge
+structures	cc	ALL-CAPS beside other casing	cc		3	text2json 3	Cc	text2json: field of record: ['and', 'or'] | field of record: ['and', 'or']	merge

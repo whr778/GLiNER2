@@ -209,7 +209,7 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
         ) from e
     # Labels are an INPUT: send the spellings this model trained on (its config.label_map).
     input_schema, label_map_applied = apply_label_map(
-        req.input_schema, getattr(model.config, "label_map", None))
+        req.input_schema, getattr(model.config, "label_map", None), getattr(model.config, "label_style", None))
     try:
         schema = Schema.from_dict(_declare_records(input_schema))
     except Exception as e:  # noqa: BLE001 - surface schema errors to the client

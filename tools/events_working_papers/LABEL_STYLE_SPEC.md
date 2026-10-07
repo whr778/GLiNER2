@@ -1,6 +1,6 @@
 # One label style: Title_Snake for every training label
 
-**Status:** SPEC 2026-10-07, not built. Decisions so far are the user's (section 3); the four review
+**Status:** BUILT 2026-10-07 (section 8): `labels/unified-full-v3.yaml` is generated, reviewed and gated; no config uses it yet. Was SPEC 2026-10-07. Decisions so far are the user's (section 3); the four review
 files in `label_style/` are awaiting the user's `decision` column. Labels are an INPUT to GLiNER2, so
 this changes what the model reads: it needs a new label file (v3) and a NEW BASE. No warm start from
 eb19 or earlier.
@@ -139,3 +139,61 @@ are not merged today. The collision risk is today's groups.
 - **Measuring the label effect itself** needs two arms on identical data, differing only in the label
   file (a fast A/B, ~$20). Otherwise the new base's English arguments mix the label fix with everything
   else that changed.
+
+## 8. Build results, 2026-10-07
+
+**Built:**
+- **`gliner2/inference/label_style.py`.** `title_snake(label, acronyms, short_words)` is the ONE function that the
+  generator, training and inference all use.
+  - Inference has no dictionary, so the generator lists the acronyms. That list is every ALL-CAPS token of the
+    training labels that is not an English word, short ones included (`SRS`, `GPE`): 122 entries.
+  - A short ALL-CAPS token stays an acronym unless it is a function word inside a longer label
+    (`Part_OF -> Part_Of`).
+  - A SHOUTED phrase (multi-word, all capitals) keeps only listed acronyms: `REGULATION OR LAW -> Regulation_Or_Law`,
+    `SRS-A -> SRS_A`.
+- **`build_unified_full.py --v3`**, via `label_style_v3.py`, writes `labels/unified-full-v3.yaml`.
+  - It holds the maps plus a `style:` block.
+  - It refuses a blank decision in `squashed_segments.tsv` or `suspect_groups.tsv`. The user's 2026-10-07
+    acceptance of the suspect defaults is now explicit (`merge`; `proposal` -> `keep apart: Marriage_Proposal`).
+  - It refuses a map whose targets are unstyled, that is not closed, or that leaves a label unstyled.
+- **Training.** `load_labels_cfg` carries the file's `style`, and `_category_fns` styles EVERY label of every
+  category after the map. That covers corpora the generator never scanned, so nothing reaches the model raw
+  except `labels_passthrough` corpora. The checkpoint records it as `config.label_style`.
+- **Inference.** `apply_label_map(schema, label_map, label_style)` styles every label a user sends, and maps
+  structure names, fields and anchors too. `infer.py` and the viewer pass `config.label_style`.
+  - Without a style nothing changes.
+  - (Pre-existing gap, left as it was for old checkpoints: training renames structure names and fields, but
+    inference never mapped structures.)
+
+**Gates (section 6), on real data:**
+
+| gate | result |
+|---|---|
+| 1 style | 0 targets fail `title_snake(t) == t`, in all 5 categories |
+| 2 total | through train.py's read path with v3, all splits of eb20's corpora: **0 of 8,089,717 label uses unstyled**. The same check on eb20's v2 labels finds 5,903,734 (it can fail) |
+| 3 no loss | map closed. One train label use fewer than v2: an events_biotech `true_label` that listed `executive statement` twice, collapsed by the existing dedupe. A duplicate, not a loss |
+| 4 decisions | the generator refuses blanks; all 224 squashed and 104 suspect rows decided |
+| 5 keep-apart | DuEE `proposal` -> `Marriage_Proposal`; the cc_news role `Proposal` stays `Proposal` |
+| 6 eval = train | on a v3-shaped checkpoint (p5link weights, v3 label_map and style), `infer.py --gold-schema --labels-file v3`: 1,402 gold_mapped label uses and 74 predicted labels, all styled; 0 predictions off their gold menu |
+| 7 old unchanged | p5link (no label_style): `infer.py` gold-schema and typed-menu outputs BYTE-IDENTICAL before and after |
+
+**Traced on typed input (v3-shaped checkpoint):**
+- `person`/`PERSON` -> `Person`; `LOC` -> `Location`; `street address` -> `Street_Address`;
+- `military rank` -> `Military_Rank`, which no map entry covers;
+- `placeofemployment` -> `Place_Of_Employment`; `personnel.elect.winelection` -> `Personnel.Elect.Win_Election`.
+
+**Differences from the reviewed draft:** 9 labels, all corrections the library rules made:
+- SciERC's `USED-FOR` / `HYPONYM-OF` / `FEATURE-OF` / `EVALUATE-FOR` were `Used_FOR`...; now `Used_For`...;
+- `Regulation_Or_Law`, `Non_Human`, `Gene_And_Gene_Products`, `Cells_And_Their_Components`.
+
+**Known leftovers, for the user:**
+- `ATPases Associated with Diverse Cellular Activities -> At_Pases_...`. The camelCase splitter breaks the enzyme
+  name; one label.
+- RAMS's `n/a` subtype becomes `N_A` (`Personnel.End_Position.N_A`).
+- `&` drops out: `alliance & partnership -> Alliance_Partnership`.
+- An acronym never seen in training and typed at inference is title-cased (`HTTP -> Http`); every trained one is
+  listed.
+
+**Next:** a new base config with `labels_file: labels/unified-full-v3.yaml`. Optionally, the label-only fast A/B to
+measure what the style buys.
+

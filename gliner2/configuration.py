@@ -1040,6 +1040,10 @@ class ExtractorConfig(PretrainedConfig):
         # Labels are an INPUT to the model, so a consumer must send the spellings it
         # trained on; ``gliner2.inference.label_map.apply_label_map`` replays it.
         label_map: Mapping[str, Any] = None,
+        # The label STYLE training applied after the map, ``{name: title_snake, acronyms: [...]}``
+        # (LABEL_STYLE_SPEC.md); ``apply_label_map`` applies it to every label a consumer sends.
+        # None for every checkpoint trained before it, whose labels are then mapped only.
+        label_style: Mapping[str, Any] = None,
         # The inference settings the model was evaluated with: ``threshold``,
         # ``chunk_size``, ``chunk_overlap``, ``global_decode``.
         inference_defaults: Mapping[str, Any] = None,
@@ -1060,6 +1064,7 @@ class ExtractorConfig(PretrainedConfig):
         self.max_len = max_len
         self.default_schema = dict(default_schema) if default_schema else None
         self.label_map = dict(label_map) if label_map else None
+        self.label_style = dict(label_style) if label_style else None
         self.inference_defaults = dict(inference_defaults) if inference_defaults else None
         self.selected_checkpoint = dict(selected_checkpoint) if selected_checkpoint else None
         # Transformers may serialize its reserved attention field as null;
