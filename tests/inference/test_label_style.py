@@ -30,6 +30,17 @@ def test_long_acronym_kept_only_when_listed():
     assert title_snake("HTTPServer", acronyms={"HTTP"}) == "HTTP_Server"
 
 
+def test_preserved_words_are_kept_verbatim():
+    P = {"ATPases", "CoA"}
+    assert title_snake("ATPases Associated with Diverse Cellular Activities", preserve=P) == \
+        "ATPases_Associated_With_Diverse_Cellular_Activities"
+    assert title_snake("Acetyl-CoA Carboxylase", preserve=P) == "Acetyl_CoA_Carboxylase"
+    assert styler({"name": "title_snake", "preserve": ["CoA"]})("acetyl CoA") == "Acetyl_CoA"
+    assert title_snake("Acetyl-CoA Carboxylase") == "Acetyl_Co_A_Carboxylase"
+    assert title_snake("Cholesterol level in mg/dL", preserve={"mg/dL"}) == "Cholesterol_Level_In_mg/dL"
+    assert title_snake("personnel.endposition.n/a", preserve={"mg/dL"}) == "Personnel.Endposition.N_A"
+
+
 def test_listed_acronyms_and_short_words():
     assert title_snake("NORP") == "Norp" and title_snake("NORP", acronyms={"NORP"}) == "NORP"
     assert title_snake("LAW") == "LAW" and title_snake("LAW", short_words={"LAW"}) == "Law"

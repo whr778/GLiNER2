@@ -26,6 +26,10 @@ REVIEW = Path("tools/events_working_papers/label_style")
 DICTIONARY = Path("/usr/share/dict/words")
 OUT = Path("tools/train/config/labels/unified-full-v3.yaml")
 REQUIRED = ("squashed_segments.tsv", "suspect_groups.tsv")   # every row must carry a decision
+# Single words the camelCase splitter breaks (found by scanning the training labels, 2026-10-07):
+# kept verbatim. ATPases by the user; GTPase, CoA (coenzyme A) and dL (decilitre) are the same defect;
+# mg/dL keeps its slash, which means "per" (user, 2026-10-07).
+PRESERVE = ["ATPases", "CoA", "GTPase", "dL", "mg/dL"]
 
 
 def rows(name: str):
@@ -73,14 +77,15 @@ def style_lists(uses: Dict[str, Counter], verdicts: Dict[str, bool], word) -> Di
     caps = {t for cat in uses for lab in uses[cat] for t in words(lab.replace(".", " ")) if t.isupper() and len(t) > 1}
     acronyms = sorted(t for t in caps if verdicts.get(t, not word(t)))
     short_words = sorted(t for t in caps if len(t) <= 3 and verdicts.get(t) is False)
-    return {"name": TITLE_SNAKE, "acronyms": acronyms, "words": short_words}
+    return {"name": TITLE_SNAKE, "acronyms": acronyms, "words": short_words, "preserve": PRESERVE}
 
 
 def styler(category, squashed, style):
     def fn(label):
         if "." in label:
             return ".".join(fn(p) for p in label.split("."))
-        return squashed.get(category, {}).get(label.lower()) or title_snake(label, style["acronyms"], style["words"])
+        return (squashed.get(category, {}).get(label.lower())
+                or title_snake(label, style["acronyms"], style["words"], style["preserve"]))
     return fn
 
 
@@ -143,7 +148,7 @@ def derive_v3(out: Path = OUT) -> dict:
 
 def gate(cat, m, uses, style):
     """Refuse a map whose targets are not styled, that is not closed, or that leaves a label unstyled."""
-    ts = lambda x: title_snake(x, style["acronyms"], style["words"])
+    ts = lambda x: title_snake(x, style["acronyms"], style["words"], style.get("preserve", ()))
     bad = sorted(t for t in set(m.values()) if ts(t) != t)
     open_ = {k: v for k, v in m.items() if v in m}
     unstyled = [lab for lab in uses if lab not in m and ts(lab) != lab]

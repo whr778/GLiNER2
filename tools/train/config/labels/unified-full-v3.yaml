@@ -128,6 +128,12 @@ style:
   - XY
   - YYYY
   words: []
+  preserve:
+  - ATPases
+  - CoA
+  - GTPase
+  - dL
+  - mg/dL
 labels:
   entities:
     rollup: false
@@ -2792,7 +2798,7 @@ labels:
       street: Street
       code: Code
       total: Total
-      3-Hydroxyacyl CoA Dehydrogenases: 3_Hydroxyacyl_Co_A_Dehydrogenases
+      3-Hydroxyacyl CoA Dehydrogenases: 3_Hydroxyacyl_CoA_Dehydrogenases
       3-Hydroxysteroid Dehydrogenases: 3_Hydroxysteroid_Dehydrogenases
       ADAM Proteins: Adam_Proteins
       Actinomycetales Infections: Actinomycetales_Infections
@@ -4016,14 +4022,14 @@ labels:
       updated_at: Updated_At
       vendor: Vendor
       2-Acetylaminofluorene: 2_Acetylaminofluorene
-      3-Hydroxyacyl-CoA Dehydrogenase: 3_Hydroxyacyl_Co_A_Dehydrogenase
+      3-Hydroxyacyl-CoA Dehydrogenase: 3_Hydroxyacyl_CoA_Dehydrogenase
       4-Aminopyridine: 4_Aminopyridine
       AAA Proteins: AAA_Proteins
       ACTH-Secreting Pituitary Adenoma: ACTH_Secreting_Pituitary_Adenoma
       ADP-Ribosylation Factors: ADP_Ribosylation_Factors
-      ATPases Associated with Diverse Cellular Activities: At_Pases_Associated_With_Diverse_Cellular_Activities
+      ATPases Associated with Diverse Cellular Activities: ATPases_Associated_With_Diverse_Cellular_Activities
       Abdominal Fat: Abdominal_Fat
-      Acetyl-CoA Carboxylase: Acetyl_Co_A_Carboxylase
+      Acetyl-CoA Carboxylase: Acetyl_CoA_Carboxylase
       Acids, Carbocyclic: Acids_Carbocyclic
       Acoustic Maculae: Acoustic_Maculae
       Actin Depolymerizing Factors: Actin_Depolymerizing_Factors
@@ -4189,7 +4195,7 @@ labels:
       Forkhead Transcription Factors: Forkhead_Transcription_Factors
       Freeze Drying: Freeze_Drying
       Functional Neuroimaging: Functional_Neuroimaging
-      GTPase-Activating Proteins: GT_Pase_Activating_Proteins
+      GTPase-Activating Proteins: GTPase_Activating_Proteins
       Gastric Mucins: Gastric_Mucins
       Gender Identity: Gender_Identity
       Gene Products, pol: Gene_Products_Pol
@@ -8795,7 +8801,7 @@ labels:
       characteristics.spectral_class: Characteristics.Spectral_Class
       child_policy.adult_age: Child_Policy.Adult_Age
       child_policy.infants.age_range: Child_Policy.Infants.Age_Range
-      'cholesterol: Cholesterol level in mg/dL if elevated': Cholesterol_Cholesterol_Level_In_Mg_D_L_If_Elevated
+      'cholesterol: Cholesterol level in mg/dL if elevated': Cholesterol_Cholesterol_Level_In_mg/dL_If_Elevated
       citations.0.year: Citations.0.Year
       citations.1.year: Citations.1.Year
       citations.4.description: Citations.4.Description

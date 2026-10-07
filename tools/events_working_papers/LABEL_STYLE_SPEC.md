@@ -186,11 +186,19 @@ are not merged today. The collision risk is today's groups.
 - SciERC's `USED-FOR` / `HYPONYM-OF` / `FEATURE-OF` / `EVALUATE-FOR` were `Used_FOR`...; now `Used_For`...;
 - `Regulation_Or_Law`, `Non_Human`, `Gene_And_Gene_Products`, `Cells_And_Their_Components`.
 
-**Known leftovers, for the user:**
-- `ATPases Associated with Diverse Cellular Activities -> At_Pases_...`. The camelCase splitter breaks the enzyme
-  name; one label.
-- RAMS's `n/a` subtype becomes `N_A` (`Personnel.End_Position.N_A`).
-- `&` drops out: `alliance & partnership -> Alliance_Partnership`.
+**Leftovers, decided by the user 2026-10-07:**
+- RAMS's `n/a` subtype -> `N_A` (`Personnel.End_Position.N_A`): accepted.
+- `&` drops out (`alliance & partnership -> Alliance_Partnership`): accepted.
+- **PRESERVE list** (`style.preserve`): single words the camelCase splitter breaks, kept verbatim by the style
+  function itself, at generation AND at inference.
+  - `ATPases` (the user's call);
+  - `GTPase`, `CoA` (coenzyme A) and `dL` (decilitre): the same defect, found by scanning every training label
+    for words the splitter breaks;
+  - `mg/dL`, which keeps its slash because it means "per" (user's choice over `mg_Per_dL`).
+
+  Every other `/` still separates words (`TV/film -> TV_Film`). This changed exactly 6 labels, e.g.
+  `ATPases_Associated_With_Diverse_Cellular_Activities`, `Acetyl_CoA_Carboxylase`, `..._In_mg/dL_If_Elevated`.
+  The total gate is still 0 of 8,089,717 unstyled.
 - An acronym never seen in training and typed at inference is title-cased (`HTTP -> Http`); every trained one is
   listed.
 
