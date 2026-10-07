@@ -38,8 +38,9 @@ uv run python tools/train/check_label_menus.py --config "$CFG" \
 export JOB_TIMEOUT=${JOB_TIMEOUT:-21600}     # whole job: 6h
 export HARD_DEADLINE=${HARD_DEADLINE:-25200} # whole box incl. provisioning: 7h
 
-PROBE_ENV="PROBE=1"
-[ "$ARM" = "control" ] && PROBE_ENV="PROBE=1 PROBE_BASE=1 PROBE_BASE_CKPT=whr778/gliner2-eb18-balanced"
+# PROBE=0 skips the trigger-miss probe (up to ~2 h per box) for a family whose question is not triggers.
+PROBE_ENV="PROBE=${PROBE:-1}"
+[ "$ARM" = "control" ] && [ "${PROBE:-1}" = "1" ] && PROBE_ENV="PROBE=1 PROBE_BASE=1 PROBE_BASE_CKPT=whr778/gliner2-eb18-balanced"
 
 JOB="CFG=$CFG \
 OUTDIR=./out/$EXP-$ARM \
