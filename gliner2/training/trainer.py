@@ -250,6 +250,13 @@ class TrainingConfig:
     negative_pools: Optional[str] = None
     negative_labels_per_dim: Optional[dict] = None
     negative_label_seed: int = 42
+    # MENU_SPEC s4 refinements, all OFF by default. `negative_gold_free_dims`: absents also for a
+    # dimension the record has no gold in, from its OWN corpus pool. `negative_k_sampling`:
+    # "fixed" | "loguniform" (K per record drawn from 1..negative_labels_per_dim). `negative_max_per_record`:
+    # a whole-record cap on injected labels (the window budget).
+    negative_gold_free_dims: bool = False
+    negative_k_sampling: str = "fixed"
+    negative_max_per_record: Optional[int] = None
     # SCHEMA DROPOUT. The processor's SamplingConfig randomly REMOVES gold from a training
     # schema -- remove_events_prob and remove_relations_prob default to 0.2,
     # remove_classification_label_prob to 0.5 -- and was previously unreachable from config
@@ -1820,13 +1827,17 @@ class ExtractorTrainer:
                 self.config.negative_pools,
                 self.config.negative_labels_per_dim,
                 seed=self.config.negative_label_seed,
+                max_per_record=self.config.negative_max_per_record,
                 partial=getattr(self.config, "partial_annotation", None),
+                gold_free_dims=self.config.negative_gold_free_dims,
+                k_sampling=self.config.negative_k_sampling,
             )
             self._negatives_cache = cached
             logger.info("label negatives ON: %s from %s | partial-annotation "
-                        "protected corpora: %s",
+                        "protected corpora: %s | gold_free_dims=%s k_sampling=%s max_per_record=%s",
                         self.config.negative_labels_per_dim, self.config.negative_pools,
-                        sorted(cached.partial) or "NONE")
+                        sorted(cached.partial) or "NONE", self.config.negative_gold_free_dims,
+                        self.config.negative_k_sampling, self.config.negative_max_per_record)
         return cached
 
     def _guide_scores(self):

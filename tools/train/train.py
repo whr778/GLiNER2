@@ -687,11 +687,16 @@ def labels_passthrough(cfg: Dict) -> Set[str]:
 
 
 def read_transformed(paths: List[str], fns: Dict, passthrough: Set[str]) -> List[Dict]:
-    """Read records, applying the label map except to corpora in `passthrough`."""
+    """Read records, applying the label map except to corpora in `passthrough`, each tagged with its
+    `_corpus` -- the provenance the negatives injector needs (partial dimensions, the record's own
+    pool) and that ExtractorDataset only attached when it read the files itself."""
     records: List[Dict] = []
     for p in paths:
+        corpus = _corpus_of(p)
         batch = _read_records([p])
-        records += batch if _corpus_of(p) in passthrough else [transform_record(r, fns) for r in batch]
+        for r in (batch if corpus in passthrough else [transform_record(r, fns) for r in batch]):
+            r.setdefault("_corpus", corpus)
+            records.append(r)
     return records
 
 

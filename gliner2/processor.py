@@ -1294,11 +1294,12 @@ class SchemaTransformer:
         * **Training gold** — ``list[{event_type, triggers, arguments}]``
           from the JSONL record's ``output.events``.
         """
-        if "events" not in schema:
-            return
-
         events_data = schema.get("events")
         if not events_data:
+            # A record with NO gold events can still carry injected absent event types
+            # (`negative_gold_free_dims`): an event-free document must also learn to fire
+            # nothing. Without absent_events this returns exactly as before.
+            self._process_absent_events(schema, schemas, labels, types, sampling, set())
             return
 
         # ---- inference path: dict[type, roles] ----
@@ -1395,19 +1396,22 @@ class SchemaTransformer:
             schemas.append(self._transform_schema(etype, field_names, self.V_TOKEN))
             types.append("events")
 
-        # ---- ABSENT event types: menu entries with no gold ----
-        # A training record's `events` list is both its menu and its answer key, so a type the
-        # document does NOT have cannot be expressed there -- the loop above skips any event
-        # with empty triggers (`if ... not triggers: continue`), so an empty Event yields no
-        # query at all. `absent_events` carries {type: [role, ...]} alongside the gold list and
-        # emits exactly what the inference path emits for a type with no mentions:
-        # `labels.append([0, []])`. That is an ABSENT QUERY -- the positive class of
-        # abstention_loss and the selection pool of negative_query_ratio, both of which have
-        # been live and starved in every run this project has trained.
+        self._process_absent_events(schema, schemas, labels, types, sampling, set(groups))
+
+    def _process_absent_events(self, schema, schemas, labels, types, sampling, gold_types) -> None:
+        """ABSENT event types: menu entries with no gold.
+
+        A training record's `events` list is both its menu and its answer key, so a type the
+        document does NOT have cannot be expressed there -- the gold loop skips any event with
+        empty triggers, so an empty Event yields no query at all. `absent_events` carries
+        {type: [role, ...]} alongside the gold list and emits exactly what the inference path
+        emits for a type with no mentions: `labels.append([0, []])`. That is an ABSENT QUERY --
+        the positive class of abstention_loss and the selection pool of negative_query_ratio.
+        """
         absent = schema.get("absent_events")
         if isinstance(absent, dict):
             for etype, roles in absent.items():
-                if not isinstance(etype, str) or not etype.strip() or etype in groups:
+                if not isinstance(etype, str) or not etype.strip() or etype in gold_types:
                     continue
                 role_list = [r for r in (roles or []) if isinstance(r, str) and r.strip()]
                 if sampling and getattr(sampling, "shuffle_event_roles", False) and len(role_list) > 1:

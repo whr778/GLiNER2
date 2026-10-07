@@ -48,8 +48,18 @@ class NegativeLabels:
 
     def __init__(self, pools: Dict[str, dict], per_dim: Dict[str, int], seed: int = 42,
                  max_per_record: Optional[int] = None,
-                 partial: Optional[Dict[str, list]] = None):
+                 partial: Optional[Dict[str, list]] = None,
+                 gold_free_dims: bool = False, k_sampling: str = "fixed"):
         self.pools = pools
+        # MENU_SPEC s4. `gold_free_dims`: a dimension the record has NO gold in still gets
+        # absents, from the record's OWN corpus pool, when that corpus annotates the dimension
+        # -- an event-free news article (10.8% of sonnet55 train) otherwise never practises
+        # firing no events. `k_sampling: loguniform` draws K per record and dimension from 1..K,
+        # so menu sizes vary as production menus do. Both off = the historical behaviour.
+        if k_sampling not in ("fixed", "loguniform"):
+            raise ValueError(f"k_sampling must be fixed|loguniform, got {k_sampling!r}")
+        self.gold_free_dims = bool(gold_free_dims)
+        self.k_sampling = k_sampling
         self.per_dim = {d: int(n) for d, n in (per_dim or {}).items() if int(n) > 0}
         # PARTIAL ANNOTATION. `{corpus: [dimension, ...]}` -- a corpus whose gold is NOT
         # exhaustive for that dimension. Injecting an absent label there asserts something
@@ -70,14 +80,15 @@ class NegativeLabels:
         self.seed = seed
         self.epoch = 0
         self.stats = {"records": 0, "injected": 0, "records_with_injection": 0,
-                      "no_candidate": 0, "partial_skips": 0}
+                      "no_candidate": 0, "partial_skips": 0, "gold_free_injected": 0}
 
     @classmethod
     def load(cls, path: str, per_dim: Dict[str, int], seed: int = 42,
              max_per_record: Optional[int] = None,
-             partial: Optional[Dict[str, list]] = None) -> "NegativeLabels":
+             partial: Optional[Dict[str, list]] = None,
+             gold_free_dims: bool = False, k_sampling: str = "fixed") -> "NegativeLabels":
         blob = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(blob.get("pools") or {}, per_dim, seed, max_per_record, partial)
+        return cls(blob.get("pools") or {}, per_dim, seed, max_per_record, partial, gold_free_dims, k_sampling)
 
     def set_epoch(self, epoch: int) -> None:
         """Resample every epoch. The trainer calls this, as with DistributedSampler."""
@@ -134,6 +145,14 @@ class NegativeLabels:
             pool = have if pool is None else (pool & have)
         return pool or set()
 
+    def _own_pool(self, dim: str, corpus: Optional[str]):
+        """(labels, spec) of the record's OWN corpus pool for a dimension it annotates, else empty."""
+        spec = self.pools.get(corpus or "") or {}
+        if not (spec.get("annotates") or {}).get(dim):
+            return set(), {}
+        have = spec.get(dim) or {}
+        return (set(have) if isinstance(have, (dict, list)) else set()), (have if isinstance(have, dict) else {})
+
     # -- injection -------------------------------------------------------------------
     def inject(self, schema: Any, index: int, corpus: Optional[str] = None) -> Any:
         """Return ``schema`` with up to ``per_dim[d]`` absent labels added per dimension.
@@ -150,7 +169,8 @@ class NegativeLabels:
             self.stats["partial_skips"] += 1
         gold = self._gold_labels(schema)
         candidates = self._candidates(gold)
-        if not candidates:
+        gold_free = self.gold_free_dims and (corpus or "") in self.pools
+        if not candidates and not gold_free:
             self.stats["no_candidate"] += 1
             return schema
 
@@ -165,10 +185,22 @@ class NegativeLabels:
                 return k
             return max(0, min(k, self.max_per_record - added))
 
-        k = 0 if "entities" in skip else budget(self.per_dim.get("entities", 0))
-        if k and gold["entities"]:
-            pool = sorted(self._usable_pool("entities", candidates) - gold["entities"])
+        def k_for(dim: str) -> int:
+            """This record's K for a dimension: the configured count, or log-uniform in 1..count."""
+            k = self.per_dim.get(dim, 0)
+            if k and self.k_sampling == "loguniform":
+                import math
+                k = max(1, min(k, int(math.exp(rng.uniform(0.0, math.log(k + 1))))))
+            return budget(k)
+
+        k = 0 if "entities" in skip else k_for("entities")
+        from_own = k and not gold["entities"] and gold_free
+        if k and (gold["entities"] or from_own):
+            pool = sorted((self._usable_pool("entities", candidates) - gold["entities"]) if not from_own
+                          else self._own_pool("entities", corpus)[0])
             chosen = rng.sample(pool, min(k, len(pool))) if pool else []
+            if chosen and from_own:
+                self.stats["gold_free_injected"] += len(chosen)
             if chosen:
                 # An absent entity query is the label mapped to an EMPTY LIST -- the exact
                 # shape GuideScores.inject uses, already supported end to end.
@@ -176,17 +208,22 @@ class NegativeLabels:
                                    **{name: [] for name in chosen}}
                 added += len(chosen)
 
-        k = 0 if "events" in skip else budget(self.per_dim.get("events", 0))
-        if k and gold["events"] and isinstance(schema.get("events"), list):
-            pool_types = self._usable_pool("events", candidates) - gold["events"]
+        k = 0 if "events" in skip else k_for("events")
+        ev_own = k and not gold["events"] and gold_free
+        if k and ((gold["events"] and isinstance(schema.get("events"), list)) or ev_own):
+            own_types = self._own_pool("events", corpus)[0] if ev_own else set()
+            pool_types = (self._usable_pool("events", candidates) - gold["events"]) if not ev_own else own_types
             chosen = rng.sample(sorted(pool_types), min(k, len(pool_types))) if pool_types else []
+            if chosen and ev_own:
+                self.stats["gold_free_injected"] += len(chosen)
+            role_sources = [corpus] if ev_own else candidates
             if chosen:
                 # Menu-only event types: roles come from the pool, gold stays empty. The
                 # training path skips an Event with no triggers (processor.py:1183), so these
                 # ride a separate key the processor reads alongside the gold list.
                 roles = {}
                 for name in chosen:
-                    for cand in candidates:
+                    for cand in role_sources:
                         spec = (self.pools[cand].get("events") or {}).get(name)
                         if spec:
                             roles[name] = list(spec)
