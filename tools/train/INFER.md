@@ -107,6 +107,32 @@ Each decode setting resolves in this order:
 
 Checkpoints from before 63eb320 store no defaults and no label map, so they use step 3 and labels as typed.
 
+## Scoring a predictions file like the blind test
+
+`tools/train/score_predictions.py` scores an `infer.py --output` file with the blind test's own scorer
+(`eval_metrics.score_predictions`), record filter, duplicate drop and language buckets:
+
+```bash
+uv run tools/infer.py --model whr778/gliner2-eb19 --input test.jsonl --gold-schema \
+    --labels-file tools/train/config/labels/unified-full.yaml --output test.preds.jsonl
+uv run tools/train/score_predictions.py --predictions test.preds.jsonl --by-language \
+    --out test.scored.json --card
+```
+
+- It scores against `gold_mapped` when every line has it, else `gold` (`--gold` overrides).
+- `--card` prints the model card's blind-test and OneIE tables, plus one table per language.
+- **Traced 2026-10-07:** on 40 real test records, every one of 426 metric keys, and the English bucket's
+  404, equalled `compute_metrics` run directly on the same predictions.
+
+**The number equals the blind test's only if** the predictions were made the same way:
+- `--gold-schema`. A file made with any other menu prints a WARNING naming the off-menu records.
+- The checkpoint's decode settings.
+- `--labels-file` for a model trained with a label map.
+- CPU, or `--batch-size 1` on MPS.
+
+The one thing it cannot reproduce is the blind test's removal of test documents that also appear in
+train/val, because it never sees those splits.
+
 ## Coreferent triggers (eb20 and later)
 
 One event is often mentioned several times ("Rebels **attacked** the base ... The **assault**

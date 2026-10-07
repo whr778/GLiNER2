@@ -232,6 +232,17 @@ def compute_metrics(
             texts, schemas, batch_size=batch_size, threshold=threshold,
         )
 
+    return score_predictions(golds, preds, stopwords=stopwords, report=report)
+
+
+def score_predictions(golds: List[Dict], preds: List[Dict], stopwords: frozenset = _DEFAULT_STOPWORDS,
+                      report: bool = True) -> Dict[str, Any]:
+    """Score predictions against gold, record by record: the scoring half of :func:`compute_metrics`.
+
+    ``golds[i]`` is a record's gold ``output`` and ``preds[i]`` the model's prediction for it,
+    as ``batch_extract_long`` returns it (spans and confidences are accepted). Lets a saved
+    predictions file (``tools/infer.py --output``) be scored exactly as the blind test scores.
+    """
     # strict (exact) and relaxed (partial-overlap) TP/FP/FN per category.
     ent_s, ent_r = _counters(), _counters()
     # fine-grained span error types + label confusions (diagnostic), for the

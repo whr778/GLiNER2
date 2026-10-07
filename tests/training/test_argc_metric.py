@@ -93,7 +93,7 @@ def test_argc_is_not_a_scored_head():
 
     from gliner2.training import eval_metrics
 
-    src = inspect.getsource(eval_metrics.compute_metrics)
+    src = inspect.getsource(eval_metrics.score_predictions)
     # Split on the CLOSING LINE, not on ")" -- the first ")" ends the first tuple row, so
     # `.split(")")[0]` inspects one line and can never fail. It was written that way, it
     # passed with argc deliberately planted in the block, and that is the whole reason
@@ -111,7 +111,7 @@ def test_the_metric_name_cannot_be_mistaken_for_event_argument():
     from gliner2.training import eval_metrics
     import inspect
 
-    src = inspect.getsource(eval_metrics.compute_metrics)
+    src = inspect.getsource(eval_metrics.score_predictions)
     assert '_finalize("argc", "external"' in src
     assert 'eval_argc_external_triggerless_gold' in src
 
@@ -190,7 +190,7 @@ def test_none_of_the_four_is_a_scored_head():
 
     from gliner2.training import eval_metrics
 
-    src = inspect.getsource(eval_metrics.compute_metrics)
+    src = inspect.getsource(eval_metrics.score_predictions)
     block = src.split("primitive_heads = (", 1)[1].split("\n    )", 1)[0]
     assert "entity" in block and "event_argument" in block, "block not parsed"
     for name in ("argc", "argi", "trigc", "trigi"):
@@ -202,6 +202,6 @@ def test_all_four_emit_under_the_external_label():
 
     from gliner2.training import eval_metrics
 
-    src = inspect.getsource(eval_metrics.compute_metrics)
+    src = inspect.getsource(eval_metrics.score_predictions)
     for name in ("argc", "argi", "trigc", "trigi"):
         assert f'_finalize("{name}", "external"' in src

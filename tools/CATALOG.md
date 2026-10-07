@@ -295,6 +295,9 @@ total, or another event's?), `scope_gate_test.py`, `gate_threshold_sweep.py`,
 
 ## 7. `tools` root
 
+`train/score_predictions.py` — score an `infer.py --output` file exactly as the blind test scores
+(same scorer, filter, duplicate drop, language buckets; `gold_mapped` when present); `--card` prints the
+model card's tables. Warns when predictions were not made with `--gold-schema`.
 `infer.py` — command-line inference, with optional document-level global decoding. Loads
 boundary checkpoints (`AutoExtractor`; `GLiNER2` is the span class), takes the checkpoint's own
 schema (`--model-schema --tasks ...`), and applies its `inference_defaults` and `label_map`

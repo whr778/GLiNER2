@@ -1170,6 +1170,56 @@ def _print_blind_test(metrics: Dict) -> None:
 MIN_LANG_RECORDS = 25
 
 
+def language_groups(records: List[Dict]) -> Tuple[Dict[str, List[Dict]], Dict[str, int]]:
+    """({language: records}, {folded language: count}) as the blind test buckets them.
+
+    A tiny bucket is a language-ID artefact, not a language. Measured 2026-09-06 on
+    stage1-docee-3lang: ONE record of docee_zh -- 516 Han characters, zero Hangul --
+    was called `kor` at confidence 0.598, and got its own report reading
+    "entity F1 0.0000", which looks like a model that fails at Korean rather than a
+    misdetection on a corpus with no Korean in it. An F1 over one record is noise
+    whatever the label says.
+
+    Folded, not dropped: the records stay in the combined pass, and the languages that
+    were folded are NAMED, so a genuinely rare language shows up as something to look
+    at rather than vanishing.
+    """
+    from collections import defaultdict
+    _annotate_languages(records)
+    by_lang: Dict[str, List[Dict]] = defaultdict(list)
+    for rec in records:
+        by_lang[rec.get("_lang", "und")].append(rec)
+    tiny = {lg: len(rs) for lg, rs in by_lang.items() if len(rs) < MIN_LANG_RECORDS}
+    if tiny:
+        for lg in tiny:
+            del by_lang[lg]
+        detail = ", ".join(f"{lg}={n}" for lg, n in sorted(tiny.items()))
+        print(f"[blind test] not reporting per-language for buckets under "
+              f"{MIN_LANG_RECORDS} records: {detail} "
+              f"(still scored in the combined pass)")
+    return dict(by_lang), tiny
+
+
+def by_language_block(per_lang: Dict[str, Dict], tiny: Dict[str, int]) -> Dict:
+    """The ``by_language`` keys of test_metrics.json.
+
+    KEEP the per-language numbers. eval_by_language doubles the cost of the blind test
+    -- everything is scored once overall and again per language -- and until now the
+    second pass bought stdout only: the per-language dicts were printed and dropped, so
+    nothing downstream (test_metrics.json, the model card) ever saw them.
+
+    Compact projection, not the raw dicts: each language's metrics carry a full
+    per-class `classification_report` string, and embedding those would multiply the
+    size of test_metrics.json for numbers nobody reads there.
+    """
+    out = {"by_language": {lang: {k: v for k, v in m.items()
+                                  if k.startswith("eval_") and not k.endswith("classification_report")}
+                           for lang, m in per_lang.items()}}
+    if tiny:
+        out["by_language_folded"] = tiny
+    return out
+
+
 def _blind_test_by_language(
     best: Path,
     test_data,
@@ -1182,7 +1232,6 @@ def _blind_test_by_language(
     boundary_overrides: Dict = None,
 ) -> Dict:
     """Run the blind test per language then over all data; return aggregate metrics."""
-    from collections import defaultdict
     from gliner2.training.eval_metrics import load_with_overrides
     from gliner2.training.metrics import compute_metrics, _print_micro_report
     from gliner2.training.trainer import ExtractorDataset
@@ -1191,35 +1240,11 @@ def _blind_test_by_language(
     if test_data and isinstance(test_data[0], str):
         test_data = _read_records(test_data)
 
-    _annotate_languages(test_data)
-
     gd = dict(
         chunk_size=chunk_size, chunk_overlap=chunk_overlap,
         global_decode=global_decode, global_decode_config=global_decode_config,
     )
-
-    by_lang: Dict[str, List[Dict]] = defaultdict(list)
-    for rec in test_data:
-        by_lang[rec.get("_lang", "und")].append(rec)
-
-    # A tiny bucket is a language-ID artefact, not a language. Measured 2026-09-06 on
-    # stage1-docee-3lang: ONE record of docee_zh -- 516 Han characters, zero Hangul --
-    # was called `kor` at confidence 0.598, and got its own report reading
-    # "entity F1 0.0000", which looks like a model that fails at Korean rather than a
-    # misdetection on a corpus with no Korean in it. An F1 over one record is noise
-    # whatever the label says.
-    #
-    # Folded, not dropped: the records stay in the combined pass, and the languages that
-    # were folded are NAMED, so a genuinely rare language shows up as something to look
-    # at rather than vanishing.
-    tiny = {lg: len(rs) for lg, rs in by_lang.items() if len(rs) < MIN_LANG_RECORDS}
-    if tiny:
-        for lg in tiny:
-            del by_lang[lg]
-        detail = ", ".join(f"{lg}={n}" for lg, n in sorted(tiny.items()))
-        print(f"[blind test] not reporting per-language for buckets under "
-              f"{MIN_LANG_RECORDS} records: {detail} "
-              f"(still scored in the combined pass)")
+    by_lang, tiny = language_groups(test_data)
 
     print(f"\n[blind test] Loading {best} for per-language evaluation...")
     model = load_with_overrides(best, boundary_overrides)
@@ -1243,23 +1268,7 @@ def _blind_test_by_language(
         _print_micro_report(per_lang[lang], label=lang)
     _print_micro_report(all_metrics, label="all")
 
-    # KEEP the per-language numbers. eval_by_language doubles the cost of the blind test
-    # -- everything is scored once overall and again per language -- and until now the
-    # second pass bought stdout only: the per-language dicts were printed and dropped, so
-    # nothing downstream (test_metrics.json, the model card) ever saw them. Paying twice
-    # and keeping nothing is the part worth fixing, not the cost.
-    #
-    # Compact projection, not the raw dicts: each language's metrics carry a full
-    # per-class `classification_report` string, and embedding those would multiply the
-    # size of test_metrics.json for numbers nobody reads there.
-    all_metrics["by_language"] = {
-        lang: {k: v for k, v in m.items()
-               if k.startswith("eval_") and not k.endswith("classification_report")}
-        for lang, m in per_lang.items()
-    }
-    if tiny:
-        all_metrics["by_language_folded"] = tiny
-
+    all_metrics.update(by_language_block(per_lang, tiny))
     return all_metrics
 
 
