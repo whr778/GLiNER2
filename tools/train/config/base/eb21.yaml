@@ -12,6 +12,19 @@
 #                                       user types the same way. DuEE's `proposal` (a marriage proposal) is
 #                                       kept apart from the cc_news ROLE `Proposal` as `Marriage_Proposal`.
 #
+#   negative_labels_per_dim: 20/20      the menudose A/B (2026-10-07, MENU_SPEC.md s8): training on 20 absent labels
+#                                       per dimension instead of 1 cut over-firing under the English-news menu
+#                                       (event_type P 0.118 -> 0.917, F1 0.205 -> 0.566; trigger F1 0.158 ->
+#                                       0.426; entity F1 0.389 -> 0.481) with no gold-menu cost. COST: that arm
+#                                       trained 2.8x slower on sonnet55 (3.5 vs 9.8 samples/s); measure the
+#                                       full mix's ratio early in the run before trusting the schedule's ETA.
+#                                       Injected per record on eb21's mix (200 real train records each): docee,
+#                                       docfee, paraloq, sonnet55 ~20 entities; maven, rams, duee 20 events;
+#                                       casie 13.4 entities / 3.2 events (pool of 5); cmnee_ner 0 entities
+#                                       (PARTIAL, protected). cc_news_events_haiku45 (Haiku gold, ~0.40 agreement)
+#                                       gets 20 entities + 12.6 events -- some will be unannotated truths; a
+#                                       per-corpus dose does not exist yet (MENU_SPEC s4 refinement).
+#
 # A NEW BASE. No warm start: no earlier model learned these spellings. Data, schedule, coreferent
 # triggers, coref calibration (with its CMNEE + MAVEN control) and the eval block are eb20's.
 # COMPARABILITY: the blind test is the same records, but every label is spelled differently, so the
@@ -446,7 +459,7 @@ training:
   # `_candidates` returned nothing for them, silently. That is the exact failure the
   # `auto` path exists to prevent, and the header already warned about it.
   negative_pools: auto
-  negative_labels_per_dim: {entities: 1, events: 1}
+  negative_labels_per_dim: {entities: 20, events: 20}   # eb21: menudose A/B (MENU_SPEC s8) -- 20 absent labels per dimension cut news-menu over-firing (event_type F1 0.205 -> 0.566) at no gold-menu cost
   negative_label_seed: 42
   output_dir: ./out/eb21   # eb21
   experiment_name: eb21   # eb21
