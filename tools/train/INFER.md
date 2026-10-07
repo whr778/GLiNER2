@@ -114,6 +114,25 @@ before the map applies, including labels the map never saw: `military rank` -> `
 `person` -> `Person`, and structure names and fields too. The `[infer] label_map rewrites` line shows each change.
 `--no-label-map` turns off both the map and the style. Older checkpoints are unchanged.
 
+## Application menus (MENU_SPEC.md)
+
+Production has no gold menu. An application sends its own curated menu, e.g.
+`tools/train/config/menus/news55.json` (125 entity + 55 event types, the English-news menu). `--schema-json`
+accepts a menu file:
+
+```bash
+uv run tools/infer.py --model whr778/gliner2-eb19 --input data/cc_news_events_sonnet55_v2.test.jsonl \
+    --schema-json tools/train/config/menus/news55.json \
+    --labels-file tools/train/config/labels/unified-full.yaml --output news.preds.jsonl
+uv run tools/train/score_predictions.py --predictions news.preds.jsonl --menu app:tools/train/config/menus/news55.json \
+    --corpus cc_news_events_sonnet55_v2 --labels-file tools/train/config/labels/unified-full.yaml
+```
+
+- A menu is scored only on corpora annotated exhaustively against it (`exhaustive_for`); any other corpus
+  is refused.
+- Documents with no gold are kept, because anything fired on them is a real false positive.
+- `eval.py --menu app:news55` (or `widened:K`, `corpus_full`) scores a checkpoint the same way.
+
 ## Scoring a predictions file like the blind test
 
 `tools/train/score_predictions.py` scores an `infer.py --output` file with the blind test's own scorer

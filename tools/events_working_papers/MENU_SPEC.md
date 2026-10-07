@@ -1,6 +1,6 @@
 # Menus: score, calibrate and train against the question production asks
 
-**Status:** SPEC 2026-10-07, not built. Decisions so far are the user's (section 3). This is
+**Status:** STEP 1 BUILT 2026-10-07 (section 7); steps 2-4 not run. Was SPEC 2026-10-07. Decisions so far are the user's (section 3). This is
 TODO #23 (full menu over-fires) turned into a plan. The plan is cheapest-first: step 2 is free,
 and the GPU A/B (step 3) runs only if step 2 shows a material gap.
 
@@ -137,3 +137,70 @@ Lambda ~$20-25, or free at the user's office.
    - **Material gap** (event precision falls, or the chosen threshold moves): step 4.
    - **No gap:** stop. The training change is not needed for news.
 4. **The dose A/B** (section 4), with gate 5.
+
+## 7. Step 1 results, 2026-10-07
+
+**Built:**
+- **`eval_metrics`:**
+  - `parse_menu`;
+  - `widen_from_pool`, which offers every dimension the CORPUS annotates, so an event-free document is
+    asked about events (the old `_widen_with_absent`, kept unchanged for `--full-menu`, widens only
+    dimensions the gold already has);
+  - `project_gold` (app gold restricted to the menu's labels and roles);
+  - `build_menus` (app menus refuse non-exhaustive corpora);
+  - `menu_sizes`;
+  - `compute_metrics(menus=)`, with an in-run line of the menu sizes offered;
+  - `sweep_thresholds(menus=)`.
+- **`train.py`:**
+  - `corpus_pools`: per-corpus templates from transformed TRAIN records; role-less event types are kept
+    (MAVEN), partial dimensions are skipped;
+  - `load_app_menu`: mapped through the run's labels config, style included;
+  - `menu_split`: an app menu reads its OWN exhaustive corpora's split, because they are often train_only
+    in the config (sonnet55 is);
+  - `score_under_menu`;
+  - a `check_menus` startup refusal.
+- **Config keys:**
+  - `eval.menu`: an extra blind-test pass under `by_menu`, with the gold keys untouched;
+  - `eval.calibration_menu`: the threshold sweep AND the coref calibration;
+  - `eval.app_menus`.
+- **CLIs:** `eval.py --menu`; `score_predictions.py --menu app:<file> --corpus --labels-file`;
+  `infer.py --schema-json` accepts a menu file.
+- **Menu file:** `config/menus/news55.json` -- 125 entity types + 55 event types with roles, exactly the menu
+  `ccnews_english_v2.yaml` offered every document. Relations, classifications and structures were sampled
+  per document, so they are not exhaustive and are left out.
+  - Exhaustiveness checked: all 9,939 entity, 2,944 event and 5,385 argument gold uses in sonnet55 val/test
+    fall inside the menu.
+
+**Gates:**
+
+| gate | result |
+|---|---|
+| 1 off unchanged | `compute_metrics` without menus: the 40-record 426-key output is BYTE-IDENTICAL to before |
+| 2 menu is what it claims | in-run `[menu] offered per document (min, median, max)` line; app:news55 prints 125 / 55 for every document |
+| 3 app refuses | `score_predictions --menu app:news55 --corpus casie` refuses; `build_menus` refuses and counts non-exhaustive records |
+| 4 mode can fail | under app:news55, `event_type` precision is a measurement (0.088 on 12 docs), not 1.0000 |
+| equivalence | on the same 12 sonnet55 test docs, the eval path (`menu_split` + `compute_metrics`) and the file path (`infer.py --schema-json` + `score_predictions --menu`) agree on all 330 keys |
+| end to end | a tiny real `train.py` run with `eval.menu` + `eval.calibration_menu`: startup check, a threshold sweep under the app menu, and a `by_menu` blind-test block beside intact gold keys |
+
+`menu_split` on eb21's real config: `app:news55` scores sonnet55's 500 test docs; `widened:20` and
+`corpus_full` score exactly 20,602 test records (= the blind test's count), offering up to 20 / 64 absents.
+
+**A first look (p5link, an older model, 12 sonnet55 test docs, threshold 0.3) -- NOT step 2:**
+
+| head | precision, gold menu | precision, app:news55 |
+|---|---|---|
+| entity | 0.657 | 0.0055 |
+| event_type | 1.000 (pinned) | 0.088 |
+| event_trigger | 0.474 | 0.049 |
+
+On one 2,286-char document with 21 gold entity mentions, 3,141 entity mentions were predicted across 96
+types: `60` got 82 types and `Timothy Fiore` 71. The spellings agree (every gold label is among the
+predicted keys), so this is over-firing, not a measurement artefact. Step 2 measures eb19.
+
+**Deferred:** `eval.selection_menu` (per-epoch checkpoint selection). The trainer's eval is WINDOWED -- records
+become chunks -- so per-record menus (and the corpus each needs) must be carried through chunking first.
+It is a separate change.
+
+**eb21:** carries `eval.app_menus` and `eval.menu: app:news55` (an extra `by_menu` blind-test pass only). It
+does NOT set `calibration_menu`: that changes the operating point, and step 2 decides it.
+

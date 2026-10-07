@@ -72,6 +72,7 @@ Example::
 
 from __future__ import annotations
 
+import copy
 from collections import Counter
 from math import log2
 from typing import Any, Callable, Dict, Iterable, List, Set, Tuple
@@ -162,6 +163,104 @@ def _widen_with_absent(schema: Dict, menu: Dict, max_absent: int = 20,
     return out
 
 
+# ---------------------------------------------------------------------------
+# MENUS (MENU_SPEC.md): the labels offered to the model for one document.
+# ---------------------------------------------------------------------------
+
+MENU_CAP = 64
+
+
+def parse_menu(mode: str) -> Tuple[str, Optional[str]]:
+    """``gold`` | ``widened:K`` | ``corpus_full`` | ``app:<name>`` -> (kind, argument)."""
+    kind, _, arg = (mode or "gold").partition(":")
+    if kind not in ("gold", "widened", "corpus_full", "app") or (kind in ("widened", "app") and not arg):
+        raise ValueError(f"menu {mode!r}: expected gold | widened:K | corpus_full | app:<name>")
+    return kind, arg or None
+
+
+def widen_from_pool(schema: Dict, pool: Dict, max_absent: int, index: int = 0) -> Dict:
+    """Add up to ``max_absent`` absent labels per dimension from a CORPUS pool (deterministic per index).
+
+    Unlike ``_widen_with_absent``, a dimension is offered whenever the corpus annotates it, even if this
+    document's gold has none of it: an event-free news document is asked about events, so an event fired
+    on it is a measured false positive rather than an unasked question.
+    """
+    import hashlib
+    import random as _random
+    seed = int.from_bytes(hashlib.sha256(str(index).encode()).digest()[:8], "little")
+
+    def pick(labels, have):
+        cand = sorted(set(labels) - set(have))
+        return cand if len(cand) <= max_absent else sorted(_random.Random(seed).sample(cand, max_absent))
+
+    out = dict(schema)
+    if pool.get("entities"):
+        have = dict(out.get("entities") or {})
+        out["entities"] = {**{e: "" for e in pick(pool["entities"], have)}, **have}
+    if pool.get("events"):
+        have = dict(out.get("events") or {})
+        out["events"] = {**{t: list(pool["events"][t]) for t in pick(list(pool["events"]), have)}, **have}
+    if pool.get("relations"):
+        have_rel = list(out.get("relations") or [])
+        names = {n for r in have_rel if isinstance(r, dict) for n in r}
+        out["relations"] = have_rel + [{n: {"head": "", "tail": ""}} for n in pick(pool["relations"], names)]
+    return out
+
+
+def project_gold(output: Dict, menu: Dict) -> Dict:
+    """The part of a gold record an APP menu asks about: its entity types, its event types and their
+    menu roles. Gold the menu never asks for (relations, classifications, structures here) is set aside,
+    or every one of them would score as a miss for a question nobody asked."""
+    ents = set(menu.get("entities") or ())
+    evs = menu.get("events") or {}
+    out: Dict[str, Any] = {}
+    if ents and isinstance(output.get("entities"), dict):
+        out["entities"] = {k: v for k, v in output["entities"].items() if k in ents}
+    if evs and isinstance(output.get("events"), list):
+        out["events"] = [dict(e, arguments=[a for a in e.get("arguments") or [] if a.get("role") in (evs[e["event_type"]] or [])])
+                         for e in output["events"] if isinstance(e, dict) and e.get("event_type") in evs]
+    return out
+
+
+def build_menus(records: List[Dict], corpora: List[str], mode: str, pools: Optional[Dict] = None,
+                app: Optional[Dict] = None, cap: int = MENU_CAP) -> Tuple[List[Dict], List[Dict], Dict]:
+    """(records to score, their menus, report) for one menu mode.
+
+    ``corpora[i]`` names ``records[i]``'s corpus. ``pools`` is ``{corpus: schema}`` (widened / corpus_full);
+    ``app`` is ``{name, schema, exhaustive_for}``. An app menu REFUSES records from corpora it is not
+    exhaustive for: they are skipped and counted, never scored against gold that was not asked its question.
+    """
+    kind, arg = parse_menu(mode)
+    out_recs, menus, refused = [], [], Counter()
+    for i, (rec, corpus) in enumerate(zip(records, corpora)):
+        gold = rec.get("output") or {}
+        if kind == "gold":
+            menu = _schema_from_gold(gold)
+        elif kind == "app":
+            if corpus not in app["exhaustive_for"]:
+                refused[corpus] += 1
+                continue
+            menu = copy.deepcopy(app["schema"])
+            rec = dict(rec, output=project_gold(gold, app["schema"]))
+        else:
+            k = int(arg) if kind == "widened" else cap
+            menu = widen_from_pool(_schema_from_gold(gold), (pools or {}).get(corpus) or {}, k, index=i)
+        out_recs.append(rec)
+        menus.append(menu)
+    return out_recs, menus, {"mode": mode, "scored": len(out_recs), "refused": dict(refused)}
+
+
+def menu_sizes(menus: List[Dict]) -> Dict[str, Tuple[int, float, int]]:
+    """(min, median, max) labels offered per dimension -- the in-run proof of what a mode offered."""
+    import statistics
+    out = {}
+    for dim in ("entities", "events", "relations"):
+        n = [len(m.get(dim) or ()) for m in menus]
+        if any(n):
+            out[dim] = (min(n), statistics.median(n), max(n))
+    return out
+
+
 def compute_metrics(
     model,
     eval_dataset,
@@ -175,8 +274,12 @@ def compute_metrics(
     global_decode: bool = False,
     global_decode_config=None,
     report: bool = True,
+    menus: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
     """Score ``eval_dataset`` and return a flat metrics dict.
+
+    ``menus[i]``, when given, is the menu offered for ``eval_dataset[i]`` (``build_menus``) in place of
+    the record's own gold labels; None keeps the gold menu.
 
     Args:
         model: A loaded :class:`GLiNER2` model (or ``Extractor`` subclass).
@@ -208,7 +311,7 @@ def compute_metrics(
         text, output = eval_dataset[i]
         if not isinstance(text, str) or not isinstance(output, dict):
             continue
-        schema = _schema_from_gold(output)
+        schema = menus[i] if menus is not None else _schema_from_gold(output)
         if not schema:
             continue
         if full_menu:
@@ -220,6 +323,8 @@ def compute_metrics(
 
     if not texts:
         return {}
+    if menus is not None:
+        print(f"[menu] offered per document (min, median, max): {menu_sizes(schemas)} over {len(schemas)} documents")
 
     if chunk_size is not None:
         preds = model.batch_extract_long(
@@ -1472,8 +1577,10 @@ def sweep_thresholds(
     chunk_overlap: int = 128,
     global_decode: bool = False,
     global_decode_config=None,
+    menus: Optional[List[Dict]] = None,
 ) -> Tuple[float, Dict[str, Any], Dict[float, Dict[str, Any]]]:
-    """Score ``eval_dataset`` at each candidate threshold; return the best.
+    """Score ``eval_dataset`` at each candidate threshold; return the best. ``menus`` as in
+    :func:`compute_metrics` -- the menu the threshold is calibrated under (MENU_SPEC.md).
 
     "Best" maximizes a support-weighted average of strict micro-F1 across
     whichever categories are present (see ``_selection_score``).
@@ -1506,7 +1613,7 @@ def sweep_thresholds(
         results[t] = compute_metrics(
             model, eval_dataset, batch_size=batch_size, threshold=t, stopwords=stopwords,
             chunk_size=chunk_size, chunk_overlap=chunk_overlap,
-            global_decode=global_decode, global_decode_config=global_decode_config,
+            global_decode=global_decode, global_decode_config=global_decode_config, menus=menus,
         ) or {}
 
     best_threshold = max(results, key=lambda t: _selection_score(results[t]))

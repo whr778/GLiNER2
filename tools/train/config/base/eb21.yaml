@@ -549,6 +549,8 @@ eval:
   eval_by_language: true    # eb18: lumi 3.0.1 reads Chinese correctly
   global_decode: true       # eb18: document-level event assembly
   coref_calibration: [data/cc_news_events_sonnet55_v2]   # eb20: pick the merge threshold on its voted val
+  app_menus: {news55: menus/news55.json}   # eb21: MENU_SPEC -- the English-news production menu
+  menu: app:news55   # eb21: blind test ALSO under the news menu (by_menu); gold keys and thresholds unchanged
   coref_control: [data/cmnee, data/maven]   # eb20: one trigger per event (0 multi-trigger, 593 / 345 docs repeat a type): a merge there can only cost
 
 # Unified label space, shared with every model warm-started from this base so they

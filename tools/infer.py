@@ -95,7 +95,10 @@ def _model_schema(config, tasks: str = None) -> Dict[str, Any]:
 def _build_schema(args: argparse.Namespace, config=None) -> Dict[str, Any]:
     """Assemble a raw schema dict from CLI options; --entities/--events add to --model-schema."""
     if args.schema_json:
-        return json.loads(Path(args.schema_json).read_text(encoding="utf-8"))
+        data = json.loads(Path(args.schema_json).read_text(encoding="utf-8"))
+        # An application menu file (tools/train/config/menus/*.json, MENU_SPEC.md) carries its schema
+        # under "schema" beside its name and the corpora it is exhaustive for.
+        return data["schema"] if "schema" in data and "exhaustive_for" in data else data
     schema: Dict[str, Any] = _model_schema(config, args.tasks) if args.model_schema else {}
     if args.entities:
         schema["entities"] = [e.strip() for e in args.entities.split(",") if e.strip()]
@@ -125,7 +128,8 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                    help="Literal text, a .txt file, or a .jsonl with an 'input' field per line.")
     p.add_argument("--entities", help="Comma-separated entity types.")
     p.add_argument("--events", help='JSON mapping event type -> [roles], e.g. \'{"Attack":["Target"]}\'.')
-    p.add_argument("--schema-json", help="Path to a full schema JSON (overrides every other schema option).")
+    p.add_argument("--schema-json", help="Path to a full schema JSON, or an application menu file "
+                                         "(tools/train/config/menus/*.json); overrides every other schema option.")
     p.add_argument("--model-schema", action="store_true",
                    help="Start from the schema the checkpoint ships (config.json default_schema).")
     p.add_argument("--tasks", help="With --model-schema: keep only these task types, comma-separated "

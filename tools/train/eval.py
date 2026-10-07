@@ -51,6 +51,8 @@ def main() -> None:
                    help="Also score with the model's own default_schema as the menu, "
                         "emitting eval_fullmenu_* keys. Gold-menu precision is 1.0000 by "
                         "construction for event_type; this is the honest pass.")
+    p.add_argument("--menu", help="Also score under this menu, beside the gold keys (MENU_SPEC.md): "
+                                  "widened:K | corpus_full | app:<name or menu file>. Results under by_menu.")
     p.add_argument("--batch-size", type=int, dest="batch_size",
                    help="Override eval.batch_size. Scores MUST NOT change with this -- if "
                         "they do, padding is leaking into the result. It exists because "
@@ -113,6 +115,8 @@ def main() -> None:
     if args.global_decode is not None:
         overrides["global_decode"] = args.global_decode
 
+    if args.menu:
+        overrides["menu"] = args.menu
     evaluate_config(args.config, split=args.split, checkpoint=args.checkpoint, overrides=overrides)
 
 

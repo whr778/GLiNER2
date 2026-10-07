@@ -112,13 +112,15 @@ def score(golds: List[Dict], preds: List[Dict]) -> Dict[str, Any]:
     }
 
 
-def _predict(model, records: List[Dict], decode: Dict[str, Any], batch_size: int) -> Tuple[list, list]:
+def _predict(model, records: List[Dict], decode: Dict[str, Any], batch_size: int,
+             menus: Optional[List[Dict]] = None) -> Tuple[list, list]:
     """(golds, preds) for records with event gold, each offered its own gold schema as eval does.
     Event-free documents are skipped, so a false merge on one cannot be seen; on the calibration and
     control sets every document the merge can touch carries event gold."""
     from gliner2.training.eval_metrics import _schema_from_gold
-    keep = [r for r in records if (r.get("output") or {}).get("events")]
-    schemas = [_schema_from_gold(r["output"]) for r in keep]
+    idx = [i for i, r in enumerate(records) if (r.get("output") or {}).get("events")]
+    keep = [records[i] for i in idx]
+    schemas = [menus[i] for i in idx] if menus is not None else [_schema_from_gold(r["output"]) for r in keep]
     preds = model.batch_extract_long([r["input"] for r in keep], schemas, batch_size=batch_size, **decode)
     return [r["output"] for r in keep], preds
 
@@ -130,7 +132,8 @@ def multi_trigger_events(records: List[Dict]) -> int:
 
 
 def sweep(model, records: List[Dict], decode: Dict[str, Any], grid=COREF_THRESHOLD_GRID,
-          batch_size: int = 8, control: Optional[List[Dict]] = None) -> Dict[str, Dict[str, Any]]:
+          batch_size: int = 8, control: Optional[List[Dict]] = None,
+          menus: Optional[List[Dict]] = None) -> Dict[str, Dict[str, Any]]:
     """{"off": row, "<t>": row} -- the calibration set decoded without the merge and at each threshold.
     With ``control`` (one-trigger-per-event gold), each row also carries ``control``: the same scores on
     corpora where the merge can only cost, which the calibration set alone cannot see."""
@@ -140,7 +143,7 @@ def sweep(model, records: List[Dict], decode: Dict[str, Any], grid=COREF_THRESHO
         mode = {"record_merge_coreferent": "off"} if t == "off" else {
             "record_merge_coreferent": "link", "record_coref_link_threshold": float(t)}
         apply_boundary_overrides(model, mode)
-        row = score(*_predict(model, records, decode, batch_size))
+        row = score(*_predict(model, records, decode, batch_size, menus))
         if control:
             row["control"] = score(*_predict(model, control, decode, batch_size))
         rows[str(t)] = row

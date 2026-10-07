@@ -1,0 +1,483 @@
+{
+ "name": "news55",
+ "source": "tools/data/synthetic/schema_spec.py: ENTITY_TYPES (125) + EVENT_ONTOLOGY (55 types with roles) -- the menu ccnews_english_v2.yaml offered EVERY document in full (events sample_per_doc 55 of 55; entities unsampled). Relations, classifications and structures were sampled per document, so they are NOT exhaustive and not here. Raw annotator spellings: the checkpoint's label_map/label_style (or the run's labels file) maps them.",
+ "exhaustive_for": [
+  "cc_news_events_sonnet55_v2"
+ ],
+ "schema": {
+  "entities": [
+   "person",
+   "job title",
+   "nationality",
+   "ethnic group",
+   "religious group",
+   "political affiliation",
+   "academic degree",
+   "military rank",
+   "occupation",
+   "family relationship",
+   "pseudonym",
+   "honorific",
+   "team role",
+   "witness",
+   "organization",
+   "company",
+   "government agency",
+   "political party",
+   "non-profit organization",
+   "educational institution",
+   "sports team",
+   "media outlet",
+   "military unit",
+   "criminal organization",
+   "trade union",
+   "regulatory body",
+   "location",
+   "geopolitical entity",
+   "facility",
+   "address",
+   "region",
+   "body of water",
+   "mountain",
+   "road",
+   "airport",
+   "landmark",
+   "border",
+   "postal code",
+   "date",
+   "time",
+   "duration",
+   "frequency",
+   "age",
+   "era",
+   "deadline",
+   "money",
+   "quantity",
+   "percent",
+   "ordinal",
+   "cardinal",
+   "measurement",
+   "temperature",
+   "distance",
+   "weight",
+   "area",
+   "speed",
+   "voltage",
+   "dosage",
+   "product",
+   "work of art",
+   "book",
+   "film",
+   "song",
+   "software",
+   "brand",
+   "model number",
+   "vehicle",
+   "aircraft",
+   "vessel",
+   "video game",
+   "publication",
+   "law",
+   "court case",
+   "contract",
+   "patent",
+   "regulation",
+   "crime",
+   "sentence",
+   "license",
+   "treaty",
+   "verdict",
+   "disease",
+   "symptom",
+   "medication",
+   "chemical",
+   "organism",
+   "gene",
+   "protein",
+   "medical procedure",
+   "anatomical structure",
+   "species",
+   "mineral",
+   "clinical trial",
+   "diagnosis",
+   "pathogen",
+   "vaccine",
+   "allergen",
+   "programming language",
+   "algorithm",
+   "hardware component",
+   "protocol",
+   "file format",
+   "database",
+   "operating system",
+   "api",
+   "framework",
+   "security vulnerability",
+   "currency",
+   "stock ticker",
+   "financial instrument",
+   "tax",
+   "credit rating",
+   "market index",
+   "interest rate",
+   "fiscal quarter",
+   "budget line",
+   "event",
+   "holiday",
+   "conference",
+   "sports competition",
+   "natural disaster",
+   "war",
+   "award",
+   "language",
+   "weapon"
+  ],
+  "events": {
+   "Conflict.Attack": [
+    "Attacker",
+    "Target",
+    "Instrument",
+    "Place",
+    "Time"
+   ],
+   "Conflict.Demonstrate": [
+    "Demonstrator",
+    "Target",
+    "Place",
+    "Time"
+   ],
+   "Conflict.Ceasefire": [
+    "Party",
+    "Mediator",
+    "Place",
+    "Time"
+   ],
+   "Life.Die": [
+    "Victim",
+    "Agent",
+    "Instrument",
+    "Place",
+    "Time"
+   ],
+   "Life.Injure": [
+    "Victim",
+    "Agent",
+    "Instrument",
+    "Place",
+    "Time"
+   ],
+   "Life.BeBorn": [
+    "Person",
+    "Place",
+    "Time"
+   ],
+   "Life.Marry": [
+    "Participant",
+    "Place",
+    "Time"
+   ],
+   "Life.Divorce": [
+    "Participant",
+    "Place",
+    "Time"
+   ],
+   "Life.Evacuate": [
+    "Evacuee",
+    "Agent",
+    "Origin",
+    "Destination",
+    "Time"
+   ],
+   "Movement.Transport": [
+    "Agent",
+    "Entity",
+    "Origin",
+    "Destination",
+    "Vehicle",
+    "Time"
+   ],
+   "Movement.Migrate": [
+    "Migrant",
+    "Origin",
+    "Destination",
+    "Time"
+   ],
+   "Movement.Deport": [
+    "Agent",
+    "Person",
+    "Origin",
+    "Destination",
+    "Time"
+   ],
+   "Movement.Arrive": [
+    "Traveler",
+    "Destination",
+    "Vehicle",
+    "Time"
+   ],
+   "Transaction.TransferMoney": [
+    "Giver",
+    "Recipient",
+    "Beneficiary",
+    "Money",
+    "Time"
+   ],
+   "Transaction.TransferOwnership": [
+    "Buyer",
+    "Seller",
+    "Artifact",
+    "Price",
+    "Time"
+   ],
+   "Transaction.Donate": [
+    "Donor",
+    "Recipient",
+    "Artifact",
+    "Time"
+   ],
+   "Transaction.Lend": [
+    "Lender",
+    "Borrower",
+    "Money",
+    "Time"
+   ],
+   "Business.StartOrg": [
+    "Agent",
+    "Organization",
+    "Place",
+    "Time"
+   ],
+   "Business.MergeOrg": [
+    "Organization",
+    "Place",
+    "Time"
+   ],
+   "Business.DeclareBankruptcy": [
+    "Organization",
+    "Place",
+    "Time"
+   ],
+   "Business.EndOrg": [
+    "Organization",
+    "Place",
+    "Time"
+   ],
+   "Business.LaunchProduct": [
+    "Organization",
+    "Product",
+    "Place",
+    "Time"
+   ],
+   "Business.Layoff": [
+    "Organization",
+    "Employee",
+    "Quantity",
+    "Place",
+    "Time"
+   ],
+   "Business.Strike": [
+    "Striker",
+    "Organization",
+    "Place",
+    "Time"
+   ],
+   "Personnel.StartPosition": [
+    "Person",
+    "Organization",
+    "Position",
+    "Time"
+   ],
+   "Personnel.EndPosition": [
+    "Person",
+    "Organization",
+    "Position",
+    "Time"
+   ],
+   "Personnel.Elect": [
+    "Person",
+    "Organization",
+    "Position",
+    "Place",
+    "Time"
+   ],
+   "Personnel.Nominate": [
+    "Person",
+    "Agent",
+    "Position",
+    "Time"
+   ],
+   "Contact.Meet": [
+    "Participant",
+    "Place",
+    "Time"
+   ],
+   "Contact.Communicate": [
+    "Communicator",
+    "Recipient",
+    "Place",
+    "Time"
+   ],
+   "Contact.Negotiate": [
+    "Participant",
+    "Topic",
+    "Place",
+    "Time"
+   ],
+   "Justice.Arrest": [
+    "Person",
+    "Agent",
+    "Crime",
+    "Place",
+    "Time"
+   ],
+   "Justice.ChargeIndict": [
+    "Defendant",
+    "Prosecutor",
+    "Adjudicator",
+    "Crime",
+    "Time"
+   ],
+   "Justice.TrialHearing": [
+    "Defendant",
+    "Prosecutor",
+    "Adjudicator",
+    "Place",
+    "Time"
+   ],
+   "Justice.Sentence": [
+    "Defendant",
+    "Adjudicator",
+    "Crime",
+    "Sentence",
+    "Time"
+   ],
+   "Justice.Sue": [
+    "Plaintiff",
+    "Defendant",
+    "Adjudicator",
+    "Crime",
+    "Time"
+   ],
+   "Justice.Acquit": [
+    "Defendant",
+    "Adjudicator",
+    "Crime",
+    "Time"
+   ],
+   "Justice.Appeal": [
+    "Appellant",
+    "Adjudicator",
+    "Crime",
+    "Time"
+   ],
+   "Justice.Fine": [
+    "Entity",
+    "Adjudicator",
+    "Money",
+    "Crime",
+    "Time"
+   ],
+   "Disaster.NaturalDisaster": [
+    "Type",
+    "Affected",
+    "Place",
+    "Time"
+   ],
+   "Disaster.Accident": [
+    "Vehicle",
+    "Victim",
+    "Place",
+    "Time"
+   ],
+   "Disaster.Outbreak": [
+    "Disease",
+    "Affected",
+    "Place",
+    "Time"
+   ],
+   "Disaster.Rescue": [
+    "Rescuer",
+    "Victim",
+    "Place",
+    "Time"
+   ],
+   "Medical.Diagnose": [
+    "Patient",
+    "Diagnosis",
+    "Physician",
+    "Place",
+    "Time"
+   ],
+   "Medical.Treat": [
+    "Patient",
+    "Treatment",
+    "Physician",
+    "Time"
+   ],
+   "Research.Publish": [
+    "Author",
+    "Publication",
+    "Venue",
+    "Time"
+   ],
+   "Research.Discover": [
+    "Researcher",
+    "Finding",
+    "Place",
+    "Time"
+   ],
+   "Research.Fund": [
+    "Funder",
+    "Recipient",
+    "Money",
+    "Time"
+   ],
+   "Tech.Release": [
+    "Organization",
+    "Product",
+    "Version",
+    "Time"
+   ],
+   "Tech.Breach": [
+    "Attacker",
+    "Target",
+    "Data",
+    "Place",
+    "Time"
+   ],
+   "Government.EnactLaw": [
+    "Agent",
+    "Law",
+    "Place",
+    "Time"
+   ],
+   "Government.Vote": [
+    "Voter",
+    "Proposal",
+    "Result",
+    "Place",
+    "Time"
+   ],
+   "Government.Sanction": [
+    "Agent",
+    "Target",
+    "Reason",
+    "Time"
+   ],
+   "Award.ReceiveAward": [
+    "Recipient",
+    "Award",
+    "Awarder",
+    "Place",
+    "Time"
+   ],
+   "Sport.Compete": [
+    "Competitor",
+    "Competition",
+    "Result",
+    "Place",
+    "Time"
+   ]
+  }
+ }
+}

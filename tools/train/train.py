@@ -733,16 +733,133 @@ def check_coref_calibration(cfg: Dict, config_path: str = "") -> None:
           f"control {ev.get('coref_control') or 'NONE -- the merge is unchecked on one-trigger corpora'}")
 
 
+def corpus_pools(cfg: Dict, config_path: str) -> Dict[str, Dict]:
+    """``{corpus: menu schema}`` for the ``widened`` / ``corpus_full`` menus (MENU_SPEC.md): every label each
+    corpus's TRAIN split annotates, after the labels transform. Event types WITHOUT roles are kept (MAVEN's
+    168 are trigger-only), and a dimension declared in ``data.partial_annotation`` is left out: an absent
+    label from a partial dimension may be an unannotated truth."""
+    d = cfg.get("data") or {}
+    fns, passthrough = _category_fns(load_labels_cfg(cfg, config_path)), labels_passthrough(cfg)
+    partial = d.get("partial_annotation") or {}
+    pools: Dict[str, Dict] = {}
+    for f in _dedupe_paths(_split_files(d.get("corpora") or [], "train") + _event_split(d.get("event_files") or {}, "train"), "train"):
+        corpus = _corpus_of(f)
+        ents, evs, rels = set(), {}, set()
+        for rec in (read_transformed([f], fns, passthrough) if fns else _read_records([f])):
+            out = rec.get("output") or {}
+            ents.update(out.get("entities") or {})
+            for ev in out.get("events") or []:
+                if isinstance(ev, dict) and ev.get("event_type"):
+                    evs.setdefault(ev["event_type"], set()).update(a["role"] for a in ev.get("arguments") or []
+                                                                     if isinstance(a, dict) and a.get("role"))
+            for rel in out.get("relations") or []:
+                rels.update(rel or {})
+        skip = set(partial.get(corpus) or [])
+        pool = pools.setdefault(corpus, {})
+        if ents and "entities" not in skip:
+            pool["entities"] = sorted(set(pool.get("entities", [])) | ents)
+        if evs and "events" not in skip:
+            merged = {t: set(r) for t, r in (pool.get("events") or {}).items()}
+            for t, r in evs.items():
+                merged.setdefault(t, set()).update(r)
+            pool["events"] = {t: sorted(r) for t, r in sorted(merged.items())}
+        if rels and "relations" not in skip:
+            pool["relations"] = sorted(set(pool.get("relations", [])) | rels)
+    return pools
+
+
+def load_app_menu(name: str, cfg: Dict, config_path: str) -> Dict:
+    """An application menu (``eval.app_menus: {name: path}``, or a path), its schema mapped through this run's
+    labels config -- map AND style -- so it asks in the spellings the model trains on."""
+    from gliner2.inference.label_map import apply_label_map
+    ref = ((cfg.get("eval") or {}).get("app_menus") or {}).get(name, name)
+    menu = json.loads(_resolve_beside_config(ref, config_path, required=True).read_text(encoding="utf-8"))
+    labels_cfg = load_labels_cfg(cfg, config_path)
+    menu["schema"], _ = apply_label_map(menu["schema"], {c: labels_cfg[c] for c in LABEL_CATEGORIES if c in labels_cfg},
+                                        labels_cfg.get("style"))
+    return menu
+
+
+def menu_split(cfg: Dict, config_path: str, mode: str, split: str):
+    """(records, menus, report) to score one split under one menu mode.
+
+    ``app:<name>`` reads the menu's OWN exhaustive corpora's split -- often train_only in the config, as
+    sonnet55 is, so they are not in the config's val/test -- and projects their gold onto the menu.
+    ``widened:K`` / ``corpus_full`` read the config's split (train_only excluded, exact duplicates dropped)
+    and widen each document from its corpus pool."""
+    from gliner2.training.eval_metrics import build_menus, parse_menu
+    from gliner2.training.split_hygiene import _record_key
+    d = cfg.get("data") or {}
+    fns, passthrough = _category_fns(load_labels_cfg(cfg, config_path)), labels_passthrough(cfg)
+    kind, arg = parse_menu(mode)
+    app = load_app_menu(arg, cfg, config_path) if kind == "app" else None
+    if app:
+        files = [f"data/{c}.{split}.jsonl" for c in app["exhaustive_for"]]
+        for f in files:
+            if _fetch_if_missing(f) is ABSENT_SPLIT:
+                raise SystemExit(f"[menu] {f}: the menu's exhaustive corpus has no {split} split")
+    else:
+        files = _dedupe_paths(_split_files(d.get("corpora") or [], split, set(d.get("train_only") or ()))
+                              + _event_split(d.get("event_files") or {}, split), split)
+    records, corpora, seen = [], [], set()
+    for f in files:
+        for rec in (read_transformed([f], fns, passthrough) if fns else _read_records([f])):
+            k = _record_key(rec)
+            if k not in seen:
+                seen.add(k)
+                records.append(rec)
+                corpora.append(_corpus_of(f))
+    pools = corpus_pools(cfg, config_path) if kind in ("widened", "corpus_full") else None
+    return build_menus(records, corpora, mode, pools=pools, app=app)
+
+
+def score_under_menu(model, cfg: Dict, config_path: str, mode: str, split: str, batch_size: int,
+                     threshold: float, gd_kwargs: Dict) -> Dict:
+    """One pass of ``split`` under menu ``mode``: the metrics, with what was scored and refused."""
+    from gliner2.training.eval_metrics import compute_metrics
+    from gliner2.training.trainer import ExtractorDataset
+    records, menus, report = menu_split(cfg, config_path, mode, split)
+    print(f"[menu] {mode} on {split}: scoring {report['scored']} records; refused {report['refused'] or 'none'}")
+    metrics = compute_metrics(model, ExtractorDataset(records, shuffle=False, validate=False), batch_size=batch_size,
+                              threshold=threshold, menus=menus, **gd_kwargs) or {}
+    metrics["menu_report"] = report
+    return metrics
+
+
+def check_menus(cfg: Dict, config_path: str) -> None:
+    """Refuse at STARTUP a menu setting that could only fail after training: an unknown mode, or an app
+    menu whose file or exhaustive corpora are missing."""
+    from gliner2.training.eval_metrics import parse_menu
+    ev = cfg.get("eval") or {}
+    for key in ("menu", "calibration_menu"):
+        mode = ev.get(key)
+        if not mode:
+            continue
+        kind, arg = parse_menu(mode)
+        if kind == "app":
+            app = load_app_menu(arg, cfg, config_path)
+            for c in app["exhaustive_for"]:
+                for split in ("val", "test"):
+                    if _fetch_if_missing(f"data/{c}.{split}.jsonl") is ABSENT_SPLIT:
+                        raise SystemExit(f"[menu] eval.{key} {mode}: data/{c}.{split}.jsonl does not exist")
+        print(f"[menu] eval.{key}: {mode}")
+
+
 def calibrate_coref(best: Path, cfg: Dict, config_path: str, batch_size: int, decode: Dict) -> None:
     """Sweep the coreference merge threshold on the calibration val set (gated also on the control
     set) and write the choice into ``best/config.json`` (``gliner2.training.coref_calibration``)."""
     from gliner2 import AutoExtractor
     from gliner2.training import coref_calibration as CC
     files, records, cfiles, control = coref_calibration_data(cfg, config_path)
+    menu, menus = (cfg.get("eval") or {}).get("calibration_menu") or "gold", None
+    if menu.startswith("app:"):
+        # MENU_SPEC.md: calibrate under the application's menu, on the corpora it is exhaustive for.
+        records, menus, report = menu_split(cfg, config_path, menu, "val")
+        files = [f"{menu} ({report['scored']} records)"]
     print(f"\n[coref sweep] {best} over {len(records)} records from {files}, control {len(control)} from "
-          f"{cfiles}, grid {CC.COREF_THRESHOLD_GRID}")
+          f"{cfiles}, grid {CC.COREF_THRESHOLD_GRID}, calibration menu {menu}")
     rows = CC.sweep(AutoExtractor.from_pretrained(str(best)), records, decode, batch_size=batch_size,
-                    control=control or None)
+                    control=control or None, menus=menus)
     CC.write(best, rows, *CC.choose(rows), source=files, control=cfiles)
 
 
@@ -1465,6 +1582,13 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     _log_composition(None, split_data if split == "val" else None,
                      split_data if split != "val" else None, streaming=False)
     metrics = _run_blind_test(best, split_data, ev["batch_size"], ev["threshold"], ev["by_language"], gd_kwargs)
+    menu_mode = (overrides or {}).get("menu") or "gold"
+    if metrics and menu_mode != "gold":
+        from gliner2.training.eval_metrics import load_with_overrides
+        gd = {k: v for k, v in gd_kwargs.items() if k != "boundary_overrides"}
+        metrics["by_menu"] = {menu_mode: score_under_menu(
+            load_with_overrides(best, gd_kwargs.get("boundary_overrides")), cfg, config_path, menu_mode, split,
+            ev["batch_size"], ev["threshold"], gd)}
     if metrics:
         # RECORD THE OPERATING POINT. A <split>_metrics.json used to carry 314 numbers and
         # nothing about the threshold or menu behind them, so establishing that a published
@@ -1681,6 +1805,7 @@ def main(config_path: str) -> None:
             )
         print(f"[data] train_only (excluded from val and test): {sorted(train_only)}")
     check_coref_calibration(cfg, config_path)
+    check_menus(cfg, config_path)
     train_data = _dedupe_paths(
         _split_files(corpora, "train", train_only) + _event_split(event_files, "train"), "train")
     eval_data = _dedupe_paths(
@@ -1827,11 +1952,17 @@ def main(config_path: str) -> None:
               f"{len(eval_data)} val samples over {thresholds}...")
         sweep_model = AutoExtractor.from_pretrained(str(best))
         eval_records = _read_records(eval_data) if eval_data and isinstance(eval_data[0], str) else eval_data
+        sweep_menus = None
+        cal_menu = (cfg.get("eval") or {}).get("calibration_menu") or "gold"
+        if cal_menu != "gold":
+            # MENU_SPEC.md: pick the threshold under the menu production will send, not the gold menu.
+            eval_records, sweep_menus, report = menu_split(cfg, config_path, cal_menu, "val")
+            print(f"[threshold sweep] calibrating under menu {cal_menu}: {report}")
         sweep_ds = ExtractorDataset(eval_records, shuffle=False, validate=False)
         eval_thr, sweep_best_metrics, sweep_all = sweep_thresholds(
             sweep_model, sweep_ds, thresholds=thresholds, batch_size=eval_bs, stopwords=eval_stopwords,
             chunk_size=chunk_size, chunk_overlap=chunk_overlap,
-            global_decode=global_decode, global_decode_config=global_decode_config,
+            global_decode=global_decode, global_decode_config=global_decode_config, menus=sweep_menus,
         )
         print(f"[threshold sweep] Chose threshold={eval_thr} "
               f"(support-weighted strict micro-F1={_selection_score(sweep_best_metrics):.4f}); "
@@ -1852,6 +1983,13 @@ def main(config_path: str) -> None:
     if (cfg.get("eval") or {}).get("coref_calibration"):
         calibrate_coref(best, cfg, config_path, eval_bs, dict(threshold=eval_thr, **gd_kwargs))
     test_metrics = _run_blind_test(best, test_data, eval_bs, eval_thr, eval_by_language, gd_kwargs)
+    menu_mode = (cfg.get("eval") or {}).get("menu") or "gold"
+    if test_metrics and menu_mode != "gold":
+        # MENU_SPEC.md: the gold keys stay (every published number is gold-menu); the configured menu's
+        # numbers go beside them, under by_menu.
+        print(f"\n[blind test] scoring again under menu {menu_mode}")
+        test_metrics["by_menu"] = {menu_mode: score_under_menu(
+            AutoExtractor.from_pretrained(str(best)), cfg, config_path, menu_mode, "test", eval_bs, eval_thr, gd_kwargs)}
     if test_metrics and merge_shipped(best):
         # The shipped merge changes event identity, so these numbers are not comparable with a base that
         # decoded one event per mention. Score the SAME test once more with the merge off, beside them.
