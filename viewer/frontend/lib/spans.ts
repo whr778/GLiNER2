@@ -111,18 +111,31 @@ export type SegMark = {
 
 export type Segment = { text: string; mark: SegMark | null };
 
+// cu[i] = the UTF-16 index of code point i; cu[codePointCount] = text.length.
+export function codeUnitOffsets(text: string): number[] {
+  const cu = [0];
+  for (const ch of text) cu.push(cu[cu.length - 1] + ch.length);
+  return cu;
+}
+
 // Segment the text so each character renders once, but MERGE all marks that
 // share a character range into one span carrying every role. A span that is an
 // endpoint of several relations (or an argument of several events) keeps them
 // all — an arc needs both endpoints present, so dropping duplicates hid links.
 export function buildSegments(text: string, marks: Mark[]): Segment[] {
+  // The model's offsets count CODE POINTS (Python); JS strings and DOM ranges count UTF-16 code
+  // units, so every character outside the BMP (an emoji) shifted later highlights left by one.
+  // Convert once here; everything below works in UTF-16.
+  const cu = codeUnitOffsets(text);
   const groups = new Map<string, { start: number; end: number; roles: Role[] }>();
   for (const m of marks) {
-    if (m.start < 0 || m.start >= m.end || m.end > text.length) continue;
-    const key = m.start + ":" + m.end;
+    if (m.start < 0 || m.start >= m.end || m.end >= cu.length) continue;
+    const start = cu[m.start];
+    const end = cu[m.end];
+    const key = start + ":" + end;
     let g = groups.get(key);
     if (!g) {
-      g = { start: m.start, end: m.end, roles: [] };
+      g = { start, end, roles: [] };
       groups.set(key, g);
     }
     g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx });
