@@ -1,225 +1,225 @@
 category	segment	in_label	uses	corpora	proposed	flag	example	decision
-entities	organisation	ORGANISATION	5379	kaznerd 5379	Organ_Is_Ati_On	CHECK	kaznerd: Ұлттық банктың | Үкіметке	
-entities	database	database	5056	cc_news_haiku45 2056; cc_news_events_haiku45 854; synthetic_haiku45_5k_coerced 577	Data_Base		cc_news_haiku45: GFXBench | Geekbench	
-entities	spacecraft	Spacecraft	455	docee 275; turkish_event 172; text2json 4	Space_Craft		docee: Alpha Magnetic Spectrometer (AMS) | AMS	
-entities	timestamp	timestamp	8	paraloq_json 8	Times_Tamp		paraloq_json: 2023-03-08T18:30:00Z | 2023-03-07T12:00:00Z	
-entities	timeline	timeline	4	paraloq_json 4	Time_Line		paraloq_json: 12 months | 12 months	
-entities	keywords	keywords	3	paraloq_json 3	Key_Words	CHECK	paraloq_json: exercise | cardiovascular health	
-entities	ethnicity	ethnicity	2	paraloq_json 2	???	CHECK	paraloq_json: Hispanic | Caucasian	
-entities	username	username	2	paraloq_json 2	User_Name		paraloq_json: jdoe | jsmith	
-entities	hostname	hostname	2	paraloq_json 2	Host_Name		paraloq_json: webserver1.example.com | example-host	
-entities	descriptor	descriptor	1	paraloq_json 1	Descript_Or		paraloq_json: Acme Corp	
-entities	expertise	expertise	1	paraloq_json 1	Ex_Per_Ti_Se	CHECK	paraloq_json: Python, Java, C++	
-entities	descriptors	descriptors	1	paraloq_json 1	Descript_Ors	CHECK	paraloq_json: Blood and Gore | Intense Violence	
-entities	filepath	filepath	1	paraloq_json 1	File_Path		paraloq_json: /path/to/outtake.mp3	
-entities	postconditions	postconditions	1	paraloq_json 1	Post_Conditions		paraloq_json: Servers are created and configured. | Software is installed on the servers.	
-entities	postcode	postcode	1	paraloq_json 1	Post_Code		paraloq_json: 75001	
-events	deathcausedbyviolentevents	life.die.deathcausedbyviolentevents	595	rams 317; rams_merged 278	Death_Caused_By_Violent_Events		rams: type, trigger ['homicide'] | type, trigger ['genocide']	
-events	selfdirectedbattle	conflict.attack.selfdirectedbattle	490	rams 256; rams_merged 234	Self_Directed_Battle		rams: type, trigger ['battle'] | type, trigger ['skirmishing']	
-events	detainee	detainee	443	rams 141; rams_merged 125	De_Tai_Nee	CHECK	rams: role, Otto Warmbier in justice.arrestjaildetain.arrestjaildetain | role, those who engage in political dissent in justice.arrestjaildetain.arrestjaildetain	
-events	injurycausedbyviolentevents	life.injure.injurycausedbyviolentevents	432	rams 226; rams_merged 206	Injury_Caused_By_Violent_Events		rams: type, trigger ['assault'] | type, trigger ['strikes']	
-events	financing	financing	419	duee 143; duee_typed 143; duee_ner 133	Fin_An_Cing	CHECK	duee: type, trigger ['融资'] | type, trigger ['融资']	
-events	transfermoney	transaction.transfermoney.n/a	309	rams 174; rams_merged 135	Transfer_Money		rams: type, trigger ['reimbursed'] | type, trigger ['rented']	
-events	transportperson	movement.transportperson.preventexit	273	rams 145; rams_merged 128	Transport_Person		rams: type, trigger ['imprisoned'] | type, trigger ['arrests']	
-events	preventexit	movement.transportperson.preventexit	273	rams 145; rams_merged 128	Prevent_Exit		rams: type, trigger ['imprisoned'] | type, trigger ['arrests']	
-events	arrestjaildetain	justice.arrestjaildetain.arrestjaildetain	270	rams 143; rams_merged 127	Arrest_Jail_Detain		rams: type, trigger ['imprisoned'] | type, trigger ['incarcerate']	
-events	payforservice	transaction.transfermoney.payforservice	213	rams 112; rams_merged 101	Pay_For_Service	CHECK	rams: type, trigger ['reimbursed'] | type, trigger ['compensating']	
-events	transportartifact	movement.transportartifact.n/a	189	rams 116; rams_merged 73	Transport_Artifact		rams: type, trigger ['supplied'] | type, trigger ['flung']	
-events	transferownership	transaction.transferownership.n/a	188	rams 105; rams_merged 83	Transfer_Ownership		rams: type, trigger ['donated'] | type, trigger ['loans']	
-events	requestadvise	contact.requestadvise.broadcast	162	rams 83; rams_merged 79	Request_Advise		rams: type, trigger ['advocating'] | type, trigger ['recommend']	
-events	commitmentpromiseexpressintent	contact.commitmentpromiseexpressintent.meet	155	rams 80; rams_merged 75	Commitment_Promise_Express_Intent		rams: type, trigger ['promises'] | type, trigger ['vow']	
-events	inspectedentity	inspectedentity	152	rams 83; rams_merged 69	Inspected_Entity		rams: role, nuclear program in inspection.sensoryobserve.physicalinvestigateinspect | role, illegal road in inspection.sensoryobserve.physicalinvestigateinspect	
-events	embargosanction	transaction.transaction.embargosanction	151	rams 79; rams_merged 72	Embargo_Sanction		rams: type, trigger ['boycott'] | type, trigger ['sanctions']	
-events	artifactexistence	artifactexistence.damagedestroy.damage	151	rams 80; rams_merged 71	Artifact_Existence		rams: type, trigger ['battered'] | type, trigger ['vandalized']	
-events	damagedestroy	artifactexistence.damagedestroy.damage	151	rams 80; rams_merged 71	Damage_Destroy		rams: type, trigger ['battered'] | type, trigger ['vandalized']	
-events	acceptagreementcontractceasefire	government.agreements.acceptagreementcontractceasefire	144	rams 76; rams_merged 68	Accept_Agreement_Contract_Cease_Fire		rams: type, trigger ['agreement'] | type, trigger ['ceasefire']	
-events	startposition	personnel.startposition.hiring	140	rams 73; rams_merged 67	Start_Position		rams: type, trigger ['hired'] | type, trigger ['employed']	
-events	judicialconsequences	justice.judicialconsequences.n/a	136	rams 79; rams_merged 57	Judicial_Consequences		rams: type, trigger ['extradite'] | type, trigger ['extradite']	
-events	publicstatementinperson	contact.publicstatementinperson.broadcast	135	rams 70; rams_merged 65	Public_Statement_In_Person		rams: type, trigger ['reiterates'] | type, trigger ['reiterated']	
-events	evacuationrescue	movement.transportperson.evacuationrescue	133	rams 69; rams_merged 64	Evacuation_Rescue		rams: type, trigger ['escape'] | type, trigger ['fled']	
-events	governmentbody	governmentbody	131	rams 70; rams_merged 61	Government_Body		rams: role, Congress in government.legislate.legislate | role, hyper­democracy in government.legislate.legislate	
-events	transfercontrol	transaction.transaction.transfercontrol	129	rams 70; rams_merged 59	Transfer_Control		rams: type, trigger ['seized'] | type, trigger ['land grab']	
-events	giftgrantprovideaid	transaction.transfermoney.giftgrantprovideaid	129	rams 67; rams_merged 62	Gift_Grant_Provide_Aid	CHECK	rams: type, trigger ['provide aid'] | type, trigger ['donated']	
-events	illnessdegradationphysical	life.injure.illnessdegradationphysical	128	rams 67; rams_merged 61	Illness_Degradation_Physical		rams: type, trigger ['sickness'] | type, trigger ['illness']	
-events	endposition	personnel.endposition.quitretire	127	rams 66; rams_merged 61	End_Position	CHECK	rams: type, trigger ['quit'] | type, trigger ['retired']	
-events	quitretire	personnel.endposition.quitretire	127	rams 66; rams_merged 61	Quit_Retire		rams: type, trigger ['quit'] | type, trigger ['retired']	
-events	initiatejudicialprocess	justice.initiatejudicialprocess.n/a	122	rams 64; rams_merged 58	Initiate_Judicial_Process		rams: type, trigger ['testifying'] | type, trigger ['indicted']	
-events	chargeindict	justice.initiatejudicialprocess.chargeindict	121	rams 65; rams_merged 56	Charge_Indict		rams: type, trigger ['indicted'] | type, trigger ['accused']	
-events	otherparticipant	otherparticipant	119	rams 60; rams_merged 59	Other_Participant		rams: role, the rebels in government.agreements.violateagreement | role, Iran in government.agreements.violateagreement	
-events	stealrobhijack	conflict.attack.stealrobhijack	119	rams 62; rams_merged 57	Steal_Rob_Hijack	CHECK	rams: type, trigger ['robbery'] | type, trigger ['hijacked']	
-events	fireexplosion	disaster.fireexplosion.fireexplosion	117	rams 59; rams_merged 58	Fire_Explosion		rams: type, trigger ['fire'] | type, trigger ['explosions']	
-events	borrowlend	transaction.transfermoney.borrowlend	117	rams 62; rams_merged 55	Borrow_Lend		rams: type, trigger ['lend'] | type, trigger ['loan']	
-events	illnessdegradationhungerthirst	life.injure.illnessdegradationhungerthirst	111	rams 58; rams_merged 53	Illness_Degradation_Hunger_Thirst		rams: type, trigger ['dehydrated'] | type, trigger ['dehydration']	
-events	firinglayoff	personnel.endposition.firinglayoff	107	rams 58; rams_merged 49	Firing_Layoff		rams: type, trigger ['ousted'] | type, trigger ['ousted']	
-events	trialhearing	justice.initiatejudicialprocess.trialhearing	107	rams 56; rams_merged 51	Trial_Hearing		rams: type, trigger ['proceedings'] | type, trigger ['testify']	
-events	sensoryobserve	inspection.sensoryobserve.physicalinvestigateinspect	103	rams 56; rams_merged 47	Sensory_Observe		rams: type, trigger ['inspections'] | type, trigger ['inspection']	
-events	physicalinvestigateinspect	inspection.sensoryobserve.physicalinvestigateinspect	103	rams 56; rams_merged 47	Physical_Investigate_Inspect		rams: type, trigger ['inspections'] | type, trigger ['inspection']	
-events	accidentcrash	disaster.accidentcrash.accidentcrash	96	rams 52; rams_merged 44	Accident_Crash		rams: type, trigger ['collision'] | type, trigger ['crashed']	
-events	violateagreement	government.agreements.violateagreement	95	rams 48; rams_merged 47	Violate_Agreement		rams: type, trigger ['ceasefire'] | type, trigger ['agreements']	
-events	winelection	personnel.elect.winelection	92	rams 48; rams_merged 44	Wine_Lection		rams: type, trigger ['winning elections'] | type, trigger ['won election']	
-events	fireexplosionobject	fireexplosionobject	91	rams 46; rams_merged 45	Fire_Explosion_Object		rams: role, athletes ' village in disaster.fireexplosion.fireexplosion | role, mine and missile in disaster.fireexplosion.fireexplosion	
-events	nonviolentdeath	life.die.nonviolentdeath	89	rams 46; rams_merged 43	Non_Violent_Death	CHECK	rams: type, trigger ['passed away'] | type, trigger ['die']	
-events	investigatecrime	justice.investigate.investigatecrime	87	rams 47; rams_merged 40	Investigate_Crime		rams: type, trigger ['investigation'] | type, trigger ['investigation']	
-events	threatencoerce	contact.threatencoerce.meet	86	rams 45; rams_merged 41	Threaten_Coerce		rams: type, trigger ['intimidated'] | type, trigger ['blackmail']	
-events	extraditer	extraditer	83	rams 44; rams_merged 39	Extrad_Iter		rams: role, US in justice.judicialconsequences.extradite | role, Turkey in justice.judicialconsequences.extradite	
-events	inspectpeopleorganization	inspection.sensoryobserve.inspectpeopleorganization	82	rams 45; rams_merged 37	Inspect_People_Organization		rams: type, trigger ['immigrate'] | type, trigger ['immigrate']	
-events	airstrikemissilestrike	conflict.attack.airstrikemissilestrike	81	rams 42; rams_merged 39	Airs_Trike_Missiles_Trike		rams: type, trigger ['airstrike'] | type, trigger ['airstrikes']	
-events	smuggleextract	movement.transportartifact.smuggleextract	80	rams 44; rams_merged 36	Smuggle_Extract		rams: type, trigger ['smuggling'] | type, trigger ['smuggled']	
-events	mediastatement	contact.mediastatement.broadcast	76	rams 40; rams_merged 36	Media_Statement		rams: type, trigger ['broadcast'] | type, trigger ['address']	
-events	commandorder	contact.commandorder.broadcast	75	rams 39; rams_merged 36	Command_Order		rams: type, trigger ['urged'] | type, trigger ['urge']	
-events	prevententry	movement.transportperson.prevententry	72	rams 36; rams_merged 36	Prevent_Entry		rams: type, trigger ['denied entry'] | type, trigger ['obstruct']	
-events	bringcarryunload	movement.transportartifact.bringcarryunload	72	rams 38; rams_merged 34	Bring_Carry_Unload		rams: type, trigger ['shipments'] | type, trigger ['shipments']	
-events	selfmotion	movement.transportperson.selfmotion	72	rams 38; rams_merged 34	Self_Motion		rams: type, trigger ['walked'] | type, trigger ['walking']	
-events	grantentryasylum	movement.transportperson.grantentryasylum	70	rams 37; rams_merged 33	Grant_Entry_Asylum		rams: type, trigger ['immigrating'] | type, trigger ['immigrating']	
-events	funeralvigil	contact.funeralvigil.meet	69	rams 38; rams_merged 31	Funeral_Vigil		rams: type, trigger ['funerals'] | type, trigger ['funeral']	
-events	disperseseparate	movement.transportartifact.disperseseparate	67	rams 36; rams_merged 31	Disperse_Separate		rams: type, trigger ['shipment'] | type, trigger ['shipment']	
-events	sendsupplyexport	movement.transportartifact.sendsupplyexport	65	rams 36; rams_merged 29	Send_Supply_Export		rams: type, trigger ['supply'] | type, trigger ['supply']	
-events	castvote	government.vote.castvote	61	rams 31; rams_merged 30	Cast_Vote		rams: type, trigger ['vote'] | type, trigger ['vote']	
-events	rejectnullifyagreementcontractceasefire	government.agreements.rejectnullifyagreementcontractceasefire	58	rams 30; rams_merged 28	Reject_Nullify_Agreement_Contract_Cease_Fire		rams: type, trigger ['agreement'] | type, trigger ['treaty']	
-events	rejecternullifier	rejecternullifier	56	rams 29; rams_merged 27	Rejecter_Nullifier		rams: role, The Sanders campaign in government.agreements.rejectnullifyagreementcontractceasefire | role, Russian President Vladimir Putin in government.agreements.rejectnullifyagreementcontractceasefire	
-events	firearmattack	conflict.attack.firearmattack	54	rams 27; rams_merged 27	Firearm_Attack		rams: type, trigger ['shoot'] | type, trigger ['shooting']	
-events	territoryorfacility	territoryorfacility	53	rams 28; rams_merged 25	Territory_Or_Facility		rams: role, offshore in transaction.transaction.transfercontrol | role, the islands in transaction.transaction.transfercontrol	
-events	marchprotestpoliticalgathering	conflict.demonstrate.marchprotestpoliticalgathering	51	rams 28; rams_merged 23	March_Protest_Political_Gathering		rams: type, trigger ['protests'] | type, trigger ['protest']	
-events	mergegpe	government.formation.mergegpe	47	rams 27; rams_merged 20	???	CHECK	rams: type, trigger ['annex'] | type, trigger ['annex']	
-events	grantentry	movement.transportartifact.grantentry	46	rams 24; rams_merged 22	Grant_Entry		rams: type, trigger ['imported'] | type, trigger ['import']	
-events	receiveimport	movement.transportartifact.receiveimport	43	rams 23; rams_merged 20	Receive_Import		rams: type, trigger ['imports'] | type, trigger ['imported']	
-events	driverpassenger	driverpassenger	38	rams 21; rams_merged 17	Driver_Passenger		rams: role, pilots in disaster.accidentcrash.accidentcrash | role, parties in disaster.accidentcrash.accidentcrash	
-events	createmanufacture	manufacture.artifact.createmanufacture	37	rams 19; rams_merged 18	Create_Manufacture		rams: type, trigger ['producing'] | type, trigger ['produce']	
-events	violationspreventvote	government.vote.violationspreventvote	36	rams 18; rams_merged 18	Violations_Prevent_Vote		rams: type, trigger ['voter intimidation'] | type, trigger ['Voting']	
-events	monitorelection	inspection.sensoryobserve.monitorelection	34	rams 17; rams_merged 17	Monitor_Election		rams: type, trigger ['voting'] | type, trigger ['voting']	
-events	nonviolentthrowlaunch	movement.transportartifact.nonviolentthrowlaunch	32	rams 16; rams_merged 16	Non_Violent_Throw_Launch	CHECK	rams: type, trigger ['throwing'] | type, trigger ['thrown']	
-events	startgpe	government.formation.startgpe	32	rams 17; rams_merged 15	???	CHECK	rams: type, trigger ['inaugurating'] | type, trigger ['establish']	
-events	createintellectualproperty	manufacture.artifact.createintellectualproperty	32	rams 16; rams_merged 16	Create_Intellectual_Property		rams: type, trigger ['produced'] | type, trigger ['producing']	
-events	hidingplace	hidingplace	31	rams 17; rams_merged 14	Hiding_Place		rams: role, Saudi in movement.transportperson.hide | role, container vessel in movement.transportperson.hide	
-events	biologicalchemicalpoisonattack	conflict.attack.biologicalchemicalpoisonattack	28	rams 16; rams_merged 12	Biological_Chemical_Poison_Attack		rams: type, trigger ['poisoned'] | type, trigger ['poisoning']	
-events	monitoredentity	monitoredentity	26	rams 13; rams_merged 13	Monitored_Entity		rams: role, Pam Bondi , Florida Attorney General , a in inspection.sensoryobserve.monitorelection | role, a lot of very intelligent women in inspection.sensoryobserve.monitorelection	
-relations	chairperson	chairperson	2664	docred 2279; redocred 209; sentence_rex 139	Chair_Person		docred: {'head': 'Committee on International Trade', 'tail': 'Bernd  | {'head': 'Communist Party of the Soviet Union', 'tail': 'Jos	
-relations	tracklist	tracklist	100	sentence_rex 100	Track_List		sentence_rex: {'head': 'Random Access Memories', 'tail': 'Lose Yourself to | {'head': 'Mezzanine', 'tail': 'Teardrop'}	
-relations	antiparticle	antiparticle	17	sentence_rex 17	Anti_Particle		sentence_rex: {'head': 'positron', 'tail': 'electron'} | {'head': 'positron', 'tail': 'electron'}	
-relations	lifestyle	lifestyle	13	sentence_rex 13	Life_Style		sentence_rex: {'head': 'Mansur al - Hallaj', 'tail': 'mystic'} | {'head': 'Paul', 'tail': 'vegetarianism'}	
-relations	microarchitecture	microarchitecture	6	sentence_rex 6	Micro_Architecture		sentence_rex: {'head': 'GeForce 20 series', 'tail': 'Turing microarchitect | {'head': 'Elbrus 2000', 'tail': 'VLIW'}	
-relations	comorbidity	comorbidity	3	sentence_rex 3	???	CHECK	"sentence_rex: {'head': ""Asperger 's Syndrome"", 'tail': 'clinical depressio | {'head': ""Asperger 's Syndrome"", 'tail': 'major depressive d"	
-relations	avionics	avionics	2	sentence_rex 2	???	CHECK	sentence_rex: {'head': 'Sea King helicopters', 'tail': 'Searchwater radar' | {'head': 'Northrop F-5', 'tail': 'AN / APQ-153'}	
-relations	codomain	codomain	2	sentence_rex 2	Codo_Main		sentence_rex: {'head': 'bathtub curve', 'tail': 'failure rates'} | {'head': 'bathtub curve', 'tail': 'failure rate'}	
-relations	including	including	1	sentence_rex 1	???	CHECK	sentence_rex: {'head': 'Northern Iran', 'tail': 'Gilan Province'}	
-relations	ortholog	ortholog	1	sentence_rex 1	Ortho_Log	CHECK	sentence_rex: {'head': 'FGF15', 'tail': 'FGF19'}	
-structures	keywords	keywords	25	text2json 25	Key_Words	CHECK	text2json: field of record: Variable Frequency Drives | field of record: ['сцепление суммы', 'низких температурах	
-structures	attendees	attendees	20	text2json 20	Attend_Ees	CHECK	text2json: field of record: 1,850 | field of record: 120	
-structures	retweets	retweets	19	text2json 19	Ret_Weets	CHECK	text2json: field of record: 3.8k | field of record: 890	
-structures	subreddit	subreddit	15	text2json 15	Sub_Redd_It	CHECK	text2json: field of record: r/drone_aircraft | field of record: r/mentalhealth	
-structures	timestamp	timestamp	15	text2json 15	Times_Tamp		text2json: field of record: Mar 24 2012 12:22 AM | field of record: 9:17 a.m.	
-structures	hashtags	hashtags	13	text2json 13	Hash_Tags		text2json: field of record: ['#Pixel8Review', '#SamsungFolds'] | field of record: ['#Pixel8Review', '#SamsungFolds']	
-structures	medicalrecordid	medicalrecordid	12	text2json 12	Medical_Record_Id		text2json: field of record: MRN-789412 | field of record: MRN-789412	
-structures	dateofservice	dateofservice	12	text2json 12	Date_Of_Service		text2json: field of record: 2024-01-14 | field of record: 2023-09-14	
-structures	lengthofstay	lengthofstay	10	text2json 10	Length_Ofs_Tay	CHECK	text2json: field of record: 11 | field of record: 8	
-structures	useoffunds	useoffunds	8	text2json 8	Use_Of_Funds	CHECK	text2json: field of record: R&D and talent acquisition | field of record: R&D and talent acquisition	
-structures	pricepernight	pricepernight	6	text2json 6	Price_Per_Night		text2json: field of record: $215 | field of record: 280	
-structures	dateofincident	dateofincident	6	text2json 6	Date_Of_Incident		text2json: field of record: 2023-09-14 | field of record: 2023-09-14	
-structures	leasestartdate	leasestartdate	6	text2json 6	Leases_Tartd_Ate	CHECK	text2json: field of record: 2024-04-01 | field of record: 2024-04-01	
-structures	originalpostlink	originalpostlink	5	text2json 5	Original_Post_Link		text2json: field of record: https://www.reddit.com/r/remote_work/com | field of record: https://www.reddit.com/r/remote_work/com	
-structures	supportresponsetime	supportresponsetime	5	text2json 5	Support_Response_Time		text2json: field of record: 0 | field of record: 0	
-structures	devicebatterylife	devicebatterylife	5	text2json 5	Device_Battery_Life		text2json: field of record: 0 | field of record: 0	
-structures	linkedinposturl	linkedinposturl	5	text2json 5	???	CHECK	text2json: field of record: linkedin.com/post/1234567890 | field of record: linkedin.com/post/1234567890	
-structures	tracklist	album.tracklist.cd.4.notes	5	text2json 5	Track_List		text2json: field of record: ['14th單曲。', '電影《搬運你的未來》主題歌。'] | field of record: ['14th單曲。', '電影《搬運你的未來》主題歌。']	
-structures	airlines	terminal.airlines	5	text2json 5	Air_Lines	CHECK	text2json: field of record: ['easyJet', 'Germanwings', 'Jet2.com', ' | field of record: ['easyJet', 'Germanwings', 'Jet2.com', '	
-structures	lastrevieweddate	lastrevieweddate	5	text2json 5	Lastre_Viewed_Date		text2json: field of record: 2024-08-03 | field of record: 2024-08-03	
-structures	npadvmod	npadvmod	5	text2json 5	???	CHECK	text2json: field of record: ['Monday', 'Friday', 'time'] | field of record: ['Monday', 'Friday', 'time']	
-structures	disputingpartya	disputingpartya	5	text2json 5	Dis_Puting_Party_A	CHECK	text2json: field of record: NovaBrite Lighting Inc. | field of record: NovaBrite Lighting Inc.	
-structures	costperpatient	costperpatient	5	text2json 5	Cost_Per_Patient		text2json: field of record: 45 | field of record: 45	
-structures	awayteampoints	awayteampoints	5	text2json 5	Away_Team_Points		text2json: field of record: 112 | field of record: 112	
-structures	playerbirthcity	playerbirthcity	5	text2json 5	Player_Birth_City		text2json: field of record: Riyadh | field of record: Riyadh	
-structures	ambiance	ambiance	5	text2json 5	???	CHECK	text2json: field of record: warm with soft jazz | field of record: warm with soft jazz	
-structures	monthlyactiveusers	monthlyactiveusers	5	text2json 5	Monthly_Active_Users		text2json: field of record: 125000 | field of record: 125000	
-structures	coordinates	city.coordinates.latitude	5	text2json 5	Coo_Rd_In_Ates	CHECK	text2json: field of record: 0.35 | field of record: 0.35	
-structures	customerservicerating	customerservicerating	4	text2json 4	Customer_Service_Rating		text2json: field of record: 4.6 | field of record: 4.6	
-structures	chipdesignfocus	chipdesignfocus	4	text2json 4	Chip_Design_Focus		text2json: field of record: 3-nanometer | field of record: 3-nanometer	
-structures	pathophysiology	pathophysiology.etiology	4	text2json 4	Pat_Ho_Physiology	CHECK	text2json: field of record: blunt trauma | field of record: blunt trauma	
-structures	grandchildren	grandchildren	4	text2json 4	Grand_Children		text2json: field of record: ['Steffan Sigler', 'Richard Jr.', 'Ava G | field of record: ['Steffan Sigler', 'Richard Jr.', 'Ava G	
-structures	targetgradelevel	targetgradelevel	4	text2json 4	Target_Grade_Level		text2json: field of record: Grade 12 | field of record: Grade 12	
-structures	causeofloss	causeofloss	4	text2json 4	Cause_Of_Loss		text2json: field of record: Severe storm damage to roof and attic | field of record: Severe storm damage to roof and attic	
-structures	studyenddate	studyenddate	4	text2json 4	Study_Endd_Ate	CHECK	text2json: field of record: 2022-09-30 | field of record: 2022-09-30	
-structures	techtoolsused	techtoolsused	4	text2json 4	Tech_Tools_Used		text2json: field of record: ['Python', 'Jupyter', 'AI ethics framewo | field of record: ['Python', 'Jupyter', 'AI ethics framewo	
-structures	batteryorfeature	batteryorfeature	4	text2json 4	Battery_Or_Feature		text2json: field of record: noise cancellation | field of record: noise cancellation	
-structures	lastdosedate	lastdosedate	4	text2json 4	Lastd_Osed_Ate	CHECK	text2json: field of record: July 14, 2023 | field of record: July 14, 2023	
-structures	webmaster	webmaster	4	text2json 4	Web_Master	CHECK	text2json: field of record: Dave Lossos | field of record: Dave Lossos	
-structures	donorfecid	donorfecid	4	text2json 4	Donor_Fe_Cid	CHECK	text2json: field of record: C123456789 | field of record: C123456789	
-structures	originalheadcountapex	originalheadcountapex	4	text2json 4	Original_Head_Count_Apex		text2json: field of record: 680 | field of record: 680	
-structures	currentheadcountapex	currentheadcountapex	4	text2json 4	Current_Head_Count_Apex		text2json: field of record: 520 | field of record: 520	
-structures	iporevisedvaluation	iporevisedvaluation	4	text2json 4	???	CHECK	text2json: field of record: 72 | field of record: 72	
-structures	lastfollowup	lastfollowup	4	text2json 4	Last_Follow_Up	CHECK	text2json: field of record: 2023-08-03 | field of record: 2023-08-03	
-structures	playertwoid	playertwoid	4	text2json 4	Player_Two_Id	CHECK	text2json: field of record: CN-2105 | field of record: CN-2105	
-structures	playeronename	playeronename	4	text2json 4	Player_One_Name	CHECK	text2json: field of record: Maria Lopez | field of record: Maria Lopez	
-structures	merchantcategorycode	merchantcategorycode	4	text2json 4	Merchant_Category_Code		text2json: field of record: 5812 | field of record: 5812	
-structures	numberofteams	numberofteams	4	text2json 4	Number_Of_Teams		text2json: field of record: 64 | field of record: 64	
-structures	followupinterval	followupinterval	4	text2json 4	Follow_Up_Interval	CHECK	text2json: field of record: 3 | field of record: 3	
-structures	rentescalaionclause	rentescalaionclause	4	text2json 4	Rentes_Cal_Aion_Clause	CHECK	text2json: field of record: 2 | field of record: 2	
-structures	magnitudeorindex	magnitudeorindex	4	text2json 4	Magnitude_Or_Index		text2json: field of record: 6.2 | field of record: 6.2	
-structures	tenantimprovementsallowance	tenantimprovementsallowance	4	text2json 4	Tenant_Improvements_Allowance		text2json: field of record: 0 | field of record: 0	
-structures	correctiveactionplan	correctiveactionplan	4	text2json 4	Corrective_Action_Plan		text2json: field of record: Implement automated accounting reconcili | field of record: Implement automated accounting reconcili	
-structures	ownerlocationa	ownerlocationa	4	text2json 4	Owner_Location_A		text2json: field of record: New York City | field of record: New York City	
-structures	targetusersegment	targetusersegment	4	text2json 4	Target_User_Segment		text2json: field of record: enterprise sales professionals in B2B in | field of record: enterprise sales professionals in B2B in	
-structures	seconddoseid	seconddoseid	4	text2json 4	Secondd_Ose_Id	CHECK	text2json: field of record: 2021-0705M | field of record: 2021-0705M	
-structures	sheikhdom	sheikhdom.name	4	text2json 4	Sheik_Hd_Om	CHECK	text2json: field of record: إنجعافن | field of record: إنجعافن	
-structures	vitalsignstemp	vitalsignstemp	4	text2json 4	Vital_Signs_Temp		text2json: field of record: 36.8 | field of record: 36.8	
-structures	staystartdate	staystartdate	4	text2json 4	Stays_Tartd_Ate	CHECK	text2json: field of record: 2024-03-07 | field of record: 2024-03-07	
-structures	primarycareprovider	primarycareprovider	4	text2json 4	Primary_Care_Provider		text2json: field of record: Dr. Elena Foster | field of record: Dr. Elena Foster	
-structures	numberofslots	numberofslots	4	text2json 4	Number_Ofs_Lots	CHECK	text2json: field of record: 12 | field of record: 12	
-structures	followupinstruction	followupinstruction	4	text2json 4	Follow_Up_Instruction	CHECK	text2json: field of record: rest | field of record: rest	
-structures	expertise	person.expertise	4	text2json 4	Ex_Per_Ti_Se	CHECK	text2json: field of record: etiqueta | field of record: etiqueta	
-structures	auditstatus	auditstatus	3	text2json 3	Audits_Tatus		text2json: field of record: audited | field of record: audited	
-structures	ratingcategory	ratingcategory	3	text2json 3	Rating_Category		text2json: field of record: Exceeds Expectations | field of record: Exceeds Expectations	
-structures	githubrepourl	githubrepourl	3	text2json 3	???	CHECK	text2json: field of record: github.com/jordanlee/devflow | field of record: github.com/jordanlee/devflow	
-structures	vendorinvoiceemail	vendorinvoiceemail	3	text2json 3	Vendor_Invoice_Em_Ail	CHECK	text2json: field of record: INV-2024-0817 | field of record: INV-2024-0817	
-structures	paymentduedate	paymentduedate	3	text2json 3	Paymentd_Ued_Ate	CHECK	text2json: field of record: 2024-09-15 | field of record: 2024-09-15	
-structures	wavelength	observations.0.wavelength	3	text2json 3	Wave_Length		text2json: field of record: del infrarrojo cercano | field of record: del infrarrojo cercano	
-structures	whoadrcode	whoadrcode	3	text2json 3	???	CHECK	text2json: field of record: 004210 | field of record: 004210	
-structures	followupaction	followupaction	3	text2json 3	Follow_Up_Action	CHECK	text2json: field of record: discontinued the medication after three  | field of record: discontinued the medication after three 	
-structures	originalordernumber	originalordernumber	3	text2json 3	Original_Order_Number		text2json: field of record: ORD98765 | field of record: ORD98765	
-structures	lastcommitdate	lastcommitdate	3	text2json 3	Last_Commitd_Ate	CHECK	text2json: field of record: 2023-05-22 | field of record: 2023-05-22	
-structures	officeactionnumber	officeactionnumber	3	text2json 3	Office_Action_Number		text2json: field of record: 1429 | field of record: 1429	
-structures	sustainability	sustainability.certification	3	text2json 3	Sustain_Ability		text2json: field of record: FSC certified | field of record: FSC certified	
-structures	riskfactorcode	riskfactorcode	3	text2json 3	Risk_Factor_Code		text2json: field of record: RF-45A | field of record: RF-45A	
-structures	bloodpressuresystolic	bloodpressuresystolic	3	text2json 3	Blood_Pressure_Systolic		text2json: field of record: 122 | field of record: 122	
-structures	bloodpressurediastolic	bloodpressurediastolic	3	text2json 3	Blood_Pressure_Diastolic		text2json: field of record: 78 | field of record: 78	
-structures	disputingpartyb	disputingpartyb	3	text2json 3	???	CHECK	text2json: field of record: Sunbeam Solutions | field of record: Sunbeam Solutions	
-structures	audiofidelityscore	audiofidelityscore	3	text2json 3	Audio_Fidelitys_Core		text2json: field of record: 3.8 | field of record: 3.8	
-structures	downvotes	downvotes	3	text2json 3	Down_Votes		text2json: field of record: 3 | field of record: 3	
-structures	preferredtenanttype	preferredtenanttype	3	text2json 3	Preferred_Tenant_Type		text2json: field of record: Stable, non-smoking, pets allowed with p | field of record: Stable, non-smoking, pets allowed with p	
-structures	nsubjpass	nsubjpass	3	text2json 3	???	CHECK	text2json: field of record: pathway | field of record: pathway	
-structures	revenuebyregion	revenuebyregion	3	text2json 3	Revenue_By_Region		text2json: field of record: 68% | field of record: 68%	
-structures	clonality	clonality	3	text2json 3	???	CHECK	text2json: field of record: Polyclonal | field of record: Polyclonal	
-structures	playeroneid	playeroneid	3	text2json 3	Player_One_Id	CHECK	text2json: field of record: ML-7839 | field of record: ML-7839	
-structures	playertwoname	playertwoname	3	text2json 3	Player_Two_Name	CHECK	text2json: field of record: Clara Nguyen | field of record: Clara Nguyen	
-structures	fiscalyearend	fiscalyearend	3	text2json 3	Fiscal_Year_End	CHECK	text2json: field of record: Dec 31, 2023 | field of record: Dec 31, 2023	
-structures	originalorderid	originalorderid	3	text2json 3	Original_Order_Id		text2json: field of record: ORD-78942 | field of record: ORD-78942	
-structures	dateofbirth	dateofbirth	3	text2json 3	Date_Of_Birth		text2json: field of record: 1985-03-12 | field of record: 1985-03-12	
-structures	hometeampoints	hometeampoints	3	text2json 3	Home_Team_Points		text2json: field of record: 118 | field of record: 118	
-structures	healthpolicyid	healthpolicyid	3	text2json 3	Health_Policy_Id		text2json: field of record: H-74291 | field of record: H-74291	
-structures	firstdoseid	firstdoseid	3	text2json 3	Firstd_Ose_Id	CHECK	text2json: field of record: 2021-0312M | field of record: 2021-0312M	
-structures	comorbidities	comorbidities	3	text2json 3	???	CHECK	text2json: field of record: Hypertension | field of record: Hypertension	
-structures	impactradiuskm	impactradiuskm	3	text2json 3	???	CHECK	text2json: field of record: 45 | field of record: 45	
-structures	primarycelltypes	primarycelltypes	3	text2json 3	Primary_Cell_Types		text2json: field of record: ['adipocytes', 'skeletal muscle'] | field of record: ['adipocytes', 'skeletal muscle']	
-structures	fieldofstudy	fieldofstudy	2	text2json 2	Field_Of_Study		text2json: field of record: environmental science | field of record: environmental science	
-structures	lastinspectiondate	lastinspectiondate	2	text2json 2	Last_Inspectiond_Ate	CHECK	text2json: field of record: 2024-03-22 | field of record: 2024-03-22	
-structures	pressnoteid	pressnoteid	2	text2json 2	Press_Note_Id		text2json: field of record: VD-MED-2023-001 | field of record: VD-MED-2023-001	
-structures	uploader	uploader	2	text2json 2	Upload_Er	CHECK	text2json: field of record: Alex Rivera | field of record: Alex Rivera	
-structures	marginofvictory	marginofvictory	2	text2json 2	Margin_Of_Victory		text2json: field of record: 4.6 | field of record: 4.6	
-structures	lastreceivingdate	lastreceivingdate	2	text2json 2	Lastre_Ce_Ivin_Gd_Ate	CHECK	text2json: field of record: 2024-01-10 | field of record: 2024-01-10	
-structures	studystartdate	studystartdate	2	text2json 2	Studys_Tartd_Ate	CHECK	text2json: field of record: 2018-04-12 | field of record: 2018-04-12	
-structures	accuracyorefficiency	accuracyorefficiency	2	text2json 2	Accuracy_Or_Efficiency		text2json: field of record: 94 | field of record: 94	
-structures	freetierusers	freetierusers	2	text2json 2	Free_Tier_Users		text2json: field of record: 15 | field of record: 15	
-structures	concurrentuserslimit	concurrentuserslimit	2	text2json 2	Concurrent_Users_Limit		text2json: field of record: 500 | field of record: 500	
-structures	waterbody	location.waterbody	2	text2json 2	Water_Body		text2json: field of record: Deschutes River | field of record: Deschutes River	
-structures	planning	planning	2	text2json 2	Plan_Ning		text2json: field of record: launch a new app that helps remote worke | field of record: launch a new app that helps remote worke	
-structures	goalscoringplayer	goalscoringplayer	2	text2json 2	Goals_Coring_Player		text2json: field of record: De Ligt | field of record: De Ligt	
-structures	registrantusptoid	registrantusptoid	2	text2json 2	???	CHECK	text2json: field of record: 456123987 | field of record: 456123987	
-structures	publicreviewperiod	publicreviewperiod	2	text2json 2	Public_Review_Period		text2json: field of record: 0 | field of record: 0	
-structures	postmortemaction	postmortemaction	2	text2json 2	Post_Mort_Em_Action	CHECK	text2json: field of record: a missing monitoring alert for CPU spike | field of record: a missing monitoring alert for CPU spike	
-structures	deviceortool	deviceortool	2	text2json 2	Device_Or_Tool		text2json: field of record: Pixel 9 Pro | field of record: Pixel 9 Pro	
-structures	sideeffectrate	sideeffectrate	2	text2json 2	Side_Effect_Rate		text2json: field of record: 28 | field of record: 28	
-structures	claimhistorycount	claimhistorycount	1	text2json 1	Claim_History_Count		text2json: field of record: 1	
-structures	nextvideotitle	nextvideotitle	1	text2json 1	Next_Video_Title		text2json: field of record: Gym Bets for $100	
-structures	timeframe	timeframe	1	text2json 1	Time_Frame		text2json: field of record: past three days	
-structures	followupdate	followupdate	1	text2json 1	Follow_Update		text2json: field of record: 2023-11-05	
-structures	ownerlocationb	ownerlocationb	1	text2json 1	???	CHECK	text2json: field of record: Houston, TX	
-structures	vitalsignsbp	vitalsignsbp	1	text2json 1	???	CHECK	text2json: field of record: BP 130/85	
+entities	organisation	ORGANISATION	5379	kaznerd 5379	Organ_Is_Ati_On	CHECK	kaznerd: Ұлттық банктың | Үкіметке	one word
+entities	database	database	5056	cc_news_haiku45 2056; cc_news_events_haiku45 854; synthetic_haiku45_5k_coerced 577	Data_Base		cc_news_haiku45: GFXBench | Geekbench	one word
+entities	spacecraft	Spacecraft	455	docee 275; turkish_event 172; text2json 4	Space_Craft		docee: Alpha Magnetic Spectrometer (AMS) | AMS	one word
+entities	timestamp	timestamp	8	paraloq_json 8	Times_Tamp		paraloq_json: 2023-03-08T18:30:00Z | 2023-03-07T12:00:00Z	one word
+entities	timeline	timeline	4	paraloq_json 4	Time_Line		paraloq_json: 12 months | 12 months	one word
+entities	keywords	keywords	3	paraloq_json 3	Key_Words	CHECK	paraloq_json: exercise | cardiovascular health	one word
+entities	ethnicity	ethnicity	2	paraloq_json 2	???	CHECK	paraloq_json: Hispanic | Caucasian	one word
+entities	username	username	2	paraloq_json 2	User_Name		paraloq_json: jdoe | jsmith	one word
+entities	hostname	hostname	2	paraloq_json 2	Host_Name		paraloq_json: webserver1.example.com | example-host	one word
+entities	descriptor	descriptor	1	paraloq_json 1	Descript_Or		paraloq_json: Acme Corp	one word
+entities	expertise	expertise	1	paraloq_json 1	Ex_Per_Ti_Se	CHECK	paraloq_json: Python, Java, C++	one word
+entities	descriptors	descriptors	1	paraloq_json 1	Descript_Ors	CHECK	paraloq_json: Blood and Gore | Intense Violence	one word
+entities	filepath	filepath	1	paraloq_json 1	File_Path		paraloq_json: /path/to/outtake.mp3	one word
+entities	postconditions	postconditions	1	paraloq_json 1	Post_Conditions		paraloq_json: Servers are created and configured. | Software is installed on the servers.	one word
+entities	postcode	postcode	1	paraloq_json 1	Post_Code		paraloq_json: 75001	one word
+events	deathcausedbyviolentevents	life.die.deathcausedbyviolentevents	595	rams 317; rams_merged 278	Death_Caused_By_Violent_Events		rams: type, trigger ['homicide'] | type, trigger ['genocide']	Death_Caused_By_Violent_Events
+events	selfdirectedbattle	conflict.attack.selfdirectedbattle	490	rams 256; rams_merged 234	Self_Directed_Battle		rams: type, trigger ['battle'] | type, trigger ['skirmishing']	Self_Directed_Battle
+events	detainee	detainee	443	rams 141; rams_merged 125	De_Tai_Nee	CHECK	rams: role, Otto Warmbier in justice.arrestjaildetain.arrestjaildetain | role, those who engage in political dissent in justice.arrestjaildetain.arrestjaildetain	one word
+events	injurycausedbyviolentevents	life.injure.injurycausedbyviolentevents	432	rams 226; rams_merged 206	Injury_Caused_By_Violent_Events		rams: type, trigger ['assault'] | type, trigger ['strikes']	Injury_Caused_By_Violent_Events
+events	financing	financing	419	duee 143; duee_typed 143; duee_ner 133	Fin_An_Cing	CHECK	duee: type, trigger ['融资'] | type, trigger ['融资']	one word
+events	transfermoney	transaction.transfermoney.n/a	309	rams 174; rams_merged 135	Transfer_Money		rams: type, trigger ['reimbursed'] | type, trigger ['rented']	Transfer_Money
+events	transportperson	movement.transportperson.preventexit	273	rams 145; rams_merged 128	Transport_Person		rams: type, trigger ['imprisoned'] | type, trigger ['arrests']	Transport_Person
+events	preventexit	movement.transportperson.preventexit	273	rams 145; rams_merged 128	Prevent_Exit		rams: type, trigger ['imprisoned'] | type, trigger ['arrests']	Prevent_Exit
+events	arrestjaildetain	justice.arrestjaildetain.arrestjaildetain	270	rams 143; rams_merged 127	Arrest_Jail_Detain		rams: type, trigger ['imprisoned'] | type, trigger ['incarcerate']	Arrest_Jail_Detain
+events	payforservice	transaction.transfermoney.payforservice	213	rams 112; rams_merged 101	Pay_For_Service	CHECK	rams: type, trigger ['reimbursed'] | type, trigger ['compensating']	Pay_For_Service
+events	transportartifact	movement.transportartifact.n/a	189	rams 116; rams_merged 73	Transport_Artifact		rams: type, trigger ['supplied'] | type, trigger ['flung']	Transport_Artifact
+events	transferownership	transaction.transferownership.n/a	188	rams 105; rams_merged 83	Transfer_Ownership		rams: type, trigger ['donated'] | type, trigger ['loans']	Transfer_Ownership
+events	requestadvise	contact.requestadvise.broadcast	162	rams 83; rams_merged 79	Request_Advise		rams: type, trigger ['advocating'] | type, trigger ['recommend']	Request_Advise
+events	commitmentpromiseexpressintent	contact.commitmentpromiseexpressintent.meet	155	rams 80; rams_merged 75	Commitment_Promise_Express_Intent		rams: type, trigger ['promises'] | type, trigger ['vow']	Commitment_Promise_Express_Intent
+events	inspectedentity	inspectedentity	152	rams 83; rams_merged 69	Inspected_Entity		rams: role, nuclear program in inspection.sensoryobserve.physicalinvestigateinspect | role, illegal road in inspection.sensoryobserve.physicalinvestigateinspect	Inspected_Entity
+events	embargosanction	transaction.transaction.embargosanction	151	rams 79; rams_merged 72	Embargo_Sanction		rams: type, trigger ['boycott'] | type, trigger ['sanctions']	Embargo_Sanction
+events	artifactexistence	artifactexistence.damagedestroy.damage	151	rams 80; rams_merged 71	Artifact_Existence		rams: type, trigger ['battered'] | type, trigger ['vandalized']	Artifact_Existence
+events	damagedestroy	artifactexistence.damagedestroy.damage	151	rams 80; rams_merged 71	Damage_Destroy		rams: type, trigger ['battered'] | type, trigger ['vandalized']	Damage_Destroy
+events	acceptagreementcontractceasefire	government.agreements.acceptagreementcontractceasefire	144	rams 76; rams_merged 68	Accept_Agreement_Contract_Cease_Fire		rams: type, trigger ['agreement'] | type, trigger ['ceasefire']	Accept_Agreement_Contract_Cease_Fire
+events	startposition	personnel.startposition.hiring	140	rams 73; rams_merged 67	Start_Position		rams: type, trigger ['hired'] | type, trigger ['employed']	Start_Position
+events	judicialconsequences	justice.judicialconsequences.n/a	136	rams 79; rams_merged 57	Judicial_Consequences		rams: type, trigger ['extradite'] | type, trigger ['extradite']	Judicial_Consequences
+events	publicstatementinperson	contact.publicstatementinperson.broadcast	135	rams 70; rams_merged 65	Public_Statement_In_Person		rams: type, trigger ['reiterates'] | type, trigger ['reiterated']	Public_Statement_In_Person
+events	evacuationrescue	movement.transportperson.evacuationrescue	133	rams 69; rams_merged 64	Evacuation_Rescue		rams: type, trigger ['escape'] | type, trigger ['fled']	Evacuation_Rescue
+events	governmentbody	governmentbody	131	rams 70; rams_merged 61	Government_Body		rams: role, Congress in government.legislate.legislate | role, hyper­democracy in government.legislate.legislate	Government_Body
+events	transfercontrol	transaction.transaction.transfercontrol	129	rams 70; rams_merged 59	Transfer_Control		rams: type, trigger ['seized'] | type, trigger ['land grab']	Transfer_Control
+events	giftgrantprovideaid	transaction.transfermoney.giftgrantprovideaid	129	rams 67; rams_merged 62	Gift_Grant_Provide_Aid	CHECK	rams: type, trigger ['provide aid'] | type, trigger ['donated']	Gift_Grant_Provide_Aid
+events	illnessdegradationphysical	life.injure.illnessdegradationphysical	128	rams 67; rams_merged 61	Illness_Degradation_Physical		rams: type, trigger ['sickness'] | type, trigger ['illness']	Illness_Degradation_Physical
+events	endposition	personnel.endposition.quitretire	127	rams 66; rams_merged 61	End_Position	CHECK	rams: type, trigger ['quit'] | type, trigger ['retired']	End_Position
+events	quitretire	personnel.endposition.quitretire	127	rams 66; rams_merged 61	Quit_Retire		rams: type, trigger ['quit'] | type, trigger ['retired']	Quit_Retire
+events	initiatejudicialprocess	justice.initiatejudicialprocess.n/a	122	rams 64; rams_merged 58	Initiate_Judicial_Process		rams: type, trigger ['testifying'] | type, trigger ['indicted']	Initiate_Judicial_Process
+events	chargeindict	justice.initiatejudicialprocess.chargeindict	121	rams 65; rams_merged 56	Charge_Indict		rams: type, trigger ['indicted'] | type, trigger ['accused']	Charge_Indict
+events	otherparticipant	otherparticipant	119	rams 60; rams_merged 59	Other_Participant		rams: role, the rebels in government.agreements.violateagreement | role, Iran in government.agreements.violateagreement	Other_Participant
+events	stealrobhijack	conflict.attack.stealrobhijack	119	rams 62; rams_merged 57	Steal_Rob_Hijack	CHECK	rams: type, trigger ['robbery'] | type, trigger ['hijacked']	Steal_Rob_Hijack
+events	fireexplosion	disaster.fireexplosion.fireexplosion	117	rams 59; rams_merged 58	Fire_Explosion		rams: type, trigger ['fire'] | type, trigger ['explosions']	Fire_Explosion
+events	borrowlend	transaction.transfermoney.borrowlend	117	rams 62; rams_merged 55	Borrow_Lend		rams: type, trigger ['lend'] | type, trigger ['loan']	Borrow_Lend
+events	illnessdegradationhungerthirst	life.injure.illnessdegradationhungerthirst	111	rams 58; rams_merged 53	Illness_Degradation_Hunger_Thirst		rams: type, trigger ['dehydrated'] | type, trigger ['dehydration']	Illness_Degradation_Hunger_Thirst
+events	firinglayoff	personnel.endposition.firinglayoff	107	rams 58; rams_merged 49	Firing_Layoff		rams: type, trigger ['ousted'] | type, trigger ['ousted']	Firing_Layoff
+events	trialhearing	justice.initiatejudicialprocess.trialhearing	107	rams 56; rams_merged 51	Trial_Hearing		rams: type, trigger ['proceedings'] | type, trigger ['testify']	Trial_Hearing
+events	sensoryobserve	inspection.sensoryobserve.physicalinvestigateinspect	103	rams 56; rams_merged 47	Sensory_Observe		rams: type, trigger ['inspections'] | type, trigger ['inspection']	Sensory_Observe
+events	physicalinvestigateinspect	inspection.sensoryobserve.physicalinvestigateinspect	103	rams 56; rams_merged 47	Physical_Investigate_Inspect		rams: type, trigger ['inspections'] | type, trigger ['inspection']	Physical_Investigate_Inspect
+events	accidentcrash	disaster.accidentcrash.accidentcrash	96	rams 52; rams_merged 44	Accident_Crash		rams: type, trigger ['collision'] | type, trigger ['crashed']	Accident_Crash
+events	violateagreement	government.agreements.violateagreement	95	rams 48; rams_merged 47	Violate_Agreement		rams: type, trigger ['ceasefire'] | type, trigger ['agreements']	Violate_Agreement
+events	winelection	personnel.elect.winelection	92	rams 48; rams_merged 44	Wine_Lection		rams: type, trigger ['winning elections'] | type, trigger ['won election']	Win_Election
+events	fireexplosionobject	fireexplosionobject	91	rams 46; rams_merged 45	Fire_Explosion_Object		rams: role, athletes ' village in disaster.fireexplosion.fireexplosion | role, mine and missile in disaster.fireexplosion.fireexplosion	Fire_Explosion_Object
+events	nonviolentdeath	life.die.nonviolentdeath	89	rams 46; rams_merged 43	Non_Violent_Death	CHECK	rams: type, trigger ['passed away'] | type, trigger ['die']	Nonviolent_Death
+events	investigatecrime	justice.investigate.investigatecrime	87	rams 47; rams_merged 40	Investigate_Crime		rams: type, trigger ['investigation'] | type, trigger ['investigation']	Investigate_Crime
+events	threatencoerce	contact.threatencoerce.meet	86	rams 45; rams_merged 41	Threaten_Coerce		rams: type, trigger ['intimidated'] | type, trigger ['blackmail']	Threaten_Coerce
+events	extraditer	extraditer	83	rams 44; rams_merged 39	Extrad_Iter		rams: role, US in justice.judicialconsequences.extradite | role, Turkey in justice.judicialconsequences.extradite	one word
+events	inspectpeopleorganization	inspection.sensoryobserve.inspectpeopleorganization	82	rams 45; rams_merged 37	Inspect_People_Organization		rams: type, trigger ['immigrate'] | type, trigger ['immigrate']	Inspect_People_Organization
+events	airstrikemissilestrike	conflict.attack.airstrikemissilestrike	81	rams 42; rams_merged 39	Airs_Trike_Missiles_Trike		rams: type, trigger ['airstrike'] | type, trigger ['airstrikes']	Airstrike_Missile_Strike
+events	smuggleextract	movement.transportartifact.smuggleextract	80	rams 44; rams_merged 36	Smuggle_Extract		rams: type, trigger ['smuggling'] | type, trigger ['smuggled']	Smuggle_Extract
+events	mediastatement	contact.mediastatement.broadcast	76	rams 40; rams_merged 36	Media_Statement		rams: type, trigger ['broadcast'] | type, trigger ['address']	Media_Statement
+events	commandorder	contact.commandorder.broadcast	75	rams 39; rams_merged 36	Command_Order		rams: type, trigger ['urged'] | type, trigger ['urge']	Command_Order
+events	prevententry	movement.transportperson.prevententry	72	rams 36; rams_merged 36	Prevent_Entry		rams: type, trigger ['denied entry'] | type, trigger ['obstruct']	Prevent_Entry
+events	bringcarryunload	movement.transportartifact.bringcarryunload	72	rams 38; rams_merged 34	Bring_Carry_Unload		rams: type, trigger ['shipments'] | type, trigger ['shipments']	Bring_Carry_Unload
+events	selfmotion	movement.transportperson.selfmotion	72	rams 38; rams_merged 34	Self_Motion		rams: type, trigger ['walked'] | type, trigger ['walking']	Self_Motion
+events	grantentryasylum	movement.transportperson.grantentryasylum	70	rams 37; rams_merged 33	Grant_Entry_Asylum		rams: type, trigger ['immigrating'] | type, trigger ['immigrating']	Grant_Entry_Asylum
+events	funeralvigil	contact.funeralvigil.meet	69	rams 38; rams_merged 31	Funeral_Vigil		rams: type, trigger ['funerals'] | type, trigger ['funeral']	Funeral_Vigil
+events	disperseseparate	movement.transportartifact.disperseseparate	67	rams 36; rams_merged 31	Disperse_Separate		rams: type, trigger ['shipment'] | type, trigger ['shipment']	Disperse_Separate
+events	sendsupplyexport	movement.transportartifact.sendsupplyexport	65	rams 36; rams_merged 29	Send_Supply_Export		rams: type, trigger ['supply'] | type, trigger ['supply']	Send_Supply_Export
+events	castvote	government.vote.castvote	61	rams 31; rams_merged 30	Cast_Vote		rams: type, trigger ['vote'] | type, trigger ['vote']	Cast_Vote
+events	rejectnullifyagreementcontractceasefire	government.agreements.rejectnullifyagreementcontractceasefire	58	rams 30; rams_merged 28	Reject_Nullify_Agreement_Contract_Cease_Fire		rams: type, trigger ['agreement'] | type, trigger ['treaty']	Reject_Nullify_Agreement_Contract_Cease_Fire
+events	rejecternullifier	rejecternullifier	56	rams 29; rams_merged 27	Rejecter_Nullifier		rams: role, The Sanders campaign in government.agreements.rejectnullifyagreementcontractceasefire | role, Russian President Vladimir Putin in government.agreements.rejectnullifyagreementcontractceasefire	Rejecter_Nullifier
+events	firearmattack	conflict.attack.firearmattack	54	rams 27; rams_merged 27	Firearm_Attack		rams: type, trigger ['shoot'] | type, trigger ['shooting']	Firearm_Attack
+events	territoryorfacility	territoryorfacility	53	rams 28; rams_merged 25	Territory_Or_Facility		rams: role, offshore in transaction.transaction.transfercontrol | role, the islands in transaction.transaction.transfercontrol	Territory_Or_Facility
+events	marchprotestpoliticalgathering	conflict.demonstrate.marchprotestpoliticalgathering	51	rams 28; rams_merged 23	March_Protest_Political_Gathering		rams: type, trigger ['protests'] | type, trigger ['protest']	March_Protest_Political_Gathering
+events	mergegpe	government.formation.mergegpe	47	rams 27; rams_merged 20	???	CHECK	rams: type, trigger ['annex'] | type, trigger ['annex']	Merge_GPE
+events	grantentry	movement.transportartifact.grantentry	46	rams 24; rams_merged 22	Grant_Entry		rams: type, trigger ['imported'] | type, trigger ['import']	Grant_Entry
+events	receiveimport	movement.transportartifact.receiveimport	43	rams 23; rams_merged 20	Receive_Import		rams: type, trigger ['imports'] | type, trigger ['imported']	Receive_Import
+events	driverpassenger	driverpassenger	38	rams 21; rams_merged 17	Driver_Passenger		rams: role, pilots in disaster.accidentcrash.accidentcrash | role, parties in disaster.accidentcrash.accidentcrash	Driver_Passenger
+events	createmanufacture	manufacture.artifact.createmanufacture	37	rams 19; rams_merged 18	Create_Manufacture		rams: type, trigger ['producing'] | type, trigger ['produce']	Create_Manufacture
+events	violationspreventvote	government.vote.violationspreventvote	36	rams 18; rams_merged 18	Violations_Prevent_Vote		rams: type, trigger ['voter intimidation'] | type, trigger ['Voting']	Violations_Prevent_Vote
+events	monitorelection	inspection.sensoryobserve.monitorelection	34	rams 17; rams_merged 17	Monitor_Election		rams: type, trigger ['voting'] | type, trigger ['voting']	Monitor_Election
+events	nonviolentthrowlaunch	movement.transportartifact.nonviolentthrowlaunch	32	rams 16; rams_merged 16	Non_Violent_Throw_Launch	CHECK	rams: type, trigger ['throwing'] | type, trigger ['thrown']	Nonviolent_Throw_Launch
+events	startgpe	government.formation.startgpe	32	rams 17; rams_merged 15	???	CHECK	rams: type, trigger ['inaugurating'] | type, trigger ['establish']	Start_GPE
+events	createintellectualproperty	manufacture.artifact.createintellectualproperty	32	rams 16; rams_merged 16	Create_Intellectual_Property		rams: type, trigger ['produced'] | type, trigger ['producing']	Create_Intellectual_Property
+events	hidingplace	hidingplace	31	rams 17; rams_merged 14	Hiding_Place		rams: role, Saudi in movement.transportperson.hide | role, container vessel in movement.transportperson.hide	Hiding_Place
+events	biologicalchemicalpoisonattack	conflict.attack.biologicalchemicalpoisonattack	28	rams 16; rams_merged 12	Biological_Chemical_Poison_Attack		rams: type, trigger ['poisoned'] | type, trigger ['poisoning']	Biological_Chemical_Poison_Attack
+events	monitoredentity	monitoredentity	26	rams 13; rams_merged 13	Monitored_Entity		rams: role, Pam Bondi , Florida Attorney General , a in inspection.sensoryobserve.monitorelection | role, a lot of very intelligent women in inspection.sensoryobserve.monitorelection	Monitored_Entity
+relations	chairperson	chairperson	2664	docred 2279; redocred 209; sentence_rex 139	Chair_Person		docred: {'head': 'Committee on International Trade', 'tail': 'Bernd  | {'head': 'Communist Party of the Soviet Union', 'tail': 'Jos	one word
+relations	tracklist	tracklist	100	sentence_rex 100	Track_List		sentence_rex: {'head': 'Random Access Memories', 'tail': 'Lose Yourself to | {'head': 'Mezzanine', 'tail': 'Teardrop'}	one word
+relations	antiparticle	antiparticle	17	sentence_rex 17	Anti_Particle		sentence_rex: {'head': 'positron', 'tail': 'electron'} | {'head': 'positron', 'tail': 'electron'}	one word
+relations	lifestyle	lifestyle	13	sentence_rex 13	Life_Style		sentence_rex: {'head': 'Mansur al - Hallaj', 'tail': 'mystic'} | {'head': 'Paul', 'tail': 'vegetarianism'}	one word
+relations	microarchitecture	microarchitecture	6	sentence_rex 6	Micro_Architecture		sentence_rex: {'head': 'GeForce 20 series', 'tail': 'Turing microarchitect | {'head': 'Elbrus 2000', 'tail': 'VLIW'}	one word
+relations	comorbidity	comorbidity	3	sentence_rex 3	???	CHECK	"sentence_rex: {'head': ""Asperger 's Syndrome"", 'tail': 'clinical depressio | {'head': ""Asperger 's Syndrome"", 'tail': 'major depressive d"	one word
+relations	avionics	avionics	2	sentence_rex 2	???	CHECK	sentence_rex: {'head': 'Sea King helicopters', 'tail': 'Searchwater radar' | {'head': 'Northrop F-5', 'tail': 'AN / APQ-153'}	one word
+relations	codomain	codomain	2	sentence_rex 2	Codo_Main		sentence_rex: {'head': 'bathtub curve', 'tail': 'failure rates'} | {'head': 'bathtub curve', 'tail': 'failure rate'}	one word
+relations	including	including	1	sentence_rex 1	???	CHECK	sentence_rex: {'head': 'Northern Iran', 'tail': 'Gilan Province'}	one word
+relations	ortholog	ortholog	1	sentence_rex 1	Ortho_Log	CHECK	sentence_rex: {'head': 'FGF15', 'tail': 'FGF19'}	one word
+structures	keywords	keywords	25	text2json 25	Key_Words	CHECK	text2json: field of record: Variable Frequency Drives | field of record: ['сцепление суммы', 'низких температурах	one word
+structures	attendees	attendees	20	text2json 20	Attend_Ees	CHECK	text2json: field of record: 1,850 | field of record: 120	one word
+structures	retweets	retweets	19	text2json 19	Ret_Weets	CHECK	text2json: field of record: 3.8k | field of record: 890	one word
+structures	subreddit	subreddit	15	text2json 15	Sub_Redd_It	CHECK	text2json: field of record: r/drone_aircraft | field of record: r/mentalhealth	one word
+structures	timestamp	timestamp	15	text2json 15	Times_Tamp		text2json: field of record: Mar 24 2012 12:22 AM | field of record: 9:17 a.m.	one word
+structures	hashtags	hashtags	13	text2json 13	Hash_Tags		text2json: field of record: ['#Pixel8Review', '#SamsungFolds'] | field of record: ['#Pixel8Review', '#SamsungFolds']	one word
+structures	medicalrecordid	medicalrecordid	12	text2json 12	Medical_Record_Id		text2json: field of record: MRN-789412 | field of record: MRN-789412	Medical_Record_Id
+structures	dateofservice	dateofservice	12	text2json 12	Date_Of_Service		text2json: field of record: 2024-01-14 | field of record: 2023-09-14	Date_Of_Service
+structures	lengthofstay	lengthofstay	10	text2json 10	Length_Ofs_Tay	CHECK	text2json: field of record: 11 | field of record: 8	Length_Of_Stay
+structures	useoffunds	useoffunds	8	text2json 8	Use_Of_Funds	CHECK	text2json: field of record: R&D and talent acquisition | field of record: R&D and talent acquisition	Use_Of_Funds
+structures	pricepernight	pricepernight	6	text2json 6	Price_Per_Night		text2json: field of record: $215 | field of record: 280	Price_Per_Night
+structures	dateofincident	dateofincident	6	text2json 6	Date_Of_Incident		text2json: field of record: 2023-09-14 | field of record: 2023-09-14	Date_Of_Incident
+structures	leasestartdate	leasestartdate	6	text2json 6	Leases_Tartd_Ate	CHECK	text2json: field of record: 2024-04-01 | field of record: 2024-04-01	Lease_Start_Date
+structures	originalpostlink	originalpostlink	5	text2json 5	Original_Post_Link		text2json: field of record: https://www.reddit.com/r/remote_work/com | field of record: https://www.reddit.com/r/remote_work/com	Original_Post_Link
+structures	supportresponsetime	supportresponsetime	5	text2json 5	Support_Response_Time		text2json: field of record: 0 | field of record: 0	Support_Response_Time
+structures	devicebatterylife	devicebatterylife	5	text2json 5	Device_Battery_Life		text2json: field of record: 0 | field of record: 0	Device_Battery_Life
+structures	linkedinposturl	linkedinposturl	5	text2json 5	???	CHECK	text2json: field of record: linkedin.com/post/1234567890 | field of record: linkedin.com/post/1234567890	Linkedin_Post_Url
+structures	tracklist	album.tracklist.cd.4.notes	5	text2json 5	Track_List		text2json: field of record: ['14th單曲。', '電影《搬運你的未來》主題歌。'] | field of record: ['14th單曲。', '電影《搬運你的未來》主題歌。']	Track_List
+structures	airlines	terminal.airlines	5	text2json 5	Air_Lines	CHECK	text2json: field of record: ['easyJet', 'Germanwings', 'Jet2.com', ' | field of record: ['easyJet', 'Germanwings', 'Jet2.com', '	one word
+structures	lastrevieweddate	lastrevieweddate	5	text2json 5	Lastre_Viewed_Date		text2json: field of record: 2024-08-03 | field of record: 2024-08-03	Last_Reviewed_Date
+structures	npadvmod	npadvmod	5	text2json 5	???	CHECK	text2json: field of record: ['Monday', 'Friday', 'time'] | field of record: ['Monday', 'Friday', 'time']	one word
+structures	disputingpartya	disputingpartya	5	text2json 5	Dis_Puting_Party_A	CHECK	text2json: field of record: NovaBrite Lighting Inc. | field of record: NovaBrite Lighting Inc.	Disputing_Party_A
+structures	costperpatient	costperpatient	5	text2json 5	Cost_Per_Patient		text2json: field of record: 45 | field of record: 45	Cost_Per_Patient
+structures	awayteampoints	awayteampoints	5	text2json 5	Away_Team_Points		text2json: field of record: 112 | field of record: 112	Away_Team_Points
+structures	playerbirthcity	playerbirthcity	5	text2json 5	Player_Birth_City		text2json: field of record: Riyadh | field of record: Riyadh	Player_Birth_City
+structures	ambiance	ambiance	5	text2json 5	???	CHECK	text2json: field of record: warm with soft jazz | field of record: warm with soft jazz	one word
+structures	monthlyactiveusers	monthlyactiveusers	5	text2json 5	Monthly_Active_Users		text2json: field of record: 125000 | field of record: 125000	Monthly_Active_Users
+structures	coordinates	city.coordinates.latitude	5	text2json 5	Coo_Rd_In_Ates	CHECK	text2json: field of record: 0.35 | field of record: 0.35	one word
+structures	customerservicerating	customerservicerating	4	text2json 4	Customer_Service_Rating		text2json: field of record: 4.6 | field of record: 4.6	Customer_Service_Rating
+structures	chipdesignfocus	chipdesignfocus	4	text2json 4	Chip_Design_Focus		text2json: field of record: 3-nanometer | field of record: 3-nanometer	Chip_Design_Focus
+structures	pathophysiology	pathophysiology.etiology	4	text2json 4	Pat_Ho_Physiology	CHECK	text2json: field of record: blunt trauma | field of record: blunt trauma	one word
+structures	grandchildren	grandchildren	4	text2json 4	Grand_Children		text2json: field of record: ['Steffan Sigler', 'Richard Jr.', 'Ava G | field of record: ['Steffan Sigler', 'Richard Jr.', 'Ava G	one word
+structures	targetgradelevel	targetgradelevel	4	text2json 4	Target_Grade_Level		text2json: field of record: Grade 12 | field of record: Grade 12	Target_Grade_Level
+structures	causeofloss	causeofloss	4	text2json 4	Cause_Of_Loss		text2json: field of record: Severe storm damage to roof and attic | field of record: Severe storm damage to roof and attic	Cause_Of_Loss
+structures	studyenddate	studyenddate	4	text2json 4	Study_Endd_Ate	CHECK	text2json: field of record: 2022-09-30 | field of record: 2022-09-30	Study_End_Date
+structures	techtoolsused	techtoolsused	4	text2json 4	Tech_Tools_Used		text2json: field of record: ['Python', 'Jupyter', 'AI ethics framewo | field of record: ['Python', 'Jupyter', 'AI ethics framewo	Tech_Tools_Used
+structures	batteryorfeature	batteryorfeature	4	text2json 4	Battery_Or_Feature		text2json: field of record: noise cancellation | field of record: noise cancellation	Battery_Or_Feature
+structures	lastdosedate	lastdosedate	4	text2json 4	Lastd_Osed_Ate	CHECK	text2json: field of record: July 14, 2023 | field of record: July 14, 2023	Last_Dose_Date
+structures	webmaster	webmaster	4	text2json 4	Web_Master	CHECK	text2json: field of record: Dave Lossos | field of record: Dave Lossos	one word
+structures	donorfecid	donorfecid	4	text2json 4	Donor_Fe_Cid	CHECK	text2json: field of record: C123456789 | field of record: C123456789	Donor_FEC_Id
+structures	originalheadcountapex	originalheadcountapex	4	text2json 4	Original_Head_Count_Apex		text2json: field of record: 680 | field of record: 680	Original_Head_Count_Apex
+structures	currentheadcountapex	currentheadcountapex	4	text2json 4	Current_Head_Count_Apex		text2json: field of record: 520 | field of record: 520	Current_Head_Count_Apex
+structures	iporevisedvaluation	iporevisedvaluation	4	text2json 4	???	CHECK	text2json: field of record: 72 | field of record: 72	IPO_Revised_Valuation
+structures	lastfollowup	lastfollowup	4	text2json 4	Last_Follow_Up	CHECK	text2json: field of record: 2023-08-03 | field of record: 2023-08-03	Last_Follow_Up
+structures	playertwoid	playertwoid	4	text2json 4	Player_Two_Id	CHECK	text2json: field of record: CN-2105 | field of record: CN-2105	Player_Two_Id
+structures	playeronename	playeronename	4	text2json 4	Player_One_Name	CHECK	text2json: field of record: Maria Lopez | field of record: Maria Lopez	Player_One_Name
+structures	merchantcategorycode	merchantcategorycode	4	text2json 4	Merchant_Category_Code		text2json: field of record: 5812 | field of record: 5812	Merchant_Category_Code
+structures	numberofteams	numberofteams	4	text2json 4	Number_Of_Teams		text2json: field of record: 64 | field of record: 64	Number_Of_Teams
+structures	followupinterval	followupinterval	4	text2json 4	Follow_Up_Interval	CHECK	text2json: field of record: 3 | field of record: 3	Follow_Up_Interval
+structures	rentescalaionclause	rentescalaionclause	4	text2json 4	Rentes_Cal_Aion_Clause	CHECK	text2json: field of record: 2 | field of record: 2	Rent_Escalaion_Clause
+structures	magnitudeorindex	magnitudeorindex	4	text2json 4	Magnitude_Or_Index		text2json: field of record: 6.2 | field of record: 6.2	Magnitude_Or_Index
+structures	tenantimprovementsallowance	tenantimprovementsallowance	4	text2json 4	Tenant_Improvements_Allowance		text2json: field of record: 0 | field of record: 0	Tenant_Improvements_Allowance
+structures	correctiveactionplan	correctiveactionplan	4	text2json 4	Corrective_Action_Plan		text2json: field of record: Implement automated accounting reconcili | field of record: Implement automated accounting reconcili	Corrective_Action_Plan
+structures	ownerlocationa	ownerlocationa	4	text2json 4	Owner_Location_A		text2json: field of record: New York City | field of record: New York City	Owner_Location_A
+structures	targetusersegment	targetusersegment	4	text2json 4	Target_User_Segment		text2json: field of record: enterprise sales professionals in B2B in | field of record: enterprise sales professionals in B2B in	Target_User_Segment
+structures	seconddoseid	seconddoseid	4	text2json 4	Secondd_Ose_Id	CHECK	text2json: field of record: 2021-0705M | field of record: 2021-0705M	Second_Dose_Id
+structures	sheikhdom	sheikhdom.name	4	text2json 4	Sheik_Hd_Om	CHECK	text2json: field of record: إنجعافن | field of record: إنجعافن	one word
+structures	vitalsignstemp	vitalsignstemp	4	text2json 4	Vital_Signs_Temp		text2json: field of record: 36.8 | field of record: 36.8	Vital_Signs_Temp
+structures	staystartdate	staystartdate	4	text2json 4	Stays_Tartd_Ate	CHECK	text2json: field of record: 2024-03-07 | field of record: 2024-03-07	Stay_Start_Date
+structures	primarycareprovider	primarycareprovider	4	text2json 4	Primary_Care_Provider		text2json: field of record: Dr. Elena Foster | field of record: Dr. Elena Foster	Primary_Care_Provider
+structures	numberofslots	numberofslots	4	text2json 4	Number_Ofs_Lots	CHECK	text2json: field of record: 12 | field of record: 12	Number_Of_Slots
+structures	followupinstruction	followupinstruction	4	text2json 4	Follow_Up_Instruction	CHECK	text2json: field of record: rest | field of record: rest	Follow_Up_Instruction
+structures	expertise	person.expertise	4	text2json 4	Ex_Per_Ti_Se	CHECK	text2json: field of record: etiqueta | field of record: etiqueta	one word
+structures	auditstatus	auditstatus	3	text2json 3	Audits_Tatus		text2json: field of record: audited | field of record: audited	Audit_Status
+structures	ratingcategory	ratingcategory	3	text2json 3	Rating_Category		text2json: field of record: Exceeds Expectations | field of record: Exceeds Expectations	Rating_Category
+structures	githubrepourl	githubrepourl	3	text2json 3	???	CHECK	text2json: field of record: github.com/jordanlee/devflow | field of record: github.com/jordanlee/devflow	Github_Repo_Url
+structures	vendorinvoiceemail	vendorinvoiceemail	3	text2json 3	Vendor_Invoice_Em_Ail	CHECK	text2json: field of record: INV-2024-0817 | field of record: INV-2024-0817	Vendor_Invoice_Email
+structures	paymentduedate	paymentduedate	3	text2json 3	Paymentd_Ued_Ate	CHECK	text2json: field of record: 2024-09-15 | field of record: 2024-09-15	Payment_Due_Date
+structures	wavelength	observations.0.wavelength	3	text2json 3	Wave_Length		text2json: field of record: del infrarrojo cercano | field of record: del infrarrojo cercano	one word
+structures	whoadrcode	whoadrcode	3	text2json 3	???	CHECK	text2json: field of record: 004210 | field of record: 004210	WHO_ADR_Code
+structures	followupaction	followupaction	3	text2json 3	Follow_Up_Action	CHECK	text2json: field of record: discontinued the medication after three  | field of record: discontinued the medication after three 	Follow_Up_Action
+structures	originalordernumber	originalordernumber	3	text2json 3	Original_Order_Number		text2json: field of record: ORD98765 | field of record: ORD98765	Original_Order_Number
+structures	lastcommitdate	lastcommitdate	3	text2json 3	Last_Commitd_Ate	CHECK	text2json: field of record: 2023-05-22 | field of record: 2023-05-22	Last_Commit_Date
+structures	officeactionnumber	officeactionnumber	3	text2json 3	Office_Action_Number		text2json: field of record: 1429 | field of record: 1429	Office_Action_Number
+structures	sustainability	sustainability.certification	3	text2json 3	Sustain_Ability		text2json: field of record: FSC certified | field of record: FSC certified	one word
+structures	riskfactorcode	riskfactorcode	3	text2json 3	Risk_Factor_Code		text2json: field of record: RF-45A | field of record: RF-45A	Risk_Factor_Code
+structures	bloodpressuresystolic	bloodpressuresystolic	3	text2json 3	Blood_Pressure_Systolic		text2json: field of record: 122 | field of record: 122	Blood_Pressure_Systolic
+structures	bloodpressurediastolic	bloodpressurediastolic	3	text2json 3	Blood_Pressure_Diastolic		text2json: field of record: 78 | field of record: 78	Blood_Pressure_Diastolic
+structures	disputingpartyb	disputingpartyb	3	text2json 3	???	CHECK	text2json: field of record: Sunbeam Solutions | field of record: Sunbeam Solutions	Disputing_Party_B
+structures	audiofidelityscore	audiofidelityscore	3	text2json 3	Audio_Fidelitys_Core		text2json: field of record: 3.8 | field of record: 3.8	Audio_Fidelity_Score
+structures	downvotes	downvotes	3	text2json 3	Down_Votes		text2json: field of record: 3 | field of record: 3	one word
+structures	preferredtenanttype	preferredtenanttype	3	text2json 3	Preferred_Tenant_Type		text2json: field of record: Stable, non-smoking, pets allowed with p | field of record: Stable, non-smoking, pets allowed with p	Preferred_Tenant_Type
+structures	nsubjpass	nsubjpass	3	text2json 3	???	CHECK	text2json: field of record: pathway | field of record: pathway	one word
+structures	revenuebyregion	revenuebyregion	3	text2json 3	Revenue_By_Region		text2json: field of record: 68% | field of record: 68%	Revenue_By_Region
+structures	clonality	clonality	3	text2json 3	???	CHECK	text2json: field of record: Polyclonal | field of record: Polyclonal	one word
+structures	playeroneid	playeroneid	3	text2json 3	Player_One_Id	CHECK	text2json: field of record: ML-7839 | field of record: ML-7839	Player_One_Id
+structures	playertwoname	playertwoname	3	text2json 3	Player_Two_Name	CHECK	text2json: field of record: Clara Nguyen | field of record: Clara Nguyen	Player_Two_Name
+structures	fiscalyearend	fiscalyearend	3	text2json 3	Fiscal_Year_End	CHECK	text2json: field of record: Dec 31, 2023 | field of record: Dec 31, 2023	Fiscal_Year_End
+structures	originalorderid	originalorderid	3	text2json 3	Original_Order_Id		text2json: field of record: ORD-78942 | field of record: ORD-78942	Original_Order_Id
+structures	dateofbirth	dateofbirth	3	text2json 3	Date_Of_Birth		text2json: field of record: 1985-03-12 | field of record: 1985-03-12	Date_Of_Birth
+structures	hometeampoints	hometeampoints	3	text2json 3	Home_Team_Points		text2json: field of record: 118 | field of record: 118	Home_Team_Points
+structures	healthpolicyid	healthpolicyid	3	text2json 3	Health_Policy_Id		text2json: field of record: H-74291 | field of record: H-74291	Health_Policy_Id
+structures	firstdoseid	firstdoseid	3	text2json 3	Firstd_Ose_Id	CHECK	text2json: field of record: 2021-0312M | field of record: 2021-0312M	First_Dose_Id
+structures	comorbidities	comorbidities	3	text2json 3	???	CHECK	text2json: field of record: Hypertension | field of record: Hypertension	one word
+structures	impactradiuskm	impactradiuskm	3	text2json 3	???	CHECK	text2json: field of record: 45 | field of record: 45	Impact_Radius_Km
+structures	primarycelltypes	primarycelltypes	3	text2json 3	Primary_Cell_Types		text2json: field of record: ['adipocytes', 'skeletal muscle'] | field of record: ['adipocytes', 'skeletal muscle']	Primary_Cell_Types
+structures	fieldofstudy	fieldofstudy	2	text2json 2	Field_Of_Study		text2json: field of record: environmental science | field of record: environmental science	Field_Of_Study
+structures	lastinspectiondate	lastinspectiondate	2	text2json 2	Last_Inspectiond_Ate	CHECK	text2json: field of record: 2024-03-22 | field of record: 2024-03-22	Last_Inspection_Date
+structures	pressnoteid	pressnoteid	2	text2json 2	Press_Note_Id		text2json: field of record: VD-MED-2023-001 | field of record: VD-MED-2023-001	Press_Note_Id
+structures	uploader	uploader	2	text2json 2	Upload_Er	CHECK	text2json: field of record: Alex Rivera | field of record: Alex Rivera	one word
+structures	marginofvictory	marginofvictory	2	text2json 2	Margin_Of_Victory		text2json: field of record: 4.6 | field of record: 4.6	Margin_Of_Victory
+structures	lastreceivingdate	lastreceivingdate	2	text2json 2	Lastre_Ce_Ivin_Gd_Ate	CHECK	text2json: field of record: 2024-01-10 | field of record: 2024-01-10	Last_Receiving_Date
+structures	studystartdate	studystartdate	2	text2json 2	Studys_Tartd_Ate	CHECK	text2json: field of record: 2018-04-12 | field of record: 2018-04-12	Study_Start_Date
+structures	accuracyorefficiency	accuracyorefficiency	2	text2json 2	Accuracy_Or_Efficiency		text2json: field of record: 94 | field of record: 94	Accuracy_Or_Efficiency
+structures	freetierusers	freetierusers	2	text2json 2	Free_Tier_Users		text2json: field of record: 15 | field of record: 15	Free_Tier_Users
+structures	concurrentuserslimit	concurrentuserslimit	2	text2json 2	Concurrent_Users_Limit		text2json: field of record: 500 | field of record: 500	Concurrent_Users_Limit
+structures	waterbody	location.waterbody	2	text2json 2	Water_Body		text2json: field of record: Deschutes River | field of record: Deschutes River	Water_Body
+structures	planning	planning	2	text2json 2	Plan_Ning		text2json: field of record: launch a new app that helps remote worke | field of record: launch a new app that helps remote worke	one word
+structures	goalscoringplayer	goalscoringplayer	2	text2json 2	Goals_Coring_Player		text2json: field of record: De Ligt | field of record: De Ligt	Goal_Scoring_Player
+structures	registrantusptoid	registrantusptoid	2	text2json 2	???	CHECK	text2json: field of record: 456123987 | field of record: 456123987	Registrant_USPTO_Id
+structures	publicreviewperiod	publicreviewperiod	2	text2json 2	Public_Review_Period		text2json: field of record: 0 | field of record: 0	Public_Review_Period
+structures	postmortemaction	postmortemaction	2	text2json 2	Post_Mort_Em_Action	CHECK	text2json: field of record: a missing monitoring alert for CPU spike | field of record: a missing monitoring alert for CPU spike	Postmortem_Action
+structures	deviceortool	deviceortool	2	text2json 2	Device_Or_Tool		text2json: field of record: Pixel 9 Pro | field of record: Pixel 9 Pro	Device_Or_Tool
+structures	sideeffectrate	sideeffectrate	2	text2json 2	Side_Effect_Rate		text2json: field of record: 28 | field of record: 28	Side_Effect_Rate
+structures	claimhistorycount	claimhistorycount	1	text2json 1	Claim_History_Count		text2json: field of record: 1	Claim_History_Count
+structures	nextvideotitle	nextvideotitle	1	text2json 1	Next_Video_Title		text2json: field of record: Gym Bets for $100	Next_Video_Title
+structures	timeframe	timeframe	1	text2json 1	Time_Frame		text2json: field of record: past three days	Time_Frame
+structures	followupdate	followupdate	1	text2json 1	Follow_Update		text2json: field of record: 2023-11-05	Follow_Up_Date
+structures	ownerlocationb	ownerlocationb	1	text2json 1	???	CHECK	text2json: field of record: Houston, TX	Owner_Location_B
+structures	vitalsignsbp	vitalsignsbp	1	text2json 1	???	CHECK	text2json: field of record: BP 130/85	Vital_Signs_BP
