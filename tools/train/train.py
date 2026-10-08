@@ -82,6 +82,7 @@ determination sourced from ``tools/train/dataset_registry.yaml``.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 import os
@@ -1153,6 +1154,26 @@ def _build_model(model_cfg: Dict):
     )
 
 
+def abstention_configs(config: TrainingConfig, phase: Dict) -> Tuple[TrainingConfig, TrainingConfig]:
+    """(main, abstention phase) configs for ``training.abstention_phase: {epochs: N}``.
+
+    The main phase is the config with every negatives dose set to 1, writing to ``<output_dir>/main``.
+    The abstention phase runs ``epochs`` (default 1) at the configured dose from the main phase's best,
+    writing to ``output_dir`` itself, so ``best/`` -- what the blind test scores and the box pushes -- is
+    the phase's. With epochs > 1 the phase selects its best on ``metric_for_best`` like any run.
+    """
+    if config.negative_labels_schedule:
+        raise SystemExit("[abstention] abstention_phase and negative_labels_schedule both set the dose; use one")
+    if not config.negative_labels_per_dim:
+        raise SystemExit("[abstention] abstention_phase needs negative_labels_per_dim (the phase's dose)")
+    main = copy.copy(config)
+    main.output_dir = str(Path(config.output_dir) / "main")
+    main.negative_labels_per_dim = {dim: 1 for dim in config.negative_labels_per_dim}
+    after = copy.copy(config)
+    after.num_epochs = int(phase.get("epochs", 1))
+    return main, after
+
+
 def _collect_lang_codes(data) -> set:
     """Collect unique ISO 639-2 _lang codes from training records.
 
@@ -1772,6 +1793,7 @@ def main(config_path: str) -> None:
 
     # Popped before TrainingConfig: it is a data-pipeline gate, not a trainer field.
     split_hygiene = str((cfg.get("training") or {}).pop("split_hygiene", "drop"))
+    abstention = (cfg.get("training") or {}).pop("abstention_phase", None)
 
     config = TrainingConfig(**cfg["training"])
 
@@ -1796,6 +1818,15 @@ def main(config_path: str) -> None:
     # Absent (single-process) -> config keeps its default -1 -> single-device.
     if "LOCAL_RANK" in os.environ:
         config.local_rank = int(os.environ["LOCAL_RANK"])
+
+    phase_config = None
+    if abstention:
+        if "LOCAL_RANK" in os.environ:
+            raise SystemExit("[abstention] abstention_phase is single-process only (no rank sync at the handoff)")
+        config, phase_config = abstention_configs(config, abstention)
+        print(f"[abstention] main phase: {config.num_epochs} epoch(s) at dose {config.negative_labels_per_dim} "
+              f"-> {config.output_dir}; then {phase_config.num_epochs} epoch(s) at dose "
+              f"{phase_config.negative_labels_per_dim} -> {phase_config.output_dir}")
 
     data = cfg.get("data") or {}
     corpora = data.get("corpora") or []
@@ -1931,6 +1962,16 @@ def main(config_path: str) -> None:
 
     results = trainer.train(train_data=train_data)
     # pprint(results)
+
+    if phase_config is not None:
+        main_best = Path(config.output_dir) / "best"
+        print(f"[abstention] phase from {main_best}: {phase_config.num_epochs} epoch(s) at dose "
+              f"{phase_config.negative_labels_per_dim}, fresh optimizer and LR schedule")
+        load = {k: cfg["model"][k] for k in ("architecture", "map_location", "quantize", "compile") if k in cfg["model"]}
+        model = _build_model({**load, "pretrained": str(main_best)})
+        config = phase_config
+        trainer = GLiNER2Trainer(model, config, eval_data=eval_data, compute_metrics=compute_metrics_hook)
+        results = trainer.train(train_data=train_data)
 
     # Only rank 0 writes results and runs the blind test; other ranks are done.
     if not is_main:

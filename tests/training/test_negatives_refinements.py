@@ -151,3 +151,17 @@ def test_training_prompt_does_not_reveal_which_entity_labels_are_present():
                 entity1_is_gold[-1] = bool(schema["entities"]["entity 1"])
     assert 0.1 < sum(first_is_gold) / 300 < 0.35     # base rate 2/10, was 1.00
     assert 0.1 < sum(entity1_is_gold) / 300 < 0.35
+
+
+def test_abstention_phase_splits_the_config():
+    """Main phase: dose 1 into <out>/main; the phase: the configured dose, its epochs, into <out> (best/ ships)."""
+    import pytest
+    from gliner2.training.trainer import TrainingConfig
+    cfg = TrainingConfig(output_dir="out/x", num_epochs=3, negative_labels_per_dim={"entities": 20, "events": 20})
+    main, phase = T.abstention_configs(cfg, {"epochs": 1})
+    assert (main.output_dir, main.num_epochs, main.negative_labels_per_dim) == ("out/x/main", 3, {"entities": 1, "events": 1})
+    assert (phase.output_dir, phase.num_epochs, phase.negative_labels_per_dim) == ("out/x", 1, {"entities": 20, "events": 20})
+    assert cfg.negative_labels_per_dim == {"entities": 20, "events": 20} and cfg.output_dir == "out/x"
+    with pytest.raises(SystemExit):
+        T.abstention_configs(TrainingConfig(output_dir="o", negative_labels_per_dim={"entities": 20},
+                                            negative_labels_schedule={"entities": [1, 20]}), {"epochs": 1})
