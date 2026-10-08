@@ -514,3 +514,6 @@ data:
   # (best/); test 500 voted 2-of-3, scored under the gold menu AND the news menu.
   corpora:
     - data/cc_news_events_sonnet55_v2
+  # relations were SAMPLED per document (10 of 72), so not exhaustive: never offered as absents
+  # (MENU_SPEC widened / corpus_full menus; training injects no relation negatives here)
+  partial_annotation: {cc_news_events_sonnet55_v2: [relations]}

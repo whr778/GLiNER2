@@ -629,6 +629,7 @@ data:
   # probe, and duee_ner at 7.1% -- so this is the incumbent bar, not a new risk.
   partial_annotation:
     cmnee_ner: [entities]
+    cc_news_events_sonnet55_v2: [relations]   # eb21: relations SAMPLED per doc (10 of 72), not exhaustive
 
   event_files:
     chfinann:        {train: data/chfinann.train.jsonl, val: data/scaling_joint/chfinann.val.jsonl, test: data/chfinann.test.jsonl}

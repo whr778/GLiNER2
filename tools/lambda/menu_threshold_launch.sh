@@ -13,5 +13,8 @@ export JOB_TIMEOUT=${JOB_TIMEOUT:-14400}     # whole job: 4 h
 export HARD_DEADLINE=${HARD_DEADLINE:-16200} # whole box: 4.5 h
 ARMS=${ARMS:-menudose-treatment,menudose-control}
 case "$ARMS" in *[!a-z0-9,-]*) echo "[mt] ARMS must be comma-separated names, no spaces: $ARMS"; exit 7;; esac
-exec env NAME="menu-threshold" JOB="ARMS=$ARMS bash tools/lambda/menu_threshold_job.sh" TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
+# JOB_SCRIPT selects the job (default the threshold job); NAME labels the box.
+JOB_SCRIPT=${JOB_SCRIPT:-tools/lambda/menu_threshold_job.sh}
+[ -f "$JOB_SCRIPT" ] || { echo "[mt] no such job script: $JOB_SCRIPT"; exit 6; }
+exec env NAME="${NAME:-menu-threshold}" JOB="ARMS=$ARMS bash $JOB_SCRIPT"  TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
      bash tools/lambda/launch_when_available.sh

@@ -6,6 +6,7 @@
 MENU_SPEC.md: a threshold is an operating point, so it is chosen under the menu production sends, not
 the gold menu. The choice is `sweep_thresholds`' own (support-weighted strict micro F1). The test split
 is scored once, at the chosen threshold, under the menu AND under the gold menu (the recall cost).
+`--threshold T --test-menus ...` skips the sweep and scores the test at T under a LADDER of menus.
 """
 from __future__ import annotations
 
@@ -28,6 +29,9 @@ def main(argv=None) -> None:
     ap.add_argument("--checkpoint", required=True, help="local dir or Hub repo id")
     ap.add_argument("--menu", required=True, help="widened:K | corpus_full | app:<name>")
     ap.add_argument("--grid", type=float, nargs="+", default=list(GRID))
+    ap.add_argument("--threshold", type=float, help="skip the val sweep and score the test at this threshold")
+    ap.add_argument("--test-menus", nargs="+", help="menus to score the test under (default: --menu and gold), "
+                                                    "e.g. a ladder: widened:5 widened:20 corpus_full app:news55 gold")
     ap.add_argument("--limit", type=int, help="score only the first N records of each split (a trace, not a result)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
@@ -47,15 +51,19 @@ def main(argv=None) -> None:
         n = args.limit or len(recs)
         return recs[:n], menus[:n], report
 
-    val, vmenus, vrep = split(args.menu, "val")
-    print(f"[sweep] {args.checkpoint} on val under {args.menu}: {len(val)} records ({vrep}), grid {args.grid}")
-    thr, _, by_t = sweep_thresholds(model, ExtractorDataset(val, shuffle=False, validate=False), thresholds=args.grid,
-                                    batch_size=ev["batch_size"], menus=vmenus, **gd)
-    print(f"[sweep] chose threshold {thr} (" + ", ".join(f"{t}: {_selection_score(m):.4f}" for t, m in by_t.items()) + ")")
+    if args.threshold is None:
+        val, vmenus, vrep = split(args.menu, "val")
+        print(f"[sweep] {args.checkpoint} on val under {args.menu}: {len(val)} records ({vrep}), grid {args.grid}")
+        thr, _, by_t = sweep_thresholds(model, ExtractorDataset(val, shuffle=False, validate=False), thresholds=args.grid,
+                                        batch_size=ev["batch_size"], menus=vmenus, **gd)
+        print(f"[sweep] chose threshold {thr} (" + ", ".join(f"{t}: {_selection_score(m):.4f}" for t, m in by_t.items()) + ")")
+    else:
+        thr, by_t = args.threshold, {}
+        print(f"[sweep] {args.checkpoint}: threshold FIXED at {thr} (no val sweep)")
 
     result = {"checkpoint": args.checkpoint, "menu": args.menu, "chosen_threshold": thr,
               "val_by_threshold": {str(t): m for t, m in by_t.items()}, "test": {}}
-    for mode in (args.menu, "gold"):
+    for mode in (args.test_menus or [args.menu, "gold"]):
         recs, menus, rep = split(mode, "test")
         print(f"[test] {mode} at threshold {thr}: {len(recs)} records")
         m = compute_metrics(model, ExtractorDataset(recs, shuffle=False, validate=False), batch_size=ev["batch_size"],
