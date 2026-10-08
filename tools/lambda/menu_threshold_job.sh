@@ -12,11 +12,13 @@ PY=./.venv/bin/python
 LOG=$HOME/menu_threshold.log
 source tools/lambda/_publish.sh
 echo "[mt] start $(date -u)" | tee -a "$LOG"
-# ARMS: "<exp>-<arm> ..." (config tools/train/config/ab/<exp>-<arm>.yaml, model whr778/gliner2-<exp>-<arm>).
+# ARMS: COMMA-separated "<exp>-<arm>,..." (config tools/train/config/ab/<exp>-<arm>.yaml, model
+# whr778/gliner2-<exp>-<arm>). Commas, not spaces: the job string is nested inside the provisioner's ssh
+# quoting, and a quoted space-separated list broke it ("unexpected EOF while looking for matching").
 # Each arm is PUBLISHED AS SOON AS IT FINISHES: the first run published only at the end, the job timeout
 # killed the slow control sweep, and only a hand-published treatment result survived (2026-10-07).
-ARMS=${ARMS:-"menudose-treatment menudose-control"}
-for a in $ARMS; do
+ARMS=${ARMS:-menudose-treatment,menudose-control}
+for a in ${ARMS//,/ }; do
   $PY -u tools/train/sweep_menu_threshold.py --config tools/train/config/ab/$a.yaml \
       --checkpoint whr778/gliner2-$a --menu app:news55 --out "$HOME/$a.sweep.json" 2>&1 | tee -a "$LOG"
   if [ -f "$HOME/$a.sweep.json" ]; then
