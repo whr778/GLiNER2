@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import train as T  # noqa: E402
-from model_card import _metrics_table, _oneie_table  # noqa: E402
+from model_card import CATEGORIES, ONEIE_CRITERIA, _metric  # noqa: E402
 
 from gliner2.inference.label_map import apply_label_map  # noqa: E402
 from gliner2.training.eval_metrics import (  # noqa: E402
@@ -109,13 +109,31 @@ def score(records: List[Dict[str, Any]], by_language: bool) -> Dict[str, Any]:
     return metrics
 
 
+def metrics_table(metrics: Dict[str, Any], title: str) -> str:
+    """The blind test's metrics as a plain table: micro P / R / F1 (strict -> relaxed), support, and the
+    OneIE criteria. No model-card prose: the card describes how ITS numbers were made, not this file's."""
+    rows = [f"### {title}", "", "| Metric | Precision | Recall | F1 | Support |", "|---|--:|--:|--:|--:|"]
+    for c in (c for c in CATEGORIES if _metric(metrics, c, "strict", "f1") is not None):
+        def cell(m):
+            s, r = _metric(metrics, c, "strict", m), _metric(metrics, c, "relaxed", m)
+            return f"{s:.3f} -> {r:.3f}" if r is not None else f"{s:.3f}"
+        rows.append(f"| {c} (strict -> relaxed) | {cell('precision')} | {cell('recall')} | {cell('f1')} | "
+                    f"{metrics.get(f'eval_{c}_strict_support', '-')} |")
+    for key, label, _ in ONEIE_CRITERIA:
+        g = lambda m: metrics.get(f"eval_{key}_external_micro_{m}")
+        if g("f1") is not None:
+            rows.append(f"| {label} (OneIE) | {g('precision'):.3f} | {g('recall'):.3f} | {g('f1'):.3f} | "
+                        f"{metrics.get(f'eval_{key}_external_support', '-')} |")
+    return "\n".join(rows) + "\n"
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--predictions", required=True, help="an infer.py --output JSONL")
     ap.add_argument("--gold", choices=["auto", "gold", "gold_mapped"], default="auto")
     ap.add_argument("--by-language", action="store_true", help="per-language buckets, as eval.by_language")
     ap.add_argument("--out", help="write the metrics JSON (test_metrics.json shape) here")
-    ap.add_argument("--card", action="store_true", help="print the model card's blind-test tables")
+    ap.add_argument("--card", action="store_true", help="print the metrics as tables (the blind test's metrics)")
     ap.add_argument("--menu", default="gold", help="gold (default) or app:<menu file>, the menu the predictions "
                                                    "were made with (infer.py --schema-json <menu file>)")
     ap.add_argument("--corpus", help="with --menu app: the corpus this file covers; refused unless the menu "
@@ -150,10 +168,10 @@ def main(argv=None) -> None:
         Path(args.out).write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"[score] wrote {args.out}")
     if args.card:
-        print("\n" + _metrics_table(metrics, "Blind test (held-out test splits)"))
-        print(_oneie_table(metrics, "OneIE criteria (blind test)"))
+        src = f"{args.predictions}, gold `{key}`, menu {args.menu}"
+        print("\n" + metrics_table(metrics, f"All records ({src})"))
         for lang, m in (metrics.get("by_language") or {}).items():
-            print(_metrics_table(m, f"Blind test, {lang}"))
+            print(metrics_table(m, f"{lang} ({src})"))
 
 
 if __name__ == "__main__":

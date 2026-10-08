@@ -66,3 +66,11 @@ def test_cli_end_to_end(tmp_path):
     m = json.loads(out.read_text())
     assert m["eval_entity_strict_micro_f1"] == score_predictions([GOLD], [PRED], report=False)["eval_entity_strict_micro_f1"]
     assert m["scored_from"]["records"] == 1
+
+
+def test_card_is_the_metrics_without_model_card_prose():
+    m = score_predictions([GOLD], [PRED], report=False)
+    table = S.metrics_table(m, "All records (preds.jsonl, gold `gold`, menu app:news55.json)")
+    assert "own gold" not in table and "eval.py" not in table and "menu app:news55.json" in table
+    assert f"| entity (strict -> relaxed) | {m['eval_entity_strict_micro_precision']:.3f} -> " in table
+    assert "| event_argument (strict -> relaxed) |" in table and "| Arg-C (OneIE) |" in table
