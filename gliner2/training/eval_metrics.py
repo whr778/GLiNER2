@@ -785,7 +785,9 @@ def _pred_structure_set(pred: Dict) -> Set[Tuple[str, str, str]]:
         if not isinstance(instances, list):
             continue
         for body in instances:
-            if not isinstance(body, dict):
+            # A classification answer with --include-confidence is {"label", "confidence"}:
+            # not a structure, or every one scores as a structure false positive.
+            if not isinstance(body, dict) or set(body) <= {"label", "confidence"}:
                 continue
             for field, value in body.items():
                 if not isinstance(field, str):
@@ -1106,6 +1108,8 @@ def _pred_oneie_sets(pred: Dict) -> Tuple[Dict[str, Set], int]:
                 if not isinstance(arg, dict):
                     continue
                 role, entity = arg.get("role"), arg.get("entity")
+                if isinstance(entity, dict):
+                    entity = entity.get("text")
                 if not isinstance(role, str) or not isinstance(entity, str):
                     continue
                 role, entity = role.strip().lower(), entity.strip().lower()

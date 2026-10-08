@@ -74,3 +74,17 @@ def test_card_is_the_metrics_without_model_card_prose():
     assert "own gold" not in table and "eval.py" not in table and "menu app:news55.json" in table
     assert f"| entity (strict -> relaxed) | {m['eval_entity_strict_micro_precision']:.3f} -> " in table
     assert "| event_argument (strict -> relaxed) |" in table and "| Arg-C (OneIE) |" in table
+
+
+def test_span_and_confidence_output_scores_like_plain_output():
+    """infer.py --include-spans --include-confidence wraps argument entities as {"text", ...} and
+    classification answers as {"label", "confidence"}: Arg-I/Arg-C read 0.000 and every answer
+    scored as a structure false positive (2026-10-08)."""
+    gold = dict(GOLD, classifications=[{"task": "genre", "labels": ["news", "blog"], "true_label": ["news"]}])
+    plain = dict(PRED, genre="news")
+    spans = {"entities": PRED["entities"], "genre": {"label": "news", "confidence": 0.9},
+             "event_extraction": {"Contact.Meet": [{"triggers": [{"text": "met", "start": 12, "end": 15}],
+                                                    "arguments": [{"role": "Participant", "entity": {
+                                                        "text": "Olaf Scholz", "start": 0, "end": 11, "confidence": 0.8}}]}]}}
+    a, b = score_predictions([gold], [plain], report=False), score_predictions([gold], [spans], report=False)
+    assert a["eval_argc_external_micro_f1"] == 1.0 and a == b
