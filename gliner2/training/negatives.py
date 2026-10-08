@@ -49,8 +49,12 @@ class NegativeLabels:
     def __init__(self, pools: Dict[str, dict], per_dim: Dict[str, int], seed: int = 42,
                  max_per_record: Optional[int] = None,
                  partial: Optional[Dict[str, list]] = None,
-                 gold_free_dims: bool = False, k_sampling: str = "fixed"):
+                 gold_free_dims: bool = False, k_sampling: str = "fixed",
+                 schedule: Optional[Dict[str, list]] = None):
         self.pools = pools
+        # DOSE SCHEDULE: {dim: [dose at epoch 0, epoch 1, ...]}; the last value holds after the list ends.
+        # Overrides per_dim for the dims it names (an annealing-style ramp, e.g. [1, 5, 20]).
+        self.schedule = {d: [int(x) for x in v] for d, v in (schedule or {}).items() if v}
         # MENU_SPEC s4. `gold_free_dims`: a dimension the record has NO gold in still gets
         # absents, from the record's OWN corpus pool, when that corpus annotates the dimension
         # -- an event-free news article (10.8% of sonnet55 train) otherwise never practises
@@ -78,7 +82,14 @@ class NegativeLabels:
         # length-bound, and it truncates in dimension order rather than dropping a dimension.
         self.max_per_record = max_per_record
         self.seed = seed
-        self.epoch = 0
+        # SHARED WITH FORKED DATALOADER WORKERS. Workers are persistent and forked once, so a plain
+        # attribute set by the parent's set_epoch never reached them: every epoch re-drew epoch 0's
+        # menus, and a dose schedule could not take effect (2026-10-08). Shared values, created before
+        # the fork, carry the epoch down and the per-epoch injection counts back up.
+        import multiprocessing as _mp
+        self._epoch = _mp.Value("i", 0)
+        self._epoch_records = _mp.Value("q", 0)
+        self._epoch_injected = _mp.Value("q", 0)
         self.stats = {"records": 0, "injected": 0, "records_with_injection": 0,
                       "no_candidate": 0, "partial_skips": 0, "gold_free_injected": 0}
 
@@ -86,13 +97,51 @@ class NegativeLabels:
     def load(cls, path: str, per_dim: Dict[str, int], seed: int = 42,
              max_per_record: Optional[int] = None,
              partial: Optional[Dict[str, list]] = None,
-             gold_free_dims: bool = False, k_sampling: str = "fixed") -> "NegativeLabels":
+             gold_free_dims: bool = False, k_sampling: str = "fixed",
+             schedule: Optional[Dict[str, list]] = None) -> "NegativeLabels":
         blob = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(blob.get("pools") or {}, per_dim, seed, max_per_record, partial, gold_free_dims, k_sampling)
+        return cls(blob.get("pools") or {}, per_dim, seed, max_per_record, partial, gold_free_dims, k_sampling,
+                   schedule)
+
+    @property
+    def epoch(self) -> int:
+        return self._epoch.value
 
     def set_epoch(self, epoch: int) -> None:
-        """Resample every epoch. The trainer calls this, as with DistributedSampler."""
-        self.epoch = int(epoch)
+        """Resample every epoch (and step the dose schedule). The trainer calls this, as with
+        DistributedSampler; the value is shared, so persistent forked workers see it."""
+        self._epoch.value = int(epoch)
+        with self._epoch_records.get_lock():
+            self._epoch_records.value = 0
+        with self._epoch_injected.get_lock():
+            self._epoch_injected.value = 0
+
+    def dose(self, dim: str) -> int:
+        """This epoch's count for a dimension: the schedule's value if it names the dim, else per_dim."""
+        steps = self.schedule.get(dim)
+        if steps:
+            return steps[min(self.epoch, len(steps) - 1)]
+        return self.per_dim.get(dim, 0)
+
+    def epoch_line(self) -> str:
+        """Injection THIS epoch, counted across every worker -- the per-epoch proof the dose applied."""
+        n = self._epoch_records.value
+        return (f"[negatives] epoch {self.epoch}: dose {{entities: {self.dose('entities')}, events: "
+                f"{self.dose('events')}}} | {self._epoch_injected.value:,} labels injected into {n:,} records "
+                f"({self._epoch_injected.value / max(n, 1):.1f} per record)")
+
+    def __getstate__(self):
+        """Spawned (non-forked) workers get plain values: shared memory crosses only a fork."""
+        state = dict(self.__dict__)
+        for key in ("_epoch", "_epoch_records", "_epoch_injected"):
+            state[key] = state[key].value
+        return state
+
+    def __setstate__(self, state):
+        import multiprocessing as _mp
+        for key, code in (("_epoch", "i"), ("_epoch_records", "q"), ("_epoch_injected", "q")):
+            state[key] = _mp.Value(code, state[key])
+        self.__dict__.update(state)
 
     # -- corpus identification -------------------------------------------------------
     @staticmethod
@@ -161,7 +210,7 @@ class NegativeLabels:
         skipped: its gold is not exhaustive there, so an "absent" label may simply be
         unannotated, and injecting it would teach the model to reject something present.
         """
-        if not isinstance(schema, dict) or not self.per_dim:
+        if not isinstance(schema, dict) or not (self.per_dim or self.schedule):
             return schema
         self.stats["records"] += 1
         skip = self.partial.get(corpus or "", frozenset())
@@ -187,7 +236,7 @@ class NegativeLabels:
 
         def k_for(dim: str) -> int:
             """This record's K for a dimension: the configured count, or log-uniform in 1..count."""
-            k = self.per_dim.get(dim, 0)
+            k = self.dose(dim)
             if k and self.k_sampling == "loguniform":
                 import math
                 k = max(1, min(k, int(math.exp(rng.uniform(0.0, math.log(k + 1))))))
@@ -232,7 +281,7 @@ class NegativeLabels:
                 out["absent_events"] = {**(out.get("absent_events") or {}), **roles}
                 added += len(chosen)
 
-        k = 0 if "relations" in skip else budget(self.per_dim.get("relations", 0))
+        k = 0 if "relations" in skip else budget(self.dose("relations"))
         if k and gold["relations"] and isinstance(schema.get("relations"), list):
             pool = sorted(self._usable_pool("relations", candidates) - gold["relations"])
             chosen = rng.sample(pool, min(k, len(pool))) if pool else []
@@ -244,7 +293,7 @@ class NegativeLabels:
                     set(out.get("absent_relations") or []) | set(chosen))
                 added += len(chosen)
 
-        k = 0 if "structures" in skip else budget(self.per_dim.get("structures", 0))
+        k = 0 if "structures" in skip else budget(self.dose("structures"))
         if k and gold["structures"] and isinstance(schema.get("json_structures"), list):
             pool_names = self._usable_pool("structures", candidates) - gold["structures"]
             chosen = rng.sample(sorted(pool_names), min(k, len(pool_names))) if pool_names else []
@@ -268,7 +317,11 @@ class NegativeLabels:
                     out["record_metadata"] = meta
                     added += len(fields)
 
+        with self._epoch_records.get_lock():
+            self._epoch_records.value += 1
         if added:
+            with self._epoch_injected.get_lock():
+                self._epoch_injected.value += added
             self.stats["injected"] += added
             self.stats["records_with_injection"] += 1
             # A negative that is actually present is the failure this whole design guards

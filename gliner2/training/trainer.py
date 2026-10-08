@@ -257,6 +257,10 @@ class TrainingConfig:
     negative_gold_free_dims: bool = False
     negative_k_sampling: str = "fixed"
     negative_max_per_record: Optional[int] = None
+    # Per-epoch dose, {dim: [epoch 0, epoch 1, ...]} (the last value holds): an annealing-style ramp such as
+    # [1, 5, 20], or [1, 1, 20] for a final rejection phase. Overrides negative_labels_per_dim for the dims it
+    # names; negative_labels_per_dim must still be set (it switches negatives on).
+    negative_labels_schedule: Optional[dict] = None
     # SCHEMA DROPOUT. The processor's SamplingConfig randomly REMOVES gold from a training
     # schema -- remove_events_prob and remove_relations_prob default to 0.2,
     # remove_classification_label_prob to 0.5 -- and was previously unreachable from config
@@ -1831,6 +1835,7 @@ class ExtractorTrainer:
                 partial=getattr(self.config, "partial_annotation", None),
                 gold_free_dims=self.config.negative_gold_free_dims,
                 k_sampling=self.config.negative_k_sampling,
+                schedule=self.config.negative_labels_schedule,
             )
             self._negatives_cache = cached
             logger.info("label negatives ON: %s from %s | partial-annotation "
@@ -1838,6 +1843,8 @@ class ExtractorTrainer:
                         self.config.negative_labels_per_dim, self.config.negative_pools,
                         sorted(cached.partial) or "NONE", self.config.negative_gold_free_dims,
                         self.config.negative_k_sampling, self.config.negative_max_per_record)
+            if self.config.negative_labels_schedule:
+                logger.info("label negatives SCHEDULE (per epoch): %s", self.config.negative_labels_schedule)
         return cached
 
     def _guide_scores(self):
@@ -2512,6 +2519,7 @@ class ExtractorTrainer:
             _neg = getattr(getattr(train_loader, "dataset", None), "negatives", None)
             if _neg is not None and self.is_main_process:
                 logger.info("%s", _neg.composition_line())
+                logger.info("%s", _neg.epoch_line())
 
             if self.config.eval_strategy == "epoch":
                 if eval_dataset:
