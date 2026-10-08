@@ -48,7 +48,7 @@ def test_boundary_overfit_on_real_deberta_v3(tmp_path):
         model=model,
         config=TrainingConfig(
             output_dir=str(tmp_path / "boundary-overfit"),
-            max_steps=100,
+            max_steps=200,   # 100 passed only by label POSITION; entity labels now shuffle in training
             batch_size=1,
             encoder_lr=2e-5,
             task_lr=5e-3,
@@ -68,7 +68,7 @@ def test_boundary_overfit_on_real_deberta_v3(tmp_path):
     )
 
     train_result = trainer.train(train_data=examples)
-    assert train_result["total_steps"] == 100
+    assert train_result["total_steps"] == 200
 
     model.eval()
     result = model.extract_entities(

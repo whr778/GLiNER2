@@ -271,7 +271,7 @@ class SamplingConfig:
     remove_json_field_prob: float = 0.2
     # Entities
     remove_entities_prob: float = 0.0
-    shuffle_entities: bool = False
+    shuffle_entities: bool = True   # False leaks presence: absent entity labels sit after the gold
     remove_entity_prob: float = 0.0
     synthetic_entity_label_prob: float = 0.2
     # Relations
@@ -1174,6 +1174,11 @@ class SchemaTransformer:
         descs = schema.get("entity_descriptions", {})
         example_modes = ["none", "descriptions"]
 
+        # Shuffle BEFORE synthetic naming: the injector appends absent labels after the gold, so
+        # unshuffled order (or `entity i` numbered in that order) tells the model which labels are present.
+        if sampling and sampling.shuffle_entities:
+            random.shuffle(entity_fields)
+
         real2syn = {}
         if sampling and random.random() < sampling.synthetic_entity_label_prob:
             example_modes.remove("none")
@@ -1185,9 +1190,6 @@ class SchemaTransformer:
             descs = {real2syn.get(k, k): v for k, v in descs.items()}
             schema["entities"] = {real2syn.get(k, k): v for k, v in schema["entities"].items()}
             entity_fields = synthetic
-
-        if sampling and sampling.shuffle_entities:
-            random.shuffle(entity_fields)
 
         chosen = [
             e

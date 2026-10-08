@@ -126,3 +126,28 @@ def test_pickling_for_spawned_workers_keeps_plain_values():
     n.set_epoch(1)
     m = pickle.loads(pickle.dumps(n))
     assert m.epoch == 1 and m.dose("entities") == 5
+
+
+def test_training_prompt_does_not_reveal_which_entity_labels_are_present():
+    """Absent entity labels are appended after the gold; unshuffled order, or synthetic `entity i`
+    names numbered in that order, told the model which labels were present (entity F1 0.000 vs 0.646
+    on the same labels in a different order, 2026-10-08)."""
+    import random
+    from gliner2.processor import SamplingConfig, SchemaTransformer
+    proc = SchemaTransformer.__new__(SchemaTransformer)
+    proc.is_training, proc.E_TOKEN = True, "[E]"
+    proc._transform_schema = lambda name, fields, tok, **kw: list(fields)
+    gold = {"entities": {"G0": ["a"], "G1": ["b"]}}
+    gold["entities"].update({f"A{i}": [] for i in range(8)})
+    random.seed(0)
+    first_is_gold, entity1_is_gold = [], []
+    for synth in (0.0, 1.0):
+        sc = SamplingConfig(synthetic_entity_label_prob=synth, remove_entity_prob=0.0)
+        for _ in range(300):
+            schema, schemas, labels, types = json.loads(json.dumps(gold)), [], [], []
+            proc._process_entities(schema, schemas, labels, types, sc)
+            (first_is_gold if not synth else entity1_is_gold).append(bool(labels[0][1][0][0]))
+            if synth:
+                entity1_is_gold[-1] = bool(schema["entities"]["entity 1"])
+    assert 0.1 < sum(first_is_gold) / 300 < 0.35     # base rate 2/10, was 1.00
+    assert 0.1 < sum(entity1_is_gold) / 300 < 0.35
