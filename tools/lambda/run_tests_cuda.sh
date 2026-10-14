@@ -27,6 +27,9 @@ KEY=${KEY:-$HOME/.ssh/id_ed25519}
 REPO=${REPO:-https://github.com/whr778/GLiNER2.git}
 TEST_TIMEOUT=${TEST_TIMEOUT:-3600}
 HARD_DEADLINE=${HARD_DEADLINE:-5400}
+# TESTS narrows the run (space-separated pytest node ids); a narrowed run keeps its tracebacks.
+TESTS=${TESTS:-tests/}
+TAIL=40; [ "$TESTS" = "tests/" ] || TAIL=300
 : "${LAMBDA_API_KEY:?not set}"
 
 API=https://cloud.lambda.ai/api/v1
@@ -116,7 +119,7 @@ print("[cuda] device:", torch.cuda.get_device_name(0))
 PROOF
 
 # Stop 1: the timeout on the run itself.
-timeout $TEST_TIMEOUT ./.venv/bin/python -m pytest tests/ -q -rf --deselect tests/training/test_matching.py 2>&1 | tail -40
+timeout $TEST_TIMEOUT ./.venv/bin/python -m pytest $TESTS -q -rf --tb=short --deselect tests/training/test_matching.py 2>&1 | tail -$TAIL
 echo "[cuda] pytest exit: \${PIPESTATUS[0]}"
 REMOTE
 
