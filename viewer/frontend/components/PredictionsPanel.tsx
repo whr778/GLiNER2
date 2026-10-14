@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import AnnotatedText from "./AnnotatedText";
+import PredictionsHelp from "./PredictionsHelp";
 import { collectMarks, type Layer } from "@/lib/spans";
 import {
   getPredictionRecord, listPredictionFiles, openPredictions,
@@ -33,6 +34,7 @@ export default function PredictionsPanel() {
   const [diffOnly, setDiffOnly] = useState(false);
   const [pinned, setPinned] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
 
   const [files, setFiles] = useState<{ root: string; files: PredictionFile[] } | null>(null);
   const refreshFiles = () => listPredictionFiles().then(setFiles).catch((e) => setError(e.message));
@@ -94,7 +96,10 @@ export default function PredictionsPanel() {
   return (
     <div>
       <div className="card">
-        <h2>Predictions file</h2>
+        <div className="row between">
+          <h2>Predictions file</h2>
+          <button className="secondary" onClick={() => setHelp(true)}>Help</button>
+        </div>
         <div className="row" style={{ gap: 8, marginBottom: 8 }}>
           <select style={{ flex: 1 }} value={files?.files.some((f) => f.path === path) ? path : ""}
                   onChange={(e) => { if (e.target.value) { setPath(e.target.value); onOpen(e.target.value); } }}>
@@ -201,6 +206,7 @@ export default function PredictionsPanel() {
           </table>
         </div>
       )}
+      {help && <PredictionsHelp onClose={() => setHelp(false)} />}
     </div>
   );
 }
