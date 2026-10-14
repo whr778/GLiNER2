@@ -340,10 +340,20 @@ and 0.213 on pure gibberish. With real masking the same two read 1.84 and 7.47.
 | ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
 | **Real text, model annotations** | | | | | | |
 | cc_news_haiku45 | Multi-task IE (NER, rel, evt, cls, struct) | 15,839 | 2,075 | 2,043 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) |
+| cc_news_events_haiku45 | Events + entities, full event menu (English) | 6,562 | 803 | 895 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) |
+| cc_news_events_sonnet55_v2 | Events + entities + classification, news55 menu, eval voted 2-of-3 | 4,597 | 500 | 500 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) |
+| turkish_event | Classification + entities (Turkish news) | 24,028 | 3,016 | 3,090 | not redistributable | [HF](https://huggingface.co/datasets/umutertugrul/turkish-news-1.8M-tokenized) |
+| **Derived from corpora above** (added 2026-10; not in the total) | | | | | | |
+| cmnee_ner | Entities typed over CMNEE (Chinese) | 9,281 | 1,601 | 2,724 | derived from CMNEE | local |
+| duee_ner | Entities typed over DuEE (Chinese) | 11,323 | 1,414 | — | derived from DuEE | local |
+| docee_zh | DocEE-zh, classification + entities, DocEE-en label space | 27,122 | 3,390 | 3,398 | DocEE | local |
+| rams_merged | RAMS, one record per passage | 6,322 | — | — | derived from RAMS | local |
+| synthetic_events_capped | LLM multi-task slice, capped by argument gold | 4,727 | — | — | generated here | local |
 | **EKF disaster tracking** (synthetic) | | | | | | |
 | casualty_ft | Structured extraction (single-event) | 29,198 | 1,303 | 1,038 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
 | casualty_multi | Structured extraction (multi-event) | 29,030 | 1,297 | 1,023 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
 | **Total (generated)** | | **1,933,577** | **249,880** | **276,572** | | |
+| Rows added 2026-10-14 (the eight above, not in the total) | | 93,962 | 10,724 | 10,607 | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard).
@@ -740,6 +750,48 @@ et al., 2020); word-level triggers only (no argument roles). Auto-downloads the 
 LDC-licensed; not redistributable and not generated here. Convert from your own
 licensed copy via `tools/data/convert_ace2005.py` (emits a stratified 80/10/10
 split covering entity, relation, and event types).
+
+### Derived and LLM-annotated event corpora (2026-09 to 2026-10)
+
+All in eb21's mix. Several are **train_only** (excluded from val/test in eb21): docee_zh, cmnee_ner,
+duee_ner, rams_merged, cc_news_events_haiku45, synthetic_events_capped and cc_news_events_sonnet55_v2.
+
+- **cc_news_events_haiku45** -- real English CC-News documents annotated by Haiku 4.5 against the full event
+  menu: 33,538 argument gold for $26.25. Private on the Hub.
+- **cc_news_events_sonnet55_v2** -- 5,597 English CC-News documents annotated by Sonnet 5.5, exhaustive for the
+  **news55** application menu (125 entity types, 55 event types). Relations were SAMPLED (10 of 72 per
+  document), so they are declared `partial_annotation`. val/test are three runs voted 2-of-3;
+  classifications are voted only among runs asked the SAME menu (`vote_annotations.vote_classifications`; the
+  repair is `repair_voted_classifications.py`). $89.21; private.
+- **turkish_event** -- Turkish news with Haiku event-type and entity passes, joined by
+  `merge_turkish_event.py`; lemmatised gold repaired to 99.83% aligned. Text not redistributable.
+- **cmnee_ner / duee_ner** -- entity types purchased over the CMNEE and DuEE texts
+  (`annotate_entities_zh.py`); CMNEE's entities are partial, so they are declared `partial_annotation`.
+- **docee_zh** -- DocEE-zh mapped into DocEE-en's label space (`prepare_docee_zh.py`), classification and
+  entities only.
+- **rams_merged** -- RAMS stores one event per example, so a passage with several events appeared as several
+  records, each teaching that the others are absent; merged to one record per passage
+  (`merge_rams_passages.py`).
+- **synthetic_events_capped** -- a seeded, argument-capped slice of the Sonnet 5 / Haiku 4.5 synthetic
+  multi-task corpora (`build_capped_slice.py`).
+
+## What changed in the training data, 2026-10-08 to 2026-10-14
+
+Measured on 200 train records from each of eb21's 23 corpora.
+
+- **Labels** -- `unified-full-v3.yaml`: one Title_Snake spelling per label, with acronyms and dotted event
+  types kept, and a collision gate (`LABEL_STYLE_SPEC.md`). The map is applied at training and shipped in
+  `config.json` (`label_map`, `label_style`).
+- **Entity label order** -- labels are now shuffled before synthetic naming (be581a1). Before, gold labels
+  were always first, and models learned their position.
+- **Classification** -- 22.6% of training views (13,476 of 59,720) offered the real gold label as a NEGATIVE.
+  Fixed upstream (v2.1.0, fbf18fb); arrives with the merge.
+- **Entity gold** -- upstream's contained-span dedupe (`dedupe_contained_entity_spans`, kept ON) drops 9.8% of
+  entity token matches. These are phantoms: a short listed surface re-matched inside a longer gold mention of
+  the same type (wikievents 15.9%, bio_ner_relations 16.7%, biored 13.1%; e.g. "North" inside
+  "North Waziristan").
+- **Word splitting** -- combining marks (Indic scripts) now stay inside words. Effect on eb21's corpora: 2 of
+  4,600 records.
 
 ## EKF disaster tracking
 

@@ -122,6 +122,15 @@ block. It maps an argument surface to the entity type(s) that surface carries, s
 role-constraint work can ask "is this filler's type allowed for this role". Adding it as
 `entities` would silently invent entity supervision the corpus never had.
 
+### 1.7 Explicit character spans (v2.1.0)
+
+A gold value may pin its occurrence instead of being re-found by surface search:
+`{"text": "Kiox", "start": 112, "end": 116}` (`SurfaceSpan`, half-open character offsets). The text at
+`[start, end)` must equal `text`, or the record is refused. Plain strings still work, and every occurrence of
+the surface is gold. That is the behaviour the contained-span dedupe tidies: a short listed surface
+re-matched INSIDE a longer gold mention of the same type is dropped, about 9.8% of entity matches on eb21's
+corpora.
+
 ---
 
 ## 2. Inference schema -- the question
@@ -191,6 +200,11 @@ Note `attack_target` beside `Attacker` and `Location` -- a casing/spelling incon
 survived label unification, and exactly the kind of thing `default_schema` is useful for
 auditing, since it is the menu the model will actually be offered.
 
+**Shipped beside it** (since 2026-10): `label_map` and `label_style` (the training label transform, e.g.
+Title_Snake from `unified-full-v3.yaml`; a consumer must apply them so its labels are spelled the way the model
+trained) and `inference_defaults` (the threshold and decode it was evaluated at). `apply_label_map(schema,
+label_map, label_style)` does both. The `attack_target` inconsistency below is what v3 removes.
+
 **`open_vocab` is the trap.** Past `_OPEN_VOCAB_LIMIT = 1000` distinct labels a dimension is
 open-vocabulary: `derive_schema` records the dimension name under `open_vocab` and OMITS its
 label list entirely (deliberately -- a truncated list would read as a complete ontology).
@@ -204,8 +218,14 @@ practical consequence, paid for once already: full-menu eval cannot widen entiti
 from gliner2.inference.schema import Schema
 schema = Schema.from_dict(json.load(open("<checkpoint>/config.json"))["default_schema"])
 ```
-`from_dict` IGNORES `open_vocab`, so a round-trip through it silently drops the
-open-vocabulary dimensions. Offer those labels explicitly if you need them scored.
+`from_dict` drops `open_vocab`, so a round-trip through it silently loses the open-vocabulary dimensions.
+Offer those labels explicitly if you need them scored.
+
+**Strict since v2.1.0:** any other unknown key raises a `ValidationError`, so a typo (`"entitys"`) fails
+instead of being ignored. `open_vocab` is dropped before validation because every shipped schema carries it;
+without that, eb19's own `default_schema` was refused. `from_dict` now takes the builder's options too:
+per-type `description` and `threshold` for entities and relations, and `cls_threshold`, `top_k`, label
+descriptions, prompts and examples for classifications.
 
 ---
 
@@ -232,6 +252,26 @@ uv run python tools/train/eval.py --config <cfg> --split test \
 
 Any precision-targeting intervention -- negatives, the typed margin -- is structurally
 invisible under the gold menu. Score it full-menu or do not score it.
+
+### 3.1 Menu modes (MENU_SPEC.md, 2026-10-07)
+
+Production sends a CURATED menu per application, so eval, calibration and the blind test can each be scored
+under the menu production will send. In config: `eval.menu`, `eval.calibration_menu`, `eval.app_menus`.
+
+| mode | what each document is offered |
+|---|---|
+| `gold` | its own gold labels (the old default; precision inflated) |
+| `widened:K` | gold plus K absent labels from its corpus's pool |
+| `corpus_full` | gold plus its corpus's whole label pool (capped) |
+| `app:<name>` | a fixed application menu, e.g. `app:news55` (125 entity / 55 event types); scored only on corpora the menu is EXHAUSTIVE for, with gold projected onto the menu |
+
+An application menu file is `{"name", "exhaustive_for": [corpora], "schema": {...}}`. It is mapped through the
+run's `label_map` and `label_style` before use. `tools/train/sweep_menu_threshold.py` picks a threshold under
+a menu; `score_predictions.py --menu app:<file>` scores an `infer.py` file under one.
+
+**Order is part of the question.** Models trained before be581a1 read entity label POSITION: gold first in
+training. Under a menu in any other order, their entities collapsed (0.000 vs 0.646 on the same labels).
+`tools/train/probe_label_order.py` checks a model.
 
 ---
 
