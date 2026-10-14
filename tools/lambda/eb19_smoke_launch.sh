@@ -7,8 +7,8 @@
 # Stops: the smoke's own `timeout 5400` on train.py, JOB_TIMEOUT 2 h, HARD_DEADLINE 3 h, terminate
 # on the normal path. Commit pinned: the box must run exactly this commit.
 set -uo pipefail
-EXP=eb19_smoke
-CFG=tools/train/config/base/eb19.yaml
+CFG=${CFG:-tools/train/config/base/eb19.yaml}   # any base config
+EXP=$(basename "$CFG" .yaml)_smoke
 
 export BRANCH=$(git rev-parse --abbrev-ref HEAD)
 export EXPECT_COMMIT=$(git rev-parse --short=12 HEAD)
@@ -21,6 +21,6 @@ uv run python tools/train/check_corpora_fetchable.py --config "$CFG" --offline \
 export JOB_TIMEOUT=${JOB_TIMEOUT:-7200}
 export HARD_DEADLINE=${HARD_DEADLINE:-10800}
 
-echo "[$EXP] commit $EXPECT_COMMIT  logs -> whr778/gliner2-run-logs:eb19_smoke/"
-exec env NAME="eb19-smoke" JOB="STEPS=${STEPS:-1500} bash tools/lambda/eb19_smoke.sh" \
+echo "[$EXP] commit $EXPECT_COMMIT  config $CFG  logs -> whr778/gliner2-run-logs:$EXP/"
+exec env NAME="${EXP//_/-}" JOB="STEPS=${STEPS:-1500} SRC=$CFG bash tools/lambda/eb19_smoke.sh" \
      TYPES="${TYPES:-gpu_1x_a100_sxm4}" bash tools/lambda/launch_when_available.sh
