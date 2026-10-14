@@ -1236,7 +1236,7 @@ class BoundaryHead(nn.Module):
                     (query_task_ids == i) & query_mask
                 ).sum().to(pair_logits.dtype)
 
-        return {
+        losses = {
             **task_losses,
             "total_loss": total,
             "start_loss": start_loss,
@@ -1249,14 +1249,16 @@ class BoundaryHead(nn.Module):
             "consistency_loss": consistency_loss,
             "abstention_loss": null_loss,
             "count_loss": count_loss,
-            # THE GATE, logged every step. Zero while the treatment is on means absent labels
-            # never reached the denominator -- the treatment did not apply, and this
-            # programme has shipped exactly that failure three times. It is a plain count,
-            # so it is readable in the training log without a diagnostic flag.
-            "absent_negatives_used": (
-                captures.get("rerank", {}).get("absent_negatives_used", total.new_zeros(()))
-            ),
         }
+        # THE GATE, logged every step -- but only when its treatment is on. Zero while
+        # `absent_negatives_in_denominator` is on means absent labels never reached the rerank
+        # denominator: the treatment did not apply, a failure this programme shipped three times.
+        # Returned when the treatment is OFF it was a constant 0 that read as that same failure on
+        # every run that never asked for it (eb21 smoke, 2026-10-14), so it is not returned then.
+        if self.settings.absent_negatives_in_denominator:
+            losses["absent_negatives_used"] = captures.get("rerank", {}).get(
+                "absent_negatives_used", total.new_zeros(()))
+        return losses
 
 
 def _group_scored_candidates(

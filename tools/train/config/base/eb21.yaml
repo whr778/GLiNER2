@@ -242,11 +242,12 @@
 #                           loss effect. The model already ranks type-incompatible fillers
 #                           near zero. Leave it off.
 #
-#   `absent_negatives_in_denominator`   PENDING. absneg2 measured +0.0376 event_argument
-#                           against -0.1977 classification and -0.0686 event_type, and
-#                           `absneg4-roles` is testing whether scoping the pool to event ROLES
-#                           keeps the gain without the cost. DO NOT bake this into a base
-#                           before that verdict lands.
+#   `absent_negatives_in_denominator`   OFF -- the lever is CLOSED, NEGATIVE (TODO #1). absneg2
+#                           measured +0.0376 event_argument against -0.1977 classification and
+#                           -0.0686 event_type; absneg4-roles (2026-09-22) found scoping the pool to
+#                           event ROLES loses the gain (event_argument -0.1027) while recovering only
+#                           15% of the classification cost. Its gate `absent_negatives_used` is now
+#                           shown only when this is on, so no counter appears for it here.
 #
 #   30% exact replay        NOT A BASE SETTING. There is no replay flag; replay is corpus
 #                           composition, and a COLD start from vanilla mmBERT has nothing to

@@ -109,3 +109,24 @@ def test_no_gold_anywhere_is_still_zero():
     tids = torch.zeros(2, 3, dtype=torch.long)
     on = proposal_listwise_loss(logits, gold, valid, qmask, absent_negatives=True, task_ids=tids)
     assert torch.allclose(on, torch.zeros_like(on))
+
+
+def test_the_gate_is_returned_only_when_its_treatment_is_on(golden_batch):
+    """Returned with the treatment OFF it was a constant 0 that read as the treatment-failed signal on
+    every run that never asked for it (eb21 smoke, 2026-10-14). ON, it must be there, and count."""
+    import dataclasses
+    head = golden_batch["head"]
+
+    def losses():
+        # One task id for every query: the absent label pools with gold of its OWN task, as the
+        # treatment requires (it refuses to pool across tasks).
+        task_ids = torch.zeros_like(golden_batch["query_mask"], dtype=torch.long)
+        with torch.no_grad():
+            return head(golden_batch["token_states"], golden_batch["text_mask"], golden_batch["query_states"],
+                        golden_batch["query_mask"], golden_batch["targets"], query_task_ids=task_ids).losses
+
+    assert "absent_negatives_used" not in losses()
+    head.settings = dataclasses.replace(head.settings, absent_negatives_in_denominator=True,
+                                        rerank_listwise_weight=0.3)  # the treatment lives in the rerank loss
+    on = losses()
+    assert "absent_negatives_used" in on and float(on["absent_negatives_used"]) > 0
