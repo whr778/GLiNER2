@@ -1,8 +1,8 @@
 # The tools catalog
 
-Every executable under `tools/` — **287 scripts** — and what each one is for. Compiled
+Every executable under `tools/` — **300 scripts** — and what each one is for. Compiled
 2026-09-22 from the tools' own docstrings; the 49 scripts added since were catalogued
-2026-10-05, including the new `tools/derive`.
+2026-10-05, including the new `tools/derive`, and 24 more (missed or new) on 2026-10-14.
 
 **How to read it.** The tools divide into two kinds, and the division matters more than the
 directory they live in:
@@ -26,17 +26,17 @@ is not a result without a noise floor beside it. Measured floors:
 
 | directory | scripts | what lives there |
 |---|---:|---|
-| [`tools/data`](#2-toolsdata--corpus-construction) | 105 | converters, annotators, repairs, label space, Hub mirrors |
-| [`tools/train`](#3-toolstrain--training-probing-scoring) | 66 | training, probes, sweeps, scoring, model cards |
+| [`tools/data`](#2-toolsdata--corpus-construction) | 108 | converters, annotators, repairs, label space, Hub mirrors |
+| [`tools/train`](#3-toolstrain--training-probing-scoring) | 73 | training, probes, sweeps, scoring, model cards |
 | [`tools/ekf_showcase`](#5-toolsekf_showcase--textnormaltracking) | 55 | the disaster-tracking research line end to end |
-| [`tools/lambda`](#4-toolslambda--gpu-runs-that-stop-themselves) | 38 | GPU runs that provision, publish and terminate |
+| [`tools/lambda`](#4-toolslambda--gpu-runs-that-stop-themselves) | 42 | GPU runs that provision, publish and terminate |
 | [`tools/derive`](#3a-toolsderive--derive-a-fine-tuning-config-from-measurement) | 8 | measure a corpus against a base and write the config |
 | [`tools/data/synthetic`](#21-toolsdatasynthetic) | 7 | LLM generation of base-training data |
 | [`tools/prototypes`](#6-toolsprototypes--architecture-spikes) | 4 | architecture spikes on toy harnesses |
 | [`tools`](#7-tools-root) | 3 | inference CLI and import-surface diffing |
 
 Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py` is in
-`tools/train`); a few more scripts sit deeper, which makes the 287.
+`tools/train`); together they make the 300.
 
 ---
 
@@ -97,6 +97,9 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | `train/measure_absent_dilution.py` | How much ABSENT queries dilute the boundary loss, on real training batches with no model. Its `load_records(split=)` is the shared sampler the other measure tools use. |
 | `train/measure_pos_neg_ratio.py` | The per-task negative:positive ratio the boundary BCE actually sees, before anyone sets `pos_weight`. |
 | `train/eval_decode_pooling.py` | Decode-time pooling of same-type instances on boundary-variant triggers, rescored. Tested 2026-10-04: NEGATIVE (F1 -0.001 to -0.004). |
+| `train/probe_label_order.py` | **Does the model read LABELS or their POSITION?** Same model, records and widened menu; only one dimension's label order changes (`--dimension entities|events|relations`). Found the entity position leak: 0.000 absent-first vs 0.646 gold-first (MENU_SPEC s9). |
+| `train/measure_coref_separability.py` | Baseline for coreference: do trigger-instance states separate coreferent mention pairs from DIFFERENT same-type events? |
+| `train/measure_link_by_task.py` | Which TASKS does the junction's column loss train? Counted per task type on real training batches. |
 
 ### 1d. Measure the ceiling BEFORE spending on the treatment
 
@@ -121,6 +124,8 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | `train/sweep_preservation.py` | Several checkpoints on ONE held-out set, each at its own best threshold. |
 | `train/sweep_entity_typed_arguments.py` | Can predicted entity types improve argument precision? |
 | `data/compare_label_distributions.py` | Generated corpora against a real-text reference. |
+| `data/compare_annotators.py` | Agreement between two annotators (or two runs) on the SAME documents -- the annotation noise floor -- and the real price of one batch. |
+| `train/sweep_menu_threshold.py` | A checkpoint's decision threshold picked under an application MENU on val, the blind test scored ONCE; `--threshold T --test-menus ...` scores a menu-size ladder. |
 | `train/sweep_record_anchor_threshold.py` | Sweeps the RECORD decode gates on VALIDATION; records decode at their own gates, not the span threshold. |
 | `train/pr_sweep_results/pr_sweep.py` | Precision / recall over a threshold grid for eb17-best: pooled, CASIE val and CMNEE val separately. Results beside it. |
 
@@ -141,8 +146,8 @@ scientific_text, scierc, sentence_rex, stockmark_ner, text2json, wikievents.
 > (partitioning), `_stratify.py` (greedy multi-label stratified split), `_mention_filter.py`.
 
 **Builders** — `build_gate_corpus.py` (all text real), `build_negative_pools.py` (the labels
-a document must learn to reject), `build_role_type_map.py`, `build_turkish_pool.py` /
-`_candidates` / `_eval`, `build_chinese_candidates.py`, `build_zh_general_pool.py`,
+a document must learn to reject), `build_role_type_map.py`, `build_turkish_pool.py`,
+`build_turkish_candidates.py`, `build_turkish_eval.py`, `build_chinese_candidates.py`, `build_zh_general_pool.py`,
 `build_english_casualty_candidates.py`, `build_duplicate_control.py`.
 
 **Annotators (paid, Haiku)** — `annotate_casualty.py`, `annotate_gate.py`,
@@ -157,6 +162,23 @@ a document must learn to reject), `build_role_type_map.py`, `build_turkish_pool.
 
 **Slices** — `build_capped_slice.py`: a seeded slice of whole documents, capped by
 event-argument gold, holding LLM-annotated data at a fixed real : synthetic ratio.
+
+**Collectors and screens** — `fetch_cc_news.py` (real English news from `vblagoje/cc_news` for annotation),
+`harvest_long_ccnews.py` (the long tail the collector threw away), `screen_ccnews_candidates.py` (free regex,
+then the extractor), `prefilter_pool.py` (the free numeric-toll regex before the GPU),
+`normalize_gate_source.py` (one `source` value per outlet for the gate corpus's balance).
+
+**Self-consistency gold** — `vote_annotations.py` (k runs of the SAME documents -> one voted record; a
+classification is voted only across runs asked the same menu), `repair_voted_classifications.py` (re-votes
+an existing voted set's classifications from its raw runs, changing nothing else).
+
+**Derived corpora** — `augment_baseword.py` (every surface word, text and labels, reduced to its base form),
+`events_to_entities.py` (trigger-only events as typed spans), `roles_to_entities.py` (event ARGUMENT roles
+as an entity corpus; Option 4), `merge_entity_types.py` (purchased entity TYPES attached as a typing signal
+only), `merge_turkish_event.py` (the Turkish TYPE and ENTITY passes in DocEE's shape), `prepare_docee_zh.py`
+(DocEE-zh into DocEE-en's label space), `split_rams_test.py` (rams.test into val and blind-test halves).
+
+**Streaming** — `hf_stream.py`: HuggingFace token-NER datasets into training WITHOUT disk (`data.hf_streaming`).
 
 **Label space** — `build_unified_full.py` (in `train/`; writes `labels/unified-full.yaml` over
 every TAXONOMY corpus in `data/`, the base's spellings canonical -- what eb18/eb19 use),
@@ -230,7 +252,8 @@ on GPU against three structurally different bases.
 
 **Base runs and their smokes** — `eb18_smoke.sh`, `eb19_smoke.sh` + `eb19_smoke_launch.sh`
 (the recipe from scratch before the base is bought: loss health from the progress bar, the
-in-run junction gate, speed, memory), `eb19_launch.sh`. Launchers pin `EXPECT_COMMIT`, and
+in-run junction gate, the label-negatives dose and in-loss negative queries, speed, memory; ANY base config:
+`CFG=tools/train/config/base/eb21.yaml bash tools/lambda/eb19_smoke_launch.sh`), `eb19_launch.sh`. Launchers pin `EXPECT_COMMIT`, and
 `provision_box.sh` refuses a box at any other commit. Per-epoch checkpoints (`PUSH_EPOCHS=1`)
 are pushed AFTER `train.py` exits, not as each epoch ends -- to read an epoch mid-run, copy it
 off the box.
@@ -238,13 +261,17 @@ off the box.
 **Fast A/Bs** — `fast_ab_launch.sh` (any family: `EXP=<family> ARM=<arm>`, one box per arm,
 configs `train/config/ab/<EXP>-<ARM>.yaml`), `p2fast_ab_launch.sh` (its first instance).
 
+**Menu jobs** — `menu_threshold_launch.sh` + `menu_threshold_job.sh` (re-pick each ARM's threshold under
+an app menu on val, publish per arm; `ARMS` comma-separated), `menu_probe_job.sh` (the menu-size ladder).
+`pull_epoch_det.sh` copies each `checkpoint-epoch-N` off a running base and measures its junction DET mid-run.
+
 **Operating-point jobs** — `sweep_and_rescore_eb17.sh` (record-gate sweep on validation),
 `blind_test_record_anchor.sh` (the blind test ONCE at the picked point),
 `anchor_sweep_wide.sh` (does the optimum move once the proposal cap is lifted?),
 `width_threshold_arms.sh`, `window_overlap_arms.sh` (where window/overlap CAN matter:
 `cc_news_long`), `rescore_eb17_eb18.sh` (the first like-for-like eb17 vs eb18 delta).
 
-**`run_tests_cuda.sh`** — runs the TEST SUITE on a real CUDA box, then terminates it.
+**`run_tests_cuda.sh`** — runs the TEST SUITE on a real CUDA box, then terminates it. `TESTS="<node ids>"` narrows it and keeps the tracebacks.
 `resolve_device` picks cuda -> mps -> cpu, so a laptop run never takes the cuda branch:
 two known device-specific facts (MPS `torch.gather` on int64 corrupting above 2^24, and
 the DDP test's skip guard being unable to fire on Darwin) are invisible locally in both
@@ -257,7 +284,7 @@ directions. Needs no `$HF_TOKEN`, because it publishes nothing. Does the cu128 s
 `run_pipeline.py` (1,301 lines) is the whole research line in one command: news feed →
 EKF-tracked casualty timeline. `README.md` there is the entry point.
 
-**Feeds and ground truth** — `build_helene_feed.py`, `build_turkey_feed{,_tr,_zh}.py`,
+**Feeds and ground truth** — `build_helene_feed.py`, `build_turkey_feed.py`, `build_turkey_feed_tr.py`, `build_turkey_feed_zh.py`,
 `build_aegean_feed.py`, `harvest_helene_gt.py`, `harvest_turkey_gt.py`,
 `harvest_aegean_gt.py`, `make_demo_feed.py`, `make_docee_feed.py`,
 `build_real_comparison.py`, `turkey_truth_jsonl.py`.
