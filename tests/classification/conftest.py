@@ -11,10 +11,13 @@ indirection.
 """
 from __future__ import annotations
 
+import contextlib
 from types import SimpleNamespace
 
 import pytest
 import torch
+
+from gliner2.models.base import BaseExtractorModel
 
 
 def _task_tokens(name, labels):
@@ -59,7 +62,7 @@ class FakeClsProcessor:
     def change_mode(self, is_training):
         self.is_training = is_training
 
-    def collate_fn_inference(self, rows, max_len=None):
+    def collate_fn_inference(self, rows, max_len=None, architecture="span"):
         self.calls += 1
         texts, schemas = zip(*rows)
         return FakeClsBatch(list(texts), list(schemas), self.tasks)
@@ -92,6 +95,10 @@ class FakeEncoder(torch.nn.Module):
 
 class FakeClsModel(torch.nn.Module):
     """model.classifier(embs).squeeze(-1) must reproduce the planted logits."""
+
+    encode_tokens = BaseExtractorModel.encode_tokens
+
+    _encoder_autocast = staticmethod(contextlib.nullcontext)  # no flash attention here
 
     def __init__(self, tasks, logits):
         super().__init__()

@@ -8,12 +8,14 @@ opt-in).
 
 from __future__ import annotations
 
+import contextlib
 import types
 
 import pytest
 import torch
 
 from gliner2.inference.runtime import ExtractorRuntimeMixin
+from gliner2.models.base import BaseExtractorModel
 from tests.fixtures.tiny_boundary_checkpoint import build_tiny_boundary_model
 
 
@@ -36,6 +38,10 @@ class _FakeBatch:
 
 class _FakeRuntime(ExtractorRuntimeMixin):
     """Minimal runtime that always fails inside ``_extract_sample``."""
+
+    encode_tokens = BaseExtractorModel.encode_tokens
+
+    _encoder_autocast = staticmethod(contextlib.nullcontext)  # no flash attention here
 
     def __init__(self):
         self.encoder = lambda input_ids, attention_mask: types.SimpleNamespace(
@@ -107,7 +113,7 @@ def test_boundary_decoder_matches_strict_and_resilient_contract(
         "cls_specs": [[], []],
         "word_offsets": [0, 0],
     }
-    monkeypatch.setattr(model, "_encode_core", lambda _: core)
+    monkeypatch.setattr(model, "_encode_core", lambda *_, **__: core)
     monkeypatch.setattr(
         model,
         "_decode_records",

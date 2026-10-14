@@ -4,6 +4,7 @@ enforced exactly.
 """
 from __future__ import annotations
 
+import contextlib
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ import torch
 from gliner2.classification import constraints as C
 from gliner2.classification.engine import ClassificationConfig, Classifier
 from gliner2.classification.schema import ClassificationSchema
+from gliner2.models.base import BaseExtractorModel
 
 SAFETY = ["safe", "unsafe"]
 TOXICITY = ["violence", "sexual_content", "hate", "self_harm", "pii", "benign"]
@@ -50,7 +52,7 @@ class _Processor:
     def change_mode(self, is_training):
         self.is_training = is_training
 
-    def collate_fn_inference(self, rows, max_len=None):
+    def collate_fn_inference(self, rows, max_len=None, architecture="span"):
         texts = [t for t, _ in rows]
         b = SimpleNamespace()
         b.input_ids = torch.ones((len(texts), 4), dtype=torch.long)
@@ -89,6 +91,9 @@ class _Encoder(torch.nn.Module):
 
 
 class _Model(torch.nn.Module):
+    encode_tokens = BaseExtractorModel.encode_tokens
+    _encoder_autocast = staticmethod(contextlib.nullcontext)  # no flash attention here
+
     def __init__(self, tasks, logits):
         super().__init__()
         self.encoder = _Encoder()

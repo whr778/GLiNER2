@@ -39,6 +39,8 @@ EXCLUDED_PREFIXES = {
     "annotate_": "costs real money; the header says these are never run automatically",
     "synthetic": "costs real money (LLM generation)",
     "build_": "derived corpora -- scaling slices, mixes, dose arms; excluded by scope",
+    "merge_": "derived corpora -- merges an already-converted corpus (RAMS repeated passages)",
+    "rebuild_": "re-derives an already-published corpus with a fixed builder (casualty_docee v2)",
     "repair_": "repairs an existing corpus in place; not a pipeline step",
     "stamp_": "repairs corpora whose build invocation is unrecorded and cannot be re-derived",
     "push_": "publishes to the Hub",

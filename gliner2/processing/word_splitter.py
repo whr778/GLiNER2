@@ -11,6 +11,8 @@ Unicode case folding can change length and corrupt offsets.
 from __future__ import annotations
 
 import re
+import sys
+import unicodedata
 from typing import Any, Callable, Iterator, Optional, Tuple, Union
 
 WordSplitter = Callable[[str, bool], Iterator[Tuple[str, int, int]]]
@@ -39,22 +41,14 @@ _CJK_RANGES = (
     "\u3130-\u318f"      # Hangul Compatibility Jamo
 )
 
-# Combining marks (Unicode Mn/Mc) are NOT word characters to `re`, so a bare `\w+` run
-# breaks at every one of them and leaves the mark stranded as its own token: `สวัสดี`
-# tokenized to ['สว', 'ั', 'สด', 'ี'], which is worse than a coarse split because the mark
-# is severed from the base character it modifies. Listing the ranges for the scripts that
-# actually carry them keeps a word and its marks in one token.
-_MARK_RANGES = (
-    "\u0300-\u036f"      # Combining Diacritical Marks (NFD Latin/Greek/Cyrillic)
-    "\u0483-\u0489"      # Cyrillic
-    "\u0591-\u05bd\u05bf\u05c1-\u05c2\u05c4-\u05c5\u05c7"  # Hebrew
-    "\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06dc"          # Arabic
-    "\u0900-\u0903\u093a-\u094f\u0951-\u0957\u0962-\u0963"  # Devanagari
-    "\u0e31\u0e34-\u0e3a\u0e47-\u0e4e"                          # Thai
-    "\u0eb1\u0eb4-\u0ebc\u0ec8-\u0ecd"                          # Lao
-    "\u17b4-\u17d3"      # Khmer
-    "\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20f0\ufe20-\ufe2f"  # further combining blocks
-)
+# Combining marks are NOT word characters to `re`, so a bare `\w+` run breaks at every one of
+# them and strands the mark as its own token: `สวัสดี` tokenized to ['สว', 'ั', 'สด', 'ี'], and
+# Hindi, Bengali, Tamil, Telugu vowel signs and viramas cut words apart the same way. Every Unicode
+# mark (categories Mn, Mc, Me) plus ZWNJ/ZWJ stays inside the word (upstream 56a736d). The list of
+# per-script ranges this replaced missed Bengali, Tamil, Telugu and the other Indic blocks.
+_MARK_RANGES = "".join(
+    chr(code) for code in range(sys.maxunicode + 1) if unicodedata.category(chr(code)).startswith("M")
+) + "\u200c\u200d"
 
 
 class WhitespaceTokenSplitter:

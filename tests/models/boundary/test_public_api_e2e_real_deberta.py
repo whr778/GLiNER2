@@ -177,7 +177,7 @@ def test_boundary_public_api_converges_real_deberta(tmp_path):
 
     config = TrainingConfig(
         output_dir=str(tmp_path / "run"),
-        max_steps=1000,  # classification overfit needs ~800 steps to converge here
+        max_steps=2000,  # ~800 sufficed while 50% of synthetic views trained the gold as a negative (upstream fbf18fb); correct views need ~2000
         batch_size=4,
         gradient_accumulation_steps=1,
         encoder_lr=2e-5,

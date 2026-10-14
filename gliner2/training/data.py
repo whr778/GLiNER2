@@ -53,15 +53,36 @@ import json
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Tuple, Iterator, TYPE_CHECKING
+from typing import (
+    Any, Dict, List, Mapping, Optional, Union, Tuple, Iterator, TYPE_CHECKING
+)
 from collections import Counter
 from tqdm import tqdm
+
+from gliner2.processing.targets import SurfaceSpan
 
 if TYPE_CHECKING:
     # Import-only (avoids a circular import with the trainer at runtime) so the
     # ``'ExtractorDataset'`` forward reference in ``DataInput`` resolves for
     # static type checkers / ``get_type_hints``.
     from gliner2.training.trainer import ExtractorDataset
+
+
+def _is_locatable(value: Any, text: str) -> bool:
+    # an absent field is not an annotation, so there is nothing to locate
+    if value is None or value == "":
+        return True
+    if isinstance(value, Mapping):
+        try:
+            span = SurfaceSpan.from_mapping(value)
+        except ValueError:
+            return False
+        return text[span.start : span.end] == span.text
+    if isinstance(value, list):
+        return all(_is_locatable(v, text) for v in value)
+    if isinstance(value, str):
+        return value.lower() in text.lower()
+    return False
 
 
 class DataValidationError(Exception):
@@ -77,6 +98,14 @@ class DataValidationError(Exception):
             suffix = f"\n  ... and {len(self.errors) - 10} more errors" if len(self.errors) > 10 else ""
             return f"{self.args[0]}\n  - {error_list}{suffix}"
         return self.args[0]
+
+
+_NO_TASK_ERROR = (
+    "Example must have at least one task (entities, classifications, structures, relations, or events). "
+    "A negative example still needs the labels it is negative for: declare them with empty "
+    "mention lists, e.g. entities={'person': [], 'company': []}, or pass them as "
+    "entity_descriptions."
+)
 
 
 # =============================================================================
@@ -586,20 +615,20 @@ class Structure:
                 errors.extend(value.validate(f"{self.struct_name}.{field_name}"))
             elif isinstance(value, list):
                 for i, v in enumerate(value):
-                    if v is not None and not isinstance(v, str):
+                    if v is not None and not isinstance(v, (str, Mapping)):
                         errors.append(
                             f"List value at index {i} in "
-                            f"'{self.struct_name}.{field_name}' must be a string"
+                            f"'{self.struct_name}.{field_name}' must be a string or span"
                         )
-                    elif v and v.lower() not in text.lower():
+                    elif not _is_locatable(v, text):
                         errors.append(f"List value '{v}' at index {i} in '{self.struct_name}.{field_name}' not found in text")
-            elif isinstance(value, str):
-                if value and value.lower() not in text.lower():
+            elif isinstance(value, (str, Mapping)):
+                if not _is_locatable(value, text):
                     errors.append(f"Value '{value}' for '{self.struct_name}.{field_name}' not found in text")
             elif value is not None:
                 errors.append(
                     f"Value for '{self.struct_name}.{field_name}' must be a string, "
-                    "list of strings, or ChoiceField"
+                    "span, list of them, or ChoiceField"
                 )
         return errors
 
@@ -674,9 +703,8 @@ class Relation:
         if not self._fields:
             errors.append(f"Relation '{self.name}' has no fields")
         for field_name, value in self._fields.items():
-            if isinstance(value, str) and value:
-                if value.lower() not in text.lower():
-                    errors.append(f"Relation value '{value}' for '{self.name}.{field_name}' not found in text")
+            if not _is_locatable(value, text):
+                errors.append(f"Relation value '{value}' for '{self.name}.{field_name}' not found in text")
         return errors
 
     def get_field_names(self) -> List[str]:
@@ -815,9 +843,12 @@ class InputExample:
     text : str
         The input text for this example.
     entities : Dict[str, List[str]], optional
-        Entity type to mentions mapping.
+        Entity type to mentions mapping. A type mapped to an empty list is a
+        negative: the text is trained as containing no mention of that type.
     entity_descriptions : Dict[str, str], optional
-        Descriptions for entity types.
+        Descriptions for entity types. Every described type is part of this
+        example's label set, so a described type with no mentions is added to
+        ``entities`` with an empty list and trained as a negative.
     classifications : List[Classification], optional
         Classification tasks for this example.
     structures : List[Structure], optional
@@ -832,6 +863,10 @@ class InputExample:
     >>> example = InputExample(
     ...     text="John Smith works at Google.",
     ...     entities={"person": ["John Smith"], "company": ["Google"]}
+    ... )
+    >>> negative = InputExample(
+    ...     text="The meeting moved to Tuesday.",
+    ...     entities={"person": [], "company": []}
     ... )
     """
     text: str
@@ -853,6 +888,12 @@ class InputExample:
             self.relations = []
         if self.events is None:
             self.events = []
+
+
+        if self.entity_descriptions:
+            undeclared = [t for t in self.entity_descriptions if t not in self.entities]
+            if undeclared:
+                self.entities = {**self.entities, **{t: [] for t in undeclared}}
 
     def validate(self) -> List[str]:
         """
@@ -876,13 +917,8 @@ class InputExample:
                 if not entity_type:
                     errors.append("Entity type cannot be empty")
                 for mention in mentions:
-                    if mention and mention.lower() not in self.text.lower():
+                    if not _is_locatable(mention, self.text):
                         errors.append(f"Entity '{mention}' (type: {entity_type}) not found in text")
-
-        if self.entity_descriptions and self.entities:
-            for desc_type in self.entity_descriptions:
-                if desc_type not in self.entities:
-                    errors.append(f"Entity description for '{desc_type}' but no entities of that type")
 
         for cls in self.classifications:
             errors.extend(cls.validate())
@@ -909,10 +945,7 @@ class InputExample:
             or bool(self.events)
         )
         if not has_content:
-            errors.append(
-                "Example must have at least one task "
-                "(entities, classifications, structures, relations, or events)"
-            )
+            errors.append(_NO_TASK_ERROR)
 
         return errors
 
@@ -956,7 +989,7 @@ class InputExample:
                 # Check if any mention is not in text
                 has_invalid = False
                 for mention in mentions:
-                    if mention and mention.lower() not in self.text.lower():
+                    if not _is_locatable(mention, self.text):
                         has_invalid = True
                         warnings.append(f"Entity '{mention}' (type: {entity_type}) not found in text - dropping entity type")
                         break
@@ -1009,57 +1042,46 @@ class InputExample:
                             is_valid = False
                     elif isinstance(value, list):
                         for v in value:
-                            if v and v.lower() not in self.text.lower():
+                            if not _is_locatable(v, self.text):
                                 warnings.append(f"List value '{v}' in '{struct.struct_name}.{field_name}' not found - dropping field")
                                 is_valid = False
                                 break
-                    elif isinstance(value, str):
-                        if value and value.lower() not in self.text.lower():
+                    elif isinstance(value, (str, Mapping)):
+                        if not _is_locatable(value, self.text):
                             warnings.append(f"Value '{value}' for '{struct.struct_name}.{field_name}' not found - dropping field")
                             is_valid = False
                     
                     if is_valid:
                         valid_fields[field_name] = value
                 
-                # ---------------------------------------------------------------
-                # THE ANCHOR MUST SURVIVE, OR THE STRUCTURE GOES WITH IT.
+                # An anchored structure must keep the field its record metadata names.
                 #
-                # This block edits GOLD. `record_metadata` -- which names the anchor --
-                # is DECLARATION, and nothing here used to touch it. Dropping a field the
-                # declaration names left a record whose anchor pointed at nothing, and
-                # `compile_record_specs` then raised:
+                # `record_metadata` is a DECLARATION -- it names the anchor field -- while
+                # the loop above edits GOLD. Dropping a field the declaration names leaves
+                # a structure whose anchor points at nothing, and
+                # `compile_record_specs` then raises:
                 #
                 #   record 'record' declares anchor 'type' but no matching field query
-                #   was found in the layout; the extractive fields present are ['url']
+                #   was found in the layout
                 #
-                # THAT KILLED eb17-best AND eb17-smoke, twice, at ~11% of a 5-epoch run,
-                # with no checkpoint written. It took a day to find because it is
-                # invisible until `validate_data: true`, and eb17 is the FIRST base config
-                # to set it -- its own header lists that as change #3. Six traces over
-                # ~600,000 samples missed it for one reason: every one of them ran with
-                # validation OFF, so the sanitizer never ran.
+                # aborting training in a DataLoader worker. It only bites when records are
+                # validated (`validate=True`), which is why it can lie dormant.
                 #
-                # THERE IS A SECOND, QUIETER FAILURE and it is the worse of the two.
-                # `get_record_metadata` defaults a natural-mode anchor to
-                # `next(iter(self._fields))` -- the FIRST declared field. Reassigning
-                # `_fields` below therefore RE-POINTS a defaulted anchor at whatever field
-                # now happens to be first. No crash, no warning: the record simply trains
-                # against a different anchor than it declares. A crash is recoverable;
-                # this is not.
+                # The quieter case matters as much: `get_record_metadata` defaults a
+                # natural-mode anchor to the FIRST declared field, so reassigning
+                # `_fields` below would silently RE-POINT a defaulted anchor at whatever
+                # field now happens to be first -- no error, and the record trains against
+                # a different anchor than it declares.
                 #
-                # So: resolve the anchor the way `get_record_metadata` will resolve it,
-                # BEFORE mutating, and drop the whole structure if that field did not
-                # survive. Validation's contract is "remove invalid parts" -- a structure
-                # whose anchor is gone is not a part, it is a contradiction.
+                # Resolve the anchor exactly as `get_record_metadata` will, before
+                # mutating, and drop the structure if that field did not survive.
                 anchor = struct.anchor
                 if struct.mode == "natural" and not anchor:
                     anchor = next(iter(struct._fields), None)
                 if struct.mode and anchor is not None and anchor not in valid_fields:
                     warnings.append(
                         f"Structure '{struct.struct_name}' lost its anchor field "
-                        f"'{anchor}' during sanitization - dropping the whole structure "
-                        f"(a record_metadata anchor naming a field that no longer exists "
-                        f"aborts record-spec compilation)"
+                        f"'{anchor}' during sanitization - dropping the whole structure"
                     )
                     continue
 
@@ -1087,12 +1109,11 @@ class InputExample:
                 # Check if any field value is invalid
                 has_invalid = False
                 for field_name, value in rel._fields.items():
-                    if isinstance(value, str) and value:
-                        if value.lower() not in self.text.lower():
-                            warnings.append(f"Relation '{rel.name}' field '{field_name}' value '{value}' not found - dropping relation")
-                            has_invalid = True
-                            break
-
+                    if not _is_locatable(value, self.text):
+                        warnings.append(f"Relation '{rel.name}' field '{field_name}' value '{value}' not found - dropping relation")
+                        has_invalid = True
+                        break
+                
                 if not has_invalid:
                     valid_relations.append(rel)
 

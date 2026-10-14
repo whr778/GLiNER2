@@ -53,7 +53,7 @@ def test_training_state_round_trip(tmp_path):
 
     saver = types.SimpleNamespace(
         optimizer=opt, scheduler=None, epoch=2, global_step=44,
-        best_metric=0.42, patience_counter=1,
+        best_metric=0.42, best_epoch=2, best_step=40, patience_counter=1,
     )
     T._save_training_state(saver, tmp_path)
     assert (tmp_path / "training_state.pt").is_file()
@@ -62,7 +62,7 @@ def test_training_state_round_trip(tmp_path):
     opt2 = AdamW(torch.nn.Linear(8, 8).parameters(), lr=1e-3)
     restorer = types.SimpleNamespace(
         optimizer=opt2, scheduler=None, device=torch.device("cpu"),
-        best_metric=float("inf"), global_step=0, patience_counter=0,
+        best_metric=float("inf"), best_epoch=None, best_step=None, global_step=0, patience_counter=0,
     )
     start_epoch = T._restore_training_state(restorer, loaded)
 
@@ -70,6 +70,7 @@ def test_training_state_round_trip(tmp_path):
     assert restorer.global_step == 44
     assert abs(restorer.best_metric - 0.42) < 1e-9
     assert restorer.patience_counter == 1
+    assert (restorer.best_epoch, restorer.best_step) == (2, 40)
     assert len(opt2.state) > 0                     # optimizer moments restored
 
 

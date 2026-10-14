@@ -1,3 +1,4 @@
+import contextlib
 from types import SimpleNamespace
 
 import pytest
@@ -5,6 +6,7 @@ import torch
 
 from gliner2.joint_ie import JointIE, JointIEConfig, RawScorer
 from gliner2.joint_ie.schema import JointSchema
+from gliner2.models.base import BaseExtractorModel
 
 
 class FakeBatch:
@@ -64,6 +66,9 @@ class FakeEncoder(torch.nn.Module):
 
 
 class FakeModel(torch.nn.Module):
+    encode_tokens = BaseExtractorModel.encode_tokens
+    _encoder_autocast = staticmethod(contextlib.nullcontext)  # no flash attention here
+
     def __init__(self):
         super().__init__()
         self.encoder = FakeEncoder()

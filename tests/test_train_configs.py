@@ -104,7 +104,14 @@ def test_config_builds(path):
     # training.* -> TrainingConfig (a dataclass; raises on an unknown field).
     # Force precision off: bf16/fp16 are device-validated in __post_init__, and this
     # config-shape check must run on any machine (CPU/CI), not only a bf16-capable GPU.
-    tc = TrainingConfig(**{**cfg["training"], "bf16": False, "fp16": False})
+    # train.py pops these two before building TrainingConfig; the phase is then split by abstention_configs.
+    training = {k: v for k, v in cfg["training"].items() if k not in ("split_hygiene", "abstention_phase")}
+    tc = TrainingConfig(**{**training, "bf16": False, "fp16": False})
+    if cfg["training"].get("abstention_phase"):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "train"))
+        from train import abstention_configs
+        abstention_configs(tc, cfg["training"]["abstention_phase"])
     assert isinstance(tc.encoder_lr, float), f"{path.name}: encoder_lr is not a float"
     assert isinstance(tc.task_lr, float), f"{path.name}: task_lr is not a float"
 

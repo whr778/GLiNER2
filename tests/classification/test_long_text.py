@@ -3,6 +3,7 @@ a constraint satisfied within each chunk but violated in aggregate is enforced.
 """
 from __future__ import annotations
 
+import contextlib
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from gliner2.classification.long_text import aggregate_scores
 from gliner2.classification.schema import ClassificationSchema
 from gliner2.classification.compiler import compile_schema
 from gliner2.classification.scoring import ClassificationScores
+from gliner2.models.base import BaseExtractorModel
 
 
 # A fake whose per-label logits depend on the chunk text, so different chunks
@@ -33,7 +35,7 @@ class _TextKeyedProcessor:
                 return key
         return next(iter(self.logits_by_key))
 
-    def collate_fn_inference(self, rows, max_len=None):
+    def collate_fn_inference(self, rows, max_len=None, architecture="span"):
         texts = [t for t, _ in rows]
         batch = SimpleNamespace()
         batch.input_ids = torch.ones((len(texts), 4), dtype=torch.long)
@@ -72,6 +74,9 @@ class _FakeEncoder(torch.nn.Module):
 
 
 class _FakeModel(torch.nn.Module):
+    encode_tokens = BaseExtractorModel.encode_tokens
+    _encoder_autocast = staticmethod(contextlib.nullcontext)  # no flash attention here
+
     def __init__(self, tasks, logits_by_key):
         super().__init__()
         self.encoder = _FakeEncoder()
