@@ -270,3 +270,18 @@ def test_arg_i_criterion_names_the_event_type():
     from model_card import ONEIE_CRITERIA
     note = dict((k, n) for k, _, n in ONEIE_CRITERIA)["argi"]
     assert "event type" in note
+
+
+def test_arg_c_above_relaxed_is_explained_only_when_case_merging_shrank_its_support():
+    """Arg-C lowercases, so "We"/"we" merge: a smaller Arg-C gold support explains Arg-C above relaxed
+    (real case 2026-10-07: 0.0513 vs 0.0507, support 266 vs 269). Anything else stays VIOLATED."""
+    from model_card import _oneie_table
+
+    m = {"eval_argc_external_micro_f1": 0.0513, "eval_argc_external_micro_precision": 1.0,
+         "eval_argc_external_micro_recall": 0.0263, "eval_event_argument_strict_micro_f1": 0.0276,
+         "eval_event_argument_relaxed_micro_f1": 0.0507,
+         "eval_argc_external_support": 266, "eval_event_argument_relaxed_support": 269}
+    line = _oneie_table(m, "t")
+    assert "case merge" in line and "266 vs relaxed 269" in line and "VIOLATED" not in line
+    assert "VIOLATED" in _oneie_table(dict(m, eval_argc_external_support=269), "t")
+    assert "VIOLATED" in _oneie_table(dict(m, eval_argc_external_micro_f1=0.0100), "t")

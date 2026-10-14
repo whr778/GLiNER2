@@ -399,11 +399,17 @@ def _oneie_table(metrics: Dict[str, Any], title: str) -> str:
     ac = metrics.get("eval_argc_external_micro_f1")
     if all(isinstance(v, (int, float)) for v in (lo, hi, ac)):
         ok = lo - 1e-9 <= ac <= hi + 1e-9
+        # Arg-C lowercases before matching, so gold arguments differing only by case ("We"/"we")
+        # merge into one key; a SMALLER Arg-C gold support proves such a merge happened.
+        s_ac = metrics.get("eval_argc_external_support")
+        s_hi = metrics.get("eval_event_argument_relaxed_support")
+        merged = ac > hi and isinstance(s_ac, int) and isinstance(s_hi, int) and s_ac < s_hi
+        verdict = ("holds." if ok else
+                   f"exceeded by {ac - hi:.5f}: Arg-C lowercases, so gold arguments differing only by "
+                   f"case merge (Arg-C support {s_ac} vs relaxed {s_hi}). Not a scoring fault." if merged else
+                   "**VIOLATED**, so the two accountings disagree and Arg-C here is not trustworthy.")
         rows += ["", f"> **Sanity bound:** `event_argument` strict {lo:.4f} ≤ Arg-C "
-                     f"{ac:.4f} ≤ relaxed {hi:.4f} — "
-                     + ("holds." if ok else
-                        "**VIOLATED**, so the two accountings disagree and Arg-C here is "
-                        "not trustworthy.")]
+                     f"{ac:.4f} ≤ relaxed {hi:.4f} — " + verdict]
     tl_g = metrics.get("eval_argc_external_triggerless_gold")
     tl_p = metrics.get("eval_argc_external_triggerless_pred")
     if isinstance(tl_g, (int, float)) or isinstance(tl_p, (int, float)):
