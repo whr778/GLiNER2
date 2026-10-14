@@ -6,6 +6,7 @@ import SchemaPanel from "@/components/SchemaPanel";
 import ResultView from "@/components/ResultView";
 import ModelManager from "@/components/ModelManager";
 import EkfPanel from "@/components/EkfPanel";
+import PredictionsPanel from "@/components/PredictionsPanel";
 import { addModel, extract, getModelSchema, getModels, getPresets } from "@/lib/api";
 import { matchCorpusPreset } from "@/lib/models";
 import { MODEL_PRESET_VALUE, pruneSchema, scaffoldSchema } from "@/lib/schema";
@@ -30,7 +31,7 @@ export default function Home() {
   const [showModels, setShowModels] = useState(false);
   // The viewer had a single view; EKF tracking is a different job (a feed over
   // time, not one text), so it gets its own mode rather than more panels.
-  const [mode, setMode] = useState<"extract" | "ekf">("extract");
+  const [mode, setMode] = useState<"extract" | "ekf" | "predictions">("extract");
   const [resp, setResp] = useState<ExtractResponse | null>(null);
   const [usedSchema, setUsedSchema] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -150,11 +151,15 @@ export default function Home() {
                   onClick={() => setMode("extract")}>Extract</button>
           <button className={mode === "ekf" ? "" : "secondary"}
                   onClick={() => setMode("ekf")}>EKF tracking</button>
+          <button className={mode === "predictions" ? "" : "secondary"}
+                  onClick={() => setMode("predictions")}>Predictions vs gold</button>
         </div>
       </header>
 
       {mode === "ekf" ? (
         <EkfPanel />
+      ) : mode === "predictions" ? (
+        <PredictionsPanel />
       ) : (
 
       <div className="grid">

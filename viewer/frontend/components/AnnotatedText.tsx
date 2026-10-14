@@ -207,6 +207,20 @@ export default function AnnotatedText({
         // if the selection is elsewhere / nothing selected).
         const selPos = activeEid ? eidList.indexOf(activeEid) : -1;
         const clickable = linkable && eidList.length > 0 && !!onSelectEid;
+        // Predictions view: solid gold rim = the prediction matches gold (strict key); dashed =
+        // gold lands here but no prediction on it matches (wrong label/role); rim only = missed.
+        const hasGold = mk.roles.some((r) => r.gold);
+        const hasPred = mk.roles.some((r) => !r.gold);
+        const predMatch = mk.roles.some((r) => !r.gold && r.match);
+        const goldLabels = [...new Set(mk.roles.filter((r) => r.gold).map((r) => r.label))];
+        const sameLabel = !predMatch && mk.roles.some((r) => !r.gold && goldLabels.includes(r.label));
+        const goldClass = !hasGold ? "" : !hasPred ? " gold goldonly" : predMatch ? " gold" : " gold golddiff";
+        const status = !hasGold && !mk.roles.some((r) => r.match !== undefined) ? ""
+          : !hasPred ? " · gold, missed"
+          : predMatch ? " · matches gold"
+          : sameLabel ? " · same label as gold, but not its strict key (an argument's key includes its mention's triggers)"
+          : hasGold ? " · gold here: " + goldLabels.join(", ")
+          : " · prediction, not in gold";
         // Cycle: nothing here selected -> first; selected -> next; past the last -> clear.
         const cycle = () => {
           if (!clickable) return;
@@ -216,7 +230,7 @@ export default function AnnotatedText({
         return (
           <mark
             key={i}
-            className={"tag" + (active ? " active" : "")}
+            className={"tag" + (active ? " active" : "") + goldClass}
             data-eids={eidTokens || undefined}
             data-nested={nestedAttr || undefined}
             data-kind={p.kind}
@@ -225,7 +239,7 @@ export default function AnnotatedText({
             onMouseLeave={() => setSpanHover(new Set())}
             onClick={clickable ? cycle : undefined}
             title={
-              `${p.label} · ${p.kind}` +
+              `${p.label} · ${p.kind}` + status +
               (count > 1 ? ` · ${count} events here — click to view one at a time` : "") +
               (p.confidence != null ? ` · ${fmtConf(p.confidence)}` : "")
             }

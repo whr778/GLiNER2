@@ -13,6 +13,7 @@ the default model.
 
 from __future__ import annotations
 
+import os
 import threading
 
 import logging
@@ -350,6 +351,24 @@ class EkfRequest(BaseModel):
     # Turkiye: without it the 1999 Izmit toll was tracked as a 2023 figure in every
     # configuration. Read but never declared until 2026-08-30, so it silently did nothing.
     event_year: int = 0
+
+
+@app.get("/predictions")
+def predictions(path: str) -> Dict[str, Any]:
+    """Open a ``tools/infer.py --output`` file: per-record strict F1 for the pager."""
+    import gold
+
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=f"no such file: {path}")
+    return gold.summary(path)
+
+
+@app.get("/predictions/record")
+def prediction_record(path: str, i: int) -> Dict[str, Any]:
+    """One record of an infer.py output file: prediction and gold, every span flagged ``match``."""
+    import gold
+
+    return gold.record(path, i)
 
 
 @app.get("/ekf-feeds")

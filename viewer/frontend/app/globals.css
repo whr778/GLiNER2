@@ -6,6 +6,7 @@
   --text: #1a2230;
   --muted: #667085;
   --accent: #2563eb;
+  --gold: #c99a06;
   --accent-fg: #ffffff;
   --danger: #dc2626;
   --radius: 10px;
@@ -21,6 +22,7 @@
     --text: #e6edf3;
     --muted: #9aa7b6;
     --accent: #3b82f6;
+    --gold: #e8b923;
     --accent-fg: #ffffff;
     --danger: #f87171;
     --shadow: none;
@@ -185,6 +187,13 @@ mark.tag[data-kind="head"] {
   padding: 1px 4px;
   font-weight: 600;
 }
+
+/* Predictions view: gold rim (gold landed here), rim only = gold the model missed. */
+mark.tag.gold { outline: 2px solid var(--gold); outline-offset: 1px; }
+mark.tag.golddiff { outline-style: dashed; }
+mark.tag.goldonly { background: transparent; border-bottom-color: transparent; }
+mark.tag.goldonly .taglabel { color: var(--gold); }
+mark.tag.goldonly[data-kind="trigger"], mark.tag.goldonly[data-kind="head"] { border-color: transparent; }
 
 /* Event / relation connection arcs (hover-linked) */
 .arcs { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; overflow: visible; }

@@ -410,6 +410,24 @@ Defaults mirror the CLI: gate `fastino/gliner2-base-v1`, casualty
 `window: article`, `device: cpu`. **CPU is deliberate** — MPS is 3-4x *slower*
 for many-label event extraction, because the per-op sync overhead dominates.
 
+## Predictions vs gold
+
+The **Predictions vs gold** mode pages through a `tools/infer.py --output` file (one row per
+record: `input`, `output` = prediction, `gold`, and `gold_mapped` with `--labels-file`).
+Enter the file's path as the BACKEND sees it (under Docker, a mounted path) and Open.
+
+- Prev / Next (or the arrow keys), a record number, or **worst F1 first** on one head.
+- The prediction is drawn as in Extract. The record's gold is a rim, matched under the
+  scorer's STRICT keys (`eval_metrics`), so the view agrees with the strict F1:
+  **solid** = matches gold, **dashed** = gold here under another label/role, **rim only** =
+  gold the model missed (gold label), **fill, no rim** = prediction not in gold.
+- **show gold** toggles the rims; **differences only** hides everything that matched.
+- Gold stores surfaces, not offsets; they are placed exactly as training places them (every
+  occurrence of the word run). Gold training cannot place, e.g. `Houston` inside
+  `Houston-area`, is listed under the text.
+- Without `gold_mapped` the gold is in the corpus spellings, so `location` vs `Location` is a
+  miss, as it is for the scorer; the page says so.
+
 ## API (backend)
 
 | Endpoint | Body | Returns |
@@ -424,6 +442,8 @@ for many-label event extraction, because the per-op sync overhead dominates.
 | `GET /ekf-feeds` | — | `{feeds: [{path, articles, truth}]}` |
 | `POST /ekf-track` | `EkfRequest` | `{job_id, ...}` — starts an async run |
 | `GET /ekf-track/{job_id}` | — | `{stage, done, total, log, result}` |
+| `GET /predictions` | `?path=` | `{count, gold_key, records: [{i, chars, has_gold, f1}]}` |
+| `GET /predictions/record` | `?path=&i=` | `{text, pred, gold, classifications, unlocated, f1}`, spans flagged `match` |
 | `GET /health` | — | `{status, default_model, loaded_models}` |
 
 `options`: `threshold`, `chunk_size`, `chunk_overlap`, `global_decode`,

@@ -155,3 +155,31 @@ export async function getEkfJob(jobId: string): Promise<EkfJob> {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+export type PredictionSummary = {
+  path: string;
+  count: number;
+  gold_key: "gold" | "gold_mapped" | null;
+  records: { i: number; chars: number; has_gold: boolean; f1: Record<string, number> }[];
+};
+
+export type PredictionRecord = {
+  i: number;
+  text: string;
+  pred: Record<string, any>;
+  gold: Record<string, any>;
+  has_gold: boolean;
+  classifications: { task: string; gold: string[]; pred: any; match: boolean }[];
+  unlocated: string[];
+  f1: Record<string, number>;
+};
+
+// A tools/infer.py --output file: per-record strict F1 for the pager.
+export async function openPredictions(path: string): Promise<PredictionSummary> {
+  return jsonOrThrow(await fetch(`${API_BASE}/predictions?path=${encodeURIComponent(path)}`));
+}
+
+// One record: prediction and gold in the same result shape, every span flagged `match`.
+export async function getPredictionRecord(path: string, i: number): Promise<PredictionRecord> {
+  return jsonOrThrow(await fetch(`${API_BASE}/predictions/record?path=${encodeURIComponent(path)}&i=${i}`));
+}

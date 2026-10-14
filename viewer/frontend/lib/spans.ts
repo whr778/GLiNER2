@@ -11,6 +11,8 @@ export type Mark = {
   eid?: string; // shared id for spans of one event mention / relation instance
   colorKey?: string; // what to color by (event type / relation name); defaults to label
   idx?: number; // 1-based mention index within its event type (for a badge)
+  gold?: boolean; // from the gold record, not the prediction (predictions view)
+  match?: boolean; // the scorer's strict key is on the other side too
 };
 
 function asSpan(x: any): Span | null {
@@ -44,27 +46,31 @@ export function schemaLayers(schema: Record<string, any> | null | undefined): La
   return layers;
 }
 
-export function collectMarks(result: ExtractionResult, layer: Layer): Mark[] {
+// `gold`: these marks come from the gold record; each span's `match` (set by the backend's
+// gold.py) says whether the scorer's strict key is on the other side.
+export function collectMarks(result: ExtractionResult, layer: Layer, gold = false): Mark[] {
   const marks: Mark[] = [];
+  const g = (sp: any) => ({ gold, match: sp?.match });
+  const pre = gold ? "g-" : "";
   if (layer === "entities") {
     for (const [label, spans] of Object.entries(result.entities || {})) {
       for (const s of (spans as any[]) || []) {
         const sp = asSpan(s);
-        if (sp) marks.push({ start: sp.start!, end: sp.end!, label, kind: "entity", confidence: sp.confidence });
+        if (sp) marks.push({ start: sp.start!, end: sp.end!, label, kind: "entity", confidence: sp.confidence, ...g(sp) });
       }
     }
   } else if (layer === "events") {
     let counter = 0;
     for (const [etype, mentions] of Object.entries(result.event_extraction || {})) {
       (mentions as any[])?.forEach((m, mi) => {
-        const eid = `evt-${counter++}`;
+        const eid = `${pre}evt-${counter++}`;
         for (const t of m.triggers || []) {
           const sp = asSpan(t);
-          if (sp) marks.push({ start: sp.start!, end: sp.end!, label: etype, kind: "trigger", confidence: sp.confidence, eid, colorKey: etype, idx: mi + 1 });
+          if (sp) marks.push({ start: sp.start!, end: sp.end!, label: etype, kind: "trigger", confidence: sp.confidence, eid, colorKey: etype, idx: mi + 1, ...g(sp) });
         }
         for (const a of m.arguments || []) {
           const sp = asSpan(a.entity);
-          if (sp) marks.push({ start: sp.start!, end: sp.end!, label: a.role, kind: "argument", confidence: sp.confidence, eid, colorKey: etype });
+          if (sp) marks.push({ start: sp.start!, end: sp.end!, label: a.role, kind: "argument", confidence: sp.confidence, eid, colorKey: etype, ...g(sp) });
         }
       });
     }
@@ -72,13 +78,13 @@ export function collectMarks(result: ExtractionResult, layer: Layer): Mark[] {
     let counter = 0;
     for (const [rname, insts] of Object.entries(result.relation_extraction || {})) {
       for (const inst of (insts as any[]) || []) {
-        const eid = `rel-${counter++}`;
+        const eid = `${pre}rel-${counter++}`;
         const head = Array.isArray(inst) ? inst[0] : inst.head;
         const tail = Array.isArray(inst) ? inst[1] : inst.tail;
         const hs = asSpan(head);
         const ts = asSpan(tail);
-        if (hs) marks.push({ start: hs.start!, end: hs.end!, label: rname, kind: "head", confidence: hs.confidence, eid, colorKey: rname });
-        if (ts) marks.push({ start: ts.start!, end: ts.end!, label: rname, kind: "tail", confidence: ts.confidence, eid, colorKey: rname });
+        if (hs) marks.push({ start: hs.start!, end: hs.end!, label: rname, kind: "head", confidence: hs.confidence, eid, colorKey: rname, ...g(hs) });
+        if (ts) marks.push({ start: ts.start!, end: ts.end!, label: rname, kind: "tail", confidence: ts.confidence, eid, colorKey: rname, ...g(ts) });
       }
     }
   }
@@ -95,6 +101,8 @@ export type Role = {
   colorKey?: string;
   confidence?: number;
   idx?: number;
+  gold?: boolean;
+  match?: boolean;
 };
 
 // A rendered span, carrying every role that lands on its character range.
@@ -138,7 +146,7 @@ export function buildSegments(text: string, marks: Mark[]): Segment[] {
       g = { start, end, roles: [] };
       groups.set(key, g);
     }
-    g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx });
+    g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx, gold: m.gold, match: m.match });
   }
 
   const sorted = [...groups.values()].sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));
@@ -160,7 +168,9 @@ export function buildSegments(text: string, marks: Mark[]): Segment[] {
       continue;
     }
     if (g.start > cursor) segs.push({ text: text.slice(cursor, g.start), mark: null });
-    const primary = g.roles.find((r) => r.kind === "head" || r.kind === "trigger") ?? g.roles[0];
+    // A predicted role drives color and sublabel; gold only when nothing was predicted here.
+    const shown = g.roles.filter((r) => !r.gold).length ? g.roles.filter((r) => !r.gold) : g.roles;
+    const primary = shown.find((r) => r.kind === "head" || r.kind === "trigger") ?? shown[0];
     const mark: SegMark = { start: g.start, end: g.end, roles: g.roles, primary };
     segs.push({ text: text.slice(g.start, g.end), mark });
     lastMark = mark;

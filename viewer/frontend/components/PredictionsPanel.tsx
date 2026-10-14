@@ -1,0 +1,175 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import AnnotatedText from "./AnnotatedText";
+import { collectMarks, type Layer } from "@/lib/spans";
+import { getPredictionRecord, openPredictions, type PredictionRecord, type PredictionSummary } from "@/lib/api";
+
+const LAYERS: Layer[] = ["entities", "events", "relations"];
+const LAYER_KEY: Record<Layer, string> = { entities: "entities", events: "event_extraction", relations: "relation_extraction" };
+const HEADS = ["entity", "event_trigger", "event_argument", "relation"];
+const PATH_KEY = "predictions.path";
+
+function hasLayer(r: Record<string, any>, l: Layer): boolean {
+  return Object.values(r[LAYER_KEY[l]] || {}).some((v: any) => Array.isArray(v) && v.length > 0);
+}
+
+// Pages through a tools/infer.py --output file: the prediction drawn as usual, the record's own
+// gold as a rim (solid = matches, dashed = gold here under another label/role, rim only = missed),
+// matched under the scorer's strict keys so the view agrees with the strict F1.
+export default function PredictionsPanel() {
+  const [path, setPath] = useState(() => {
+    try { return localStorage.getItem(PATH_KEY) ?? ""; } catch { return ""; }
+  });
+  const [summary, setSummary] = useState<PredictionSummary | null>(null);
+  const [order, setOrder] = useState("file");
+  const [pos, setPos] = useState(0);
+  const [rec, setRec] = useState<PredictionRecord | null>(null);
+  const [layer, setLayer] = useState<Layer>("entities");
+  const [showGold, setShowGold] = useState(true);
+  const [diffOnly, setDiffOnly] = useState(false);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onOpen() {
+    setError(null);
+    try {
+      setSummary(await openPredictions(path.trim()));
+      setPos(0);
+      try { localStorage.setItem(PATH_KEY, path.trim()); } catch { /* per-viewer convenience only */ }
+    } catch (e: any) {
+      setError(e.message);
+      setSummary(null);
+    }
+  }
+
+  // File order, or worst-first on one head (records without that head go last).
+  const sequence = useMemo(() => {
+    const rs = summary?.records ?? [];
+    if (order === "file") return rs.map((r) => r.i);
+    const f = (r: (typeof rs)[number]) => r.f1[order] ?? 2;
+    return [...rs].sort((a, b) => f(a) - f(b) || a.i - b.i).map((r) => r.i);
+  }, [summary, order]);
+  const index = sequence[pos];
+
+  useEffect(() => {
+    if (!summary || index === undefined) return;
+    let cancelled = false;
+    getPredictionRecord(summary.path, index)
+      .then((r) => {
+        if (cancelled) return;
+        setRec(r);
+        setPinned(null);
+        setLayer((cur) => (hasLayer(r.pred, cur) || hasLayer(r.gold, cur) ? cur
+          : LAYERS.find((l) => hasLayer(r.pred, l) || hasLayer(r.gold, l)) ?? "entities"));
+      })
+      .catch((e) => setError(e.message));
+    return () => { cancelled = true; };
+  }, [summary, index]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if (e.key === "ArrowRight") setPos((p) => Math.min(p + 1, sequence.length - 1));
+      if (e.key === "ArrowLeft") setPos((p) => Math.max(p - 1, 0));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sequence.length]);
+
+  const marks = useMemo(() => {
+    if (!rec) return [];
+    const all = [...collectMarks(rec.pred, layer), ...(showGold ? collectMarks(rec.gold, layer, true) : [])];
+    return diffOnly ? all.filter((m) => !m.match) : all;
+  }, [rec, layer, showGold, diffOnly]);
+
+  return (
+    <div>
+      <div className="card">
+        <h2>Predictions file</h2>
+        <div className="row" style={{ gap: 8 }}>
+          <input className="mono" style={{ flex: 1 }} value={path} onChange={(e) => setPath(e.target.value)}
+                 onKeyDown={(e) => e.key === "Enter" && onOpen()}
+                 placeholder="/path/to/preds.jsonl  (tools/infer.py --output)" />
+          <button className="primary" onClick={onOpen} disabled={!path.trim()}>Open</button>
+        </div>
+        {error && <div className="error" style={{ marginTop: 8 }}>{error}</div>}
+        {summary?.gold_key === "gold" && (
+          <div className="hint" style={{ marginTop: 8 }}>
+            This file has no <span className="mono">gold_mapped</span>: gold is in the corpus spellings, so a label
+            spelled differently from the model&apos;s (<span className="mono">location</span> vs{" "}
+            <span className="mono">Location</span>) is a miss here, as it is for the strict scorer. Run infer.py with{" "}
+            <span className="mono">--labels-file</span> to compare in the model&apos;s spellings.
+          </div>
+        )}
+        {summary && (
+          <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button className="secondary" onClick={() => setPos((p) => Math.max(p - 1, 0))} disabled={pos === 0}>Prev</button>
+            <input type="number" style={{ width: 80 }} min={1} max={sequence.length} value={pos + 1}
+                   onChange={(e) => setPos(Math.min(Math.max(Number(e.target.value) - 1, 0), sequence.length - 1))} />
+            <span className="hint">of {summary.count} (record #{index})</span>
+            <button className="secondary" onClick={() => setPos((p) => Math.min(p + 1, sequence.length - 1))}
+                    disabled={pos >= sequence.length - 1}>Next</button>
+            <select value={order} onChange={(e) => { setOrder(e.target.value); setPos(0); }}>
+              <option value="file">file order</option>
+              {HEADS.map((h) => <option key={h} value={h}>worst {h} F1 first</option>)}
+            </select>
+            <label className="hint"><input type="checkbox" checked={showGold} onChange={(e) => setShowGold(e.target.checked)} /> show gold</label>
+            <label className="hint"><input type="checkbox" checked={diffOnly} onChange={(e) => setDiffOnly(e.target.checked)} /> differences only</label>
+          </div>
+        )}
+      </div>
+
+      {rec && (
+        <div className="card annotated">
+          <div className="row between">
+            <h2>Record {rec.i}</h2>
+            <div className="toggle">
+              {LAYERS.filter((l) => hasLayer(rec.pred, l) || hasLayer(rec.gold, l)).map((l) => (
+                <button key={l} className={l === layer ? "active" : ""} onClick={() => setLayer(l)}>
+                  {l === "entities" ? "Entities" : l === "events" ? "Events" : "Relations"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="hint" style={{ marginBottom: 8 }}>
+            {rec.has_gold
+              ? <>Strict F1 this record: {Object.entries(rec.f1).map(([h, v]) => `${h} ${v.toFixed(3)}`).join(" · ") || "nothing to score"}</>
+              : "No gold in this record: predictions only."}
+          </div>
+          {rec.has_gold && (
+            <div className="hint" style={{ marginBottom: 8 }}>
+              Gold rim: <b>solid</b> = prediction matches gold · <b>dashed</b> = gold here under another label/role ·
+              {" "}<b>rim only</b> = gold the model missed · fill without rim = prediction not in gold
+            </div>
+          )}
+          <AnnotatedText text={rec.text} marks={marks} layer={layer} activeEid={pinned} onSelectEid={setPinned} />
+          {rec.unlocated.length > 0 && (
+            <div className="hint" style={{ marginTop: 8 }}>
+              Gold that cannot be placed in the text (training cannot place it either): {rec.unlocated.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+
+      {rec && rec.classifications.length > 0 && (
+        <div className="card">
+          <h2>Classifications</h2>
+          <table>
+            <thead><tr><th>task</th><th>predicted</th><th>gold</th><th></th></tr></thead>
+            <tbody>
+              {rec.classifications.map((c) => (
+                <tr key={c.task}>
+                  <td className="mono">{c.task}</td>
+                  <td>{Array.isArray(c.pred) ? c.pred.map((x: any) => x?.label ?? x).join(", ") : String(c.pred ?? "-")}</td>
+                  <td>{c.gold.join(", ")}</td>
+                  <td>{c.match ? "match" : "differs"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

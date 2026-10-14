@@ -34,3 +34,18 @@ test("nested sub-range offsets are local UTF-16, as DOM ranges need", () => {
 test("codeUnitOffsets maps each code point to its UTF-16 index", () => {
   assert.deepEqual(codeUnitOffsets("a😀b"), [0, 1, 3, 4]);
 });
+
+test("gold marks carry gold + match, and gold event ids never collide with predicted ones", () => {
+  const span = (text: string, start: number, match?: boolean) => ({ text, start, end: start + text.length, match });
+  const pred = { event_extraction: { Attack: [{ triggers: [span("hit", 4, true)], arguments: [] }] } };
+  const gold = { event_extraction: { Attack: [{ triggers: [span("hit", 4, true)], arguments: [{ role: "Place", entity: span("Rome", 11, false) }] }] } };
+  const p = collectMarks(pred, "events");
+  const g = collectMarks(gold, "events", true);
+  assert.deepEqual(p.map((m) => [m.gold, m.match, m.eid]), [[false, true, "evt-0"]]);
+  assert.deepEqual(g.map((m) => [m.gold, m.match, m.eid]), [[true, true, "g-evt-0"], [true, false, "g-evt-0"]]);
+  // A predicted and a gold mark on one range merge into one span; the predicted role is primary.
+  const seg = buildSegments("Mob hit in Rome", [...p, ...g]).filter((s) => s.mark);
+  assert.equal(seg[0].mark!.roles.length, 2);
+  assert.equal(seg[0].mark!.primary.gold, false);
+  assert.equal(seg[1].mark!.primary.gold, true);
+});
