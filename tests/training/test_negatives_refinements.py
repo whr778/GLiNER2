@@ -165,3 +165,11 @@ def test_abstention_phase_splits_the_config():
     with pytest.raises(SystemExit):
         T.abstention_configs(TrainingConfig(output_dir="o", negative_labels_per_dim={"entities": 20},
                                             negative_labels_schedule={"entities": [1, 20]}), {"epochs": 1})
+
+
+def test_abstention_phase_main_dose_is_configurable():
+    from gliner2.training.trainer import TrainingConfig
+    cfg = TrainingConfig(output_dir="o", negative_labels_per_dim={"entities": 20, "events": 20})
+    main, phase = T.abstention_configs(cfg, {"epochs": 1, "main_dose": 5})
+    assert main.negative_labels_per_dim == {"entities": 5, "events": 5}
+    assert phase.negative_labels_per_dim == {"entities": 20, "events": 20}
