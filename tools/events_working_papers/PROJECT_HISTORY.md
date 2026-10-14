@@ -4373,3 +4373,31 @@ the kind that should be checked against the code before it is written down, and 
 written down three times first. It joins the rerank double-count, the hardcoded
 `ABSENT queries: 0`, and the menu gate that read the wrong tree: a claim that sounds
 explanatory is the one most worth verifying.
+
+### 2026-10-08 to 2026-10-14 -- three supervision bugs found, the v2.1.0 merge, and eb21
+
+**Our own defects, found by tracing:**
+- Gold entity labels were always first in training, so models learned position, not labels (entity F1 0.000
+  vs 0.646 by order alone; LABEL_SPACE_COLLAPSE 3d).
+- Injected negatives never resampled across epochs, because persistent forked workers never saw `set_epoch`
+  (LABEL_NEGATIVES_PLAN correction).
+
+**Upstream's fixes we carried:** v2.1.0 fixed the classification augmentation that trained the gold label as a
+negative. On eb21's corpora that was 22.6% of classification views, in every model trained so far.
+
+**The merge:**
+- 13 conflicted files.
+- Three merge defects found only by tracing real outputs:
+  - span models lost every event, because upstream's new batched path did not know our `[V]` marker;
+  - `Schema.from_dict` refused the `open_vocab` key every shipped schema carries;
+  - our engine was missing upstream's relation-confidence change.
+- The decoder-sync speedup is deferred: its candidate-grouping shortcut would empty our event decode.
+- Validated locally (3,475 tests) and on a CUDA A10.
+
+**Dose experiments (MENU_SPEC s9):**
+- A final dose-20 stage buys news-menu precision.
+- Gold-menu recall must be learned during the main run, at a dose above 1.
+- eb21 keeps dose 20 throughout.
+
+eb19 was judged broken; eb20 was skipped. eb21, from scratch on the merge, is the base going forward.
+

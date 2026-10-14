@@ -236,3 +236,53 @@ against the control's 14,011.
 
   The next base can take the dose as is, and the rest can be A/B'd on top.
 
+
+## 9. After the dose A/B, 2026-10-07 to 2026-10-14
+
+Details and costs are in `EXPERIMENT_CATALOG.md`. All numbers are strict micro F1 on the voted sonnet55 test
+(500 docs), single runs, floor +/-0.02.
+
+**Thresholds (calibrated under app:news55 on val).** Dose 20 is already best at 0.5. The dose-1 control is best
+at 0.7, and calibrated it still loses: news event_type 0.345 vs 0.566, trigger 0.264 vs 0.426. The dose wins on
+its own, not through a threshold.
+
+**Section 4 refinements: rejected.** Gold-free event absents and the full recipe (log-uniform K, per-record
+cap) were each scored at their own best threshold. Under the news menu they lose to plain dose 20 on entity and
+arguments (full: entity 0.311 vs 0.480, argument 0.035 vs 0.092). Under the gold menu the full recipe was best.
+The size ladder below locates that flip: the full recipe leads at every widened size up to corpus_full (the
+corpus's own 74 entity / 55 event types) and loses only under news55's 125 curated entity types.
+
+**The entity position leak (fixed be581a1).** Every widened ladder rung collapsed entities (widened:20 entity
+F1 0.000). Root cause: the injector appended absent entity labels after the gold, and `shuffle_entities`
+defaulted False, so in training the gold entity labels were always first; synthetic `entity 1` was gold 100% of
+the time. The same model on the same 28 labels scores 0.000 absent-first, 0.646 gold-first, 0.231 shuffled.
+Fix: shuffle before synthetic naming, default True. Every entity score from a negatives-trained model before
+be581a1 carries the shortcut. Event types, relations and structures were never affected: each label is its own
+task, and task order is shuffled. Measured at inference with `tools/train/probe_label_order.py`: event_type
+0.847 / 0.847 / 0.853, relations 0.059 / 0.061 / 0.057, post-fix entities 0.622 / 0.613 / 0.604.
+
+**Negatives never resampled across epochs (fixed 0d4f248).** Persistent forked DataLoader workers never saw
+`set_epoch`, so every multi-epoch run before 2026-10-08 showed the same absent labels every epoch. The epoch and
+per-epoch counters are now shared memory, traced 1 / 5 / 20 in real forked workers; epoch 0 is byte-identical to
+before.
+
+**Dose over epochs (3 epochs from eb19, threshold 0.5).** `negative_labels_schedule` sets a per-epoch dose.
+`training.abstention_phase: {epochs, main_dose}` (off by default) trains the main phase at `main_dose`, then
+runs the phase at the configured dose from the main phase's `best/`, with a fresh optimizer and LR.
+
+| arm | dose per epoch | news event_type | news argument | gold entity | gold event_type |
+|---|---|---|---|---|---|
+| const20 | 20, 20, 20 | 0.621 | 0.100 | **0.575** | **0.826** |
+| last | 1, 1, 20 | 0.626 | 0.114 | 0.507 | 0.776 |
+| abst | 1, 1, 1 + phase 20 | 0.634 | 0.124 | 0.511 | 0.790 |
+| abst5 | 5, 5, 5 + phase 20 | **0.656** | **0.136** | 0.530 | 0.812 |
+
+ramp (1, 5, 20) is confounded: head_min selection (~0.01, noise) shipped its dose-5 epoch.
+
+- A final dose-20 stage reaches const20's news-menu precision from a low dose.
+- Gold-menu recall is learned during the main run at a dose above 1. abst5 keeps the event heads inside the
+  floor and is the best arm on events: news event_type and argument each gain +0.035, about 1.75x the floor.
+- Entity recall under the gold menu still costs abst5 -0.045.
+
+**Decision for eb21:** dose 20 throughout, unchanged. abst5's event result needs a second seed before it can
+change the recipe.

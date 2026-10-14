@@ -346,6 +346,11 @@ despite being an event corpus: its events were converted to entities + classific
 - [x] Deterministic `sha256(seed, epoch, index)` — not `hash()`, which is salted per process
       and would give DDP ranks different menus. Trainer calls `set_epoch` in the epoch loop
       beside `DistributedSampler.set_epoch`, so negatives resample per epoch.
+      **CORRECTION 2026-10-08: they did NOT.** `__getitem__` runs in PERSISTENT forked DataLoader
+      workers, which keep the epoch they were forked with, so the parent's `set_epoch` never reached
+      them. Every multi-epoch run before 0d4f248 drew the same absent labels every epoch. Fixed with a
+      shared-memory epoch (multiprocessing.Value); traced 1/5/20 in real forked workers, and epoch 0 is
+      byte-identical to before. See MENU_SPEC.md section 9.
 - [x] Asserted at injection: no injected label appears in that record's gold, either dimension.
 - [x] `composition_line()` that can fail an A/B gate; logged once on the first epoch.
 - [x] **CORPUS IDENTIFICATION WITHOUT PROVENANCE.** Records carry only `{"input", "output"}`.

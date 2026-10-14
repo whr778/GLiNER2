@@ -316,6 +316,18 @@ This is the same disease one level up — narrowing of the *menu of task combina
 than of labels within a task — and it is what the Phase 0 experiment
 (`config/base/eb16-composed.yaml`) tests.
 
+### 3d. A fourth: label-POSITION collapse (measured and fixed 2026-10-08)
+
+Not a narrowing of the label set but a shortcut around reading it. The negatives injector appended absent
+entity labels after the gold, and `shuffle_entities` defaulted False, so in training the gold labels were always
+first in the prompt (mean position 0.12 vs 0.62 for absent labels); synthetic `entity 1` was gold 100% of the
+time. The model learned position, not labels. Same model, same 28 labels, only the order changed: entity strict
+F1 **0.000** absent-first, **0.646** gold-first, 0.231 shuffled. Under any menu whose order differs from
+training (every curated application menu), the entity head collapsed while event heads, whose labels are
+separate shuffled tasks, did not move (0.847-0.853). Fixed in be581a1: shuffle before synthetic naming, default
+True. Detection: `tools/train/probe_label_order.py` (MENU_SPEC.md s9) -- a model that reads its labels scores the
+three orders alike.
+
 ---
 
 ## 4. Detection

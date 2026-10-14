@@ -255,6 +255,20 @@ instead (see its own row).
 | `casualty-multievent.yaml` | `casualty_multi` | [[EKF_MHT_DESIGN]] §20, [[COUNTING_LAYER]] | the §20 corpus had exactly one `casualty_report` in all 31,539 docs, so the count head only ever saw "1". This fixes that |
 | `casualty-docee.yaml` | `casualty_docee` | [[EKF_MHT_DESIGN]] §20-21 | successor to `casualty-multievent`: synthetic trajectories paired with **real** DocEE contexts |
 
+## Stage 6 — The eb bases, 2026-09-22 onward (boundary, from `jhu-clsp/mmBERT-base`)
+
+| base | what it was | status |
+|---|---|---|
+| eb17-best | every measured lesson to its date; first base with `validate_data` on (the record-anchor crash, 2026-09-22) | superseded |
+| eb18-balanced | English event supervision, reach, capacity, global_decode; best epoch 4 of 5 | provisional: under-trained (the LR ran out with the metric still rising) |
+| eb19 | the junction, hard role negatives, identity proposal gold; hand-stopped at epoch 7; warm-start base of the 2026-10 menu A/Bs | **judged broken** (2026-10-14); not a baseline to beat |
+| eb20 | — | **skipped** after a critical discovery |
+| **eb21** | from scratch: label negatives at dose 20 (MENU_SPEC s8-9), unified-full-v3 labels (Title_Snake), the news55 app menu for eval, the entity-shuffle fix (be581a1), on the fastino v2.1.0 merge (`merge/upstream-20261014`; contained-span dedupe on) | **the base going forward**: the most likely usable events architecture |
+
+Entity and classification scores do not compare across eb21 and earlier bases. eb21's training data differs by
+the entity position fix, the classification gold-as-negative fix (22.6% of views) and the contained-span dedupe
+(9.8% of entity matches); see `EXPERIMENT_CATALOG.md`, 2026-10-08 and 2026-10-14.
+
 ## Appendix — configs that are not links in any lineage
 
 | config | working paper | what it is |
