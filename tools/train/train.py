@@ -1155,9 +1155,10 @@ def _build_model(model_cfg: Dict):
 
 
 def abstention_configs(config: TrainingConfig, phase: Dict) -> Tuple[TrainingConfig, TrainingConfig]:
-    """(main, abstention phase) configs for ``training.abstention_phase: {epochs: N}``.
+    """(main, abstention phase) configs for ``training.abstention_phase: {epochs: N, main_dose: D}``.
 
-    The main phase is the config with every negatives dose set to 1, writing to ``<output_dir>/main``.
+    The main phase is the config with every negatives dose set to ``main_dose`` (default 1), writing to
+    ``<output_dir>/main``.
     The abstention phase runs ``epochs`` (default 1) at the configured dose from the main phase's best,
     writing to ``output_dir`` itself, so ``best/`` -- what the blind test scores and the box pushes -- is
     the phase's. With epochs > 1 the phase selects its best on ``metric_for_best`` like any run.
@@ -1168,7 +1169,7 @@ def abstention_configs(config: TrainingConfig, phase: Dict) -> Tuple[TrainingCon
         raise SystemExit("[abstention] abstention_phase needs negative_labels_per_dim (the phase's dose)")
     main = copy.copy(config)
     main.output_dir = str(Path(config.output_dir) / "main")
-    main.negative_labels_per_dim = {dim: 1 for dim in config.negative_labels_per_dim}
+    main.negative_labels_per_dim = {dim: int(phase.get("main_dose", 1)) for dim in config.negative_labels_per_dim}
     after = copy.copy(config)
     after.num_epochs = int(phase.get("epochs", 1))
     return main, after
