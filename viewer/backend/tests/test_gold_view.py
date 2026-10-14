@@ -62,3 +62,14 @@ def test_record_never_mutates_the_cached_rows(tmp_path):
     assert "match" not in json.dumps(gold.rows_of(str(path)))
     assert gold.record(str(path), 0) == first
     assert gold.summary(str(path))["gold_key"] == "gold"
+
+
+def test_picker_lists_only_infer_outputs_and_flags_files_without_spans(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "spans.jsonl").write_text(json.dumps(ROW) + "\n", encoding="utf-8")
+    bare = dict(ROW, output={"entities": {"Person": ["Ed Smith"]}}, gold_mapped={})
+    (tmp_path / "bare.jsonl").write_text(json.dumps(bare) + "\n", encoding="utf-8")
+    (tmp_path / "corpus.train.jsonl").write_text(json.dumps({"input": TEXT, "output": {}}) + "\n", encoding="utf-8")
+    (tmp_path / "broken.jsonl").write_text("{not json\n", encoding="utf-8")
+    got = {f["name"]: (f["spans"], f["gold_mapped"]) for f in gold.list_files(str(tmp_path))}
+    assert got == {"sub/spans.jsonl": (True, False), "bare.jsonl": (False, True)}

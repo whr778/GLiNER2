@@ -414,7 +414,11 @@ for many-label event extraction, because the per-op sync overhead dominates.
 
 The **Predictions vs gold** mode pages through a `tools/infer.py --output` file (one row per
 record: `input`, `output` = prediction, `gold`, and `gold_mapped` with `--labels-file`).
-Enter the file's path as the BACKEND sees it (under Docker, a mounted path) and Open.
+Pick it from the dropdown -- every infer.py output under `predictions_root` in
+`viewer/config.yaml` (default `out/predictions`), newest first; a file qualifies when its first line
+has `input`, `output` and `gold` -- or type its path as the BACKEND sees it (under Docker, a mounted
+path) and Open. Files written without `--include-spans` are marked `no spans`: their predictions
+have no offsets, so only gold is drawn (as missed); run infer.py with `--include-spans`.
 
 - Prev / Next (or the arrow keys), a record number, or **worst F1 first** on one head.
 - The prediction is drawn as in Extract. The record's gold is a rim, matched under the
@@ -443,6 +447,7 @@ Enter the file's path as the BACKEND sees it (under Docker, a mounted path) and 
 | `POST /ekf-track` | `EkfRequest` | `{job_id, ...}` — starts an async run |
 | `GET /ekf-track/{job_id}` | — | `{stage, done, total, log, result}` |
 | `GET /predictions` | `?path=` | `{count, gold_key, records: [{i, chars, has_gold, f1}]}` |
+| `GET /predictions/files` | — | `{root, files: [{path, name, mtime, size, gold_mapped, spans}]}` |
 | `GET /predictions/record` | `?path=&i=` | `{text, pred, gold, classifications, unlocated, f1}`, spans flagged `match` |
 | `GET /health` | — | `{status, default_model, loaded_models}` |
 

@@ -11,6 +11,10 @@ data_root: data
 # Directory scanned for **/best checkpoints -> auto-discovered models.
 models_root: out
 
+# Directory scanned (recursively) for tools/infer.py --output files -> the
+# "Predictions vs gold" picker. A file qualifies when its first line has input, output and gold.
+predictions_root: out/predictions
+
 # Server default model: an HF id or a local checkpoint path.
 # The GLINER2_MODEL env var overrides this.
 default_model: fastino/gliner2-base-v1

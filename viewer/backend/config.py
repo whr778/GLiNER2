@@ -7,6 +7,7 @@ absolute paths are honored.
 
     data_root:     data       # scanned for <name>.train.jsonl corpus presets
     models_root:   out        # scanned for **/best checkpoints
+    predictions_root: out/predictions   # scanned for tools/infer.py --output files
     default_model: fastino/gliner2-base-v1
 """
 
@@ -47,6 +48,11 @@ def data_root() -> Path:
 def models_root() -> Path:
     """Directory scanned for ``**/best`` checkpoints to auto-discover."""
     return _root("models_root", _REPO / "out")
+
+
+def predictions_root() -> Path:
+    """Directory scanned (recursively) for ``tools/infer.py --output`` files for the predictions picker."""
+    return _root("predictions_root", _REPO / "out" / "predictions")
 
 
 def scripts_root() -> Path:

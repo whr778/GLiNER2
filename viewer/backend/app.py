@@ -363,6 +363,15 @@ def predictions(path: str) -> Dict[str, Any]:
     return gold.summary(path)
 
 
+@app.get("/predictions/files")
+def prediction_files() -> Dict[str, Any]:
+    """The infer.py output files under the configured ``predictions_root``, newest first."""
+    import gold
+
+    root = config.predictions_root()
+    return {"root": str(root), "files": gold.list_files(str(root)) if root.is_dir() else []}
+
+
 @app.get("/predictions/record")
 def prediction_record(path: str, i: int) -> Dict[str, Any]:
     """One record of an infer.py output file: prediction and gold, every span flagged ``match``."""

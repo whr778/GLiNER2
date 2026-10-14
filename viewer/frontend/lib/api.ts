@@ -183,3 +183,10 @@ export async function openPredictions(path: string): Promise<PredictionSummary> 
 export async function getPredictionRecord(path: string, i: number): Promise<PredictionRecord> {
   return jsonOrThrow(await fetch(`${API_BASE}/predictions/record?path=${encodeURIComponent(path)}&i=${i}`));
 }
+
+export type PredictionFile = { path: string; name: string; mtime: number; size: number; gold_mapped: boolean; spans: boolean };
+
+// infer.py output files under the backend's configured predictions_root, newest first.
+export async function listPredictionFiles(): Promise<{ root: string; files: PredictionFile[] }> {
+  return jsonOrThrow(await fetch(`${API_BASE}/predictions/files`));
+}

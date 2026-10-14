@@ -12,6 +12,7 @@ import copy
 import json
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from gliner2.processing.word_splitter import WhitespaceTokenSplitter
@@ -48,6 +49,36 @@ def summary(path: str) -> Dict[str, Any]:
 def record(path: str, i: int) -> Dict[str, Any]:
     """Record ``i`` of the file as ``record_view``; the cached row is never mutated."""
     return dict(record_view(copy.deepcopy(rows_of(path)[i])), i=i)
+
+
+_verdicts: Dict[Tuple[str, float, int], Dict[str, Any] | None] = {}
+
+
+def _infer_output(path: str, mtime: float, size: int) -> Dict[str, Any] | None:
+    """The picker entry when the file's first line is an infer.py row (input, output and gold), else None.
+    Cached by (path, mtime, size): only new or changed files are read."""
+    key = (path, mtime, size)
+    if key not in _verdicts:
+        try:
+            with open(path, encoding="utf-8") as f:
+                first = json.loads(f.readline() or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            first = {}
+        _verdicts[key] = ({"path": path, "mtime": mtime, "size": size, "gold_mapped": "gold_mapped" in first,
+                           "spans": '"start"' in json.dumps(first.get("output"))}
+                          if isinstance(first, dict) and {"input", "output", "gold"} <= first.keys() else None)
+    return _verdicts[key]
+
+
+def list_files(root: str) -> List[Dict[str, Any]]:
+    """Every infer.py output file under ``root``, newest first."""
+    out = []
+    for p in Path(root).rglob("*.jsonl"):
+        st = p.stat()
+        entry = _infer_output(str(p), st.st_mtime, st.st_size)
+        if entry:
+            out.append(dict(entry, name=str(p.relative_to(root))))
+    return sorted(out, key=lambda e: -e["mtime"])
 
 
 def gold_key(row: Dict[str, Any]) -> str:

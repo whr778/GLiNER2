@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import AnnotatedText from "./AnnotatedText";
 import { collectMarks, type Layer } from "@/lib/spans";
-import { getPredictionRecord, openPredictions, type PredictionRecord, type PredictionSummary } from "@/lib/api";
+import {
+  getPredictionRecord, listPredictionFiles, openPredictions,
+  type PredictionFile, type PredictionRecord, type PredictionSummary,
+} from "@/lib/api";
 
 const LAYERS: Layer[] = ["entities", "events", "relations"];
 const LAYER_KEY: Record<Layer, string> = { entities: "entities", events: "event_extraction", relations: "relation_extraction" };
@@ -31,12 +34,17 @@ export default function PredictionsPanel() {
   const [pinned, setPinned] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function onOpen() {
+  const [files, setFiles] = useState<{ root: string; files: PredictionFile[] } | null>(null);
+  const refreshFiles = () => listPredictionFiles().then(setFiles).catch((e) => setError(e.message));
+  useEffect(() => { refreshFiles(); }, []);
+  const picked = files?.files.find((f) => f.path === summary?.path);
+
+  async function onOpen(target = path) {
     setError(null);
     try {
-      setSummary(await openPredictions(path.trim()));
+      setSummary(await openPredictions(target.trim()));
       setPos(0);
-      try { localStorage.setItem(PATH_KEY, path.trim()); } catch { /* per-viewer convenience only */ }
+      try { localStorage.setItem(PATH_KEY, target.trim()); } catch { /* per-viewer convenience only */ }
     } catch (e: any) {
       setError(e.message);
       setSummary(null);
@@ -87,13 +95,36 @@ export default function PredictionsPanel() {
     <div>
       <div className="card">
         <h2>Predictions file</h2>
+        <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+          <select style={{ flex: 1 }} value={files?.files.some((f) => f.path === path) ? path : ""}
+                  onChange={(e) => { if (e.target.value) { setPath(e.target.value); onOpen(e.target.value); } }}>
+            <option value="">
+              {files ? `${files.files.length} infer.py output file(s) in ${files.root}` : "loading..."}
+            </option>
+            {files?.files.map((f) => (
+              <option key={f.path} value={f.path}>
+                {f.name} -- {new Date(f.mtime * 1000).toLocaleString()} -- {(f.size / 1024).toFixed(0)} KB
+                {f.spans ? "" : " -- no spans"}{f.gold_mapped ? " -- gold_mapped" : ""}
+              </option>
+            ))}
+          </select>
+          <button className="secondary" onClick={refreshFiles}>Refresh</button>
+        </div>
         <div className="row" style={{ gap: 8 }}>
           <input className="mono" style={{ flex: 1 }} value={path} onChange={(e) => setPath(e.target.value)}
                  onKeyDown={(e) => e.key === "Enter" && onOpen()}
                  placeholder="/path/to/preds.jsonl  (tools/infer.py --output)" />
-          <button className="primary" onClick={onOpen} disabled={!path.trim()}>Open</button>
+          <button className="primary" onClick={() => onOpen()} disabled={!path.trim()}>Open</button>
         </div>
         {error && <div className="error" style={{ marginTop: 8 }}>{error}</div>}
+        {picked && !picked.spans && (
+          <div className="error" style={{ marginTop: 8 }}>
+            This file&apos;s predictions carry no span offsets (infer.py ran without{" "}
+            <span className="mono">--include-spans</span>), so no prediction can be drawn and every gold span
+            shows as missed. The F1 numbers and classifications are still right. Re-run infer.py with{" "}
+            <span className="mono">--include-spans</span> to see predictions in the text.
+          </div>
+        )}
         {summary?.gold_key === "gold" && (
           <div className="hint" style={{ marginTop: 8 }}>
             This file has no <span className="mono">gold_mapped</span>: gold is in the corpus spellings, so a label
