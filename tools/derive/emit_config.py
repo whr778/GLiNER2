@@ -20,6 +20,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/train"))
 import train as T  # noqa: E402
 
 PLATEAU = 0.95          # smallest k reaching 95% of the best measured coverage
+NEGATIVE_DOSE = 20      # menudose A/B 2026-10-07: 20 vs 1 absent labels per dimension (entities, events)
+# dimension -> the stage-2 gold count that says the corpus annotates it
+NEGATIVE_DIMS = {"entities": "entity_mentions", "events": "event_instances",
+                 "relations": "relations", "structures": "structure_records"}
+DOSE_TESTED = ("entities", "events")
+
+
+def _negatives(train_heads: Dict[str, int]) -> Tuple[Dict[str, int], str, List[str]]:
+    """Absent labels per dimension, only for dimensions this corpus annotates (a dimension it
+    lacks has no pool to draw from), at the A/B-backed dose. Returns (dims, comment, warnings)."""
+    dims = {d: NEGATIVE_DOSE for d, key in NEGATIVE_DIMS.items() if train_heads.get(key, 0) > 0}
+    counts = ", ".join(f"{d} {train_heads[NEGATIVE_DIMS[d]]:,}" for d in dims)
+    untested = [d for d in dims if d not in DOSE_TESTED]
+    note = (f"measured dims (train gold: {counts}); dose {NEGATIVE_DOSE} = menudose A/B 2026-10-07 "
+            f"(news-menu event_type F1 0.205 -> 0.566, no gold-menu cost)")
+    warns = []
+    if untested:
+        note += f"; {'/'.join(untested)} dose UNTESTED"
+        warns.append(f"NEGATIVES: {', '.join(untested)} get dose {NEGATIVE_DOSE} by analogy -- the menudose A/B covered "
+                     f"entities and events only; an untested treatment, A/B it or set it to 1.")
+    return dims, note, warns
 
 
 def _reach_pick(reach: Dict[str, Dict]) -> Tuple[int, str]:
@@ -101,10 +122,17 @@ def build(name: str, model: str, corpus_base: str, calib: Dict) -> Tuple[Dict, D
         "validate_data": True, "sliding_window": True, "max_len": window, "window_stride": int(0.75 * window),
         "gradient_checkpointing": window >= 2048, "pin_memory": True,
         "error_policy": "skip", "on_capacity_exceeded": "truncate_with_warning",
-        "negative_pools": "auto", "negative_labels_per_dim": {"entities": 1, "events": 1}, "negative_label_seed": 42,
+        "negative_pools": "auto", "negative_label_seed": 42,
     }
+    neg, neg_note, neg_warns = _negatives(c["heads"]["train"])
+    if neg:
+        tr["negative_labels_per_dim"] = neg
+    else:
+        del tr["negative_pools"], tr["negative_label_seed"]
     for k in tr:
         cm[f"training.{k}"] = "policy"
+    if neg:
+        cm["training.negative_labels_per_dim"] = neg_note
     cm["training.max_len"] = f"measured: eval window ({ev.get('source', 'default')}); train p99 {c['lengths']['train']['p99']} subwords"
     cm["training.window_stride"] = "policy: 25% window overlap"
     cm["training.batch_size"] = "policy: NOT measured for your GPU -- 4x4 fits 4096 windows on an A100-40GB (eb18: 18.9 GB peak)"
@@ -120,6 +148,7 @@ def build(name: str, model: str, corpus_base: str, calib: Dict) -> Tuple[Dict, D
                             if span_pick is not None else "checkpoint/default: run with --gpu to measure")
     cm["eval.global_decode"] = f"checkpoint/default: {ev.get('source', 'default')}"
 
+    warnings += neg_warns
     warnings.append("NO REPLAY: the base's training corpora are not available here. Fine-tuning without replay "
                     "forgot the base on all 8 heads in this project (gate3 warm cells); add an exact ~30% replay "
                     "slice of the base's data to data.corpora (train_only) if you have it.")

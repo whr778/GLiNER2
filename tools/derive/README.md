@@ -154,6 +154,7 @@ threshold picked on the grid edge. Measured decisions:
 | `candidate_pool` | a `shared` base switches to `per_query` only if its val scores under `per_query` are at least as good (stage 6 companion) |
 | `record_anchor_threshold` (+ `_wins`) | stage 6 record-gate pick on the base |
 | `eval.threshold` | stage 6 span pick on the base |
+| `negative_labels_per_dim` | dose 20 (menudose A/B, 2026-10-07) for each dimension the corpus has train gold in (stage 2); relations / structures are flagged UNTESTED in the header |
 
 Structural keys are never written (the run would refuse them). Batch size is **policy, not
 measured** for your GPU. Base-measured thresholds are starting points: `threshold_sweep: true`
