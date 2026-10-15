@@ -17,6 +17,7 @@ import torch
 from transformers import AutoTokenizer
 
 from gliner2.classification.errors import SchemaError
+from gliner2.processing import coref
 from gliner2.processing.targets import SurfaceSpan, char_span_to_word_boundaries
 from gliner2.processing.word_splitter import (  # noqa: F401 - public re-exports
     CharLevelSplitter,
@@ -176,6 +177,7 @@ class PreprocessedBatch:
     targets: Any = None  # PaddedTargetBatch | None
     model_texts: tuple = ()  # tokenizer-facing (possibly mutated) text per sample
     record_specs: tuple = ()  # per-sample {task_index: RecordSpec}
+    coref_mentions: tuple = ()  # per-sample [(first word, last word, cluster)] (processing/coref.py)
 
     def to(self, device: torch.device, dtype: torch.dtype = None) -> "PreprocessedBatch":
         """Move tensors to device and optionally cast float tensors to dtype.
@@ -234,6 +236,7 @@ class PreprocessedBatch:
             targets=(self.targets.to(device) if self.targets is not None else None),
             model_texts=self.model_texts,
             record_specs=self.record_specs,
+            coref_mentions=self.coref_mentions,
         )
 
     def pin_memory(self) -> "PreprocessedBatch":
@@ -286,6 +289,7 @@ class PreprocessedBatch:
             targets=(self.targets.pin_memory() if self.targets is not None else None),
             model_texts=self.model_texts,
             record_specs=self.record_specs,
+            coref_mentions=self.coref_mentions,
         )
 
     def __contains__(self, key: str) -> bool:
@@ -499,6 +503,7 @@ class SchemaTransformer:
             PreprocessedBatch ready for model.forward()
         """
         self.is_training = True
+        batch, clusters = coref.take(batch)
         # `build_targets=True` comes from upstream (bb4f5d5): the training collate must
         # ask for gold explicitly now that `_collate_batch` defaults it off.
         result = self._collate_batch(
@@ -528,6 +533,7 @@ class SchemaTransformer:
         )
         if architecture == "boundary" and len(out):
             out.typed_spans = self._typed_spans(out)
+        out.coref_mentions = coref.batch_mentions(out, clusters)
         return out
 
     def collate_fn_inference(
@@ -564,10 +570,11 @@ class SchemaTransformer:
             PreprocessedBatch for batch_extract
         """
         self.is_training = False
+        batch, clusters = coref.take(batch)
         result = self._collate_batch(
             batch, max_len=max_len, error_policy=error_policy, build_targets=bool(build_targets)
         )
-        return self._add_boundary_metadata(
+        out = self._add_boundary_metadata(
             result,
             architecture,
             is_training=False,
@@ -588,6 +595,8 @@ class SchemaTransformer:
             ),
             dedupe_contained_entity_spans=dedupe_contained_entity_spans,
         )
+        out.coref_mentions = coref.batch_mentions(out, clusters)
+        return out
 
     @staticmethod
     def _add_boundary_metadata(

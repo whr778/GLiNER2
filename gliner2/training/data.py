@@ -385,13 +385,17 @@ class DataLoader_Factory:
                     # injector saw corpus=None in every validated run -- `negative_gold_free_dims`
                     # never fired and partial_annotation went unread (menuref A/B, 2026-10-07).
                     sanitized = example.to_dict()
-                    if "_corpus" in record:
-                        sanitized["_corpus"] = record["_corpus"]
+                    for key in ("_corpus", "coref_clusters"):   # to_dict drops both
+                        if key in record:
+                            sanitized[key] = record[key]
                     records[i] = sanitized
                     valid_indices.append(i)
                     if sanitize_warnings:
                         # Record was sanitized but still valid
                         warnings.extend(sanitize_warnings)
+                elif record.get("coref_clusters") and not record.get("output"):
+                    # A coreference-only record (gum_coref, ...) has no tasks by design.
+                    valid_indices.append(i)
                 else:
                     # No valid content remains
                     warnings.extend(sanitize_warnings)

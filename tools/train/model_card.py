@@ -166,6 +166,9 @@ _SLICE_SUFFIX = re.compile(r"\.j\d+k$")
 _KEY_ALIASES = {
     "synthetic_coerced": "synthetic_haiku45_5k_coerced",
     "synthetic_sonnet5": "synthetic_sonnet5_1k",
+    # corefB evaluates on eb21's exact val/test: the corpus's FULL split beside eb21's slice entry
+    # (docee's slice shares no record with its full val), so the full one needs its own label.
+    **{f"{c}_full": c for c in ("casie", "chfinann", "docee", "docfee", "events_biotech", "maven", "text2json")},
 }
 
 

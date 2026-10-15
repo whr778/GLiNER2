@@ -71,6 +71,7 @@ def _slice_batch(batch: PreprocessedBatch, start: int, end: int,
         text_word_indices=t(batch.text_word_indices),
         text_word_counts=l(batch.text_word_counts),
         schema_special_indices=l(batch.schema_special_indices),
+        coref_mentions=l(batch.coref_mentions),
     )
 
 

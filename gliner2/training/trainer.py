@@ -65,6 +65,7 @@ import torch.distributed as dist
 from tqdm.auto import tqdm
 
 from gliner2.processor import SchemaTransformer, SamplingConfig
+from gliner2.processing import coref
 from gliner2.utils.device_errors import is_fatal_device_error
 from gliner2.utils.sync_probe import count_cuda_syncs
 
@@ -638,7 +639,7 @@ class ExtractorDataset(Dataset):
             # staying deterministic in (seed, epoch, index), which is what DDP ranks and
             # dataloader workers need to agree.
             schema = self.negatives.inject(schema, idx, record.get("_corpus"))
-        return text, schema
+        return text, coref.attach(schema, record.get("coref_clusters"))
 
     # Factory methods for explicit creation
     @classmethod

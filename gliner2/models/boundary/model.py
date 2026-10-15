@@ -43,6 +43,7 @@ from gliner2.models.loading import (
     reconcile_encoder_embeddings,
     split_load_kwargs,
 )
+from gliner2.models.boundary.mention_link import MentionLink, batch_loss
 from gliner2.models.boundary.encoding import BoundaryEncoder, BoundaryEncoding
 from gliner2.models.boundary.constants import MASK_LOGIT
 from gliner2.models.boundary.heads import BoundaryMarginals, BoundaryQueryHead
@@ -1621,6 +1622,10 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 link=settings.record_link_mode == "junction",
                 coref=settings.record_coref_link,
             )
+        # The entity-mention coreference link (entity_coref_link). Built only when on.
+        self.mention_link = None
+        if settings.entity_coref_link:
+            self.enable_mention_link()
         if self.enable_relations:
             self.relation_pair_generator = TypedRelationPairGenerator(
                 RelationProposalSettings(
@@ -2510,6 +2515,12 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     exc,
                 )
                 record_loss = None
+        coref_loss = None
+        if (self.mention_link is not None and self.training
+                and self.boundary_settings.entity_coref_link_weight > 0 and getattr(batch, "coref_mentions", ())):
+            loss, n_pairs = batch_loss(self.mention_link, core["text_states"], batch.coref_mentions,
+                                       self.boundary_settings.entity_coref_link_negatives)
+            coref_loss = _finite_loss_term(loss) if n_pairs else None
         relation_loss = None
         if self.enable_relations and self.training and output.candidates is not None:
             try:
@@ -2548,6 +2559,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
             or has_cls_supervision
             or record_loss is not None
             or relation_loss is not None
+            or coref_loss is not None
         )
         if has_supervision:
             span_total = (
@@ -2560,6 +2572,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 combined = combined + record_loss["total"]
             if relation_loss is not None:
                 combined = combined + relation_loss
+            if coref_loss is not None:
+                combined = combined + self.boundary_settings.entity_coref_link_weight * coref_loss
             output.total_loss = combined
             output.loss = combined
             if output.losses is not None:
@@ -2569,7 +2583,17 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     output.losses["record_field_loss"] = record_loss["field"]
                 if relation_loss is not None:
                     output.losses["relation_loss"] = relation_loss
+                if coref_loss is not None:
+                    output.losses["entity_coref_loss"] = coref_loss
         return output
+
+    def enable_mention_link(self) -> None:
+        """Add the entity-mention coreference link (a warm start from a checkpoint without it). Call before
+        the optimizer is built, or its parameters are never updated."""
+        if self.mention_link is None:
+            ref = next(self.parameters())
+            self.mention_link = MentionLink(self.hidden_size, self.boundary_settings.record_dim).to(
+                device=ref.device, dtype=ref.dtype)
 
     def _record_loss(self, batch, core, candidates, targets) -> Dict[str, torch.Tensor]:
         """Aggregate record object + field-assignment losses across the batch."""

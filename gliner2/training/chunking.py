@@ -237,6 +237,17 @@ def _filter_record_output(
     return new_out
 
 
+def _chunk_clusters(clusters, c_start: int, c_end: int) -> List[List[Dict[str, Any]]]:
+    """The coref clusters inside ``[c_start, c_end)``, offsets re-based to the chunk."""
+    out = []
+    for cluster in clusters or []:
+        kept = [dict(m, start=m["start"] - c_start, end=m["end"] - c_start)
+                for m in cluster if c_start <= m["start"] and m["end"] <= c_end]
+        if kept:
+            out.append(kept)
+    return out
+
+
 def _record_has_content(out: Dict[str, Any]) -> bool:
     return any(k in out for k in (
         "entities", "relations", "events", "classifications", "json_structures",
@@ -293,11 +304,14 @@ def chunk_records(
             n_passthrough += 1
             continue
         n_chunked += 1
-        for _, _, chunk_text in chunks:
+        for c_start, c_end, chunk_text in chunks:
             new_out = _filter_record_output(output, chunk_text)
-            if not _record_has_content(new_out):
+            clusters = _chunk_clusters(record.get("coref_clusters"), c_start, c_end)
+            if not _record_has_content(new_out) and sum(map(len, clusters)) < 2:
                 continue
             chunk = {"input": chunk_text, "output": new_out}
+            if clusters:
+                chunk["coref_clusters"] = clusters
             # Carry provenance for the same reason record_metadata is carried: a chunk
             # that forgets which corpus it came from cannot be protected by
             # `partial_annotation`, and the loss of the tag would be silent.

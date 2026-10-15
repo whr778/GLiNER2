@@ -117,6 +117,12 @@ class BoundaryHeadSettings:
     record_coref_link_weight: float = 0.0
     record_coref_link_negatives: int = 4
     record_coref_link_threshold: float = 0.5      # decode: merge same-type instances at sigmoid(s) >= this
+    # THE ENTITY-MENTION COREFERENCE LINK (COREF_DATA_SOURCES.md): a mention x mention score over the mean word
+    # states of gold `coref_clusters` mentions, trained on all positives + each mention's k hardest negatives, its
+    # OWN mean, weighted. No decode reads it yet.
+    entity_coref_link: bool = False
+    entity_coref_link_weight: float = 0.0
+    entity_coref_link_negatives: int = 4
     # THE TRIGGER x ARGUMENT JUNCTION (JUNCTION_LAYER_SPEC.md). "additive" (default, historical): the
     # assignment is P (trigger x candidate) + R (role x candidate, the SAME for every trigger) -- measured
     # role fit with no join (junction AUC 0.56-0.61, pair term below chance in-row). "junction" adds a
@@ -435,6 +441,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_coref_link_weight": float(values.get("record_coref_link_weight", d.record_coref_link_weight)),
         "record_coref_link_negatives": int(values.get("record_coref_link_negatives", d.record_coref_link_negatives)),
         "record_coref_link_threshold": float(values.get("record_coref_link_threshold", d.record_coref_link_threshold)),
+        "entity_coref_link": bool(values.get("entity_coref_link", d.entity_coref_link)),
+        "entity_coref_link_weight": float(values.get("entity_coref_link_weight", d.entity_coref_link_weight)),
+        "entity_coref_link_negatives": int(values.get("entity_coref_link_negatives", d.entity_coref_link_negatives)),
         "record_link_mode": str(values.get("record_link_mode", d.record_link_mode)),
         "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
@@ -724,6 +733,8 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError("boundary_head.record_role_hard_negatives must be >= 0")
     if result["record_merge_coreferent"] not in ("off", "args", "link"):
         raise ValueError(f"boundary_head.record_merge_coreferent must be off/args/link, got {result['record_merge_coreferent']!r}")
+    if result["entity_coref_link_weight"] > 0 and not result["entity_coref_link"]:
+        raise ValueError("boundary_head.entity_coref_link_weight needs entity_coref_link: true")
     if result["record_coref_link_weight"] > 0 and not result["record_coref_link"]:
         raise ValueError("boundary_head.record_coref_link_weight needs record_coref_link: true")
     if result["record_merge_coreferent"] == "link" and not result["record_coref_link"]:

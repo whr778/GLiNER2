@@ -18,6 +18,11 @@
 # description (one-sentence qualitative summary for the model card).
 
 base_models:
+  whr778/gliner2-eb21:
+    name: gliner2-eb21
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: local (trained by tools/train/config/base/eb21.yaml, hand-stopped after epoch 3 of 9, 2026-10-15),
+      pushed to the Hub; THE base, and the warm start of the option-B coref arms (ab/corefB-*.yaml)
   whr778/gliner2-eb18-balanced:
     name: gliner2-eb18-balanced
     license: derived from jhu-clsp/mmBERT-base
@@ -1337,3 +1342,11 @@ datasets:
     hf_jsonl: whr778/gap_coref
     language: [en]
     description: "Wikipedia passages, one ambiguous pronoun and two candidate names each; the coreferent name joins the pronoun's cluster, the other is a singleton (a hard negative). 2,000 / 454 / 2,000 (GAP's own splits). 3 passages repeat inside a split with a different pronoun (by design, not leakage)."
+  replay_eb21_coref30:
+    name: eb21 exact replay, 30% of the option-B coref mixture
+    provenance: mixed (replay)
+    tasks: mixed (replay)
+    license: mixed -- inherits eb21's 23 source corpora
+    source_url: local (tools/train/build_137k_replay.py --config base/eb21.yaml --new-records 2421 --replay-frac 0.30 --seed 42)
+    hf_jsonl: whr778/replay_eb21_coref30
+    description: "1,037 TRAIN records drawn proportionally from eb21's 23 train corpora (239,038 records), each tagged with its source `_corpus` so negatives and partial_annotation resolve per source. val/test are empty on purpose: replay is train-only."

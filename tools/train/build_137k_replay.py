@@ -34,7 +34,8 @@ def pool_files(config: Path) -> dict[str, Path]:
     for co in cfg["data"].get("corpora") or []:
         out[Path(co).name] = Path(f"{co}.train.jsonl")
     for name, v in (cfg["data"].get("event_files") or {}).items():
-        out[name] = Path(v["train"])
+        if "train" in v:   # val/test-only entries (eb21: duee, cmnee, mendeley_ed) are never trained on
+            out[name] = Path(v["train"])
     return {k: v for k, v in out.items() if v.exists()}
 
 
@@ -67,14 +68,17 @@ def main() -> int:
         rng.shuffle(lines)
         take = lines[:share]
         picked[name] = len(take)
-        rows.extend(take)
+        rows.extend((name, line) for line in take)
     rng.shuffle(rows)
 
     out_train = Path(f"{args.out}.train.jsonl")
     seen = set()
     with out_train.open("w", encoding="utf-8") as fh:
-        for line in rows:
-            rec = json.loads(line)
+        for name, line in rows:
+            # Keep the SOURCE corpus: train.py only setdefaults `_corpus` from the file name, so without
+            # this every replay record is tagged with the replay file and the negatives injector and
+            # `partial_annotation` look up the wrong pool.
+            rec = dict(json.loads(line), _corpus=name)
             seen.add(normalize_group_key(rec.get("input", "")))
             fh.write(dumps_record(rec) + "\n")
     # the trainer resolves a corpus as <base>.{train,val,test}; give it readable paths
