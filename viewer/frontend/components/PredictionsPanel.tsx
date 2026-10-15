@@ -6,8 +6,14 @@ import PredictionsHelp from "./PredictionsHelp";
 import { collectMarks, type Layer } from "@/lib/spans";
 import {
   getPredictionRecord, listPredictionFiles, openPredictions,
-  type PredictionFile, type PredictionRecord, type PredictionSummary,
+  type DiffSide, type PredictionFile, type PredictionRecord, type PredictionSummary,
 } from "@/lib/api";
+
+function sideText(d: DiffSide | null): string {
+  if (!d) return "-";
+  const lab = d.label + (d.role ? ` / ${d.role}` : "") + (d.idx ? ` #${d.idx}` : "");
+  return `"${d.text}"${d.tail ? ` -> "${d.tail}"` : ""}  (${lab})` + (d.trig ? `  under ${d.trig.join(", ") || "-"}` : "");
+}
 
 const LAYERS: Layer[] = ["entities", "events", "relations"];
 const LAYER_KEY: Record<Layer, string> = { entities: "entities", events: "event_extraction", relations: "relation_extraction" };
@@ -19,7 +25,7 @@ function hasLayer(r: Record<string, any>, l: Layer): boolean {
 }
 
 // Pages through a tools/infer.py --output file: the prediction drawn as usual, the record's own
-// gold as a rim (solid = matches, dashed = gold here under another label/role, rim only = missed),
+// gold as a rim (solid = matches, dashed = overlap that differs -- diffs.py names how -- rim only = missed),
 // matched under the scorer's strict keys so the view agrees with the strict F1.
 export default function PredictionsPanel() {
   const [path, setPath] = useState(() => {
@@ -143,7 +149,7 @@ export default function PredictionsPanel() {
             <button className="secondary" onClick={() => setPos((p) => Math.max(p - 1, 0))} disabled={pos === 0}>Prev</button>
             <input type="number" style={{ width: 80 }} min={1} max={sequence.length} value={pos + 1}
                    onChange={(e) => setPos(Math.min(Math.max(Number(e.target.value) - 1, 0), sequence.length - 1))} />
-            <span className="hint">of {summary.count} (record #{index})</span>
+            <span className="hint">of {summary.count}{order === "file" ? "" : ` (record ${index + 1} in the file)`}</span>
             <button className="secondary" onClick={() => setPos((p) => Math.min(p + 1, sequence.length - 1))}
                     disabled={pos >= sequence.length - 1}>Next</button>
             <select value={order} onChange={(e) => { setOrder(e.target.value); setPos(0); }}>
@@ -159,7 +165,7 @@ export default function PredictionsPanel() {
       {rec && (
         <div className="card annotated">
           <div className="row between">
-            <h2>Record {rec.i}</h2>
+            <h2>Record {rec.i + 1}</h2>
             <div className="toggle">
               {LAYERS.filter((l) => hasLayer(rec.pred, l) || hasLayer(rec.gold, l)).map((l) => (
                 <button key={l} className={l === layer ? "active" : ""} onClick={() => setLayer(l)}>
@@ -175,8 +181,9 @@ export default function PredictionsPanel() {
           </div>
           {rec.has_gold && (
             <div className="hint" style={{ marginBottom: 8 }}>
-              Gold rim: <b>solid</b> = prediction matches gold · <b>dashed</b> = gold here under another label/role ·
-              {" "}<b>rim only</b> = gold the model missed · fill without rim = prediction not in gold
+              Gold rim: <b>solid</b> = prediction matches gold · <b>dashed</b> = gold and prediction overlap but
+              differ (the <b>≠</b> tag says how) · <b>rim only</b> = gold the model missed · fill without rim =
+              prediction not in gold. Click an event or relation span to cycle its mentions (pred / gold).
             </div>
           )}
           <AnnotatedText text={rec.text} marks={marks} layer={layer} activeEid={pinned} onSelectEid={setPinned} />
@@ -185,6 +192,36 @@ export default function PredictionsPanel() {
               Gold that cannot be placed in the text (training cannot place it either): {rec.unlocated.join(", ")}
             </div>
           )}
+        </div>
+      )}
+
+      {rec && rec.has_gold && (
+        <div className="card">
+          <h2>Differences: {layer}</h2>
+          {(() => {
+            const rows = rec.diffs.filter((d) => d.layer === layer);
+            if (!rows.length) return <div className="hint">None: every {layer} span matches gold.</div>;
+            return (
+              <table>
+                <thead><tr><th>why</th><th>gold</th><th>predicted</th><th>×</th></tr></thead>
+                <tbody>
+                  {rows.map((d, k) => {
+                    const eid = d.gold?.eid ?? d.pred?.eid ?? null;
+                    return (
+                      <tr key={k} className={eid ? "clickrow" + (eid === pinned ? " active" : "") : undefined}
+                          onClick={eid ? () => setPinned(eid === pinned ? null : eid) : undefined}
+                          title={d.why}>
+                        <td><b>{d.reason}</b></td>
+                        <td className="mono">{sideText(d.gold)}</td>
+                        <td className="mono">{sideText(d.pred)}</td>
+                        <td>{d.count > 1 ? d.count : ""}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
       )}
 

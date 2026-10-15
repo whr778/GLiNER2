@@ -13,6 +13,7 @@ export type Mark = {
   idx?: number; // 1-based mention index within its event type (for a badge)
   gold?: boolean; // from the gold record, not the prediction (predictions view)
   match?: boolean; // the scorer's strict key is on the other side too
+  why?: string[]; // why it does not match (backend diffs.py)
 };
 
 function asSpan(x: any): Span | null {
@@ -50,7 +51,7 @@ export function schemaLayers(schema: Record<string, any> | null | undefined): La
 // gold.py) says whether the scorer's strict key is on the other side.
 export function collectMarks(result: ExtractionResult, layer: Layer, gold = false): Mark[] {
   const marks: Mark[] = [];
-  const g = (sp: any) => ({ gold, match: sp?.match });
+  const g = (sp: any) => ({ gold, match: sp?.match, why: sp?.why });
   const pre = gold ? "g-" : "";
   if (layer === "entities") {
     for (const [label, spans] of Object.entries(result.entities || {})) {
@@ -103,6 +104,7 @@ export type Role = {
   idx?: number;
   gold?: boolean;
   match?: boolean;
+  why?: string[];
 };
 
 // A rendered span, carrying every role that lands on its character range.
@@ -146,7 +148,7 @@ export function buildSegments(text: string, marks: Mark[]): Segment[] {
       g = { start, end, roles: [] };
       groups.set(key, g);
     }
-    g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx, gold: m.gold, match: m.match });
+    g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx, gold: m.gold, match: m.match, why: m.why });
   }
 
   const sorted = [...groups.values()].sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));

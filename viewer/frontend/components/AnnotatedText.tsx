@@ -35,6 +35,8 @@ export default function AnnotatedText({
   const [spanHover, setSpanHover] = useState<Set<string>>(() => new Set());
   const hoverEids = useMemo(() => {
     if (!activeEid) return spanHover;
+    // Hovering the span that holds the selection shows ONLY the selection, so cycling isolates it.
+    if (spanHover.has(activeEid)) return new Set([activeEid]);
     const s = new Set(spanHover);
     s.add(activeEid);
     return s;
@@ -193,7 +195,12 @@ export default function AnnotatedText({
       {segments.map((s, i) => {
         const mk = s.mark;
         if (!mk) return <span key={i}>{s.text}</span>;
-        const p = mk.primary;
+        // The selected mention, when it is on this span, drives label and color: cycling shows each one.
+        const sel = activeEid
+          ? mk.roles.find((r) => r.eid === activeEid && (r.kind === "trigger" || r.kind === "head"))
+            ?? mk.roles.find((r) => r.eid === activeEid)
+          : undefined;
+        const p = sel ?? mk.primary;
         const colorKey = p.colorKey ?? p.label;
         const eidTokens = mk.roles.filter((r) => r.eid).map((r) => `${r.eid}:${r.kind}`).join(" ");
         // Distinct eids on this span, in role order, so clicks cycle deterministically.
@@ -208,19 +215,21 @@ export default function AnnotatedText({
         const selPos = activeEid ? eidList.indexOf(activeEid) : -1;
         const clickable = linkable && eidList.length > 0 && !!onSelectEid;
         // Predictions view: solid gold rim = the prediction matches gold (strict key); dashed =
-        // gold lands here but no prediction on it matches (wrong label/role); rim only = missed.
+        // gold and a prediction overlap here but differ; rim only = missed. `why` (backend diffs.py)
+        // names how they differ; with a mention selected, only that mention's reasons.
+        const scored = mk.roles.some((r) => r.match !== undefined);
         const hasGold = mk.roles.some((r) => r.gold);
         const hasPred = mk.roles.some((r) => !r.gold);
         const predMatch = mk.roles.some((r) => !r.gold && r.match);
-        const goldLabels = [...new Set(mk.roles.filter((r) => r.gold).map((r) => r.label))];
-        const sameLabel = !predMatch && mk.roles.some((r) => !r.gold && goldLabels.includes(r.label));
         const goldClass = !hasGold ? "" : !hasPred ? " gold goldonly" : predMatch ? " gold" : " gold golddiff";
-        const status = !hasGold && !mk.roles.some((r) => r.match !== undefined) ? ""
+        const whys = [...new Set((sel ? [sel] : mk.roles).flatMap((r) => r.why ?? []))];
+        const reasons = [...new Set(whys.map((w) => w.split(" ")[0].replace(/:$/, "")).filter((r) => r !== "missed" && r !== "spurious"))];
+        const status = !scored ? ""
+          : whys.length ? "\n" + whys.join("\n")
           : !hasPred ? " · gold, missed"
           : predMatch ? " · matches gold"
-          : sameLabel ? " · same label as gold, but not its strict key (an argument's key includes its mention's triggers)"
-          : hasGold ? " · gold here: " + goldLabels.join(", ")
           : " · prediction, not in gold";
+        const side = scored && sel ? (sel.gold ? "gold " : "pred ") : "";
         // Cycle: nothing here selected -> first; selected -> next; past the last -> clear.
         const cycle = () => {
           if (!clickable) return;
@@ -246,8 +255,9 @@ export default function AnnotatedText({
           >
             {s.text}
             <span className="taglabel" style={tagStyle(colorKey)}>
-              {p.label}
+              {side}{p.label}
               {p.kind === "trigger" && p.idx ? <sup className="eidx">{p.idx}</sup> : null}
+              {reasons.length ? <sup className="whytag">≠{reasons.join(" ≠")}</sup> : null}
               {count > 1 ? (
                 <sup className="eidx">{selPos >= 0 ? `${selPos + 1}/${count}` : `×${count}`}</sup>
               ) : null}

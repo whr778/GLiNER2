@@ -15,6 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import diffs
 from gliner2.processing.word_splitter import WhitespaceTokenSplitter
 from gliner2.training import eval_metrics as M
 
@@ -180,8 +181,9 @@ def _classifications(gold: Dict[str, Any], pred: Dict[str, Any]) -> List[Dict[st
 
 
 def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
-    """One row as {text, pred, gold, classifications, unlocated, f1}: both sides in the
-    prediction shape, every span flagged ``match`` under the strict keys."""
+    """One row as {text, pred, gold, classifications, unlocated, f1, diffs}: both sides in the
+    prediction shape, every span flagged ``match`` under the strict keys, every unmatched span
+    given its ``why`` (diffs.py)."""
     text, pred, gold = row["input"], row.get("output") or {}, row.get(gold_key(row)) or {}
     missed: List[str] = []
     g = {"entities": gold_entities(text, gold, missed),
@@ -193,9 +195,11 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     _mark_events(g["event_extraction"], M._pred_event_trigger_set(pred), M._pred_event_argument_set(pred))
     _mark_relations(pred.get("relation_extraction") or {}, M._gold_relation_set(gold))
     _mark_relations(g["relation_extraction"], M._pred_relation_set(pred))
-    return {"text": text, "pred": pred, "gold": g, "has_gold": bool(gold),
+    view = {"text": text, "pred": pred, "gold": g, "has_gold": bool(gold),
             "classifications": _classifications(gold, pred),
             "unlocated": sorted(set(missed)), "f1": _f1(gold, pred)}
+    view["diffs"] = diffs.annotate(view) if gold else []
+    return view
 
 
 def _f1(gold: Dict[str, Any], pred: Dict[str, Any]) -> Dict[str, float]:

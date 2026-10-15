@@ -177,6 +177,7 @@ mark.tag .taglabel {
   color: var(--tagc);
 }
 sup.eidx { font-size: 8px; margin-left: 1px; opacity: 0.85; }
+sup.whytag { font-size: 8px; margin-left: 3px; color: var(--gold); font-weight: 600; }
 
 /* Event triggers and relation heads get a full box border + bold so they stand
    out from their arguments / tails. */
@@ -279,3 +280,5 @@ details.raw pre { background: var(--panel-2); padding: 12px; border-radius: 8px;
 .flow tbody tr:hover { background: #f8fafc; }
 .flow-ok { color: #15803d; }
 .flow-stop { color: var(--muted); opacity: 0.75; }
+tr.clickrow { cursor: pointer; }
+tr.clickrow:hover, tr.clickrow.active { background: color-mix(in srgb, var(--gold) 14%, transparent); }

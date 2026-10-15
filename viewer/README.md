@@ -423,8 +423,12 @@ have no offsets, so only gold is drawn (as missed); run infer.py with `--include
 - Prev / Next (or the arrow keys), a record number, or **worst F1 first** on one head.
 - The prediction is drawn as in Extract. The record's gold is a rim, matched under the
   scorer's STRICT keys (`eval_metrics`), so the view agrees with the strict F1:
-  **solid** = matches gold, **dashed** = gold here under another label/role, **rim only** =
+  **solid** = matches gold, **dashed** = gold and prediction overlap but differ, **rim only** =
   gold the model missed (gold label), **fill, no rim** = prediction not in gold.
+- A dashed span's **≠ tag** names how it differs (`backend/diffs.py`): `span` (extent), `label` /
+  `type`, `role`, `attachment` (argument under another trigger), `direction`, `surface`. The
+  **Differences** card lists every mismatch on the current tab; click a row, or click a span to
+  cycle its mentions, and the tag reads `pred` / `gold` for the one selected.
 - **show gold** toggles the rims; **differences only** hides everything that matched.
 - Gold stores surfaces, not offsets; they are placed exactly as training places them (every
   occurrence of the word run). Gold training cannot place, e.g. `Houston` inside
