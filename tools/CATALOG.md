@@ -1,6 +1,6 @@
 # The tools catalog
 
-Every executable under `tools/` — **300 scripts** — and what each one is for. Compiled
+Every executable under `tools/` — **301 scripts** — and what each one is for. Compiled
 2026-09-22 from the tools' own docstrings; the 49 scripts added since were catalogued
 2026-10-05, including the new `tools/derive`, and 24 more (missed or new) on 2026-10-14.
 
@@ -59,6 +59,7 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | `train/trace_anchor_raise.py` | Reproduces a record-spec raise on the REAL data path with no GPU and no training (eb17-best and its smoke both died in a DataLoader worker). |
 | `data/measure_event_normalisation.py` | Is the event gold trigger-keyed or event-keyed? The two measurements that price design C (normalised events). |
 | `data/trace_absent_event_negatives.py` | Traces absent-event negatives exactly as training injects them and tests whether "absent" is true; `data/adjudicate_absent_events.py` has Claude adjudicate a RANDOM sample of them. |
+| `data/measure_occurrence_ambiguity.py` | Per event corpus: how many places training marks each gold trigger/argument string (every occurrence, `latent_all`), events per document and document length -- why whole-document event loss falls more slowly (`EVENT_ARGUMENT_DIAGNOSIS.md` s4l, TODO #26). |
 | `data/measure_casualty_gold_coverage.py` | Per paragraph of casualty_docee: covered by gold, and if not, why (collision vs unique toll). `data/trace_casualty_gold_gap.py` traces each paragraph to its source snippet's ground truth -- the root cause that `rebuild_casualty_docee.py` fixed. |
 
 ### 1b. Will this config train at all? (pre-launch gates)

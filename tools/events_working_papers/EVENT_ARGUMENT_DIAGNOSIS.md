@@ -1695,6 +1695,60 @@ of the four that can move the never-proposed third. It also gives up the event g
 those spans — a span extracted as an entity is not attached to an instance — so it is a
 complement to the record head, not a replacement for it.
 
+## 4l. WHOLE DOCUMENTS vs SENTENCES — why event loss falls more slowly on documents (MEASURED 2026-10-14)
+
+**The observation** (user, watching training): the loss on whole-document event corpora descends
+more slowly than on sentence-level ones, which reads as inverse — documents carry MORE context.
+It is not inverse. More context helps a reader; for this model a whole document makes each
+example harder and its gold NOISIER, and both slow the descent.
+
+**The measurement** (`tools/data/measure_occurrence_ambiguity.py`, 300 seeded train records per
+corpus that carry `output.events`, eb21's corpora). Gold triggers and arguments are STRINGS, and
+training places a string at EVERY occurrence of its word run (`processor._find_sublist`,
+occurrence policy `latent_all`), so a repeated surface becomes several positive targets:
+
+| corpus | median chars | events/doc | places a gold trigger lands | triggers in >1 place | places a gold argument lands | arguments in >1 place |
+|---|---|---|---|---|---|---|
+| duee (sentences) | 38 | 1.2 | 1.15 | 12.9% | 1.13 | 10.6% |
+| rams_merged (5-sentence passages) | 734 | 1.1 | 1.23 | 15.2% | 1.62 | 33.4% |
+| cmnee | 329 | 2.1 | 2.16 | 47.8% | 1.84 | 35.3% |
+| synthetic_events_capped | 1,544 | 2.9 | 1.14 | 10.2% | 1.49 | 24.3% |
+| cc_news_events_haiku45 | 2,098 | 2.6 | 1.80 | 38.6% | 2.55 | 40.7% |
+| cc_news_events_sonnet55_v2 | 2,082 | 3.3 | 2.01 | 34.0% | 2.36 | 39.0% |
+| casie | 2,126 | 8.3 | 1.53 | 25.6% | 2.26 | 36.6% |
+| maven | 1,332 | 27.2 | 1.87 | 31.4% | (trigger-only) | — |
+| **wikievents (whole documents)** | **3,004** | **16.8** | **3.29** | **56.4%** | **4.53** | **64.6%** |
+
+Unplaceable surfaces are 0.0-0.3% everywhere. NOT measured: docee, docee_zh, docfee, chfinann,
+text2json, events_biotech and turkish_event carry no `output.events` in their train files (their
+events are stored in another shape) — do not read the table as covering them.
+
+**Three mechanisms, all stronger in whole documents:**
+
+1. **Ambiguous positives — the largest.** A WikiEvents trigger is marked gold in 3.3 places on
+   average, an argument in 4.5. Some extra places are genuinely the same event mentioned again
+   (coreferent mentions); others are the same word in an unrelated sentence, and the model is told
+   they are events too. That part of the loss is irreducible. A sentence rarely repeats a word
+   (1.15 places in DuEE), so its targets are nearly clean.
+2. **More positions per event.** One trigger among ~3,000 characters against one among 38: the
+   positives are sparse, and the ranking problem harder, before any label noise.
+3. **More events per document to keep apart.** 16.8 events per WikiEvents document against 1.2 in
+   DuEE: arguments must be bound to the right instance, often across sentences, and same-type
+   events tend to pool (`mention-path` finding: one instance per type).
+
+**Caveats.** Absolute loss levels are not comparable across corpora: the loss sums over queries and
+positions, so a long document contributes more terms, and part of the visible gap is SCALE, not
+learning speed. The fair comparison is each corpus's validation F1 by epoch (eb21 produces it).
+The table counts placements; it does not say what fraction of the extra placements are wrong —
+coreferent repeats are right. Splitting them needs offset gold (below) or the coreferent clusters
+(`COREFERENT_OWNERSHIP_SPEC.md`).
+
+**What would reduce it** — TODO #26 (offset-anchored mentions): gold with character offsets marks
+only the real occurrence. The v2.1.0 merge added explicit spans (`SurfaceSpan {text, start, end}`),
+and WikiEvents and RAMS ship offsets, so the converters could keep them. A candidate for the round
+AFTER eb21, measured as: how much of the slower descent, and of the document-level argument gap,
+offset gold removes. Not applied to eb21 (already training).
+
 ## 5. What follows, in order
 
 > *Written before §4d-§4g. Item 1 is kept current; items 2-4 are the plan as it stood
