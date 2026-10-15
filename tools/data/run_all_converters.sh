@@ -140,6 +140,18 @@ run_step wikievents_train uv run python tools/data/convert_wikievents.py --split
 run_step wikievents_dev   uv run python tools/data/convert_wikievents.py --split dev   --out data/wikievents.dev.jsonl
 run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split test  --out data/wikievents.test.jsonl
 
+# English coreference (coref_clusters only, empty output) -- auto-download from the Hub, no manual prep.
+# CorefUD 1.2 mirror FrancophonIA/CorefUD_1.2 (dev -> test, 10% of train -> val); GAP coref-data/gap_raw.
+# GUM licenses are per genre (several CC-BY-NC-SA, four UNVERIFIED) and recorded per record in provenance.
+run_step gum_coref        uv run python tools/data/convert_corefud.py --corefud English-GUM --name gum_coref \
+    --license academic=CC-BY-4.0 --license bio=CC-BY-SA-3.0 --license court=CC-BY-4.0 \
+    --license essay=CC-BY-NC-SA-4.0 --license fiction=CC-BY-NC-SA-3.0 --license letter=CC-BY-NC-SA-4.0 \
+    --license podcast=CC-BY-NC-SA-4.0 --license whow=CC-BY-NC-SA-3.0 --license voyage=CC-BY-SA-3.0 \
+    --license news=CC-BY-2.5 --license interview=CC-BY-2.5 \
+    --license "*=UNVERIFIED (genre not listed in GUM LICENSE.md; annotations CC-BY-4.0)"
+run_step litbank_coref    uv run python tools/data/convert_corefud.py --corefud English-LitBank --name litbank_coref --license "*=CC-BY-4.0"
+run_step gap_coref        uv run python tools/data/convert_gap.py
+
 # CASIE auto-downloads the GitHub tarball and emits stratified splits — no manual prep.
 run_step casie            uv run python tools/data/convert_casie.py --out data/casie.jsonl
 

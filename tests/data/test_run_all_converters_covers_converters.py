@@ -36,6 +36,7 @@ RUNNER = DATA_TOOLS / "run_all_converters.sh"
 # Each prefix is a KIND the runner's header excludes, with the reason it gives.
 EXCLUDED_PREFIXES = {
     "_": "shared library module, not a script",
+    "add_": "in-place one-time augmentation of the deduped disk files; a fresh build gets the field from the converters",
     "annotate_": "costs real money; the header says these are never run automatically",
     "synthetic": "costs real money (LLM generation)",
     "build_": "derived corpora -- scaling slices, mixes, dose arms; excluded by scope",

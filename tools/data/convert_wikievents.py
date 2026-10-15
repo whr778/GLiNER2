@@ -42,9 +42,8 @@ accepts either a local path or an ``http(s)://`` URL; the URL is
 streamed without buffering into memory.
 
 Gold entity coreference (``coref/<split>.jsonlines``) is kept as a top-level ``coref_clusters``:
-mentions with code-point offsets into the cleaned text (see add_coref_clusters.py). The files in
-data/ are DEDUPED splits -- a fresh train carries 2 dev/test documents -- so do not overwrite them
-with a fresh run.
+mentions with code-point offsets into the cleaned text (see add_coref_clusters.py). The files in data/ are the DEDUPED splits; a fresh run must pass run_all_converters.sh's
+leakage gate (a fresh wikievents train carries 2 dev/test documents).
 
 Usage::
 

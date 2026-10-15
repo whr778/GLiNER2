@@ -265,3 +265,6 @@ one trigger per event. So:
   F1 is 0.3846 as shipped vs 0.3125 off, and the OLD strict `event_argument` falls 0.0253 -> 0.0000 under the
   untrained merge.
 
+
+
+Entity (not trigger) coreference data -- sources, licenses, language coverage: [COREF_DATA_SOURCES.md](COREF_DATA_SOURCES.md).

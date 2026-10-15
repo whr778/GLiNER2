@@ -32,7 +32,7 @@ Each input record::
 
 The ``coref_arguments`` clusters are kept as a top-level ``coref_clusters`` (mentions with
 code-point offsets into the CLEANED text ``dumps_record`` writes; see add_coref_clusters.py).
-The files in data/ are DEDUPED splits: do not overwrite them with a fresh run.
+The files in data/ are the DEDUPED splits; a fresh run must pass run_all_converters.sh's leakage gate.
 Surfaces are verbatim-filtered against ``text``; the source's char
 offsets are authoritative so this is essentially a defensive check.
 
