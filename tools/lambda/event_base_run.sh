@@ -181,6 +181,17 @@ fi
 
 [ -n "$PROBE_FILES" ] && { publish "$DEST" $PROBE_FILES || echo "[base] probe publish failed (non-fatal)"; }
 
+# 4. OPTIONAL ENTITY-COREF READOUT (COREF_READOUT=1): VAL pair AUC of best/'s mention link beside
+# string match and cosine (tools/train/coref_readout.py). Same rules as the probe: after the model
+# and metrics are published, its own timeout, non-fatal, published on its own.
+if [ "${COREF_READOUT:-0}" = "1" ] && [ -d "$OUTDIR/best" ]; then
+  timeout ${READOUT_TIMEOUT:-3600} $PY -u tools/train/coref_readout.py --model "$OUTDIR/best" --device cuda \
+      --out "$HOME/coref_readout.json" 2>&1 | tee "$HOME/coref_readout.log" | grep -a -v "Warning" | tail -8 \
+    || echo "[base] coref readout failed (non-fatal)"
+  [ -f "$HOME/coref_readout.json" ] && { publish "$DEST" "$HOME/coref_readout.json" "$HOME/coref_readout.log" \
+    || echo "[base] coref readout publish failed (non-fatal)"; }
+fi
+
 echo "[base] ===== DONE $(date -u) rc=$rc ====="
 if [ "$RESCUE" -ne 0 ]; then
   echo "[base] *** SOMETHING DID NOT PUBLISH -- holding the box for rescue ***"

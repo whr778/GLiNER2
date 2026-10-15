@@ -15,8 +15,8 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import torch
-from sklearn.metrics import roc_auc_score
 
 from gliner2 import AutoExtractor
 from gliner2.models.boundary.mention_link import mention_states
@@ -54,9 +54,23 @@ def doc_pairs(model, rec, max_docs_words: int):
     return out
 
 
+def roc_auc(y, s) -> float:
+    """ROC AUC as the Mann-Whitney statistic, tied scores at their average rank."""
+    y, s = np.asarray(y, dtype=bool), np.asarray(s, dtype=float)
+    order = np.argsort(s, kind="mergesort")
+    ranks = np.empty(len(s))
+    sorted_s = s[order]
+    starts = np.r_[0, np.flatnonzero(np.diff(sorted_s)) + 1]
+    ends = np.r_[starts[1:], len(s)]
+    for a, b in zip(starts, ends):
+        ranks[order[a:b]] = (a + b + 1) / 2
+    n_pos, n_neg = y.sum(), (~y).sum()
+    return float((ranks[y].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
+
+
 def auc(pairs, col):
     y = [p[0] for p in pairs]
-    return round(roc_auc_score(y, [p[col] for p in pairs]), 4) if len(set(y)) == 2 else None
+    return round(roc_auc(y, [p[col] for p in pairs]), 4) if len(set(y)) == 2 else None
 
 
 def readout(model, corpora, limit: int, max_words: int):
