@@ -219,7 +219,7 @@ export default function AnnotatedText({
         // names how they differ; with a mention selected, only that mention's reasons.
         const scored = mk.roles.some((r) => r.match !== undefined);
         const hasGold = mk.roles.some((r) => r.gold);
-        const hasPred = mk.roles.some((r) => !r.gold);
+        const hasPred = mk.roles.some((r) => !r.gold && r.kind !== "derived");
         const predMatch = mk.roles.some((r) => !r.gold && r.match);
         const goldClass = !hasGold ? "" : !hasPred ? " gold goldonly" : predMatch ? " gold" : " gold golddiff";
         const whys = [...new Set((sel ? [sel] : mk.roles).flatMap((r) => r.why ?? []))];
@@ -230,6 +230,9 @@ export default function AnnotatedText({
           : predMatch ? " · matches gold"
           : " · prediction, not in gold";
         const side = scored && sel ? (sel.gold ? "gold " : "pred ") : "";
+        const links = [...new Set((sel ? [sel] : mk.roles).map((r) => (r.gold ? "gold " : "") + (r.link ?? "")).filter((l) => l.trim() && l !== "gold "))];
+        // The selected argument names its entity on the label: "pred Victim -> entity e12 Person".
+        const selLink = sel?.kind === "argument" && sel.link ? ` ${sel.link}` : "";
         // Cycle: nothing here selected -> first; selected -> next; past the last -> clear.
         const cycle = () => {
           if (!clickable) return;
@@ -239,7 +242,7 @@ export default function AnnotatedText({
         return (
           <mark
             key={i}
-            className={"tag" + (active ? " active" : "") + goldClass}
+            className={"tag" + (active ? " active" : "") + goldClass + (p.kind === "derived" ? " derived" : "")}
             data-eids={eidTokens || undefined}
             data-nested={nestedAttr || undefined}
             data-kind={p.kind}
@@ -249,13 +252,14 @@ export default function AnnotatedText({
             onClick={clickable ? cycle : undefined}
             title={
               `${p.label} · ${p.kind}` + status +
+              (links.length ? "\n" + links.join("\n") : "") +
               (count > 1 ? ` · ${count} events here — click to view one at a time` : "") +
               (p.confidence != null ? ` · ${fmtConf(p.confidence)}` : "")
             }
           >
             {s.text}
             <span className="taglabel" style={tagStyle(colorKey)}>
-              {side}{p.label}
+              {side}{p.label}{selLink}
               {p.kind === "trigger" && p.idx ? <sup className="eidx">{p.idx}</sup> : null}
               {reasons.length ? <sup className="whytag">≠{reasons.join(" ≠")}</sup> : null}
               {count > 1 ? (

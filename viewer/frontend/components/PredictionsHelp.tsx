@@ -97,6 +97,10 @@ export default function PredictionsHelp({ onClose }: { onClose: () => void }) {
           <li>Click a span on the Events / Relations tab to isolate one mention and its arcs; click again to cycle.
             The tag then reads <b>pred</b> or <b>gold</b> and shows that mention&apos;s own type and ≠ reason.</li>
           <li>Click a Differences row to isolate that event or relation mention in the text.</li>
+          <li>Every argument is linked to the entity on its exact span (<code>argument_links.py</code>): a selected
+            argument&apos;s tag reads <b>-&gt; e12 Person</b>, and an entity&apos;s tooltip lists the arguments it fills.
+            An argument with no entity on its span gets a faded <b>derived</b> entity, typed from the role map when it
+            has an entry; derived entities are never scored.</li>
         </ul>
 
         <h3>Making a file to open</h3>

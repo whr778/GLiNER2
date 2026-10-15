@@ -430,6 +430,9 @@ have no offsets, so only gold is drawn (as missed); run infer.py with `--include
   **Differences** card lists every mismatch on the current tab; click a row, or click a span to
   cycle its mentions, and the tag reads `pred` / `gold` for the one selected.
 - **show gold** toggles the rims; **differences only** hides everything that matched.
+- Every argument links to the entity on its exact span (`gliner2/inference/argument_links.py`): a
+  selected argument's tag names its entity (`-> e12 Person`); an argument with no entity gets a faded,
+  never-scored **derived** entity, typed from `role_types.json` when the map has an entry.
 - Gold stores surfaces, not offsets; they are placed exactly as training places them (every
   occurrence of the word run). Gold training cannot place, e.g. `Houston` inside
   `Houston-area`, is listed under the text.

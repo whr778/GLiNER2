@@ -14,6 +14,7 @@ export type Mark = {
   gold?: boolean; // from the gold record, not the prediction (predictions view)
   match?: boolean; // the scorer's strict key is on the other side too
   why?: string[]; // why it does not match (backend diffs.py)
+  link?: string; // argument -> its entity, or entity -> the arguments it fills (argument_links.py)
 };
 
 function asSpan(x: any): Span | null {
@@ -47,18 +48,53 @@ export function schemaLayers(schema: Record<string, any> | null | undefined): La
   return layers;
 }
 
+// Entity id -> "e12 Person, GPE"; a derived entity (an argument with no entity on its span) is
+// "e12 derived GPE", typed from the role map when it has an entry.
+function entityNames(result: ExtractionResult): Map<string, string> {
+  const labels = new Map<string, string[]>();
+  for (const [label, spans] of Object.entries(result.entities || {})) {
+    for (const sp of (spans as any[]) || []) if (sp?.id) labels.set(sp.id, [...(labels.get(sp.id) || []), label]);
+  }
+  const out = new Map<string, string>();
+  for (const [id, ls] of labels) out.set(id, `${id} ${ls.join(", ")}`);
+  for (const d of result.derived_entities || []) out.set(d.id, `${d.id} derived${d.types?.length ? " " + d.types.join(", ") : ""}`);
+  return out;
+}
+
+// Entity id -> the "EventType · role" pairs whose argument sits on it.
+function argumentUses(result: ExtractionResult): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const [etype, mentions] of Object.entries(result.event_extraction || {})) {
+    for (const m of (mentions as any[]) || []) {
+      for (const a of m.arguments || []) {
+        if (!a.entity_id) continue;
+        const use = `${etype} · ${a.role}`;
+        const cur = out.get(a.entity_id) || [];
+        if (!cur.includes(use)) out.set(a.entity_id, [...cur, use]);
+      }
+    }
+  }
+  return out;
+}
+
 // `gold`: these marks come from the gold record; each span's `match` (set by the backend's
 // gold.py) says whether the scorer's strict key is on the other side.
 export function collectMarks(result: ExtractionResult, layer: Layer, gold = false): Mark[] {
   const marks: Mark[] = [];
   const g = (sp: any) => ({ gold, match: sp?.match, why: sp?.why });
   const pre = gold ? "g-" : "";
+  const names = entityNames(result);
+  const argUses = argumentUses(result);
+  const uses = (id?: string) => (id && argUses.get(id)?.length ? `${id} argument of ${argUses.get(id)!.join("; ")}` : undefined);
   if (layer === "entities") {
     for (const [label, spans] of Object.entries(result.entities || {})) {
       for (const s of (spans as any[]) || []) {
         const sp = asSpan(s);
-        if (sp) marks.push({ start: sp.start!, end: sp.end!, label, kind: "entity", confidence: sp.confidence, ...g(sp) });
+        if (sp) marks.push({ start: sp.start!, end: sp.end!, label, kind: "entity", confidence: sp.confidence, link: uses((s as any).id), ...g(sp) });
       }
+    }
+    for (const d of result.derived_entities || []) {
+      marks.push({ start: d.start, end: d.end, label: d.types?.length ? d.types.join(", ") : "untyped", kind: "derived", link: uses(d.id), gold });
     }
   } else if (layer === "events") {
     let counter = 0;
@@ -71,7 +107,8 @@ export function collectMarks(result: ExtractionResult, layer: Layer, gold = fals
         }
         for (const a of m.arguments || []) {
           const sp = asSpan(a.entity);
-          if (sp) marks.push({ start: sp.start!, end: sp.end!, label: a.role, kind: "argument", confidence: sp.confidence, eid, colorKey: etype, ...g(sp) });
+          const link = a.entity_id ? `-> ${names.get(a.entity_id) ?? a.entity_id}` : undefined;
+          if (sp) marks.push({ start: sp.start!, end: sp.end!, label: a.role, kind: "argument", confidence: sp.confidence, eid, colorKey: etype, link, ...g(sp) });
         }
       });
     }
@@ -105,6 +142,7 @@ export type Role = {
   gold?: boolean;
   match?: boolean;
   why?: string[];
+  link?: string;
 };
 
 // A rendered span, carrying every role that lands on its character range.
@@ -148,7 +186,7 @@ export function buildSegments(text: string, marks: Mark[]): Segment[] {
       g = { start, end, roles: [] };
       groups.set(key, g);
     }
-    g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx, gold: m.gold, match: m.match, why: m.why });
+    g.roles.push({ eid: m.eid, kind: m.kind, label: m.label, colorKey: m.colorKey, confidence: m.confidence, idx: m.idx, gold: m.gold, match: m.match, why: m.why, link: m.link });
   }
 
   const sorted = [...groups.values()].sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));

@@ -73,3 +73,17 @@ def test_picker_lists_only_infer_outputs_and_flags_files_without_spans(tmp_path)
     (tmp_path / "broken.jsonl").write_text("{not json\n", encoding="utf-8")
     got = {f["name"]: (f["spans"], f["gold_mapped"]) for f in gold.list_files(str(tmp_path))}
     assert got == {"sub/spans.jsonl": (True, False), "bare.jsonl": (False, True)}
+
+
+def test_arguments_link_to_their_entity_on_both_sides_and_scores_do_not_move():
+    row = json.loads(json.dumps(ROW))
+    row["output"]["event_extraction"]["Contact.Communicate"][0]["arguments"].append(
+        {"role": "Place", "entity": {"text": "plants", "start": 27, "end": 33}})
+    v = gold.record_view(row)
+    pred_arg, derived_arg = v["pred"]["event_extraction"]["Contact.Communicate"][0]["arguments"]
+    assert pred_arg["entity_id"] == v["pred"]["entities"]["Person"][0]["id"]
+    (d,) = v["pred"]["derived_entities"]
+    assert (d["text"], d["id"]) == ("plants", derived_arg["entity_id"])
+    gold_arg = v["gold"]["event_extraction"]["Contact.Communicate"][0]["arguments"][0]
+    assert gold_arg["entity_id"] == v["gold"]["entities"]["Person"][0]["id"]
+    assert v["f1"] == gold._f1(row["gold"], row["output"])

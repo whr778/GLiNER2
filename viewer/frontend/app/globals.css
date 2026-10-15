@@ -192,6 +192,7 @@ mark.tag[data-kind="head"] {
 /* Predictions view: gold rim (gold landed here), rim only = gold the model missed. */
 mark.tag.gold { outline: 2px solid var(--gold); outline-offset: 1px; }
 mark.tag.golddiff { outline-style: dashed; }
+mark.tag.derived { opacity: 0.6; border-bottom: 2px dotted currentColor; }
 mark.tag.goldonly { background: transparent; border-bottom-color: transparent; }
 mark.tag.goldonly .taglabel { color: var(--gold); }
 mark.tag.goldonly[data-kind="trigger"], mark.tag.goldonly[data-kind="head"] { border-color: transparent; }
