@@ -30,7 +30,9 @@ Each input record::
                             "triggers": ["执行"],
                             "arguments": [{"role": "Subject", "entity": "美国海军"}, ...]}]}}
 
-The ``coref_arguments`` field is ignored (we don't model coreference).
+The ``coref_arguments`` clusters are kept as a top-level ``coref_clusters`` (mentions with
+code-point offsets into the CLEANED text ``dumps_record`` writes; see add_coref_clusters.py).
+The files in data/ are DEDUPED splits: do not overwrite them with a fresh run.
 Surfaces are verbatim-filtered against ``text``; the source's char
 offsets are authoritative so this is essentially a defensive check.
 
@@ -65,7 +67,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _split import dumps_record  # noqa: E402
+from _split import clean_text, dumps_record  # noqa: E402
+from add_coref_clusters import place  # noqa: E402
 
 
 def convert_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -115,7 +118,9 @@ def convert_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     if not events_out:
         return None
-    return {"input": text, "output": {"events": events_out}}
+    clusters = [[(m["text"], m["offset"][0], m["offset"][1]) for m in c] for c in row.get("coref_arguments") or []]
+    coref = place(clean_text(text), clusters, clean_text, text, {"kept": 0, "dropped": 0})
+    return {"input": text, "output": {"events": events_out}, "coref_clusters": coref}
 
 
 def main() -> int:

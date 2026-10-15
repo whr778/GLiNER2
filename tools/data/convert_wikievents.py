@@ -41,6 +41,11 @@ conventions) — run it three times to populate all splits. ``--input``
 accepts either a local path or an ``http(s)://`` URL; the URL is
 streamed without buffering into memory.
 
+Gold entity coreference (``coref/<split>.jsonlines``) is kept as a top-level ``coref_clusters``:
+mentions with code-point offsets into the cleaned text (see add_coref_clusters.py). The files in
+data/ are DEDUPED splits -- a fresh train carries 2 dev/test documents -- so do not overwrite them
+with a fresh run.
+
 Usage::
 
     # All three splits (S3 URLs are the defaults for --input):
@@ -70,7 +75,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _split import dumps_record  # noqa: E402
+from _split import clean_text, dumps_record  # noqa: E402
+from add_coref_clusters import _char_offsets, place  # noqa: E402
 
 
 S3_BASE = "https://gen-arg-data.s3.us-east-2.amazonaws.com/wikievents/data"
@@ -111,8 +117,17 @@ def _iter_records(source: str) -> Iterable[Dict[str, Any]]:
         yield from _iter_jsonl_from_file(p)
 
 
-def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
-    """Convert one WikiEvents document to a GLiNER2 record; None if unusable."""
+def coref_clusters(row: Dict[str, Any], clusters: List[List[str]]) -> List[List[Dict[str, Any]]]:
+    """Gold entity clusters (lists of entity-mention ids) as mentions with offsets into the cleaned text."""
+    offs = _char_offsets(row["text"], row["tokens"])
+    ments = {m["id"]: (m["text"], offs[m["start"]][0], offs[m["end"] - 1][1]) for m in row["entity_mentions"]}
+    return place(clean_text(row["text"]), [[ments[m] for m in c if m in ments] for c in clusters],
+                 clean_text, row["text"], {"kept": 0, "dropped": 0})
+
+
+def convert_row(row: Dict[str, Any], clusters: List[List[str]] | None = None) -> Dict[str, Any] | None:
+    """Convert one WikiEvents document to a GLiNER2 record; None if unusable. ``clusters`` (from the
+    coref file) adds a top-level ``coref_clusters``."""
     text = row.get("text")
     if not isinstance(text, str) or not text.strip():
         return None
@@ -179,7 +194,10 @@ def convert_row(row: Dict[str, Any]) -> Dict[str, Any] | None:
         output["events"] = events_out
     if not output:
         return None
-    return {"input": text, "output": output}
+    record = {"input": text, "output": output}
+    if clusters is not None:
+        record["coref_clusters"] = coref_clusters(row, clusters)
+    return record
 
 
 def main() -> int:
@@ -199,9 +217,13 @@ def main() -> int:
                         help="Output GLiNER2 JSONL path.")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum documents to emit (-1 = all).")
+    parser.add_argument("--coref", help="Local path or URL of the matching coref/<split>.jsonlines; "
+                                        "default with --split: the S3 one. Adds coref_clusters.")
     args = parser.parse_args()
 
     source = args.input if args.input else f"{S3_BASE}/{args.split}.jsonl"
+    coref_src = args.coref or (f"{S3_BASE}/coref/{args.split}.jsonlines" if args.split else None)
+    clusters = {c["doc_key"]: c["clusters"] for c in _iter_records(coref_src)} if coref_src else None
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     emitted = 0
@@ -218,7 +240,7 @@ def main() -> int:
         for idx, row in enumerate(_iter_records(source)):
             if 0 <= args.max_records <= idx:
                 break
-            record = convert_row(row)
+            record = convert_row(row, None if clusters is None else clusters.get(row.get("doc_id"), []))
             if record is None:
                 skipped_empty += 1
                 continue
