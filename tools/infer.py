@@ -170,6 +170,10 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p.add_argument("--coref-threshold", type=float, default=None,
                    help="With --merge-coreferent link: merge when sigmoid(link score) >= this. Pick it "
                         "on VAL. Default: the checkpoint's record_coref_link_threshold.")
+    p.add_argument("--link-arguments", nargs="?", const="", default=None, metavar="ROLE_TYPES_JSON",
+                   help="Give every event argument the entity_id of the entity on its exact span; arguments "
+                        "with none get a derived entity under derived_entities (typed from the optional "
+                        "role_types JSON). Needs --include-spans. See gliner2/inference/argument_links.py.")
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args(argv)
 
@@ -214,10 +218,14 @@ def main(argv: List[str] = None) -> None:
     # AutoExtractor, not GLiNER2: GLiNER2 IS the span class, so a boundary checkpoint
     # died on `config.max_width` -- the same defect the viewer and eval already fixed.
     from gliner2 import AutoExtractor
+    from gliner2.inference.argument_links import link_arguments, load_role_types
     from gliner2.inference.global_decode import GlobalDecodeConfig
     from gliner2.inference.label_map import apply_label_map
     from gliner2.training.eval_metrics import apply_boundary_overrides
 
+    if args.link_arguments is not None and not args.include_spans:
+        raise SystemExit("--link-arguments links by span and needs --include-spans.")
+    role_types = load_role_types(args.link_arguments) if args.link_arguments else None
     records = _read_records(args.input)
     model = AutoExtractor.from_pretrained(args.model)
     # Decode reads the merge from boundary_settings, so it is applied the way eval applies overrides.
@@ -272,7 +280,7 @@ def main(argv: List[str] = None) -> None:
         ) if keep else []
         out = [{} for _ in recs]
         for i, r in zip(keep, got):
-            out[i] = r
+            out[i] = link_arguments(r, role_types) if args.link_arguments is not None else r
         return out
 
     if not args.output:
