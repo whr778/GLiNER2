@@ -1382,9 +1382,12 @@ def _blind_test_by_language(
     global_decode: bool = False,
     global_decode_config=None,
     boundary_overrides: Dict = None,
+    full_menu=None,
+    menu_negatives: int = 20,
 ) -> Dict:
-    """Run the blind test per language then over all data; return aggregate metrics."""
-    from gliner2.training.eval_metrics import load_with_overrides
+    """Run the blind test per language then over all data; return aggregate metrics.
+    ``full_menu`` adds the ``eval_fullmenu_*`` pass to each, as ``evaluate_checkpoint`` does."""
+    from gliner2.training.eval_metrics import add_full_menu, load_with_overrides
     from gliner2.training.metrics import compute_metrics, _print_micro_report
     from gliner2.training.trainer import ExtractorDataset
 
@@ -1407,12 +1410,14 @@ def _blind_test_by_language(
         print(f"\n[blind test] Processing language: {lang}  ({len(subset)} samples)")
         ds = ExtractorDataset(subset, shuffle=False, validate=False)
         lang_metrics = compute_metrics(model, ds, batch_size=eval_bs, threshold=eval_thr, **gd) or {}
+        add_full_menu(lang_metrics, model, ds, full_menu, menu_negatives, batch_size=eval_bs, threshold=eval_thr, **gd)
         per_lang[lang] = lang_metrics
         _print_blind_test(lang_metrics)
 
     print(f"\n[blind test] All languages combined ({len(test_data)} samples)")
     ds_all = ExtractorDataset(test_data, shuffle=False, validate=False)
     all_metrics = compute_metrics(model, ds_all, batch_size=eval_bs, threshold=eval_thr, **gd) or {}
+    add_full_menu(all_metrics, model, ds_all, full_menu, menu_negatives, batch_size=eval_bs, threshold=eval_thr, **gd)
     _print_blind_test(all_metrics)
 
     print("\n===== Blind test summary by language =====")

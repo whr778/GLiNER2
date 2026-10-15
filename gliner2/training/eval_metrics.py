@@ -1508,37 +1508,36 @@ def evaluate_checkpoint(
 
     model = load_with_overrides(checkpoint_dir, boundary_overrides, map_location)
     dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
-    metrics = compute_metrics(
-        model, dataset, batch_size=batch_size, threshold=threshold, stopwords=stopwords,
-        chunk_size=chunk_size, chunk_overlap=chunk_overlap,
-        global_decode=global_decode, global_decode_config=global_decode_config,
-    )
-    if full_menu:
-        # A SECOND pass with the real taxonomy on the menu, emitted under `*_fullmenu_*`
-        # keys. Never merged into the originals: every number this project has published is
-        # a gold-menu number, and silently changing what a key means would invalidate every
-        # comparison against them.
-        menu = full_menu if isinstance(full_menu, dict) else (
-            getattr(model.config, "default_schema", None) or {})
-        if menu:
-            wide = compute_metrics(
-                model, dataset, batch_size=batch_size, threshold=threshold,
-                stopwords=stopwords, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
-                global_decode=global_decode, global_decode_config=global_decode_config,
-                full_menu=menu, menu_negatives=menu_negatives, report=False,
-            ) or {}
-            metrics.update({k.replace("eval_", "eval_fullmenu_", 1): v
-                            for k, v in wide.items()})
-            metrics["fullmenu_sizes"] = {
-                # The DOSE matters as much as the pool. Training injects
-                # negative_labels_per_dim (1 per dimension on eb16); the gold menu offers 0
-                # and this pass offers `menu_negatives` per dimension. All three are
-                # different operating points, so record which one produced these keys.
-                "menu_negatives": menu_negatives,
-                "entities": len(menu.get("entities") or []),
-                "events": len(menu.get("events") or {}),
-                "relations": len(menu.get("relations") or []),
-            }
+    kw = dict(batch_size=batch_size, threshold=threshold, stopwords=stopwords,
+              chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+              global_decode=global_decode, global_decode_config=global_decode_config)
+    metrics = compute_metrics(model, dataset, **kw)
+    return add_full_menu(metrics, model, dataset, full_menu, menu_negatives, **kw)
+
+
+def add_full_menu(metrics, model, dataset, full_menu: Any, menu_negatives: int = 20, **kw) -> Dict[str, Any]:
+    """With ``full_menu``, score ``dataset`` a SECOND time with the real taxonomy on the menu and
+    add the result to ``metrics`` under ``eval_fullmenu_*`` keys. Never merged into the originals:
+    every number this project has published is a gold-menu number, and silently changing what a
+    key means would invalidate every comparison against them. ``kw`` is compute_metrics' decode."""
+    if not full_menu or metrics is None:
+        return metrics
+    menu = full_menu if isinstance(full_menu, dict) else (
+        getattr(model.config, "default_schema", None) or {})
+    if menu:
+        wide = compute_metrics(model, dataset, full_menu=menu, menu_negatives=menu_negatives,
+                               report=False, **kw) or {}
+        metrics.update({k.replace("eval_", "eval_fullmenu_", 1): v for k, v in wide.items()})
+        metrics["fullmenu_sizes"] = {
+            # The DOSE matters as much as the pool. Training injects
+            # negative_labels_per_dim (1 per dimension on eb16); the gold menu offers 0
+            # and this pass offers `menu_negatives` per dimension. All three are
+            # different operating points, so record which one produced these keys.
+            "menu_negatives": menu_negatives,
+            "entities": len(menu.get("entities") or []),
+            "events": len(menu.get("events") or {}),
+            "relations": len(menu.get("relations") or []),
+        }
     return metrics
 
 

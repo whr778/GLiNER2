@@ -22,3 +22,27 @@ def test_by_language_path_receives_boundary_overrides(monkeypatch):
     T._run_blind_test("ckpt", recs, 2, 0.5, True,
                       {"global_decode": True, "boundary_overrides": {"start_top_k": 16}})
     assert seen["ov"] == {"start_top_k": 16}
+
+
+def test_by_language_path_runs_the_full_menu_pass(monkeypatch):
+    """`eval.py --full-menu` on an `eval_by_language` config died the same way with
+    'full_menu' (2026-10-15); every language and the combined set must get the second pass."""
+    calls = []
+
+    def fake(model, ds, **k):
+        calls.append(bool(k.get("full_menu")))
+        return {"eval_x_strict_micro_f1": 0.5}
+
+    class Cfg:
+        default_schema = {"events": {"Attack": []}}
+
+    monkeypatch.setattr(E, "load_with_overrides", lambda best, ov=None, map_location=None: type("Mdl", (), {"config": Cfg})())
+    monkeypatch.setattr(M, "compute_metrics", fake)
+    monkeypatch.setattr(E, "compute_metrics", fake)
+    monkeypatch.setattr(T, "_annotate_languages", lambda recs: [r.setdefault("_lang", "eng") for r in recs])
+    recs = [{"input": f"doc {i}", "output": {}} for i in range(30)]
+    m = T._run_blind_test("ckpt", recs, 2, 0.5, True, {"full_menu": True, "menu_negatives": 20})
+    assert calls == [False, True, False, True]  # eng, then all: gold pass then full-menu pass
+    assert m["eval_fullmenu_x_strict_micro_f1"] == 0.5
+    assert m["by_language"]["eng"]["eval_fullmenu_x_strict_micro_f1"] == 0.5
+    assert m["fullmenu_sizes"]["events"] == 1
