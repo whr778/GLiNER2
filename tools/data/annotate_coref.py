@@ -4,7 +4,7 @@
     uv run python tools/data/annotate_coref.py --corpus cc_news_events_sonnet55_v2 --batch
     recover: ... --corpus cc_news_events_sonnet55_v2 --fetch-batch msgbatch_...
 
-The prompt, renderer and parser are coref_llm_pilot.py's, the ones the pilot validated (Sonnet 5.5:
+The prompt, renderer and parser live here and coref_llm_pilot.py imports them: the ones the pilot validated (Sonnet 5.5:
 pronoun-pair F1 0.76 at precision 0.90 on news up to 12,000 chars; Haiku failed). The LLM CLUSTERS
 numbered candidate mentions and never writes a span, so every mention is a real offset.
 
@@ -27,11 +27,58 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _split import dumps_record  # noqa: E402
-from coref_llm_pilot import MODELS, PRONOUNS, SYSTEM, USER, parse, render  # noqa: E402
+from annotation import rules  # noqa: E402
 from synthetic.providers import AnthropicProvider, ProviderConfig  # noqa: E402
 
+PRONOUNS = {"he", "she", "they", "him", "her", "them", "his", "their", "hers", "theirs", "its", "it", "we",
+            "us", "our", "i", "me", "my", "you", "your", "who", "whom", "whose", "himself", "herself",
+            "themselves", "itself"}
+MODELS = {"haiku": ("claude-haiku-4-5-20251001", 0.50, 2.50), "sonnet": ("claude-sonnet-5-5", 1.50, 7.50)}
+# The rules are annotation/GUIDELINES.md's `coreference` block -- reviewing that IS reviewing this prompt.
+SYSTEM = (
+    "You resolve entity coreference in English news text."
+) + " " + rules("json_only", "coreference")
+USER = """In the text below, candidate mentions are tagged <m id=N>...</m>. Group the ids that refer
+to the same entity.
+
+Reply as {{"clusters": [[id, id, ...], ...]}} listing only groups of 2 or more ids; every id not
+listed is its own entity. An id appears in at most one group.
+
+Text:
+{text}"""
 MAX_CHARS = 12000
 REPLIES = Path("/Volumes/Development/tmp/coref_buy")
+
+
+def render(text: str, cands: list[dict]) -> str:
+    out, pos = [], 0
+    for i, m in enumerate(cands):
+        out += [text[pos:m["start"]], f"<m id={i}>{text[m['start']:m['end']]}</m>"]
+        pos = m["end"]
+    return "".join(out + [text[pos:]])
+
+
+def parse(raw: str, n: int) -> list[int] | None:
+    """Predicted cluster id per candidate (singletons get unique ids), or None if unusable.
+    The LAST JSON object with "clusters" wins: Sonnet sometimes answers, writes "Wait, ... Corrected:"
+    and answers again, and the correction is its answer."""
+    dec, groups, i = json.JSONDecoder(), None, raw.find("{")
+    while i != -1:
+        try:
+            obj, end = dec.raw_decode(raw, i)
+            if isinstance(obj, dict) and isinstance(obj.get("clusters"), list):
+                groups = obj["clusters"]
+            i = raw.find("{", end)
+        except ValueError:
+            i = raw.find("{", i + 1)
+    if groups is None:
+        return None
+    label = list(range(n, 2 * n))
+    for g, ids in enumerate(groups):
+        for i in ids if isinstance(ids, list) else []:
+            if isinstance(i, int) and 0 <= i < n and label[i] >= n:
+                label[i] = g
+    return label
 
 
 def surfaces(rec: dict) -> set[str]:

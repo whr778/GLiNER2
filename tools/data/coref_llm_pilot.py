@@ -25,24 +25,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from annotation import rules  # noqa: E402
+from annotate_coref import MODELS, PRONOUNS, SYSTEM, USER, parse, render  # noqa: E402,F401
 from synthetic.providers import AnthropicProvider, ProviderConfig  # noqa: E402
-
-PRONOUNS = {"he", "she", "they", "him", "her", "them", "his", "their", "hers", "theirs", "its", "it", "we",
-            "us", "our", "i", "me", "my", "you", "your", "who", "whom", "whose", "himself", "herself",
-            "themselves", "itself"}
-MODELS = {"haiku": ("claude-haiku-4-5-20251001", 0.50, 2.50), "sonnet": ("claude-sonnet-5-5", 1.50, 7.50)}
-# The rules are annotation/GUIDELINES.md's `coreference` block -- reviewing that IS reviewing this prompt.
-SYSTEM = "You resolve entity coreference in English news text. " + rules("json_only", "coreference")
-USER = """In the text below, candidate mentions are tagged <m id=N>...</m>. Group the ids that refer
-to the same entity.
-
-Reply as {{"clusters": [[id, id, ...], ...]}} listing only groups of 2 or more ids; every id not
-listed is its own entity. An id appears in at most one group.
-
-Text:
-{text}"""
-
 
 def candidates(rec: dict) -> list[dict]:
     """Gold cluster mentions (cluster id) plus non-overlapping distractors (cluster None), by offset."""
@@ -65,37 +49,6 @@ def candidates(rec: dict) -> list[dict]:
 def overlapping(rec: dict) -> bool:
     ms = sorted((m["start"], m["end"]) for c in rec["coref_clusters"] for m in c)
     return any(b[0] < a[1] for a, b in zip(ms, ms[1:]))
-
-
-def render(text: str, cands: list[dict]) -> str:
-    out, pos = [], 0
-    for i, m in enumerate(cands):
-        out += [text[pos:m["start"]], f"<m id={i}>{text[m['start']:m['end']]}</m>"]
-        pos = m["end"]
-    return "".join(out + [text[pos:]])
-
-
-def parse(raw: str, n: int) -> list[int] | None:
-    """Predicted cluster id per candidate (singletons get unique ids), or None if unusable.
-    The LAST JSON object with "clusters" wins: Sonnet sometimes answers, writes "Wait, ... Corrected:"
-    and answers again, and the correction is its answer."""
-    dec, groups, i = json.JSONDecoder(), None, raw.find("{")
-    while i != -1:
-        try:
-            obj, end = dec.raw_decode(raw, i)
-            if isinstance(obj, dict) and isinstance(obj.get("clusters"), list):
-                groups = obj["clusters"]
-            i = raw.find("{", end)
-        except ValueError:
-            i = raw.find("{", i + 1)
-    if groups is None:
-        return None
-    label = list(range(n, 2 * n))
-    for g, ids in enumerate(groups):
-        for i in ids if isinstance(ids, list) else []:
-            if isinstance(i, int) and 0 <= i < n and label[i] >= n:
-                label[i] = g
-    return label
 
 
 def pair_counts(pred: list[int], gold: list, pron: list[bool], subset: str) -> tuple[int, int, int]:
