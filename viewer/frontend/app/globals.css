@@ -126,7 +126,7 @@ input:focus, textarea:focus, select:focus {
   flex-direction: column;
   overflow: hidden;
 }
-.card.annotated.expanded .doc { max-height: none; flex: 1; }
+.card.annotated.expanded .doc { height: auto; resize: none; flex: 1; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 .modal {
@@ -155,7 +155,9 @@ input:focus, textarea:focus, select:focus {
   word-break: break-word;
   line-height: 2.1;
   font-size: 15px;
-  max-height: 460px;
+  height: 460px;
+  min-height: 120px;
+  resize: vertical; /* drag the bottom-right corner; vertical only so the text never re-wraps */
   overflow: auto;
 }
 mark.tag {
