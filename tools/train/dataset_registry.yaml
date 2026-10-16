@@ -1387,6 +1387,15 @@ datasets:
     hf_jsonl: whr778/replay_eb21_coref34
     language: [en, zh, tr]
     description: "13,990 eb21 TRAIN records proportional per corpus (23 corpora, all found locally), tagged _corpus; 34.0% of a mixture with the four *_coref_llm corpora (27,153). 0 inputs in eb21's 39 val/test files; 59 repeated inputs mirror eb21's own pool (52 = one text, several tasks)."
+  replay_eb21_coref34free:
+    name: eb21 exact replay, 34% of the coref_llm + GUM/LitBank/GAP mixture
+    provenance: mixed (replay)
+    tasks: mixed (replay)
+    license: mixed -- inherits eb21's 23 source corpora
+    source_url: local (tools/train/build_137k_replay.py --config base/eb21.yaml --new-records 29374 --replay-frac 0.34 --seed 42)
+    hf_jsonl: whr778/replay_eb21_coref34free
+    language: [en, zh, tr]
+    description: "15,133 eb21 TRAIN records, a STRICT SUPERSET of replay_eb21_coref34 (all 13,990 included), so corefC treatment vs treatment-free differ only by GUM/LitBank/GAP + the 1,143 replay records that hold 34%."
   replay_eb21_coref30:
     name: eb21 exact replay, 30% of the option-B coref mixture
     provenance: mixed (replay)
