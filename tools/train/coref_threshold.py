@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +21,10 @@ import torch
 
 from gliner2.inference.entity_coref import PRONOUNS, best_antecedent, link_logits
 
-CACHE = Path("/Volumes/Development/tmp/coref_threshold")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from train import _fetch_if_missing
+
+CACHE = Path(os.environ.get("COREF_CACHE", "/Volumes/Development/tmp/coref_threshold"))
 CORPORA = ["cc_news_events_sonnet55_v2_coref_llm", "cc_news_events_haiku45_coref_llm", "cc_news_haiku45_coref_llm"]
 
 
@@ -30,6 +35,7 @@ def doc_logits(model_id: str, path: str, limit: int, device: str) -> list:
         return torch.load(cache)
     from gliner2 import AutoExtractor
     model = AutoExtractor.from_pretrained(model_id).to(device).eval()
+    _fetch_if_missing(path)
     out = []
     with open(path, encoding="utf-8") as fh:
         rows = [json.loads(line) for line in fh][:limit]
