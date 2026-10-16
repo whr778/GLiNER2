@@ -1368,7 +1368,7 @@ datasets:
     source_url: https://huggingface.co/datasets/vblagoje/cc_news
     hf_jsonl: whr778/cc_news_haiku45_coref_llm
     language: [en]
-    description: "PENDING counts. Claude Sonnet 5.5 clusters numbered candidate mentions (entity + event-argument surfaces + pronouns; never writes a span) with GUIDELINES.md `coreference` (tools/data/annotate_coref.py, af0ab99); pilot vs WikiEvents gold: pronoun-pair F1 0.76 at precision 0.90. TRAIN only: the source corpus's val/test are not annotated. Batch msgbatch_01NZLScPLr5GQj5EpH6RAeCi."
+    description: "15,806 records (of 15,825 units; 19 malformed replies dropped), 117,143 clusters, 520,840 clustered mentions (49.7% pronouns). INHERITED OVERLAP: 442 inputs (from cc_news_haiku45.train itself) also sit in the news-gate splits gate2/gate3/gate2_tr val+test -- no extraction eval; matters only for a gate model warm-started from a base trained on this. Claude Sonnet 5.5 clusters numbered candidate mentions (entity + event-argument surfaces + pronouns; never writes a span) with GUIDELINES.md `coreference` (tools/data/annotate_coref.py, af0ab99); pilot vs WikiEvents gold: pronoun-pair F1 0.76 at precision 0.90. TRAIN only: the source corpus's val/test are not annotated. Batch msgbatch_01NZLScPLr5GQj5EpH6RAeCi, $53.32."
   wikievents_coref_llm:
     name: LLM coref over WikiEvents train (completes its partial gold)
     provenance: llm_real
