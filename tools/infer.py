@@ -178,7 +178,8 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                    help="Cluster predicted entity mentions + pronouns with the trained entity coref link "
                         "(gliner2/inference/entity_coref.py) into output['coref_clusters'], multi-mention "
                         "clusters only. The value is the link-logit cut-off picked on val "
-                        "(tools/train/coref_threshold.py). Needs --include-spans and a checkpoint with the link.")
+                        "(tools/train/coref_threshold.py; 0.2 for gliner2-corefC-treatment). Needs --include-spans "
+                        "and a checkpoint with the link.")
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args(argv)
 
