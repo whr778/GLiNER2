@@ -76,14 +76,23 @@ def render(text: str, cands: list[dict]) -> str:
 
 
 def parse(raw: str, n: int) -> list[int] | None:
-    """Predicted cluster id per candidate (singletons get unique ids), or None if unusable."""
-    try:
-        groups = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])["clusters"]
-    except (ValueError, KeyError, TypeError):
+    """Predicted cluster id per candidate (singletons get unique ids), or None if unusable.
+    The LAST JSON object with "clusters" wins: Sonnet sometimes answers, writes "Wait, ... Corrected:"
+    and answers again, and the correction is its answer."""
+    dec, groups, i = json.JSONDecoder(), None, raw.find("{")
+    while i != -1:
+        try:
+            obj, end = dec.raw_decode(raw, i)
+            if isinstance(obj, dict) and isinstance(obj.get("clusters"), list):
+                groups = obj["clusters"]
+            i = raw.find("{", end)
+        except ValueError:
+            i = raw.find("{", i + 1)
+    if groups is None:
         return None
     label = list(range(n, 2 * n))
     for g, ids in enumerate(groups):
-        for i in ids:
+        for i in ids if isinstance(ids, list) else []:
             if isinstance(i, int) and 0 <= i < n and label[i] >= n:
                 label[i] = g
     return label
@@ -132,6 +141,39 @@ def distractor_links(preds: dict, docs: list[dict]) -> float:
     return round(hit / tot, 4) if tot else 0.0
 
 
+def doc_f1(preds: dict, docs: list[dict]) -> float:
+    """Mean per-document pairwise F1: pair counts grow with the SQUARE of a doc's mentions, so one
+    2,000-mention doc held 47% of the pilot's gold pairs and set the micro figure alone."""
+    f = [prf(*pair_counts(p, [m["cluster"] for m in docs[d]["cands"]], [False] * len(p), "all"))["f1"]
+         for d, p in preds.items()]
+    return round(sum(f) / len(f), 4) if f else 0.0
+
+
+def evaluate(replies: dict, docs: list[dict], n_draws: int, max_chars: int) -> dict:
+    """Scores per draw against gold and between draws, over all docs and over docs <= max_chars."""
+    draws = {k: {} for k in range(n_draws)}
+    unusable = 0
+    for cid, raw in replies.items():
+        d, k = map(int, cid.split("_"))
+        labels = parse(raw, len(docs[d]["cands"]))
+        if labels is None:
+            unusable += 1
+        else:
+            draws[k][d] = labels
+    out = {"replies": len(replies), "unusable": unusable}
+    short = {d for d, doc in enumerate(docs) if len(doc["rec"]["input"]) <= max_chars}
+    for scope, keep in (("all_docs", set(range(len(docs)))), (f"docs_le_{max_chars}_chars", short)):
+        dr = {k: {d: v for d, v in p.items() if d in keep} for k, p in draws.items()}
+        gold = lambda d: [m["cluster"] for m in docs[d]["cands"]]  # noqa: E731
+        out[scope] = {
+            "docs": len(keep),
+            "vs_gold": {k: {**score(p, docs, gold), "doc_mean_f1": doc_f1(p, docs),
+                            "links_touching_distractor": distractor_links(p, docs)} for k, p in dr.items()},
+            "redraw": {f"{a}v{b}": score({d: dr[a][d] for d in dr[a] if d in dr[b]}, docs, lambda d, b=b: dr[b][d])
+                       for a, b in itertools.combinations(range(n_draws), 2)}}
+    return out
+
+
 def usage_cost(provider: AnthropicProvider, batch_id: str, price_in: float, price_out: float) -> dict:
     tin = tout = 0
     for r in provider._client.messages.batches.results(batch_id):
@@ -150,6 +192,9 @@ def main() -> int:
     ap.add_argument("--models", nargs="+", default=list(MODELS))
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--dry-run", action="store_true", help="build and show prompts, send nothing")
+    ap.add_argument("--rescore", action="store_true", help="score the saved replies in --out, send nothing")
+    ap.add_argument("--max-chars", type=int, default=12000,
+                    help="also score docs up to this length: the purchase corpora's own maximum")
     args = ap.parse_args()
 
     recs = [json.loads(l) for l in open(args.train, encoding="utf-8")]
@@ -165,6 +210,12 @@ def main() -> int:
         return 0
 
     result = {"docs": len(docs), "candidates": n_all, "gold_clustered": n_gold, "models": {}}
+    if args.rescore:
+        for name in args.models:
+            replies = json.loads((args.out / f"{name}.replies.json").read_text(encoding="utf-8"))
+            result["models"][name] = {"model": MODELS[name][0], **evaluate(replies, docs, args.draws, args.max_chars)}
+        (args.out / "rescore.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        return 0
     for name in args.models:
         model, pin, pout = MODELS[name]
         provider = AnthropicProvider(ProviderConfig(provider="anthropic", model=model, max_tokens=4000))
@@ -173,23 +224,8 @@ def main() -> int:
         replies = provider.complete_batch(items, id_path=args.out / f"{name}.batch_id")
         batch_id = (args.out / f"{name}.batch_id").read_text().strip()
         (args.out / f"{name}.replies.json").write_text(json.dumps(replies, ensure_ascii=False), encoding="utf-8")
-        draws = {k: {} for k in range(args.draws)}
-        unusable = 0
-        for cid, raw in replies.items():
-            d, k = map(int, cid.split("_"))
-            labels = parse(raw, len(docs[d]["cands"]))
-            if labels is None:
-                unusable += 1
-            else:
-                draws[k][d] = labels
-        gold = lambda d: [m["cluster"] for m in docs[d]["cands"]]  # noqa: E731
-        vs_gold = {k: score(p, docs, gold) for k, p in draws.items()}
-        to_distractor = {k: distractor_links(p, docs) for k, p in draws.items()}
-        redraw = {f"{a}v{b}": score({d: draws[a][d] for d in draws[a] if d in draws[b]}, docs,
-                                    lambda d, b=b: draws[b][d])
-                  for a, b in itertools.combinations(range(args.draws), 2)}
-        result["models"][name] = {"model": model, "batch_id": batch_id, "replies": len(replies),
-                                  "unusable": unusable, "vs_gold": vs_gold, "links_touching_distractor": to_distractor, "redraw": redraw,
+        result["models"][name] = {"model": model, "batch_id": batch_id,
+                                  **evaluate(replies, docs, args.draws, args.max_chars),
                                   "cost": usage_cost(provider, batch_id, pin, pout)}
         print(f"[pilot] {name}", json.dumps(result["models"][name]), flush=True)
     (args.out / "pilot.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")

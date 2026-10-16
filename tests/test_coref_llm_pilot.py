@@ -33,3 +33,8 @@ def test_distractor_pairs_are_unscored():
     assert P.score(linked_to_distractor, docs, gold)["all"] == {"precision": 1.0, "recall": 1.0, "f1": 1.0}
     assert P.distractor_links(linked_to_distractor, docs) == 0.8333
     assert P.score({0: [0, 1, 2, 3]}, docs, gold)["pronoun"]["recall"] == 0.0
+
+
+def test_parse_takes_the_last_answer_when_the_model_corrects_itself():
+    raw = '{"clusters": [[0, 1], [1, 2]]}\n\nWait, ids can\'t repeat. Corrected:\n\n{"clusters": [[0, 1]]}'
+    assert P.parse(raw, 3) == [0, 0, 5]
