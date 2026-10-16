@@ -27,6 +27,6 @@ def test_units_rebase_candidates_per_window_and_keep_gold_mentions():
     assert [(u["offset"], [(m["start"], m["text"]) for m in u["cands"]]) for u in us] == [(0, [(0, "Ann")]), (9, [(0, "She")])]
 
 
-def test_clusters_drop_singletons():
+def test_clusters_keep_singletons_as_negatives():
     cands = [{"text": "a"}, {"text": "b"}, {"text": "c"}]
-    assert A.clusters([0, 9, 0], cands) == [[{"text": "a"}, {"text": "c"}]]
+    assert A.clusters([0, 9, 0], cands) == [[{"text": "a"}, {"text": "c"}], [{"text": "b"}]]

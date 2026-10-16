@@ -77,10 +77,13 @@ def units(rec: dict, max_chars: int) -> list[dict]:
 
 
 def clusters(labels: list[int], cands: list[dict]) -> list[list[dict]]:
+    """Every candidate's cluster, SINGLETONS KEPT (as gum_coref keeps them): an id the LLM left
+    ungrouped is its judgment that the mention is its own entity, a negative for every other mention.
+    Dropping them threw away 33-50% of candidates and left 2.8-4.6% of records with no negatives."""
     groups: dict[int, list[dict]] = {}
     for lab, m in zip(labels, cands):
         groups.setdefault(lab, []).append(m)
-    return [g for g in groups.values() if len(g) >= 2]
+    return list(groups.values())
 
 
 def main() -> int:
@@ -92,6 +95,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="build, count and show one prompt; send nothing")
     ap.add_argument("--batch", action="store_true")
     ap.add_argument("--fetch-batch")
+    ap.add_argument("--from-replies", action="store_true", help="rebuild from the saved replies; send nothing")
     args = ap.parse_args()
 
     recs = [json.loads(l) for l in open(f"data/{args.corpus}.train.jsonl", encoding="utf-8")][:args.limit]
@@ -105,10 +109,14 @@ def main() -> int:
         return 0
 
     model, pin, pout = MODELS[args.model]
-    provider = AnthropicProvider(ProviderConfig(provider="anthropic", model=model, max_tokens=4000))
+    provider = None if args.from_replies else AnthropicProvider(
+        ProviderConfig(provider="anthropic", model=model, max_tokens=4000))
     REPLIES.mkdir(parents=True, exist_ok=True)
     items = [(f"{i}_{w}", SYSTEM, USER.format(text=render(u["text"], u["cands"]))) for i, w, u in work]
-    if args.fetch_batch:
+    if args.from_replies:
+        replies = json.loads((REPLIES / f"{args.corpus}.replies.json").read_text(encoding="utf-8"))
+        batch_id = (REPLIES / f"{args.corpus}.batch_id").read_text().strip()
+    elif args.fetch_batch:
         replies = provider.fetch_batch(args.fetch_batch)
         batch_id = args.fetch_batch
     elif args.batch:
@@ -118,7 +126,8 @@ def main() -> int:
     else:
         replies = {cid: provider.complete(s, u) for cid, s, u in items}
         batch_id = "sync"
-    (REPLIES / f"{args.corpus}.replies.json").write_text(json.dumps(replies, ensure_ascii=False), encoding="utf-8")
+    if not args.from_replies:
+        (REPLIES / f"{args.corpus}.replies.json").write_text(json.dumps(replies, ensure_ascii=False), encoding="utf-8")
 
     rows, unusable = [], 0
     for i, w, u in work:
@@ -138,8 +147,9 @@ def main() -> int:
             fh.write(dumps_record(r) + "\n")
     n_cl = sum(len(r["coref_clusters"]) for r in rows)
     n_m = sum(len(c) for r in rows for c in r["coref_clusters"])
-    print(f"[coref-buy] {len(rows):,} records -> {out}; {unusable} unusable / missing; {n_cl:,} clusters, "
-          f"{n_m:,} clustered mentions")
+    n_s = sum(len(c) == 1 for r in rows for c in r["coref_clusters"])
+    print(f"[coref-buy] {len(rows):,} records -> {out}; {unusable} unusable / missing; {n_cl:,} clusters "
+          f"({n_s:,} singletons), {n_m:,} mentions")
     return 0
 
 
