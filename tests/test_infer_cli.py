@@ -242,3 +242,15 @@ class TestCoreferentMerge:
     def test_unknown_mode_is_refused(self):
         with pytest.raises(SystemExit):
             infer._parse_args(["--model", "m", "--input", "x", "--merge-coreferent", "union"])
+
+
+class TestDevice:
+    def test_default_is_auto(self):
+        assert infer._parse_args(["--model", "m", "--input", "x"]).device == "auto"
+
+    def test_explicit_cpu(self):
+        assert infer._parse_args(["--model", "m", "--input", "x", "--device", "cpu"]).device == "cpu"
+
+    def test_unknown_device_is_rejected(self):
+        with pytest.raises(SystemExit):
+            infer._parse_args(["--model", "m", "--input", "x", "--device", "gpu"])

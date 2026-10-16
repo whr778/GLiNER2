@@ -180,6 +180,10 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                         "clusters only. The value is the link-logit cut-off picked on val "
                         "(tools/train/coref_threshold.py; 0.2 for gliner2-corefC-treatment). Needs --include-spans "
                         "and a checkpoint with the link.")
+    p.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], default="auto",
+                   help="auto (default) picks cuda, else mps, else cpu. On Apple silicon prefer "
+                        "cpu for a long file: MPS keeps memory for every new input length and never returns it "
+                        "(~100 MB per document measured), so a long run grows until the OS kills it.")
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args(argv)
 
@@ -235,7 +239,8 @@ def main(argv: List[str] = None) -> None:
         raise SystemExit("--entity-coref clusters predicted spans and needs --include-spans.")
     role_types = load_role_types(args.link_arguments) if args.link_arguments else None
     records = _read_records(args.input)
-    model = AutoExtractor.from_pretrained(args.model)
+    model = AutoExtractor.from_pretrained(args.model, map_location=None if args.device == "auto" else args.device)
+    print(f"[infer] device {next(model.parameters()).device}")
     if args.entity_coref is not None and getattr(model, "mention_link", None) is None:
         raise SystemExit(f"--entity-coref: {args.model} has no trained entity coref link (mention_link).")
     # Decode reads the merge from boundary_settings, so it is applied the way eval applies overrides.
