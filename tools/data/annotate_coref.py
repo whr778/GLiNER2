@@ -158,7 +158,7 @@ def vote(draws: list[list[int]], n: int) -> list[int]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--corpus", required=True, help="reads data/<corpus>.<split>.jsonl")
-    ap.add_argument("--split", default="train", choices=["train", "val", "test"])
+    ap.add_argument("--split", default="train", choices=["train", "val", "dev", "test"])
     ap.add_argument("--draws", type=int, default=1, help="independent draws per unit; more than 1 is voted")
     ap.add_argument("--skip", type=Path, help="near_dup_eval.py output: doc indices of this split to leave out")
     ap.add_argument("--model", default="sonnet", choices=list(MODELS))
