@@ -7,12 +7,14 @@ schema, `_encode_core`, mean word states -- gliner2/models/boundary/mention_link
 inside a document is scored; positive = same gold `coref_clusters` cluster. Per corpus it reports AUC
 over all pairs, pairs whose surfaces differ, and pairs involving an English pronoun. `link` is absent
 when the checkpoint has no trained link (eb21, a control arm): the cosine column is then the baseline.
-VAL only; the test splits stay blind.
+VAL only; the test splits stay blind. Missing val files are pulled from the Hub as train.py does: a
+box fetches only what its config names, and these corpora train `train_only`.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +23,9 @@ import torch
 from gliner2 import AutoExtractor
 from gliner2.models.boundary.mention_link import mention_states
 from gliner2.processing import coref
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from train import _fetch_if_missing  # noqa: E402
 
 PRONOUNS = {"he", "she", "they", "him", "her", "them", "his", "their", "hers", "theirs", "its", "it", "we",
             "us", "our", "i", "me", "my", "you", "your", "who", "whom", "whose", "himself", "herself",
@@ -76,6 +81,7 @@ def auc(pairs, col):
 def readout(model, corpora, limit: int, max_words: int):
     res = {}
     for name in corpora:
+        _fetch_if_missing(VAL[name])
         rows = [json.loads(l) for l in open(VAL[name], encoding="utf-8")]
         rows = [r for r in rows if r.get("coref_clusters")][:limit]
         pairs = [p for r in rows for p in doc_pairs(model, r, max_words)]

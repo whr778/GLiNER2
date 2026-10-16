@@ -188,8 +188,10 @@ if [ "${COREF_READOUT:-0}" = "1" ] && [ -d "$OUTDIR/best" ]; then
   timeout ${READOUT_TIMEOUT:-3600} $PY -u tools/train/coref_readout.py --model "$OUTDIR/best" --device cuda \
       --out "$HOME/coref_readout.json" 2>&1 | tee "$HOME/coref_readout.log" | grep -a -v "Warning" | tail -8 \
     || echo "[base] coref readout failed (non-fatal)"
-  [ -f "$HOME/coref_readout.json" ] && { publish "$DEST" "$HOME/coref_readout.json" "$HOME/coref_readout.log" \
-    || echo "[base] coref readout publish failed (non-fatal)"; }
+  # The log publishes WITH OR WITHOUT the json: corefB lost its readout to a FileNotFoundError that
+  # died with the box because the log only travelled beside the json.
+  publish "$DEST" $([ -f "$HOME/coref_readout.json" ] && echo "$HOME/coref_readout.json") "$HOME/coref_readout.log" \
+    || echo "[base] coref readout publish failed (non-fatal)"
 fi
 
 echo "[base] ===== DONE $(date -u) rc=$rc ====="
