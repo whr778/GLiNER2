@@ -1378,6 +1378,15 @@ datasets:
     hf_jsonl: whr778/wikievents_coref_llm
     language: [en]
     description: "214 records (200 train docs; 11 over 12,000 chars cut into per-window records; 1 malformed reply dropped), 18,885 clusters (15,390 singletons), 30,588 mentions (singletons KEPT, as gum_coref) (21.9% pronouns). Candidates include WikiEvents' own gold coref mentions; LLM clusters may DISAGREE with the gold in wikievents.train -- decide which to train on, do not train both blindly. Claude Sonnet 5.5 clusters numbered candidate mentions (entity + event-argument surfaces + pronouns; never writes a span) with GUIDELINES.md `coreference` (tools/data/annotate_coref.py, af0ab99); pilot vs WikiEvents gold: pronoun-pair F1 0.76 at precision 0.90. TRAIN only: the source corpus's val/test are not annotated. Batch msgbatch_01DYJYhksj5N1qpmPSfuFTcu, $1.26."
+  replay_eb21_coref34:
+    name: eb21 exact replay, 34% of the coref_llm mixture
+    provenance: mixed (replay)
+    tasks: mixed (replay)
+    license: mixed -- inherits eb21's 23 source corpora
+    source_url: local (tools/train/build_137k_replay.py --config base/eb21.yaml --new-records 27153 --replay-frac 0.34 --seed 42)
+    hf_jsonl: whr778/replay_eb21_coref34
+    language: [en, zh, tr]
+    description: "13,990 eb21 TRAIN records proportional per corpus (23 corpora, all found locally), tagged _corpus; 34.0% of a mixture with the four *_coref_llm corpora (27,153). 0 inputs in eb21's 39 val/test files; 59 repeated inputs mirror eb21's own pool (52 = one text, several tasks)."
   replay_eb21_coref30:
     name: eb21 exact replay, 30% of the option-B coref mixture
     provenance: mixed (replay)
