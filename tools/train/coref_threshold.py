@@ -81,7 +81,10 @@ def main() -> int:
     ap.add_argument("--corpora", nargs="+", default=CORPORA)
     ap.add_argument("--threshold", type=float, help="test: the cut-off picked on val (required for test)")
     ap.add_argument("--limit", type=int, default=100000)
-    ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
+    # CPU, not MPS: MPS keeps per-input-shape state, so every new document length costs ~100 MB that is
+    # never returned (proven: one doc x30 flat, 30 distinct docs +2.9 GB driver; the full val run was
+    # SIGKILLed). CPU is flat after warm-up and about as fast for this encode-only job.
+    ap.add_argument("--device", default="cpu")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
     if args.split == "test" and args.threshold is None:
