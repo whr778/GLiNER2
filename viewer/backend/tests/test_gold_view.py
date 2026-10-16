@@ -105,3 +105,26 @@ def test_a_training_data_row_shows_its_annotations(tmp_path):
     assert (ent["text"], ent["start"], ent["end"]) == ("Ed Smith", 0, 8)
     mention = r["pred"]["event_extraction"]["Contact.Communicate"][0]
     assert mention["triggers"][0]["start"] == 9 and "trigger_key" not in mention
+
+
+def _m(text, start):
+    return {"text": text, "start": start, "end": start + len(text)}
+
+
+def test_coref_merge_marks_the_smaller_side_and_pairs_score():
+    a1, a2, a3, b1 = _m("Ann", 0), _m("she", 10), _m("Ann", 20), _m("Bea", 30)
+    gold_c = [[a1, a2, a3], [b1, _m("Bea", 40)]]
+    pred_c = gold.coref_view([[a1, a2, a3, b1]])
+    gold._mark_coref(pred_c, gold.coref_view(gold_c))
+    assert [m["match"] for m in pred_c[0]] == [True, True, True, False]
+    assert gold.coref_view([[a1]]) == []
+    assert len(gold.coref_pairs(gold_c)) == 4
+
+
+def test_data_row_carries_its_coref_clusters(tmp_path):
+    row = {"input": "Ann said she left.", "output": {},
+           "coref_clusters": [[_m("Ann", 0), _m("she", 9)], [_m("left", 13)]]}
+    p = tmp_path / "coref.jsonl"
+    p.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    r = gold.record(str(p), 0)
+    assert [[m["text"] for m in c] for c in r["pred"]["coref_clusters"]] == [["Ann", "she"]]

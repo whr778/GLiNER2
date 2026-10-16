@@ -15,8 +15,8 @@ function sideText(d: DiffSide | null): string {
   return `"${d.text}"${d.tail ? ` -> "${d.tail}"` : ""}  (${lab})` + (d.trig ? `  under ${d.trig.join(", ") || "-"}` : "");
 }
 
-const LAYERS: Layer[] = ["entities", "events", "relations"];
-const LAYER_KEY: Record<Layer, string> = { entities: "entities", events: "event_extraction", relations: "relation_extraction" };
+const LAYERS: Layer[] = ["entities", "events", "relations", "coref"];
+const LAYER_KEY: Record<Layer, string> = { entities: "entities", events: "event_extraction", relations: "relation_extraction", coref: "coref_clusters" };
 const HEADS = ["entity", "event_trigger", "event_argument", "relation"];
 const PATH_KEY = "predictions.path";
 
@@ -169,7 +169,7 @@ export default function PredictionsPanel() {
             <div className="toggle">
               {LAYERS.filter((l) => hasLayer(rec.pred, l) || hasLayer(rec.gold, l)).map((l) => (
                 <button key={l} className={l === layer ? "active" : ""} onClick={() => setLayer(l)}>
-                  {l === "entities" ? "Entities" : l === "events" ? "Events" : "Relations"}
+                  {l === "entities" ? "Entities" : l === "events" ? "Events" : l === "relations" ? "Relations" : "Coref"}
                 </button>
               ))}
             </div>
@@ -187,6 +187,14 @@ export default function PredictionsPanel() {
               prediction not in gold. Click an event or relation span to cycle its mentions (pred / gold).
             </div>
           )}
+          {layer === "coref" && (
+            <div className="hint" style={{ marginBottom: 8 }}>
+              Coref: one colour per entity cluster (C1, C2, ...; singletons hidden); hover a mention to join its
+              cluster. Gold rim solid = most of the mention&apos;s cluster-mates are its mates in gold too; a merge
+              of two entities leaves its smaller side (or both, if even) unmatched. Record F1 &quot;coref&quot; is
+              mention-pair F1.
+            </div>
+          )}
           <AnnotatedText text={rec.text} marks={marks} layer={layer} activeEid={pinned} onSelectEid={setPinned} />
           {rec.unlocated.length > 0 && (
             <div className="hint" style={{ marginTop: 8 }}>
@@ -196,7 +204,7 @@ export default function PredictionsPanel() {
         </div>
       )}
 
-      {rec && rec.has_gold && (
+      {rec && rec.has_gold && layer !== "coref" && (
         <div className="card">
           <h2>Differences: {layer}</h2>
           {(() => {

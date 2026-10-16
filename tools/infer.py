@@ -174,6 +174,11 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                    help="Give every event argument the entity_id of the entity on its exact span; arguments "
                         "with none get a derived entity under derived_entities (typed from the optional "
                         "role_types JSON). Needs --include-spans. See gliner2/inference/argument_links.py.")
+    p.add_argument("--entity-coref", type=float, default=None, metavar="LINK_THRESHOLD",
+                   help="Cluster predicted entity mentions + pronouns with the trained entity coref link "
+                        "(gliner2/inference/entity_coref.py) into output['coref_clusters'], multi-mention "
+                        "clusters only. The value is the link-logit cut-off picked on val "
+                        "(tools/train/coref_threshold.py). Needs --include-spans and a checkpoint with the link.")
     p.add_argument("--batch-size", type=int, default=8)
     return p.parse_args(argv)
 
@@ -225,9 +230,13 @@ def main(argv: List[str] = None) -> None:
 
     if args.link_arguments is not None and not args.include_spans:
         raise SystemExit("--link-arguments links by span and needs --include-spans.")
+    if args.entity_coref is not None and not args.include_spans:
+        raise SystemExit("--entity-coref clusters predicted spans and needs --include-spans.")
     role_types = load_role_types(args.link_arguments) if args.link_arguments else None
     records = _read_records(args.input)
     model = AutoExtractor.from_pretrained(args.model)
+    if args.entity_coref is not None and getattr(model, "mention_link", None) is None:
+        raise SystemExit(f"--entity-coref: {args.model} has no trained entity coref link (mention_link).")
     # Decode reads the merge from boundary_settings, so it is applied the way eval applies overrides.
     apply_boundary_overrides(model, _coref_overrides(args))
     s = getattr(model, "boundary_settings", None)
@@ -281,6 +290,11 @@ def main(argv: List[str] = None) -> None:
         out = [{} for _ in recs]
         for i, r in zip(keep, got):
             out[i] = link_arguments(r, role_types) if args.link_arguments is not None else r
+        if args.entity_coref is not None:
+            from gliner2.inference.entity_coref import candidate_mentions, resolve
+            for rec, r in zip(recs, out):
+                mentions = candidate_mentions(rec["input"], r.get("entities"))
+                r["coref_clusters"] = [c for c in resolve(model, rec["input"], mentions, args.entity_coref) if len(c) > 1]
         return out
 
     if not args.output:
@@ -292,6 +306,8 @@ def main(argv: List[str] = None) -> None:
             chunk = records[start:start + step]
             for i, (rec, pred) in enumerate(zip(chunk, predict(chunk, schemas[start:start + step]))):
                 row = {"input": rec["input"], "output": pred, "gold": rec.get("output")}
+                if rec.get("coref_clusters"):
+                    row["gold_coref"] = rec["coref_clusters"]
                 if gold_mapped is not None:
                     row["gold_mapped"] = gold_mapped[start + i]
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")

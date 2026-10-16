@@ -46,7 +46,7 @@ export default function AnnotatedText({
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   const segments = useMemo(() => buildSegments(text, marks), [text, marks]);
-  const linkable = layer === "events" || layer === "relations";
+  const linkable = layer === "events" || layer === "relations" || layer === "coref";
   const hovering = hoverEids.size > 0;
 
   const compute = useCallback(() => {

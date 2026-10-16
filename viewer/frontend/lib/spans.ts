@@ -1,6 +1,6 @@
 import type { ExtractionResult, Span } from "./types";
 
-export type Layer = "entities" | "events" | "relations";
+export type Layer = "entities" | "events" | "relations" | "coref";
 
 export type Mark = {
   start: number;
@@ -112,6 +112,17 @@ export function collectMarks(result: ExtractionResult, layer: Layer, gold = fals
         }
       });
     }
+  } else if (layer === "coref") {
+    // Entity coreference: one colour and one hover group per cluster (multi-mention clusters only;
+    // gold.py drops singletons). Named by the cluster's first non-pronoun mention.
+    (result.coref_clusters as any[] | undefined)?.forEach((cluster, k) => {
+      const name = (cluster.find((m: any) => m.text?.length > 4) ?? cluster[0])?.text ?? "";
+      const eid = `${pre}coref-${k}`;
+      for (const m of cluster) {
+        const sp = asSpan(m);
+        if (sp) marks.push({ start: sp.start!, end: sp.end!, label: `C${k + 1} ${name}`, kind: "mention", eid, colorKey: eid, idx: k + 1, ...g(sp) });
+      }
+    });
   } else if (layer === "relations") {
     let counter = 0;
     for (const [rname, insts] of Object.entries(result.relation_extraction || {})) {

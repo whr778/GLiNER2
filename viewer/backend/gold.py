@@ -45,8 +45,8 @@ def summary(path: str) -> Dict[str, Any]:
     rows = rows_of(path)
     return {"path": path, "count": len(rows), "gold_key": gold_key(rows[0]) if rows else None,
             "data_file": bool(rows) and is_data_row(rows[0]),
-            "records": [{"i": i, "chars": len(r["input"]), "has_gold": bool(r.get(gold_key(r))),
-                         "f1": _f1(r.get(gold_key(r)) or {}, r.get("output") or {})}
+            "records": [{"i": i, "chars": len(r["input"]), "has_gold": bool(r.get(gold_key(r)) or r.get("gold_coref")),
+                         "f1": _f1(r.get(gold_key(r)) or {}, r.get("output") or {}, r.get("gold_coref"))}
                         for i, r in enumerate(rows)]}
 
 
@@ -175,6 +175,31 @@ def _mark_relations(block: Dict[str, list], other: set) -> None:
                     r["tail"]["match"] = hit
 
 
+def coref_view(clusters: Any) -> List[List[Dict[str, Any]]]:
+    """Multi-mention clusters only (a singleton is the absence of a link, and would paint every
+    candidate), each mention a fresh dict so ``match`` can be set on it."""
+    return [[{"text": m["text"], "start": m["start"], "end": m["end"]} for m in c]
+            for c in clusters or [] if len(c) > 1]
+
+
+def _mark_coref(block: List[List[Dict[str, Any]]], other: List[List[Dict[str, Any]]]) -> None:
+    """A mention matches when MORE THAN HALF of its cluster-mates (those the other side mentions at all)
+    share its cluster there. One intruder in a big cluster marks only the intruder; a merge of two
+    entities marks the smaller side."""
+    side = {(m["start"], m["end"]): ci for ci, c in enumerate(other) for m in c}
+    for c in block:
+        for m in c:
+            mine = side.get((m["start"], m["end"]))
+            mates = [side[k] for o in c if o is not m and (k := (o["start"], o["end"])) in side]
+            m["match"] = mine is not None and sum(x == mine for x in mates) * 2 > len(mates)
+
+
+def coref_pairs(clusters: Any) -> set:
+    """Unordered mention-span pairs inside multi-mention clusters."""
+    return {tuple(sorted(((a["start"], a["end"]), (b["start"], b["end"]))))
+            for c in clusters or [] for i, a in enumerate(c) for b in c[i + 1:]}
+
+
 def _classifications(gold: Dict[str, Any], pred: Dict[str, Any]) -> List[Dict[str, Any]]:
     hits = M._pred_classification_pairs(pred, gold)
     rows = []
@@ -205,9 +230,14 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     _mark_events(g["event_extraction"], M._pred_event_trigger_set(pred), M._pred_event_argument_set(pred))
     _mark_relations(pred.get("relation_extraction") or {}, M._gold_relation_set(gold))
     _mark_relations(g["relation_extraction"], M._pred_relation_set(pred))
-    view = {"text": text, "pred": pred, "gold": g, "has_gold": bool(gold),
+    if pred.get("coref_clusters") or row.get("gold_coref"):
+        pred["coref_clusters"] = coref_view(pred.get("coref_clusters"))
+        g["coref_clusters"] = coref_view(row.get("gold_coref"))
+        _mark_coref(pred["coref_clusters"], g["coref_clusters"])
+        _mark_coref(g["coref_clusters"], pred["coref_clusters"])
+    view = {"text": text, "pred": pred, "gold": g, "has_gold": bool(gold) or bool(g.get("coref_clusters")),
             "classifications": _classifications(gold, pred),
-            "unlocated": sorted(set(missed)), "f1": _f1(gold, pred)}
+            "unlocated": sorted(set(missed)), "f1": _f1(gold, pred, row.get("gold_coref"))}
     view["diffs"] = diffs.annotate(view) if gold else []
     link_arguments(pred, _ROLE_TYPES)
     link_arguments(g, _ROLE_TYPES)
@@ -220,7 +250,8 @@ def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
     text, ann, missed = row["input"], row.get("output") or {}, []
     shown = {"entities": gold_entities(text, ann, missed),
              "event_extraction": gold_events(text, ann, missed),
-             "relation_extraction": gold_relations(text, ann, missed)}
+             "relation_extraction": gold_relations(text, ann, missed),
+             "coref_clusters": coref_view(row.get("coref_clusters"))}
     for mentions in shown["event_extraction"].values():
         for m in mentions:
             m.pop("trigger_key", None)
@@ -229,12 +260,14 @@ def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
             "classifications": [], "unlocated": sorted(set(missed)), "f1": {}, "diffs": []}
 
 
-def _f1(gold: Dict[str, Any], pred: Dict[str, Any]) -> Dict[str, float]:
-    """Strict F1 of this one record per head, from the scorer's own sets."""
+def _f1(gold: Dict[str, Any], pred: Dict[str, Any], gold_coref: Any = None) -> Dict[str, float]:
+    """Strict F1 of this one record per head, from the scorer's own sets; ``coref`` is mention-pair F1."""
     pairs = {"entity": (M._gold_entity_set(gold), M._pred_entity_set(pred)),
              "event_trigger": (M._gold_event_trigger_set(gold), M._pred_event_trigger_set(pred)),
              "event_argument": (M._gold_event_argument_set(gold), M._pred_event_argument_set(pred)),
-             "relation": (M._gold_relation_set(gold), M._pred_relation_set(pred))}
+             "relation": (M._gold_relation_set(gold), M._pred_relation_set(pred))} if gold else {}
+    if gold_coref or pred.get("coref_clusters"):
+        pairs["coref"] = (coref_pairs(gold_coref), coref_pairs(pred.get("coref_clusters")))
     out = {}
     for head, (g, p) in pairs.items():
         if g or p:
