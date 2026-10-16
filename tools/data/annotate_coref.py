@@ -160,6 +160,7 @@ def main() -> int:
     ap.add_argument("--corpus", required=True, help="reads data/<corpus>.<split>.jsonl")
     ap.add_argument("--split", default="train", choices=["train", "val", "test"])
     ap.add_argument("--draws", type=int, default=1, help="independent draws per unit; more than 1 is voted")
+    ap.add_argument("--skip", type=Path, help="near_dup_eval.py output: doc indices of this split to leave out")
     ap.add_argument("--model", default="sonnet", choices=list(MODELS))
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--max-chars", type=int, default=MAX_CHARS)
@@ -171,10 +172,12 @@ def main() -> int:
 
     with open(f"data/{args.corpus}.{args.split}.jsonl", encoding="utf-8") as fh:
         recs = [json.loads(l) for l in fh][:args.limit]
-    work = [(i, w, u) for i, r in enumerate(recs) for w, u in enumerate(units(r, args.max_chars)) if len(u["cands"]) >= 2]
+    skip = set(json.loads(args.skip.read_text(encoding="utf-8"))[f"data/{args.corpus}.{args.split}.jsonl"]) if args.skip else set()
+    work = [(i, w, u) for i, r in enumerate(recs) if i not in skip
+            for w, u in enumerate(units(r, args.max_chars)) if len(u["cands"]) >= 2]
     n_c = sum(len(u["cands"]) for _, _, u in work)
     n_p = sum(m["text"].casefold() in PRONOUNS for _, _, u in work for m in u["cands"])
-    print(f"[coref-buy] {args.corpus}.{args.split}: {len(recs):,} docs -> {len(work):,} units x {args.draws} draws; "
+    print(f"[coref-buy] {args.corpus}.{args.split}: {len(recs):,} docs, {len(skip)} skipped -> {len(work):,} units x {args.draws} draws; "
           f"{n_c:,} candidates ({n_p / max(n_c, 1):.1%} pronouns)")
     if args.dry_run:
         print(USER.format(text=render(work[0][2]["text"], work[0][2]["cands"]))[:2500])
