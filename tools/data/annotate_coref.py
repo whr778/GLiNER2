@@ -3,6 +3,7 @@
     uv run python tools/data/annotate_coref.py --corpus cc_news_events_sonnet55_v2 --dry-run
     uv run python tools/data/annotate_coref.py --corpus cc_news_events_sonnet55_v2 --batch
     recover: ... --corpus cc_news_events_sonnet55_v2 --fetch-batch msgbatch_...
+    eval:    ... --corpus cc_news_events_sonnet55_v2 --split val --draws 3 --batch
 
 The prompt, renderer and parser live here and coref_llm_pilot.py imports them: the ones the pilot validated (Sonnet 5.5:
 pronoun-pair F1 0.76 at precision 0.90 on news up to 12,000 chars; Haiku failed). The LLM CLUSTERS
@@ -14,8 +15,10 @@ surface first. WikiEvents also offers its gold coref mentions, so the LLM can co
 Texts over 12,000 chars are cut into windows, and each window is its own record: a cluster split by
 a cut would otherwise train two mentions of one entity as different entities.
 
-Writes data/<corpus>_coref_llm.train.jsonl, records {input, output: {}, coref_clusters, provenance}
-like gum_coref. TRAIN splits only: dev and test stay blind and gold.
+Writes data/<corpus>_coref_llm.<split>.jsonl, records {input, output: {}, coref_clusters, provenance}
+like gum_coref. A val/test split is an eval yardstick, so it is bought with --draws 3 and VOTED: a pair
+is coreferent when a majority of the draws link it, and clusters are the connected components of the
+kept pairs. Voted labels are LLM silver, not human gold -- report scores on them as such.
 """
 from __future__ import annotations
 
@@ -133,9 +136,30 @@ def clusters(labels: list[int], cands: list[dict]) -> list[list[dict]]:
     return list(groups.values())
 
 
+def vote(draws: list[list[int]], n: int) -> list[int]:
+    """Cluster label per candidate from several draws' labels: union the pairs a majority of draws link.
+    Transitive closure can join two mentions no majority linked directly (A~B and B~C kept, A~C not)."""
+    need = len(draws) // 2 + 1
+    parent = list(range(n))
+
+    def root(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a in range(n):
+        for b in range(a + 1, n):
+            if sum(d[a] == d[b] for d in draws) >= need:
+                parent[root(a)] = root(b)
+    return [root(x) for x in range(n)]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--corpus", required=True, help="reads data/<corpus>.train.jsonl")
+    ap.add_argument("--corpus", required=True, help="reads data/<corpus>.<split>.jsonl")
+    ap.add_argument("--split", default="train", choices=["train", "val", "test"])
+    ap.add_argument("--draws", type=int, default=1, help="independent draws per unit; more than 1 is voted")
     ap.add_argument("--model", default="sonnet", choices=list(MODELS))
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--max-chars", type=int, default=MAX_CHARS)
@@ -145,13 +169,13 @@ def main() -> int:
     ap.add_argument("--from-replies", action="store_true", help="rebuild from the saved replies; send nothing")
     args = ap.parse_args()
 
-    with open(f"data/{args.corpus}.train.jsonl", encoding="utf-8") as fh:
+    with open(f"data/{args.corpus}.{args.split}.jsonl", encoding="utf-8") as fh:
         recs = [json.loads(l) for l in fh][:args.limit]
     work = [(i, w, u) for i, r in enumerate(recs) for w, u in enumerate(units(r, args.max_chars)) if len(u["cands"]) >= 2]
     n_c = sum(len(u["cands"]) for _, _, u in work)
     n_p = sum(m["text"].casefold() in PRONOUNS for _, _, u in work for m in u["cands"])
-    print(f"[coref-buy] {args.corpus}: {len(recs):,} docs -> {len(work):,} units; {n_c:,} candidates "
-          f"({n_p / max(n_c, 1):.1%} pronouns)")
+    print(f"[coref-buy] {args.corpus}.{args.split}: {len(recs):,} docs -> {len(work):,} units x {args.draws} draws; "
+          f"{n_c:,} candidates ({n_p / max(n_c, 1):.1%} pronouns)")
     if args.dry_run:
         print(USER.format(text=render(work[0][2]["text"], work[0][2]["cands"]))[:2500])
         return 0
@@ -160,36 +184,41 @@ def main() -> int:
     provider = None if args.from_replies else AnthropicProvider(
         ProviderConfig(provider="anthropic", model=model, max_tokens=4000))
     REPLIES.mkdir(parents=True, exist_ok=True)
-    items = [(f"{i}_{w}", SYSTEM, USER.format(text=render(u["text"], u["cands"]))) for i, w, u in work]
+    stem = args.corpus if args.split == "train" else f"{args.corpus}.{args.split}"
+    cid = (lambda i, w, k: f"{i}_{w}") if args.draws == 1 else (lambda i, w, k: f"{i}_{w}_{k}")
+    items = [(cid(i, w, k), SYSTEM, USER.format(text=render(u["text"], u["cands"])))
+             for i, w, u in work for k in range(args.draws)]
     if args.from_replies:
-        replies = json.loads((REPLIES / f"{args.corpus}.replies.json").read_text(encoding="utf-8"))
-        batch_id = (REPLIES / f"{args.corpus}.batch_id").read_text().strip()
+        replies = json.loads((REPLIES / f"{stem}.replies.json").read_text(encoding="utf-8"))
+        batch_id = (REPLIES / f"{stem}.batch_id").read_text().strip()
     elif args.fetch_batch:
         replies = provider.fetch_batch(args.fetch_batch)
         batch_id = args.fetch_batch
     elif args.batch:
-        id_path = REPLIES / f"{args.corpus}.batch_id"
+        id_path = REPLIES / f"{stem}.batch_id"
         replies = provider.complete_batch(items, id_path=id_path)
         batch_id = id_path.read_text().strip()
     else:
         replies = {cid: provider.complete(s, u) for cid, s, u in items}
         batch_id = "sync"
     if not args.from_replies:
-        (REPLIES / f"{args.corpus}.replies.json").write_text(json.dumps(replies, ensure_ascii=False), encoding="utf-8")
+        (REPLIES / f"{stem}.replies.json").write_text(json.dumps(replies, ensure_ascii=False), encoding="utf-8")
 
     rows, unusable = [], 0
     for i, w, u in work:
-        raw = replies.get(f"{i}_{w}")
-        labels = parse(raw, len(u["cands"])) if raw else None
-        if labels is None:
+        raws = [replies.get(cid(i, w, k)) for k in range(args.draws)]
+        draws = [parse(raw, len(u["cands"])) if raw else None for raw in raws]
+        if any(d is None for d in draws):
             unusable += 1
             continue
+        labels = draws[0] if args.draws == 1 else vote(draws, len(u["cands"]))
         cl = clusters(labels, u["cands"])
         assert all(u["text"][m["start"]:m["end"]] == m["text"] for c in cl for m in c)
         rows.append({"input": u["text"], "output": {}, "coref_clusters": cl,
                      "provenance": {"source": args.corpus, "doc_index": i, "window": w, "char_offset": u["offset"],
-                                    "annotator": model, "batch_id": batch_id}})
-    out = Path(f"data/{args.corpus}_coref_llm.train.jsonl")
+                                    "annotator": model, "batch_id": batch_id,
+                                    **({"draws": args.draws, "vote": "pair majority"} if args.draws > 1 else {})}})
+    out = Path(f"data/{args.corpus}_coref_llm.{args.split}.jsonl")
     with out.open("w", encoding="utf-8") as fh:
         for r in rows:
             fh.write(dumps_record(r) + "\n")

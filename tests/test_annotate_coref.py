@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "data"))
 
-import annotate_coref as A  # noqa: E402
+import annotate_coref as A
 
 
 def test_pronouns_match_lower_and_capitalized_but_never_all_caps_or_inside_names():
@@ -30,3 +30,17 @@ def test_units_rebase_candidates_per_window_and_keep_gold_mentions():
 def test_clusters_keep_singletons_as_negatives():
     cands = [{"text": "a"}, {"text": "b"}, {"text": "c"}]
     assert A.clusters([0, 9, 0], cands) == [[{"text": "a"}, {"text": "c"}], [{"text": "b"}]]
+
+
+def test_vote_keeps_majority_pairs_and_closes_transitively():
+    import annotate_coref as A
+    # draws agree 0~1 twice; 1~2 twice; 0~2 never directly -> one cluster by closure; 3 alone
+    draws = [[0, 0, 5, 7], [0, 0, 0, 7], [4, 5, 5, 6]]
+    labels = A.vote(draws, 4)
+    assert labels[0] == labels[1] == labels[2] and labels[3] != labels[0]
+
+
+def test_vote_drops_a_pair_only_one_draw_links():
+    import annotate_coref as A
+    labels = A.vote([[0, 0, 2], [0, 1, 2], [0, 1, 2]], 3)
+    assert len(set(labels)) == 3
