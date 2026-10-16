@@ -21,7 +21,7 @@ ANNOTATORS = sorted((ROOT / "tools" / "data").glob("annotate_*.py"))
 
 def test_guidelines_file_defines_the_expected_rules():
     assert set(available()) == {"json_only", "verbatim", "no_inference", "minority",
-                               "ambiguity", "uncertain_field", "events"}
+                               "ambiguity", "uncertain_field", "events", "coreference"}
 
 
 def test_rules_returns_the_markdown_bytes_verbatim():

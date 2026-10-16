@@ -3,7 +3,7 @@
 **This file is the source, not a description of the source.** `annotation/__init__.py`
 reads the blocks below and injects them verbatim into the system prompt of the annotators that
 call `rules(...)`: `annotate_event_type`, `annotate_casualty`, `annotate_event_entities`,
-`annotate_gate`, `annotate_multitask`, `annotate_long_news`. What you review here is
+`annotate_gate`, `annotate_multitask`, `annotate_long_news`, `coref_llm_pilot`. What you review here is
 byte-for-byte what THOSE models are sent. Edit this file to change their behaviour.
 
 **`tools/data/synthetic/generate.py` did NOT read this file until 2026-10-05**, and still does
@@ -203,6 +203,29 @@ says "he" or "they", give the named or nominal mention it refers to ("John Smith
 "police"). An event needs at least one such named or nominal participant; an event with no
 participant at all is left out. Label an event only when the type's definition fits it. If no
 listed type fits, leave it out and name the type you considered in "uncertain_types".
+<!-- end -->
+
+---
+
+## Coreference
+
+Added 2026-10-16 for English news entity coreference (option 4, `coref_llm_pilot.py`). The
+corefB A/B (EXPERIMENT_CATALOG 2026-10-15) showed the coref link learns pronouns on GUM, LitBank and
+GAP but not on news, where the only gold is WikiEvents' 195 train docs. The annotator CLUSTERS
+numbered candidate mentions; it never finds or edits spans, so `verbatim` does not apply. This
+complements `events`: an event argument is never a bare pronoun, and coreference is what links
+that pronoun to the named mention. The conventions follow WikiEvents' gold, the scoring target:
+titles and role nouns join the name they describe ("spokesman", "Gen", "Prawut Thavornsiri" are
+one cluster), and a group and the pronoun that speaks for it ("police" ... "we") are one entity.
+
+<!-- rule: coreference -->
+Group the ids of mentions that refer to the SAME real-world entity: a person, group,
+organization, place, or object. A name, a pronoun, a title, and a role noun can all refer to the
+same entity ("Maria Lopez" ... "the minister" ... "Lopez" ... "she"). A pronoun belongs to
+the entity it stands for, including "we" or "they" spoken for a group. Do not group mentions that
+are merely the same kind of thing ("a soldier" and "another soldier"), and do not group a part
+with its whole or a place with the people in it. Decide each pronoun from the text around it;
+when the text does not settle what it refers to, leave it ungrouped rather than guess.
 <!-- end -->
 
 ---
