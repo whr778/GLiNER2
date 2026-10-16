@@ -26,9 +26,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _split import dumps_record  # noqa: E402
-from annotation import rules  # noqa: E402
-from synthetic.providers import AnthropicProvider, ProviderConfig  # noqa: E402
+from _split import dumps_record
+from annotation import rules
+from synthetic.providers import AnthropicProvider, ProviderConfig
 
 PRONOUNS = {"he", "she", "they", "him", "her", "them", "his", "their", "hers", "theirs", "its", "it", "we",
             "us", "our", "i", "me", "my", "you", "your", "who", "whom", "whose", "himself", "herself",
@@ -145,7 +145,8 @@ def main() -> int:
     ap.add_argument("--from-replies", action="store_true", help="rebuild from the saved replies; send nothing")
     args = ap.parse_args()
 
-    recs = [json.loads(l) for l in open(f"data/{args.corpus}.train.jsonl", encoding="utf-8")][:args.limit]
+    with open(f"data/{args.corpus}.train.jsonl", encoding="utf-8") as fh:
+        recs = [json.loads(l) for l in fh][:args.limit]
     work = [(i, w, u) for i, r in enumerate(recs) for w, u in enumerate(units(r, args.max_chars)) if len(u["cands"]) >= 2]
     n_c = sum(len(u["cands"]) for _, _, u in work)
     n_p = sum(m["text"].casefold() in PRONOUNS for _, _, u in work for m in u["cands"])
@@ -155,7 +156,7 @@ def main() -> int:
         print(USER.format(text=render(work[0][2]["text"], work[0][2]["cands"]))[:2500])
         return 0
 
-    model, pin, pout = MODELS[args.model]
+    model = MODELS[args.model][0]
     provider = None if args.from_replies else AnthropicProvider(
         ProviderConfig(provider="anthropic", model=model, max_tokens=4000))
     REPLIES.mkdir(parents=True, exist_ok=True)

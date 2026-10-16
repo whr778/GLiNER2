@@ -25,8 +25,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from annotate_coref import MODELS, PRONOUNS, SYSTEM, USER, parse, render  # noqa: E402,F401
-from synthetic.providers import AnthropicProvider, ProviderConfig  # noqa: E402
+from annotate_coref import MODELS, PRONOUNS, SYSTEM, USER, parse, render
+from synthetic.providers import AnthropicProvider, ProviderConfig
+
 
 def candidates(rec: dict) -> list[dict]:
     """Gold cluster mentions (cluster id) plus non-overlapping distractors (cluster None), by offset."""
@@ -48,7 +49,7 @@ def candidates(rec: dict) -> list[dict]:
 
 def overlapping(rec: dict) -> bool:
     ms = sorted((m["start"], m["end"]) for c in rec["coref_clusters"] for m in c)
-    return any(b[0] < a[1] for a, b in zip(ms, ms[1:]))
+    return any(b[0] < a[1] for a, b in itertools.pairwise(ms))
 
 
 def pair_counts(pred: list[int], gold: list, pron: list[bool], subset: str) -> tuple[int, int, int]:
@@ -117,12 +118,12 @@ def evaluate(replies: dict, docs: list[dict], n_draws: int, max_chars: int) -> d
     short = {d for d, doc in enumerate(docs) if len(doc["rec"]["input"]) <= max_chars}
     for scope, keep in (("all_docs", set(range(len(docs)))), (f"docs_le_{max_chars}_chars", short)):
         dr = {k: {d: v for d, v in p.items() if d in keep} for k, p in draws.items()}
-        gold = lambda d: [m["cluster"] for m in docs[d]["cands"]]  # noqa: E731
+        gold = lambda d: [m["cluster"] for m in docs[d]["cands"]]
         out[scope] = {
             "docs": len(keep),
             "vs_gold": {k: {**score(p, docs, gold), "doc_mean_f1": doc_f1(p, docs),
                             "links_touching_distractor": distractor_links(p, docs)} for k, p in dr.items()},
-            "redraw": {f"{a}v{b}": score({d: dr[a][d] for d in dr[a] if d in dr[b]}, docs, lambda d, b=b: dr[b][d])
+            "redraw": {f"{a}v{b}": score({d: dr[a][d] for d in dr[a] if d in dr[b]}, docs, lambda d, b=b, dr=dr: dr[b][d])
                        for a, b in itertools.combinations(range(n_draws), 2)}}
     return out
 
@@ -150,7 +151,8 @@ def main() -> int:
                     help="also score docs up to this length: the purchase corpora's own maximum")
     args = ap.parse_args()
 
-    recs = [json.loads(l) for l in open(args.train, encoding="utf-8")]
+    with open(args.train, encoding="utf-8") as fh:
+        recs = [json.loads(l) for l in fh]
     pool = [r for r in recs if r.get("coref_clusters") and not overlapping(r)]
     docs = [{"rec": r, "cands": candidates(r)} for r in random.Random(args.seed).sample(pool, args.docs)]
     n_gold = sum(m["cluster"] is not None for d in docs for m in d["cands"])
