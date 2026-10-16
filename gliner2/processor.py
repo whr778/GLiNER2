@@ -178,6 +178,7 @@ class PreprocessedBatch:
     model_texts: tuple = ()  # tokenizer-facing (possibly mutated) text per sample
     record_specs: tuple = ()  # per-sample {task_index: RecordSpec}
     coref_mentions: tuple = ()  # per-sample [(first word, last word, cluster)] (processing/coref.py)
+    typed_spans: tuple = ()  # per-sample typed-span join for the typed-role margin (training only)
 
     def to(self, device: torch.device, dtype: torch.dtype = None) -> "PreprocessedBatch":
         """Move tensors to device and optionally cast float tensors to dtype.
@@ -237,6 +238,7 @@ class PreprocessedBatch:
             model_texts=self.model_texts,
             record_specs=self.record_specs,
             coref_mentions=self.coref_mentions,
+            typed_spans=self.typed_spans,
         )
 
     def pin_memory(self) -> "PreprocessedBatch":
@@ -290,6 +292,7 @@ class PreprocessedBatch:
             model_texts=self.model_texts,
             record_specs=self.record_specs,
             coref_mentions=self.coref_mentions,
+            typed_spans=self.typed_spans,
         )
 
     def __contains__(self, key: str) -> bool:
