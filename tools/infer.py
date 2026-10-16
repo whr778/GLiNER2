@@ -240,7 +240,7 @@ def main(argv: List[str] = None) -> None:
     role_types = load_role_types(args.link_arguments) if args.link_arguments else None
     records = _read_records(args.input)
     model = AutoExtractor.from_pretrained(args.model, map_location=None if args.device == "auto" else args.device)
-    print(f"[infer] device {next(model.parameters()).device}")
+    print(f"[infer] device {getattr(model, 'device', args.device)}")
     if args.entity_coref is not None and getattr(model, "mention_link", None) is None:
         raise SystemExit(f"--entity-coref: {args.model} has no trained entity coref link (mention_link).")
     # Decode reads the merge from boundary_settings, so it is applied the way eval applies overrides.
