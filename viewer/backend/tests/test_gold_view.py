@@ -87,3 +87,21 @@ def test_arguments_link_to_their_entity_on_both_sides_and_scores_do_not_move():
     gold_arg = v["gold"]["event_extraction"]["Contact.Communicate"][0]["arguments"][0]
     assert gold_arg["entity_id"] == v["gold"]["entities"]["Person"][0]["id"]
     assert v["f1"] == gold._f1(row["gold"], row["output"])
+
+
+
+def test_a_training_data_row_shows_its_annotations(tmp_path):
+    """A train/val/test row has no gold key: its output IS the gold (bare surfaces), with no prediction.
+    Read as a prediction, its surfaces reached argument_links as strings and the record endpoint 500'd."""
+    row = {"input": TEXT, "output": {"entities": {"Person": ["Ed Smith"]},
+                                     "events": [{"event_type": "Contact.Communicate", "triggers": ["said"],
+                                                 "arguments": [{"role": "Speaker", "entity": "Ed Smith"}]}]}}
+    p = tmp_path / "data.jsonl"
+    p.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    assert gold.summary(str(p))["data_file"]
+    r = gold.record(str(p), 0)
+    assert r["data_row"] and not r["has_gold"] and r["diffs"] == []
+    ent = r["pred"]["entities"]["Person"][0]
+    assert (ent["text"], ent["start"], ent["end"]) == ("Ed Smith", 0, 8)
+    mention = r["pred"]["event_extraction"]["Contact.Communicate"][0]
+    assert mention["triggers"][0]["start"] == 9 and "trigger_key" not in mention

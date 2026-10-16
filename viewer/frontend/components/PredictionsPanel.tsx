@@ -177,6 +177,7 @@ export default function PredictionsPanel() {
           <div className="hint" style={{ marginBottom: 8 }}>
             {rec.has_gold
               ? <>Strict F1 this record: {Object.entries(rec.f1).map(([h, v]) => `${h} ${v.toFixed(3)}`).join(" · ") || "nothing to score"}</>
+              : rec.data_row ? "Data file: the record's stored annotations (gold), placed as training places them."
               : "No gold in this record: predictions only."}
           </div>
           {rec.has_gold && (

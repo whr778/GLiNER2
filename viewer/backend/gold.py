@@ -44,6 +44,7 @@ def summary(path: str) -> Dict[str, Any]:
     """Per record: has gold, strict F1 per head -- what the pager shows and sorts by."""
     rows = rows_of(path)
     return {"path": path, "count": len(rows), "gold_key": gold_key(rows[0]) if rows else None,
+            "data_file": bool(rows) and is_data_row(rows[0]),
             "records": [{"i": i, "chars": len(r["input"]), "has_gold": bool(r.get(gold_key(r))),
                          "f1": _f1(r.get(gold_key(r)) or {}, r.get("output") or {})}
                         for i, r in enumerate(rows)]}
@@ -87,6 +88,11 @@ def list_files(root: str) -> List[Dict[str, Any]]:
 def gold_key(row: Dict[str, Any]) -> str:
     """``gold_mapped`` (gold in the model's spellings) when present, as the scorer reads it."""
     return "gold_mapped" if "gold_mapped" in row else "gold"
+
+
+def is_data_row(row: Dict[str, Any]) -> bool:
+    """A train/val/test JSONL row, not an infer.py row: no gold key, its ``output`` IS the gold."""
+    return "gold" not in row and "gold_mapped" not in row
 
 
 def locate(text: str, surface: str) -> List[Tuple[int, int]]:
@@ -186,6 +192,8 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     """One row as {text, pred, gold, classifications, unlocated, f1, diffs}: both sides in the
     prediction shape, every span flagged ``match`` under the strict keys, every unmatched span
     given its ``why`` (diffs.py), every argument linked to its entity by span (argument_links.py)."""
+    if is_data_row(row):
+        return data_view(row)
     text, pred, gold = row["input"], row.get("output") or {}, row.get(gold_key(row)) or {}
     missed: List[str] = []
     g = {"entities": gold_entities(text, gold, missed),
@@ -204,6 +212,21 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     link_arguments(pred, _ROLE_TYPES)
     link_arguments(g, _ROLE_TYPES)
     return view
+
+
+def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
+    """A train/val/test row's stored annotations, placed as training places them and drawn as the
+    record's own layer: no prediction, so no gold rim, F1 or differences."""
+    text, ann, missed = row["input"], row.get("output") or {}, []
+    shown = {"entities": gold_entities(text, ann, missed),
+             "event_extraction": gold_events(text, ann, missed),
+             "relation_extraction": gold_relations(text, ann, missed)}
+    for mentions in shown["event_extraction"].values():
+        for m in mentions:
+            m.pop("trigger_key", None)
+    link_arguments(shown, _ROLE_TYPES)
+    return {"text": text, "pred": shown, "gold": {}, "has_gold": False, "data_row": True,
+            "classifications": [], "unlocated": sorted(set(missed)), "f1": {}, "diffs": []}
 
 
 def _f1(gold: Dict[str, Any], pred: Dict[str, Any]) -> Dict[str, float]:

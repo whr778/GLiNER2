@@ -160,6 +160,7 @@ export type PredictionSummary = {
   path: string;
   count: number;
   gold_key: "gold" | "gold_mapped" | null;
+  data_file: boolean; // a train/val/test file: its annotations are drawn, there is no prediction
   records: { i: number; chars: number; has_gold: boolean; f1: Record<string, number> }[];
 };
 
@@ -169,6 +170,7 @@ export type PredictionRecord = {
   pred: Record<string, any>;
   gold: Record<string, any>;
   has_gold: boolean;
+  data_row?: boolean;
   classifications: { task: string; gold: string[]; pred: any; match: boolean }[];
   unlocated: string[];
   f1: Record<string, number>;
