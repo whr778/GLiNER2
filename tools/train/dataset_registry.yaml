@@ -1323,7 +1323,7 @@ datasets:
     source_url: https://huggingface.co/datasets/FrancophonIA/CorefUD_1.2 (CorefUD_English-GUM)
     hf_jsonl: whr778/gum_coref
     language: [en]
-    description: "191 docs, 15 genres incl. news/interview (reddit not in CorefUD); 27,260 clusters (singletons kept), 52,716 mentions, 21.0% pronouns. Train 149 / val 16 (seeded 10% of CorefUD train) / test 26 (CorefUD dev)."
+    description: "191 docs, 15 genres incl. news/interview (reddit not in CorefUD); 27,260 clusters (singletons kept), 52,716 mentions, 21.0% pronouns. Train 149 / val 16 (seeded 10% of CorefUD train) / test 26 (CorefUD dev). DROPPED FROM TRAINING 2026-10-16 (corefC, d0beda6): adds ~nothing over the bought news coref (pronoun AUC GUM +0.005, LitBank +0.002, GAP all +0.033, WikiEvents -0.022); val kept as an out-of-genre readout check only."
   litbank_coref:
     name: LitBank, CorefUD 1.2 English-LitBank
     provenance: human
@@ -1332,7 +1332,7 @@ datasets:
     source_url: https://huggingface.co/datasets/FrancophonIA/CorefUD_1.2 (CorefUD_English-LitBank); original https://github.com/dbamman/litbank
     hf_jsonl: whr778/litbank_coref
     language: [en]
-    description: "90 English fiction excerpts (~2,000 words); 7,052 clusters, 26,261 mentions, 51.8% pronouns. Train 72 / val 8 / test 10 (CorefUD dev)."
+    description: "90 English fiction excerpts (~2,000 words); 7,052 clusters, 26,261 mentions, 51.8% pronouns. Train 72 / val 8 / test 10 (CorefUD dev). DROPPED FROM TRAINING 2026-10-16 (corefC, d0beda6): adds ~nothing over the bought news coref (pronoun AUC GUM +0.005, LitBank +0.002, GAP all +0.033, WikiEvents -0.022); val kept as an out-of-genre readout check only."
   gap_coref:
     name: GAP (Gendered Ambiguous Pronouns)
     provenance: human
@@ -1341,7 +1341,7 @@ datasets:
     source_url: https://huggingface.co/datasets/coref-data/gap_raw
     hf_jsonl: whr778/gap_coref
     language: [en]
-    description: "Wikipedia passages, one ambiguous pronoun and two candidate names each; the coreferent name joins the pronoun's cluster, the other is a singleton (a hard negative). 2,000 / 454 / 2,000 (GAP's own splits). 3 passages repeat inside a split with a different pronoun (by design, not leakage)."
+    description: "Wikipedia passages, one ambiguous pronoun and two candidate names each; the coreferent name joins the pronoun's cluster, the other is a singleton (a hard negative). 2,000 / 454 / 2,000 (GAP's own splits). 3 passages repeat inside a split with a different pronoun (by design, not leakage). DROPPED FROM TRAINING 2026-10-16 (corefC, d0beda6): adds ~nothing over the bought news coref (pronoun AUC GUM +0.005, LitBank +0.002, GAP all +0.033, WikiEvents -0.022); val kept as an out-of-genre readout check only."
   cc_news_events_sonnet55_v2_coref_llm:
     name: LLM coref over cc_news_events_sonnet55_v2 train
     provenance: llm_real
