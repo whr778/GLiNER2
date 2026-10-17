@@ -139,6 +139,10 @@ done
 run_step wikievents_train uv run python tools/data/convert_wikievents.py --split train --out data/wikievents.train.jsonl
 run_step wikievents_dev   uv run python tools/data/convert_wikievents.py --split dev   --out data/wikievents.dev.jsonl
 run_step wikievents_test  uv run python tools/data/convert_wikievents.py --split test  --out data/wikievents.test.jsonl
+# WikiEvents ships test doc 10 (Tsarnaev) 92% inside train doc 113 -- a near-duplicate exact keys miss.
+# Precedence test > val > train drops the train copy, so the blind test keeps its documents.
+run_optional wikievents_dedupe data/wikievents.train.jsonl \
+    uv run python tools/data/dedupe_splits.py data/wikievents --near-dup 0.2
 
 # English coreference (coref_clusters only, empty output) -- auto-download from the Hub, no manual prep.
 # CorefUD 1.2 mirror FrancophonIA/CorefUD_1.2 (dev -> test, 10% of train -> val); GAP coref-data/gap_raw.

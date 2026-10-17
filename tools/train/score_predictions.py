@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import train as T  # noqa: E402
 from model_card import CATEGORIES, ONEIE_CRITERIA, _metric  # noqa: E402
 
+from gliner2.inference.entity_coref import PRONOUNS, candidate_mentions  # noqa: E402
 from gliner2.inference.label_map import apply_label_map  # noqa: E402
 from gliner2.training.eval_metrics import (  # noqa: E402
     _print_micro_report, _schema_from_gold, parse_menu, project_gold, score_predictions)
@@ -109,6 +110,45 @@ def score(records: List[Dict[str, Any]], by_language: bool) -> Dict[str, Any]:
     return metrics
 
 
+def _pairs(clusters: List[list]) -> set:
+    """Co-clustered mention pairs, each mention its (start, end) span."""
+    return {tuple(sorted(((a["start"], a["end"]), (b["start"], b["end"]))))
+            for c in clusters for i, a in enumerate(c) for b in c[i + 1:]}
+
+
+def _prf(tp: int, npred: int, ngold: int) -> Dict[str, float]:
+    p, r = tp / max(npred, 1), tp / max(ngold, 1)
+    return {"precision": round(p, 4), "recall": round(r, 4), "f1": round(2 * p * r / max(p + r, 1e-9), 4)}
+
+
+def coref_scores(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """End-to-end entity coref (``infer.py --entity-coref`` on rows carrying ``gold_coref``): mention-pair
+    P/R/F1 with EXACT spans -- a predicted pair is a hit only when both spans are gold mentions of one gold
+    cluster -- over all pairs and over pairs with a pronoun. ``candidate_recall`` is the share of gold
+    mentions in multi-mention clusters that were candidates at all (predicted entity span or pronoun):
+    the ceiling mention detection puts on recall."""
+    tp, npred, ngold = {"all": 0, "pronoun": 0}, {"all": 0, "pronoun": 0}, {"all": 0, "pronoun": 0}
+    covered = linked = docs = 0
+    for r in rows:
+        if "gold_coref" not in r:
+            continue
+        docs += 1
+        gold, pred = r["gold_coref"], r["output"].get("coref_clusters") or []
+        text = {(m["start"], m["end"]): m["text"].casefold() for c in gold + pred for m in c}
+        gp, pp = _pairs(gold), _pairs(pred)
+        pron = {q for q in gp | pp if text[q[0]] in PRONOUNS or text[q[1]] in PRONOUNS}
+        for k, keep in (("all", gp | pp), ("pronoun", pron)):
+            tp[k] += len(gp & pp & keep)
+            npred[k] += len(pp & keep)
+            ngold[k] += len(gp & keep)
+        cands = {(m["start"], m["end"]) for m in candidate_mentions(r["input"], r["output"].get("entities") or {})}
+        multi = [(m["start"], m["end"]) for c in gold if len(c) > 1 for m in c]
+        covered += sum(m in cands for m in multi)
+        linked += len(multi)
+    return {"docs": docs, **{k: _prf(tp[k], npred[k], ngold[k]) for k in tp},
+            "candidate_recall": round(covered / max(linked, 1), 4)}
+
+
 def metrics_table(metrics: Dict[str, Any], title: str) -> str:
     """The blind test's metrics as a plain table: micro P / R / F1 (strict -> relaxed), support, and the
     OneIE criteria. No model-card prose: the card describes how ITS numbers were made, not this file's."""
@@ -162,6 +202,13 @@ def main(argv=None) -> None:
         print(f"[score] WARNING: {stray} records predict labels outside the menu they are scored under -- the "
               f"predictions were made with a different menu, so this is NOT the {args.menu} number")
     metrics = score(records, args.by_language)
+    if any("gold_coref" in r for r in rows):
+        metrics["coref"] = coref_scores(rows)
+        c = metrics["coref"]
+        print(f"[score] entity coref, {c['docs']} docs, mention-pair (exact span) "
+              f"all P {c['all']['precision']:.3f} R {c['all']['recall']:.3f} F1 {c['all']['f1']:.3f} | pronoun "
+              f"P {c['pronoun']['precision']:.3f} R {c['pronoun']['recall']:.3f} F1 {c['pronoun']['f1']:.3f} | "
+              f"candidate recall {c['candidate_recall']:.3f}")
     metrics["scored_from"] = {"predictions": args.predictions, "gold": key, "menu": args.menu, "lines": len(rows),
                               "records": len(records), "dropped": dropped, "off_menu_records": stray}
     if args.out:

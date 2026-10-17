@@ -16,6 +16,13 @@ ships `normal_setting/{train,dev,test}.json` already overlapping -- 56 train/val
 honours those published splits, so it reproduces the defect faithfully every run.
 For corpora like that this step is part of the build, not a one-off cleanup;
 re-running the converter without it silently restores the leak.
+
+``--near-dup T`` also drops a lower-precedence document that CONTAINS a share >= T of a
+higher-precedence document's 8-word shingles (``near_dup_eval.shingles``, the eval near-dup
+gate's measure). Exact keys miss the same wire story re-published with a different header
+or ending: WikiEvents ships test doc 10 92% inside train doc 113.
+Read the pairs before trusting it: a shared footer trips it too (DocEE: ABC's copyright footer
+fills >= 20% of short test docs, 761 false holds), so it is run per corpus, never across the board.
 """
 from __future__ import annotations
 
@@ -27,6 +34,7 @@ from typing import Dict, List, Set
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _split import derive_split_paths, dumps_record, normalize_group_key  # noqa: E402
+from near_dup_eval import shingles  # noqa: E402
 
 # test last: each split drops what the later, higher-precedence ones already hold.
 SPLIT_ORDER = ("train", "val", "test")
@@ -43,8 +51,27 @@ def _write(path: Path, records: List[dict]) -> None:
             fh.write(dumps_record(rec) + "\n")
 
 
-def dedupe(paths: Dict[str, Path], dry_run: bool = False) -> int:
-    """Drop duplicate and cross-split documents. Returns the number removed."""
+def near_dup_holders(higher: List[str], texts: List[str], threshold: float) -> Set[int]:
+    """Indices of ``texts`` that contain >= ``threshold`` of some ``higher`` doc's shingles."""
+    hs = [shingles(t) for t in higher]
+    index: Dict[int, List[int]] = {}
+    for j, sh in enumerate(hs):
+        for h in sh:
+            index.setdefault(h, []).append(j)
+    held = set()
+    for i, t in enumerate(texts):
+        count: Dict[int, int] = {}
+        for h in shingles(t):
+            for j in index.get(h, ()):
+                count[j] = count.get(j, 0) + 1
+        if any(c / len(hs[j]) >= threshold for j, c in count.items()):
+            held.add(i)
+    return held
+
+
+def dedupe(paths: Dict[str, Path], dry_run: bool = False, near_dup: float | None = None) -> int:
+    """Drop duplicate and cross-split documents (and, with ``near_dup``, near-duplicates of a
+    later split's documents). Returns the number removed."""
     records = {s: _load(p) for s, p in paths.items()}
     keys = {
         s: [normalize_group_key(r.get("input", "")) for r in recs]
@@ -59,10 +86,14 @@ def dedupe(paths: Dict[str, Path], dry_run: bool = False) -> int:
         blocked: Set[str] = set()
         for higher in SPLIT_ORDER[i + 1:]:
             blocked |= set(keys.get(higher, []))
+        near: Set[int] = set()
+        if near_dup is not None:
+            later = [r.get("input", "") for h in SPLIT_ORDER[i + 1:] for r in records.get(h, [])]
+            near = near_dup_holders(later, [r.get("input", "") for r in records[split]], near_dup) if later else set()
 
         kept, seen, dropped_cross, dropped_dup = [], set(), 0, 0
-        for rec, key in zip(records[split], keys[split]):
-            if key in blocked:
+        for n, (rec, key) in enumerate(zip(records[split], keys[split])):
+            if key in blocked or n in near:
                 dropped_cross += 1
             elif key in seen:
                 dropped_dup += 1
@@ -91,6 +122,8 @@ def main() -> int:
                     help="split base, e.g. data/docee -> data/docee.{train,val,test}.jsonl")
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would be dropped without rewriting")
+    ap.add_argument("--near-dup", type=float, metavar="T",
+                    help="also drop a document containing >= T of a later split's document's 8-word shingles (0.2)")
     args = ap.parse_args()
 
     paths = derive_split_paths(args.base)
@@ -117,7 +150,7 @@ def main() -> int:
     paths = present
 
     print(f"{'DRY RUN: ' if args.dry_run else ''}{args.base} (precedence test > val > train)")
-    total = dedupe(paths, dry_run=args.dry_run)
+    total = dedupe(paths, dry_run=args.dry_run, near_dup=args.near_dup)
     print(f"  removed {total:,} record(s)" + (" -- nothing written" if args.dry_run else ""))
     return 0
 

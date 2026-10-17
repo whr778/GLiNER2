@@ -88,3 +88,22 @@ def test_span_and_confidence_output_scores_like_plain_output():
                                                         "text": "Olaf Scholz", "start": 0, "end": 11, "confidence": 0.8}}]}]}}
     a, b = score_predictions([gold], [plain], report=False), score_predictions([gold], [spans], report=False)
     assert a["eval_argc_external_micro_f1"] == 1.0 and a == b
+
+
+def _m(text, start):
+    return {"text": text, "start": start, "end": start + len(text)}
+
+
+def test_coref_scores_exact_span_pairs_and_pronouns():
+    text = "Ann met Bob. She left. Bob stayed."
+    gold = [[_m("Ann", 0), _m("She", 13)], [_m("Bob", 8), _m("Bob", 23)]]
+    # one right pair (Ann-She), one wrong pair (She-Bob), Bob-Bob missed
+    pred = [[_m("Ann", 0), _m("She", 13), _m("Bob", 23)]]
+    row = {"input": text, "gold_coref": gold, "output": {"entities": {"person": [_m("Ann", 0), _m("Bob", 8)]},
+                                                         "coref_clusters": pred}}
+    c = S.coref_scores([row, {"input": "x", "output": {}}])
+    assert c["docs"] == 1
+    assert c["all"] == {"precision": round(1 / 3, 4), "recall": 0.5, "f1": 0.4}
+    assert c["pronoun"]["precision"] == 0.5 and c["pronoun"]["recall"] == 1.0
+    # gold multi mentions Ann, She, Bob@8 are candidates (entities + pronoun); Bob@23 is not predicted
+    assert c["candidate_recall"] == 0.75
