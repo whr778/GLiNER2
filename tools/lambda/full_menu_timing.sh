@@ -12,7 +12,7 @@ set -uo pipefail
 NAME=${NAME:-full-menu-timing}
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 EXPECT_COMMIT=$(git rev-parse --short=12 HEAD)
-TYPES=${TYPES:-"gpu_1x_a10 gpu_1x_a100_sxm4"}
+TYPES=${TYPES:-"gpu_1x_a100_sxm4 gpu_1x_a10"}
 SSH_KEY_NAME=${SSH_KEY_NAME:-gliner2-mac}
 KEY=${KEY:-$HOME/.ssh/id_ed25519}
 REPO=${REPO:-https://github.com/whr778/GLiNER2.git}
@@ -98,7 +98,7 @@ mkdir -p ~/out
     sleep 20
   done ) > ~/out/mem.log 2>&1 &
 MON=\$!
-COMMON="--schema-json \$HOME/corefC_model_schema.json --global-decode --merge-coreferent link --include-spans --link-arguments --labels-file tools/train/config/labels/unified-full-v3.yaml --device cuda"
+COMMON="--schema-json \$HOME/corefC_model_schema.json --global-decode --merge-coreferent link --include-spans --link-arguments --labels-file tools/train/config/labels/unified-full-v3.yaml --device cuda --batch-size ${BATCH:-1}"
 run() {  # name model input extra...
   local name=\$1 model=\$2 input=\$3; shift 3
   local start=\$(date +%s)
