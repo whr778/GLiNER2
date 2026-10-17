@@ -97,7 +97,8 @@ def main() -> None:
     stage("S3 schema sampling + injected negatives (ExtractorDataset.__getitem__)")
     pools = bnp.build_pools(cfg, Path(args.config), log=lambda *a: None)
     neg = NegativeLabels(pools, tr["negative_labels_per_dim"], seed=int(tr.get("negative_label_seed", 42)),
-                         partial=cfg["data"].get("partial_annotation"))
+                         partial=cfg["data"].get("partial_annotation"),
+                         gold_full_roles=bool(tr.get("negative_gold_full_roles", False)))
     ds = ExtractorDataset(data=chunks, max_samples=-1, shuffle=False, seed=42, validate=False, negatives=neg)
     random.seed(args.seed)
     torch.manual_seed(args.seed)

@@ -1457,6 +1457,13 @@ class SchemaTransformer:
                         seen.add(role)
                         roles_seen.append(role)
 
+            # `event_roles` (NegativeLabels gold_full_roles): the type's full role list, so a gold type lists
+            # the same role set an absent one does; the unargued roles get empty targets below.
+            for role in (schema.get("event_roles") or {}).get(etype) or []:
+                if isinstance(role, str) and role.strip() and role not in seen:
+                    seen.add(role)
+                    roles_seen.append(role)
+
             field_names = ["trigger"] + list(roles_seen)
             if sampling and getattr(sampling, "shuffle_event_roles", False) and len(roles_seen) > 1:
                 roles_shuffled = list(roles_seen)

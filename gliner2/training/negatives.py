@@ -50,8 +50,14 @@ class NegativeLabels:
                  max_per_record: Optional[int] = None,
                  partial: Optional[Dict[str, list]] = None,
                  gold_free_dims: bool = False, k_sampling: str = "fixed",
-                 schedule: Optional[Dict[str, list]] = None):
+                 schedule: Optional[Dict[str, list]] = None, gold_full_roles: bool = False):
         self.pools = pools
+        # ROLE-LIST SYMMETRY. An absent event type lists its FULL pool role list, a gold type only the roles
+        # argued in its document, so a rarely argued role (CASIE Damage_Amount: 26 gold vs 1,543 absent
+        # listings) became an "absent" cue that zeroed its type at inference (2026-10-17). On, every gold
+        # type also carries its full pool role list (`event_roles`); the processor lists the unargued ones
+        # with empty targets, so the role set says nothing about presence. Off = the historical behaviour.
+        self.gold_full_roles = bool(gold_full_roles)
         # DOSE SCHEDULE: {dim: [dose at epoch 0, epoch 1, ...]}; the last value holds after the list ends.
         # Overrides per_dim for the dims it names (an annealing-style ramp, e.g. [1, 5, 20]).
         self.schedule = {d: [int(x) for x in v] for d, v in (schedule or {}).items() if v}
@@ -90,18 +96,20 @@ class NegativeLabels:
         self._epoch = _mp.Value("i", 0)
         self._epoch_records = _mp.Value("q", 0)
         self._epoch_injected = _mp.Value("q", 0)
+        self._epoch_full_roles = _mp.Value("q", 0)
         self.stats = {"records": 0, "injected": 0, "records_with_injection": 0,
-                      "no_candidate": 0, "partial_skips": 0, "gold_free_injected": 0}
+                      "no_candidate": 0, "partial_skips": 0, "gold_free_injected": 0,
+                      "gold_full_role_types": 0, "gold_full_roles_added": 0}
 
     @classmethod
     def load(cls, path: str, per_dim: Dict[str, int], seed: int = 42,
              max_per_record: Optional[int] = None,
              partial: Optional[Dict[str, list]] = None,
              gold_free_dims: bool = False, k_sampling: str = "fixed",
-             schedule: Optional[Dict[str, list]] = None) -> "NegativeLabels":
+             schedule: Optional[Dict[str, list]] = None, gold_full_roles: bool = False) -> "NegativeLabels":
         blob = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls(blob.get("pools") or {}, per_dim, seed, max_per_record, partial, gold_free_dims, k_sampling,
-                   schedule)
+                   schedule, gold_full_roles)
 
     @property
     def epoch(self) -> int:
@@ -115,6 +123,8 @@ class NegativeLabels:
             self._epoch_records.value = 0
         with self._epoch_injected.get_lock():
             self._epoch_injected.value = 0
+        with self._epoch_full_roles.get_lock():
+            self._epoch_full_roles.value = 0
 
     def dose(self, dim: str) -> int:
         """This epoch's count for a dimension: the schedule's value if it names the dim, else per_dim."""
@@ -128,18 +138,21 @@ class NegativeLabels:
         n = self._epoch_records.value
         return (f"[negatives] epoch {self.epoch}: dose {{entities: {self.dose('entities')}, events: "
                 f"{self.dose('events')}}} | {self._epoch_injected.value:,} labels injected into {n:,} records "
-                f"({self._epoch_injected.value / max(n, 1):.1f} per record)")
+                f"({self._epoch_injected.value / max(n, 1):.1f} per record)"
+                + (f" | gold full roles: {self._epoch_full_roles.value:,} unargued roles listed on gold event types"
+                   if self.gold_full_roles else ""))
 
     def __getstate__(self):
         """Spawned (non-forked) workers get plain values: shared memory crosses only a fork."""
         state = dict(self.__dict__)
-        for key in ("_epoch", "_epoch_records", "_epoch_injected"):
+        for key in ("_epoch", "_epoch_records", "_epoch_injected", "_epoch_full_roles"):
             state[key] = state[key].value
         return state
 
     def __setstate__(self, state):
         import multiprocessing as _mp
-        for key, code in (("_epoch", "i"), ("_epoch_records", "q"), ("_epoch_injected", "q")):
+        for key, code in (("_epoch", "i"), ("_epoch_records", "q"), ("_epoch_injected", "q"),
+                          ("_epoch_full_roles", "q")):
             state[key] = _mp.Value(code, state[key])
         self.__dict__.update(state)
 
@@ -281,6 +294,9 @@ class NegativeLabels:
                 out["absent_events"] = {**(out.get("absent_events") or {}), **roles}
                 added += len(chosen)
 
+        if self.gold_full_roles and "events" not in skip and gold["events"] and isinstance(schema.get("events"), list):
+            self._add_gold_event_roles(out, gold["events"], [corpus] + candidates)
+
         k = 0 if "relations" in skip else budget(self.dose("relations"))
         if k and gold["relations"] and isinstance(schema.get("relations"), list):
             pool = sorted(self._usable_pool("relations", candidates) - gold["relations"])
@@ -336,6 +352,28 @@ class NegativeLabels:
                 "injected a structure that is in this record's gold"
         return out
 
+    def _add_gold_event_roles(self, out: dict, gold_types: set, sources: list) -> None:
+        """Put each gold event type's full pool role list in ``out["event_roles"]`` (own corpus pool first)."""
+        argued = {}
+        for e in out.get("events") or []:
+            if isinstance(e, dict):
+                argued.setdefault(e.get("event_type"), set()).update(
+                    a.get("role") for a in e.get("arguments") or [] if isinstance(a, dict))
+        roles = {}
+        for name in sorted(gold_types):
+            for src in sources:
+                spec = ((self.pools.get(src or "") or {}).get("events") or {}).get(name)
+                if spec:
+                    roles[name] = list(spec)
+                    break
+        if roles:
+            out["event_roles"] = roles
+            added = sum(len(set(r) - argued.get(t, set())) for t, r in roles.items())
+            self.stats["gold_full_role_types"] += len(roles)
+            self.stats["gold_full_roles_added"] += added
+            with self._epoch_full_roles.get_lock():
+                self._epoch_full_roles.value += added
+
     def composition_line(self) -> str:
         """One deterministic line an A/B gate can actually fail on."""
         n = self.stats["records"] or 1
@@ -344,7 +382,9 @@ class NegativeLabels:
         return (f"[composition]   negatives: {dims} | {self.stats['injected']:,} labels into "
                 f"{self.stats['records_with_injection']:,}/{self.stats['records']:,} records "
                 f"({pct:.1f}%) | no-candidate {self.stats['no_candidate']:,}"
-                f" | partial-protected {self.stats['partial_skips']:,}")
+                f" | partial-protected {self.stats['partial_skips']:,}"
+                + (f" | gold full roles: {self.stats['gold_full_role_types']:,} types, "
+                   f"{self.stats['gold_full_roles_added']:,} unargued roles listed" if self.gold_full_roles else ""))
 
 
 __all__ = ["NegativeLabels", "DIMENSIONS"]

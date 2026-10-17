@@ -253,6 +253,9 @@ class TrainingConfig:
     # "fixed" | "loguniform" (K per record drawn from 1..negative_labels_per_dim). `negative_max_per_record`:
     # a whole-record cap on injected labels (the window budget).
     negative_gold_free_dims: bool = False
+    # Role-list symmetry: gold event types also list their FULL pool role list (unargued roles get empty
+    # targets), as injected absent types always have. Off = historical; see NegativeLabels.gold_full_roles.
+    negative_gold_full_roles: bool = False
     negative_k_sampling: str = "fixed"
     negative_max_per_record: Optional[int] = None
     # Per-epoch dose, {dim: [epoch 0, epoch 1, ...]} (the last value holds): an annealing-style ramp such as
@@ -1856,6 +1859,7 @@ class ExtractorTrainer:
                 gold_free_dims=self.config.negative_gold_free_dims,
                 k_sampling=self.config.negative_k_sampling,
                 schedule=self.config.negative_labels_schedule,
+                gold_full_roles=self.config.negative_gold_full_roles,
             )
             self._negatives_cache = cached
             logger.info("label negatives ON: %s from %s | partial-annotation "
