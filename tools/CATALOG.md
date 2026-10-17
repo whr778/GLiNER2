@@ -2,7 +2,7 @@
 
 Every executable under `tools/` — **301 scripts** — and what each one is for. Compiled
 2026-09-22 from the tools' own docstrings; the 49 scripts added since were catalogued
-2026-10-05, including the new `tools/derive`, and 24 more (missed or new) on 2026-10-14.
+2026-10-05, including the new `tools/derive`, and 24 more (missed or new) on 2026-10-14, and 18 more on 2026-10-17 (coreference, menu poison, common menus).
 
 **How to read it.** The tools divide into two kinds, and the division matters more than the
 directory they live in:
@@ -52,6 +52,7 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | `train/probe_absent_queries.py` | **How many queries carry no gold** — the positive class of `abstention_loss`. Its headline `0` was once a hardcoded print; it now measures from `targets.mention_mask` and reads **0.19%** (2 of 1,079), concentrated in chfinann. |
 | `data/audit_corpora.py` | Structural validity over every corpus in `data/`. STRUCT flags any structure with no `record_metadata` — which is silently undecodable on the boundary path. |
 | `data/check_leakage.py` | Does any corpus share input text with another, or across its own splits? The standing contamination gate. |
+| `data/near_dup_eval.py` | **Near-duplicates exact-match dedup misses**: eval docs whose 8-word shingles sit >= `--threshold` (0.2) inside one training doc or an earlier eval split. Found WikiEvents test #10 92% inside a train doc (exact dedup: 0). False-fires on shared footers (DocEE's ABC footer). `dedupe_splits.py --near-dup` acts on it. |
 | `data/event_multiplicity.py` | Prices event-instance multiplicity against the KEY a decoder uses to address instances — the quantitative case for `event_records`. |
 | `train/size_gold_capacity.py` | Sizes `max_gold_per_query` from a config's OWN corpora, rather than a default that silently truncates. |
 | `train/trace_sample_life.py` | **The life of one training sample**: every stage on the REAL pipeline, printed, ending in its gradient. The trace behind `events_working_papers/LIFE_OF_A_SAMPLE.md`. |
@@ -100,6 +101,10 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | `train/eval_decode_pooling.py` | Decode-time pooling of same-type instances on boundary-variant triggers, rescored. Tested 2026-10-04: NEGATIVE (F1 -0.001 to -0.004). |
 | `train/probe_label_order.py` | **Does the model read LABELS or their POSITION?** Same model, records and widened menu; only one dimension's label order changes (`--dimension entities|events|relations`). Found the entity position leak: 0.000 absent-first vs 0.646 gold-first (MENU_SPEC s9). |
 | `train/measure_coref_separability.py` | Baseline for coreference: do trigger-instance states separate coreferent mention pairs from DIFFERENT same-type events? |
+| `train/menu_poison_check.py` | **Which menu labels POISON the rest?** Runs a checkpoint on VAL under the gold menu, the full menu, and the full menu minus each event role / type (`--entities`: each entity label), counting events fired AND exact type+trigger hits; suspects are confirmed greedily so side effects drop out. Found CASIE's `Damage_Amount` (menu 0 -> 32 hits vs gold 27). Examples: `train/INFER.md` "Common menus and poison labels". |
+| `train/probe_poison_mechanism.py` | **Where does a poison label act?** Trigger max p per event type under menu variants (role removed / original / one role added), and `--swap`: text states of one arm with query states of the other. Found the trigger QUERY of the listing type, not the text. |
+| `train/probe_menu_axes.py` | Which menu AXIS silences events: per-doc menus varying one axis at a time (extra types, extra entities, role order, extra roles, one role). The probe that isolated `Damage_Amount`. |
+| `train/coref_readout.py` | Entity-coreference readout: pair AUC of a checkpoint's mention link on VAL docs, beside string match and cosine, per corpus (pronoun pairs separately). |
 | `train/measure_link_by_task.py` | Which TASKS does the junction's column loss train? Counted per task type on real training batches. |
 
 ### 1d. Measure the ceiling BEFORE spending on the treatment
@@ -120,6 +125,7 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | instrument | what it enforces |
 |---|---|
 | `train/compare_runs.py` | Two runs' test metrics **with the noise floor made explicit**. |
+| `train/coref_auc_floor.py` | Document-bootstrap noise floor for `coref_readout`'s pair AUC, PAIRED across arms (same gold mentions, same pairs); CIs for named contrasts. corefC's news gain +0.127 [+0.088, +0.179]. |
 | `train/compare_capabilities.py` | Per-capability diff between two blind-test metric files. |
 | `train/sweep_record_thresholds.py` | The record head across its own decode thresholds. |
 | `train/sweep_preservation.py` | Several checkpoints on ONE held-out set, each at its own best threshold. |
@@ -134,9 +140,9 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 
 ## 2. `tools/data` — corpus construction
 
-**36 converters** (`convert_*.py`), one per source corpus: ace2005, bio_ner_relations,
-biomed_ner, biored, casie, chfinann, cmnee, docee, docfee, docred, duee, events_biotech,
-finer_ord, gliclass_logic, gliner_multilingual, hf_token_ner, klue, knowledgator_gliner,
+**38 converters** (`convert_*.py`), one per source corpus: ace2005, bio_ner_relations,
+biomed_ner, biored, casie, chfinann, cmnee, corefud (any CorefUD CoNLL-U corpus, e.g. GUM, LitBank), docee, docfee, docred, duee, events_biotech,
+finer_ord, gap (GAP pronoun coreference), gliclass_logic, gliner_multilingual, hf_token_ner, klue, knowledgator_gliner,
 masakhaner, masakhanews, maven, mendeley_ed, mtl_bio, nuner, paraloq_json,
 pile_ner_definition, professorbob_re, pubmed_abstracts_ner, rams, redocred,
 scientific_text, scierc, sentence_rex, stockmark_ner, text2json, wikievents.
@@ -153,10 +159,10 @@ a document must learn to reject), `build_role_type_map.py`, `build_turkish_pool.
 
 **Annotators (paid, Haiku)** — `annotate_casualty.py`, `annotate_gate.py`,
 `annotate_event_type.py`, `annotate_event_entities.py`, `annotate_entities_zh.py`,
-`annotate_long_news.py`, `annotate_multitask.py`.
+`annotate_long_news.py`, `annotate_multitask.py`. Coreference: `annotate_coref.py` (buys entity coref clusters over NUMBERED candidate mentions, batch + recover + voted eval draws; the `*_coref_llm` corpora) and `coref_llm_pilot.py` (its pilot: can an LLM cluster news mentions well enough to train the link on).
 
 **Repairs** — `repair_turkish_surfaces.py` (lemmatised gold, **refusing unsafe repairs**),
-`repair_casualty_anchors.py`, `repair_contradicted_negatives.py`, `dedupe_splits.py`,
+`repair_casualty_anchors.py`, `repair_contradicted_negatives.py`, `dedupe_splits.py` (`--near-dup T` also drops train docs containing a later split's doc), `add_coref_clusters.py` (adds gold `coref_clusters` IN PLACE, every other byte unchanged),
 `stamp_record_metadata.py`, `stamp_field_cardinality.py`, `interleave_splits.py`,
 `rebuild_casualty_docee.py` (v2, with the `_standalone` fix the v1 build predated),
 `merge_rams_passages.py` (one record per passage; RAMS stores one event per example).
@@ -209,6 +215,10 @@ refuses to let it die quietly), `push_to_hub.py`, `model_card.py`, `backfill_sch
 the threshold), `build_unified_full.py` (the label map, see section 2).
 How to run a trained checkpoint is in [`train/INFER.md`](train/INFER.md).
 
+**Common inference menus** -- `build_schema.py` (one app menu from corpora's TRAIN gold, for `infer.py --schema-json` and `score_predictions --menu app:`; reports val/test labels it does not offer; `--drop` removes poison labels; outputs in `train/config/schemas/`).
+
+**A/B config generators** (write both arms from a base so they differ only where intended) -- `make_corefB_configs.py`, `make_corefC_configs.py`, `make_rolesym_configs.py` (`negative_gold_full_roles`, the menu-poison fix).
+
 **Mix builders** — `build_137k_replay.py`, `build_scaling_mix.py`,
 `build_joint_scaling_mix.py`, `build_warmstart_mix.py`, `build_turkish_dose_mix.py`,
 `build_zh_multitask_mix.py`, `build_casualty_multilingual.py`, `build_loc_control.py`.
@@ -254,7 +264,7 @@ on GPU against three structurally different bases.
 **Base runs and their smokes** — `eb18_smoke.sh`, `eb19_smoke.sh` + `eb19_smoke_launch.sh`
 (the recipe from scratch before the base is bought: loss health from the progress bar, the
 in-run junction gate, the label-negatives dose and in-loss negative queries, speed, memory; ANY base config:
-`CFG=tools/train/config/base/eb21.yaml bash tools/lambda/eb19_smoke_launch.sh`), `eb19_launch.sh`. Launchers pin `EXPECT_COMMIT`, and
+`CFG=tools/train/config/base/eb21.yaml bash tools/lambda/eb19_smoke_launch.sh`), `eb19_launch.sh`, `eb21_launch.sh` (the eb21 base, one box, full schedule). Launchers pin `EXPECT_COMMIT`, and
 `provision_box.sh` refuses a box at any other commit. Per-epoch checkpoints (`PUSH_EPOCHS=1`)
 are pushed AFTER `train.py` exits, not as each epoch ends -- to read an epoch mid-run, copy it
 off the box.
@@ -265,6 +275,8 @@ configs `train/config/ab/<EXP>-<ARM>.yaml`), `p2fast_ab_launch.sh` (its first in
 **Menu jobs** — `menu_threshold_launch.sh` + `menu_threshold_job.sh` (re-pick each ARM's threshold under
 an app menu on val, publish per arm; `ARMS` comma-separated), `menu_probe_job.sh` (the menu-size ladder).
 `pull_epoch_det.sh` copies each `checkpoint-epoch-N` off a running base and measures its junction DET mid-run.
+
+**One-off CUDA checks** (publish nothing; results come back by scp; setup duplicated from `run_tests_cuda.sh`) -- `coref_cuda_check.sh` (entity-coref val sweep on CUDA with memory logged; same cut-off as CPU), `full_menu_timing.sh` (seconds per doc for the full-menu blind test; both runs OOMed in the relation decode, TODO #37).
 
 **Operating-point jobs** — `sweep_and_rescore_eb17.sh` (record-gate sweep on validation),
 `blind_test_record_anchor.sh` (the blind test ONCE at the picked point),
