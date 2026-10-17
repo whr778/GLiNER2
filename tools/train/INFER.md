@@ -64,6 +64,35 @@ uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
     --input data/casie.test.jsonl --model-schema --tasks events --output casie_test.full.preds.jsonl
 ```
 
+**6. The full menu, as production runs it.** The checkpoint's whole shipped schema, every task, with
+global decode, coreferent-trigger merging, argument -> entity links and entity coreference
+(run 2026-10-17 on 3 v2 test docs, CPU, ~130 s per doc, 14 GB peak):
+
+```bash
+uv run tools/infer.py --model whr778/gliner2-corefC-treatment \
+    --input data/cc_news_events_sonnet55_v2.test.jsonl \
+    --model-schema --global-decode --merge-coreferent link --include-spans --link-arguments \
+    --entity-coref 0.2 --labels-file tools/train/config/labels/unified-full-v3.yaml \
+    --device cpu --output v2_test.full.preds.jsonl
+uv run tools/train/score_predictions.py --predictions v2_test.full.preds.jsonl --out v2_test.full.scored.json
+```
+```
+[infer] device cpu
+[infer] coreferent merge link (link threshold 0.5, link trained)
+[infer] labels file tools/train/config/labels/unified-full-v3.yaml: matches the checkpoint's label_map
+[infer] schema classifications=16, entities=810, events=276, relations=598
+```
+
+- `score_predictions` prints a WARNING: the gold of these documents was never asked the full menu, so a
+  correct prediction of a label the gold does not cover counts as a false positive. Precision is a lower
+  bound; recall is exact.
+- Put `coref_clusters` on the input records (the `*_coref_llm` eval files carry them) and every line
+  gets `gold_coref`, and `score_predictions` adds an end-to-end entity coref block (mention-pair F1,
+  exact spans).
+- **A checkpoint whose training saw over 1,000 labels in a task ships no labels for it** (`default_schema`
+  lists the task under `open_vocab` instead): eb21 ships no entities. To run two checkpoints on one menu,
+  write the menu to a file and pass `--schema-json` to both.
+
 Each line of the predictions file:
 
 | key | contents |
@@ -99,6 +128,10 @@ ONCE: pick settings on the validation split first.
 | `--labels-file <unified YAML>` | add `gold_mapped`, and with `--gold-schema` build each schema from the mapped gold (eval's path). Warns if the file's map differs from the checkpoint's `label_map` -- usually the wrong file for that model |
 | `--output preds.jsonl` | write `{input, output, gold}` per record as JSONL instead of printing |
 | `--merge-coreferent off\|link`, `--coref-threshold` | merge mentions of one event (see below); default: the checkpoint's setting |
+| `--link-arguments [ROLE_TYPES_JSON]` | give each event argument the `entity_id` of the entity on its span (needs `--include-spans`) |
+| `--entity-coref 0.2` | cluster predicted entity mentions + pronouns into `coref_clusters` (needs `--include-spans` and a checkpoint with the link; 0.2 picked on val for corefC-treatment) |
+| `--device auto\|cuda\|mps\|cpu` | where to load the model; use `cpu` for long files on Apple silicon (MPS keeps memory per input length) |
+| `--batch-size 8` | documents per forward pass |
 
 Each decode setting resolves in this order:
 1. the flag;
