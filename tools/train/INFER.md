@@ -246,11 +246,21 @@ uv run tools/train/build_schema.py data/casie --exhaustive --drop Damage-Amount 
 
 **Why CASIE's `Damage_Amount` is poison** (2026-10-17, eb21 and corefC-treatment alike): it is the
 label's NAME, not its spans. Renamed `Amount`, `Harm_Amount` or `Loss_Figure`, the same role is
-harmless; renamed `Damage`, it is still poison. "Damage" is used across the training label space:
-entities (`Damaged_Facility`, `Number_Of_Damaged_Houses`, ~1,850 uses), event types
-(`Artifact_Existence.Damage_Destroy.*`, ~260) and roles (`Damager`, ~105). CASIE's role (37 uses) is the
-smallest of these. Removing the other money labels (`Price`, the entity `Money`) does not help. Why one
-role switches off whole events is not yet known.
+harmless; renamed `Damage`, it is still poison. Removing the other money labels (`Price`, the entity
+`Money`) does not help.
+
+**The mechanism** (traced with `tools/train/probe_poison_mechanism.py`):
+- It acts through the **trigger query** of the event type that lists the role. That type's trigger
+  scores fall 10-100x and the other types are untouched. Text states carry nothing: the poisoned
+  forward with clean query states scores as if the role were absent.
+- The cue is the token `▁Damage`, and in eb21's training it occurs only in CASIE's role. `Damager`
+  tokenizes as `▁Dama ger` and is harmless.
+- **Cause, the training recipe:** a gold event type lists only the roles argued in its document, while
+  an injected absent type lists its full role list. Damage_Amount was listed 26 times on gold types
+  and 1,543 times on absent ones, so the model learned it as "this type is absent".
+- The absent-type dose amplifies it. At dose 1 the role cuts Ransom's trigger by about half; at dose
+  20 (eb21) it removes it.
+- So any rarely argued role can poison a menu. Run the check below on every new menu.
 
 **3. Run and score** every model on the same menu (`--batch-size 1` keeps CPU memory near 6 GB):
 

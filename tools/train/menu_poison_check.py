@@ -15,9 +15,10 @@ least half of the gold-menu hits the menu is missing. Suspects are then CONFIRME
 is removed, the remaining suspects are re-tried on that cleaner menu, and only those that still add
 ``--min-gain`` hits are poison too -- a partial recovery seen while a worse label is present is often a
 side effect of it. Found this way on 2026-10-17: CASIE's role
-``Damage_Amount`` (37 training uses) zeroes every CASIE event in eb21 and corefC-treatment (full menu
-1 hit vs 48 without it, of 305 gold triggers on 40 docs) because "Damage" is an entity / event-type
-word elsewhere in the training label space; renamed ``Amount`` it is harmless.
+``Damage_Amount`` zeroes every CASIE event in eb21 and corefC-treatment (full menu 1 hit vs 48 without
+it, of 305 gold triggers on 40 docs). Training lists only argued roles on gold event types but the full
+role list on injected absent ones, so a rarely argued role (26 gold vs 1,543 absent listings) became an
+"absent" cue; the absent-type dose amplifies it. ``probe_poison_mechanism.py`` traces it.
 
 Scan VAL, not test: choosing which labels to drop by reading test is fitting the test set.
 The menu is mapped through the checkpoint's ``label_map`` exactly as ``infer.py --schema-json`` maps it.
@@ -30,9 +31,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import infer as I  # noqa: E402
+import infer as I
 
-from gliner2.inference.label_map import apply_label_map  # noqa: E402
+from gliner2.inference.label_map import apply_label_map
 
 
 def gold_triggers(gold: dict) -> set:
