@@ -192,6 +192,81 @@ uv run tools/train/score_predictions.py --predictions test.preds.jsonl --by-lang
 The one thing it cannot reproduce is the blind test's removal of test documents that also appear in
 train/val, because it never sees those splits.
 
+## Common menus and poison labels (tools/train/config/schemas/)
+
+To compare models on equal terms, give every model the SAME menu with `--schema-json`, instead of each
+checkpoint's own `default_schema`. Three steps: build the menu from a corpus, check it for poison
+labels on VAL, then run and score.
+
+**1. Build a menu** from one or more corpora's train gold (corpus spellings; `infer.py` maps them
+through each checkpoint's `label_map`):
+
+```bash
+uv run tools/train/build_schema.py data/casie --exhaustive --out tools/train/config/schemas/casie.json
+```
+```
+[schema] 798 train records -> entities=21, events=5
+[schema] val/test gold labels not offered: 0
+```
+
+- `--exhaustive` declares that every document was annotated against the whole ontology. That is
+  true of a single human-annotated corpus like CASIE or WikiEvents, and false for a union of corpora.
+  It lets `score_predictions --menu app:` count a fired label the document lacks as a false positive.
+- Several corpora give one union menu (`build_schema.py data/casie data/wikievents ...`).
+- `--include-eval` also takes labels from val/test gold. Without it, those labels are only reported.
+
+**2. Check the menu for poison labels on VAL.** A poison label is one whose mere presence suppresses
+other outputs. `menu_poison_check.py` runs the first `--docs` val documents three ways: each document
+offered its own gold labels (the reference), the whole menu, and the whole menu minus one label, for
+every event role and type (and entity label, with `--entities`). It then confirms the suspects one at
+a time:
+
+```bash
+uv run tools/train/menu_poison_check.py --model whr778/gliner2-eb21 \
+    --menu tools/train/config/schemas/casie.json --data data/casie.val.jsonl --docs 40 \
+    --labels-file tools/train/config/labels/unified-full-v3.yaml --out casie_poison.json
+```
+```
+[poison] gold (each doc's own labels)                  events fired    79 | exact type+trigger hits   27 / 299
+[poison] menu                                          events fired     0 | exact type+trigger hits    0 / 299
+[poison] suspects (removal adds >= max(5, half the 27 hits the menu loses vs gold)): ['role:Damage_Amount', 'role:Payment_Method', 'role:Attack_Pattern']
+[poison] confirmed so far ['role:Damage_Amount']       events fired   165 | exact type+trigger hits   32 / 299
+[poison]   + minus role:Payment_Method                 events fired   176 | exact type+trigger hits   32 / 299
+[poison]   + minus role:Attack_Pattern                 events fired   204 | exact type+trigger hits   32 / 299
+[poison] POISON labels: ['role:Damage_Amount'] | menu 0 -> 32 hits without them (gold menu 27)
+```
+
+Then rebuild the menu without the poison label, in its CORPUS spelling (the check prints model spellings:
+`Damage_Amount` is CASIE's `Damage-Amount`):
+
+```bash
+uv run tools/train/build_schema.py data/casie --exhaustive --drop Damage-Amount \
+    --out tools/train/config/schemas/casie.json
+```
+
+**Why CASIE's `Damage_Amount` is poison** (2026-10-17, eb21 and corefC-treatment alike): it is the
+label's NAME, not its spans. Renamed `Amount`, `Harm_Amount` or `Loss_Figure`, the same role is
+harmless; renamed `Damage`, it is still poison. "Damage" is used across the training label space:
+entities (`Damaged_Facility`, `Number_Of_Damaged_Houses`, ~1,850 uses), event types
+(`Artifact_Existence.Damage_Destroy.*`, ~260) and roles (`Damager`, ~105). CASIE's role (37 uses) is the
+smallest of these. Removing the other money labels (`Price`, the entity `Money`) does not help. Why one
+role switches off whole events is not yet known.
+
+**3. Run and score** every model on the same menu (`--batch-size 1` keeps CPU memory near 6 GB):
+
+```bash
+uv run tools/infer.py --model whr778/gliner2-eb21 --input data/casie.test.jsonl \
+    --schema-json tools/train/config/schemas/casie.json --global-decode --merge-coreferent link \
+    --include-spans --link-arguments --labels-file tools/train/config/labels/unified-full-v3.yaml \
+    --device cpu --batch-size 1 --output casie_test.eb21.jsonl
+uv run tools/train/score_predictions.py --predictions casie_test.eb21.jsonl \
+    --menu app:tools/train/config/schemas/casie.json --corpus casie \
+    --labels-file tools/train/config/labels/unified-full-v3.yaml --out casie_test.eb21.scored.json
+```
+
+`--menu app:` needs the corpus listed in the menu's `exhaustive_for` (`--exhaustive` at build time), and
+`--labels-file` when the predictions carry `gold_mapped`.
+
 ## Coreferent triggers (eb20 and later)
 
 One event is often mentioned several times ("Rebels **attacked** the base ... The **assault**

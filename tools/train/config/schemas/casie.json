@@ -1,6 +1,6 @@
 {
   "name": "casie",
-  "source": "build_schema.py data/casie: train gold",
+  "source": "build_schema.py data/casie: train gold; dropped ['Damage-Amount']",
   "exhaustive_for": [
     "casie"
   ],
@@ -33,7 +33,6 @@
         "Attack-Pattern",
         "Attacker",
         "Compromised-Data",
-        "Damage-Amount",
         "Number-of-Data",
         "Number-of-Victim",
         "Place",
@@ -68,7 +67,6 @@
       "Cyber.Phishing": [
         "Attack-Pattern",
         "Attacker",
-        "Damage-Amount",
         "Place",
         "Purpose",
         "Time",
@@ -79,7 +77,6 @@
       "Cyber.Ransom": [
         "Attack-Pattern",
         "Attacker",
-        "Damage-Amount",
         "Payment-Method",
         "Place",
         "Price",

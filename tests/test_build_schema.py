@@ -34,3 +34,8 @@ def test_include_eval_offers_them(tmp_path, monkeypatch):
     B.main()
     menu = json.loads(out.read_text(encoding="utf-8"))
     assert menu["schema"]["entities"] == ["Malware", "Person"] and menu["exhaustive_for"] == ["c"]
+
+
+def test_drop_removes_a_label_wherever_it_occurs():
+    schema = {"entities": ["Money", "Person"], "events": {"Ransom": ["Damage-Amount", "Victim"], "Damage-Amount": ["X"]}}
+    assert B.drop(schema, ["Damage-Amount", "Money"]) == {"entities": ["Person"], "events": {"Ransom": ["Victim"]}}

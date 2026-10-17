@@ -56,6 +56,19 @@ def labels(schema: dict) -> set[tuple]:
     return out
 
 
+def drop(schema: dict, names: list[str]) -> dict:
+    """The schema without these labels, wherever they occur: entity, relation, event type, or event role."""
+    gone = set(names)
+    out = dict(schema)
+    if "entities" in out:
+        out["entities"] = [e for e in out["entities"] if e not in gone]
+    if "relations" in out:
+        out["relations"] = [r for r in out["relations"] if r not in gone]
+    if "events" in out:
+        out["events"] = {t: [r for r in rs if r not in gone] for t, rs in out["events"].items() if t not in gone}
+    return out
+
+
 def summary(schema: dict) -> str:
     return ", ".join(f"{k}={len(v)}" for k, v in schema.items())
 
@@ -65,6 +78,8 @@ def main() -> int:
     ap.add_argument("corpora", nargs="+", type=Path, help="split bases, e.g. data/casie -> data/casie.train.jsonl")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--include-eval", action="store_true", help="also take labels from the val and test gold")
+    ap.add_argument("--drop", nargs="+", default=[], metavar="LABEL",
+                    help="remove these labels (corpus spelling), e.g. a poison role menu_poison_check.py found")
     ap.add_argument("--exhaustive", action="store_true",
                     help="claim every document was annotated against the whole ontology (exhaustive_for)")
     args = ap.parse_args()
@@ -74,13 +89,14 @@ def main() -> int:
         raise SystemExit(f"no train split under {[str(c) for c in args.corpora]}")
     evals = split_records(args.corpora, "val") + split_records(args.corpora, "test")
     schema = derive_schema(train + (evals if args.include_eval else []))
+    schema = drop(schema, args.drop)
     missing = labels(derive_schema(evals)) - labels(schema) if evals else set()
     print(f"[schema] {len(train)} train records -> {summary(schema)}")
     print(f"[schema] val/test gold labels not offered: {len(missing)}" + (f" {sorted(missing)[:10]}" if missing else ""))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     names = [c.name for c in args.corpora]
     menu = {"name": args.out.stem, "source": f"build_schema.py {' '.join(map(str, args.corpora))}: train gold"
-            + (" + val/test gold" if args.include_eval else ""), "exhaustive_for": names if args.exhaustive else [],
+            + (" + val/test gold" if args.include_eval else "") + (f"; dropped {args.drop}" if args.drop else ""), "exhaustive_for": names if args.exhaustive else [],
             "schema": schema}
     args.out.write_text(json.dumps(menu, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"[schema] wrote {args.out}")
