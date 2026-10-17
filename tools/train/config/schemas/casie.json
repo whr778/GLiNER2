@@ -1,0 +1,92 @@
+{
+  "name": "casie",
+  "source": "build_schema.py data/casie: train gold",
+  "exhaustive_for": [
+    "casie"
+  ],
+  "schema": {
+    "entities": [
+      "CVE",
+      "Capabilities",
+      "Data",
+      "Device",
+      "File",
+      "GPE",
+      "Malware",
+      "Money",
+      "Number",
+      "Organization",
+      "PII",
+      "Patch",
+      "PaymentMethod",
+      "Person",
+      "Purpose",
+      "Software",
+      "System",
+      "Time",
+      "Version",
+      "Vulnerability",
+      "Website"
+    ],
+    "events": {
+      "Cyber.Databreach": [
+        "Attack-Pattern",
+        "Attacker",
+        "Compromised-Data",
+        "Damage-Amount",
+        "Number-of-Data",
+        "Number-of-Victim",
+        "Place",
+        "Purpose",
+        "Time",
+        "Tool",
+        "Victim"
+      ],
+      "Cyber.DiscoverVulnerability": [
+        "CVE",
+        "Capabilities",
+        "Discoverer",
+        "Supported_Platform",
+        "Time",
+        "Vulnerability",
+        "Vulnerable_System",
+        "Vulnerable_System_Owner",
+        "Vulnerable_System_Version"
+      ],
+      "Cyber.PatchVulnerability": [
+        "CVE",
+        "Issues-Addressed",
+        "Patch",
+        "Patch-Number",
+        "Releaser",
+        "Supported_Platform",
+        "Time",
+        "Vulnerability",
+        "Vulnerable_System",
+        "Vulnerable_System_Version"
+      ],
+      "Cyber.Phishing": [
+        "Attack-Pattern",
+        "Attacker",
+        "Damage-Amount",
+        "Place",
+        "Purpose",
+        "Time",
+        "Tool",
+        "Trusted-Entity",
+        "Victim"
+      ],
+      "Cyber.Ransom": [
+        "Attack-Pattern",
+        "Attacker",
+        "Damage-Amount",
+        "Payment-Method",
+        "Place",
+        "Price",
+        "Time",
+        "Tool",
+        "Victim"
+      ]
+    }
+  }
+}
