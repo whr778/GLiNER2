@@ -1863,10 +1863,12 @@ class ExtractorTrainer:
             )
             self._negatives_cache = cached
             logger.info("label negatives ON: %s from %s | partial-annotation "
-                        "protected corpora: %s | gold_free_dims=%s k_sampling=%s max_per_record=%s",
+                        "protected corpora: %s | gold_free_dims=%s k_sampling=%s max_per_record=%s "
+                        "gold_full_roles=%s",
                         self.config.negative_labels_per_dim, self.config.negative_pools,
                         sorted(cached.partial) or "NONE", self.config.negative_gold_free_dims,
-                        self.config.negative_k_sampling, self.config.negative_max_per_record)
+                        self.config.negative_k_sampling, self.config.negative_max_per_record,
+                        cached.gold_full_roles)
             if self.config.negative_labels_schedule:
                 logger.info("label negatives SCHEDULE (per epoch): %s", self.config.negative_labels_schedule)
         return cached
