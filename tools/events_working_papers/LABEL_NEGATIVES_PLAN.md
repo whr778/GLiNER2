@@ -847,6 +847,27 @@ pays for it.
 three seeds (classification sd 0.0178) and the clean re-baseline's seed42/43 pair
 (classification 0.0013). See [[EXPERIMENT_CATALOG]].
 
+## 5g. THE ROLE-LIST LEAK, 2026-10-17 -- absent event types told the model they were absent
+
+Event negatives carried a second signal besides "no gold here": their ROLE LISTS.
+
+- **The asymmetry.** `inject` gives an absent event type its full pool role list. The processor gives a gold
+  type only the union of roles argued in its document.
+- **What it leaks.** A role that is rarely argued is listed almost only on absent types. CASIE's Damage_Amount:
+  26 gold listings vs 1,543 absent, against a 19:1 next-worst CASIE role.
+- **What it did.** At inference a menu lists full role sets for every type. A listed `Damage_Amount` switched
+  its type's trigger query off (trigger p 0.522 -> 0.001), and every CASIE event vanished under CASIE's own
+  menu (MENU_SPEC s10).
+- **The dose amplifies it.** Same warm start and data, only the dose varied: dose 1 roughly halves the trigger,
+  and dose 20 removes it.
+- **Why no gate caught it.** The gold-menu eval lists argued roles only, exactly the training shape for a gold
+  type, so the leak cannot show there. Phase 3 verified absent queries per head, but never what the query's
+  OWN PROMPT carries. Trap to add to s3: an absent label must differ from a present one ONLY in its gold.
+- **The fix (built, A/B running):** `negative_gold_full_roles` puts the full pool role list on gold types too,
+  with empty targets for unargued roles. Traced on real records; the proof line rides a shared counter in
+  `epoch_line`. Side effect: the pair loss's absent-query sample includes the new empty role queries, so the
+  absent-trigger share of that pool drops from 0.177 to 0.161.
+
 ## 6. Sequencing
 
 The event-base blind test lands first: model report, then the comparable 18,786-record eval

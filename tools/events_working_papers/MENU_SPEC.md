@@ -286,3 +286,48 @@ ramp (1, 5, 20) is confounded: head_min selection (~0.01, noise) shipped its dos
 
 **Decision for eb21:** dose 20 throughout, unchanged. abst5's event result needs a second seed before it can
 change the recipe.
+
+## 10. Common menus and menu poison, 2026-10-17
+
+Details, numbers and costs are in `EXPERIMENT_CATALOG.md`, 2026-10-17.
+
+**Common inference menus.** `tools/train/build_schema.py` builds one app menu from corpora's train gold
+(`config/schemas/casie.json`, `wikievents.json`). It reports val/test labels the menu does not offer.
+`infer.py --schema-json` runs every model on that one menu, overriding each checkpoint's `default_schema`. eb21's
+`default_schema` ships no entity labels: more than 1,000 go to `open_vocab`, unlisted. Score with
+`score_predictions --menu app:<file> --corpus <name>`.
+
+**The checkpoint's full menu cannot run yet.** Its 598 relations make the relation decode allocate an int64
+[B, R, Q*K] tensor of 5.47 GiB at batch 1, which runs a 40 GB A100 out of memory. The tensor grows with the
+menu, not the batch. CPU runs it at ~130 s/doc and 14 GB, about 100 h per arm for the blind test. The fix is to
+chunk over R in `TypedRelationPairGenerator.select` (TODO #37).
+
+**Menu poison.**
+- Under CASIE's own menu, eb21 and both corefC arms fire no CASIE events: 1 hit vs 37 under the gold menu, on
+  40 test docs.
+- One role, `Damage_Amount`, causes it. Without it the corpus menu beats the gold menu (48 hits).
+- `tools/train/menu_poison_check.py` finds such labels on VAL: drop-one removal, then greedy confirmation.
+- `build_schema.py --drop` removes them.
+
+**The mechanism** (`tools/train/probe_poison_mechanism.py`, CASIE val):
+- The role acts through the trigger QUERY of the event type that lists it. Text states carry nothing.
+- Other types are untouched, and span ranks are kept while scores fall 10-100x.
+- The cue is the token `▁Damage`, which reaches eb21 only through this role.
+- **Cause: training lists roles asymmetrically.**
+  - A gold event type lists only the roles argued in its document (`processor.py`).
+  - An injected absent type lists its full pool role list (`negatives.py`).
+  - Damage_Amount was listed 26 times on gold types vs 1,543 on absent ones.
+- **The dose amplifies it.** The menudose arms share eb19's warm start and data and differ only in dose. In
+  their doc-1 trigger p for Ransom, the role cuts 0.696 to 0.314 at dose 1, and 0.271 to 0.001 at dose 20.
+- Section 8's dose gain therefore came with a menu-shaped cost that no gold-menu eval could see. Any rarely
+  argued role can poison a production menu.
+
+**The fix, under test.**
+- `training.negative_gold_full_roles: true` lists each gold type's full pool role set; unargued roles get
+  empty targets. Gold and absent types then list the same roles.
+- Listing gate: roles more than 0.05 above the absent base rate fall from 20 to 2. Damage_Amount's absent share
+  falls from 0.983 to 0.645.
+- The rolesym A/B (`config/ab/rolesym-*.yaml`) differs only in this flag. Reads are pre-registered on VAL:
+  1. poison check under the original full CASIE menu, then WikiEvents and RAMS;
+  2. app:news55 over-firing, the companion, since the role list may have been doing some of the dose's work;
+  3. eb21's heads against the floor.

@@ -61,3 +61,30 @@ CMNEE, Chinese PRONOUN coreference by nothing yet.
 A frozen encoder with a linear head learns each corpus's own coreference but does not transfer
 the extra English to WikiEvents, and GAP's ambiguous pronouns are at chance. Encoder training
 (option B) is the next test; LLM-annotated English news (option 4) is priced in the catalog.
+
+## What the data buys, trained (corefC, 2026-10-16 to 2026-10-17; EXPERIMENT_CATALOG)
+
+corefC warm-started eb21 on 34% exact replay plus the bought LLM news coref. The arms were control (link
+weight 0), treatment (0.3), and treatment-free (0.3 + GUM/LitBank/GAP).
+
+- **Linking, val (pair AUC), WikiEvents dev pronouns:** treatment link 0.811 vs control cosine 0.685. The
+  document-bootstrap floor puts the gain at +0.127, 95% CI [+0.088, +0.179] (20 docs). It is the first link
+  that learns news pronouns.
+- **GUM/LitBank/GAP add little on news:** treatment-free minus treatment, WikiEvents pronoun -0.023
+  [-0.041, +0.013], unresolved. GAP's own task gains +0.041 [+0.013, +0.068]. Dropped from training (aab28b3);
+  their val splits stay as an out-of-genre check.
+- **Linking, blind test (gold mentions, LLM-silver gold),** cut-off picked on val (link logit +0.20):
+  - mention-pair F1 0.598 vs string match 0.437;
+  - pronoun pairs 0.591 vs 0.353.
+  - CPU, MPS and CUDA agree.
+- **End to end (predicted mentions), v2 val:**
+  - mention-pair F1 0.452 vs 0.588 with gold mentions;
+  - pronoun pairs 0.499.
+  - 30% of gold coreferent mentions are never proposed (candidate recall 0.698), so mention detection, not
+    the link, caps recall.
+- eb21's other heads: corefC treatment minus control is inside the +/-0.02 floor on every blind-test head.
+
+The coref eval purchase found WikiEvents test #10 92% inside a train document. Fixed 2026-10-17 by dropping
+train doc 113 from `wikievents` and `wikievents_coref_llm`
+(`tools/data/dedupe_splits.py --near-dup 0.2`). eb21 and the corefC arms trained before the fix, so their
+WikiEvents test scores include it.

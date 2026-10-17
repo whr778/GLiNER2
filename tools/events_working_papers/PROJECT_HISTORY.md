@@ -4401,3 +4401,34 @@ negative. On eb21's corpora that was 22.6% of classification views, in every mod
 
 eb19 was judged broken; eb20 was skipped. eb21, from scratch on the merge, is the base going forward.
 
+
+### 2026-10-15 to 2026-10-17 -- coref that learns news, a split leak, and a poison found in our own negatives
+
+**Coreference** (COREF_DATA_SOURCES, "What the data buys, trained"):
+- The bought LLM news coref taught the entity-coref link news pronouns: corefC WikiEvents pronoun AUC 0.811 vs
+  0.685, gain +0.127 with CI [+0.088, +0.179].
+- GUM/LitBank/GAP were dropped.
+- On the blind test the link beats string match (pair F1 0.598 vs 0.437).
+- End to end, mention detection caps it: 30% of gold coreferent mentions are never proposed.
+
+**A split leak, found by the coref eval purchase:**
+- WikiEvents test #10 is 92% inside a train document.
+- `dedupe_splits.py --near-dup` now drops the train copy.
+- eb21 and corefC trained before the fix.
+
+**Production menus (MENU_SPEC s10):**
+- `build_schema.py` makes one shared menu per data domain.
+- The checkpoint's full menu OOMs a 40 GB GPU in the relation decode.
+- Under CASIE's own menu, every model fired no CASIE events.
+
+**The poison was ours.** One rarely argued role, Damage_Amount, switched off its event type's trigger query.
+- Deep tracing found the cause in the label-negatives injector, not in the label space (LABEL_NEGATIVES_PLAN
+  s5g): absent types listed full role lists, gold types only argued roles.
+- The dose that cured over-firing (MENU_SPEC s8) amplified it.
+- A first explanation, a cross-corpus "Damage" word collision, was string matching. The tokenizer refuted it:
+  `▁Damage` occurs only in CASIE's role. It was corrected in every place it had been written down.
+- The fix, `negative_gold_full_roles`, is built and traced. The rolesym A/B tests it, with pre-registered
+  VAL reads.
+
+**The standing lesson.** The gold-menu eval could not fail on this defect, because it shows a gold type exactly
+as training does. A menu shaped like production surfaced it in one run.
