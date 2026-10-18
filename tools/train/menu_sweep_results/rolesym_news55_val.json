@@ -1,0 +1,326 @@
+{
+ "split": "cc_news_events_sonnet55_v2 val (500 docs), menu app:news55, CPU, strict micro P/R/F1; picked by sweep_thresholds' support-weighted strict micro F1",
+ "commit": "915898f",
+ "treatment": {
+  "checkpoint": "whr778/gliner2-rolesym-treatment",
+  "chosen_threshold": 0.5,
+  "test_read": {},
+  "by_threshold": {
+   "0.1": {
+    "entity": {
+     "precision": 0.2831,
+     "recall": 0.611,
+     "f1": 0.3869
+    },
+    "event_type": {
+     "precision": 0.2125,
+     "recall": 0.8447,
+     "f1": 0.3395
+    },
+    "event_trigger": {
+     "precision": 0.1785,
+     "recall": 0.5693,
+     "f1": 0.2718
+    },
+    "event_argument": {
+     "precision": 0.098,
+     "recall": 0.1508,
+     "f1": 0.1188
+    }
+   },
+   "0.2": {
+    "entity": {
+     "precision": 0.3791,
+     "recall": 0.576,
+     "f1": 0.4572
+    },
+    "event_type": {
+     "precision": 0.3346,
+     "recall": 0.767,
+     "f1": 0.4659
+    },
+    "event_trigger": {
+     "precision": 0.2813,
+     "recall": 0.4913,
+     "f1": 0.3578
+    },
+    "event_argument": {
+     "precision": 0.1614,
+     "recall": 0.1176,
+     "f1": 0.1361
+    }
+   },
+   "0.3": {
+    "entity": {
+     "precision": 0.4529,
+     "recall": 0.5413,
+     "f1": 0.4932
+    },
+    "event_type": {
+     "precision": 0.4492,
+     "recall": 0.6968,
+     "f1": 0.5463
+    },
+    "event_trigger": {
+     "precision": 0.3696,
+     "recall": 0.4275,
+     "f1": 0.3965
+    },
+    "event_argument": {
+     "precision": 0.2169,
+     "recall": 0.0871,
+     "f1": 0.1243
+    }
+   },
+   "0.4": {
+    "entity": {
+     "precision": 0.516,
+     "recall": 0.5083,
+     "f1": 0.5121
+    },
+    "event_type": {
+     "precision": 0.532,
+     "recall": 0.6447,
+     "f1": 0.583
+    },
+    "event_trigger": {
+     "precision": 0.4449,
+     "recall": 0.3896,
+     "f1": 0.4154
+    },
+    "event_argument": {
+     "precision": 0.271,
+     "recall": 0.0633,
+     "f1": 0.1027
+    }
+   },
+   "0.5": {
+    "entity": {
+     "precision": 0.5726,
+     "recall": 0.4735,
+     "f1": 0.5184
+    },
+    "event_type": {
+     "precision": 0.6243,
+     "recall": 0.5851,
+     "f1": 0.6041
+    },
+    "event_trigger": {
+     "precision": 0.5189,
+     "recall": 0.3469,
+     "f1": 0.4158
+    },
+    "event_argument": {
+     "precision": 0.3412,
+     "recall": 0.0437,
+     "f1": 0.0775
+    }
+   },
+   "0.6": {
+    "entity": {
+     "precision": 0.6331,
+     "recall": 0.4354,
+     "f1": 0.516
+    },
+    "event_type": {
+     "precision": 0.7058,
+     "recall": 0.5309,
+     "f1": 0.606
+    },
+    "event_trigger": {
+     "precision": 0.5903,
+     "recall": 0.3015,
+     "f1": 0.3992
+    },
+    "event_argument": {
+     "precision": 0.4313,
+     "recall": 0.026,
+     "f1": 0.0491
+    }
+   },
+   "0.7": {
+    "entity": {
+     "precision": 0.6918,
+     "recall": 0.3908,
+     "f1": 0.4995
+    },
+    "event_type": {
+     "precision": 0.7772,
+     "recall": 0.4489,
+     "f1": 0.5691
+    },
+    "event_trigger": {
+     "precision": 0.6634,
+     "recall": 0.2462,
+     "f1": 0.3591
+    },
+    "event_argument": {
+     "precision": 0.55,
+     "recall": 0.0166,
+     "f1": 0.0322
+    }
+   }
+  }
+ },
+ "control": {
+  "checkpoint": "whr778/gliner2-rolesym-control",
+  "chosen_threshold": 0.5,
+  "test_read": {},
+  "by_threshold": {
+   "0.1": {
+    "entity": {
+     "precision": 0.2982,
+     "recall": 0.5964,
+     "f1": 0.3976
+    },
+    "event_type": {
+     "precision": 0.3061,
+     "recall": 0.2904,
+     "f1": 0.298
+    },
+    "event_trigger": {
+     "precision": 0.231,
+     "recall": 0.1297,
+     "f1": 0.1661
+    },
+    "event_argument": {
+     "precision": 0.0446,
+     "recall": 0.0128,
+     "f1": 0.0199
+    }
+   },
+   "0.2": {
+    "entity": {
+     "precision": 0.3961,
+     "recall": 0.5607,
+     "f1": 0.4643
+    },
+    "event_type": {
+     "precision": 0.3777,
+     "recall": 0.166,
+     "f1": 0.2306
+    },
+    "event_trigger": {
+     "precision": 0.2765,
+     "recall": 0.0675,
+     "f1": 0.1085
+    },
+    "event_argument": {
+     "precision": 0.0749,
+     "recall": 0.0053,
+     "f1": 0.0099
+    }
+   },
+   "0.3": {
+    "entity": {
+     "precision": 0.4692,
+     "recall": 0.5285,
+     "f1": 0.4971
+    },
+    "event_type": {
+     "precision": 0.416,
+     "recall": 0.1053,
+     "f1": 0.1681
+    },
+    "event_trigger": {
+     "precision": 0.2896,
+     "recall": 0.0395,
+     "f1": 0.0696
+    },
+    "event_argument": {
+     "precision": 0.0882,
+     "recall": 0.0023,
+     "f1": 0.0044
+    }
+   },
+   "0.4": {
+    "entity": {
+     "precision": 0.5308,
+     "recall": 0.4998,
+     "f1": 0.5148
+    },
+    "event_type": {
+     "precision": 0.4242,
+     "recall": 0.0596,
+     "f1": 0.1045
+    },
+    "event_trigger": {
+     "precision": 0.3034,
+     "recall": 0.0232,
+     "f1": 0.0431
+    },
+    "event_argument": {
+     "precision": 0.1667,
+     "recall": 0.0011,
+     "f1": 0.0022
+    }
+   },
+   "0.5": {
+    "entity": {
+     "precision": 0.5898,
+     "recall": 0.4672,
+     "f1": 0.5214
+    },
+    "event_type": {
+     "precision": 0.4767,
+     "recall": 0.0436,
+     "f1": 0.0799
+    },
+    "event_trigger": {
+     "precision": 0.3587,
+     "recall": 0.0174,
+     "f1": 0.0332
+    },
+    "event_argument": {
+     "precision": 0.0909,
+     "recall": 0.0004,
+     "f1": 0.0008
+    }
+   },
+   "0.6": {
+    "entity": {
+     "precision": 0.6515,
+     "recall": 0.4326,
+     "f1": 0.52
+    },
+    "event_type": {
+     "precision": 0.6098,
+     "recall": 0.0266,
+     "f1": 0.051
+    },
+    "event_trigger": {
+     "precision": 0.4773,
+     "recall": 0.0111,
+     "f1": 0.0216
+    },
+    "event_argument": {
+     "precision": 0.3333,
+     "recall": 0.0004,
+     "f1": 0.0008
+    }
+   },
+   "0.7": {
+    "entity": {
+     "precision": 0.7029,
+     "recall": 0.3895,
+     "f1": 0.5012
+    },
+    "event_type": {
+     "precision": 0.7097,
+     "recall": 0.0234,
+     "f1": 0.0453
+    },
+    "event_trigger": {
+     "precision": 0.6129,
+     "recall": 0.01,
+     "f1": 0.0197
+    },
+    "event_argument": {
+     "precision": 0.0,
+     "recall": 0.0,
+     "f1": 0.0
+    }
+   }
+  }
+ }
+}
