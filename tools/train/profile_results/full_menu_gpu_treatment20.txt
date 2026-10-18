@@ -1,0 +1,81 @@
+Sun Oct 18 18:45:19 2026    /Volumes/Development/tmp/gpu_profile/box/treatment20.prof
+
+         58722667 function calls (56623684 primitive calls) in 318.384 seconds
+
+   Ordered by: internal time
+   List reduced from 15254 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       20  101.192    5.060  104.386    5.219 /home/ubuntu/repo/gliner2/models/boundary/relations.py:116(generate_batched)
+   549/40   85.986    0.157    7.370    0.184 {method 'acquire' of '_thread.lock' objects}
+       20   20.988    1.049   99.988    4.999 /home/ubuntu/repo/gliner2/models/boundary/engine.py:1665(_decode_relations)
+        3   10.675    3.558   10.676    3.559 {method '__exit__' of 'builtins.XetFileDownloadGroup' objects}
+   477/12    7.163    0.015    0.128    0.011 /home/ubuntu/repo/.venv/lib/python3.12/site-packages/torch/library.py:285(impl)
+    56067    6.044    0.000    6.044    0.000 {method 'tolist' of 'torch._C.TensorBase' objects}
+     5520    5.454    0.001   12.591    0.002 /home/ubuntu/repo/gliner2/models/boundary/records.py:929(decode_group)
+      132    5.448    0.041   19.605    0.149 /home/ubuntu/repo/.venv/lib/python3.12/site-packages/torch/_library/custom_ops.py:607(_register_to_dispatcher)
+     2997    4.771    0.002    4.771    0.002 {built-in method builtins.compile}
+   151280    4.244    0.000    4.244    0.000 {built-in method torch._C._nn.linear}
+    22609    3.823    0.000    4.514    0.000 /home/ubuntu/repo/gliner2/models/boundary/engine.py:2223(_candidate_span_probability)
+     5520    3.777    0.001   21.185    0.004 /home/ubuntu/repo/gliner2/models/boundary/records.py:776(forward_group)
+  3061760    2.542    0.000    4.474    0.000 /home/ubuntu/repo/gliner2/models/boundary/relations.py:67(_query_type)
+     5520    2.486    0.000   10.007    0.002 /home/ubuntu/repo/gliner2/models/boundary/records.py:314(forward)
+       20    2.432    0.122    2.432    0.122 {method 'nonzero' of 'torch._C.TensorBase' objects}
+       92    2.258    0.025    2.258    0.025 {method 'normal_' of 'torch._C.TensorBase' objects}
+    23800    2.086    0.000    3.723    0.000 /home/ubuntu/repo/gliner2/models/boundary/records.py:307(_geometry)
+      310    1.959    0.006    1.959    0.006 {method 'uniform_' of 'torch._C.TensorBase' objects}
+  3061760    1.932    0.000    1.932    0.000 /home/ubuntu/repo/gliner2/models/base.py:208(query)
+ 10512988    1.706    0.000    1.706    0.000 {method 'append' of 'list' objects}
+     5520    1.476    0.000    3.228    0.001 /home/ubuntu/repo/gliner2/models/boundary/records.py:478(_assign_logits)
+        1    1.126    1.126    1.126    1.126 {built-in method from_file}
+  6390546    1.030    0.000    1.030    0.000 {method 'get' of 'dict' objects}
+        1    1.015    1.015    1.015    1.015 {method '__setstate__' of 'tokenizers.Tokenizer' objects}
+    23800    1.008    0.000    1.008    0.000 {built-in method torch.nonzero}
+      920    0.885    0.001    0.885    0.001 {method 'topk' of 'torch._C.TensorBase' objects}
+    80798    0.875    0.000    0.875    0.000 {method 'float' of 'torch._C.TensorBase' objects}
+99018/72177    0.857    0.000    1.524    0.000 {built-in method builtins.sorted}
+  1564479    0.831    0.000    0.831    0.000 {method 'detach' of 'torch._C.TensorBase' objects}
+       20    0.766    0.038   38.170    1.909 /home/ubuntu/repo/gliner2/models/boundary/engine.py:1877(_decode_records)
+
+
+Sun Oct 18 18:45:19 2026    /Volumes/Development/tmp/gpu_profile/box/treatment20.prof
+
+         58722667 function calls (56623684 primitive calls) in 318.384 seconds
+
+   Ordered by: cumulative time
+   List reduced from 15254 to 644 due to restriction <'gliner2|infer'>
+   List reduced from 644 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       20    0.179    0.009  215.208   10.760 /home/ubuntu/repo/gliner2/models/boundary/engine.py:289(decode_sample)
+       20    0.002    0.000  104.388    5.219 /home/ubuntu/repo/gliner2/models/boundary/relations.py:103(generate)
+       20  101.192    5.060  104.386    5.219 /home/ubuntu/repo/gliner2/models/boundary/relations.py:116(generate_batched)
+       20   20.988    1.049   99.988    4.999 /home/ubuntu/repo/gliner2/models/boundary/engine.py:1665(_decode_relations)
+       20    0.766    0.038   38.170    1.909 /home/ubuntu/repo/gliner2/models/boundary/engine.py:1877(_decode_records)
+     5520    3.777    0.001   21.185    0.004 /home/ubuntu/repo/gliner2/models/boundary/records.py:776(forward_group)
+     5520    5.454    0.001   12.591    0.002 /home/ubuntu/repo/gliner2/models/boundary/records.py:929(decode_group)
+        3    0.000    0.000   11.107    3.702 /home/ubuntu/repo/gliner2/models/loading.py:125(checkpoint_file)
+        1    0.000    0.000   11.009   11.009 /home/ubuntu/repo/gliner2/models/loading.py:147(load_checkpoint_state_dict)
+     5520    2.486    0.000   10.007    0.002 /home/ubuntu/repo/gliner2/models/boundary/records.py:314(forward)
+    28449    0.306    0.000    5.455    0.000 /home/ubuntu/repo/gliner2/models/boundary/engine.py:1918(_format_field)
+        1    0.001    0.001    4.584    4.584 /home/ubuntu/repo/gliner2/models/base.py:123(load_extractor_tokenizer)
+    22609    3.823    0.000    4.514    0.000 /home/ubuntu/repo/gliner2/models/boundary/engine.py:2223(_candidate_span_probability)
+  3061760    2.542    0.000    4.474    0.000 /home/ubuntu/repo/gliner2/models/boundary/relations.py:67(_query_type)
+    23800    2.086    0.000    3.723    0.000 /home/ubuntu/repo/gliner2/models/boundary/records.py:307(_geometry)
+       40    0.006    0.000    3.701    0.093 /home/ubuntu/repo/gliner2/processor.py:542(collate_fn_inference)
+     1189    0.029    0.000    3.688    0.003 /home/ubuntu/repo/gliner2/models/boundary/records.py:1137(_merge_by_link)
+        1    0.000    0.000    3.627    3.627 tools/infer.py:58(_labels_file)
+       20    0.000    0.000    3.597    0.180 /home/ubuntu/repo/gliner2/training/trainer.py:719(__call__)
+     5520    1.476    0.000    3.228    0.001 /home/ubuntu/repo/gliner2/models/boundary/records.py:478(_assign_logits)
+       40    0.008    0.000    3.092    0.077 /home/ubuntu/repo/gliner2/processor.py:757(_collate_batch)
+       20    0.562    0.028    3.001    0.150 /home/ubuntu/repo/gliner2/models/boundary/model.py:1265(_group_scored_candidates)
+       40    0.020    0.000    2.511    0.063 /home/ubuntu/repo/gliner2/processor.py:808(_transform_record)
+       20    0.001    0.000    1.969    0.098 /home/ubuntu/repo/gliner2/inference/chunking.py:111(merge_chunk_results)
+  3061760    1.932    0.000    1.932    0.000 /home/ubuntu/repo/gliner2/models/base.py:208(query)
+     5520    0.602    0.000    1.299    0.000 /home/ubuntu/repo/gliner2/models/boundary/records.py:275(forward)
+       40    0.440    0.011    1.211    0.030 /home/ubuntu/repo/gliner2/processor.py:1908(_format_input_with_mapping)
+       40    0.125    0.003    1.179    0.029 /home/ubuntu/repo/gliner2/models/boundary/relations.py:190(select)
+        1    0.000    0.000    1.033    1.033 /home/ubuntu/repo/gliner2/processing/word_splitter.py:1(<module>)
+     2451    0.531    0.000    0.989    0.000 /home/ubuntu/repo/gliner2/processing/word_splitter.py:49(<genexpr>)
+
+
