@@ -5,6 +5,9 @@
 # CPU). Inputs ($INPUTS: timing20.jsonl, timing5.jsonl, corefC_model_schema.json) go up by scp; predictions
 # and logs come back to $OUT. Nothing is published. Setup is run_tests_cuda.sh's -- change them together.
 #
+# PROFILE=1 runs each job under cProfile (out/<name>.prof, read locally with pstats) to show where the
+# seconds go; mem.log also samples GPU utilization either way.
+#
 # THREE INDEPENDENT STOPS: `timeout` on the sweep, a detached hard-deadline watchdog, terminate in a trap.
 #
 #   bash tools/lambda/full_menu_timing.sh
@@ -94,7 +97,7 @@ PROOF
 
 mkdir -p ~/out
 ( while true; do
-    echo "\$(date -u +%H:%M:%S) gpu_used_mib \$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits) rss_kib \$(ps -o rss= -p \$(pgrep -n -f tools/infer.py) 2>/dev/null)"
+    echo "\$(date -u +%H:%M:%S) gpu_used_mib \$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits) gpu_util_pct \$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits) rss_kib \$(ps -o rss= -p \$(pgrep -n -f tools/infer.py) 2>/dev/null)"
     sleep 20
   done ) > ~/out/mem.log 2>&1 &
 MON=\$!
@@ -102,7 +105,8 @@ COMMON="--schema-json \$HOME/corefC_model_schema.json --global-decode --merge-co
 run() {  # name model input extra...
   local name=\$1 model=\$2 input=\$3; shift 3
   local start=\$(date +%s)
-  timeout $JOB_TIMEOUT ./.venv/bin/python tools/infer.py --model \$model --input \$HOME/\$input \$COMMON "\$@" \
+  local prof=""; [ "${PROFILE:-0}" = 1 ] && prof="-m cProfile -o \$HOME/out/\$name.prof"
+  timeout $JOB_TIMEOUT ./.venv/bin/python \$prof tools/infer.py --model \$model --input \$HOME/\$input \$COMMON "\$@" \
     --output \$HOME/out/\$name.pred.jsonl > \$HOME/out/\$name.log 2>&1
   echo "[timing] \$name exit \$? | \$(wc -l < \$HOME/out/\$name.pred.jsonl) docs in \$(( \$(date +%s) - start )) s (incl. model load)"
   grep "^\[infer\]" \$HOME/out/\$name.log | grep -E "device|merge|schema" 
@@ -111,7 +115,7 @@ run treatment20 whr778/gliner2-corefC-treatment timing20.jsonl --entity-coref 0.
 run treatment5 whr778/gliner2-corefC-treatment timing5.jsonl --entity-coref 0.2
 run eb21_5 whr778/gliner2-eb21 timing5.jsonl
 kill \$MON
-echo "[timing] peak gpu_used_mib \$(awk '{print \$3}' ~/out/mem.log | sort -n | tail -1)"
+echo "[timing] peak gpu_used_mib \$(awk '{print \$3}' ~/out/mem.log | sort -n | tail -1) | mean gpu_util_pct \$(awk '\$5 != "" {s+=\$5; n++} END {if (n) printf "%.0f", s/n}' ~/out/mem.log)"
 REMOTE
 
 mkdir -p "$OUT"
