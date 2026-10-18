@@ -6,6 +6,7 @@
 MENU_SPEC.md: a threshold is an operating point, so it is chosen under the menu production sends, not
 the gold menu. The choice is `sweep_thresholds`' own (support-weighted strict micro F1). The test split
 is scored once, at the chosen threshold, under the menu AND under the gold menu (the recall cost).
+`--val-only` stops after the pick and reads no test.
 `--threshold T --test-menus ...` skips the sweep and scores the test at T under a LADDER of menus.
 """
 from __future__ import annotations
@@ -32,6 +33,8 @@ def main(argv=None) -> None:
     ap.add_argument("--threshold", type=float, help="skip the val sweep and score the test at this threshold")
     ap.add_argument("--test-menus", nargs="+", help="menus to score the test under (default: --menu and gold), "
                                                     "e.g. a ladder: widened:5 widened:20 corpus_full app:news55 gold")
+    ap.add_argument("--val-only", action="store_true", help="pick the threshold on val and score no test split")
+    ap.add_argument("--device", help="e.g. cpu: many-document loops grow without bound on MPS")
     ap.add_argument("--limit", type=int, help="score only the first N records of each split (a trace, not a result)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
@@ -45,6 +48,9 @@ def main(argv=None) -> None:
     gd = dict(chunk_size=ev["chunk_size"], chunk_overlap=ev["chunk_overlap"], global_decode=ev["global_decode"],
               global_decode_config=ev["global_decode_config"])
     model = AutoExtractor.from_pretrained(args.checkpoint)
+    if args.device:
+        model = model.to(args.device)
+    print(f"[sweep] device {next(model.parameters()).device}")
 
     def split(mode, name):
         recs, menus, report = T.menu_split(cfg, args.config, mode, name)
@@ -63,7 +69,7 @@ def main(argv=None) -> None:
 
     result = {"checkpoint": args.checkpoint, "menu": args.menu, "chosen_threshold": thr,
               "val_by_threshold": {str(t): m for t, m in by_t.items()}, "test": {}}
-    for mode in (args.test_menus or [args.menu, "gold"]):
+    for mode in [] if args.val_only else (args.test_menus or [args.menu, "gold"]):
         recs, menus, rep = split(mode, "test")
         print(f"[test] {mode} at threshold {thr}: {len(recs)} records")
         m = compute_metrics(model, ExtractorDataset(recs, shuffle=False, validate=False), batch_size=ev["batch_size"],
