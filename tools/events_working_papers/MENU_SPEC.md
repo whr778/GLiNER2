@@ -300,7 +300,9 @@ Details, numbers and costs are in `EXPERIMENT_CATALOG.md`, 2026-10-17.
 **The checkpoint's full menu cannot run yet.** Its 598 relations make the relation decode allocate an int64
 [B, R, Q*K] tensor of 5.47 GiB at batch 1, which runs a 40 GB A100 out of memory. The tensor grows with the
 menu, not the batch. CPU runs it at ~130 s/doc and 14 GB, about 100 h per arm for the blind test. The fix is to
-chunk over R in `TypedRelationPairGenerator.select` (TODO #37).
+chunk over R in `TypedRelationPairGenerator.select` (TODO #37). **Fixed a27cc6b:** the relation-independent
+sorts now run once and each relation takes a blocked `topk`; output byte-identical, selection 62.0 -> 1.59 s and
++13.3 -> +0.8 GB on a real full-menu doc, which now takes 59.6 s on CPU instead of 122.8 s (the encoder now dominates).
 
 **Menu poison.**
 - Under CASIE's own menu, eb21 and both corefC arms fire no CASIE events: 1 hit vs 37 under the gold menu, on
