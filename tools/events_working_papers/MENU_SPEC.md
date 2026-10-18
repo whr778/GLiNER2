@@ -329,7 +329,9 @@ sorts now run once and each relation takes a blocked `topk`; output byte-identic
   empty targets. Gold and absent types then list the same roles.
 - Listing gate: roles more than 0.05 above the absent base rate fall from 20 to 2. Damage_Amount's absent share
   falls from 0.983 to 0.645.
-- The rolesym A/B (`config/ab/rolesym-*.yaml`) differs only in this flag. Reads are pre-registered on VAL:
+- **Result, rolesym A/B, 2026-10-18 (POSITIVE):** news55 (test, once per arm) event_type F1 0.153 -> 0.541 with precision UP (0.414 -> 0.460), trigger 0.069 -> 0.397, argument 0.007 -> 0.115; CASIE val full menu 2 -> 72 hits (gold menu 60 -> 47); WikiEvents dev full menu 48 -> 97 hits but 3.5x the firing; blind-test heads all inside the floor. Gold-menu prompts (argued roles only) are now out of
+  distribution for the treatment, so gold-menu evals understate it. EXPERIMENT_CATALOG has the numbers.
+- The rolesym A/B (`config/ab/rolesym-*.yaml`) differs only in this flag. Reads were pre-registered on VAL:
   1. poison check under the original full CASIE menu, then WikiEvents and RAMS;
   2. app:news55 over-firing, the companion, since the role list may have been doing some of the dose's work;
   3. eb21's heads against the floor.

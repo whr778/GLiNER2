@@ -4428,7 +4428,7 @@ eb19 was judged broken; eb20 was skipped. eb21, from scratch on the merge, is th
 - A first explanation, a cross-corpus "Damage" word collision, was string matching. The tokenizer refuted it:
   `▁Damage` occurs only in CASIE's role. It was corrected in every place it had been written down.
 - The fix, `negative_gold_full_roles`, is built and traced. The rolesym A/B tests it, with pre-registered
-  VAL reads.
+  VAL reads. Result (2026-10-18): news55 (test, once per arm) event_type F1 0.153 -> 0.541 with precision UP (0.414 -> 0.460), trigger 0.069 -> 0.397, argument 0.007 -> 0.115; CASIE val full menu 2 -> 72 hits (gold menu 60 -> 47); WikiEvents dev full menu 48 -> 97 hits but 3.5x the firing; blind-test heads all inside the floor.
 
 **The standing lesson.** The gold-menu eval could not fail on this defect, because it shows a gold type exactly
 as training does. A menu shaped like production surfaced it in one run.

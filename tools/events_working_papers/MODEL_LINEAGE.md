@@ -265,7 +265,7 @@ instead (see its own row).
 | eb20 | — | **skipped** after a critical discovery |
 | **eb21** | from scratch: label negatives at dose 20 (MENU_SPEC s8-9), unified-full-v3 labels (Title_Snake), the news55 app menu for eval, the entity-shuffle fix (be581a1), on the fastino v2.1.0 merge (`merge/upstream-20261014`; contained-span dedupe on) | **the base going forward**: the most likely usable events architecture |
 | corefC-control / -treatment / -treatment-free | warm eb21, 2 epochs: 34% exact replay + the bought LLM news coref; entity-coref link weight 0 / 0.3 / 0.3 + GUM/LitBank/GAP ([[COREF_DATA_SOURCES]]) | **DONE 2026-10-16**: treatment link learns news pronouns (AUC 0.811 vs 0.685); eb21 heads inside the floor; GUM/LitBank/GAP dropped |
-| rolesym-control / -treatment | warm eb21, 2 epochs: exact eb21 replay without casie/rams_merged/wikievents + those three in full; ONLY `negative_gold_full_roles` differs ([[MENU_SPEC]] s10, [[LABEL_NEGATIVES_PLAN]] s5g) | **RUNNING** since 2026-10-17 22:16 UTC; tests the menu-poison fix |
+| rolesym-control / -treatment | warm eb21, 2 epochs: exact eb21 replay without casie/rams_merged/wikievents + those three in full; ONLY `negative_gold_full_roles` differs ([[MENU_SPEC]] s10, [[LABEL_NEGATIVES_PLAN]] s5g) | **DONE 2026-10-18, POSITIVE**: news55 event_type F1 0.153 -> 0.541, poison gone on CASIE (2 -> 72 hits), heads inside the floor |
 
 Entity and classification scores do not compare across eb21 and earlier bases. eb21's training data differs by
 the entity position fix, the classification gold-as-negative fix (22.6% of views) and the contained-span dedupe

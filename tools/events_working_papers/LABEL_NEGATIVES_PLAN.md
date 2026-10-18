@@ -863,7 +863,8 @@ Event negatives carried a second signal besides "no gold here": their ROLE LISTS
 - **Why no gate caught it.** The gold-menu eval lists argued roles only, exactly the training shape for a gold
   type, so the leak cannot show there. Phase 3 verified absent queries per head, but never what the query's
   OWN PROMPT carries. Trap to add to s3: an absent label must differ from a present one ONLY in its gold.
-- **The fix (built, A/B running):** `negative_gold_full_roles` puts the full pool role list on gold types too,
+- **Result (rolesym A/B, 2026-10-18): POSITIVE.** news55 (test, once per arm) event_type F1 0.153 -> 0.541 with precision UP (0.414 -> 0.460), trigger 0.069 -> 0.397, argument 0.007 -> 0.115; CASIE val full menu 2 -> 72 hits (gold menu 60 -> 47); WikiEvents dev full menu 48 -> 97 hits but 3.5x the firing; blind-test heads all inside the floor.
+- **The fix:** `negative_gold_full_roles` puts the full pool role list on gold types too,
   with empty targets for unargued roles. Traced on real records; the proof line rides a shared counter in
   `epoch_line`. Side effect: the pair loss's absent-query sample includes the new empty role queries, so the
   absent-trigger share of that pool drops from 0.177 to 0.161.
