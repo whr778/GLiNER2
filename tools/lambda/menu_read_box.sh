@@ -95,7 +95,7 @@ mkdir -p ~/out
 for ck in $CKPTS; do
   name=\$(basename \$ck)
   start=\$(date +%s)
-  timeout $JOB_TIMEOUT ./.venv/bin/python tools/train/sweep_menu_threshold.py --config $CFG --checkpoint \$ck --menu $MENU \
+  PYTHONUNBUFFERED=1 timeout $JOB_TIMEOUT ./.venv/bin/python tools/train/sweep_menu_threshold.py --config $CFG --checkpoint \$ck --menu $MENU \
     --val-only --device cuda --grid $GRID --out \$HOME/out/\$name.json > \$HOME/out/\$name.log 2>&1
   echo "[read] \$name exit \$? in \$(( \$(date +%s) - start )) s | \$(grep -a -E 'device|chose' \$HOME/out/\$name.log | tr '\n' ' ')"
 done
