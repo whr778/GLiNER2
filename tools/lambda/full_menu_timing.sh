@@ -5,6 +5,9 @@
 # CPU). Inputs ($INPUTS: timing20.jsonl, timing5.jsonl, corefC_model_schema.json) go up by scp; predictions
 # and logs come back to $OUT. Nothing is published. Setup is run_tests_cuda.sh's -- change them together.
 #
+# An optional $INPUTS/relcheck.jsonl (records with relation gold) is also decoded with eb21 under its gold
+# menu at threshold 0.1, so relation edges -- which the full menu never fires -- can be compared to CPU.
+#
 # PROFILE=1 runs each job under cProfile (out/<name>.prof, read locally with pstats) to show where the
 # seconds go; mem.log also samples GPU utilization either way.
 #
@@ -74,7 +77,8 @@ echo "[timing] box is up at $IP"
 $SSH "ubuntu@$IP" 'nvidia-smi --query-gpu=name,ecc.mode.current,ecc.errors.uncorrected.volatile.total --format=csv,noheader'
 $SSH "ubuntu@$IP" "setsid nohup bash -c 'sleep $HARD_DEADLINE; sudo poweroff' >/dev/null 2>&1 < /dev/null &" || true
 
-$SCP "$INPUTS/timing20.jsonl" "$INPUTS/timing5.jsonl" "$INPUTS/corefC_model_schema.json" "ubuntu@$IP:" \
+$SCP "$INPUTS/timing20.jsonl" "$INPUTS/timing5.jsonl" "$INPUTS/corefC_model_schema.json" \
+  $([ -f "$INPUTS/relcheck.jsonl" ] && echo "$INPUTS/relcheck.jsonl") "ubuntu@$IP:" \
   || { echo "[timing] *** could not copy inputs ***"; exit 1; }
 
 $SSH "ubuntu@$IP" "bash -s" <<REMOTE
@@ -114,6 +118,12 @@ run() {  # name model input extra...
 run treatment20 whr778/gliner2-corefC-treatment timing20.jsonl --entity-coref 0.2
 run treatment5 whr778/gliner2-corefC-treatment timing5.jsonl --entity-coref 0.2
 run eb21_5 whr778/gliner2-eb21 timing5.jsonl
+if [ -f \$HOME/relcheck.jsonl ]; then
+  timeout $JOB_TIMEOUT ./.venv/bin/python tools/infer.py --model whr778/gliner2-eb21 --input \$HOME/relcheck.jsonl \
+    --gold-schema --labels-file tools/train/config/labels/unified-full-v3.yaml --include-spans --include-confidence \
+    --threshold 0.1 --device cuda --batch-size 1 --output \$HOME/out/relcheck.pred.jsonl > \$HOME/out/relcheck.log 2>&1
+  echo "[timing] relcheck exit \$? | \$(wc -l < \$HOME/out/relcheck.pred.jsonl) docs"
+fi
 kill \$MON
 echo "[timing] peak gpu_used_mib \$(awk '{print \$3}' ~/out/mem.log | sort -n | tail -1) | mean gpu_util_pct \$(awk '\$5 != "" {s+=\$5; n++} END {if (n) printf "%.0f", s/n}' ~/out/mem.log)"
 REMOTE

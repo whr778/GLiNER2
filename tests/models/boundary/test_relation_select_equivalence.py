@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from gliner2.models.base import QueryLayout
 from gliner2.models.boundary.relations import (
     CandidateTensorBatch, RelationProposalSettings, RelationTypeSpec, TypedRelationPairGenerator,
 )
@@ -45,18 +46,21 @@ def _case(seed: int, bsz: int, queries: int, cands: int, rels: int):
     return candidates, schemas
 
 
+@pytest.mark.parametrize("layouts", [[], [QueryLayout(queries=())] * 2])
 @pytest.mark.parametrize("compact", [False, True])
 @pytest.mark.parametrize("seed", range(6))
-def test_select_matches_the_original_per_relation_sort(seed, compact):
+def test_select_matches_the_original_per_relation_sort(seed, compact, layouts):
     settings = RelationProposalSettings(heads_per_relation=5, tails_per_relation=4, pair_cap=7)
     candidates, schemas = _case(seed, bsz=2, queries=4, cands=6, rels=5)
     new = TypedRelationPairGenerator(settings)
     new.select_budget = 1   # one relation per block
-    a = ReferenceGenerator(settings).generate_batched(candidates, [], schemas, compact=compact)
-    b = new.generate_batched(candidates, [], schemas, compact=compact)
+    a = ReferenceGenerator(settings).generate_batched(candidates, layouts, schemas, compact=compact)
+    b = new.generate_batched(candidates, layouts, schemas, compact=compact)
     for f in FIELDS:
         assert torch.equal(getattr(a, f), getattr(b, f)), f
     assert a.relation_types == b.relation_types
+    assert a.head_keys == b.head_keys and a.tail_keys == b.tail_keys
+    assert all(type(v) is int for key in b.head_keys + b.tail_keys for v in key[1:])
 
 
 def test_more_requested_than_candidates_pads_like_the_original():
@@ -66,3 +70,4 @@ def test_more_requested_than_candidates_pads_like_the_original():
     b = TypedRelationPairGenerator(settings).generate_batched(candidates, [], schemas, compact=False)
     for f in FIELDS:
         assert torch.equal(getattr(a, f), getattr(b, f)), f
+    assert a.head_keys == b.head_keys and a.tail_keys == b.tail_keys

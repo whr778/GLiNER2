@@ -1712,7 +1712,12 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 {},
             ).items()
         }
-        for pair_index, probability in enumerate(probabilities):
+        # One host copy per field: element-wise reads of device tensors sync per pair.
+        scores = probabilities.detach().tolist()
+        head_start, head_end = pairs.head_start.tolist(), pairs.head_end.tolist()
+        tail_start, tail_end = pairs.tail_start.tolist(), pairs.tail_end.tolist()
+        head_prob, tail_prob = pairs.head_prob.tolist(), pairs.tail_prob.tolist()
+        for pair_index, score in enumerate(scores):
             relation_type = relation_aliases.get(
                 pairs.relation_types[pair_index],
                 pairs.relation_types[pair_index],
@@ -1722,13 +1727,12 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             )
             if relation_threshold is None:
                 relation_threshold = threshold
-            score = float(probability.detach())
             if score < relation_threshold:
                 continue
-            hs = int(pairs.head_start[pair_index]) - offset
-            he = int(pairs.head_end[pair_index]) - offset
-            ts = int(pairs.tail_start[pair_index]) - offset
-            te = int(pairs.tail_end[pair_index]) - offset
+            hs = head_start[pair_index] - offset
+            he = head_end[pair_index] - offset
+            ts = tail_start[pair_index] - offset
+            te = tail_end[pair_index] - offset
             if not (0 <= hs < he <= text_len and 0 <= ts < te <= text_len):
                 continue
             h0, h1 = token_boundaries_to_character_offsets(hs, he, start_map, end_map)
@@ -1738,8 +1742,8 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 continue
             edges.setdefault(relation_type, []).append({
                 "score": score,
-                "head": (head, h0, h1, float(pairs.head_prob[pair_index])),
-                "tail": (tail, t0, t1, float(pairs.tail_prob[pair_index])),
+                "head": (head, h0, h1, head_prob[pair_index]),
+                "tail": (tail, t0, t1, tail_prob[pair_index]),
             })
 
         out: Dict[str, Any] = {}
