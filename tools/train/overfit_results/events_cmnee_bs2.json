@@ -1,0 +1,181 @@
+{
+ "args": {
+  "config": "tools/train/config/base/eb21.yaml",
+  "checkpoint": "whr778/gliner2-eb21",
+  "corpus": "cmnee",
+  "records": 64,
+  "steps": 400,
+  "batch_size": 2,
+  "every": 50,
+  "encoder_lr": 1e-05,
+  "task_lr": 0.0001,
+  "device": "cuda",
+  "negative_pools": "tools/train/config/pools/eb21.negative_pools.json",
+  "labels_file": null,
+  "out": "/home/ubuntu/out/cmnee.json"
+ },
+ "log": [
+  {
+   "step": 0,
+   "seconds": 0,
+   "@0.3": {
+    "type": 0.6667,
+    "trigger": 0.5054,
+    "argument": 0.1618
+   },
+   "@0.1": {
+    "type": 0.8441,
+    "trigger": 0.6465,
+    "argument": 0.3003
+   },
+   "train": {
+    "record_field_loss": 0.0,
+    "loss": 0.0
+   }
+  },
+  {
+   "step": 50,
+   "seconds": 25,
+   "@0.3": {
+    "type": 0.8864,
+    "trigger": 0.7378,
+    "argument": 0.5249
+   },
+   "@0.1": {
+    "type": 0.9625,
+    "trigger": 0.7538,
+    "argument": 0.509
+   },
+   "train": {
+    "record_field_loss": 0.5986,
+    "loss": 1.569
+   }
+  },
+  {
+   "step": 100,
+   "seconds": 51,
+   "@0.3": {
+    "type": 0.8905,
+    "trigger": 0.7602,
+    "argument": 0.4272
+   },
+   "@0.1": {
+    "type": 0.9517,
+    "trigger": 0.7744,
+    "argument": 0.5299
+   },
+   "train": {
+    "record_field_loss": 0.5095,
+    "loss": 1.2068
+   }
+  },
+  {
+   "step": 150,
+   "seconds": 74,
+   "@0.3": {
+    "type": 0.9296,
+    "trigger": 0.7922,
+    "argument": 0.5779
+   },
+   "@0.1": {
+    "type": 0.9625,
+    "trigger": 0.7704,
+    "argument": 0.5775
+   },
+   "train": {
+    "record_field_loss": 0.3963,
+    "loss": 0.9408
+   }
+  },
+  {
+   "step": 200,
+   "seconds": 98,
+   "@0.3": {
+    "type": 0.8657,
+    "trigger": 0.7771,
+    "argument": 0.5698
+   },
+   "@0.1": {
+    "type": 0.9296,
+    "trigger": 0.8199,
+    "argument": 0.6257
+   },
+   "train": {
+    "record_field_loss": 0.3648,
+    "loss": 0.8117
+   }
+  },
+  {
+   "step": 250,
+   "seconds": 120,
+   "@0.3": {
+    "type": 0.9104,
+    "trigger": 0.8125,
+    "argument": 0.5139
+   },
+   "@0.1": {
+    "type": 0.9517,
+    "trigger": 0.8104,
+    "argument": 0.6119
+   },
+   "train": {
+    "record_field_loss": 0.3163,
+    "loss": 0.6996
+   }
+  },
+  {
+   "step": 300,
+   "seconds": 143,
+   "@0.3": {
+    "type": 0.9625,
+    "trigger": 0.8579,
+    "argument": 0.6629
+   },
+   "@0.1": {
+    "type": 0.9695,
+    "trigger": 0.8235,
+    "argument": 0.6609
+   },
+   "train": {
+    "record_field_loss": 0.3134,
+    "loss": 0.6567
+   }
+  },
+  {
+   "step": 350,
+   "seconds": 167,
+   "@0.3": {
+    "type": 0.9444,
+    "trigger": 0.8596,
+    "argument": 0.7081
+   },
+   "@0.1": {
+    "type": 0.9695,
+    "trigger": 0.8633,
+    "argument": 0.7097
+   },
+   "train": {
+    "record_field_loss": 0.2695,
+    "loss": 0.5992
+   }
+  },
+  {
+   "step": 400,
+   "seconds": 190,
+   "@0.3": {
+    "type": 0.9143,
+    "trigger": 0.8448,
+    "argument": 0.6967
+   },
+   "@0.1": {
+    "type": 0.9799,
+    "trigger": 0.8601,
+    "argument": 0.7307
+   },
+   "train": {
+    "record_field_loss": 0.2392,
+    "loss": 0.5394
+   }
+  }
+ ]
+}

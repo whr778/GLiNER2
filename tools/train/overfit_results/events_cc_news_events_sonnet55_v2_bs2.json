@@ -1,0 +1,181 @@
+{
+ "args": {
+  "config": "tools/train/config/base/eb21.yaml",
+  "checkpoint": "whr778/gliner2-eb21",
+  "corpus": "cc_news_events_sonnet55_v2",
+  "records": 64,
+  "steps": 400,
+  "batch_size": 2,
+  "every": 50,
+  "encoder_lr": 1e-05,
+  "task_lr": 0.0001,
+  "device": "cuda",
+  "negative_pools": "tools/train/config/pools/eb21.negative_pools.json",
+  "labels_file": null,
+  "out": "/home/ubuntu/out/cc_news_events_sonnet55_v2.json"
+ },
+ "log": [
+  {
+   "step": 0,
+   "seconds": 0,
+   "@0.3": {
+    "type": 0.8273,
+    "trigger": 0.4576,
+    "argument": 0.1165
+   },
+   "@0.1": {
+    "type": 0.9185,
+    "trigger": 0.4179,
+    "argument": 0.1493
+   },
+   "train": {
+    "record_field_loss": 0.0,
+    "loss": 0.0
+   }
+  },
+  {
+   "step": 50,
+   "seconds": 56,
+   "@0.3": {
+    "type": 0.8082,
+    "trigger": 0.5,
+    "argument": 0.1246
+   },
+   "@0.1": {
+    "type": 0.8981,
+    "trigger": 0.4765,
+    "argument": 0.1711
+   },
+   "train": {
+    "record_field_loss": 0.8004,
+    "loss": 2.4348
+   }
+  },
+  {
+   "step": 100,
+   "seconds": 114,
+   "@0.3": {
+    "type": 0.9023,
+    "trigger": 0.5108,
+    "argument": 0.2051
+   },
+   "@0.1": {
+    "type": 0.9496,
+    "trigger": 0.4592,
+    "argument": 0.1701
+   },
+   "train": {
+    "record_field_loss": 0.6759,
+    "loss": 2.1205
+   }
+  },
+  {
+   "step": 150,
+   "seconds": 181,
+   "@0.3": {
+    "type": 0.9265,
+    "trigger": 0.544,
+    "argument": 0.2241
+   },
+   "@0.1": {
+    "type": 0.9609,
+    "trigger": 0.4707,
+    "argument": 0.189
+   },
+   "train": {
+    "record_field_loss": 0.5449,
+    "loss": 1.7485
+   }
+  },
+  {
+   "step": 200,
+   "seconds": 255,
+   "@0.3": {
+    "type": 0.9185,
+    "trigger": 0.5813,
+    "argument": 0.2667
+   },
+   "@0.1": {
+    "type": 0.9496,
+    "trigger": 0.5242,
+    "argument": 0.2289
+   },
+   "train": {
+    "record_field_loss": 0.5454,
+    "loss": 1.5523
+   }
+  },
+  {
+   "step": 250,
+   "seconds": 319,
+   "@0.3": {
+    "type": 0.9645,
+    "trigger": 0.6127,
+    "argument": 0.308
+   },
+   "@0.1": {
+    "type": 0.9754,
+    "trigger": 0.5394,
+    "argument": 0.2691
+   },
+   "train": {
+    "record_field_loss": 0.5525,
+    "loss": 1.5701
+   }
+  },
+  {
+   "step": 300,
+   "seconds": 389,
+   "@0.3": {
+    "type": 0.9304,
+    "trigger": 0.5802,
+    "argument": 0.2282
+   },
+   "@0.1": {
+    "type": 0.979,
+    "trigger": 0.5595,
+    "argument": 0.2431
+   },
+   "train": {
+    "record_field_loss": 0.5011,
+    "loss": 1.5312
+   }
+  },
+  {
+   "step": 350,
+   "seconds": 454,
+   "@0.3": {
+    "type": 0.942,
+    "trigger": 0.6272,
+    "argument": 0.3287
+   },
+   "@0.1": {
+    "type": 0.979,
+    "trigger": 0.6204,
+    "argument": 0.2911
+   },
+   "train": {
+    "record_field_loss": 0.474,
+    "loss": 1.3738
+   }
+  },
+  {
+   "step": 400,
+   "seconds": 519,
+   "@0.3": {
+    "type": 0.9534,
+    "trigger": 0.6448,
+    "argument": 0.3326
+   },
+   "@0.1": {
+    "type": 0.9754,
+    "trigger": 0.611,
+    "argument": 0.3301
+   },
+   "train": {
+    "record_field_loss": 0.3657,
+    "loss": 1.1356
+   }
+  }
+ ]
+}
