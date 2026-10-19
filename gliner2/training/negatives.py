@@ -97,6 +97,7 @@ class NegativeLabels:
         self._epoch_records = _mp.Value("q", 0)
         self._epoch_injected = _mp.Value("q", 0)
         self._epoch_full_roles = _mp.Value("q", 0)
+        self._epoch_relations = _mp.Value("q", 0)
         self.stats = {"records": 0, "injected": 0, "records_with_injection": 0,
                       "no_candidate": 0, "partial_skips": 0, "gold_free_injected": 0,
                       "gold_full_role_types": 0, "gold_full_roles_added": 0}
@@ -125,6 +126,8 @@ class NegativeLabels:
             self._epoch_injected.value = 0
         with self._epoch_full_roles.get_lock():
             self._epoch_full_roles.value = 0
+        with self._epoch_relations.get_lock():
+            self._epoch_relations.value = 0
 
     def dose(self, dim: str) -> int:
         """This epoch's count for a dimension: the schedule's value if it names the dim, else per_dim."""
@@ -140,19 +143,21 @@ class NegativeLabels:
                 f"{self.dose('events')}}} | {self._epoch_injected.value:,} labels injected into {n:,} records "
                 f"({self._epoch_injected.value / max(n, 1):.1f} per record)"
                 + (f" | gold full roles: {self._epoch_full_roles.value:,} unargued roles listed on gold event types"
-                   if self.gold_full_roles else ""))
+                   if self.gold_full_roles else "")
+                + (f" | relations dose {self.dose('relations')}: {self._epoch_relations.value:,} absent relations injected"
+                   if self.dose("relations") else ""))
 
     def __getstate__(self):
         """Spawned (non-forked) workers get plain values: shared memory crosses only a fork."""
         state = dict(self.__dict__)
-        for key in ("_epoch", "_epoch_records", "_epoch_injected", "_epoch_full_roles"):
+        for key in ("_epoch", "_epoch_records", "_epoch_injected", "_epoch_full_roles", "_epoch_relations"):
             state[key] = state[key].value
         return state
 
     def __setstate__(self, state):
         import multiprocessing as _mp
         for key, code in (("_epoch", "i"), ("_epoch_records", "q"), ("_epoch_injected", "q"),
-                          ("_epoch_full_roles", "q")):
+                          ("_epoch_full_roles", "q"), ("_epoch_relations", "q")):
             state[key] = _mp.Value(code, state[key])
         self.__dict__.update(state)
 
@@ -308,6 +313,8 @@ class NegativeLabels:
                 out["absent_relations"] = sorted(
                     set(out.get("absent_relations") or []) | set(chosen))
                 added += len(chosen)
+                with self._epoch_relations.get_lock():
+                    self._epoch_relations.value += len(chosen)
 
         k = 0 if "structures" in skip else budget(self.dose("structures"))
         if k and gold["structures"] and isinstance(schema.get("json_structures"), list):
