@@ -56,6 +56,8 @@ def main(argv=None) -> None:
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--negative-pools", help="override the config's negative_pools (`auto` reads every corpus)")
     ap.add_argument("--labels-file", help="override the config's labels_file")
+    ap.add_argument("--eval-corpus", help="score against THIS corpus's records for the same documents (e.g. wikievents for "
+                                          "wikievents_off): the evaluator matches TEXT and cannot read {text, start, end} gold")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
@@ -69,6 +71,13 @@ def main(argv=None) -> None:
     records = [r for r in T.read_transformed([path], fns, passthrough) if r["output"].get("events")][:args.records]
     for r in records:
         r["_corpus"] = args.corpus
+    eval_records = records
+    if args.eval_corpus:
+        epath = f"data/{args.eval_corpus}.train.jsonl"
+        T._fetch_if_missing(epath)
+        by_text = {r["input"]: r for r in T.read_transformed([epath], fns, passthrough)}
+        eval_records = [by_text[r["input"]] for r in records]   # KeyError = not the same documents
+        print(f"[overfit-events] scoring against {args.eval_corpus}: {len(eval_records)} records, same texts", flush=True)
     n_args = sum(len(e.get("arguments") or []) for r in records for e in r["output"]["events"])
     print(f"[overfit-events] {args.corpus}: {len(records)} records, {sum(len(r['output']['events']) for r in records)} gold events, "
           f"{n_args} arguments | steps {args.steps} batch {args.batch_size} | device {args.device} | labels {cfg.get('labels_file')}", flush=True)
@@ -94,7 +103,7 @@ def main(argv=None) -> None:
         if step % args.every == 0:
             row = {"step": step, "seconds": round(time.time() - t0)}
             for thr in (0.3, 0.1):
-                row[f"@{thr}"] = event_scores(model, records, thr)
+                row[f"@{thr}"] = event_scores(model, eval_records, thr)
             row["train"] = {k: round(sum(v) / max(len(v), 1), 4) for k, v in losses.items()}
             log.append(row)
             print(f"[overfit-events] {json.dumps(row)}", flush=True)
