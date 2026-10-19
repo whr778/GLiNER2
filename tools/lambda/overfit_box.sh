@@ -23,6 +23,7 @@ CFG=${CFG:-tools/train/config/base/eb21.yaml}
 RECORDS=${RECORDS:-64}
 STEPS=${STEPS:-400}
 EXTRA=${EXTRA:-}
+SCRIPT=${SCRIPT:-tools/train/overfit_relations.py}   # or tools/train/overfit_events.py
 : "${LAMBDA_API_KEY:?not set}"
 : "${HF_TOKEN:?not set -- the model and val files are private}"
 
@@ -94,10 +95,10 @@ PROOF
 mkdir -p ~/out
 for c in $CORPORA; do
   start=\$(date +%s)
-  PYTHONUNBUFFERED=1 timeout $JOB_TIMEOUT ./.venv/bin/python tools/train/overfit_relations.py --config $CFG --checkpoint $CKPT \
+  PYTHONUNBUFFERED=1 timeout $JOB_TIMEOUT ./.venv/bin/python $SCRIPT --config $CFG --checkpoint $CKPT \
     --corpus \$c --records $RECORDS --steps $STEPS --device cuda $EXTRA --out \$HOME/out/\$c.json > \$HOME/out/\$c.log 2>&1
   echo "[overfit-box] \$c exit \$? in \$(( \$(date +%s) - start )) s"
-  grep -a "^\[overfit\] {" \$HOME/out/\$c.log | tail -1 | cut -c1-400
+  grep -a "^\[overfit[a-z-]*\] {" \$HOME/out/\$c.log | tail -1 | cut -c1-400
 done
 REMOTE
 
