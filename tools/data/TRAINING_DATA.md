@@ -274,6 +274,55 @@ predict how the model will behave. The proposal path shows rho = -0.133, i.e. no
 masking lets it see the token it is predicting: that reads NLL 0.001 on English clinical text
 and 0.213 on pure gibberish. With real masking the same two read 1.84 and 7.47.
 
+## Target structure of event and relation corpora (2026-10-19)
+
+What each corpus actually asks the model to learn, after the collator turns text-level gold into span targets.
+Gold arguments and relation endpoints are STRINGS, so the collator marks every occurrence: an event argument
+becomes a separate REQUIRED value of its (list) role at each occurrence, and a relation edge becomes every
+head-occurrence x tail-occurrence pair. That inflation, plus how often same-type events or relations share a
+document (pairing load), decided whether eb21's relation head could fit even its own training data (TODO #40:
+it could not; `relation_gold_pairs: nearest` + labels v4 + the biaffine scorer let it fit,
+`overfit_relations.py`). The event-side placements were first measured in `measure_occurrence_ambiguity.py`
+(`events_working_papers/EVENT_ARGUMENT_DIAGNOSIS.md` s4l); the real fix there is offset-anchored gold (TODO #26:
+WikiEvents and RAMS ship offsets; the LLM-annotated cc_news corpora do not).
+
+[records] compiled 3 field spec(s): 1 scalar, 2 list; 0 of 1 schema(s) declared field dtypes
+Measured by `tools/data/measure_target_structure.py --config tools/train/config/base/eb22b.yaml --docs 200` (first 200 train records per corpus that carry the task; inflation through eb21's collator).
+
+**Event corpora**
+
+| corpus | docs | argument inflation | events sharing a doc with a same-type event | of their arguments, shared with a sibling | null-like labels |
+|---|--:|--:|--:|--:|---|
+| duee_ner | 200 | x0.99 | 7% | 83% | none |
+| cmnee_ner | 200 | x1.31 | 51% | 45% | none |
+| maven | 200 | x0.00 | 59% | 0% | none |
+| casie | 200 | x1.70 | 95% | 14% | none |
+| rams_merged | 200 | x1.49 | 1% | 38% | none |
+| wikievents | 191 | x3.61 | 83% | 29% | none |
+| cc_news_haiku45 | 200 | x2.23 | 28% | 39% | none |
+| cc_news_events_haiku45 | 200 | x1.82 | 32% | 27% | none |
+| synthetic_events_capped | 200 | x1.83 | 18% | 21% | none |
+| cc_news_events_sonnet55_v2 | 200 | x2.29 | 59% | 21% | none |
+
+**Relation corpora**
+
+| corpus | docs | pair inflation, all | pair inflation, nearest | pairing ambiguity | null-like labels |
+|---|--:|--:|--:|--:|---|
+| sentence_rex | 200 | x1.12 | x1.00 | 1.00 | none |
+| bio_ner_relations | 200 | x0.86 | x0.50 | 1.35 | none |
+| biored | 200 | x6.83 | x0.87 | 2.41 | none |
+| professorbob_re | 200 | x18.18 | x0.98 | 1.00 | no relation |
+| scierc | 200 | x2.01 | x0.90 | 3.31 | none |
+| cc_news_haiku45 | 200 | x4.90 | x0.86 | 2.11 | none |
+| synthetic_events_capped | 200 | x2.59 | x0.82 | 1.25 | none |
+| cc_news_events_sonnet55_v2 | 200 | x8.69 | x0.86 | 1.70 | none |
+
+Reading the table: `maven` carries triggers only (inflation x0.00 = no arguments). A `nearest` inflation below
+1.0 means some text-level edges have no alignable occurrence pair at all (bio_ner_relations: half). `pairing
+ambiguity` 1.0 is one head and one tail per relation type per document; above 1.0 the scorer must choose which
+head goes with which tail (scierc 3.31) -- what the biaffine content term helps. Null-like labels: only
+professorbob_re's `no relation` (37% of its gold), dropped in `labels/unified-full-v4.yaml`.
+
 ## Summary
 
 | Dataset | Task(s) | Train | Val† | Test | License‡ | Source |

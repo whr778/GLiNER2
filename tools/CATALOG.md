@@ -60,6 +60,7 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | `train/trace_anchor_raise.py` | Reproduces a record-spec raise on the REAL data path with no GPU and no training (eb17-best and its smoke both died in a DataLoader worker). |
 | `data/measure_event_normalisation.py` | Is the event gold trigger-keyed or event-keyed? The two measurements that price design C (normalised events). |
 | `data/trace_absent_event_negatives.py` | Traces absent-event negatives exactly as training injects them and tests whether "absent" is true; `data/adjudicate_absent_events.py` has Claude adjudicate a RANDOM sample of them. |
+| `data/measure_target_structure.py` | **What does each corpus ask the model to learn?** Per event and relation corpus in a config, through the real collator: argument inflation (each occurrence a separate required list-role value), same-type pairing load and shared arguments, relation pair inflation `all` vs `nearest`, pairing ambiguity, null-like labels. Prints the TRAINING_DATA.md section "Target structure of event and relation corpora". Complements `measure_occurrence_ambiguity.py` (raw placements) with the collated targets. |
 | `data/measure_occurrence_ambiguity.py` | Per event corpus: how many places training marks each gold trigger/argument string (every occurrence, `latent_all`), events per document and document length -- why whole-document event loss falls more slowly (`EVENT_ARGUMENT_DIAGNOSIS.md` s4l, TODO #26). |
 | `data/measure_casualty_gold_coverage.py` | Per paragraph of casualty_docee: covered by gold, and if not, why (collision vs unique toll). `data/trace_casualty_gold_gap.py` traces each paragraph to its source snippet's ground truth -- the root cause that `rebuild_casualty_docee.py` fixed. |
 
@@ -101,6 +102,8 @@ Counted at each directory's top level (`tools/train/pr_sweep_results/pr_sweep.py
 | `train/eval_decode_pooling.py` | Decode-time pooling of same-type instances on boundary-variant triggers, rescored. Tested 2026-10-04: NEGATIVE (F1 -0.001 to -0.004). |
 | `train/probe_label_order.py` | **Does the model read LABELS or their POSITION?** Same model, records and widened menu; only one dimension's label order changes (`--dimension entities|events|relations`). Found the entity position leak: 0.000 absent-first vs 0.646 gold-first (MENU_SPEC s9). |
 | `train/measure_coref_separability.py` | Baseline for coreference: do trigger-instance states separate coreferent mention pairs from DIFFERENT same-type events? |
+| `train/overfit_relations.py` | **Can the relation head fit a FEW training records?** Trains a checkpoint on N relation records of one corpus through the real dataset/negatives/collator/loss and decodes them every K steps; logs gold vs positive-labelled pairs and pos/neg logits. `--relation-gold-pairs`, `--labels-file`, `--relation-biaffine` (diagnostic: zero-init biaffine scorer on a warm checkpoint). Found eb21's relation head could not fit inflated labels; nearest + v4 + biaffine fixed it (TODO #40). Run on CUDA with `lambda/overfit_box.sh`. |
+| `train/overfit_events.py` | The same overfit test for the EVENT record head, scored with the in-run `compute_metrics` (gold menu, global decode) on the same records. `lambda/overfit_box.sh SCRIPT=train/overfit_events.py`. |
 | `train/menu_poison_check.py` | **Which menu labels POISON the rest?** Runs a checkpoint on VAL under the gold menu, the full menu, and the full menu minus each event role / type (`--entities`: each entity label), counting events fired AND exact type+trigger hits; suspects are confirmed greedily so side effects drop out. Found CASIE's `Damage_Amount` (menu 0 -> 32 hits vs gold 27). Examples: `train/INFER.md` "Common menus and poison labels". |
 | `train/probe_poison_mechanism.py` | **Where does a poison label act?** Trigger max p per event type under menu variants (role removed / original / one role added), and `--swap`: text states of one arm with query states of the other. Found the trigger QUERY of the listing type, not the text. |
 | `train/probe_menu_axes.py` | Which menu AXIS silences events: per-doc menus varying one axis at a time (extra types, extra entities, role order, extra roles, one role). The probe that isolated `Damage_Amount`. |
@@ -217,7 +220,7 @@ How to run a trained checkpoint is in [`train/INFER.md`](train/INFER.md).
 
 **Common inference menus** -- `build_schema.py` (one app menu from corpora's TRAIN gold, for `infer.py --schema-json` and `score_predictions --menu app:`; reports val/test labels it does not offer; `--drop` removes poison labels; outputs in `train/config/schemas/`).
 
-**A/B config generators** (write both arms from a base so they differ only where intended) -- `make_corefB_configs.py`, `make_corefC_configs.py`, `make_rolesym_configs.py` (`negative_gold_full_roles`, the menu-poison fix).
+**A/B config generators** (write both arms from a base so they differ only where intended) -- `make_corefB_configs.py`, `make_corefC_configs.py`, `make_rolesym_configs.py` (`negative_gold_full_roles`, the menu-poison fix), `make_relneg_configs.py` (relation negatives, NEGATIVE). **Base config generators** -- `make_eb22_config.py` (eb22 option A, a warm start; crashed, superseded), `make_eb22b_config.py` (eb22 as option B: from scratch with fastino gliner2.5-multi-v1's structural relation/span flags, TODO #40 fixes).
 
 **Mix builders** — `build_137k_replay.py`, `build_scaling_mix.py`,
 `build_joint_scaling_mix.py`, `build_warmstart_mix.py`, `build_turkish_dose_mix.py`,
@@ -276,7 +279,7 @@ configs `train/config/ab/<EXP>-<ARM>.yaml`), `p2fast_ab_launch.sh` (its first in
 an app menu on val, publish per arm; `ARMS` comma-separated), `menu_probe_job.sh` (the menu-size ladder).
 `pull_epoch_det.sh` copies each `checkpoint-epoch-N` off a running base and measures its junction DET mid-run.
 
-**One-off CUDA checks** (publish nothing; results come back by scp; setup duplicated from `run_tests_cuda.sh`) -- `coref_cuda_check.sh` (entity-coref val sweep on CUDA with memory logged; same cut-off as CPU), `full_menu_timing.sh` (seconds per doc for the full-menu blind test; both runs OOMed in the relation decode, TODO #37).
+**One-off CUDA checks** (publish nothing; results come back by scp; setup duplicated from `run_tests_cuda.sh`) -- `menu_read_box.sh` (a VAL menu read, `sweep_menu_threshold --val-only`, for several checkpoints: 13 min per model on an A10 vs hours on the laptop CPU), `overfit_box.sh` (the overfit traces above, per corpus, `SCRIPT` selects relations or events), `coref_cuda_check.sh` (entity-coref val sweep on CUDA with memory logged; same cut-off as CPU), `full_menu_timing.sh` (seconds per doc for the full-menu blind test; both runs OOMed in the relation decode, TODO #37).
 
 **Operating-point jobs** — `sweep_and_rescore_eb17.sh` (record-gate sweep on validation),
 `blind_test_record_anchor.sh` (the blind test ONCE at the picked point),
