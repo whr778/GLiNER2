@@ -27,6 +27,22 @@ from gliner2.models.boundary.records import decode_group
 logger = logging.getLogger(__name__)
 
 
+def _copy_tensors_to_cpu(tensors):
+    """Copy tensors to CPU with one CUDA synchronization."""
+    if not tensors:
+        return []
+    device = tensors[0].device
+    if device.type != "cuda":
+        return [tensor.detach().cpu() for tensor in tensors]
+    copied = []
+    for tensor in tensors:
+        target = torch.empty_like(tensor, device="cpu", pin_memory=True)
+        target.copy_(tensor.detach(), non_blocking=True)
+        copied.append(target)
+    torch.cuda.current_stream(device).synchronize()
+    return copied
+
+
 def _resolve_flat_spans(
     scored: List[Tuple[float, int, int]]
 ) -> List[Tuple[float, int, int]]:
@@ -285,6 +301,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             )
             if out.null_logits is not None:
                 null_probs = torch.sigmoid(out.null_logits).float().cpu()
+        classification = self._classification_probabilities(batch, core)
 
         def decode_sample(i: int) -> Dict[str, Any]:
             sample: Dict[str, Any] = {}
@@ -346,7 +363,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         converted = _record_instances_to_events(instances, anchor)
                         if converted:
                             sample[name] = converted
-                self._decode_classifications(sample, batch, core, i)
+                self._decode_classifications(sample, classification, i)
                 return sample
 
             record_results = self._decode_records(
@@ -435,13 +452,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             for event_type, instances in event_results.items():
                 sample[event_type] = instances
 
-            schema = batch.original_schemas[i]
-            for cls in core["cls_specs"][i]:
-                self._extract_classification_result(
-                    sample, cls["task_name"], schema,
-                    cls["group_embs"], cls["schema_tokens"],
-                    temperature=self.boundary_settings.classification_temperature,
-                )
+            self._decode_classifications(sample, classification, i)
 
             return sample
 
@@ -570,16 +581,37 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 out[event_type] = [{"triggers": triggers, "arguments": arguments}]
         return out
 
+    def _classification_probabilities(self, batch, core: Dict[str, Any]):
+        """Every sample's classification probabilities, copied to CPU in one transfer.
+
+        Returns ``(records, values)``: per sample, ``(task_name, config, start, count)`` slices of
+        the flat CPU tensor ``values``.
+        """
+        records: List[List[Tuple[str, Dict[str, Any], int, int]]] = [[] for _ in range(len(batch))]
+        values, offset = [], 0
+        for sample_index, specs in enumerate(core["cls_specs"]):
+            schema = batch.original_schemas[sample_index]
+            for cls in specs:
+                computed = self._compute_classification_probabilities(
+                    schema, cls["group_embs"], cls["schema_tokens"],
+                    temperature=self.boundary_settings.classification_temperature,
+                )
+                if computed is None:
+                    continue
+                task_name, config, probabilities = computed
+                records[sample_index].append((task_name, config, offset, probabilities.numel()))
+                values.append(probabilities.reshape(-1))
+                offset += probabilities.numel()
+        return records, torch.cat(values).cpu() if values else torch.empty(0)
+
     def _decode_classifications(
-        self, sample: Dict[str, Any], batch, core: Dict[str, Any], sample_index: int,
+        self, sample: Dict[str, Any], classification, sample_index: int,
     ) -> None:
         """Add this sample's classification results in place."""
-        schema = batch.original_schemas[sample_index]
-        for cls in core["cls_specs"][sample_index]:
-            self._extract_classification_result(
-                sample, cls["task_name"], schema,
-                cls["group_embs"], cls["schema_tokens"],
-                temperature=self.boundary_settings.classification_temperature,
+        records, values = classification
+        for task_name, config, start, count in records[sample_index]:
+            self._decode_classification_probabilities(
+                sample, task_name, config, values[start:start + count],
             )
 
     def _relation_pairs_and_logits(
@@ -1310,7 +1342,9 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             query_mask,
             indices,
         )[0]
-        logits = logits / self.boundary_settings.pair_temperature
+        logits = (
+            logits / self.boundary_settings.pair_temperature
+        ).float().cpu()
         row_by_label = {
             label: row for row, (label, _) in enumerate(attribute_rows)
         }
@@ -1334,7 +1368,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         continue
                     labels, rows = zip(*present)
                     values = logits[
-                        torch.tensor(rows, dtype=torch.long, device=device),
+                        torch.tensor(rows, dtype=torch.long, device=logits.device),
                         column,
                     ]
                     if group.multi_label:
@@ -1573,7 +1607,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         )[0, 0]
         probabilities = torch.sigmoid(
             logits / self.boundary_settings.pair_temperature
-        )
+        ).float().cpu()
         if preferred_choices:
             probability_by_choice = {
                 choice: float(probabilities[index])
@@ -1712,11 +1746,13 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 {},
             ).items()
         }
-        # One host copy per field: element-wise reads of device tensors sync per pair.
-        scores = probabilities.detach().tolist()
-        head_start, head_end = pairs.head_start.tolist(), pairs.head_end.tolist()
-        tail_start, tail_end = pairs.tail_start.tolist(), pairs.tail_end.tolist()
-        head_prob, tail_prob = pairs.head_prob.tolist(), pairs.tail_prob.tolist()
+        # One host copy for all fields: element-wise reads of device tensors sync per pair.
+        scores, head_start, head_end, tail_start, tail_end, head_prob, tail_prob = (
+            tensor.tolist() for tensor in _copy_tensors_to_cpu([
+                probabilities, pairs.head_start, pairs.head_end, pairs.tail_start,
+                pairs.tail_end, pairs.head_prob, pairs.tail_prob,
+            ])
+        )
         for pair_index, score in enumerate(scores):
             relation_type = relation_aliases.get(
                 pairs.relation_types[pair_index],
