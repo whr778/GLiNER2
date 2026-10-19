@@ -71,11 +71,32 @@ from _split import clean_text, dumps_record  # noqa: E402
 from add_coref_clusters import place  # noqa: E402
 
 
-def convert_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Convert one CMNEE document into a GLiNER2 record; None if unusable."""
+OFFSET_COUNTS: Dict[str, int] = {"placed": 0, "shifted": 0, "kept_as_string": 0}
+
+
+def _offset_gold(text: str, cleaned: str, surface: str, offset: Any) -> Any:
+    """``{text, start, end}`` in the CLEANED text ``dumps_record`` writes, from CMNEE's ``[start, end]`` character
+    offsets; the surface string when no nearby shift reads exactly the surface (TODO #26)."""
+    if isinstance(offset, (list, tuple)) and len(offset) == 2 and all(isinstance(x, int) for x in offset):
+        for shift in (0, -1, 1, -2, 2):
+            s, e = offset[0] + shift, offset[1] + shift
+            if 0 <= s < e <= len(text) and text[s:e].strip() == surface:
+                placed = place(cleaned, [[(surface, s, e)]], clean_text, text, {"kept": 0, "dropped": 0})
+                if placed:
+                    OFFSET_COUNTS["placed"] += 1
+                    OFFSET_COUNTS["shifted"] += shift != 0
+                    return placed[0][0]
+    OFFSET_COUNTS["kept_as_string"] += 1
+    return surface
+
+
+def convert_row(row: Dict[str, Any], offsets: bool = False) -> Optional[Dict[str, Any]]:
+    """Convert one CMNEE document into a GLiNER2 record; None if unusable. ``offsets`` writes triggers and
+    arguments as ``{text, start, end}`` (TODO #26) so training marks only the annotated occurrence."""
     text = row.get("text")
     if not isinstance(text, str) or not text.strip():
         return None
+    cleaned = clean_text(text) if offsets else None
 
     events_out: List[Dict[str, Any]] = []
     for ev in row.get("event_list") or []:
@@ -108,11 +129,13 @@ def convert_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             if key in seen_args:
                 continue
             seen_args.add(key)
-            arguments.append({"role": role, "entity": arg_text})
+            entity: Any = _offset_gold(text, cleaned, arg_text, arg.get("offset")) if offsets else arg_text
+            arguments.append({"role": role, "entity": entity})
 
+        trig: Any = _offset_gold(text, cleaned, trigger_text, trigger.get("offset")) if offsets else trigger_text
         events_out.append({
             "event_type": etype,
-            "triggers": [trigger_text],
+            "triggers": [trig],
             "arguments": arguments,
         })
 
@@ -130,6 +153,8 @@ def main() -> int:
                              "(train.json / valid.json / test.json).")
     parser.add_argument("--out", required=True, type=Path,
                         help="Output GLiNER2 events JSONL path.")
+    parser.add_argument("--offsets", action="store_true",
+                        help="write triggers and arguments as {text, start, end} into the cleaned text (TODO #26)")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum documents to emit (-1 = all).")
     args = parser.parse_args()
@@ -154,7 +179,7 @@ def main() -> int:
         for idx, row in enumerate(data):
             if 0 <= args.max_records <= idx:
                 break
-            record = convert_row(row)
+            record = convert_row(row, offsets=args.offsets)
             if record is None:
                 skipped_empty += 1
                 continue
@@ -167,6 +192,8 @@ def main() -> int:
                     total_args += 1
                     all_roles.add(arg["role"])
 
+    if args.offsets:
+        print(f"[offsets] placed {OFFSET_COUNTS['placed']} (of which shifted {OFFSET_COUNTS['shifted']}) | kept as string {OFFSET_COUNTS['kept_as_string']}")
     print(
         f"Done. emitted={emitted} skipped_empty={skipped_empty} "
         f"total_events={total_events} event_types={len(all_event_types)} "

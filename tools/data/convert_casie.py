@@ -55,7 +55,28 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _split import dumps_record  # noqa: E402
+from _split import clean_text, dumps_record  # noqa: E402
+from add_coref_clusters import place  # noqa: E402
+
+OFFSET_COUNTS: Dict[str, int] = {"placed": 0, "kept_as_string": 0}
+
+
+def _offset_gold(text: str, cleaned: str, surface: str, start: Any, end: Any) -> Any:
+    """``{text, start, end}`` in the CLEANED text ``dumps_record`` writes, from CASIE's character offsets into
+    ``content``; the surface string when it cannot be placed there (TODO #26: offset gold marks ONE occurrence)."""
+    if isinstance(start, int) and isinstance(end, int):
+        # CASIE's own offsets start one character late in some documents (1,087 of 31,186 spans, all -1):
+        # take the nearest shift whose raw span IS the surface; anything else stays a string.
+        for shift in (0, -1, 1, -2, 2):
+            s, e = start + shift, end + shift
+            if 0 <= s < e <= len(text) and text[s:e].strip() == surface:
+                placed = place(cleaned, [[(surface, s, e)]], clean_text, text, {"kept": 0, "dropped": 0})
+                if placed:
+                    OFFSET_COUNTS["placed"] += 1
+                    OFFSET_COUNTS["shifted"] = OFFSET_COUNTS.get("shifted", 0) + (shift != 0)
+                    return placed[0][0]
+    OFFSET_COUNTS["kept_as_string"] += 1
+    return surface
 from _stratify import (  # noqa: E402
     coverage_summary,
     derive_split_paths,
@@ -91,6 +112,7 @@ def _find_data_root(extract_root: Path) -> Optional[Path]:
 def parse_annotation(
     annotation_path: Path,
     prefix_event: bool,
+    offsets: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Parse one CASIE annotation JSON into a GLiNER2 record; None if unusable."""
     try:
@@ -105,6 +127,7 @@ def parse_annotation(
 
     entities_by_type: Dict[str, List[str]] = {}
     events_out: List[Dict[str, Any]] = []
+    cleaned = clean_text(text) if offsets else None
 
     cyberevent = data.get("cyberevent") or {}
     hoppers = cyberevent.get("hopper") or []
@@ -146,7 +169,10 @@ def parse_annotation(
                 if key in seen_args:
                     continue
                 seen_args.add(key)
-                arguments.append({"role": role, "entity": surface})
+                entity: Any = surface
+                if offsets:
+                    entity = _offset_gold(text, cleaned, surface, arg.get("startOffset"), arg.get("endOffset"))
+                arguments.append({"role": role, "entity": entity})
 
                 # The argument's own ``type`` field is the entity type.
                 ent_type = arg.get("type")
@@ -156,9 +182,12 @@ def parse_annotation(
                     if surface not in bucket:
                         bucket.append(surface)
 
+            trig: Any = trigger
+            if offsets:
+                trig = _offset_gold(text, cleaned, trigger, nugget.get("startOffset"), nugget.get("endOffset"))
             events_out.append({
                 "event_type": event_type,
-                "triggers": [trigger],
+                "triggers": [trig],
                 "arguments": arguments,
             })
 
@@ -207,6 +236,8 @@ def main() -> int:
                         help="Tarball URL when --input is not provided.")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum documents to emit (-1 = all).")
+    parser.add_argument("--offsets", action="store_true",
+                        help="write triggers and arguments as {text, start, end} into the cleaned text (TODO #26)")
     parser.add_argument("--no-stratify", action="store_true",
                         help="Disable stratified split; write a single file at --out.")
     parser.add_argument("--no-prefix-event", action="store_true",
@@ -248,7 +279,7 @@ def main() -> int:
     for ann_path in sorted(annotation_dir.glob("*.json")):
         if 0 <= args.max_records <= len(records):
             break
-        rec = parse_annotation(ann_path, prefix_event=prefix_event)
+        rec = parse_annotation(ann_path, prefix_event=prefix_event, offsets=args.offsets)
         if rec is None:
             skipped += 1
             continue
@@ -262,6 +293,8 @@ def main() -> int:
         pass
 
     # ----- single-file mode -----
+    if args.offsets:
+        print(f"[offsets] placed {OFFSET_COUNTS['placed']} (of which shifted {OFFSET_COUNTS.get('shifted', 0)}) | kept as string {OFFSET_COUNTS['kept_as_string']}")
     if args.no_stratify:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         with args.out.open("w", encoding="utf-8") as f:

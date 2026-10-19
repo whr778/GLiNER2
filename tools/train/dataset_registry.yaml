@@ -405,6 +405,24 @@ datasets:
     hf_jsonl: whr778/wikievents_off
     language: [en]
     description: "TRAIN ONLY. The same 199 deduped documents as wikievents.train (inputs, entities and coref_clusters identical), with every event trigger and argument written as {text, start, end} -- code-point offsets into the cleaned text -- instead of a string, so training marks only the annotated occurrence. Built by convert_wikievents.py --offsets (7,776 placed, 0 kept as string) and filtered to the deduped train; gate: 0 spans not covering their text, 0 documents whose events differ from wikievents.train once read as text. Argument targets x3.48 (strings) -> x1.00 (eb21 collator, sampling off). Val/test stay in wikievents (strings; the evaluator matches text)."
+  casie_off:
+    name: CASIE train, OFFSET-ANCHORED event gold (TODO #26)
+    provenance: human
+    tasks: NER + event extraction
+    license: see source
+    source_url: https://github.com/Ebiquity/CASIE
+    hf_jsonl: whr778/casie_off
+    language: [en]
+    description: "val/test are BYTE-IDENTICAL copies of casie.val/casie.test (strings, so the evaluator can score them and swapping the corpus leaves evaluation unchanged); TRAIN: the same 798 deduped documents as casie.train, in the same order, inputs byte-identical (3 documents whose old input carries soft hyphens kept exactly as the string records), with triggers and arguments as {text, start, end} in the cleaned text (convert_casie.py --offsets). CASIE's own offsets start one character late in some documents: 1,083 spans recovered by an exact-match shift, 9 left as strings. Gate: 24,594 spans, 0 not covering their text; events identical as text except 4 documents kept as string records; entities unchanged. Argument targets x1.87 -> x1.01 (eb21 collator, sampling off). Val/test stay in casie (strings)."
+  cmnee_ner_off:
+    name: CMNEE events + LLM entities (cmnee_ner) train, OFFSET-ANCHORED event gold (TODO #26)
+    provenance: human
+    tasks: NER + event extraction
+    license: see source
+    source_url: https://github.com/2086482524/CMNEE
+    hf_jsonl: whr778/cmnee_ner_off
+    language: [zh]
+    description: "TRAIN ONLY. The same 9,281 documents as cmnee_ner.train, same order, entities unchanged, with event triggers and arguments as {text, start, end} in the cleaned text (convert_cmnee.py --offsets; every raw CMNEE offset is exact, 285 spans (0.35%) could not be placed after NFKC cleaning and stay strings). Gate: 81,710 spans, 0 not covering their text; events identical as text. Argument targets x1.85 -> x1.00 (eb21 collator, sampling off). Val/test stay in cmnee (strings)."
   rams_merged:
     name: RAMS, one record per passage (events of repeated passages unioned)
     provenance: human
