@@ -1,0 +1,243 @@
+{
+ "args": {
+  "config": "tools/train/config/base/eb21.yaml",
+  "checkpoint": "whr778/gliner2-eb21",
+  "corpus": "professorbob_re",
+  "records": 64,
+  "steps": 400,
+  "batch_size": 8,
+  "every": 50,
+  "encoder_lr": 1e-05,
+  "task_lr": 0.0001,
+  "device": "cuda",
+  "negative_pools": "tools/train/config/pools/eb21.negative_pools.json",
+  "out": "/home/ubuntu/out/professorbob_re.json"
+ },
+ "log": [
+  {
+   "step": 0,
+   "seconds": 0,
+   "@0.3": {
+    "P": 0.32,
+    "R": 0.1119,
+    "F1": 0.1658,
+    "predicted": 50
+   },
+   "@0.05": {
+    "P": 0.0276,
+    "R": 0.3287,
+    "F1": 0.0509,
+    "predicted": 1705
+   },
+   "train": {
+    "gold_pairs": 0,
+    "positive_pairs": 0,
+    "pairs": 0,
+    "pos_logit": 0.0,
+    "neg_logit": 0.0,
+    "relation_loss": 0.0,
+    "loss": 0.0
+   }
+  },
+  {
+   "step": 50,
+   "seconds": 23,
+   "@0.3": {
+    "P": 0.1535,
+    "R": 0.2308,
+    "F1": 0.1844,
+    "predicted": 215
+   },
+   "@0.05": {
+    "P": 0.0118,
+    "R": 0.1469,
+    "F1": 0.0219,
+    "predicted": 1775
+   },
+   "train": {
+    "gold_pairs": 17117,
+    "positive_pairs": 9255,
+    "pairs": 158720,
+    "pos_logit": -1.547,
+    "neg_logit": -1.242,
+    "relation_loss": 0.3038,
+    "loss": 0.1694
+   }
+  },
+  {
+   "step": 100,
+   "seconds": 45,
+   "@0.3": {
+    "P": 0.1536,
+    "R": 0.2867,
+    "F1": 0.2,
+    "predicted": 267
+   },
+   "@0.05": {
+    "P": 0.0178,
+    "R": 0.1608,
+    "F1": 0.0321,
+    "predicted": 1289
+   },
+   "train": {
+    "gold_pairs": 17211,
+    "positive_pairs": 12527,
+    "pairs": 168960,
+    "pos_logit": -0.947,
+    "neg_logit": -1.298,
+    "relation_loss": 0.3176,
+    "loss": -0.4752
+   }
+  },
+  {
+   "step": 150,
+   "seconds": 69,
+   "@0.3": {
+    "P": 0.0951,
+    "R": 0.2448,
+    "F1": 0.137,
+    "predicted": 368
+   },
+   "@0.05": {
+    "P": 0.0208,
+    "R": 0.1538,
+    "F1": 0.0366,
+    "predicted": 1058
+   },
+   "train": {
+    "gold_pairs": 20413,
+    "positive_pairs": 16421,
+    "pairs": 166912,
+    "pos_logit": -0.467,
+    "neg_logit": -1.47,
+    "relation_loss": 0.3334,
+    "loss": -0.915
+   }
+  },
+  {
+   "step": 200,
+   "seconds": 93,
+   "@0.3": {
+    "P": 0.0993,
+    "R": 0.2797,
+    "F1": 0.1465,
+    "predicted": 403
+   },
+   "@0.05": {
+    "P": 0.0209,
+    "R": 0.1469,
+    "F1": 0.0366,
+    "predicted": 1004
+   },
+   "train": {
+    "gold_pairs": 17650,
+    "positive_pairs": 13876,
+    "pairs": 148480,
+    "pos_logit": -0.011,
+    "neg_logit": -1.908,
+    "relation_loss": 0.2699,
+    "loss": -0.8162
+   }
+  },
+  {
+   "step": 250,
+   "seconds": 115,
+   "@0.3": {
+    "P": 0.1511,
+    "R": 0.2937,
+    "F1": 0.1995,
+    "predicted": 278
+   },
+   "@0.05": {
+    "P": 0.0282,
+    "R": 0.1399,
+    "F1": 0.047,
+    "predicted": 708
+   },
+   "train": {
+    "gold_pairs": 15690,
+    "positive_pairs": 13692,
+    "pairs": 157696,
+    "pos_logit": 0.504,
+    "neg_logit": -2.241,
+    "relation_loss": 0.2089,
+    "loss": -0.7417
+   }
+  },
+  {
+   "step": 300,
+   "seconds": 138,
+   "@0.3": {
+    "P": 0.1586,
+    "R": 0.3217,
+    "F1": 0.2125,
+    "predicted": 290
+   },
+   "@0.05": {
+    "P": 0.0477,
+    "R": 0.2238,
+    "F1": 0.0786,
+    "predicted": 671
+   },
+   "train": {
+    "gold_pairs": 17678,
+    "positive_pairs": 14982,
+    "pairs": 169984,
+    "pos_logit": 0.7,
+    "neg_logit": -2.36,
+    "relation_loss": 0.2005,
+    "loss": -0.7879
+   }
+  },
+  {
+   "step": 350,
+   "seconds": 163,
+   "@0.3": {
+    "P": 0.1204,
+    "R": 0.2727,
+    "F1": 0.167,
+    "predicted": 324
+   },
+   "@0.05": {
+    "P": 0.042,
+    "R": 0.1678,
+    "F1": 0.0672,
+    "predicted": 571
+   },
+   "train": {
+    "gold_pairs": 18424,
+    "positive_pairs": 15526,
+    "pairs": 156672,
+    "pos_logit": 0.953,
+    "neg_logit": -2.51,
+    "relation_loss": 0.1895,
+    "loss": -1.1513
+   }
+  },
+  {
+   "step": 400,
+   "seconds": 186,
+   "@0.3": {
+    "P": 0.1513,
+    "R": 0.3217,
+    "F1": 0.2058,
+    "predicted": 304
+   },
+   "@0.05": {
+    "P": 0.0555,
+    "R": 0.2098,
+    "F1": 0.0877,
+    "predicted": 541
+   },
+   "train": {
+    "gold_pairs": 17819,
+    "positive_pairs": 14949,
+    "pairs": 149504,
+    "pos_logit": 1.472,
+    "neg_logit": -3.153,
+    "relation_loss": 0.1533,
+    "loss": -0.9795
+   }
+  }
+ ]
+}
