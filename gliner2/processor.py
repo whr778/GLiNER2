@@ -472,6 +472,7 @@ class SchemaTransformer:
             ignore_missing_entities: bool = False,
             suppress_orphaned_queries: bool = False,
             dedupe_contained_entity_spans: bool = True,
+            relation_gold_pairs: str = "all",
     ) -> PreprocessedBatch:
         """
         Collate function for training DataLoader.
@@ -533,6 +534,7 @@ class SchemaTransformer:
                 else "raise"
             ),
             dedupe_contained_entity_spans=dedupe_contained_entity_spans,
+            relation_gold_pairs=relation_gold_pairs,
         )
         if architecture == "boundary" and len(out):
             out.typed_spans = self._typed_spans(out)
@@ -552,6 +554,7 @@ class SchemaTransformer:
             event_records: bool = False,
             ignore_missing_entities: bool = False,
             dedupe_contained_entity_spans: bool = True,
+            relation_gold_pairs: str = "all",
     ) -> PreprocessedBatch:
         """
         Collate function for inference DataLoader.
@@ -597,6 +600,7 @@ class SchemaTransformer:
                 else "raise"
             ),
             dedupe_contained_entity_spans=dedupe_contained_entity_spans,
+            relation_gold_pairs=relation_gold_pairs,
         )
         out.coref_mentions = coref.batch_mentions(out, clusters)
         return out
@@ -615,6 +619,7 @@ class SchemaTransformer:
             ignore_missing_entities: bool = False,
             suppress_orphaned_queries: bool = False,
             dedupe_contained_entity_spans: bool = True,
+            relation_gold_pairs: str = "all",
     ) -> PreprocessedBatch:
         if architecture != "boundary" or len(batch) == 0:
             return batch
@@ -677,6 +682,7 @@ class SchemaTransformer:
                 else "raise"
             ),
             dedupe_contained_entity_spans=dedupe_contained_entity_spans,
+            relation_gold_pairs=relation_gold_pairs,
             original_texts=batch.original_texts,
             original_schemas=batch.original_schemas,
         )
@@ -774,8 +780,9 @@ class SchemaTransformer:
             raise ValueError(f"unknown error_policy {error_policy!r}")
 
         transformed_records = []
+        kept_indices = []  # input position of each collated sample: a skipped record shifts positions
 
-        for text, schema in batch:
+        for index, (text, schema) in enumerate(batch):
             schema = self._resolve_schema(schema)
             text = self._normalize_text(text)
             record = {"text": text, "schema": copy.deepcopy(schema)}
@@ -785,6 +792,7 @@ class SchemaTransformer:
                     record, max_len=max_len, build_targets=build_targets
                 )
                 transformed_records.append(transformed)
+                kept_indices.append(index)
             except Exception as exc:
                 if error_policy == "raise":
                     raise
@@ -802,8 +810,11 @@ class SchemaTransformer:
                     error_policy,
                 )
                 transformed_records.append(self._create_fallback_record(text, schema))
+                kept_indices.append(index)
 
-        return self._pad_batch(transformed_records)
+        out = self._pad_batch(transformed_records)
+        out.kept_indices = kept_indices
+        return out
 
     def _transform_record(
         self,

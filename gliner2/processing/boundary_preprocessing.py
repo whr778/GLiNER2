@@ -449,6 +449,17 @@ def pack_record_routes(
     )
 
 
+def _pair_gap(pair: Tuple[int, int, int, int]) -> Tuple[int, int, int]:
+    """Token gap between a head and a tail span (0 if they touch or overlap); ties go to the earliest pair.
+
+    A text-level relation lists every occurrence of its head and of its tail. Labelling every
+    occurrence pair positive teaches a local pair scorer that mentions sentences apart are related
+    (professorbob_re x20.6 pairs per edge); ``relation_gold_pairs: nearest`` keeps the closest one.
+    """
+    hs, he, ts, te = pair
+    return (max(0, ts - he, hs - te), min(hs, ts), max(he, te))
+
+
 def _pack_relation_routes(
     layouts: Sequence[QueryLayout],
     relation_gold: Sequence[Sequence[Sequence[Tuple[int, int, int, int]]]],
@@ -533,6 +544,7 @@ def build_boundary_batch_metadata(
     suppress_orphaned_queries: bool = False,
     ignore_missing_entities: bool = False,
     dedupe_contained_entity_spans: bool = True,
+    relation_gold_pairs: str = "all",
     original_texts: Optional[Sequence[str]] = None,
     original_schemas: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
 ) -> tuple:
@@ -652,13 +664,15 @@ def build_boundary_batch_metadata(
                     for instance in labels[1]:
                         if len(instance) < 2:
                             continue
-                        for hs, he in _iter_inclusive_spans(instance[0]):
-                            for ts, te in _iter_inclusive_spans(instance[1]):
-                                if (
-                                    0 <= hs <= he < text_length
-                                    and 0 <= ts <= te < text_length
-                                ):
-                                    gold_pairs.append((hs, he + 1, ts, te + 1))
+                        pairs = [
+                            (hs, he + 1, ts, te + 1)
+                            for hs, he in _iter_inclusive_spans(instance[0])
+                            for ts, te in _iter_inclusive_spans(instance[1])
+                            if 0 <= hs <= he < text_length and 0 <= ts <= te < text_length
+                        ]
+                        if relation_gold_pairs == "nearest" and pairs:
+                            pairs = [min(pairs, key=_pair_gap)]
+                        gold_pairs.extend(pairs)
                 sample_relation_gold.append(gold_pairs)
 
             if not build_targets or not labels or labels[0] == 0:

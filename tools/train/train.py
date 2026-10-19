@@ -88,7 +88,7 @@ import sys
 import os
 from pathlib import Path
 from pprint import pprint
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import yaml
 
@@ -389,11 +389,17 @@ def _write_model_card(
 # ---------------------------------------------------------------------------
 
 def _label_fn(rollup: bool, separator: str, mapping: Dict[str, str], style=None):
-    """Roll a label up to its parent (first ``separator`` segment), remap it, then style it."""
-    def fn(label: str) -> str:
+    """Roll a label up to its parent (first ``separator`` segment), remap it, then style it.
+
+    A label mapped to ``null`` comes back ``None``: the transform DROPS it (relations only), e.g.
+    professorbob_re's ``no relation``, a non-relation the model was trained to extract (TODO #40).
+    """
+    def fn(label: str) -> Optional[str]:
         if rollup and separator in label:
             label = label.split(separator, 1)[0]
         label = mapping.get(label, label)
+        if label is None:
+            return None
         return style(label) if style else label
     return fn
 
@@ -439,7 +445,9 @@ def _transform_relations(relations: List, fn) -> List:
     out = []
     for rel in relations:
         if isinstance(rel, dict):
-            out.append({fn(name): fields for name, fields in rel.items()})
+            kept = {fn(name): fields for name, fields in rel.items() if fn(name) is not None}
+            if kept:
+                out.append(kept)
         else:
             out.append(rel)
     return out

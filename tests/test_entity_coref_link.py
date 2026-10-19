@@ -15,7 +15,38 @@ def test_attach_and_take_carry_clusters_without_touching_the_record():
     schema = coref.attach(output, CLUSTERS)
     assert coref.SCHEMA_KEY not in output and schema[coref.SCHEMA_KEY] == CLUSTERS
     clean, clusters = coref.take([("Ann met Bea. her", schema)])
-    assert clean == [("Ann met Bea. her", output)] and clusters == {"Ann met Bea. her": CLUSTERS}
+    assert clean == [("Ann met Bea. her", output)] and clusters == [CLUSTERS]
+
+
+def test_word_mentions_survive_a_schema_prefix_longer_than_the_text():
+    """text_word_counts counts schema-prefix words; an unaligned mention must not index past the text (eb22)."""
+    starts, ends = [0, 4, 8, 13], [3, 7, 11, 16]
+    bad = [[{"text": "nn", "start": 1, "end": 3}]]
+    assert coref.word_mentions(CLUSTERS + bad, starts, ends, 9) == [(0, 0, 0), (3, 3, 0), (2, 2, 1)]
+
+
+def test_batch_mentions_follow_kept_indices_not_text():
+    from types import SimpleNamespace
+    out = SimpleNamespace(original_texts=["Ann met Bea. her"], start_mappings=[[0, 4, 8, 13]], end_mappings=[[3, 7, 11, 16]],
+                          text_word_counts=[4], kept_indices=[1])
+    assert coref.batch_mentions(out, [None, CLUSTERS]) == ([(0, 0, 0), (3, 3, 0), (2, 2, 1)],)
+    out.kept_indices = [0]
+    assert coref.batch_mentions(out, [None, CLUSTERS]) == ([],)
+
+
+def test_same_text_twice_in_a_batch_gets_only_its_own_clusters():
+    """A replay record and the coref copy of the same article: the replay copy must NOT inherit the clusters."""
+    import random
+    from gliner2.training.trainer import ExtractorCollator
+    from tests.models.boundary.test_record_head_pipeline import _build_tiny_records_model
+    model = _build_tiny_records_model()
+    coll = ExtractorCollator(model.processor, is_training=True, architecture="boundary", max_gold_per_query=32,
+                             on_capacity_exceeded="raise", error_policy="skip")
+    text = "Ann met Bea. her"
+    random.seed(0)
+    out = coll([(text, {"entities": {"person": ["Ann"]}}), (text, coref.attach({}, CLUSTERS))])
+    assert out.kept_indices == [0, 1]
+    assert out.coref_mentions[0] == [] and len(out.coref_mentions[1]) == 3
 
 
 def test_word_mentions_keep_word_aligned_mentions_and_count_the_rest():

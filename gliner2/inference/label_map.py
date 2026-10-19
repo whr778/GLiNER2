@@ -25,10 +25,12 @@ def label_fn(block: Mapping[str, Any], style: Optional[Callable[[str], str]] = N
     separator = block.get("separator", ".")
     mapping = block.get("map") or {}
 
-    def fn(label: str) -> str:
+    def fn(label: str) -> Optional[str]:
         if rollup and separator in label:
             label = label.split(separator, 1)[0]
         label = mapping.get(label, label)
+        if label is None:  # mapped to null: the training map dropped this label
+            return None
         return style(label) if style else label
     return fn
 
@@ -42,10 +44,13 @@ def _labels(value, fn):
     (unhashable) for every relation corpus under ``infer.py --gold-schema``.
     """
     if isinstance(value, dict):
-        return {fn(k): v for k, v in value.items()}
+        return {fn(k): v for k, v in value.items() if fn(k) is not None}
     out, seen = [], set()
     for label in value:
-        new = {fn(k): v for k, v in label.items()} if isinstance(label, dict) else fn(label)
+        new = ({fn(k): v for k, v in label.items() if fn(k) is not None} if isinstance(label, dict)
+               else fn(label))
+        if not new:  # dropped by a null mapping
+            continue
         key = tuple(new) if isinstance(new, dict) else new
         if key not in seen:
             seen.add(key)

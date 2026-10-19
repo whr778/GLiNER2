@@ -21,20 +21,28 @@ def attach(schema: Dict[str, Any], clusters: Optional[List[List[Dict]]]) -> Dict
     return dict(schema, **{SCHEMA_KEY: clusters}) if clusters else schema
 
 
-def take(batch: Sequence[Tuple[str, Any]]) -> Tuple[List[Tuple[str, Any]], Dict[str, List[List[Dict]]]]:
-    """Strip the clusters from every schema; return the clean batch and ``{text: clusters}``."""
-    clean, clusters = [], {}
+def take(batch: Sequence[Tuple[str, Any]]) -> Tuple[List[Tuple[str, Any]], List[Optional[List[List[Dict]]]]]:
+    """Strip the clusters from every schema; return the clean batch and each item's clusters, by position.
+
+    By position, not by text: two records with the SAME text in one batch (a replay record and the
+    `*_coref_llm` copy of the same article) made the replay copy inherit the other's clusters -- and,
+    under a schema prefix, crashed eb22 at step 5,779 (word_mentions indexed past the document).
+    """
+    clean, clusters = [], []
     for text, schema in batch:
+        found = None
         if isinstance(schema, dict) and SCHEMA_KEY in schema:
-            clusters[text] = schema[SCHEMA_KEY]
+            found = schema[SCHEMA_KEY]
             schema = {k: v for k, v in schema.items() if k != SCHEMA_KEY}
         clean.append((text, schema))
+        clusters.append(found)
     return clean, clusters
 
 
 def word_mentions(clusters: List[List[Dict]], starts: Sequence[int], ends: Sequence[int],
                   n_words: int) -> List[WordMention]:
     """Mentions as (first word, last word, cluster) where both edges are word edges in the window."""
+    n_words = min(n_words, len(ends))  # text_word_counts also counts schema-prefix words
     first = {s: w for w, s in enumerate(starts[:n_words])}
     last = {e: w for w, e in enumerate(ends[:n_words])}
     out = []
@@ -52,14 +60,15 @@ def word_mentions(clusters: List[List[Dict]], starts: Sequence[int], ends: Seque
     return out
 
 
-def batch_mentions(out, clusters: Dict[str, List[List[Dict]]]) -> Tuple[List[WordMention], ...]:
-    """Per collated sample, its word mentions (empty when the record had no clusters). Matched by text,
-    because a skipped record shifts positions; the processor appends a final '.', so match by prefix."""
-    if not clusters:
+def batch_mentions(out, clusters: List[Optional[List[List[Dict]]]]) -> Tuple[List[WordMention], ...]:
+    """Per collated sample, its word mentions (empty when the record had no clusters). ``clusters`` is
+    per INPUT item (``take``); ``out.kept_indices`` maps each collated sample back to its input item."""
+    if not any(clusters):
         return ()
+    kept = getattr(out, "kept_indices", range(len(out.original_texts)))
     res = []
-    for i, text in enumerate(out.original_texts):
-        src = clusters.get(text) or next((c for t, c in clusters.items() if text.startswith(t)), None)
+    for i, index in enumerate(kept):
+        src = clusters[index]
         res.append(word_mentions(src, out.start_mappings[i], out.end_mappings[i], out.text_word_counts[i])
                    if src else [])
     return tuple(res)

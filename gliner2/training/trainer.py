@@ -330,6 +330,9 @@ class TrainingConfig:
     # mentions (see boundary_preprocessing._dedupe_contained_spans). Defaults
     # to the corrected behavior; set False to restore the pre-fix behavior.
     dedupe_contained_entity_spans: bool = True
+    # "all": a text-level relation labels every head-occurrence x tail-occurrence pair; "nearest":
+    # only the closest pair (see boundary_preprocessing._pair_gap).
+    relation_gold_pairs: str = "all"
     group_by_length: bool = True
     length_group_window_batches: int = 50
     # "charclass" (default) approximates tokens from character classes and works for
@@ -686,6 +689,7 @@ class ExtractorCollator:
 
 
             dedupe_contained_entity_spans: bool = True,
+            relation_gold_pairs: str = "all",
     ):
         self.processor = processor
         # Tier 2: compile event groups as records so the record head can separate
@@ -715,6 +719,7 @@ class ExtractorCollator:
         # gliner2.processing.boundary_preprocessing._dedupe_contained_spans);
         # defaults to the corrected behavior.
         self.dedupe_contained_entity_spans = dedupe_contained_entity_spans
+        self.relation_gold_pairs = relation_gold_pairs
 
     def __call__(self, batch: List[Tuple[str, Dict]]):
         """
@@ -737,6 +742,7 @@ class ExtractorCollator:
 
 
                 dedupe_contained_entity_spans=self.dedupe_contained_entity_spans,
+                relation_gold_pairs=self.relation_gold_pairs,
             )
             if self.allow_invalid_samples:
                 kwargs.update(
@@ -759,6 +765,7 @@ class ExtractorCollator:
 
 
                 dedupe_contained_entity_spans=self.dedupe_contained_entity_spans,
+                relation_gold_pairs=self.relation_gold_pairs,
             )
             if self.allow_invalid_samples:
                 kwargs.update(
@@ -2095,6 +2102,7 @@ class ExtractorTrainer:
 
 
             dedupe_contained_entity_spans=self.config.dedupe_contained_entity_spans,
+            relation_gold_pairs=self.config.relation_gold_pairs,
         )
 
         # Fix Bug #1 & #9: Handle small datasets

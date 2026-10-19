@@ -158,13 +158,43 @@ def derive_v2(src: Path = V2_FROM, out: Path = V2_OUT) -> dict:
     return doc
 
 
+# PINNED DROPS for the NEXT base, the same way: a label mapped to null is removed by the training
+# transform and by inference's apply_label_map. professorbob_re's `no relation` is a NON-relation
+# trained as a type to extract -- 37% of that corpus's relation gold, and on the shipped menu (TODO #40).
+DROPS = {"relations": ["no relation", "No_Relation"]}  # raw and styled: a menu may send either
+V3_FROM = Path("tools/train/config/labels/unified-full-v3.yaml")
+V4_OUT = Path("tools/train/config/labels/unified-full-v4.yaml")
+
+
+def derive_v4(src: Path = V3_FROM, out: Path = V4_OUT) -> dict:
+    """Write ``out`` = ``src`` with every DROPS label mapped to null. ``src`` is unchanged."""
+    text = src.read_text(encoding="utf-8")
+    doc = yaml.safe_load(text)
+    for cat, labels in DROPS.items():
+        m = doc["labels"][cat].setdefault("map", {})
+        if not any(label in m for label in labels):
+            raise SystemExit(f"[v4] {cat}: none of {labels} is in {src.name}'s map")
+        for label in labels:
+            m[label] = None
+    header = (f"# Unified label space v4 -- DERIVED by tools/train/build_unified_full.py --v4 from {src.name}\n"
+              f"# plus the pinned DROPS only (mapped to null = removed): {DROPS}. {src.name} is unchanged;\n"
+              "# eb21/eb22 and their warm starts keep it. Use this file for the NEXT model.\n")
+    out.write_text(header + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, default_flow_style=False),
+                   encoding="utf-8")
+    print(f"wrote {out}")
+    return doc
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--v2", action="store_true", help=f"derive {V2_OUT.name} from {V2_FROM.name} + MERGES")
     ap.add_argument("--v3", action="store_true", help="derive unified-full-v3.yaml: Title_Snake (LABEL_STYLE_SPEC.md)")
+    ap.add_argument("--v4", action="store_true", help=f"derive {V4_OUT.name} from {V3_FROM.name} + DROPS")
     ap.add_argument("--output", type=Path, help=f"where to write (default {OUT}, or {V2_OUT} with --v2)")
     args = ap.parse_args()
-    if args.v3:
+    if args.v4:
+        derive_v4(out=args.output or V4_OUT)
+    elif args.v3:
         import label_style_v3
         label_style_v3.derive_v3(out=args.output or label_style_v3.OUT)
     elif args.v2:

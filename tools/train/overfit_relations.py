@@ -63,6 +63,25 @@ def _hook_relation_loss():
     M.F.binary_cross_entropy_with_logits = bce
 
 
+def _add_relation_biaffine(model) -> None:
+    """Replace the relation scorer with a biaffine-content one, keeping the trained MLP weights.
+
+    The flag is structural (it adds layers), so a warm start refuses it; this diagnostic builds the
+    scorer directly. `tail_content_projection` and `content_linear` start at zero, so the added
+    term is exactly 0 until it learns and step 0 matches the checkpoint.
+    """
+    from gliner2.models.boundary.relations import SparseRelationScorer
+    old = model.relation_scorer
+    new = SparseRelationScorer(old.hidden_size, dropout=float(old.mlp[2].p), relation_query_dim=old.relation_query_dim,
+                               use_biaffine_content=True)
+    new.mlp.load_state_dict(old.mlp.state_dict())
+    for layer in (new.tail_content_projection, new.content_linear):
+        torch.nn.init.zeros_(layer.weight)
+        torch.nn.init.zeros_(layer.bias)
+    model.relation_scorer = new
+    print(f"[overfit] relation scorer: biaffine content ON ({sum(p.numel() for p in new.parameters()) - sum(p.numel() for p in old.parameters()):,} new parameters)", flush=True)
+
+
 def relation_prf(model, records, threshold):
     """Strict micro P/R/F1 on the records' own relation types (exact text, No_Relation excluded)."""
     tp = fp = fn = 0
@@ -96,12 +115,19 @@ def main(argv=None) -> None:
     ap.add_argument("--encoder-lr", type=float, default=1e-5)
     ap.add_argument("--task-lr", type=float, default=1e-4)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--labels-file", help="override the config's labels_file, e.g. labels/unified-full-v4.yaml")
+    ap.add_argument("--relation-biaffine", action="store_true",
+                    help="diagnostic: swap in a relation scorer WITH the biaffine content term (eb21's MLP weights kept, the new "
+                         "layers zero-initialised so step 0 scores exactly as before)")
+    ap.add_argument("--relation-gold-pairs", choices=["all", "nearest"], help="override training.relation_gold_pairs")
     ap.add_argument("--negative-pools", help="override the config's negative_pools (e.g. the committed eb21 JSON; `auto` reads every corpus)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
     tr, head = cfg["training"], cfg["model"]["boundary_head"]
+    if args.labels_file:
+        cfg["labels_file"] = args.labels_file
     fns, passthrough = T._category_fns(T.load_labels_cfg(cfg, args.config)), T.labels_passthrough(cfg)
     path = f"data/{args.corpus}.train.jsonl"
     T._fetch_if_missing(path)
@@ -109,9 +135,12 @@ def main(argv=None) -> None:
     for r in records:
         r["_corpus"] = args.corpus
     print(f"[overfit] {args.corpus}: {len(records)} records, {sum(len(r['output']['relations']) for r in records)} gold relations "
-          f"| steps {args.steps} batch {args.batch_size} lr enc {args.encoder_lr} task {args.task_lr} | device {args.device}", flush=True)
+          f"| steps {args.steps} batch {args.batch_size} lr enc {args.encoder_lr} task {args.task_lr} | device {args.device} | relation_gold_pairs {args.relation_gold_pairs or tr.get('relation_gold_pairs', 'all')} | labels {cfg.get('labels_file')}", flush=True)
 
-    model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").to(args.device)
+    model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu")
+    if args.relation_biaffine:
+        _add_relation_biaffine(model)
+    model = model.to(args.device)
     negatives = None
     if tr.get("negative_pools") and tr.get("negative_labels_per_dim"):
         pools = args.negative_pools or tr["negative_pools"]
@@ -124,7 +153,8 @@ def main(argv=None) -> None:
     ds = ExtractorDataset(data=records, max_samples=-1, shuffle=False, seed=42, validate=False, negatives=negatives)
     coll = ExtractorCollator(model.processor, is_training=True, max_len=tr.get("max_len"), architecture="boundary",
                              max_gold_per_query=int(head.get("max_gold_per_query", 32)), on_capacity_exceeded="truncate_with_warning",
-                             error_policy=tr.get("error_policy", "skip"), event_records=bool(head.get("event_records", False)))
+                             error_policy=tr.get("error_policy", "skip"), event_records=bool(head.get("event_records", False)),
+                             relation_gold_pairs=args.relation_gold_pairs or tr.get("relation_gold_pairs", "all"))
     enc = [p for n, p in model.named_parameters() if n.startswith("encoder")]
     rest = [p for n, p in model.named_parameters() if not n.startswith("encoder")]
     opt = torch.optim.AdamW([{"params": enc, "lr": args.encoder_lr}, {"params": rest, "lr": args.task_lr}])
