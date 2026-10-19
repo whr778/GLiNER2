@@ -3,6 +3,8 @@
 #
 #   EXP=p3arg ARM=control bash tools/lambda/fast_ab_launch.sh    # control also probes eb18 (the baseline)
 #   EXP=p3arg ARM=hard    bash tools/lambda/fast_ab_launch.sh    # one box per arm, in parallel
+#   EXP=eb22 ARM=base CFG=tools/train/config/base/eb22.yaml RUN=eb22 DEST=eb22 bash tools/lambda/fast_ab_launch.sh
+#                                     # a single-arm base: its own config path and run name
 #
 # Each family's QUESTION, arms and proof lines live in its config headers. Shared design: one
 # random draw of eb18's mix for every arm (max_samples_seed), one pass, capped validation, a FIXED
@@ -14,7 +16,9 @@
 set -uo pipefail
 EXP=${EXP:?EXP=<family>, e.g. p3arg}
 ARM=${ARM:?ARM=<arm>, e.g. control}
-CFG=tools/train/config/ab/$EXP-$ARM.yaml
+CFG=${CFG:-tools/train/config/ab/$EXP-$ARM.yaml}
+RUN=${RUN:-$EXP-$ARM}
+DEST=${DEST:-${EXP}_$ARM}
 
 # THE BOX MUST RUN THIS COMMIT. provision_box.sh defaults BRANCH to merge/main-20260805; the
 # first p2fast launch inherited that, cloned a branch without these configs, and all four
@@ -43,13 +47,13 @@ PROBE_ENV="PROBE=${PROBE:-1} COREF_READOUT=${COREF_READOUT:-0}"
 [ "$ARM" = "control" ] && [ "${PROBE:-1}" = "1" ] && PROBE_ENV="PROBE=1 PROBE_BASE=1 PROBE_BASE_CKPT=whr778/gliner2-eb18-balanced COREF_READOUT=${COREF_READOUT:-0}"
 
 JOB="CFG=$CFG \
-OUTDIR=./out/$EXP-$ARM \
-REPO=whr778/gliner2-$EXP-$ARM \
-DEST=${EXP}_$ARM \
+OUTDIR=./out/$RUN \
+REPO=whr778/gliner2-$RUN \
+DEST=$DEST \
 $PROBE_ENV \
 bash tools/lambda/event_base_run.sh"
 
-echo "[$EXP] arm=$ARM  model -> whr778/gliner2-$EXP-$ARM  logs -> ${EXP}_$ARM/"
+echo "[$EXP] arm=$ARM  config $CFG  model -> whr778/gliner2-$RUN  logs -> $DEST/"
 # PIN THE CARD: arms on different silicon are not a matched A/B.
-exec env NAME="$EXP-$ARM" JOB="$JOB" TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
+exec env NAME="$RUN" JOB="$JOB" TYPES="${TYPES:-gpu_1x_a100_sxm4}" \
      bash tools/lambda/launch_when_available.sh
