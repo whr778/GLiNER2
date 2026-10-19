@@ -155,13 +155,33 @@ def _filter_relations(
     return kept
 
 
+def _in_chunk(value: Any, chunk_text: str, c_start: int, c_end: int) -> Any:
+    """``value`` as it reads in the chunk, or None if it is not there.
+
+    A string survives if it occurs in the chunk text. Offset gold (``{text, start, end}``, TODO #26)
+    survives only if its span lies inside ``[c_start, c_end)``, re-based to the chunk -- as
+    ``_chunk_clusters`` does for coref. Dropping it (the old ``isinstance(str)`` filter) lost every
+    offset-anchored event of a windowed document.
+    """
+    if isinstance(value, str):
+        return value if value and value in chunk_text else None
+    if isinstance(value, dict) and {"text", "start", "end"} <= value.keys():
+        if c_start <= value["start"] and value["end"] <= c_end:
+            return dict(value, start=value["start"] - c_start, end=value["end"] - c_start)
+    return None
+
+
 def _filter_events(
     events: List[Dict[str, Any]],
     chunk_text: str,
+    c_start: int = 0,
+    c_end: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Keep an event mention only if EVERY trigger span survives in the
     chunk -- a partial trigger set changes what the trigger phrase means,
-    unlike a partial argument set, which is still independently useful."""
+    unlike a partial argument set, which is still independently useful.
+    ``[c_start, c_end)`` is the chunk's character range in the document (offset gold)."""
+    c_end = c_start + len(chunk_text) if c_end is None else c_end
     kept: List[Dict[str, Any]] = []
     for ev in events or []:
         if not isinstance(ev, dict):
@@ -169,18 +189,19 @@ def _filter_events(
         triggers = ev.get("triggers")
         if not isinstance(triggers, list) or not triggers:
             continue
-        if not all(isinstance(t, str) and t and t in chunk_text for t in triggers):
+        placed = [_in_chunk(t, chunk_text, c_start, c_end) for t in triggers]
+        if any(t is None for t in placed):
             continue
         kept_args: List[Dict[str, Any]] = []
         for arg in ev.get("arguments") or []:
             if not isinstance(arg, dict):
                 continue
-            entity = arg.get("entity")
-            if isinstance(entity, str) and entity and entity in chunk_text:
-                kept_args.append(arg)
+            entity = _in_chunk(arg.get("entity"), chunk_text, c_start, c_end)
+            if entity is not None:
+                kept_args.append(dict(arg, entity=entity))
         kept.append({
             "event_type": ev.get("event_type"),
-            "triggers": list(triggers),
+            "triggers": placed,
             "arguments": kept_args,
         })
     return kept
@@ -189,6 +210,8 @@ def _filter_events(
 def _filter_record_output(
     output: Dict[str, Any],
     chunk_text: str,
+    c_start: int = 0,
+    c_end: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Return a new ``output`` dict filtered to annotations present in ``chunk_text``."""
     new_out: Dict[str, Any] = {}
@@ -211,7 +234,7 @@ def _filter_record_output(
     if rels:
         new_out["relations"] = rels
 
-    evs = _filter_events(output.get("events") or [], chunk_text)
+    evs = _filter_events(output.get("events") or [], chunk_text, c_start, c_end)
     if evs:
         new_out["events"] = evs
 
@@ -305,7 +328,7 @@ def chunk_records(
             continue
         n_chunked += 1
         for c_start, c_end, chunk_text in chunks:
-            new_out = _filter_record_output(output, chunk_text)
+            new_out = _filter_record_output(output, chunk_text, c_start, c_end)
             clusters = _chunk_clusters(record.get("coref_clusters"), c_start, c_end)
             if not _record_has_content(new_out) and sum(map(len, clusters)) < 2:
                 continue

@@ -124,12 +124,31 @@ def coref_clusters(row: Dict[str, Any], clusters: List[List[str]]) -> List[List[
                  clean_text, row["text"], {"kept": 0, "dropped": 0})
 
 
-def convert_row(row: Dict[str, Any], clusters: List[List[str]] | None = None) -> Dict[str, Any] | None:
+OFFSET_COUNTS: Dict[str, int] = {"placed": 0, "kept_as_string": 0}
+
+
+def _offset_gold(row: Dict[str, Any], offs, cleaned: str, surface: str, start: int, end: int) -> Any:
+    """``{text, start, end}`` in the CLEANED text ``dumps_record`` writes, from a token span; the surface
+    string when it cannot be placed there (TODO #26: offset gold marks ONE occurrence)."""
+    placed = place(cleaned, [[(surface, offs[start][0], offs[end - 1][1])]], clean_text, row["text"],
+                   {"kept": 0, "dropped": 0})
+    if placed:
+        OFFSET_COUNTS["placed"] += 1
+        return placed[0][0]
+    OFFSET_COUNTS["kept_as_string"] += 1
+    return surface
+
+
+def convert_row(row: Dict[str, Any], clusters: List[List[str]] | None = None, offsets: bool = False) -> Dict[str, Any] | None:
     """Convert one WikiEvents document to a GLiNER2 record; None if unusable. ``clusters`` (from the
-    coref file) adds a top-level ``coref_clusters``."""
+    coref file) adds a top-level ``coref_clusters``. ``offsets`` writes triggers and arguments as
+    ``{text, start, end}`` (TODO #26) instead of strings, so training marks only the annotated occurrence."""
     text = row.get("text")
     if not isinstance(text, str) or not text.strip():
         return None
+    offs = _char_offsets(text, row["tokens"]) if offsets else None
+    cleaned = clean_text(text) if offsets else None
+    mentions = {m.get("id"): m for m in row.get("entity_mentions") or [] if isinstance(m, dict)}
 
     # ---- entities ----
     entities_by_type: Dict[str, List[str]] = {}
@@ -179,10 +198,19 @@ def convert_row(row: Dict[str, Any], clusters: List[List[str]] | None = None) ->
             if key in seen_args:
                 continue
             seen_args.add(key)
-            arguments.append({"role": role, "entity": arg_text})
+            entity: Any = arg_text
+            mention = mentions.get(arg.get("entity_id"))
+            if offsets and mention is not None:
+                entity = _offset_gold(row, offs, cleaned, arg_text, mention["start"], mention["end"])
+            elif offsets:
+                OFFSET_COUNTS["kept_as_string"] += 1
+            arguments.append({"role": role, "entity": entity})
+        trig: Any = trigger_text
+        if offsets:
+            trig = _offset_gold(row, offs, cleaned, trigger_text, trigger["start"], trigger["end"])
         events_out.append({
             "event_type": etype,
-            "triggers": [trigger_text],
+            "triggers": [trig],
             "arguments": arguments,
         })
 
@@ -216,6 +244,8 @@ def main() -> int:
                         help="Output GLiNER2 JSONL path.")
     parser.add_argument("--max-records", type=int, default=-1,
                         help="Maximum documents to emit (-1 = all).")
+    parser.add_argument("--offsets", action="store_true",
+                        help="write triggers and arguments as {text, start, end} into the cleaned text (TODO #26)")
     parser.add_argument("--coref", help="Local path or URL of the matching coref/<split>.jsonlines; "
                                         "default with --split: the S3 one. Adds coref_clusters.")
     args = parser.parse_args()
@@ -239,7 +269,7 @@ def main() -> int:
         for idx, row in enumerate(_iter_records(source)):
             if 0 <= args.max_records <= idx:
                 break
-            record = convert_row(row, None if clusters is None else clusters.get(row.get("doc_id"), []))
+            record = convert_row(row, None if clusters is None else clusters.get(row.get("doc_id"), []), offsets=args.offsets)
             if record is None:
                 skipped_empty += 1
                 continue
@@ -256,6 +286,8 @@ def main() -> int:
                     total_args += 1
                     all_roles.add(arg["role"])
 
+    if args.offsets:
+        print(f"[offsets] placed {OFFSET_COUNTS['placed']} | kept as string {OFFSET_COUNTS['kept_as_string']}")
     print(
         f"Done. emitted={emitted} skipped_empty={skipped_empty} "
         f"total_entities={total_entities} entity_types={len(all_ent_types)} "

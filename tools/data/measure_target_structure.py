@@ -130,7 +130,7 @@ def main(argv=None) -> None:
     fns, passthrough = T._category_fns(T.load_labels_cfg(cfg, args.config)), T.labels_passthrough(cfg)
     from gliner2 import AutoExtractor
     proc = AutoExtractor.from_pretrained("whr778/gliner2-eb21", map_location="cpu").processor
-    mk = lambda mode: ExtractorCollator(proc, is_training=True, max_len=cfg["training"].get("max_len"), architecture="boundary",
+    mk = lambda mode: ExtractorCollator(proc, is_training=False, build_targets=True, max_len=cfg["training"].get("max_len"), architecture="boundary",
                                        max_gold_per_query=int(head.get("max_gold_per_query", 32)),
                                        on_capacity_exceeded="truncate_with_warning", error_policy="skip",
                                        event_records=bool(head.get("event_records")), relation_gold_pairs=mode)
@@ -156,7 +156,7 @@ def main(argv=None) -> None:
                                                       if isinstance(x, dict) for t in x if NULL.match(t.strip().replace("_", " "))})
             rel_rows.append((c, len(rel), row)); print(f"[relations] {c}: {row}", file=sys.stderr, flush=True)
     print(f"Measured by `tools/data/measure_target_structure.py --config {args.config} --docs {args.docs}` (first {args.docs} train "
-          "records per corpus that carry the task; inflation through eb21's collator).\n")
+          "records per corpus that carry the task; inflation through eb21's collator, training schema sampling OFF so counts are exact).\n")
     print("**Event corpora**\n\n| corpus | docs | argument inflation | events sharing a doc with a same-type event | of their arguments, shared with a sibling | null-like labels |")
     print("|---|--:|--:|--:|--:|---|")
     for c, n, r in ev_rows:

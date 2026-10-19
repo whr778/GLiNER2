@@ -287,37 +287,38 @@ it could not; `relation_gold_pairs: nearest` + labels v4 + the biaffine scorer l
 WikiEvents and RAMS ship offsets; the LLM-annotated cc_news corpora do not).
 
 [records] compiled 3 field spec(s): 1 scalar, 2 list; 0 of 1 schema(s) declared field dtypes
-Measured by `tools/data/measure_target_structure.py --config tools/train/config/base/eb22b.yaml --docs 200` (first 200 train records per corpus that carry the task; inflation through eb21's collator).
+[records] compiled 3 field spec(s): 1 scalar, 2 list; 0 of 1 schema(s) declared field dtypes
+Measured by `tools/data/measure_target_structure.py --config tools/train/config/base/eb22b.yaml --docs 200` (first 200 train records per corpus that carry the task; inflation through eb21's collator, training schema sampling OFF so counts are exact).
 
 **Event corpora**
 
 | corpus | docs | argument inflation | events sharing a doc with a same-type event | of their arguments, shared with a sibling | null-like labels |
 |---|--:|--:|--:|--:|---|
-| duee_ner | 200 | x0.99 | 7% | 83% | none |
-| cmnee_ner | 200 | x1.31 | 51% | 45% | none |
+| duee_ner | 200 | x1.06 | 7% | 83% | none |
+| cmnee_ner | 200 | x1.79 | 51% | 45% | none |
 | maven | 200 | x0.00 | 59% | 0% | none |
-| casie | 200 | x1.70 | 95% | 14% | none |
-| rams_merged | 200 | x1.49 | 1% | 38% | none |
-| wikievents | 191 | x3.61 | 83% | 29% | none |
-| cc_news_haiku45 | 200 | x2.23 | 28% | 39% | none |
-| cc_news_events_haiku45 | 200 | x1.82 | 32% | 27% | none |
-| synthetic_events_capped | 200 | x1.83 | 18% | 21% | none |
-| cc_news_events_sonnet55_v2 | 200 | x2.29 | 59% | 21% | none |
+| casie | 200 | x2.14 | 95% | 14% | none |
+| rams_merged | 200 | x1.54 | 1% | 38% | none |
+| wikievents | 191 | x4.11 | 83% | 29% | none |
+| cc_news_haiku45 | 200 | x2.55 | 28% | 39% | none |
+| cc_news_events_haiku45 | 200 | x2.27 | 32% | 27% | none |
+| synthetic_events_capped | 200 | x2.07 | 18% | 21% | none |
+| cc_news_events_sonnet55_v2 | 200 | x2.90 | 59% | 21% | none |
 
 **Relation corpora**
 
 | corpus | docs | pair inflation, all | pair inflation, nearest | pairing ambiguity | null-like labels |
 |---|--:|--:|--:|--:|---|
 | sentence_rex | 200 | x1.12 | x1.00 | 1.00 | none |
-| bio_ner_relations | 200 | x0.86 | x0.50 | 1.35 | none |
-| biored | 200 | x6.83 | x0.87 | 2.41 | none |
+| bio_ner_relations | 200 | x0.88 | x0.51 | 1.35 | none |
+| biored | 200 | x7.46 | x0.94 | 2.41 | none |
 | professorbob_re | 200 | x18.18 | x0.98 | 1.00 | no relation |
-| scierc | 200 | x2.01 | x0.90 | 3.31 | none |
-| cc_news_haiku45 | 200 | x4.90 | x0.86 | 2.11 | none |
-| synthetic_events_capped | 200 | x2.59 | x0.82 | 1.25 | none |
-| cc_news_events_sonnet55_v2 | 200 | x8.69 | x0.86 | 1.70 | none |
+| scierc | 200 | x2.20 | x0.99 | 3.31 | none |
+| cc_news_haiku45 | 200 | x5.34 | x0.99 | 2.11 | none |
+| synthetic_events_capped | 200 | x3.18 | x0.99 | 1.25 | none |
+| cc_news_events_sonnet55_v2 | 200 | x9.98 | x1.00 | 1.70 | none |
 
-Reading the table: `maven` carries triggers only (inflation x0.00 = no arguments). A `nearest` inflation below
+Offset-anchored gold removes the event inflation: `wikievents_off` (the same train documents, triggers and arguments as `{text, start, end}`, TODO #26) measures x1.00 against x3.48 for `wikievents` on the same 40 documents. Reading the table: `maven` carries triggers only (inflation x0.00 = no arguments). A `nearest` inflation below
 1.0 means some text-level edges have no alignable occurrence pair at all (bio_ner_relations: half). `pairing
 ambiguity` 1.0 is one head and one tail per relation type per document; above 1.0 the scorer must choose which
 head goes with which tail (scierc 3.31) -- what the biaffine content term helps. Null-like labels: only

@@ -396,6 +396,15 @@ datasets:
     hf_jsonl: whr778/wikievents
     language: [en]
     description: "KAIROS-ontology event extraction co-trained with typed entity mentions; 49 event types, 57 argument roles. Train 199 docs since 2026-10-17: train doc 113 dropped, it held 92% of test doc 10 (dedupe_splits.py --near-dup 0.2). eb21 and corefC trained WITH it, so their test doc 10 is contaminated."
+  wikievents_off:
+    name: WikiEvents train, OFFSET-ANCHORED event gold (TODO #26)
+    provenance: human
+    tasks: NER + event extraction
+    license: see source
+    source_url: https://github.com/raspberryice/gen-arg
+    hf_jsonl: whr778/wikievents_off
+    language: [en]
+    description: "TRAIN ONLY. The same 199 deduped documents as wikievents.train (inputs, entities and coref_clusters identical), with every event trigger and argument written as {text, start, end} -- code-point offsets into the cleaned text -- instead of a string, so training marks only the annotated occurrence. Built by convert_wikievents.py --offsets (7,776 placed, 0 kept as string) and filtered to the deduped train; gate: 0 spans not covering their text, 0 documents whose events differ from wikievents.train once read as text. Argument targets x3.48 (strings) -> x1.00 (eb21 collator, sampling off). Val/test stay in wikievents (strings; the evaluator matches text)."
   rams_merged:
     name: RAMS, one record per passage (events of repeated passages unioned)
     provenance: human

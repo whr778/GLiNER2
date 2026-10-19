@@ -1483,7 +1483,9 @@ class SchemaTransformer:
 
             spans: List[List[Any]] = []
             for occ in occurrences:
-                trigger_list = list(occ.get("triggers") or [])
+                # `{text, start, end}` gold (offset-anchored, TODO #26) becomes a SurfaceSpan and resolves to
+                # that ONE occurrence; a plain string still resolves to every occurrence of its words.
+                trigger_list = [_parse_gold(t) for t in occ.get("triggers") or []]
                 row: List[Any] = [trigger_list]
                 role_to_spans: Dict[str, List[Any]] = {r: [] for r in field_names[1:]}
                 for arg in occ.get("arguments") or []:
@@ -1492,7 +1494,7 @@ class SchemaTransformer:
                     role = arg.get("role")
                     entity = arg.get("entity")
                     if role in role_to_spans and entity:
-                        role_to_spans[role].append(entity)
+                        role_to_spans[role].append(_parse_gold(entity))
                 for role in field_names[1:]:
                     row.append(list(role_to_spans[role]))
                 spans.append(row)
