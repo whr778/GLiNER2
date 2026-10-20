@@ -1906,11 +1906,19 @@ class ExtractorTrainer:
             model.set_guide_scores(self._guide_cache)
         return self._guide_cache
 
-    def _write_eval_metrics(self, metrics: Dict) -> None:
-        """Persist eval metrics as JSON: ``eval_metrics.json`` in ``output_dir``
-        (always) and, when the ``best/`` checkpoint folder exists, into it too, so
-        the metrics travel with the saved model. Caller guards on is_main_process."""
-        payload = json.dumps(metrics, indent=2, default=str, ensure_ascii=False)
+    def _write_eval_metrics(self, metrics: Dict, is_best: bool) -> None:
+        """Persist every eval: one line per eval in ``eval_history.jsonl`` (a run stopped by hand keeps every epoch),
+        and the BEST eval's metrics in ``eval_metrics.json`` in ``output_dir`` and ``best/``. Main process only.
+
+        Defined since 2026-08-05 (3e05e97) but never called, so no run wrote either file until 2026-10-20."""
+        if not self.is_main_process:
+            return
+        row = {**metrics, "eval_epoch": self.epoch + 1, "eval_step": self.global_step, "is_best": is_best}
+        with open(self.output_dir / "eval_history.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, default=str, ensure_ascii=False) + "\n")
+        if not is_best:
+            return
+        payload = json.dumps(row, indent=2, default=str, ensure_ascii=False)
         (self.output_dir / "eval_metrics.json").write_text(payload, encoding="utf-8")
         best_dir = self.output_dir / "best"
         if best_dir.is_dir():
@@ -2519,6 +2527,14 @@ class ExtractorTrainer:
                             self._proposal_metric_ratios(proposal_counts, "train")
                         )
                     self._log_metrics(logged_metrics, prefix="train")
+                    # EVERY per-head loss, which TrainingMetrics drops: whether record_field_loss (event arguments)
+                    # was falling could not be read from any log of any run (eb22c, 2026-10-20). Last micro-batch,
+                    # like classification_loss above, so read it as a trend, not a value.
+                    if self.is_main_process and isinstance(_losses, dict):
+                        heads = {k: float(v) for k, v in _losses.items()
+                                 if not str(k).endswith("_used") and torch.is_tensor(v) and v.numel() == 1}
+                        logger.info("[losses] step %d: %s", self.global_step,
+                                    " ".join(f"{k}={v:.4f}" for k, v in sorted(heads.items())))
                     tr_loss.zero_()
 
                 if self.config.eval_strategy == "steps" and self.global_step % self.config.eval_steps == 0:
@@ -2718,6 +2734,7 @@ class ExtractorTrainer:
             if self.config.save_best:
                 self._save_checkpoint("best")
             logger.info(f"New best {self.config.metric_for_best}: {self.best_metric:.4f}")
+        self._write_eval_metrics(metrics, is_best)
 
         return metrics
 
