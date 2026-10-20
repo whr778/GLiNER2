@@ -13,7 +13,13 @@ NAME=$(basename "$CFG" .yaml)
 STAMP=$(date +%Y%m%d-%H%M%S)
 mkdir -p logs
 LOG=logs/$NAME-$STAMP.log
-CMD="uv run torchrun --standalone --nproc_per_node=$NGPU tools/train/train.py --config $CFG"
+# ONE GPU = plain train.py, exactly as eb21 trained. torchrun --nproc_per_node=1 sets LOCAL_RANK, which turns on the
+# trainer's DDP path (world size 1: gradients measured bit-identical, but a different sampler and code path).
+if [ "$NGPU" -eq 1 ]; then
+  CMD="uv run tools/train/train.py --config $CFG"
+else
+  CMD="uv run torchrun --standalone --nproc_per_node=$NGPU tools/train/train.py --config $CFG"
+fi
 {
   echo "[run] $(date) | commit $(git rev-parse --short HEAD) | config $CFG | gpus $NGPU"
   echo "[run] command: $CMD"
