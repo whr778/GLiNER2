@@ -21,6 +21,14 @@ TYPES=${TYPES:-"gpu_1x_a100_sxm4 gpu_1x_a10"}
 SSH_KEY_NAME=${SSH_KEY_NAME:-gliner2-mac}
 POLL=${POLL:-180}
 MAX_WAIT=${MAX_WAIT:-21600}     # 6h of looking, then give up rather than poll forever
+# TIME-BOUNDED REGION AVOIDANCE: us-west-3 H100 PCIe boxes never left "booting", then sat in "terminating" until
+# Lambda support cleared them (2026-10-20, ~16:12-17:10 UTC). Avoid us-west by default until 2026-10-21 05:00 UTC
+# (epoch 1792558800); after that the default lifts by itself. An explicit AVOID_REGIONS (even empty) always wins.
+if [ -z "${AVOID_REGIONS+set}" ] && [ "$(date +%s)" -lt 1792558800 ]; then
+  AVOID_REGIONS="us-west"
+  echo "[launch] avoiding us-west until 2026-10-21 05:00 UTC (default; set AVOID_REGIONS to override)"
+fi
+AVOID_REGIONS=${AVOID_REGIONS:-}
 : "${LAMBDA_API_KEY:?not set}"
 
 deadline=$(( $(date +%s) + MAX_WAIT ))
@@ -32,10 +40,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # prefixes; the first match wins, and an empty match falls back to any region with
     # capacity rather than refusing to launch.
     REGION=$(REGIONS="${REGIONS:-us-}" curl -s -u "$LAMBDA_API_KEY:" https://cloud.lambda.ai/api/v1/instance-types \
-      | REGIONS="${REGIONS:-us-}" python3 -c "
+      | REGIONS="${REGIONS:-us-}" AVOID_REGIONS="${AVOID_REGIONS:-}" python3 -c "
 import os, sys, json
 d = json.load(sys.stdin)['data'].get('$t') or {}
 caps = [c['name'] for c in (d.get('regions_with_capacity_available') or [])]
+# AVOID_REGIONS removes regions OUTRIGHT (REGIONS only prefers, then falls back to anything): us-west-3 H100 PCIe
+# boxes never left "booting" and then sat in "terminating" until Lambda support cleared them (2026-10-20).
+avoid = os.environ.get('AVOID_REGIONS', '').split()
+caps = [c for c in caps if not any(c.startswith(a) for a in avoid)]
 prefs = os.environ.get('REGIONS', '').split()
 for pref in prefs:
     hit = [c for c in caps if c.startswith(pref)]
