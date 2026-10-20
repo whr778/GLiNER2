@@ -63,18 +63,32 @@ def trace(model, records, n: int, threshold: float) -> None:
         print(f"[trace] prediction @{threshold}: " + json.dumps(pred, ensure_ascii=False, default=str)[:1200], flush=True)
 
 
+def summarize(path: str) -> None:
+    """One line per source x head from a written JSON: F1 at 0.3, the best F1 and its threshold, gold support."""
+    for src, rows in json.load(open(path, encoding="utf-8"))["sources"].items():
+        heads = sorted({h for t in rows for h in rows[t]}, key=HEADS.index)
+        for h in heads:
+            at = rows.get("0.3", {}).get(h)
+            best = max((rows[t][h][0], t) for t in rows if h in rows[t])
+            n = max(rows[t][h][1] for t in rows if h in rows[t])
+            print(f"{src:28} {h:15} @0.3 {at[0] if at else '-':>7}   best {best[0]:.4f} @{best[1]:<5} n={n}")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--config", required=True)
-    ap.add_argument("--checkpoint", required=True, help="local dir or Hub repo id")
+    ap.add_argument("--summarize", metavar="JSON", help="print the table from a written JSON and exit")
+    ap.add_argument("--config")
+    ap.add_argument("--checkpoint", help="local dir or Hub repo id")
     ap.add_argument("--records", type=int, default=100, help="first N val records per source")
     ap.add_argument("--grid", type=float, nargs="+", default=[0.05, 0.1, 0.2, 0.3, 0.5, 0.7])
     ap.add_argument("--only", nargs="+", help="score only these sources")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--trace", type=int, default=0, help="print gold, menu and raw prediction for the first N records "
                                                          "of each source (at the lowest grid threshold), then score")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out")
     args = ap.parse_args(argv)
+    if args.summarize:
+        return summarize(args.summarize)
 
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
     fns, passthrough = T._category_fns(T.load_labels_cfg(cfg, args.config)), T.labels_passthrough(cfg)
