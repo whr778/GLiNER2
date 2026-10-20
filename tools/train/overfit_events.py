@@ -58,10 +58,18 @@ def main(argv=None) -> None:
     ap.add_argument("--labels-file", help="override the config's labels_file")
     ap.add_argument("--eval-corpus", help="score against THIS corpus's records for the same documents (e.g. wikievents for "
                                           "wikievents_off): the evaluator matches TEXT and cannot read {text, start, end} gold")
+    ap.add_argument("--from-scratch", action="store_true",
+                    help="build the model from the config's `model` section (fresh heads) instead of --checkpoint")
+    ap.add_argument("--head-override", nargs="+", default=[], metavar="KEY=VALUE",
+                    help="override boundary_head settings, e.g. boundary_marginal_loss=bce (one arm of an A/B)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
+    for kv in args.head_override:
+        k, v = kv.split("=", 1)
+        assert k in cfg["model"]["boundary_head"], f"{k} is not a boundary_head key of {args.config}"
+        cfg["model"]["boundary_head"][k] = yaml.safe_load(v)
     tr, head = cfg["training"], cfg["model"]["boundary_head"]
     if args.labels_file:
         cfg["labels_file"] = args.labels_file
@@ -82,7 +90,14 @@ def main(argv=None) -> None:
     print(f"[overfit-events] {args.corpus}: {len(records)} records, {sum(len(r['output']['events']) for r in records)} gold events, "
           f"{n_args} arguments | steps {args.steps} batch {args.batch_size} | device {args.device} | labels {cfg.get('labels_file')}", flush=True)
 
-    model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").to(args.device)
+    if args.from_scratch:
+        model = T._build_model(cfg["model"]).to(args.device)
+    else:
+        model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").to(args.device)
+    bh = getattr(model, "boundary_head", None)
+    print(f"[overfit-events] model {'FROM SCRATCH (' + args.config + ')' if args.from_scratch else args.checkpoint} | "
+          f"marginal loss {getattr(getattr(bh, 'settings', None), 'boundary_marginal_loss', '?')} | "
+          f"overrides {args.head_override or 'none'}", flush=True)
     negatives = None
     if tr.get("negative_pools") and tr.get("negative_labels_per_dim"):
         negatives = NegativeLabels.load(args.negative_pools or tr["negative_pools"], tr["negative_labels_per_dim"],
