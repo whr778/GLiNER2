@@ -5,6 +5,8 @@ events first, then everything else; eb21 (same batch, LR, schedule) learns event
 changes. Each arm REVERTS one group to eb21's defaults by deleting its keys (eb21 sets none of them):
     eb22c-bisect-loss    negative / calibration knobs removed; structure and data kept
     eb22c-bisect-struct  structural flags removed; loss knobs and data kept
+    eb22c-bisect-volume  round 2: the 4 negative-VOLUME knobs removed (hard negatives, query ratio)
+    eb22c-bisect-weight  round 2: the 4 negative-WEIGHT knobs removed (negative weight, top-k alpha, relation caps)
 The arm that still collapses holds the cause.
 
     uv run tools/train/make_eb22c_bisect_configs.py
@@ -17,6 +19,13 @@ import yaml
 LOSS_KNOBS = ["boundary_negative_weight", "boundary_top_k_alpha", "hard_negatives_per_positive", "minimum_hard_negatives",
               "hard_negative_keep_all_when_absent", "negative_query_ratio", "relation_pair_cap",
               "relation_argument_proposal_threshold"]
+# Round 2 (2026-10-20): the arm KEEPING the loss knobs (eb22c-bisect-struct) fell 0.45 -> 0.3955 event_type at 3k-4k
+# while the arm without them read 0.95, so the 8 loss knobs are split in two.
+LOSS_VOLUME = ["hard_negatives_per_positive", "minimum_hard_negatives", "hard_negative_keep_all_when_absent",
+               "negative_query_ratio"]
+LOSS_WEIGHT = ["boundary_negative_weight", "boundary_top_k_alpha", "relation_pair_cap",
+               "relation_argument_proposal_threshold"]
+assert sorted(LOSS_VOLUME + LOSS_WEIGHT) == sorted(LOSS_KNOBS)
 STRUCTURAL = ["relation_biaffine_content", "directional_relation_states", "enable_span_content", "enable_rotary_endpoints",
               "endpoint_difference_features", "query_conditioned_inside_weight", "boundary_attention_layers",
               "boundary_attention_window"]
@@ -24,7 +33,8 @@ STRUCTURAL = ["relation_biaffine_content", "directional_relation_states", "enabl
 src = yaml.safe_load(open("tools/train/config/base/eb22c-bce-trace.yaml", encoding="utf-8"))
 eb21 = yaml.safe_load(open("tools/train/config/base/eb21.yaml", encoding="utf-8"))["model"]["boundary_head"]
 assert not set(LOSS_KNOBS + STRUCTURAL) & set(eb21), "eb21 sets one of these keys; deleting it would not restore eb21"
-for name, drop in (("eb22c-bisect-loss", LOSS_KNOBS), ("eb22c-bisect-struct", STRUCTURAL)):
+for name, drop in (("eb22c-bisect-loss", LOSS_KNOBS), ("eb22c-bisect-struct", STRUCTURAL),
+                   ("eb22c-bisect-volume", LOSS_VOLUME), ("eb22c-bisect-weight", LOSS_WEIGHT)):
     head = {k: v for k, v in src["model"]["boundary_head"].items() if k not in drop}
     assert len(head) == len(src["model"]["boundary_head"]) - len(drop), f"{name}: a key to drop is missing from the source"
     cfg = dict(src, model=dict(src["model"], boundary_head=head))
