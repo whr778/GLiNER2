@@ -8,6 +8,7 @@
 # touch could then drift per rank.
 #     A  eb22c as configured (ddp_static_graph true, the default)
 #     B  eb22c with ddp_static_graph false + ddp_find_unused_parameters true
+#     C  eb22c with ddp_static_graph false ALONE (find_unused false): the minimal fix, if it holds
 # A logging DIFFER and B identical proves the drift AND the fix. First runs the Linux-only DDP tests.
 #
 #   JOB="bash tools/lambda/ddp_sync_probe.sh" (launched by ddp_sync_launch.sh)
@@ -46,3 +47,7 @@ run_arm B false true
 
 publish "ddp-probe" "$OUT/ddp_tests.log" "$OUT/A.log" "$OUT/B.log" || echo "[ddp] *** publish failed ***"
 echo "[ddp] ===== DONE $(date -u) ====="
+# Arm C was appended to the running script on the box (2026-10-20), after A had shown 25 of 33 groups drifting.
+run_arm C false false
+publish "ddp-probe" "$OUT/C.log" || echo "[ddp] *** publish C failed ***"
+echo "[ddp] ===== DONE C $(date -u) ====="
