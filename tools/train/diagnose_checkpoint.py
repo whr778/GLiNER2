@@ -22,7 +22,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import train as T  # noqa: E402
 from gliner2 import AutoExtractor  # noqa: E402
-from gliner2.training.eval_metrics import compute_metrics  # noqa: E402
+from gliner2.training.eval_metrics import _schema_from_gold, compute_metrics  # noqa: E402
 from gliner2.training.trainer import ExtractorDataset  # noqa: E402
 
 HEADS = ("entity", "relation", "event_type", "event_trigger", "event_argument")
@@ -48,6 +48,21 @@ def score(model, records, threshold: float) -> dict:
             for h in HEADS if f"eval_{h}_strict_micro_f1" in m}
 
 
+def trace(model, records, n: int, threshold: float) -> None:
+    """For n records: gold events, the event menu the scorer offers, and the RAW prediction. Tells a head that
+    emits nothing from one whose output the scorer cannot match (e.g. a label vocabulary mismatch)."""
+    for r in records[:n]:
+        schema = _schema_from_gold(r["output"])
+        pred = model.batch_extract_long([r["input"]], [schema], batch_size=1, threshold=threshold, chunk_size=4096,
+                                        chunk_overlap=0, global_decode=True)[0]
+        print("[trace] ---- " + r["input"][:120].replace("\n", " "), flush=True)
+        print("[trace] gold events: " + json.dumps(r["output"].get("events"), ensure_ascii=False)[:600], flush=True)
+        print("[trace] menu (events): " + json.dumps(schema.get("events") or schema.get("event_extraction"),
+                                                     ensure_ascii=False)[:600], flush=True)
+        print("[trace] schema keys: " + str(list(schema)), flush=True)
+        print(f"[trace] prediction @{threshold}: " + json.dumps(pred, ensure_ascii=False, default=str)[:1200], flush=True)
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", required=True)
@@ -56,6 +71,8 @@ def main(argv=None) -> None:
     ap.add_argument("--grid", type=float, nargs="+", default=[0.05, 0.1, 0.2, 0.3, 0.5, 0.7])
     ap.add_argument("--only", nargs="+", help="score only these sources")
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--trace", type=int, default=0, help="print gold, menu and raw prediction for the first N records "
+                                                         "of each source (at the lowest grid threshold), then score")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
@@ -72,6 +89,8 @@ def main(argv=None) -> None:
             print(f"[diag] {name}: no val file at {path}, skipped", flush=True)
             continue
         records = T.read_transformed([path], fns, passthrough)[:args.records]
+        if args.trace:
+            trace(model, records, args.trace, min(args.grid))
         t0, rows = time.time(), {}
         for thr in args.grid:
             rows[str(thr)] = score(model, records, thr)
