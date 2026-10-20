@@ -70,11 +70,15 @@ for name, (bs, acc, ckpt) in spec.items():
     used = [int(r[0]) for r in rows if r[0].strip().isdigit()]
     total = max((int(r[1]) for r in rows if r[1].strip().isdigit()), default=0)
     util = [int(r[2]) for r in rows if r[2].strip().isdigit() and int(r[2]) > 0]
-    failed = "OutOfMemory" in log or "Traceback" in log or not rates
+    # The gate reads torch's peak ALLOCATED memory from the progress line; nvidia-smi's figure (smi_peak_mib) counts
+    # the caching allocator's reserve and refused all three variants of launch 3, one at 98% that never ran out.
+    alloc = [float(x) * 1024 for x in re.findall(r"peak_alloc_gb=([\d.]+)", log)]
+    failed = "OutOfMemory" in log or "Traceback" in log or not rates or not alloc
     res[name] = {"batch_size": bs, "gradient_accumulation_steps": acc, "gradient_checkpointing": ckpt,
-                 "samples_per_s": rates[-1] if rates else None, "peak_mib": max(used, default=0), "total_mib": total,
+                 "samples_per_s": rates[-1] if rates else None, "peak_alloc_mib": round(max(alloc, default=0)),
+                 "smi_peak_mib": max(used, default=0), "total_mib": total,
                  "mean_util": round(sum(util) / len(util)) if util else None, "failed": failed,
-                 "fits": (not failed) and total > 0 and max(used, default=0) <= cap * total}
+                 "fits": (not failed) and total > 0 and max(alloc, default=0) <= cap * total}
 ok = [n for n in res if res[n]["fits"]]
 choice = max(ok, key=lambda n: res[n]["samples_per_s"]) if ok else None
 print(json.dumps({"variants": res, "chosen": choice, "memory_cap": cap}, indent=1))
@@ -106,7 +110,7 @@ c["training"].update(batch_size=v["batch_size"], gradient_accumulation_steps=v["
                      gradient_checkpointing=v["gradient_checkpointing"])
 yaml.safe_dump(c, open(dst, "w"), sort_keys=False, allow_unicode=True)
 print(f"[scale] chosen {scaling['chosen']}: batch {v['batch_size']} x accum {v['gradient_accumulation_steps']}, "
-      f"checkpointing {v['gradient_checkpointing']} ({v['samples_per_s']} samples/s, peak {v['peak_mib']}/{v['total_mib']} MiB) -> {dst}")
+      f"checkpointing {v['gradient_checkpointing']} ({v['samples_per_s']} samples/s, peak allocated {v['peak_alloc_mib']}/{v['total_mib']} MiB) -> {dst}")
 PY
 echo "[scale] ===== PHASE B: full run $(date -u) ====="
 exec env CFG="$RUN_CFG" bash tools/lambda/event_base_run.sh

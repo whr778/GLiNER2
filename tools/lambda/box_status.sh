@@ -25,6 +25,8 @@ while true; do
     echo "[$now] ALERT $NAME: Lambda API did not answer -- billing state UNKNOWN"
   elif [ -z "$inst" ]; then
     last=$([ -n "$LAUNCH_LOG" ] && tail -1 "$LAUNCH_LOG" | cut -c1-120)
+    # A monitor re-armed after the box died never "saw" it: the launcher's RUNNING line says it existed.
+    [ -n "$LAUNCH_LOG" ] && grep -q "RUNNING -- ip" "$LAUNCH_LOG" && seen=1
     [ "$seen" -eq 1 ] && echo "[$now] $NAME: instance GONE (terminated) | launcher: $last" && exit 0
     echo "[$now] $NAME: no instance yet (not billing) | launcher: $last"
   else

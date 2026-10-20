@@ -2790,7 +2790,11 @@ class ExtractorTrainer:
             # Add epoch info if available
             if "epoch" in metrics:
                 postfix["epoch"] = f"{metrics['epoch']:.1f}"
-            
+            # The memory the run NEEDS: nvidia-smi counts the caching allocator's reserve, which grows to fill the
+            # card -- eb22c's batch-4 variant read 98% there, above its batch-8 sibling, without running out (2026-10-20).
+            if torch.cuda.is_available():
+                postfix["peak_alloc_gb"] = f"{torch.cuda.max_memory_allocated() / 2**30:.1f}"
+
             if postfix:
                 self.progress_bar.set_postfix(postfix)
 
