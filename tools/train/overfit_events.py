@@ -42,11 +42,24 @@ def event_scores(model, records, threshold: float) -> dict:
             for h in ("type", "trigger", "argument")}
 
 
+def summarize(paths) -> None:
+    """One block per run file: the config and overrides, then trigger/argument F1 at every scored step."""
+    for path in paths:
+        d = json.load(open(path, encoding="utf-8"))
+        a = d["args"]
+        print(f"== {path}: {a.get('config')} scratch={a.get('from_scratch')} overrides={a.get('head_override') or 'none'}")
+        for r in d["log"]:
+            print(f"   step {r['step']:>4}  @0.1 trigger {r['@0.1']['trigger']:.3f} argument {r['@0.1']['argument']:.3f}"
+                  f"  |  @0.3 trigger {r['@0.3']['trigger']:.3f} argument {r['@0.3']['argument']:.3f}"
+                  f"  |  record_field_loss {r['train'].get('record_field_loss', 0):.3f}")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", default="tools/train/config/base/eb21.yaml")
     ap.add_argument("--checkpoint", default="whr778/gliner2-eb21")
-    ap.add_argument("--corpus", required=True)
+    ap.add_argument("--summarize", nargs="+", metavar="JSON", help="print the per-step table of written runs and exit")
+    ap.add_argument("--corpus")
     ap.add_argument("--records", type=int, default=64)
     ap.add_argument("--steps", type=int, default=400)
     ap.add_argument("--batch-size", type=int, default=4)
@@ -62,8 +75,10 @@ def main(argv=None) -> None:
                     help="build the model from the config's `model` section (fresh heads) instead of --checkpoint")
     ap.add_argument("--head-override", nargs="+", default=[], metavar="KEY=VALUE",
                     help="override boundary_head settings, e.g. boundary_marginal_loss=bce (one arm of an A/B)")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out")
     args = ap.parse_args(argv)
+    if args.summarize:
+        return summarize(args.summarize)
 
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
     for kv in args.head_override:
