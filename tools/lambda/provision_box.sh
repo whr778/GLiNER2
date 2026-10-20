@@ -113,7 +113,10 @@ $SSH ubuntu@$IP true 2>/dev/null || terminate_and_die "ssh never came up"
 # ECC PRE-FLIGHT. A faulty A10 with 126 uncorrected errors cost a relaunch on 2026-09-16;
 # it trains, it just produces nonsense.
 ECC_Q='nvidia-smi --query-gpu=ecc.errors.uncorrected.volatile.total --format=csv,noheader'
-ECC=$($SSH ubuntu@$IP "$ECC_Q" 2>/dev/null | tr -d ' ')
+# ONE LINE PER GPU: a 2-GPU box answers "0\n0", which the case below read as an error count and refused two clean
+# H100s (ddp-probe, 2026-10-20). Collapse to the DISTINCT values: all clean -> "0"; one bad card -> e.g. "0,126".
+ecc_read() { $SSH ubuntu@$IP "$ECC_Q" 2>/dev/null | tr -d ' ' | sort -u | paste -sd, -; }
+ECC=$(ecc_read)
 # An EMPTY answer means the QUERY failed, not that the card is clean, and the old `case`
 # treated "" and "[N/A]" identically to 0 -- so on any card that does not report ECC, and
 # on any transient ssh blip, this gate PASSED VACUOUSLY and printed something that read
@@ -121,7 +124,7 @@ ECC=$($SSH ubuntu@$IP "$ECC_Q" 2>/dev/null | tr -d ' ')
 # Retry once before concluding anything, then say which of the three happened.
 if [ -z "$ECC" ]; then
   sleep 5
-  ECC=$($SSH ubuntu@$IP "$ECC_Q" 2>/dev/null | tr -d ' ')
+  ECC=$(ecc_read)
 fi
 case "$ECC" in
   0)
