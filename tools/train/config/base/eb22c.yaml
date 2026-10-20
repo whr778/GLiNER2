@@ -140,7 +140,7 @@ data:
   - cc_news_haiku45_coref_llm
   - wikievents_coref_llm
   partial_annotation:
-    cmnee_ner:
+    cmnee_ner_off:
     - entities
     cc_news_events_sonnet55_v2:
     - relations

@@ -20,6 +20,8 @@ uv run python tools/train/check_corpora_fetchable.py --config "$CFG" --offline \
   || { echo "[$EXP] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
 uv run python tools/train/check_label_menus.py --config "$CFG" \
   || { echo "[$EXP] *** REFUSING TO LAUNCH -- classification menus disagree ***"; exit 4; }
+bash tools/lambda/local_start_check.sh "$CFG" \
+  || { echo "[$EXP] *** REFUSING TO LAUNCH -- the config cannot start train.py locally ***"; exit 7; }
 export JOB_TIMEOUT=${JOB_TIMEOUT:-165600}     # whole job: 46 h
 export HARD_DEADLINE=${HARD_DEADLINE:-180000} # whole box incl. provisioning: 50 h
 JOB="CFG=$CFG \

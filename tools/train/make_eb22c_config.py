@@ -27,6 +27,9 @@ cfg = dict(src)
 d = dict(src["data"])
 d["corpora"] = [f"data/{OFFSET_SWAPS.get(Path(c).name, Path(c).name)}" for c in d["corpora"]]
 d["train_only"] = [OFFSET_SWAPS.get(c, c) for c in d["train_only"]]
+# partial_annotation is keyed by corpus name too: a stale `cmnee_ner` key made build_negative_pools refuse the config
+# and killed the first eb22c launch at startup (2026-10-19).
+d["partial_annotation"] = {OFFSET_SWAPS.get(c, c): dims for c, dims in d["partial_annotation"].items()}
 for old, new in OFFSET_SWAPS.items():
     if old not in src["data"]["train_only"]:      # evaluated corpus: its val/test must not change with the swap
         for split in ("val", "test"):

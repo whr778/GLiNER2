@@ -198,6 +198,12 @@ echo "[base] ===== DONE $(date -u) rc=$rc ====="
 if [ "$RESCUE" -ne 0 ]; then
   echo "[base] *** SOMETHING DID NOT PUBLISH -- holding the box for rescue ***"
   echo "[base] checkpoint: $OUTDIR/best   logs: $LOG"
-  echo "[base] the hard-deadline watchdog still terminates this instance."
-  sleep infinity
+  # BOUNDED, and none at all without a checkpoint: an unbounded hold billed an idle H100 for 2 h after a startup
+  # crash that had nothing to rescue (eb22c, 2026-10-19); the hard deadline alone would have allowed ~50 h.
+  if [ -d "$OUTDIR/best" ] || [ -d "$OUTDIR/final" ]; then
+    echo "[base] holding ${RESCUE_HOLD:-3600}s, then box_run.sh terminates"
+    sleep "${RESCUE_HOLD:-3600}"
+  else
+    echo "[base] no checkpoint exists -- nothing to rescue, not holding"
+  fi
 fi

@@ -75,13 +75,19 @@ for name, (bs, acc, ckpt) in spec.items():
                  "mean_util": round(sum(util) / len(util)) if util else None, "failed": failed,
                  "fits": (not failed) and total > 0 and max(used, default=0) <= cap * total}
 ok = [n for n in res if res[n]["fits"]]
-choice = max(ok, key=lambda n: res[n]["samples_per_s"]) if ok else "A"
+choice = max(ok, key=lambda n: res[n]["samples_per_s"]) if ok else None
 print(json.dumps({"variants": res, "chosen": choice, "memory_cap": cap}, indent=1))
 PY
 cat "$OUT/scaling.json"
 publish "$DEST/scaling" "$OUT/scaling.json" "$OUT"/*.log "$OUT"/*.gpu.csv || echo "[scale] *** scaling results did not publish (continuing to the run) ***"
 
 CHOSEN=$($PY -c "import json; print(json.load(open('$OUT/scaling.json'))['chosen'])")
+# NO VARIANT RAN = THE JOB CANNOT RUN. The first eb22c launch fell back to A after all three died at startup, ran the
+# full job into the same error, and then held the box idle for rescue (2026-10-19). Exit; box_run.sh terminates.
+if [ "$CHOSEN" = "None" ]; then
+  echo "[scale] *** FATAL: no variant trained (see A/B/C logs in $DEST/scaling) -- not starting the full run ***"
+  exit 3
+fi
 RUN_CFG=$(dirname "$CFG")/$(basename "$CFG" .yaml)-run.yaml
 $PY - "$CFG" "$RUN_CFG" "$OUT/scaling.json" <<'PY'
 import json, sys, yaml

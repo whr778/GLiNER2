@@ -270,7 +270,11 @@ in-run junction gate, the label-negatives dose and in-loss negative queries, spe
 `CFG=tools/train/config/base/eb21.yaml bash tools/lambda/eb19_smoke_launch.sh`), `eb19_launch.sh`, `eb21_launch.sh` (the eb21 base, one box, full schedule). Launchers pin `EXPECT_COMMIT`, and
 `provision_box.sh` refuses a box at any other commit. Per-epoch checkpoints (`PUSH_EPOCHS=1`)
 are pushed AFTER `train.py` exits, not as each epoch ends -- to read an epoch mid-run, copy it
-off the box.
+off the box. `eb22c_launch.sh` + `scale_then_train.sh` (a 3-variant batch/checkpointing scaling check on the
+box, then the full run on the fastest variant that fits; exits if none trained). `local_start_check.sh <cfg>`
+is a pre-launch gate: the REAL `train.py` on the config, 3 steps on the laptop, so a config that cannot start
+never buys a box. `box_status.sh` (`NAME=<instance>`) prints one status line per poll from the Lambda API and
+the box's GPU, with ALERT lines for an idle billing GPU, a failure or rescue hold, and an unanswered API.
 
 **Fast A/Bs** — `fast_ab_launch.sh` (any family: `EXP=<family> ARM=<arm>`, one box per arm,
 configs `train/config/ab/<EXP>-<ARM>.yaml`), `p2fast_ab_launch.sh` (its first instance).
