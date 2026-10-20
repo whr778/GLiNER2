@@ -40,4 +40,11 @@ def test_every_per_head_loss_reaches_the_log(tmp_path, caplog):
     assert len(lines) == 4                                   # 2 epochs x 2 steps, logging every step
     # start/end are per-head losses TrainingMetrics never carried; record_field_loss appears only on batches with
     # events or structures (it is on every line of a real eb22c run), and these examples are entity-only.
-    assert all(k in lines[0] for k in ("start_loss=", "end_loss=", "total_loss="))
+    assert all(k in lines[0] for k in ("start_loss=", "end_loss=", "total_loss=", "grad_norm="))
+
+
+def test_per_module_gradient_norms_reach_the_log(tmp_path, caplog):
+    _train(tmp_path, caplog)
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("[grads] step")]
+    assert len(lines) == 4
+    assert "boundary_head." in lines[0] and "encoder." in lines[0]

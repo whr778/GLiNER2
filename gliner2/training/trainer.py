@@ -1679,6 +1679,23 @@ class ExtractorTrainer:
             )
         return result
 
+    def _group_grad_norms(self) -> Dict[str, float]:
+        """Pre-clip gradient norm per module group (first two name parts, DDP prefix dropped). One sync.
+
+        The total norm says a gradient spiked, not where: eb22c's event heads learned in epoch 1 and collapsed in
+        epoch 2 at peak LR (2026-10-20), and clipping to 1.0 lets one exploding group starve every other head."""
+        sq: Dict[str, torch.Tensor] = {}
+        for name, param in self.model.named_parameters():
+            if param.grad is None:
+                continue
+            group = ".".join(name.removeprefix("module.").split(".")[:2])
+            g = torch.linalg.vector_norm(param.grad.detach().float()) ** 2
+            sq[group] = sq[group] + g if group in sq else g
+        if not sq:
+            return {}
+        values = torch.stack(list(sq.values())).sqrt().tolist()
+        return dict(zip(sq.keys(), values))
+
     def _optimizer_step(self) -> bool:
         """Apply one optimizer update over the accumulated gradients.
 
@@ -1692,6 +1709,8 @@ class ExtractorTrainer:
             self.scaler.unscale_(self.optimizer)
 
         self._note_candidate_pool_gradient()
+        if (self.global_step + 1) % max(self.config.logging_steps, 1) == 0:
+            self._last_group_grad_norms = self._group_grad_norms()
 
         grad_norm = torch.nn.utils.clip_grad_norm_(
             self.model.parameters(), self.config.max_grad_norm
@@ -2533,8 +2552,17 @@ class ExtractorTrainer:
                     if self.is_main_process and isinstance(_losses, dict):
                         heads = {k: float(v) for k, v in _losses.items()
                                  if not str(k).endswith("_used") and torch.is_tensor(v) and v.numel() == 1}
+                        # The pre-clip total gradient norm: an exploding (large/inf) or vanishing (~0) gradient is
+                        # read here beside the loss that moved. Computed every step, logged nowhere until now.
+                        if self._last_grad_norm is not None:
+                            heads["grad_norm"] = float(self._last_grad_norm)
                         logger.info("[losses] step %d: %s", self.global_step,
                                     " ".join(f"{k}={v:.4f}" for k, v in sorted(heads.items())))
+                        groups = getattr(self, "_last_group_grad_norms", None) or {}
+                        if groups:
+                            top = sorted(groups.items(), key=lambda kv: -kv[1])[:8]
+                            logger.info("[grads] step %d: %s", self.global_step,
+                                        " ".join(f"{k}={v:.3g}" for k, v in top))
                     tr_loss.zero_()
 
                 if self.config.eval_strategy == "steps" and self.global_step % self.config.eval_steps == 0:
