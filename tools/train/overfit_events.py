@@ -115,7 +115,8 @@ def main(argv=None) -> None:
     log, rng, t0, losses = [], random.Random(0), time.time(), {"record_field_loss": [], "loss": []}
     model.train()
     for step in range(args.steps + 1):
-        if step % args.every == 0:
+        # A from-scratch step 0 is random heads proposing everything: decoding it is minutes of CPU and says nothing.
+        if step % args.every == 0 and not (args.from_scratch and step == 0):
             row = {"step": step, "seconds": round(time.time() - t0)}
             for thr in (0.3, 0.1):
                 row[f"@{thr}"] = event_scores(model, eval_records, thr)
@@ -131,6 +132,8 @@ def main(argv=None) -> None:
         batch = coll([ds[i] for i in idx]).to(args.device)
         out = model(batch)
         losses["loss"].append(float(out.loss.detach()))
+        if step % 10 == 0:
+            print(f"[overfit-events] step {step} loss {losses['loss'][-1]:.4f} | {time.time() - t0:.0f}s", flush=True)
         if out.losses.get("record_field_loss") is not None:
             losses["record_field_loss"].append(float(out.losses["record_field_loss"].detach()))
         opt.zero_grad(set_to_none=True)
