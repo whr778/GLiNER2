@@ -32,8 +32,9 @@ echo "[bs] torch cu128 $(date -u)"
 uv pip install --reinstall-package torch "torch==2.11.0" \
    --index-url https://download.pytorch.org/whl/cu128 >/dev/null 2>&1 || fail "torch install"
 
-# MULTI-GPU SXM BOXES (NVSwitch): CUDA answers error 802 "system not yet initialized" until nvidia-fabricmanager is
-# up. A 2x H100 SXM5 failed exactly that right after boot (ddp-probe launch 2, 2026-10-20); 1-GPU boxes have no fabric.
+# MULTI-GPU SXM BOXES: a 2x H100 SXM5 answered CUDA error 802 "system not yet initialized" right after boot (ddp-probe
+# launch 2, 2026-10-20). On the next box nvidia-fabricmanager FAILED to start and CUDA worked anyway, so the cause was
+# boot timing, not the fabric manager: what helps here is the wait below, which gives the driver time to initialize.
 if [ "$(nvidia-smi -L | wc -l)" -gt 1 ] && systemctl list-unit-files nvidia-fabricmanager.service | grep -q fabricmanager; then
   systemctl is-active --quiet nvidia-fabricmanager || sudo systemctl start nvidia-fabricmanager
   for _ in $(seq 1 30); do systemctl is-active --quiet nvidia-fabricmanager && break; sleep 5; done

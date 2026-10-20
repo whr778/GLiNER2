@@ -159,7 +159,9 @@ def test_recall_dry_run_disables_injection_and_preserves_weights():
 def test_new_training_config_contracts():
     config = TrainingConfig(fp16=False, bf16=False)
     assert config.ddp_consensus_check
-    assert config.ddp_static_graph
+    # Plain DDP since 2026-10-20: static_graph=True never averaged GLiNER2's gradients (its sink could not see into
+    # the ExtractorOutput dataclass), so 2-GPU ranks drifted silently. tests/training/test_ddp_output_and_default.py
+    assert not config.ddp_static_graph
     assert not config.ddp_find_unused_parameters
     assert config.profile_first_n_steps == 0
     assert config.dry_run_recall_steps == 0

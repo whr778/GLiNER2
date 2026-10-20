@@ -10,6 +10,7 @@
 #     B  eb22c with ddp_static_graph false + ddp_find_unused_parameters true
 #     C  eb22c with ddp_static_graph false ALONE (find_unused false): the minimal fix, if it holds
 #     D  A's settings (static_graph true) on the FIXED trainer: every trainable parameter touched every step
+#     F  plain DDP (static_graph false, find_unused false) + touch + ExtractorOutput registered with pytree: THE FIX
 # MEASURED 2026-10-20 (2x H100): A drifts 25 of 33 groups by step 100; B and C crash at step 1. ARMS picks the arms.
 # A logging DIFFER and B identical proves the drift AND the fix. First runs the Linux-only DDP tests.
 #
@@ -38,7 +39,8 @@ dst, name, static, unused = sys.argv[1], sys.argv[2], sys.argv[3] == "true", sys
 c = yaml.safe_load(open("tools/train/config/base/eb22c.yaml"))
 c["training"].update(output_dir=f"./out/ddp-probe-{name}", experiment_name=f"ddp-probe-{name}", max_steps=600,
                      max_train_samples=20000, eval_strategy="steps", eval_steps=100, max_eval_samples=50,
-                     save_best=False, logging_steps=20, ddp_static_graph=static, ddp_find_unused_parameters=unused)
+                     save_best=False, logging_steps=20, ddp_static_graph=static, ddp_find_unused_parameters=unused,
+                     ddp_sync_probe_steps=3)
 yaml.safe_dump(c, open(dst, "w"), sort_keys=False, allow_unicode=True)
 PY
   timeout 2400 $PY -m torch.distributed.run --standalone --nproc_per_node=2 tools/train/train.py --config "$cfg" \
@@ -46,7 +48,7 @@ PY
   echo "[ddp] arm $name (static_graph=$2, find_unused=$3) rc=$?"
   grep -a "\[ddp-sync\]" "$OUT/$name.log" | sed "s/^/[ddp] $name: /" | cut -c1-300
 }
-settings() { case $1 in A|D) echo "true false" ;; B) echo "false true" ;; C) echo "false false" ;; esac; }
+settings() { case $1 in A|D) echo "true false" ;; B) echo "false true" ;; C|F) echo "false false" ;; esac; }
 for arm in $(echo "$ARMS" | grep -o .); do
   run_arm "$arm" $(settings "$arm")
 done

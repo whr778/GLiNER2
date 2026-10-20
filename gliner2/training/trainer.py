@@ -310,7 +310,11 @@ class TrainingConfig:
     debug_global_steps: List[int] = field(default_factory=list)
     ddp_consensus_check: bool = True
     ddp_find_unused_parameters: bool = False
-    ddp_static_graph: bool = True
+    # False: DDP(static_graph=True) never averaged GLiNER2's gradients -- its backward sink is attached through
+    # pytree, which could not see into the ExtractorOutput dataclass -- so 2-GPU ranks drifted silently (25 of 33
+    # module groups, 2x H100, 2026-10-20); and once the sink does fire it cannot accumulate under no_sync(). Plain
+    # DDP plus _ddp_full_touch averages every step (tools/lambda/ddp_trace.py, 26 of 26 sync checks identical).
+    ddp_static_graph: bool = False
     # >0: compare per-module GRADIENT (pre-clip) and WEIGHT checksums across ranks on the first N optimizer
     # steps -- localizes where 2-GPU ranks diverge (ddp_sync_probe, 2026-10-20). 0 = off.
     ddp_sync_probe_steps: int = 0
@@ -1480,15 +1484,12 @@ class ExtractorTrainer:
 
     @staticmethod
     def _ddp_full_touch(model) -> torch.Tensor:
-        """An exactly-zero term reaching EVERY trainable parameter, so DDP's graph is truly static.
+        """An exactly-zero term reaching EVERY trainable parameter on every step, so plain DDP sees the same used set.
 
         Which parameters get a gradient varies by batch (classifier, count head, coref link, relation heads each only
-        on batches carrying their task). Measured on 2x H100, eb22c, 2026-10-20 (ddp_sync_probe):
-          static_graph=True  (the default)      runs, but 25 of 33 module groups DRIFT across ranks by step 100 --
-                                                unreduced gradients, then a per-rank clip factor moves everything else;
-          static_graph=False + find_unused=True crashes: forward outputs that are not in the loss;
-          static_graph=False                    crashes: parameters that produced no gradient.
-        With every parameter touched every step, every gradient is all-reduced and the ranks stay identical."""
+        on batches carrying their task: 78 eb22c tensors unused on one CMNEE batch). Plain DDP (find_unused=False) then
+        fails "Expected to have finished reduction"; find_unused=True cannot be used because forward returns tensors
+        that are not in the loss. With every parameter touched every step, every gradient is all-reduced."""
         return sum(p.sum() * 0.0 for p in model.parameters() if p.requires_grad)
 
     def _backward_one(

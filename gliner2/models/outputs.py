@@ -264,3 +264,10 @@ class ExtractorOutput:
             return self[key]
         except KeyError:
             return default
+
+
+# DistributedDataParallel(static_graph=True) finds the forward's output tensors with torch.utils._pytree.tree_flatten,
+# which treats an UNREGISTERED dataclass as one opaque leaf: DDP's backward sink never enters the graph and the
+# static-graph deferred all-reduce never fires, so 2-GPU ranks train on their own gradients and drift, silently
+# (ddp_sync_probe on 2x H100, 2026-10-20: 25 of 33 module groups; tools/lambda/ddp_trace.py reproduces it on 2 CPU ranks).
+torch.utils._pytree.register_dataclass(ExtractorOutput)
