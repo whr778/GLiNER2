@@ -2650,7 +2650,40 @@ class ExtractorTrainer:
             "eval_metrics_history": self.eval_metrics_history,
         }
 
+    def _check_ddp_weight_sync(self) -> None:
+        """Every rank must hold IDENTICAL weights. Gathers a per-module-group checksum from all ranks and logs any
+        group that differs -- a gate that can fail, emitted at every eval.
+
+        2026-10-20: on 2 GPUs the two ranks' in-run evals of the SAME 1,500 records "differ wildly". DDP with
+        static_graph=True does not all-reduce a parameter it recorded as unused, so heads that only some batches
+        touch (relation biaffine, coref link) can drift per rank silently."""
+        if not self.is_distributed:
+            return
+        model = self.model.module if hasattr(self.model, "module") else self.model
+        groups: Dict[str, torch.Tensor] = {}
+        for name, param in model.named_parameters():
+            group = ".".join(name.split(".")[:2])
+            v = param.detach().float()
+            s = torch.stack([v.sum(), (v * v).sum()])
+            groups[group] = groups[group] + s if group in groups else s
+        names = sorted(groups)
+        local = torch.stack([groups[n] for n in names])
+        gathered = [torch.zeros_like(local) for _ in range(dist.get_world_size())]
+        dist.all_gather(gathered, local)
+        if not self.is_main_process:
+            return
+        diff = torch.stack(gathered).sub(gathered[0]).abs().amax(dim=(0, 2))
+        scale = gathered[0].abs().amax(dim=1).clamp_min(1e-12)
+        bad = [(n, float(d / sc)) for n, d, sc in zip(names, diff, scale) if float(d / sc) > 1e-6]
+        if bad:
+            logger.warning("[ddp-sync] step %d: %d of %d module groups DIFFER across ranks: %s", self.global_step,
+                           len(bad), len(names), " ".join(f"{n}={r:.2e}" for n, r in sorted(bad, key=lambda x: -x[1])))
+        else:
+            logger.info("[ddp-sync] step %d: all %d module groups identical across %d ranks", self.global_step,
+                        len(names), dist.get_world_size())
+
     def _evaluate(self, eval_dataset: ExtractorDataset) -> Dict[str, float]:
+        self._check_ddp_weight_sync()
         logger.info("Running evaluation...")
         self.model.eval()
         self.processor.change_mode(is_training=False)
