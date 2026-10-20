@@ -311,6 +311,9 @@ class TrainingConfig:
     ddp_consensus_check: bool = True
     ddp_find_unused_parameters: bool = False
     ddp_static_graph: bool = True
+    # >0: compare per-module GRADIENT (pre-clip) and WEIGHT checksums across ranks on the first N optimizer
+    # steps -- localizes where 2-GPU ranks diverge (ddp_sync_probe, 2026-10-20). 0 = off.
+    ddp_sync_probe_steps: int = 0
     dry_run_recall_steps: int = 0
     gate_recall: float = 0.97
     gate_long_recall: float = 0.93
@@ -1726,6 +1729,9 @@ class ExtractorTrainer:
         self._note_candidate_pool_gradient()
         if (self.global_step + 1) % max(self.config.logging_steps, 1) == 0:
             self._last_group_grad_norms = self._group_grad_norms()
+        probe = self.global_step < self.config.ddp_sync_probe_steps
+        if probe:
+            self._check_ddp_sync("grads")
 
         grad_norm = torch.nn.utils.clip_grad_norm_(
             self.model.parameters(), self.config.max_grad_norm
@@ -1744,6 +1750,8 @@ class ExtractorTrainer:
         # Avoid GradScaler.get_scale(), which synchronizes every optimizer step.
         self.scheduler.step()
         self.optimizer.zero_grad(set_to_none=True)
+        if probe:
+            self._check_ddp_sync("weights")
         return True
 
     def _note_candidate_pool_gradient(self) -> None:
@@ -2666,6 +2674,9 @@ class ExtractorTrainer:
         }
 
     def _check_ddp_weight_sync(self) -> None:
+        self._check_ddp_sync("weights")
+
+    def _check_ddp_sync(self, kind: str = "weights") -> None:
         """Every rank must hold IDENTICAL weights. Gathers a per-module-group checksum from all ranks and logs any
         group that differs -- a gate that can fail, emitted at every eval.
 
@@ -2678,7 +2689,12 @@ class ExtractorTrainer:
         groups: Dict[str, torch.Tensor] = {}
         for name, param in model.named_parameters():
             group = ".".join(name.split(".")[:2])
-            v = param.detach().float()
+            if kind == "grads":
+                if param.grad is None:
+                    continue
+                v = param.grad.detach().float()
+            else:
+                v = param.detach().float()
             s = torch.stack([v.sum(), (v * v).sum()])
             groups[group] = groups[group] + s if group in groups else s
         names = sorted(groups)
@@ -2691,10 +2707,10 @@ class ExtractorTrainer:
         scale = gathered[0].abs().amax(dim=1).clamp_min(1e-12)
         bad = [(n, float(d / sc)) for n, d, sc in zip(names, diff, scale) if float(d / sc) > 1e-6]
         if bad:
-            logger.warning("[ddp-sync] step %d: %d of %d module groups DIFFER across ranks: %s", self.global_step,
+            logger.warning("[ddp-sync] step %d %s: %d of %d module groups DIFFER across ranks: %s", self.global_step, kind,
                            len(bad), len(names), " ".join(f"{n}={r:.2e}" for n, r in sorted(bad, key=lambda x: -x[1])))
         else:
-            logger.info("[ddp-sync] step %d: all %d module groups identical across %d ranks", self.global_step,
+            logger.info("[ddp-sync] step %d %s: all %d module groups identical across %d ranks", self.global_step, kind,
                         len(names), dist.get_world_size())
 
     def _evaluate(self, eval_dataset: ExtractorDataset) -> Dict[str, float]:
