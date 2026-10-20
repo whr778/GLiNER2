@@ -253,6 +253,7 @@ class DataLoader_Factory:
                     print(f"  ... and {num_invalid - 5} more invalid record(s)")
                 
                 print(f"Kept {num_valid} valid record(s)\n")
+                DataLoader_Factory._refuse_mass_drop(records, invalid_info)
                 
                 # Filter records to keep only valid ones
                 records = [records[i] for i in valid_indices]
@@ -352,6 +353,28 @@ class DataLoader_Factory:
                 f"or 'text' with annotation keys. Got: {list(first.keys())}"
             )
     
+    @staticmethod
+    def _refuse_mass_drop(records: List[Dict], invalid_info, limit: float = 0.5) -> None:
+        """Per-corpus kept/total for every corpus validation shrank, and REFUSE when one loses `limit` or more.
+
+        A corpus losing most of its records is a format the validator does not understand, not cleaning: offset
+        event gold failed `isinstance(str)` and eb22c trained without CMNEE, CASIE and WikiEvents events, behind one
+        printed count (2026-10-20)."""
+        total, dropped = Counter(), Counter()
+        for r in records:
+            total[r.get("_corpus", "?")] += 1
+        for _, r, _ in invalid_info:
+            dropped[r.get("_corpus", "?")] += 1
+        bad = []
+        for corpus in sorted(dropped):
+            share = dropped[corpus] / total[corpus]
+            print(f"[validation] {corpus}: dropped {dropped[corpus]:,} of {total[corpus]:,} ({100 * share:.1f}%)")
+            if share >= limit:
+                bad.append(f"{corpus} ({100 * share:.0f}%)")
+        if bad:
+            raise ValueError(f"validation dropped {int(limit * 100)}%+ of corpora {bad}: the validator does not "
+                             f"understand their format; see the first errors above")
+
     @staticmethod
     def _validate_records(records: List[Dict]) -> Tuple[List[int], List[Tuple[int, Dict, List[str]]]]:
         """
@@ -718,6 +741,21 @@ class Relation:
         return {self.name: self._fields}
 
 
+def _gold_found(value, text: str) -> bool:
+    """Event gold is a surface string (anywhere in the text, case-insensitive) or offset gold {text, start, end}
+    (exactly at [start, end)). Offset gold failed `isinstance(str)` here and every offset record was DROPPED by
+    validation: eb22c trained without CMNEE, CASIE and WikiEvents events (2026-10-20)."""
+    if isinstance(value, dict):
+        t, a, b = value.get("text"), value.get("start"), value.get("end")
+        return bool(t) and isinstance(a, int) and isinstance(b, int) and text[a:b] == t
+    return bool(value) and value.lower() in text.lower()
+
+
+def _gold_key(value):
+    """Hashable identity of a gold value: the string, or (text, start, end) for offset gold."""
+    return (value["text"], value["start"], value["end"]) if isinstance(value, dict) else value
+
+
 @dataclass
 class EventArgument:
     """A single typed argument participating in an event.
@@ -743,7 +781,7 @@ class EventArgument:
             errors.append(
                 f"Event '{event_type}' argument '{self.role}' has empty entity"
             )
-        elif self.entity.lower() not in text.lower():
+        elif not _gold_found(self.entity, text):
             errors.append(
                 f"Event '{event_type}' argument '{self.role}' "
                 f"entity '{self.entity}' not found in text"
@@ -778,10 +816,10 @@ class Event:
 
     def __post_init__(self):
         if not isinstance(self.triggers, list) or not all(
-            isinstance(t, str) for t in self.triggers
+            isinstance(t, (str, dict)) for t in self.triggers
         ):
             raise TypeError(
-                f"Event triggers must be a list of str, got {type(self.triggers).__name__}"
+                f"Event triggers must be a list of str or {{text, start, end}}, got {type(self.triggers).__name__}"
             )
         if self.arguments is None:
             self.arguments = []
@@ -808,11 +846,10 @@ class Event:
         if not self.triggers:
             errors.append(f"Event '{self.event_type}' has no trigger")
         else:
-            text_lower = text.lower()
             for trigger in self.triggers:
                 if not trigger:
                     errors.append(f"Event '{self.event_type}' has an empty trigger")
-                elif trigger.lower() not in text_lower:
+                elif not _gold_found(trigger, text):
                     errors.append(
                         f"Trigger '{trigger}' for event '{self.event_type}' "
                         f"not found in text"
@@ -820,7 +857,7 @@ class Event:
         seen = set()
         for arg in self.arguments:
             errors.extend(arg.validate(text, self.event_type))
-            key = (arg.role, arg.entity)
+            key = (arg.role, _gold_key(arg.entity))
             if key in seen:
                 errors.append(
                     f"Event '{self.event_type}' has duplicate argument "
@@ -1126,7 +1163,6 @@ class InputExample:
         # 5. Sanitize events - drop event if no triggers remain; drop missing arguments
         if self.events:
             valid_events: List[Event] = []
-            text_lower = self.text.lower()
             for event in self.events:
                 if not event.event_type or not event.triggers:
                     warnings.append(
@@ -1135,7 +1171,7 @@ class InputExample:
                     continue
                 kept_triggers: List[str] = []
                 for trigger in event.triggers:
-                    if trigger and trigger.lower() in text_lower:
+                    if _gold_found(trigger, self.text):
                         kept_triggers.append(trigger)
                     else:
                         warnings.append(
@@ -1157,13 +1193,13 @@ class InputExample:
                             f"role/entity - dropping argument"
                         )
                         continue
-                    if arg.entity.lower() not in self.text.lower():
+                    if not _gold_found(arg.entity, self.text):
                         warnings.append(
                             f"Event '{event.event_type}' argument '{arg.role}' "
                             f"entity '{arg.entity}' not in text - dropping argument"
                         )
                         continue
-                    key = (arg.role, arg.entity)
+                    key = (arg.role, _gold_key(arg.entity))
                     if key in seen:
                         continue
                     seen.add(key)
