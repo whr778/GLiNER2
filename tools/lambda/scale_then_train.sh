@@ -24,6 +24,7 @@ CFG=${CFG:?CFG=<base config>}
 DEST=${DEST:?DEST=<run-logs folder>}
 STEPS=${STEPS:-250}
 MEM_CAP=${MEM_CAP:-0.88}
+MIN_RATE=${MIN_RATE:-8}   # samples/s; the eb22b smoke ran 9.9 on an A100-40GB
 OUT=$HOME/scaling
 mkdir -p "$OUT"
 source tools/lambda/_publish.sh
@@ -86,6 +87,13 @@ CHOSEN=$($PY -c "import json; print(json.load(open('$OUT/scaling.json'))['chosen
 # full job into the same error, and then held the box idle for rescue (2026-10-19). Exit; box_run.sh terminates.
 if [ "$CHOSEN" = "None" ]; then
   echo "[scale] *** FATAL: no variant trained (see A/B/C logs in $DEST/scaling) -- not starting the full run ***"
+  exit 3
+fi
+# TOO SLOW = SOMETHING IS WRONG, NOT A LONG RUN. Launch 2 ran 2.9 samples/s on an H100 (cuDNN SDPA recompiling per
+# length, GPU 2% busy): 5 epochs would have run into the 46 h timeout. Stop rather than pay for it.
+RATE=$($PY -c "import json; s=json.load(open('$OUT/scaling.json')); print(s['variants'][s['chosen']]['samples_per_s'])")
+if ! $PY -c "import sys; sys.exit(0 if $RATE >= $MIN_RATE else 1)"; then
+  echo "[scale] *** FATAL: best variant $CHOSEN runs $RATE samples/s < MIN_RATE $MIN_RATE -- not starting the full run ***"
   exit 3
 fi
 RUN_CFG=$(dirname "$CFG")/$(basename "$CFG" .yaml)-run.yaml

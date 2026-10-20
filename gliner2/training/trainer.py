@@ -928,6 +928,13 @@ class ExtractorTrainer:
         self._setup_device()
         self._setup_output_dir()
         self._setup_logging()
+        # cuDNN SDPA compiles a fused kernel through NVRTC for EVERY new sequence length, and training lengths change
+        # every batch. On an H100 (where torch prefers that backend) one boundary-attention forward+backward cost
+        # 1.2-1.5 s per new length vs 0.001 s without it, and eb22c trained at 2.9 samples/s with the GPU 2% busy
+        # (2026-10-20). The memory-efficient and math backends take the same bool mask.
+        torch.backends.cuda.enable_cudnn_sdp(False)
+        logger.info("[sdpa] cuDNN SDPA backend disabled (per-shape NVRTC compiles): cudnn_sdp_enabled=%s",
+                    torch.backends.cuda.cudnn_sdp_enabled())
         # AFTER _setup_logging, deliberately. This block sat 21 lines above it, so the
         # zeroing HAPPENED but its confirmation went to an unconfigured logger and vanished --
         # a gate that silently cannot report is the third ordering bug of this family in this
