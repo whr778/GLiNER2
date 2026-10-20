@@ -1475,6 +1475,19 @@ class ExtractorTrainer:
             return 0.0
         return max(1.0 - step / anneal_steps, 0.0)
 
+    @staticmethod
+    def _ddp_full_touch(model) -> torch.Tensor:
+        """An exactly-zero term reaching EVERY trainable parameter, so DDP's graph is truly static.
+
+        Which parameters get a gradient varies by batch (classifier, count head, coref link, relation heads each only
+        on batches carrying their task). Measured on 2x H100, eb22c, 2026-10-20 (ddp_sync_probe):
+          static_graph=True  (the default)      runs, but 25 of 33 module groups DRIFT across ranks by step 100 --
+                                                unreduced gradients, then a per-rank clip factor moves everything else;
+          static_graph=False + find_unused=True crashes: forward outputs that are not in the loss;
+          static_graph=False                    crashes: parameters that produced no gradient.
+        With every parameter touched every step, every gradient is all-reduced and the ranks stay identical."""
+        return sum(p.sum() * 0.0 for p in model.parameters() if p.requires_grad)
+
     def _backward_one(
         self,
         batch,
@@ -1594,6 +1607,8 @@ class ExtractorTrainer:
                     reported_loss = loss.detach()
                     if self.config.gradient_accumulation_steps > 1:
                         loss = loss / self.config.gradient_accumulation_steps
+                    if self.is_distributed:
+                        loss = loss + self._ddp_full_touch(model)
 
                 if self.config.fp16:
                     self.scaler.scale(loss).backward()

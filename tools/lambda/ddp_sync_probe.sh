@@ -9,6 +9,8 @@
 #     A  eb22c as configured (ddp_static_graph true, the default)
 #     B  eb22c with ddp_static_graph false + ddp_find_unused_parameters true
 #     C  eb22c with ddp_static_graph false ALONE (find_unused false): the minimal fix, if it holds
+#     D  A's settings (static_graph true) on the FIXED trainer: every trainable parameter touched every step
+# MEASURED 2026-10-20 (2x H100): A drifts 25 of 33 groups by step 100; B and C crash at step 1. ARMS picks the arms.
 # A logging DIFFER and B identical proves the drift AND the fix. First runs the Linux-only DDP tests.
 #
 #   JOB="bash tools/lambda/ddp_sync_probe.sh" (launched by ddp_sync_launch.sh)
@@ -22,7 +24,9 @@ mkdir -p "$OUT"
 source tools/lambda/_publish.sh
 echo "[ddp] ===== START $(date -u) | $(git rev-parse --short HEAD) | $(nvidia-smi --query-gpu=name --format=csv,noheader | tr '\n' ' ') ====="
 
+ARMS=${ARMS:-ABC}   # letters, e.g. ARMS=D: survives the launcher's nested ssh quoting
 timeout 900 $PY -m pytest -q tests/test_trainer_distributed_integration.py tests/training/test_ddp_weight_sync_check.py \
+  tests/training/test_ddp_full_touch.py \
   > "$OUT/ddp_tests.log" 2>&1
 echo "[ddp] DDP tests rc=$? : $(tail -1 "$OUT/ddp_tests.log")"
 
@@ -42,12 +46,9 @@ PY
   echo "[ddp] arm $name (static_graph=$2, find_unused=$3) rc=$?"
   grep -a "\[ddp-sync\]" "$OUT/$name.log" | sed "s/^/[ddp] $name: /" | cut -c1-300
 }
-run_arm A true false
-run_arm B false true
-
-publish "ddp-probe" "$OUT/ddp_tests.log" "$OUT/A.log" "$OUT/B.log" || echo "[ddp] *** publish failed ***"
+settings() { case $1 in A|D) echo "true false" ;; B) echo "false true" ;; C) echo "false false" ;; esac; }
+for arm in $(echo "$ARMS" | grep -o .); do
+  run_arm "$arm" $(settings "$arm")
+done
+publish "ddp-probe" "$OUT/ddp_tests.log" $(for a in $(echo "$ARMS" | grep -o .); do echo "$OUT/$a.log"; done) || echo "[ddp] *** publish failed ***"
 echo "[ddp] ===== DONE $(date -u) ====="
-# Arm C was appended to the running script on the box (2026-10-20), after A had shown 25 of 33 groups drifting.
-run_arm C false false
-publish "ddp-probe" "$OUT/C.log" || echo "[ddp] *** publish C failed ***"
-echo "[ddp] ===== DONE C $(date -u) ====="

@@ -17,5 +17,5 @@ bash tools/lambda/local_start_check.sh "$CFG" \
 export JOB_TIMEOUT=${JOB_TIMEOUT:-5400}
 export HARD_DEADLINE=${HARD_DEADLINE:-7200}
 echo "[$EXP] commit $EXPECT_COMMIT | logs -> ddp-probe/"
-exec env NAME="ddp-probe" JOB="bash tools/lambda/ddp_sync_probe.sh" TYPES="${TYPES:-gpu_2x_h100_sxm5}" \
+exec env NAME="ddp-probe" JOB="ARMS=${ARMS:-ABC} bash tools/lambda/ddp_sync_probe.sh" TYPES="${TYPES:-gpu_2x_h100_sxm5}" \
      bash tools/lambda/launch_when_available.sh
