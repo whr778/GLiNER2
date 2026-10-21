@@ -90,7 +90,7 @@ def probe_doc(model, rec: dict, threshold: float) -> list[dict]:
         logits = cand.pair_logits[0, qid].float()
         idx = cand.indices[0, qid]
         vlogits = logits[valid]
-        best = None
+        best, best_c = None, None
         for cs, ce in occurrences(rec["input"], trig):
             try:
                 ws, we = char_span_to_word_boundaries(cs, ce, starts, ends)
@@ -100,13 +100,13 @@ def probe_doc(model, rec: dict, threshold: float) -> list[dict]:
             if hit.numel():
                 lg = float(logits[hit[0]])
                 if best is None or lg > best:
-                    best = lg
+                    best, best_c = lg, int(hit[0])
         top = float(vlogits.max()) if vlogits.numel() else float("nan")
         n_gate = int((torch.sigmoid(vlogits / temp) >= threshold).sum())
         out_trigs = {(t if isinstance(t, str) else (t or {}).get("text"))
                      for inst in emitted.get(etype) or [] for t in (inst.get("triggers") or [])}
         rows.append({
-            "type": etype, "trigger": trig, "reached": best is not None,
+            "type": etype, "trigger": trig, "reached": best is not None, "query_id": qid, "gold_candidate": best_c,
             "gold_logit": best, "gold_rank": (int((vlogits > best).sum()) if best is not None else None),
             "gold_gate_prob": (1 / (1 + math.exp(-best / temp)) if best is not None else None),
             "top_logit": top, "n_candidates": int(valid.sum()), "n_above_gate": n_gate,
