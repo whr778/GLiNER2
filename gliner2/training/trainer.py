@@ -2587,6 +2587,13 @@ class ExtractorTrainer:
                             top = sorted(groups.items(), key=lambda kv: -kv[1])[:8]
                             logger.info("[grads] step %d: %s", self.global_step,
                                         " ".join(f"{k}={v:.3g}" for k, v in top))
+                        if "boundary_head.event_pair_scorer" in groups:
+                            # separate_event_scorer is LIVE: only event queries reach the copies, so non-zero norms
+                            # here prove the routing happened in this run.
+                            logger.info("[separate-event] step %d: %s", self.global_step, " ".join(
+                                f"{k.split('.')[1]}={groups.get(k, 0.0):.3g}" for k in (
+                                    "boundary_head.event_pair_scorer", "boundary_head.event_proposer",
+                                    "boundary_head.pair_scorer", "boundary_head.boundary_proposer")))
                     tr_loss.zero_()
 
                 if self.config.eval_strategy == "steps" and self.global_step % self.config.eval_steps == 0:

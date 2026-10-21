@@ -261,6 +261,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 core["text_states"], core["text_mask"],
                 core["query_states"], core["query_mask"],
                 return_candidates=True,
+                event_queries=self._event_query_mask(batch, core["query_mask"]),
             )
             fwd["out"] = out
             fwd["probs"] = torch.sigmoid(

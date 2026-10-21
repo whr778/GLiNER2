@@ -954,6 +954,9 @@ _STRUCTURAL_BOUNDARY_KEYS = frozenset({
     "boundary_attention_layers", "candidate_attention_layers",
     "query_attention_layers", "endpoint_difference_features",
     "query_conditioned_inside_weight",
+    # Adds event_proposer + event_pair_scorer (28 tensors, measured 2026-10-21); a warm start onto a checkpoint
+    # built without it has no weights for them.
+    "separate_event_scorer",
     # A key diff cannot see a flag that RESIZES an always-built module -- the
     # tensor names are identical and only the shapes move. Re-measured comparing
     # shapes: these three. `record_dim` and `record_instance_queries` are named

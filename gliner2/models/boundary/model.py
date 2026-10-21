@@ -13,6 +13,8 @@ Half-open ``[start, end)`` coordinates throughout; there is no width axis.
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import logging
 import os
 import tempfile
@@ -106,6 +108,18 @@ from gliner2.utils.device_errors import is_fatal_device_error
 #: same thing across runs; unknown/padded queries get -1 and are dropped.
 TASK_TYPES = ("entities", "relations", "events", "json_structures")
 DEFAULT_LOSS_WEIGHTS = {"start": 1.0, "end": 1.0, "pair": 1.0, "inside": 0.5}
+
+
+def route_proposals(event_queries: torch.BoolTensor, event: BoundaryProposals, shared: BoundaryProposals) -> BoundaryProposals:
+    """Per query, the EVENT proposer's candidates where `event_queries` [B, Q] is True, the shared proposer's elsewhere.
+    Both proposers share one configuration, so every [B, Q, C, ...] field has the same shape."""
+    def pick(e, s):
+        if e is None or s is None:
+            return s
+        return torch.where(event_queries.view(*event_queries.shape, *([1] * (s.dim() - 2))), e, s)
+
+    return dataclasses.replace(shared, **{f: pick(getattr(event, f), getattr(shared, f)) for f in (
+        "indices", "logits", "valid_mask", "gold_mask", "compat_logits", "score_start_states", "score_end_states")})
 logger = logging.getLogger(__name__)
 
 
@@ -289,6 +303,10 @@ class BoundaryHead(nn.Module):
             multihead_pair_compat_heads=settings.multihead_pair_compat_heads,
             content_hidden_size=hidden_size,
         )
+        # separate_event_scorer: EXACT copies of the shared pair (deepcopy draws no random numbers, so every module
+        # built after this initialises as it would without the flag). Event queries route here (forward).
+        self.event_proposer = copy.deepcopy(self.boundary_proposer) if settings.separate_event_scorer else None
+        self.event_pair_scorer = copy.deepcopy(self.pair_scorer) if settings.separate_event_scorer else None
         self.use_inside_evidence = settings.use_inside_evidence
         auxiliary_rng_state = torch.random.get_rng_state()
         self.null_projection = (
@@ -361,7 +379,9 @@ class BoundaryHead(nn.Module):
         bypasses sparse proposal selection while retaining the exact proposal
         compatibility prior and pair-reranker computation used by ordinary
         candidates.  It is intended for span-conditioned features such as
-        entity attributes and constrained structure fields.
+        entity attributes and constrained structure fields.  It always scores
+        with the SHARED proposer/pair scorer: its callers pass entity, attribute
+        and choice queries only, never event queries (separate_event_scorer).
         """
         if indices.dim() != 4 or indices.shape[-1] != 2:
             raise ValueError(
@@ -507,7 +527,10 @@ class BoundaryHead(nn.Module):
         typed_allowed_bits: Optional[torch.Tensor] = None,
         typed_span_table: Optional[torch.Tensor] = None,
         absent_task_ids: Optional[torch.Tensor] = None,
+        event_queries: Optional[torch.BoolTensor] = None,
     ) -> ExtractorOutput:
+        """`event_queries` [B, Q] (separate_event_scorer only): True where a query is an EVENT query; those
+        queries take their proposals and pair logits from the event proposer/scorer. Read by nothing else."""
         b, l, _ = token_states.shape
         text_lengths = text_mask.sum(dim=1).long()
 
@@ -610,29 +633,37 @@ class BoundaryHead(nn.Module):
                 comparison_indices = comparison_proposals.indices
                 comparison_valid = comparison_proposals.valid_mask
         else:
-            scorer_start_states, scorer_end_states = self.pair_scorer.project_endpoints(
-                encoding.states
-            )
-            proposals = self.boundary_proposer(
-                encoding.states, encoding.mask,
-                query_states, query_mask,
-                marginals.start_logits, marginals.end_logits,
-                gold_pairs=gold_pairs, gold_mask=gold_mask,
-                return_stats=diagnostics,
-                return_proposal_logits=self.training,
-                gold_injection_prob=injection,
-                scorer_start_states=scorer_start_states,
-                scorer_end_states=scorer_end_states,
-            )
-            pair_logits = self.pair_scorer(
-                encoding.states, query_states, proposals,
-                marginals.start_logits, marginals.end_logits,
-                inside_prefix,
-                text_lengths,
-                token_states,
-                text_mask,
-                inside_prefix_mean=marginals.inside_prefix_mean,
-            )
+            def propose_and_score(proposer, scorer):
+                scorer_start_states, scorer_end_states = scorer.project_endpoints(encoding.states)
+                props = proposer(
+                    encoding.states, encoding.mask,
+                    query_states, query_mask,
+                    marginals.start_logits, marginals.end_logits,
+                    gold_pairs=gold_pairs, gold_mask=gold_mask,
+                    return_stats=diagnostics,
+                    return_proposal_logits=self.training,
+                    gold_injection_prob=injection,
+                    scorer_start_states=scorer_start_states,
+                    scorer_end_states=scorer_end_states,
+                )
+                logits = scorer(
+                    encoding.states, query_states, props,
+                    marginals.start_logits, marginals.end_logits,
+                    inside_prefix,
+                    text_lengths,
+                    token_states,
+                    text_mask,
+                    inside_prefix_mean=marginals.inside_prefix_mean,
+                )
+                return props, logits
+
+            proposals, pair_logits = propose_and_score(self.boundary_proposer, self.pair_scorer)
+            if self.event_pair_scorer is not None:
+                if event_queries is None:
+                    raise ValueError("separate_event_scorer is on but the caller passed no event_queries mask")
+                event_proposals, event_logits = propose_and_score(self.event_proposer, self.event_pair_scorer)
+                proposals = route_proposals(event_queries, event_proposals, proposals)
+                pair_logits = torch.where(event_queries.unsqueeze(-1), event_logits, pair_logits)
             if diagnostics:
                 comparison_pool = self.shared_pool_builder(
                     encoding.states,
@@ -1701,6 +1732,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
         self.boundary_head.pair_scorer = torch.compile(
             self.boundary_head.pair_scorer, dynamic=dynamic
         )
+        if self.boundary_head.event_pair_scorer is not None:
+            self.boundary_head.event_proposer = torch.compile(self.boundary_head.event_proposer, dynamic=dynamic)
+            self.boundary_head.event_pair_scorer = torch.compile(self.boundary_head.event_pair_scorer, dynamic=dynamic)
         if self.boundary_settings.candidate_pool == "shared":
             self.boundary_head.shared_pool_builder = torch.compile(
                 self.boundary_head.shared_pool_builder, dynamic=dynamic
@@ -2215,6 +2249,12 @@ class BoundaryExtractorModel(BaseExtractorModel):
         loss = (loss * pair_mask.to(loss.dtype)).sum() / pair_mask.sum().clamp_min(1)
         return self.boundary_settings.relation_loss_weight * loss
 
+    def _event_query_mask(self, batch, query_mask) -> Optional[torch.BoolTensor]:
+        """``[B, Q]`` True for EVENT queries when separate_event_scorer is on (routing only), else ``None``."""
+        if not self.boundary_settings.separate_event_scorer:
+            return None
+        return self._query_task_ids(batch, query_mask) == TASK_TYPES.index("events")
+
     def _query_task_ids(self, batch, query_mask) -> Optional[torch.Tensor]:
         """``[B, Q]`` task-type index per query, or ``None`` if unavailable."""
         layouts = getattr(batch, "query_layouts", None)
@@ -2471,6 +2511,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     self._query_task_ids(batch, core["query_mask"])
                     if self.boundary_settings.absent_negatives_in_denominator else None,
                 ),
+                event_queries=self._event_query_mask(batch, core["query_mask"]),
             )
             if output.candidates is not None:
                 validate_candidate_indices(

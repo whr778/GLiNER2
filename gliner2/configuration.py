@@ -300,6 +300,10 @@ class BoundaryHeadSettings:
     # gradient effect -- and it is how the event signal becomes visible at all,
     # since the boundary loss otherwise comingles every task into one scalar.
     report_task_losses: bool = False
+    # EVENT queries (triggers and roles) get their OWN proposer and pair scorer, copied from the shared pair at
+    # construction; entities, relations and structures keep the shared pair. The encoder, boundary heads and
+    # every loss stay shared. per_query candidate pool only. The eb22c separation A/B (2026-10-21).
+    separate_event_scorer: bool = False
     # Sparse typed relation scorer.
     enable_relations: bool = True
     relation_heads_per_type: int = 32
@@ -649,6 +653,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "report_task_losses": bool(
             values.get("report_task_losses", d.report_task_losses)
         ),
+        "separate_event_scorer": bool(
+            values.get("separate_event_scorer", d.separate_event_scorer)
+        ),
         "task_loss_weights": (
             {str(k): float(v) for k, v in values["task_loss_weights"].items()}
             if values.get("task_loss_weights")
@@ -741,6 +748,8 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError("boundary_head.record_merge_coreferent: link needs record_coref_link: true")
     if result["record_coref_link"] and result.get("candidate_pool") == "shared":
         raise ValueError("boundary_head.record_coref_link is implemented for candidate_pool: per_query only")
+    if result["separate_event_scorer"] and result.get("candidate_pool") == "shared":
+        raise ValueError("boundary_head.separate_event_scorer is implemented for candidate_pool: per_query only")
     if result["record_coreferent_ownership"] and result.get("candidate_pool") == "shared":
         raise ValueError("boundary_head.record_coreferent_ownership is implemented for candidate_pool: per_query only")
     if result["record_role_hard_negatives"] > 0 and result.get("candidate_pool") == "shared":

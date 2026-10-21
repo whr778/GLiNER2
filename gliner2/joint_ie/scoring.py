@@ -337,6 +337,7 @@ class RawScorer:
                 core["query_states"],
                 core["query_mask"],
                 return_candidates=True,
+                event_queries=self.model._event_query_mask(batch, core["query_mask"]),
             )
             for local_index, caller_text in enumerate(chunk_texts):
                 results.append(
