@@ -12,8 +12,15 @@ git fetch -q origin "$BRANCH" && [ "$(git rev-parse --short=12 "origin/$BRANCH")
   || { echo "[$NAME] *** REFUSING TO LAUNCH -- $EXPECT_COMMIT is not origin/$BRANCH; push first ***"; exit 5; }
 uv run python tools/train/check_corpora_fetchable.py --config "$CFG" --offline \
   || { echo "[$NAME] *** REFUSING TO LAUNCH -- a corpus is unfetchable ***"; exit 3; }
-bash tools/lambda/local_start_check.sh "$CFG" \
-  || { echo "[$NAME] *** REFUSING TO LAUNCH -- the config cannot start train.py locally ***"; exit 7; }
+# SKIP_START_CHECK=<reason>: eb22c's head (~120 queries x 768 training candidates) passes 24 GB on the 32 GB laptop by
+# step 2 at ANY window size (measured 2026-10-21), so the laptop check cannot finish; the reason is printed and the box's
+# own first logging steps carry the proof instead. Default: run it.
+if [ -n "${SKIP_START_CHECK:-}" ]; then
+  echo "[$NAME] local start check SKIPPED: $SKIP_START_CHECK"
+else
+  bash tools/lambda/local_start_check.sh "$CFG" \
+    || { echo "[$NAME] *** REFUSING TO LAUNCH -- the config cannot start train.py locally ***"; exit 7; }
+fi
 export JOB_TIMEOUT=${JOB_TIMEOUT:-21600}
 export HARD_DEADLINE=${HARD_DEADLINE:-25200}
 echo "[$NAME] commit $EXPECT_COMMIT | stop after eval at step $STOP_STEP | logs -> $NAME/"

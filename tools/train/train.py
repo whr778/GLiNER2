@@ -1128,6 +1128,21 @@ def _auto_negative_pools(cfg: dict, config_path, output_dir: str) -> str:
     return str(out)
 
 
+def _seed_model_init(cfg: Dict) -> int:
+    """Seed torch with the config's training seed BEFORE the model is built, and return it.
+
+    The trainer seeds in _setup_seed, which runs after train.py has built the model, so every head
+    initialisation used to be a fresh random draw: `seed` covered data order and training steps but never the
+    starting weights, and no run's init could be reproduced (measured 2026-10-21: two builds of one config gave
+    pair_scorer.query_gate sums 1.3157 and -0.0729)."""
+    import torch
+
+    from gliner2.training.trainer import TrainingConfig
+    seed = int((cfg.get("training") or {}).get("seed", TrainingConfig.seed))
+    torch.manual_seed(seed)
+    return seed
+
+
 def _build_model(model_cfg: Dict):
     """Build the model from the ``model`` config section.
 
@@ -1808,6 +1823,7 @@ def main(config_path: str) -> None:
             "`boundary_head.task_pos_weights` (span BCE), which is live."
         )
 
+    print(f"[seed] model init seeded with {_seed_model_init(cfg)} before the build", flush=True)
     model = _build_model(cfg["model"])
 
     # Popped before TrainingConfig: it is a data-pipeline gate, not a trainer field.
