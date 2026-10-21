@@ -1,7 +1,7 @@
 # eb22c: the event "collapse" is a score-level swing
 
-Working paper, 2026-10-20 to 2026-10-21. Status: **mechanism located to the score LEVEL, cause still open;
-gradient-conflict measurement running on Lambda.** Rows in [[EXPERIMENT_CATALOG]] (2026-10-20/21, Events line);
+Working paper, 2026-10-20 to 2026-10-21. Status: **mechanism located to the score LEVEL; gradient conflict between entity and event supervision
+MEASURED and NOT FOUND (2026-10-21); cause still open.** Rows in [[EXPERIMENT_CATALOG]] (2026-10-20/21, Events line);
 TODO rows 41-44.
 
 ## 1. What was believed, and what is true
@@ -74,7 +74,7 @@ dominates right after the LR peak and again at 28k-30k.
   gradient reaches the link, the `candidate_encoder`, the shared `boundary_encoder` and the encoder -- never the
   query states, pair scorer, proposer or query head.
 
-## 6. The open measurement: gradient conflict (running)
+## 6. Gradient conflict: measured, not found
 
 `tools/train/gradient_conflict.py`: one training-path forward per batch (real trainer preparation, auto negatives,
 collator, schedules at the checkpoint's step, dropout off, bf16 autocast on CUDA), then separate gradients for
@@ -88,7 +88,31 @@ It cannot run on the laptop: one training forward at batch 4 needs ~44 GB in fp3
 `peak_alloc_gb=22.0` in bf16); two such jobs swapped a 32 GB machine on 2026-10-21. Running on 1x H100 for
 checkpoints 3,500 / 4,000 / 4,500 / 22,000 / 24,000, 48 batches x 4 each.
 
-Decision it feeds:
+**Result (1x H100, 2026-10-21, 15/15 link replays exact):**
+
+| group | cos(entity, event), steps 3.5k / 4k / 4.5k / 22k / 24k |
+|---|---|
+| encoder layers | agree or ~0 everywhere; rises with depth early (4.5k: +0.06 -> +0.62); ~0 late, -0.06 at layers 16-19 at 24k |
+| pair scorer | +0.98 / +0.95 / +0.99 / +0.24 / -0.09 |
+| proposer | +0.43 / -0.19 / +0.37 / +0.24 / -0.42 (sign flips, no stable opposition) |
+| null projection | -0.90 / -0.33 / +0.98 / -0.98 / +0.93 (sign flips; tiny module) |
+
+| encoder gradient L2 | entity | event | bind | relation | tlink |
+|---|---|---|---|---|---|
+| 3.5k | 57 | 16 | 51 | 10 | 4.3 |
+| 4k | 51 | 14 | 50 | 67 | 3.5 |
+| 4.5k | 39 | 13 | 43 | 62 | 3.7 |
+| 22k | 38 | 13 | 24 | 21 | 3.2 |
+| 24k | 37 | 13 | 35 | 21 | 4.2 |
+
+Reading: entity and trigger supervision do NOT compete for the shared weights. The event span gradient is a small
+passenger (3-5x smaller than entity, smaller than binding, and dwarfed by relation at 4k-4.5k), so the event score
+level moves with whatever the larger gradients do to the shared weights. The trigger link is ~7% of the entity
+gradient and orthogonal to it: no treatment. Separating the query weights would remove an opposition that is not
+there. Caveat: 48 batches x 4 per checkpoint, summed; a level shift can ride on a small component a cosine of the
+whole does not isolate.
+
+Decision it fed (the rules written before the result):
 - conflict in the HEAD (proposer, null projection) -> a per-query-type bias/temperature on the pair score first,
   then separate pair scorer + proposer per query type;
 - conflict in the ENCODER, or mostly common-mode -> the learning rate (task_lr 4e-5), not separation;
