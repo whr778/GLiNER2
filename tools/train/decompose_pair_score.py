@@ -139,7 +139,7 @@ def main(argv=None) -> None:
     fns, passthrough = T._category_fns(T.load_labels_cfg(cfg, args.config)), T.labels_passthrough(cfg)
     docs = {}
     for c in args.corpora:
-        path = cfg["data"]["event_files"][c]["val"] if c in cfg["data"]["event_files"] else f"data/{c}.val.jsonl"
+        path = (cfg["data"]["event_files"].get(c) or {}).get("val") or f"data/{c}.val.jsonl"
         T._fetch_if_missing(path)
         docs[c] = [r for r in T.read_transformed([path], fns, passthrough)
                    if any(r["output"].get(q) for q in args.queries)][:args.docs]

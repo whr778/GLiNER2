@@ -33,15 +33,20 @@ from gliner2.processing.targets import char_span_to_word_boundaries  # noqa: E40
 from gliner2.training.eval_metrics import _schema_from_gold  # noqa: E402
 
 
-def load_checkpoint(ref: str):
-    """A local directory, or `repo:subfolder` on the Hub (downloaded once)."""
+def local_checkpoint(ref: str) -> str:
+    """A local directory as given, or `repo:subfolder` on the Hub downloaded once; returns the local path."""
     if ":" in ref and not Path(ref).exists():
         from huggingface_hub import snapshot_download
         repo, sub = ref.split(":", 1)
         root = snapshot_download(repo, allow_patterns=[f"{sub}/*"],
                                  local_dir=f"/Volumes/Development/tmp/autopsy_ckpts/{repo.replace('/', '__')}")
         ref = str(Path(root) / sub)
-    return AutoExtractor.from_pretrained(ref, map_location="cpu").eval()
+    return ref
+
+
+def load_checkpoint(ref: str):
+    """The checkpoint at `ref` (see local_checkpoint), in eval mode on CPU."""
+    return AutoExtractor.from_pretrained(local_checkpoint(ref), map_location="cpu").eval()
 
 
 def occurrences(text: str, needle: str):
