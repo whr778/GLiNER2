@@ -77,8 +77,8 @@ def parts(sc, boundary_states, query_states, proposals, start_logits, end_logits
     return out
 
 
-def decompose_doc(model, rec: dict, threshold: float) -> list[dict]:
-    """probe_doc rows, each with the gold candidate's parts and the per-part median over the query's valid candidates."""
+def decompose_doc(model, rec: dict, threshold: float, queries=("events",)) -> list[dict]:
+    """probe_doc rows (events and/or entities), each with the gold candidate's parts and the per-part median over the query's valid candidates."""
     sc = model.boundary_head.pair_scorer
     orig, seen = sc.forward, []
 
@@ -89,7 +89,7 @@ def decompose_doc(model, rec: dict, threshold: float) -> list[dict]:
 
     sc.forward = hook
     try:
-        rows = P.probe_doc(model, rec, threshold)
+        rows = P.probe_doc(model, rec, threshold, queries)
     finally:
         sc.forward = orig
     if not rows:
@@ -116,7 +116,9 @@ def summarize(name: str, rows: list[dict]) -> dict:
          "gold_logit": med([r["gold_logit"] for r in reached]),
          "gold": {k: med([r["gold_parts"][k] for r in reached]) for k in PARTS},
          "level": {k: med([r["level_parts"][k] for r in reached]) for k in PARTS}}
-    print(f"[decompose] {name}: n {s['decomposed']}/{s['gold_events']} | gold logit {s['gold_logit']}", flush=True)
+    print(f"[decompose] {name}: n {s['decomposed']}/{s['gold_events']} | gold logit {s['gold_logit']} | "
+          f"level logit {med([r['level_logit'] for r in reached])} | gold rank {med([r['gold_rank'] for r in reached])} | "
+          f"gold above gate {sum(r['gold_gate_prob'] >= P.THRESHOLD for r in reached) / len(rows):.3f}", flush=True)
     for kind in ("gold", "level"):
         print(f"[decompose]   {kind:5s} " + " ".join(f"{k} {s[kind][k]:+.3f}" for k in PARTS), flush=True)
     return s
@@ -126,7 +128,8 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", required=True)
     ap.add_argument("--checkpoints", nargs="+", required=True, help="local dirs or repo:subfolder")
-    ap.add_argument("--corpora", nargs="+", default=["cmnee"])
+    ap.add_argument("--corpora", nargs="+", default=["cmnee"], help="event_files names, else data/<name>.val.jsonl")
+    ap.add_argument("--queries", nargs="+", default=["events"], choices=["events", "entities"])
     ap.add_argument("--docs", type=int, default=40)
     ap.add_argument("--threshold", type=float, default=0.3)
     ap.add_argument("--out", required=True)
@@ -136,15 +139,20 @@ def main(argv=None) -> None:
     fns, passthrough = T._category_fns(T.load_labels_cfg(cfg, args.config)), T.labels_passthrough(cfg)
     docs = {}
     for c in args.corpora:
-        path = cfg["data"]["event_files"][c]["val"]
+        path = cfg["data"]["event_files"][c]["val"] if c in cfg["data"]["event_files"] else f"data/{c}.val.jsonl"
         T._fetch_if_missing(path)
-        docs[c] = [r for r in T.read_transformed([path], fns, passthrough) if r["output"].get("events")][:args.docs]
+        docs[c] = [r for r in T.read_transformed([path], fns, passthrough)
+                   if any(r["output"].get(q) for q in args.queries)][:args.docs]
     result = {"args": vars(args), "checkpoints": {}}
     for ref in args.checkpoints:
         model = P.load_checkpoint(ref)
-        result["checkpoints"][ref] = {
-            c: {"summary": summarize(f"{ref} [{c}]", rows), "rows": rows}
-            for c, recs in docs.items() for rows in [[row for r in recs for row in decompose_doc(model, r, args.threshold)]]}
+        per = {}
+        for c, recs in docs.items():
+            rows = [row for r in recs for row in decompose_doc(model, r, args.threshold, args.queries)]
+            for kind in sorted({r["kind"] for r in rows}):
+                sub = [r for r in rows if r["kind"] == kind]
+                per[f"{c}/{kind}"] = {"summary": summarize(f"{ref} [{c} {kind}]", sub), "rows": sub}
+        result["checkpoints"][ref] = per
         Path(args.out).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
         del model
     print(f"[decompose] wrote {args.out}", flush=True)

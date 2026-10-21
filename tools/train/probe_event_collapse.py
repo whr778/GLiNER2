@@ -51,68 +51,103 @@ def occurrences(text: str, needle: str):
         i = text.find(needle, i + 1)
 
 
-def probe_doc(model, rec: dict, threshold: float) -> list[dict]:
-    """One row per gold event: reach, gold logit and rank, best competitor, gate, emitted."""
-    cap = {}
+def capture(model, rec: dict, threshold: float):
+    """Run the real batch_extract_long on one record; (prediction, batch, forward) or None for a multi-chunk document."""
+    calls = []
     orig = model._forward_batch
 
     def hook(batch, *a, **k):
         fwd = orig(batch, *a, **k)
-        cap.setdefault("calls", []).append((batch, fwd))
+        calls.append((batch, fwd))
         return fwd
 
     model._forward_batch = hook
     try:
-        schema = _schema_from_gold(rec["output"])
         with torch.no_grad():
-            pred = model.batch_extract_long([rec["input"]], [schema], threshold=threshold, chunk_size=4096,
-                                            chunk_overlap=0, global_decode=True)[0]
+            pred = model.batch_extract_long([rec["input"]], [_schema_from_gold(rec["output"])], threshold=threshold,
+                                            chunk_size=4096, chunk_overlap=0, global_decode=True)[0]
     finally:
         model._forward_batch = orig
-    calls = cap.get("calls", [])
-    if len(calls) != 1 or len(calls[0][0].record_specs) != 1:
-        return []                                              # multi-chunk document: skipped (chunk offsets)
-    batch, fwd = calls[0]
+    if len(calls) != 1:
+        return None                                             # multi-chunk document: skipped (chunk offsets)
+    return pred, calls[0][0], calls[0][1]
+
+
+def gold_row(cap, text: str, qid: int, gold, threshold: float, temp: float) -> dict:
+    """Reach, logit, rank, gate and level of one gold span (a string: best occurrence; a dict: its offsets) on query qid."""
+    _, batch, fwd = cap
     cand = fwd["out"].candidates
     offset = int(fwd["core"]["word_offsets"][0])
-    temp = float(model.boundary_settings.record_temperature)
     starts, ends = batch.start_mappings[0], batch.end_mappings[0]
+    valid = cand.valid_mask[0, qid]
+    logits = cand.pair_logits[0, qid].float()
+    idx = cand.indices[0, qid]
+    vlogits = logits[valid]
+    spans = [(gold["start"], gold["end"])] if isinstance(gold, dict) else list(occurrences(text, gold))
+    best, best_c = None, None
+    for cs, ce in spans:
+        try:
+            ws, we = char_span_to_word_boundaries(cs, ce, starts, ends)
+        except ValueError:
+            continue
+        hit = (valid & (idx[:, 0] == ws + offset) & (idx[:, 1] == we + offset)).nonzero().flatten()
+        if hit.numel():
+            lg = float(logits[hit[0]])
+            if best is None or lg > best:
+                best, best_c = lg, int(hit[0])
+    return {"reached": best is not None, "query_id": qid, "gold_candidate": best_c, "gold_logit": best,
+            "gold_rank": (int((vlogits > best).sum()) if best is not None else None),
+            "gold_gate_prob": (1 / (1 + math.exp(-best / temp)) if best is not None else None),
+            "top_logit": float(vlogits.max()) if vlogits.numel() else float("nan"),
+            "level_logit": float(vlogits.median()) if vlogits.numel() else float("nan"),
+            "n_candidates": int(valid.sum()), "n_above_gate": int((torch.sigmoid(vlogits / temp) >= threshold).sum())}
+
+
+def event_rows(cap, rec: dict, threshold: float, temp: float) -> list[dict]:
+    """One row per gold event on its anchor (trigger) query; gated at sigmoid(logit / record_temperature)."""
+    pred, batch, _ = cap
     anchor = {s.task_name: s.anchor_query_id for s in batch.record_specs[0].values()}
-    emitted = (pred.get("event_extraction") or {})
+    emitted = pred.get("event_extraction") or {}
     rows = []
-    for ev in rec["output"]["events"]:
+    for ev in rec["output"].get("events") or []:
         etype, trig = ev.get("event_type"), (ev.get("triggers") or [None])[0]
-        trig = trig["text"] if isinstance(trig, dict) else trig
         if etype not in anchor or not trig:
             continue
-        qid = anchor[etype]
-        valid = cand.valid_mask[0, qid]
-        logits = cand.pair_logits[0, qid].float()
-        idx = cand.indices[0, qid]
-        vlogits = logits[valid]
-        best, best_c = None, None
-        for cs, ce in occurrences(rec["input"], trig):
-            try:
-                ws, we = char_span_to_word_boundaries(cs, ce, starts, ends)
-            except ValueError:
-                continue
-            hit = (valid & (idx[:, 0] == ws + offset) & (idx[:, 1] == we + offset)).nonzero().flatten()
-            if hit.numel():
-                lg = float(logits[hit[0]])
-                if best is None or lg > best:
-                    best, best_c = lg, int(hit[0])
-        top = float(vlogits.max()) if vlogits.numel() else float("nan")
-        n_gate = int((torch.sigmoid(vlogits / temp) >= threshold).sum())
+        text = trig["text"] if isinstance(trig, dict) else trig
         out_trigs = {(t if isinstance(t, str) else (t or {}).get("text"))
                      for inst in emitted.get(etype) or [] for t in (inst.get("triggers") or [])}
-        rows.append({
-            "type": etype, "trigger": trig, "reached": best is not None, "query_id": qid, "gold_candidate": best_c,
-            "gold_logit": best, "gold_rank": (int((vlogits > best).sum()) if best is not None else None),
-            "gold_gate_prob": (1 / (1 + math.exp(-best / temp)) if best is not None else None),
-            "top_logit": top, "n_candidates": int(valid.sum()), "n_above_gate": n_gate,
-            "emitted_type": bool(emitted.get(etype)), "emitted_trigger": trig in out_trigs,
-        })
+        rows.append({"kind": "event", "type": etype, "trigger": text,
+                     **gold_row(cap, rec["input"], anchor[etype], trig, threshold, temp),
+                     "emitted_type": bool(emitted.get(etype)), "emitted_trigger": text in out_trigs})
     return rows
+
+
+def entity_rows(cap, rec: dict, threshold: float, temp: float) -> list[dict]:
+    """One row per gold entity on its label's entity query; gated at sigmoid(logit / pair_temperature)."""
+    pred, batch, _ = cap
+    qids = {q.role_name: q.query_id for q in batch.query_layouts[0].queries if q.task_type == "entities"}
+    emitted = pred.get("entities") or {}
+    rows = []
+    for label, values in (rec["output"].get("entities") or {}).items():
+        if label not in qids:
+            continue
+        out = {(v if isinstance(v, str) else v.get("text")) for v in emitted.get(label) or []}
+        for v in values:
+            text = v["text"] if isinstance(v, dict) else v
+            rows.append({"kind": "entity", "type": label, "trigger": text,
+                         **gold_row(cap, rec["input"], qids[label], v, threshold, temp),
+                         "emitted_type": bool(emitted.get(label)), "emitted_trigger": text in out})
+    return rows
+
+
+def probe_doc(model, rec: dict, threshold: float, queries=("events",)) -> list[dict]:
+    """Rows per gold event (anchor query) and/or gold entity: reach, gold logit and rank, level, gate, emitted."""
+    cap = capture(model, rec, threshold)
+    if cap is None:
+        return []
+    bs = model.boundary_settings
+    return ((event_rows(cap, rec, threshold, float(bs.record_temperature)) if "events" in queries else [])
+            + (entity_rows(cap, rec, threshold, float(bs.pair_temperature)) if "entities" in queries else []))
 
 
 def summarize(name: str, rows: list[dict]) -> dict:
