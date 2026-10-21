@@ -8,8 +8,9 @@ One forward per batch on the TRAINING path (real trainer data preparation, negat
 dropout off, the gold-injection / consistency / soft-IoU schedules at the checkpoint's step), then three gradients:
   entity   sum over terms of weight x the entities share of that span loss   (reduce_by_task contributions)
   event    the same for the events share (trigger AND role queries)
-  record   the record head's total loss (trigger <-> argument binding), captured from _record_loss
-  relation the relation scorer's loss;  coref  the weighted entity-mention coreference loss
+  bind     the record head's loss WITHOUT the trigger link: trigger <-> argument assignment, junction, negatives
+  tlink    the trigger x trigger coreference link (TriggerLink), captured per group from records._coref_link_loss
+  relation the relation scorer's loss;  elink  the weighted entity-mention coreference link
   rest     total minus all of these: classification, consistency, the relation/json shares of the span losses
 The shares must sum to each term, or the tool refuses to report. Gradients are summed over --batches, then cosines
 between pairs of components are reported per parameter group. Negative = they pull the shared weights apart.
@@ -21,9 +22,11 @@ between pairs of components are reported per parameter group. Negative = they pu
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import random
 import re
+import resource
 import sys
 import tempfile
 from pathlib import Path
@@ -36,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # probe_task_loss
 import probe_event_collapse as P  # noqa: E402
 import train as T  # noqa: E402
 from probe_task_losses import TERMS, term_weight  # noqa: E402
+from gliner2.models.boundary import records as R  # noqa: E402
 from gliner2.models.boundary.model import TASK_TYPES  # noqa: E402
 from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig  # noqa: E402
 
@@ -48,28 +52,29 @@ def group_of(name: str) -> str:
     return ".".join(parts[:2])
 
 
-def training_records(cfg: dict, cfg_path: str, n: int, seed: int) -> list[dict]:
-    """A seeded sample of the config's real train mix, label-mapped and corpus-tagged as train.py does."""
+def training_records(cfg: dict, cfg_path: str, n: int, seed: int, only=None) -> list[dict]:
+    """A seeded sample of the config's real train mix, label-mapped and corpus-tagged as train.py does
+    (restricted to the corpora in `only` when given)."""
     d = cfg["data"]
     paths = T._dedupe_paths(T._split_files(d["corpora"], "train", set(d.get("train_only") or []))
                             + T._event_split(d.get("event_files") or {}, "train"), "train")
     fns, passthrough = T._category_fns(T.load_labels_cfg(cfg, cfg_path)), T.labels_passthrough(cfg)
-    records = T.read_transformed(paths, fns, passthrough)
+    records = [r for r in T.read_transformed(paths, fns, passthrough) if not only or r.get("_corpus") in only]
     return random.Random(seed).sample(records, min(n, len(records)))
 
 
-def build(cfg: dict, cfg_path: str, checkpoint: str, records: list[dict], batch_size: int):
+def build(cfg: dict, cfg_path: str, checkpoint: str, records: list[dict], batch_size: int, device: str = "cpu"):
     """Model with per-task losses on, and the trainer's own training dataloader over `records`."""
     model_cfg = dict(cfg["model"], pretrained=P.local_checkpoint(checkpoint), map_location="cpu")
     model_cfg["boundary_head"] = dict(model_cfg.get("boundary_head") or {}, report_task_losses=True)
-    model = T._build_model(model_cfg)
+    model = T._build_model(model_cfg).to(device)
     train_cfg = dict(cfg["training"], output_dir=tempfile.mkdtemp(), max_train_samples=-1, num_workers=0, bf16=False,
                      fp16=False, batch_size=batch_size)
     if train_cfg.get("negative_pools") == "auto":
         train_cfg["negative_pools"] = T._auto_negative_pools(cfg, cfg_path, tempfile.mkdtemp())
     known = TrainingConfig.__dataclass_fields__
     trainer = GLiNER2Trainer(model, TrainingConfig(**{k: v for k, v in train_cfg.items() if k in known}))
-    trainer.device = torch.device("cpu")
+    trainer.device = torch.device(device)
     dataset = trainer._prepare_data(records, is_train=True)
     return model, trainer, trainer._create_dataloader(dataset, batch_size, shuffle=False, is_training=True)
 
@@ -106,7 +111,10 @@ def check_shares(losses: dict) -> None:
 
 
 def check_weights(model, losses: dict) -> None:
-    """The weighted task losses plus the (not query-typed) consistency term must rebuild the head's span total."""
+    """The weighted task losses plus the (not query-typed) consistency term must rebuild the head's span total.
+    A batch with no span supervision (e.g. classification only) has no span total and nothing to rebuild."""
+    if "total_loss" not in losses:
+        return
     head = model.boundary_head
     rebuilt = sum(float(task_loss(model, losses, t)) for t in TASK_TYPES) + float(
         head.settings.consistency_loss_weight * head._consistency_scale * losses.get("consistency_loss", 0.0))
@@ -114,21 +122,66 @@ def check_weights(model, losses: dict) -> None:
     assert abs(rebuilt - whole) <= 1e-3 * max(1.0, abs(whole)), f"weighted task losses {rebuilt:.6f} != span total {whole:.6f}"
 
 
-PARTS = ("entity", "event", "record", "relation", "coref", "rest")
-PAIRS = (("entity", "event"), ("entity", "record"), ("event", "record"), ("entity", "relation"), ("entity", "coref"),
-         ("entity", "rest"), ("event", "rest"))
+PARTS = ("entity", "event", "bind", "tlink", "relation", "elink", "rest")
+PAIRS = (("entity", "event"), ("entity", "bind"), ("event", "bind"), ("entity", "tlink"), ("event", "tlink"),
+         ("entity", "elink"), ("entity", "relation"), ("entity", "rest"), ("event", "rest"))
+
+
+def trigger_link_term(model, captured: dict):
+    """The trigger x trigger coreference link's share of the record loss, as _record_loss weights it:
+    record_loss_weight * record_coref_link_weight * (summed BCE over groups) / (pairs over groups)."""
+    pairs = sum(n for _, n in captured.get("tlink", []))
+    if not pairs:
+        return None
+    s = model.boundary_settings
+    return s.record_loss_weight * s.record_coref_link_weight * sum(l for l, _ in captured["tlink"]) / pairs
 
 
 def components(model, out, captured: dict) -> dict:
-    """The additive pieces of out.loss that have their own gradient; `rest` is computed as total minus these."""
+    """The additive pieces of out.loss that have their own gradient; `rest` is computed as total minus these.
+    bind = the record loss WITHOUT the trigger link (trigger <-> argument assignment, junction column, negatives)."""
     losses = out.losses
-    coref = losses.get("entity_coref_loss")
+    elink, tlink, record = losses.get("entity_coref_loss"), trigger_link_term(model, captured), captured.get("record")
     return {"entity": task_loss(model, losses, "entities"), "event": task_loss(model, losses, "events"),
-            "record": captured.get("record"), "relation": losses.get("relation_loss"),
-            "coref": None if coref is None else model.boundary_settings.entity_coref_link_weight * coref}
+            "bind": record if tlink is None or record is None else record - tlink, "tlink": tlink,
+            "relation": losses.get("relation_loss"),
+            "elink": None if elink is None else model.boundary_settings.entity_coref_link_weight * elink}
 
 
-def measure(model, trainer, loader, step: int, planned: int, batches: int) -> dict:
+def _device(model) -> torch.device:
+    return next(model.parameters()).device
+
+
+def verify_link(model, batch, captured: dict, seed: int, bf16: bool) -> None:
+    """Replay the batch with record_coref_link_weight 0 under the same seed: the record loss must drop by exactly
+    the captured trigger-link term, or the link was mis-attributed."""
+    term = trigger_link_term(model, captured)
+    with_link, base, off = captured["record"], model.boundary_settings, {}
+    zero = dataclasses.replace(base, record_coref_link_weight=0.0)
+    orig = model._record_loss
+
+    def hook(*a, **k):
+        out = orig(*a, **k)
+        off["record"] = out["total"]
+        return out
+
+    model.boundary_settings = model.boundary_head.settings = zero
+    model._record_loss = hook
+    try:
+        torch.manual_seed(seed)
+        random.seed(seed)
+        with torch.no_grad(), torch.autocast(_device(model).type, dtype=torch.bfloat16, enabled=bf16):
+            model(batch)
+    finally:
+        model.boundary_settings = model.boundary_head.settings = base
+        model._record_loss = orig
+    diff = float(with_link) - float(off["record"])
+    assert abs(diff - float(term)) <= 1e-3 + 0.02 * abs(float(term)), \
+        f"trigger link mis-attributed: record(w) - record(0) = {diff:.6f}, captured term {float(term):.6f}"
+    print(f"[conflict] verify-link: record(w) - record(0) = {diff:+.6f}, captured term {float(term):+.6f} -- OK", flush=True)
+
+
+def measure(model, trainer, loader, step: int, planned: int, batches: int, verify: int = 0, bf16: bool = False) -> dict:
     """Summed gradient of each component per parameter, and the per-batch global cos(entity, event)."""
     params = [(n, p) for n, p in model.named_parameters() if p.requires_grad and not n.startswith("encoder.embeddings")]
     ps = [p for _, p in params]
@@ -141,7 +194,16 @@ def measure(model, trainer, loader, step: int, planned: int, batches: int) -> di
         captured["record"] = out["total"]
         return out
 
+    orig_link = R._coref_link_loss
+
+    def link_hook(*a, **k):
+        loss, n_pairs, wins, pairs = orig_link(*a, **k)
+        if n_pairs:
+            captured.setdefault("tlink", []).append((loss, n_pairs))
+        return loss, n_pairs, wins, pairs
+
     model._record_loss = record_hook
+    R._coref_link_loss = link_hook
     model.train()
     for m in model.modules():
         if isinstance(m, torch.nn.Dropout):
@@ -151,10 +213,17 @@ def measure(model, trainer, loader, step: int, planned: int, batches: int) -> di
         if used >= batches:
             break
         captured.clear()
-        out = model(batch)
+        batch = batch.to(_device(model))
+        torch.manual_seed(used)
+        random.seed(used)
+        with torch.autocast(_device(model).type, dtype=torch.bfloat16, enabled=bf16):
+            out = model(batch)
         check_shares(out.losses)
         check_weights(model, out.losses)
         comp = components(model, out, captured)
+        if verify > 0 and comp["tlink"] is not None:
+            verify_link(model, batch, dict(captured), used, bf16)
+            verify -= 1
         zero = lambda: [None] * len(ps)
         g = {k: (torch.autograd.grad(v, ps, retain_graph=True, allow_unused=True)
                  if torch.is_tensor(v) and v.requires_grad else zero()) for k, v in comp.items()}
@@ -170,8 +239,12 @@ def measure(model, trainer, loader, step: int, planned: int, batches: int) -> di
         if flat["entity"].norm() > 0 and flat["event"].norm() > 0:
             per_batch.append(float(torch.nn.functional.cosine_similarity(flat["entity"], flat["event"], dim=0)))
         used += 1
+        peak = (f"cuda peak alloc {torch.cuda.max_memory_allocated() / 2**30:.1f} GB" if _device(model).type == "cuda"
+                else f"peak rss {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**30:.1f} GB (excludes compressed)")
+        print(f"[conflict] batch {used}: input {tuple(batch.input_ids.shape)} | {peak}", flush=True)
         del out, g, flat, total
     model._record_loss = orig
+    R._coref_link_loss = orig_link
     return {"params": params, "sums": sums, "per_batch_cosine": per_batch, "batches": used}
 
 
@@ -210,17 +283,23 @@ def main(argv=None) -> None:
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--planned-steps", type=int, default=82930, help="the run's planned total (schedules)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--device", default="cpu")
+    ap.add_argument("--only-corpora", nargs="*", help="restrict the sample to these corpora (traces only)")
+    ap.add_argument("--verify-link", type=int, default=0, help="replay the first N link-carrying batches at weight 0")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
-    records = training_records(cfg, args.config, args.records, args.seed)
+    records = training_records(cfg, args.config, args.records, args.seed, set(args.only_corpora or []))
     result = {"args": vars(args), "checkpoints": {}}
     for ref in args.checkpoints:
         step = int(re.search(r"checkpoint-(\d+)", ref).group(1))
         torch.manual_seed(args.seed)
         random.seed(args.seed)
-        model, trainer, loader = build(cfg, args.config, ref, [dict(r) for r in records], args.batch_size)
-        result["checkpoints"][ref] = report(ref, measure(model, trainer, loader, step, args.planned_steps, args.batches))
+        model, trainer, loader = build(cfg, args.config, ref, [dict(r) for r in records], args.batch_size, args.device)
+        bf16 = args.device.startswith("cuda") and bool(cfg["training"].get("bf16"))
+        print(f"[conflict] {ref}: step {step}, device {args.device}, bf16 autocast {bf16}, batch {args.batch_size}", flush=True)
+        result["checkpoints"][ref] = report(ref, measure(model, trainer, loader, step, args.planned_steps, args.batches,
+                                                         args.verify_link, bf16))
         Path(args.out).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
         del model, trainer, loader
     print(f"[conflict] wrote {args.out}", flush=True)
