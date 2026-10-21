@@ -40,3 +40,19 @@ def test_entity_rows_offset_gold_and_word_offset():
     rec = {"input": TEXT, "output": {"entities": {"city": [{"text": "Paris", "start": 15, "end": 20}]}}}
     (row,) = entity_rows(_cap(offset=7), rec, 0.3, 1.0)
     assert row["reached"] and row["gold_candidate"] == 2 and row["gold_logit"] == 0.5
+
+
+def test_local_checkpoint_downloads_under_ckpt_cache(monkeypatch, tmp_path):
+    import huggingface_hub
+    import probe_event_collapse
+    seen = {}
+
+    def fake_snapshot(repo, allow_patterns, local_dir):
+        seen.update(repo=repo, allow=allow_patterns, local_dir=local_dir)
+        return local_dir
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot)
+    monkeypatch.setenv("CKPT_CACHE", str(tmp_path))
+    path = probe_event_collapse.local_checkpoint("org/repo:checkpoint-500")
+    assert seen == {"repo": "org/repo", "allow": ["checkpoint-500/*"], "local_dir": f"{tmp_path}/org__repo"}
+    assert path == f"{tmp_path}/org__repo/checkpoint-500"

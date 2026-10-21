@@ -9,6 +9,7 @@ set -uo pipefail
 cd ~/gliner2
 export PATH="$HOME/.local/bin:$PATH"
 export HF_TOKEN=$(cat ~/.hf_token)
+export CKPT_CACHE=$HOME/ckpts   # probe_event_collapse.local_checkpoint defaults to a laptop path
 PY=./.venv/bin/python
 CFG=${CFG:?CFG}; DEST=${DEST:?DEST}
 R=${CKPT_REPO:-whr778/gliner2-eb22c-collapse-trace}

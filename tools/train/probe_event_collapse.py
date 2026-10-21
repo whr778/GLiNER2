@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import statistics
 import sys
 from pathlib import Path
@@ -34,12 +35,12 @@ from gliner2.training.eval_metrics import _schema_from_gold  # noqa: E402
 
 
 def local_checkpoint(ref: str) -> str:
-    """A local directory as given, or `repo:subfolder` on the Hub downloaded once; returns the local path."""
+    """A local directory as given, or `repo:subfolder` on the Hub downloaded once under $CKPT_CACHE; returns the path."""
     if ":" in ref and not Path(ref).exists():
         from huggingface_hub import snapshot_download
         repo, sub = ref.split(":", 1)
-        root = snapshot_download(repo, allow_patterns=[f"{sub}/*"],
-                                 local_dir=f"/Volumes/Development/tmp/autopsy_ckpts/{repo.replace('/', '__')}")
+        cache = os.environ.get("CKPT_CACHE", "/Volumes/Development/tmp/autopsy_ckpts")
+        root = snapshot_download(repo, allow_patterns=[f"{sub}/*"], local_dir=f"{cache}/{repo.replace('/', '__')}")
         ref = str(Path(root) / sub)
     return ref
 
