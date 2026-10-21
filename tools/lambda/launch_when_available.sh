@@ -22,11 +22,13 @@ SSH_KEY_NAME=${SSH_KEY_NAME:-gliner2-mac}
 POLL=${POLL:-180}
 MAX_WAIT=${MAX_WAIT:-21600}     # 6h of looking, then give up rather than poll forever
 # TIME-BOUNDED REGION AVOIDANCE: us-west-3 H100 PCIe boxes never left "booting", then sat in "terminating" until
-# Lambda support cleared them (2026-10-20, ~16:12-17:10 UTC). Avoid us-west by default until 2026-10-21 05:00 UTC
-# (epoch 1792558800); after that the default lifts by itself. An explicit AVOID_REGIONS (even empty) always wins.
-if [ -z "${AVOID_REGIONS+set}" ] && [ "$(date +%s)" -lt 1792558800 ]; then
+# Lambda support cleared them (2026-10-20, ~16:12-17:10 UTC). REPEATED 2026-10-21 17:00 UTC: a us-west-3 H100 PCIe sat
+# in "booting" 11 min, was terminated, and stuck in "terminating" (ticket filed by the user). Avoid us-west by default
+# until 2026-10-22 17:19 UTC (epoch 1792689551); after that the default lifts by itself. An explicit AVOID_REGIONS
+# (even empty) always wins.
+if [ -z "${AVOID_REGIONS+set}" ] && [ "$(date +%s)" -lt 1792689551 ]; then
   AVOID_REGIONS="us-west"
-  echo "[launch] avoiding us-west until 2026-10-21 05:00 UTC (default; set AVOID_REGIONS to override)"
+  echo "[launch] avoiding us-west until 2026-10-22 17:19 UTC (default; set AVOID_REGIONS to override)"
 fi
 AVOID_REGIONS=${AVOID_REGIONS:-}
 : "${LAMBDA_API_KEY:?not set}"
