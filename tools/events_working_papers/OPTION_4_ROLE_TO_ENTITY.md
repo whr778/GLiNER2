@@ -420,3 +420,12 @@ The expensive part is not the GPU; it is that a wrong negatives pool is silent a
   the base already knows. Watch `entity_strict` on the unchanged corpora, not just the target.
 - Partial annotation leaks into negatives despite the flag — detectable by §7's inversion
   check, and the reason that check exists.
+
+## 2026-10-21 -- scope of the verdict, after the eb22c autopsy
+
+Entity labels, triggers and argument roles are rows of ONE pair-score tensor on one scorer and encoder
+([[EB22C_SCORE_LEVEL_AUTOPSY]] section 3). Run 1's negative (event_argument strict -0.0300, event_trigger strict
+-0.0541) therefore measured "positive-only argument-as-entity supervision through a SHARED head, with no negative
+reachable for the derived corpus" -- not "arguments-as-entities is bad". The shared head was the mechanism the test
+relied on, not a hidden confound, and it did transmit (trigger fell on a head the corpus never touched). The re-run
+was VOID. A clean re-test waits for the head design (TODO rows 41, 43).

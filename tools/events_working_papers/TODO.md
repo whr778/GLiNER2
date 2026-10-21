@@ -3,12 +3,16 @@
 **Only outstanding work lives here.** Everything resolved, refuted or superseded is in
 [[EXPERIMENT_CATALOG]] (what was run, newest first) and [[PROJECT_HISTORY]]
 (narrative, including [the full pre-2026-09-21 TODO](PROJECT_HISTORY.md#todo-archive-2026-09-21)
-preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the new rows 24-28 refreshed 2026-10-05; section 1 and rows 24/29 refreshed 2026-10-06; rows 36-38 added and row 23 annotated 2026-10-17.
+preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the new rows 24-28 refreshed 2026-10-05; section 1 and rows 24/29 refreshed 2026-10-06; rows 36-38 added and row 23 annotated 2026-10-17. Rows 41-44 and section 1 refreshed 2026-10-21.
 
 ## Outstanding, at a glance
 
 | # | item | why it matters | state | next action |
 |---|---|---|---|---|
+| 41 | **eb22c score-level swing (the 'event collapse')** | gold triggers stay proposed and ranked first at every checkpoint, but the LEVEL of every pair score swings across the fixed anchor gate (logit -0.85): in-run event_type 0.00-0.96 to 15k, 0.18-0.73 to 30k; entity and trigger levels move opposite 3.5k-7k, together 7k-26k, opposite 26k-30k. Every earlier 'collapse' verdict was read inside the swing | **mechanism located, cause open** -- [[EB22C_SCORE_LEVEL_AUTOPSY]]; unanchored-prior hypothesis DISPROVED; gradient-conflict run on Lambda (1x H100, launched 2026-10-21) | read the per-layer cosines (entity / event / bind / tlink / elink); then ONE change with a control: per-query-type bias+temperature (head conflict), task_lr 4e-5 (encoder / common-mode), or `record_coref_link_weight` 0.3 vs 0 (tlink opposes entity). The user holds the office run until this is decided |
+| 42 | **In-run eval is one random draw, 80% MAVEN events** | `sliding_window` evals a seeded random 1,500 of ~19k val records: gold events MAVEN 617 / 778, CMNEE 48; entity gold 93% chfinann/docee/turkish_event/docfee. The in-run curves and best-checkpoint pick describe those corpora, and a swinging metric picks a lucky checkpoint | measured 2026-10-21 (rebuilt draw matches the logged support 6,857 vs 6,878) | pick checkpoints on a per-corpus val sweep (diagnose_checkpoint.py) rather than the in-run headline; consider a stratified eval draw |
+| 43 | **Option 4 (arguments as entity spans) was never cleanly tested** | run 1 (2026-09-20, NEGATIVE) had no reachable negatives (the derived corpus was in no pool) and ran through a SHARED head; the re-run (2026-09-21) was VOID (epoch mismatch, different test sets). The verdict is regime-bound, not 'arguments-as-entities is bad' | open; auto pools built 2026-09-20; the trainer still never reads `partial_annotation` (last recorded) | re-test only after row 41 settles the head design, with the derived corpus in a negative pool |
+| 44 | **Office eb22c read 0.0 events at epochs 2-3** | it trained on the starved mix (offset gold dropped by the validator) AND with DDP rank drift, so it is not explained by the score-level swing alone | open | not worth re-running as is; superseded by the next eb22c run on the fixed code |
 | 36 | **Role-list leak in event negatives (menu poison)** | absent event types list their full pool role list, gold types only argued roles, so a rarely argued role reads as "absent": CASIE Damage_Amount zeroes CASIE events under CASIE's own menu (LABEL_NEGATIVES_PLAN s5g, MENU_SPEC s10) | **FIX BUILT 7871e33; rolesym A/B DONE 2026-10-18, POSITIVE:** news55 (test, once per arm) event_type F1 0.153 -> 0.541 with precision UP (0.414 -> 0.460), trigger 0.069 -> 0.397, argument 0.007 -> 0.115; CASIE val full menu 2 -> 72 hits (gold menu 60 -> 47); WikiEvents dev full menu 48 -> 97 hits but 3.5x the firing; blind-test heads all inside the floor  **news55 VAL pick 2026-10-18: both arms pick 0.5; treatment event_type 0.604 vs 0.080, trigger 0.416 vs 0.033 (strict micro F1), entity inside the floor; treatment wins every event head at every threshold** (catalog row) | eb22 with the flag (approved in direction 2026-10-18; price it first); a per-head threshold for arguments (they peak at 0.2) |
 | 37 | **Full shipped menu OOMs in the relation decode** | `TypedRelationPairGenerator.select` builds int64 [B, R, Q*K] = 5.47 GiB per tensor for 598 relations at batch 1; the full-menu blind test cannot run on a 40 GB GPU (CPU ~100 h per arm) | **FIXED a27cc6b (2026-10-17, user approved):** one shared candidate order + blocked topk; output byte-identical; select 62.0 -> 1.59 s, its memory +13.3 -> +0.8 GB; CPU doc 122.8 -> 59.6 s (encoder now dominates, 35.6 s) **GPU retime 2026-10-18: no OOM, peak 18.5 GB of 40, 12.7 s/doc on A100** (full blind test ~10.4 h per model, ~$62 for 3). **Host-copy relation decode 61b8bd8 (GPU profile: per-pair CUDA scalar reads, GPU ~18% busy): ~3.5 s/doc, output byte-identical; full blind test ~$17.** **Upstream PR fastino-ai/GLiNER2#195** (fix/relation-select-memory, 4e3d5a5) | full-menu blind test when wanted |
 | 40 | **Relation head does not fit its training data** | eb21 relation F1 is ~the same on train and val; full-menu relations ~0.01-0.03 | **DIAGNOSED 2026-10-19** (catalog row): can learn clean labels (sentence_rex overfit F1 1.00); starved (0.64% of encoder gradient); text edges expanded to every mention pair (professorbob_re x20.6, biored x7.7, cc_news x7-8.5) are unlearnable; `No_Relation` is 37% of professorbob_re gold and on the shipped menu; scierc does not fit even at x1.9 | BUILT 2026-10-19: `relation_gold_pairs: nearest` (training) and `labels/unified-full-v4.yaml` (v3 + `No_Relation` dropped, v3 unchanged); next: overfit them, then fold into the option-B base with fastino's structural relation/span flags; then a mixed-batch A/B for the starvation (relation_loss_weight or a separate positive/negative reduction); scierc separately |
@@ -54,13 +58,13 @@ preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the
 
 ## 1. In flight
 
-**eb19 -- DONE 2026-10-06, terminated** (row 24, catalog). Open from it: the stored `inference_defaults.threshold`
-(sweep chose 0.5, config.json still 0.3), the anchor-gate windows, the trigger-miss probe (`eb19/trigger_misses_arm.json`).
+**Gradient-conflict measurement (row 41) -- on Lambda, 2026-10-21.** `gradient_conflict.py` on 1x H100 (bf16, batch
+4, 48 batches) at eb22c-autopsy checkpoints 3,500 / 4,000 / 4,500 / 22,000 / 24,000; results publish to run-logs
+`gradient-conflict/`. Two launches failed before work started (a JOB quoting bug, a laptop-only checkpoint path);
+both boxes terminated themselves, ~4 min billed each; fixed 4317695 / e4a632c.
 
-**eb20 base run -- RUNNING at the user's office** (`eb20.yaml`, 227bcad): eb19 + coreferent ownership
-+ the coreference link (weight 0.3, unmeasured), merge OFF, + cc_news_events_sonnet55_v2 train, labels
-`unified-full-v2.yaml`. The treatment is live in-run (pair AUC 0.873 cumulative at 5,000 groups vs 0.811 at init). After it:
-TODO #29's gates 3-5 on sonnet55 val with `infer.py --merge-coreferent link`.
+**Nothing else is running.** eb22c-autopsy is DONE (30k steps, ~$42). The office eb22c run is HELD by the user
+until row 41 is decided. eb20 (office) and eb19 are history -- see the catalog.
 
 ## 2. Ready to launch
 
