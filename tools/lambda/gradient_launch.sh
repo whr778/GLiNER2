@@ -13,5 +13,5 @@ uv run python tools/train/check_corpora_fetchable.py --config "$CFG" --offline \
 export JOB_TIMEOUT=${JOB_TIMEOUT:-5400}
 export HARD_DEADLINE=${HARD_DEADLINE:-7200}
 echo "[$NAME] commit $EXPECT_COMMIT | logs -> $NAME/"
-exec env NAME="$NAME" JOB="CFG=$CFG DEST=$NAME STEPS='${STEPS:-3500 4000 4500 22000 24000}' bash tools/lambda/gradient_job.sh" \
+exec env NAME="$NAME" JOB="CFG=$CFG DEST=$NAME STEPS=${STEPS:-3500,4000,4500,22000,24000} bash tools/lambda/gradient_job.sh" \
      TYPES="${TYPES:-gpu_1x_h100_sxm5 gpu_1x_h100_pcie gpu_1x_a100_sxm4}" bash tools/lambda/launch_when_available.sh

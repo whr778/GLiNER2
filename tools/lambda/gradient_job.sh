@@ -12,13 +12,13 @@ export HF_TOKEN=$(cat ~/.hf_token)
 PY=./.venv/bin/python
 CFG=${CFG:?CFG}; DEST=${DEST:?DEST}
 R=${CKPT_REPO:-whr778/gliner2-eb22c-collapse-trace}
-STEPS=${STEPS:-"3500 4000 4500 22000 24000"}
+STEPS=${STEPS:-3500,4000,4500,22000,24000}   # comma-separated: JOB travels inside bash -lc '...' quotes
 OUT=$HOME/conflict.json
 LOG=$HOME/conflict.log
 source tools/lambda/_publish.sh
 echo "[gradient] ===== START $(date -u) | $(git rev-parse --short HEAD) | $CFG | checkpoints $STEPS ====="
 CKPTS=""
-for s in $STEPS; do CKPTS="$CKPTS ${R}:checkpoint-$s"; done
+for s in ${STEPS//,/ }; do CKPTS="$CKPTS ${R}:checkpoint-$s"; done
 PYTHONUNBUFFERED=1 $PY tools/train/gradient_conflict.py --config "$CFG" --checkpoints $CKPTS \
   --records 600 --batches 48 --batch-size 4 --device cuda --verify-link 3 --out "$OUT" > "$LOG" 2>&1
 RC=$?
