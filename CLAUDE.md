@@ -11,6 +11,7 @@
 - Be patient and be honest.
 - Do what you say and say what you do.
 - Proper prior planning prevents poor performance.
+- Be direct and be deliberate.
 
 ## MANDATORY CODE STYLE
 
