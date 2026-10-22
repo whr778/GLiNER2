@@ -8,6 +8,7 @@ exercised end-to-end only in a real training run.
 import os
 import types
 
+import pytest
 import torch
 from torch.optim import AdamW
 
@@ -52,18 +53,22 @@ def test_training_state_round_trip(tmp_path):
     opt.step()  # populate optimizer state
 
     saver = types.SimpleNamespace(
-        optimizer=opt, scheduler=None, epoch=2, global_step=44,
+        model=model, optimizer=opt, scheduler=None, epoch=2, global_step=44,
         best_metric=0.42, best_epoch=2, best_step=40, patience_counter=1,
     )
+    saver._optimizer_param_names = types.MethodType(T._optimizer_param_names, saver)
     T._save_training_state(saver, tmp_path)
     assert (tmp_path / "training_state.pt").is_file()
 
     loaded = torch.load(tmp_path / "training_state.pt", map_location="cpu", weights_only=False)
-    opt2 = AdamW(torch.nn.Linear(8, 8).parameters(), lr=1e-3)
+    model2 = torch.nn.Linear(8, 8)
+    opt2 = AdamW(model2.parameters(), lr=1e-3)
     restorer = types.SimpleNamespace(
-        optimizer=opt2, scheduler=None, device=torch.device("cpu"),
+        model=model2, optimizer=opt2, scheduler=None, device=torch.device("cpu"),
         best_metric=float("inf"), best_epoch=None, best_step=None, global_step=0, patience_counter=0,
     )
+    restorer._optimizer_param_names = types.MethodType(T._optimizer_param_names, restorer)
+    restorer._load_optimizer_state = types.MethodType(T._load_optimizer_state, restorer)
     start_epoch = T._restore_training_state(restorer, loaded)
 
     assert start_epoch == 3                       # saved epoch 2 -> resume at index 3
@@ -118,3 +123,66 @@ def test_load_checkpoint_reapplies_gradient_checkpointing(tmp_path):
     T.load_checkpoint(stub, str(ckpt))
     assert stub.model.encoder.gc is True
     assert stub.model.encoder.config.use_cache is False
+
+
+class _Net(torch.nn.Module):
+    """`late=True` registers `b` AFTER construction, the way train.py adds the junction / links to a warm start;
+    `late=False` builds it in __init__, the way a reload of that checkpoint does. Same names, different order."""
+
+    def __init__(self, late=False):
+        super().__init__()
+        if not late:
+            self.b = torch.nn.Linear(3, 5)
+        self.a = torch.nn.Linear(4, 4)
+        if late:
+            self.b = torch.nn.Linear(3, 5)
+
+
+def _named_stub(model, opt):
+    s = types.SimpleNamespace(model=model, optimizer=opt, scheduler=None, device=torch.device("cpu"), epoch=0,
+                              global_step=1, best_metric=0.0, best_epoch=0, best_step=0, patience_counter=0)
+    s._optimizer_param_names = types.MethodType(T._optimizer_param_names, s)
+    s._load_optimizer_state = types.MethodType(T._load_optimizer_state, s)
+    return s
+
+
+def _stepped(model):
+    opt = AdamW(model.parameters(), lr=1e-3)
+    for i, (n, p) in enumerate(model.named_parameters()):
+        p.grad = torch.full_like(p, float(i + 1))
+    opt.step()
+    return opt
+
+
+def test_restore_maps_moments_by_name_across_a_reordered_model(tmp_path):
+    late = _Net(late=True)
+    opt = _stepped(late)
+    T._save_training_state(_named_stub(late, opt), tmp_path)
+    want = {n: opt.state[p]["exp_avg"].clone() for n, p in late.named_parameters()}
+    state = torch.load(tmp_path / "training_state.pt", map_location="cpu", weights_only=False)
+
+    built = _Net(late=False)
+    assert [n for n, _ in built.named_parameters()] != [n for n, _ in late.named_parameters()]
+    opt2 = AdamW(built.parameters(), lr=1e-3)
+    T._restore_training_state(_named_stub(built, opt2), state)
+    for n, p in built.named_parameters():
+        assert torch.equal(opt2.state[p]["exp_avg"], want[n]), n
+
+
+def test_nameless_state_with_reordered_shapes_is_refused():
+    late = _Net(late=True)
+    opt = _stepped(late)
+    state = {"optimizer": opt.state_dict(), "epoch": 0}          # an old checkpoint: no param_names
+    built = _Net(late=False)
+    with pytest.raises(RuntimeError, match="do not line up"):
+        T._restore_training_state(_named_stub(built, AdamW(built.parameters(), lr=1e-3)), state)
+
+
+def test_nameless_state_in_the_same_order_still_restores():
+    net = _Net(late=False)
+    opt = _stepped(net)
+    state = {"optimizer": opt.state_dict(), "epoch": 0}
+    net2 = _Net(late=False)
+    opt2 = AdamW(net2.parameters(), lr=1e-3)
+    T._restore_training_state(_named_stub(net2, opt2), state)
+    assert len(opt2.state) == len(list(net2.parameters()))

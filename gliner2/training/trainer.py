@@ -1214,15 +1214,72 @@ class ExtractorTrainer:
             "best_step": self.best_step,
             "patience_counter": self.patience_counter,
             "optimizer": self.optimizer.state_dict(),
+            "param_names": self._optimizer_param_names(),
             "scheduler": self.scheduler.state_dict() if self.scheduler is not None else None,
             "torch_rng": torch.get_rng_state(),
             "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
         }
         torch.save(state, checkpoint_dir / "training_state.pt")
 
+    def _optimizer_param_names(self) -> List[List[str]]:
+        """Each optimizer group's parameter names, in the optimizer's own order (DDP's `module.` prefix dropped)."""
+        names = {id(p): n.removeprefix("module.") for n, p in self.model.named_parameters()}
+        return [[names[id(p)] for p in g["params"]] for g in self.optimizer.param_groups]
+
+    def _load_optimizer_state(self, state: dict) -> None:
+        """Load optimizer state matched to the CURRENT parameters BY NAME, not by position.
+
+        `optimizer.load_state_dict` assigns saved moments by position. A warm-started run adds the junction, trigger
+        link and mention link AFTER loading (they register last), while a reload of its checkpoint builds them in
+        __init__ (in place): 46 of eb22c's 330 positions move, 28 change shape. Positional restore then hands
+        parameters other parameters' moments -- the fused CUDA AdamW rejects it ("params, grads, exp_avgs,
+        exp_avg_sqs must have the same dtype, device and layout"), the fused CPU kernel segfaults, and the 18
+        same-shape swaps would be silently wrong (2026-10-22). Checkpoints saved without names are restored
+        positionally only if every moment matches its parameter's shape; otherwise they are refused."""
+        saved, saved_names = state["optimizer"], state.get("param_names")
+        groups = self.optimizer.param_groups
+        if saved_names is None:
+            flat = [p for g in groups for p in g["params"]]
+            order = [i for g in saved["param_groups"] for i in g["params"]]
+            bad = [k for k, i in enumerate(order) if k < len(flat) and "exp_avg" in saved["state"].get(i, {})
+                   and saved["state"][i]["exp_avg"].shape != flat[k].shape]
+            if bad or len(order) != len(flat):
+                raise RuntimeError(
+                    f"training_state.pt has no parameter names and its optimizer moments do not line up with this "
+                    f"model ({len(bad)} shape mismatches, {len(order)} saved vs {len(flat)} parameters): the run that "
+                    f"saved it registered its parameters in a different order. Resume weights-only (fresh optimizer).")
+            logger.warning("training_state.pt has no parameter names; restored by position (shapes all match, "
+                           "order cannot be verified)")
+            self.optimizer.load_state_dict(saved)
+            return
+        index = {n: i for names, g in zip(saved_names, saved["param_groups"]) for n, i in zip(names, g["params"])}
+        current = self._optimizer_param_names()
+        if len(current) != len(saved["param_groups"]):
+            raise RuntimeError(f"optimizer has {len(current)} parameter groups, training_state.pt {len(saved['param_groups'])}")
+        remapped, new_groups, k, fresh = {}, [], 0, []
+        for names, g, sg in zip(current, groups, saved["param_groups"]):
+            ids = []
+            for n, p in zip(names, g["params"]):
+                i = index.get(n)
+                if i is not None and i in saved["state"]:
+                    moments = saved["state"][i]
+                    if "exp_avg" in moments and moments["exp_avg"].shape != p.shape:
+                        raise RuntimeError(f"{n}: saved moment shape {tuple(moments['exp_avg'].shape)} != {tuple(p.shape)}")
+                    remapped[k] = moments
+                elif i is None:
+                    fresh.append(n)
+                ids.append(k)
+                k += 1
+            new_groups.append(dict(sg, params=ids))
+        dropped = set(index) - {n for names in current for n in names}
+        if fresh or dropped:
+            logger.warning("optimizer restore by name: %d parameters start fresh (%s), %d saved ones unused (%s)",
+                           len(fresh), fresh[:3], len(dropped), sorted(dropped)[:3])
+        self.optimizer.load_state_dict({"state": remapped, "param_groups": new_groups})
+
     def _restore_training_state(self, state: dict) -> int:
         """Restore optimizer/scheduler/counters/RNG; return the epoch to resume at."""
-        self.optimizer.load_state_dict(state["optimizer"])
+        self._load_optimizer_state(state)
         # Optimizer tensors were loaded on CPU; move them to the training device.
         for opt_state in self.optimizer.state.values():
             for k, v in opt_state.items():
