@@ -58,7 +58,9 @@ preserved verbatim). Last rewritten 2026-09-21; sections 1-2, rows 16/21 and the
 
 ## 1. In flight
 
-**Gradient-conflict measurement (row 41) -- DONE 2026-10-21, no conflict found (catalog).** `gradient_conflict.py` on 1x H100 (bf16, batch
+**Gradient-conflict measurement (row 41) -- DONE 2026-10-21, no conflict found (catalog).**
+
+**Separation A/B and task_lr 4e-5 -- DONE 2026-10-22, both NULL inside a large seed floor (catalog).** Threshold-robust re-score of all checkpoints running locally (diagnose_checkpoint, precision kept). `gradient_conflict.py` on 1x H100 (bf16, batch
 4, 48 batches) at eb22c-autopsy checkpoints 3,500 / 4,000 / 4,500 / 22,000 / 24,000; results publish to run-logs
 `gradient-conflict/`. Two launches failed before work started (a JOB quoting bug, a laptop-only checkpoint path);
 both boxes terminated themselves, ~4 min billed each; fixed 4317695 / e4a632c.
