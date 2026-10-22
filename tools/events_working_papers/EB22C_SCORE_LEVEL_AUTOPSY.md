@@ -132,3 +132,54 @@ Decision it fed (the rules written before the result):
 - "The prior is the largest mover of the level" -> of the GOLD logit; the level move is shared.
 - "Entities and triggers move together from 7k" -> until 26k; opposite again 26k-30k.
 - A footprint watchdog read RSS, which excludes compressed memory on macOS, and could not see an 80 GB process.
+
+## 9. Threshold-robust re-score of all 40 checkpoints (2026-10-22)
+
+`diagnose_checkpoint.py` on VAL, first 40 records of each of maven / cmnee / duee / casie, gold menu, global decode, strict
+micro F1 with precision and recall kept, thresholds 0.01 / 0.05 / 0.1 / 0.2 / 0.3 / 0.5, on one Lambda A10 with flash
+attention + bf16 autocast (the in-run eval's own instrument). Checkpoints: control (seed 42) and seed43 and sep at
+4k-8k, 10k, 12k, 20k, 24k, 28k, 30k; tasklr 4k-12k. Results: run-logs `rescore/*.json`, ~$2 billed over four boxes
+(three died before scoring; the third of them was killed by the job's own unbound `local`, 2d41a22).
+
+**Instrument check.** The laptop (fp32, CPU, sdpa) scored 13 of the same checkpoints first: 858 cells, support identical,
+mean |dF1| 0.0003, max 0.025, best threshold identical in 143 of 143 (checkpoint, source) cases. The two instruments agree.
+
+**The swing is the readout, except on DuEE.** Mean strict event_type F1 over a run's steps, at the fixed 0.3 gate and at
+the best threshold (0.01 in every single case), with the number of steps whose BEST stays below 0.5:
+
+| source | control @0.3 / best / dips | seed43 | sep | tasklr (4k-12k) |
+|---|---|---|---|---|
+| maven | 0.53 / 0.98 / 0 | 0.24 / 0.96 / 0 | 0.52 / 0.97 / 0 | 0.09 / 0.96 / 0 |
+| cmnee | 0.44 / 0.88 / 1 | 0.29 / 0.81 / 1 | 0.34 / 0.75 / 2 | 0.17 / 0.57 / 4 |
+| casie | 0.39 / 0.90 / 1 | 0.06 / 0.84 / 1 | 0.40 / 0.92 / 0 | 0.00 / 0.67 / 3 |
+| duee | 0.09 / 0.52 / 5 | 0.02 / 0.35 / 7 | 0.03 / 0.13 / 10 | 0.01 / 0.24 / 6 |
+
+At the gate the three 30k runs read 0.02-0.53; one threshold lower they read 0.75-0.98 with 0-2 dips on maven, cmnee
+and casie. The gold type stays top-ranked all run; the level crosses the gate. DuEE is different: best-threshold F1 is
+0.13-0.52 with 5-10 dips of 11 and strict trigger F1 is erratic (control 0.22 / 0.49 / 0.28 / 0.76 at 20k-30k, seed43
+0.15 / 0.60 / 0.28 / 0.41, sep 0.00 / 0.15 / 0.04 / 0.00). Its 40-record sample holds 47 gold types, so a DuEE verdict
+needs more records before any run is blamed; sep's zeros are below both controls but one run against a two-control
+spread of 0.35 at 30k is not a result.
+
+**The trigger metric is the substantive one.** Under the gold menu event_type F1 mostly reports that the right type was
+named at least once. Strict event_trigger F1 at its own best threshold, 20k / 24k / 28k / 30k:
+
+| source | control | seed43 | sep |
+|---|---|---|---|
+| maven | 0.21 0.28 0.38 0.30 | 0.22 0.29 0.35 0.36 | 0.20 0.28 0.30 0.35 |
+| cmnee | 0.58 0.72 0.68 0.74 | 0.67 0.68 0.70 0.76 | 0.69 0.69 0.73 0.73 |
+| casie | 0.15 0.19 0.20 0.16 | 0.10 0.18 0.19 0.21 | 0.09 0.17 0.18 0.21 |
+
+Through 12k every run sits at 0.02-0.08 on maven and casie and 0.3-0.5 on cmnee; the climb is late and steady and the
+three runs agree within ~0.05 per source. The separation arm is NULL on this metric too. The in-run pooled trigger F1
+tells the same story (control 0.07 at 4k, 0.19 at 20k, 0.28 at 30k). task_lr 4e-5 is behind at the robust readout in
+its window (cmnee best 0.57 with 4 dips, trigger 0.24 vs 0.45-0.49), as a 12.5x lower head rate should be at 12k; it says
+nothing about where it would end.
+
+**Arguments.** Strict event_argument own-best F1 at 20k-30k: cmnee 0.30-0.36 for all three runs; casie 0.04-0.06 for all
+three (English arguments remain near zero, as in eb21); duee 0.00-0.33, erratic. Precision at the event_type-best
+threshold (0.01) runs 0.2-0.4 on cmnee.
+
+**Floors at the robust readout** (two identical controls, 11 steps): mean best event_type differs by 0.03 maven, 0.07
+cmnee, 0.06 casie, 0.16 duee; late trigger F1 within ~0.05 on maven / cmnee / casie. These are the floors for the Issue 1
+and Issue 4 reads at 4k-16k, and the reason eb22d picks its thresholds per head on VAL (TODO 46).
