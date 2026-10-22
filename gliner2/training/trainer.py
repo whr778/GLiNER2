@@ -186,6 +186,11 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 1
     encoder_lr: float = 1e-5
     task_lr: float = 5e-4
+    # False (upstream's rule): every parameter whose NAME contains "encoder" gets encoder_lr -- which also catches
+    # the HEAD's boundary_head.boundary_encoder and boundary_head.candidate_encoder (660,736 randomly initialised
+    # params in eb22c; they moved 0.085/0.095 relative over 3.5k-30k steps vs 0.94-6.0 for the rest of the head,
+    # 2026-10-22). True: only the BACKBONE (`encoder.*`) gets encoder_lr; the head encoders get task_lr.
+    encoder_lr_backbone_only: bool = False
     weight_decay: float = 0.01
     adam_beta1: float = 0.9
     adam_beta2: float = 0.999
@@ -210,6 +215,10 @@ class TrainingConfig:
     eval_steps: int = 500
     save_total_limit: int = 3
     save_best: bool = True
+    # Also write checkpoint-epoch-N (with training_state.pt) at each epoch end when eval_strategy is "steps". Resume
+    # always restarts at the NEXT epoch (no mid-epoch batch skip), so only an epoch-end checkpoint resumes without
+    # silently skipping the rest of an epoch's data.
+    save_epoch_checkpoint: bool = False
     metric_for_best: str = "eval_loss"
     greater_is_better: bool = False
     logging_steps: int = 1
@@ -2049,13 +2058,22 @@ class ExtractorTrainer:
         for name, param in self.model.named_parameters():
             if not param.requires_grad:
                 continue
-            if "encoder" in name:
+            is_backbone = (name.removeprefix("module.").startswith("encoder.") if self.config.encoder_lr_backbone_only
+                           else "encoder" in name)
+            if is_backbone:
                 encoder_params.append(param)
             else:
                 task_params.append(param)
 
         enc_ids = {id(p) for p in encoder_params}
         task_ids = {id(p) for p in task_params}
+        head_enc = [n for n, p in self.model.named_parameters()
+                    if ("boundary_encoder" in n or "candidate_encoder" in n) and p.requires_grad]
+        logger.info("[optim] encoder_lr %.1e: %d tensors | task_lr %.1e: %d tensors | head encoders (%d tensors) on %s "
+                    "(encoder_lr_backbone_only=%s)", self.config.encoder_lr, len(encoder_params), self.config.task_lr,
+                    len(task_params), len(head_enc),
+                    "task_lr" if all(id(p) in task_ids for n, p in self.model.named_parameters() if n in head_enc)
+                    else "encoder_lr", self.config.encoder_lr_backbone_only)
         assert not (enc_ids & task_ids), "encoder/task optimizer groups overlap"
         assert len(enc_ids | task_ids) == len(encoder_params) + len(task_params), (
             "duplicate parameters across optimizer groups"
@@ -2706,6 +2724,8 @@ class ExtractorTrainer:
                     if self.config.early_stopping and self._check_early_stopping(eval_metrics, prev_best):
                         logger.info(f"Early stopping triggered at epoch {epoch + 1}")
                         break
+                self._save_checkpoint(f"checkpoint-epoch-{epoch + 1}")
+            elif self.config.save_epoch_checkpoint:
                 self._save_checkpoint(f"checkpoint-epoch-{epoch + 1}")
 
             if self.global_step >= max_steps:
