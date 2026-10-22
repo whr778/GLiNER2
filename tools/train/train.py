@@ -960,6 +960,8 @@ _STRUCTURAL_BOUNDARY_KEYS = frozenset({
     # record_link_geom_dim: measured 2026-10-22 by building the head both ways -- 4 tensors reshaped
     # (geom.weight/bias, geom_q.weight/bias), none added or removed; the junction term is 0 at init either way.
     "record_link_geom_dim",
+    # coref_link_distance: "mlp" replaces dist.{weight,bias} with dist.0.* / dist.2.* (new names, new shapes).
+    "coref_link_distance", "coref_link_distance_dim",
     # A key diff cannot see a flag that RESIZES an always-built module -- the
     # tensor names are identical and only the shapes move. Re-measured comparing
     # shapes: these three. `record_dim` and `record_instance_queries` are named

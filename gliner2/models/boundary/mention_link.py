@@ -19,17 +19,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from gliner2.models.boundary.distance_bias import build_distance_bias
+
 logger = logging.getLogger(__name__)
 
 
 class MentionLink(nn.Module):
-    def __init__(self, hidden_size: int, dim: int) -> None:
+    def __init__(self, hidden_size: int, dim: int, distance: str = "scalar", distance_dim: int = 16) -> None:
         super().__init__()
         self.dim = dim
         self.w = nn.Linear(hidden_size, dim)
-        self.dist = nn.Linear(1, 1)
-        nn.init.zeros_(self.dist.weight)
-        nn.init.zeros_(self.dist.bias)
+        # "scalar" = the historical zero-initialised Linear(1, 1) under the name `dist`; "mlp" = a zero-at-init MLP
+        # on log1p(distance) (boundary_head.coref_link_distance, shared with TriggerLink; distance_bias.py).
+        self.distance, self.distance_dim = distance, distance_dim
+        self.dist = build_distance_bias(distance, distance_dim)
 
     def forward(self, states: torch.Tensor, mid: torch.Tensor) -> torch.Tensor:
         """[M, M] logits for mention states [M, H] at word midpoints [M]."""

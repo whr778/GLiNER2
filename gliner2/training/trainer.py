@@ -511,6 +511,23 @@ def _length_proxy(text: str) -> int:
     cjk = sum(1 for ch in text if _is_cjk(ch))
     return max(1, int((len(text) - cjk) / 4.0 + cjk / 1.42))
 
+def describe_links(model) -> List[str]:
+    """One line per link module AS BUILT (not as configured): the in-run proof for the geometry / distance arms."""
+    m = model.module if hasattr(model, "module") else model
+    dec = getattr(m, "record_decoder", None)
+    lines = []
+    link = getattr(dec, "link", None)
+    if link is not None:
+        lines.append(f"[junction] geometry channel: width {link.geom.weight.shape[0]}, activation {link.geom_activation}")
+    for name, mod in (("coref link (trigger)", getattr(dec, "coref", None)), ("mention link (entity)", getattr(m, "mention_link", None))):
+        if mod is not None:
+            if isinstance(mod.dist, nn.Sequential):
+                lines.append(f"[{name}] distance mlp, width {mod.dist[0].weight.shape[0]}")
+            else:
+                lines.append(f"[{name}] distance scalar")
+    return lines
+
+
 class ExtractorDataset(Dataset):
     """
     Dataset for GLiNER2 training with multi-format support.
@@ -2074,6 +2091,8 @@ class ExtractorTrainer:
                     len(task_params), len(head_enc),
                     "task_lr" if all(id(p) in task_ids for n, p in self.model.named_parameters() if n in head_enc)
                     else "encoder_lr", self.config.encoder_lr_backbone_only)
+        for line in describe_links(self.model):
+            logger.info(line)
         assert not (enc_ids & task_ids), "encoder/task optimizer groups overlap"
         assert len(enc_ids | task_ids) == len(encoder_params) + len(task_params), (
             "duplicate parameters across optimizer groups"

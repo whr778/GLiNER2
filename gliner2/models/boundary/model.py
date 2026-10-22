@@ -1653,6 +1653,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 link=settings.record_link_mode == "junction",
                 coref=settings.record_coref_link,
                 link_geom_dim=settings.record_link_geom_dim,
+                link_geom_activation=settings.record_link_geom_activation,
+                coref_distance=settings.coref_link_distance,
+                coref_distance_dim=settings.coref_link_distance_dim,
             )
         # The entity-mention coreference link (entity_coref_link). Built only when on.
         self.mention_link = None
@@ -2634,8 +2637,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
         the optimizer is built, or its parameters are never updated."""
         if self.mention_link is None:
             ref = next(self.parameters())
-            self.mention_link = MentionLink(self.hidden_size, self.boundary_settings.record_dim).to(
-                device=ref.device, dtype=ref.dtype)
+            self.mention_link = MentionLink(self.hidden_size, self.boundary_settings.record_dim,
+                                            self.boundary_settings.coref_link_distance,
+                                            self.boundary_settings.coref_link_distance_dim).to(device=ref.device, dtype=ref.dtype)
 
     def _record_loss(self, batch, core, candidates, targets) -> Dict[str, torch.Tensor]:
         """Aggregate record object + field-assignment losses across the batch."""

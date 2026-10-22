@@ -32,6 +32,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from gliner2.models.boundary.distance_bias import build_distance_bias
+
 from gliner2.models.candidates import CandidateSet
 from gliner2.models.boundary.constants import MASK_LOGIT
 from gliner2.models.boundary.validation import (
@@ -259,13 +261,14 @@ class TriggerLink(nn.Module):
     head and are not used.
     """
 
-    def __init__(self, hidden_size: int, dim: int) -> None:
+    def __init__(self, hidden_size: int, dim: int, distance: str = "scalar", distance_dim: int = 16) -> None:
         super().__init__()
         self.dim = dim
         self.w = nn.Linear(hidden_size, dim)
-        self.dist = nn.Linear(1, 1)
-        nn.init.zeros_(self.dist.weight)
-        nn.init.zeros_(self.dist.bias)
+        # The distance term (distance_bias.py): "scalar" = the historical zero-initialised Linear(1, 1) under the
+        # historical name `dist`; "mlp" = a zero-at-init MLP on log1p(distance) (boundary_head.coref_link_distance).
+        self.distance, self.distance_dim = distance, distance_dim
+        self.dist = build_distance_bias(distance, distance_dim)
 
     def init_from(self, proj: nn.Linear) -> None:
         with torch.no_grad():
@@ -289,14 +292,16 @@ class LinkJunction(nn.Module):
     order, log distance). `v` and `geom_q` are zero-initialised: the term is exactly 0
     until it learns, so a warm start is bit-identical at step 0 (JUNCTION_LAYER_SPEC.md).
 
-    ``geom_dim`` (boundary_head.record_link_geom_dim) is the geometry channel's width. There is no activation
-    between ``geom`` and the dot with ``geom_q``, so the geometry term is bilinear in the 2-d feature and the
-    role query: rank <= 2 at any width >= 2. Width is parameterisation, not capacity.
+    ``geom_dim`` (boundary_head.record_link_geom_dim) is the geometry channel's width. With ``geom_activation``
+    "none" there is no activation between ``geom`` and the dot with ``geom_q``, so the geometry term is bilinear in
+    the 2-d feature and the role query: rank <= 2 at any width >= 2, and width is parameterisation, not capacity.
+    With "gelu" the channel is a per-role MLP over (order, log distance) and the width is real capacity.
     """
 
-    def __init__(self, hidden_size: int, dim: int, geom_dim: int = 16) -> None:
+    def __init__(self, hidden_size: int, dim: int, geom_dim: int = 16, geom_activation: str = "none") -> None:
         super().__init__()
         self.dim = dim
+        self.geom_activation = geom_activation
         self.u = nn.Linear(hidden_size, dim)
         self.v = nn.Linear(hidden_size, dim)
         self.gate = nn.Linear(hidden_size, dim)
@@ -336,7 +341,10 @@ class LinkJunction(nn.Module):
             gate = torch.sigmoid(self.gate(field_query_states[f]))   # [D]
             bilinear = (u * gate) @ self.v(cand).t() / math.sqrt(self.dim)          # [Ni, Cf]
             feats = self._geometry(inst_spans, field_spans[f]).to(cand.dtype)
-            geo = self.geom(feats) @ self.geom_q(field_query_states[f])
+            hidden = self.geom(feats)
+            if self.geom_activation == "gelu":
+                hidden = F.gelu(hidden)
+            geo = hidden @ self.geom_q(field_query_states[f])
             out.append(bilinear + geo)
         return out
 
@@ -444,15 +452,17 @@ class RecordHead(nn.Module):
     """
 
     def __init__(self, hidden_size: int, record_dim: int, instance_queries: int, link: bool = False,
-                 coref: bool = False, link_geom_dim: int = 16) -> None:
+                 coref: bool = False, link_geom_dim: int = 16, link_geom_activation: str = "none",
+                 coref_distance: str = "scalar", coref_distance_dim: int = 16) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.record_dim = record_dim
         self.instance_queries = instance_queries
-        self.link_geom_dim = link_geom_dim
+        self.link_geom_dim, self.link_geom_activation = link_geom_dim, link_geom_activation
+        self.coref_distance, self.coref_distance_dim = coref_distance, coref_distance_dim
         # The trigger x argument junction (record_link_mode: junction). Built only when on, so
         # every existing checkpoint still loads strictly; `enable_link` adds it to a loaded model.
-        self.link = LinkJunction(hidden_size, record_dim, link_geom_dim) if link else None
+        self.link = LinkJunction(hidden_size, record_dim, link_geom_dim, link_geom_activation) if link else None
 
         self.inst_proj = nn.Linear(hidden_size, record_dim)
         self.field_proj = nn.Linear(hidden_size, record_dim)
@@ -461,7 +471,7 @@ class RecordHead(nn.Module):
         # The trigger x trigger coreference link (record_coref_link). Built only when on, like the junction.
         self.coref = None
         if coref:
-            self.coref = TriggerLink(hidden_size, record_dim)
+            self.coref = TriggerLink(hidden_size, record_dim, coref_distance, coref_distance_dim)
             self.coref.init_from(self.inst_proj)
 
         self.object_head = nn.Linear(hidden_size, 1)
@@ -480,14 +490,16 @@ class RecordHead(nn.Module):
         """
         if self.link is None:
             ref = next(self.parameters())
-            self.link = LinkJunction(self.hidden_size, self.record_dim, self.link_geom_dim).to(device=ref.device, dtype=ref.dtype)
+            self.link = LinkJunction(self.hidden_size, self.record_dim, self.link_geom_dim,
+                                     self.link_geom_activation).to(device=ref.device, dtype=ref.dtype)
 
     def enable_coref_link(self) -> None:
         """Add the coreference link to an already-built head (a warm start), initialised from inst_proj.
         Call before the optimizer is built, or its parameters are never updated."""
         if self.coref is None:
             ref = next(self.parameters())
-            self.coref = TriggerLink(self.hidden_size, self.record_dim).to(device=ref.device, dtype=ref.dtype)
+            self.coref = TriggerLink(self.hidden_size, self.record_dim, self.coref_distance,
+                                     self.coref_distance_dim).to(device=ref.device, dtype=ref.dtype)
             self.coref.init_from(self.inst_proj)
 
     # ------------------------------------------------------------------ utils

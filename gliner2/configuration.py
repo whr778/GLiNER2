@@ -144,6 +144,15 @@ class BoundaryHeadSettings:
     # functions; the width changes the parameterisation and, under geom_q's zero init, how fast the term
     # grows (about linearly in the width). STRUCTURAL: reshapes geom.{weight,bias} and geom_q.{weight,bias}.
     record_link_geom_dim: int = 16
+    # GELU inside the geometry channel (none = the historical affine term). With it the channel is a per-role MLP
+    # over (order, log distance) and its width is real capacity. Forward-only: no tensors change.
+    record_link_geom_activation: str = "none"  # "none" | "gelu"
+    # The DISTANCE term of the trigger and entity coreference links (TriggerLink, MentionLink): "scalar" (historical)
+    # = Linear(1, 1) on log1p(distance); "mlp" = Linear(1, dim) -> GELU -> Linear(dim, 1), last layer zero so it is
+    # 0 at init. Measured on the 30k control (2026-10-22): the scalar term is 66-68% of the coref score and REMOVING
+    # it raises the coref pair AUC (CASIE 0.932 -> 0.944, CMNEE 0.743 -> 0.814). STRUCTURAL: new parameter names.
+    coref_link_distance: str = "scalar"  # "scalar" | "mlp"
+    coref_link_distance_dim: int = 16
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -464,6 +473,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
         "record_link_column_siblings": bool(values.get("record_link_column_siblings", d.record_link_column_siblings)),
         "record_link_geom_dim": int(values.get("record_link_geom_dim", d.record_link_geom_dim)),
+        "record_link_geom_activation": str(values.get("record_link_geom_activation", d.record_link_geom_activation)),
+        "coref_link_distance": str(values.get("coref_link_distance", d.coref_link_distance)),
+        "coref_link_distance_dim": int(values.get("coref_link_distance_dim", d.coref_link_distance_dim)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),
@@ -747,6 +759,12 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError("boundary_head.record_link_column_weight must be >= 0 and record_link_column_negatives >= 1")
     if result["record_link_geom_dim"] < 1:
         raise ValueError("boundary_head.record_link_geom_dim must be >= 1")
+    if result["record_link_geom_activation"] not in ("none", "gelu"):
+        raise ValueError(f"boundary_head.record_link_geom_activation must be 'none' or 'gelu', got {result['record_link_geom_activation']!r}")
+    if result["coref_link_distance"] not in ("scalar", "mlp"):
+        raise ValueError(f"boundary_head.coref_link_distance must be 'scalar' or 'mlp', got {result['coref_link_distance']!r}")
+    if result["coref_link_distance_dim"] < 1:
+        raise ValueError("boundary_head.coref_link_distance_dim must be >= 1")
     if result["record_link_column_weight"] > 0 and result["record_link_mode"] != "junction":
         raise ValueError("boundary_head.record_link_column_weight needs record_link_mode: junction")
     if result["record_link_mode"] == "junction" and result.get("candidate_pool") == "shared":
