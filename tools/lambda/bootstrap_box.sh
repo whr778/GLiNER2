@@ -20,7 +20,14 @@ CFG=${CFG:-}
 CKPT=${CKPT:-}
 fail() { echo "[bs] *** FATAL: $* ***" >&2; exit 1; }
 
-command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
+# The uv installer, with a bounded retry: a fresh box's network can blip right after boot (2026-10-22, 15:30 UTC: 'Failed
+# to connect to astral.sh port 443 after 12 ms' seconds after a clean clone, then 'uv: command not found', box terminated).
+for attempt in 1 2 3 4 5 6; do
+  command -v uv >/dev/null 2>&1 && break
+  curl -LsSf https://astral.sh/uv/install.sh | sh && break
+  echo "[bs] uv installer unreachable (attempt $attempt/6) -- retrying in 15 s"; sleep 15
+done
+command -v uv >/dev/null 2>&1 || fail "uv install (astral.sh unreachable after 6 attempts)"
 export PATH="$HOME/.local/bin:$PATH"
 cd ~/gliner2 || fail "no ~/gliner2"
 
