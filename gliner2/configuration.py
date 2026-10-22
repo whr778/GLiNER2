@@ -128,11 +128,16 @@ class BoundaryHeadSettings:
     # role fit with no join (junction AUC 0.56-0.61, pair term below chance in-row). "junction" adds a
     # learned, role-gated bilinear link + geometry per (instance, candidate), zero-initialised (bit-
     # identical at step 0). The COLUMN loss trains "which trigger owns this gold argument": a softmax over
-    # the gold trigger and the K hardest false triggers in that argument's column -- R is identical down a
-    # column, so only the link can lower it, and it never pushes role fit down (the p4neg recall trap).
+    # the gold trigger and the K highest-scoring NON-GOLD triggers of the group (picked once, shared by every
+    # column) -- R is identical down a column, so only the link can lower it, and it never pushes role fit
+    # down (the p4neg recall trap).
     record_link_mode: str = "additive"  # "additive" | "junction"
     record_link_column_weight: float = 0.0
     record_link_column_negatives: int = 8
+    # Outside review Issue 4 (verified 2026-10-22): those K negatives are non-gold, so a same-type SIBLING event's
+    # gold trigger is never contrasted for a column it does not own (94% of CASIE / 81% of WikiEvents argument
+    # terms). True adds the siblings as column negatives, except where the sibling's own gold holds the filler.
+    record_link_column_siblings: bool = False
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -451,6 +456,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_link_mode": str(values.get("record_link_mode", d.record_link_mode)),
         "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
+        "record_link_column_siblings": bool(values.get("record_link_column_siblings", d.record_link_column_siblings)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),

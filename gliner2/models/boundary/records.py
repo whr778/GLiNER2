@@ -1785,18 +1785,27 @@ _COLUMN_PAIRS = 0
 _COLUMN_CALLS = 0
 
 
-def _note_link_columns(terms: int, wins: int, pairs: int) -> None:
-    """In-run junction gate: share of (gold trigger, false trigger) pairs where gold wins the column."""
-    global _COLUMN_TERMS, _COLUMN_WINS, _COLUMN_PAIRS, _COLUMN_CALLS
+_COLUMN_SIB_WINS = 0
+_COLUMN_SIB_PAIRS = 0
+
+
+def _note_link_columns(terms: int, wins: int, pairs: int, sib_wins: int = 0, sib_pairs: int = 0) -> None:
+    """In-run junction gate: share of (gold trigger, false trigger) pairs where gold wins the column, and the same
+    against same-type sibling triggers (0 pairs unless record_link_column_siblings -- the treatment's own proof)."""
+    global _COLUMN_TERMS, _COLUMN_WINS, _COLUMN_PAIRS, _COLUMN_CALLS, _COLUMN_SIB_WINS, _COLUMN_SIB_PAIRS
     _COLUMN_TERMS += terms
     _COLUMN_WINS += wins
     _COLUMN_PAIRS += pairs
+    _COLUMN_SIB_WINS += sib_wins
+    _COLUMN_SIB_PAIRS += sib_pairs
     _COLUMN_CALLS += 1
     n = _COLUMN_CALLS
     if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
         logger.info("junction column loss: %d gold-argument columns trained; gold trigger beats false trigger "
-                    "in %.3f of %d pairs (junction AUC, cumulative over %d natural groups)",
-                    _COLUMN_TERMS, _COLUMN_WINS / max(_COLUMN_PAIRS, 1), _COLUMN_PAIRS, n)
+                    "in %.3f of %d pairs and same-type sibling trigger in %.3f of %d sibling pairs "
+                    "(junction AUC, cumulative over %d natural groups)",
+                    _COLUMN_TERMS, _COLUMN_WINS / max(_COLUMN_PAIRS, 1), _COLUMN_PAIRS,
+                    _COLUMN_SIB_WINS / max(_COLUMN_SIB_PAIRS, 1), _COLUMN_SIB_PAIRS, n)
 
 
 def _coref_link_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int):
@@ -1863,8 +1872,14 @@ def _note_coreferent_owners(owners: int) -> None:
                     _COREF["records"], _COREF["owners"], _COREF["owners"] / max(_COREF["records"], 1))
 
 
-def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int):
-    """(sum of column terms, n terms, wins, pairs): which trigger owns each gold argument."""
+def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int, siblings: bool = False):
+    """(sum of column terms, n terms, wins, pairs, sibling wins, sibling pairs): which trigger owns each gold argument.
+
+    The negatives are the k highest-scoring NON-GOLD triggers of the group, picked once and shared by every column, so
+    a same-type sibling event's gold trigger is never contrasted (outside review Issue 4). ``siblings`` adds, per
+    column, the gold triggers of the group's other records whose own gold for that field does not hold the column --
+    a sibling that shares the filler (34% of CMNEE / 52% of DuEE sibling terms) is still never a negative.
+    """
     af = group.field_query_ids.index(anchor_qid)
     seed_to_inst = {s[1]: i for i, s in enumerate(group.instance_seed) if s is not None and s[0] == af}
     owners = []
@@ -1873,37 +1888,43 @@ def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indice
         cols = _resolve_value_cols(a.values[0], span_indices[af]) if a is not None and a.values else []
         insts = sorted({seed_to_inst[c - 1] for c in cols if (c - 1) in seed_to_inst})
         if insts:
-            owners.append((rec, insts))
-    gold_all = {i for _, insts in owners for i in insts}
+            gold = [set() if fs.cardinality.is_scalar else set(_field_target_cols(fs, rec, span_indices[f])[0])
+                    for f, fs in enumerate(group.field_specs)]
+            owners.append((rec, insts, gold))
+    gold_all = {i for _, insts, _ in owners for i in insts}
     false = _negative_instances(group, records, anchor_qid, gold_all, k)
-    total, terms, wins, pairs = group.object_logits.new_zeros(()), 0, 0, 0
-    if not false:
-        return total, 0, 0, 0
-    for rec, insts in owners:
+    total, terms, wins, pairs, sib_wins, sib_pairs = group.object_logits.new_zeros(()), 0, 0, 0, 0, 0
+    for rec, insts, gold in owners:
         for f, fspec in enumerate(group.field_specs):
             if fspec.cardinality.is_scalar:
                 continue
-            cols, _ = _field_target_cols(fspec, rec, span_indices[f])
-            for c in sorted(set(cols)):
+            for c in sorted(gold[f]):
+                sib = [i for r2, insts2, gold2 in owners if r2 is not rec for i in insts2
+                       if c not in gold2[f] and i not in insts] if siblings else []
+                if not false and not sib:
+                    continue
                 column = group.assign_logits[f][:, c]
-                pos, neg = column[insts], column[false]
+                pos, neg = column[insts], column[false + sib]
                 total = total - (torch.logsumexp(pos, 0) - torch.logsumexp(torch.cat([pos, neg]), 0))
                 terms += 1
                 best = pos.detach().max()
-                wins += int((neg.detach() < best).sum())
+                wins += int((column[false].detach() < best).sum())
                 pairs += len(false)
-    return total, terms, wins, pairs
+                sib_wins += int((column[sib].detach() < best).sum())
+                sib_pairs += len(sib)
+    return total, terms, wins, pairs, sib_wins, sib_pairs
 
 
 def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget],
                        negative_instances: int = 0, role_hard_negatives: int = 0,
                        column_negatives: int = 0, coreferent_ownership: bool = False,
-                       coref_negatives: int = 0) -> Dict[str, torch.Tensor]:
+                       coref_negatives: int = 0, column_siblings: bool = False) -> Dict[str, torch.Tensor]:
     """Compute object and field-assignment losses for one record group.
 
     ``negative_instances`` > 0 (natural mode) also trains that many of the highest-scoring
     FALSE instances on their ROLE fields (no candidate is theirs), returned as ``negative_loss``
     (mean over the group's negatives) and ``negative_count`` for a separate batch mean.
+    ``column_siblings`` adds same-type sibling gold triggers to the column negatives (see _column_loss).
     """
     device = group.object_logits.device
     zero = torch.zeros((), device=device)
@@ -1964,11 +1985,12 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
         if column_negatives > 0:
             # The JUNCTION's training signal, returned separately with its own count (never in the
             # gold field denominator). R is identical down a column, so only the link can lower it.
-            col, terms, wins, pairs = _column_loss(group, records, anchor_qid, span_indices, column_negatives)
+            col, terms, wins, pairs, sib_wins, sib_pairs = _column_loss(group, records, anchor_qid, span_indices,
+                                                                         column_negatives, column_siblings)
             if terms:
                 out["column_loss"] = col / terms
                 out["column_count"] = terms
-            _note_link_columns(terms, wins, pairs)
+            _note_link_columns(terms, wins, pairs, sib_wins, sib_pairs)
         if coref_negatives > 0 and group.coref_logits is not None:
             loss, n_pairs, wins, pairs = _coref_link_loss(group, records, anchor_qid, span_indices, coref_negatives)
             if n_pairs:

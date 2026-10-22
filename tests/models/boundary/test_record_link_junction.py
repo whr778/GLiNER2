@@ -63,10 +63,10 @@ def test_column_loss_ignores_anything_constant_down_a_column(monkeypatch):
     g, rs = next((g, rs) for g, rs in seen if g.spec.mode == "natural" and rs)
     aq = g.spec.anchor_query_id
     spans = [R._span_index(s) for s in g.field_spans]
-    base, terms, _, _ = R._column_loss(g, rs, aq, spans, 4)
+    base, terms, *_ = R._column_loss(g, rs, aq, spans, 4)
     assert terms > 0, "the fixture must produce at least one gold-argument column"
     shifted = dataclasses.replace(g, assign_logits=[a + torch.randn(1, a.shape[1]) * 5 for a in g.assign_logits])
-    moved, _, _, _ = R._column_loss(shifted, rs, aq, spans, 4)
+    moved, *_ = R._column_loss(shifted, rs, aq, spans, 4)
     assert float(moved) == pytest.approx(float(base), rel=1e-5), "a per-column constant (the role term) moved the loss"
 
 
