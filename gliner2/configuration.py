@@ -138,6 +138,12 @@ class BoundaryHeadSettings:
     # gold trigger is never contrasted for a column it does not own (94% of CASIE / 81% of WikiEvents argument
     # terms). True adds the siblings as column negatives, except where the sibling's own gold holds the filler.
     record_link_column_siblings: bool = False
+    # Width of the junction's GEOMETRY channel: Linear(2 -> geom_dim) on (order, log distance) dotted with
+    # Linear(hidden -> geom_dim) on the role query, with NO activation between. The term is therefore bilinear
+    # in a 2-d feature and the query -- rank <= 2 for ANY width >= 2 -- so 16 and 64 represent the same
+    # functions; the width changes the parameterisation and, under geom_q's zero init, how fast the term
+    # grows (about linearly in the width). STRUCTURAL: reshapes geom.{weight,bias} and geom_q.{weight,bias}.
+    record_link_geom_dim: int = 16
     boundary_focal_gamma_positive: float = 0.0
     boundary_focal_gamma_negative: float = 2.0
     boundary_focal_clip: float = 0.05
@@ -457,6 +463,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
         "record_link_column_siblings": bool(values.get("record_link_column_siblings", d.record_link_column_siblings)),
+        "record_link_geom_dim": int(values.get("record_link_geom_dim", d.record_link_geom_dim)),
         "boundary_focal_gamma_positive": float(
             values.get("boundary_focal_gamma_positive", d.boundary_focal_gamma_positive)
         ),
@@ -738,6 +745,8 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError(f"boundary_head.record_link_mode must be 'additive' or 'junction', got {result['record_link_mode']!r}")
     if result["record_link_column_weight"] < 0 or result["record_link_column_negatives"] < 1:
         raise ValueError("boundary_head.record_link_column_weight must be >= 0 and record_link_column_negatives >= 1")
+    if result["record_link_geom_dim"] < 1:
+        raise ValueError("boundary_head.record_link_geom_dim must be >= 1")
     if result["record_link_column_weight"] > 0 and result["record_link_mode"] != "junction":
         raise ValueError("boundary_head.record_link_column_weight needs record_link_mode: junction")
     if result["record_link_mode"] == "junction" and result.get("candidate_pool") == "shared":

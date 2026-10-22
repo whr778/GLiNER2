@@ -1652,6 +1652,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 settings.record_instance_queries,
                 link=settings.record_link_mode == "junction",
                 coref=settings.record_coref_link,
+                link_geom_dim=settings.record_link_geom_dim,
             )
         # The entity-mention coreference link (entity_coref_link). Built only when on.
         self.mention_link = None

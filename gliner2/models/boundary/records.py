@@ -288,6 +288,10 @@ class LinkJunction(nn.Module):
     a gated bilinear link, role-gated so role and pair identity INTERACT, plus geometry (relative
     order, log distance). `v` and `geom_q` are zero-initialised: the term is exactly 0
     until it learns, so a warm start is bit-identical at step 0 (JUNCTION_LAYER_SPEC.md).
+
+    ``geom_dim`` (boundary_head.record_link_geom_dim) is the geometry channel's width. There is no activation
+    between ``geom`` and the dot with ``geom_q``, so the geometry term is bilinear in the 2-d feature and the
+    role query: rank <= 2 at any width >= 2. Width is parameterisation, not capacity.
     """
 
     def __init__(self, hidden_size: int, dim: int, geom_dim: int = 16) -> None:
@@ -298,8 +302,19 @@ class LinkJunction(nn.Module):
         self.gate = nn.Linear(hidden_size, dim)
         # CONTINUOUS geometry (order, log distance), as SparseRelationScorer does -- no lookup table,
         # no bucket cap. The boundary architecture forbids embedding TABLES here (test_invariants.py).
-        self.geom = nn.Linear(2, geom_dim)
-        self.geom_q = nn.Linear(hidden_size, geom_dim)
+        # The global RNG is consumed exactly as the historical 16-wide channel consumed it (two Linear builds at
+        # width 16), so every module built after the junction gets the same init at ANY width -- traced: a 64-wide
+        # channel built the usual way changed every later weight, which would make a width A/B a seed A/B. A
+        # non-default width is then built on the meta device (no RNG) and drawn from a generator forked off the seed.
+        self.geom = nn.Linear(2, 16)
+        self.geom_q = nn.Linear(hidden_size, 16)
+        if geom_dim != 16:
+            fork = torch.Generator().manual_seed(torch.initial_seed() % (2 ** 63) + geom_dim)
+            dev = torch.get_default_device()
+            self.geom = nn.Linear(2, geom_dim, device="meta").to_empty(device=dev)
+            nn.init.kaiming_uniform_(self.geom.weight, a=math.sqrt(5), generator=fork)
+            nn.init.uniform_(self.geom.bias, -1 / math.sqrt(2), 1 / math.sqrt(2), generator=fork)
+            self.geom_q = nn.Linear(hidden_size, geom_dim, device="meta").to_empty(device=dev)
         for layer in (self.v, self.geom_q):
             nn.init.zeros_(layer.weight)
             nn.init.zeros_(layer.bias)
@@ -429,14 +444,15 @@ class RecordHead(nn.Module):
     """
 
     def __init__(self, hidden_size: int, record_dim: int, instance_queries: int, link: bool = False,
-                 coref: bool = False) -> None:
+                 coref: bool = False, link_geom_dim: int = 16) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.record_dim = record_dim
         self.instance_queries = instance_queries
+        self.link_geom_dim = link_geom_dim
         # The trigger x argument junction (record_link_mode: junction). Built only when on, so
         # every existing checkpoint still loads strictly; `enable_link` adds it to a loaded model.
-        self.link = LinkJunction(hidden_size, record_dim) if link else None
+        self.link = LinkJunction(hidden_size, record_dim, link_geom_dim) if link else None
 
         self.inst_proj = nn.Linear(hidden_size, record_dim)
         self.field_proj = nn.Linear(hidden_size, record_dim)
@@ -464,7 +480,7 @@ class RecordHead(nn.Module):
         """
         if self.link is None:
             ref = next(self.parameters())
-            self.link = LinkJunction(self.hidden_size, self.record_dim).to(device=ref.device, dtype=ref.dtype)
+            self.link = LinkJunction(self.hidden_size, self.record_dim, self.link_geom_dim).to(device=ref.device, dtype=ref.dtype)
 
     def enable_coref_link(self) -> None:
         """Add the coreference link to an already-built head (a warm start), initialised from inst_proj.
