@@ -44,7 +44,11 @@ def score(model, records, threshold: float) -> dict:
     with torch.no_grad():
         m = compute_metrics(model, ExtractorDataset(records, shuffle=False, validate=False), batch_size=2,
                             threshold=threshold, report=False, chunk_size=4096, chunk_overlap=0, global_decode=True) or {}
-    return {h: [round(float(m[f"eval_{h}_strict_micro_f1"]), 4), int(m.get(f"eval_{h}_strict_support", 0) or 0)]
+    # [F1, support, precision, recall]: precision is the companion that stops a best-over-thresholds F1 rewarding
+    # indiscriminate firing (F1 and support keep indices 0 and 1, which --summarize reads).
+    return {h: [round(float(m[f"eval_{h}_strict_micro_f1"]), 4), int(m.get(f"eval_{h}_strict_support", 0) or 0),
+                round(float(m.get(f"eval_{h}_strict_micro_precision", 0.0)), 4),
+                round(float(m.get(f"eval_{h}_strict_micro_recall", 0.0)), 4)]
             for h in HEADS if f"eval_{h}_strict_micro_f1" in m}
 
 
