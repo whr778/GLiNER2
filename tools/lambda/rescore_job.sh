@@ -10,6 +10,9 @@
 # into this job with nothing on the Hub, and its log died with it.
 #
 #   JOB="CFG=tools/train/config/base/eb22c-ddp-trace.yaml DEST=rescore bash tools/lambda/rescore_job.sh"
+#   RUNS="tag=hub-repo ..." (space-separated) and STEPS=comma list choose what is scored; the defaults are the three
+#   30k eb22c A/B runs at the 11 autopsy steps. Example (an A/B arm against the controls at its window):
+#   RUNS="control=whr778/gliner2-eb22c-collapse-trace encfix=whr778/gliner2-eb22c-encfix-trace" STEPS=4000,8000,12000,16000
 set -uo pipefail
 cd ~/gliner2
 export PATH="$HOME/.local/bin:$PATH"
@@ -18,14 +21,14 @@ export GLINER2_STRICT_ATTN=1      # flash attention must really be in use, or th
 export CKPT_CACHE=$HOME/ckpts
 PY=./.venv/bin/python
 CFG=${CFG:?CFG}; DEST=${DEST:?DEST}
-STEPS_FULL=${STEPS_FULL:-4000,5000,6000,7000,8000,10000,12000,20000,24000,28000,30000}
-STEPS_LR=${STEPS_LR:-4000,5000,6000,7000,8000,10000,12000}
+RUNS=${RUNS:-"control=whr778/gliner2-eb22c-collapse-trace seed43=whr778/gliner2-eb22c-seed43-trace sep=whr778/gliner2-eb22c-sep-trace"}
+STEPS=${STEPS:-4000,5000,6000,7000,8000,10000,12000,20000,24000,28000,30000}
 OUT=$HOME/rescore
 JOBLOG=${JOBLOG:-$HOME/job.log}
 mkdir -p "$OUT"
 source tools/lambda/_publish.sh
 trap 'echo "[rescore] exit trap: publishing the job log $(date -u)"; publish "$DEST" "$JOBLOG"' EXIT
-echo "[rescore] ===== START $(date -u) | $(git rev-parse --short HEAD) | $CFG | full ${STEPS_FULL} | task_lr ${STEPS_LR} ====="
+echo "[rescore] ===== START $(date -u) | $(git rev-parse --short HEAD) | $CFG | runs: ${RUNS} | steps: ${STEPS} ====="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 { echo "start $(date -u) commit $(git rev-parse --short HEAD) gpu $(nvidia-smi --query-gpu=name --format=csv,noheader)"; } > "$OUT/start.txt"
 publish "$DEST" "$OUT/start.txt" || { echo "[rescore] *** FATAL: cannot publish the start marker -- results could not land either ***"; exit 1; }
@@ -48,12 +51,9 @@ score_one() {  # repo step tag
   publish "$DEST" "$log" $([ -s "$out" ] && echo "$out") || echo "[rescore] publish of $tag-$step failed (continuing; final publish retries)"
   rm -rf "$dir"
 }
-for s in ${STEPS_FULL//,/ }; do
-  score_one whr778/gliner2-eb22c-collapse-trace "$s" control
-  score_one whr778/gliner2-eb22c-seed43-trace "$s" seed43
-  score_one whr778/gliner2-eb22c-sep-trace "$s" sep
+for s in ${STEPS//,/ }; do
+  for run in $RUNS; do score_one "${run#*=}" "$s" "${run%%=*}"; done
 done
-for s in ${STEPS_LR//,/ }; do score_one whr778/gliner2-eb22c-tasklr4e5-trace "$s" tasklr; done
 echo "[rescore] scored $done_n, failed $failed $(date -u)"
 publish "$DEST" "$OUT"/*.json "$OUT"/*.log || { echo "[rescore] *** FATAL: FINAL PUBLISH FAILED ***"; exit 1; }
 [ "$failed" -eq 0 ] || { echo "[rescore] *** FATAL: $failed checkpoint(s) failed (results published) ***"; exit 2; }
