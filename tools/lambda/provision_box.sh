@@ -192,6 +192,19 @@ IDLE_GRACE=${IDLE_GRACE:-1200}
 # had just armed counted down on them. The remote work takes under a second; if the channel
 # lingers we do not care, and the VERIFY below is what decides whether it armed.
 TMO=$(command -v timeout || command -v gtimeout || true)
+# A BOX'S NETWORK CAN BLIP ABOUT A MINUTE AFTER BOOT (cloud-init re-applying it): two us-east-1 A10 boxes dropped
+# "No route to host" at exactly this point on 2026-10-22, within seconds of a successful clone, and were terminated
+# for a blip. Wait for ssh to answer again (bounded) before the steps that cannot tolerate a drop.
+wait_ssh() {
+  local i
+  for i in $(seq 1 12); do
+    $SSH ubuntu@$IP true >/dev/null 2>&1 && return 0
+    echo "[prov] box not answering ssh (attempt $i/12); waiting 15s"
+    sleep 15
+  done
+  return 1
+}
+wait_ssh || terminate_and_die "box stopped answering ssh after the repo clone"
 ${TMO:+$TMO 30} $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && IDLE_GRACE=$IDLE_GRACE nohup setsid bash tools/lambda/idle_guard.sh > ~/idle_guard.log 2>&1 < /dev/null & disown'" >/dev/null 2>&1
 if ${TMO:+$TMO 30} $SSH ubuntu@$IP 'pgrep -f "tools/lambda/idle_guard\.sh" >/dev/null' 2>/dev/null; then
   echo "[prov] idle guard armed (${IDLE_GRACE}s)"
@@ -200,11 +213,21 @@ else
 fi
 
 echo "[prov] bootstrap $(date -u)"
-$SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && CFG=$CFG CKPT=$CKPT bash tools/lambda/bootstrap_box.sh'" \
-  2>&1 | grep -v "^Restored session:" | tail -20
-# PIPESTATUS, not $? -- the pipe through grep/tail always succeeds and hid the bootstrap
-# failure that started all this.
-[ "${PIPESTATUS[0]}" -eq 0 ] || terminate_and_die "bootstrap failed"
+run_bootstrap() {
+  $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && CFG=$CFG CKPT=$CKPT bash tools/lambda/bootstrap_box.sh'" \
+    2>&1 | grep -v "^Restored session:" | tail -20
+  # PIPESTATUS, not $? -- the pipe through grep/tail always succeeds and hid the bootstrap
+  # failure that started all this.
+  return "${PIPESTATUS[0]}"
+}
+run_bootstrap; rc=$?
+# 255 is ssh itself failing (the link), never bootstrap_box.sh (which is idempotent: re-provisioning a box re-ran it
+# clean on 2026-10-22). A real bootstrap failure keeps its own exit code and is never retried.
+if [ "$rc" -eq 255 ]; then
+  echo "[prov] bootstrap ssh dropped (255) $(date -u); waiting for the box and retrying once"
+  wait_ssh && run_bootstrap; rc=$?
+fi
+[ "$rc" -eq 0 ] || terminate_and_die "bootstrap failed (rc=$rc)"
 
 echo "[prov] starting job $(date -u)"
 $SSH ubuntu@$IP "bash -lc 'cd ~/gliner2 && JOB=\"$JOB\" JOB_TIMEOUT=$JOB_TIMEOUT HARD_DEADLINE=$HARD_DEADLINE nohup bash tools/lambda/box_run.sh > ~/box.log 2>&1 & disown'" \
