@@ -69,3 +69,12 @@ class FlippedGateGELU(nn.Module):
 
     def extra_repr(self) -> str:
         return f"chunks={self.chunks}, gates={self.gates}, skipped={self.skipped}, eval_mode={self.eval_mode}, mc_samples={self.mc_samples}"
+
+
+def build_activation(kind: str, chunks: int = 12, gates: int = 3, skipped: int = 3, mc_samples: int = 8) -> nn.Module:
+    """The activation a head's config asks for: "gelu" -> nn.GELU(); "fg_geglu" -> FlippedGateGELU with MC inference."""
+    if kind == "gelu":
+        return nn.GELU()
+    if kind == "fg_geglu":
+        return FlippedGateGELU(chunks, gates, skipped, eval_mode="mc", mc_samples=mc_samples)
+    raise ValueError(f"activation must be 'gelu' or 'fg_geglu', got {kind!r}")

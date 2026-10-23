@@ -552,6 +552,10 @@ def describe_links(model) -> List[str]:
                 lines.append(f"[{name}] distance mlp, width {mod.dist[0].weight.shape[0]}")
             else:
                 lines.append(f"[{name}] distance scalar")
+    scorer = getattr(m, "relation_scorer", None)
+    if scorer is not None and isinstance(getattr(scorer, "mlp", None), nn.Sequential) and len(scorer.mlp) > 1:
+        act = scorer.mlp[1]
+        lines.append(f"[relation scorer] activation {type(act).__name__}({act.extra_repr()}) at width {scorer.mlp[0].out_features}")
     return lines
 
 

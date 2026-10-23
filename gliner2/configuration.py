@@ -337,6 +337,14 @@ class BoundaryHeadSettings:
     # relation loss scores. Off, the loss sees only the gold pairs the ENTITY scores rank in (15-17% on biored /
     # professorbob_re at 30k, 2026-10-23). Non-structural.
     relation_keep_gold_pairs: bool = False
+    # Activation inside the relation scorer's hidden layer: "gelu" (upstream) or "fg_geglu" (flipped-gate GEGLU,
+    # gliner2/models/boundary/flipped_gate.py; zero parameters, so non-structural). The fg_* settings are its shape:
+    # the 768-wide hidden layer must be divisible by fg_geglu_chunks. Toy sweep (FG_GEGLU.md): (12, 3, 3) and (24, 4, 4).
+    relation_scorer_activation: str = "gelu"
+    fg_geglu_chunks: int = 12
+    fg_geglu_gates: int = 3
+    fg_geglu_skipped: int = 3
+    fg_geglu_mc_samples: int = 8
 
 
 # =============================================================================
@@ -726,7 +734,18 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "relation_keep_gold_pairs": bool(
             values.get("relation_keep_gold_pairs", d.relation_keep_gold_pairs)
         ),
+        "relation_scorer_activation": str(
+            values.get("relation_scorer_activation", d.relation_scorer_activation)
+        ),
+        "fg_geglu_chunks": int(values.get("fg_geglu_chunks", d.fg_geglu_chunks)),
+        "fg_geglu_gates": int(values.get("fg_geglu_gates", d.fg_geglu_gates)),
+        "fg_geglu_skipped": int(values.get("fg_geglu_skipped", d.fg_geglu_skipped)),
+        "fg_geglu_mc_samples": int(values.get("fg_geglu_mc_samples", d.fg_geglu_mc_samples)),
     }
+    if result["relation_scorer_activation"] not in ("gelu", "fg_geglu"):
+        raise ValueError(
+            f"boundary_head.relation_scorer_activation must be 'gelu' or 'fg_geglu', got {result['relation_scorer_activation']!r}"
+        )
     if result["export_mode"] not in ("auto", "streaming", "vectorized"):
         raise ValueError(
             f"boundary_head.export_mode must be 'auto', 'streaming', or 'vectorized', "

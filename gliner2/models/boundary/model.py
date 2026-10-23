@@ -85,6 +85,7 @@ from gliner2.models.boundary.validation import (
     validate_candidate_indices,
     validate_masked_spans,
 )
+from gliner2.models.boundary.flipped_gate import build_activation
 from gliner2.models.boundary.relations import append_gold_pairs, note_relation_gold
 from gliner2.models.boundary.relations import (
     RelationProposalSettings,
@@ -1680,6 +1681,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     else self.hidden_size
                 ),
                 use_biaffine_content=settings.relation_biaffine_content,
+                activation=build_activation(settings.relation_scorer_activation, settings.fg_geglu_chunks,
+                                            settings.fg_geglu_gates, settings.fg_geglu_skipped, settings.fg_geglu_mc_samples),
             )
 
         self._lora_layers = {}

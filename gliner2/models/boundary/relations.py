@@ -369,15 +369,17 @@ class SparseRelationScorer(nn.Module):
         dropout: float = 0.0,
         relation_query_dim: int | None = None,
         use_biaffine_content: bool = False,
+        activation: nn.Module | None = None,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.relation_query_dim = relation_query_dim or hidden_size
         self.use_biaffine_content = use_biaffine_content
         in_dim = 4 * hidden_size + self.relation_query_dim + 2
+        # `activation` (default GELU) sits at mlp[1]: callers that read mlp[2].p (the dropout) keep working
         self.mlp = nn.Sequential(
             nn.Linear(in_dim, hidden_size),
-            nn.GELU(),
+            activation if activation is not None else nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_size, 1),
         )
