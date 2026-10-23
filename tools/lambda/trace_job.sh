@@ -17,11 +17,18 @@ CFG=${CFG:?CFG}; DEST=${DEST:?DEST}; STOP_STEP=${STOP_STEP:?STOP_STEP}
 STOP_EPOCH=${STOP_EPOCH:-}  # set: stop once checkpoint-epoch-N (with training_state.pt) is fully written -- a clean restart point
 NGPU=${NGPU:-1}          # >1: torchrun (plain DDP since 0b21629; [ddp-sync] at every eval proves the ranks agree)
 CKPT_REPO=${CKPT_REPO:-} # set: upload each new checkpoint-<step> (weights + configs, NOT training_state.pt) to this repo
+RESUME_FROM=${RESUME_FROM:-} # set: REPO:checkpoint-dir on the Hub, fetched (with training_state.pt) into output_dir before
+                             # train.py starts; CFG must carry checkpoint_restart, and the trainer must LOG the resume
+                             # (gated below) or the run is killed -- a silent fresh start would spend the box for nothing
 OUTDIR=$($PY -c "import yaml; print(yaml.safe_load(open('$CFG'))['training']['output_dir'])")
 HIST=$OUTDIR/eval_history.jsonl
 LOG=$HOME/trace.log
 source tools/lambda/_publish.sh
 echo "[trace] ===== START $(date -u) | $(git rev-parse --short HEAD) | $CFG | stop after eval at step $STOP_STEP ====="
+if [ -n "$RESUME_FROM" ]; then
+  PY=$PY bash tools/lambda/fetch_resume_checkpoint.sh "$RESUME_FROM" "$OUTDIR" "$CFG" || { echo "[trace] *** FATAL: resume checkpoint not usable ***"; exit 1; }
+  echo "${RESUME_FROM#*:}" >> "$HOME/uploaded.txt"   # already on the Hub: do not upload the 3.8 GB again
+fi
 
 if [ "$NGPU" -gt 1 ]; then
   PYTHONUNBUFFERED=1 $PY -m torch.distributed.run --standalone --nproc_per_node="$NGPU" tools/train/train.py --config "$CFG" > "$LOG" 2>&1 &
@@ -60,6 +67,17 @@ last_step() { [ -s "$HIST" ] && $PY -c "import json; print(json.loads(open('$HIS
 while kill -0 $TRAIN 2>/dev/null; do
   sleep 60
   step=$(last_step)
+  if [ -n "$RESUME_FROM" ] && [ -z "${resume_ok:-}" ] && grep -aq "\[grads\] step" "$LOG"; then
+    # the trainer logs "Resumed at epoch E, global step S" before its first step; a run that is stepping without it
+    # started fresh and must not spend the box
+    if grep -aq "Resumed at epoch" "$LOG"; then
+      resume_ok=1; grep -a "Resuming (checkpoint_restart\|Resumed at epoch" "$LOG" | sed 's/^/[trace] resume proof: /'
+    else
+      echo "[trace] *** FATAL: training is stepping with no 'Resumed at epoch' line -- a fresh start, not a resume; killing $(date -u) ***"
+      pkill -9 -f "tools/train/train.py --config $CFG" 2>/dev/null; kill -9 $TRAIN 2>/dev/null; wait $TRAIN 2>/dev/null
+      publish "$DEST" "$LOG"; exit 1
+    fi
+  fi
   EP=$OUTDIR/checkpoint-epoch-$STOP_EPOCH/training_state.pt
   if [ -n "$STOP_EPOCH" ] && [ -s "$EP" ]; then
     sz=$(stat -c %s "$EP"); sleep 30

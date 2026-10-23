@@ -200,6 +200,30 @@ if inst_idx is None:
 
 ---
 
+### Issue 7: 81 of 334 Tensors Receive No Training Signal (found 2026-10-23, tracing the corefdist resume)
+
+**Status: MEASURED, informational (no fix proposed).** Reading `checkpoint-epoch-1/training_state.pt` of
+eb22c-corefdist-trace (a full epoch, 16,586 steps): 70 of the 334 optimizer parameters have NO Adam moments at all
+and 11 more have moments that are exactly zero. Both groups are structural, not a defect of the run:
+
+- **70 tensors, 892,417 params (0.28%)**: `boundary_head.shared_pool_builder.*` and `boundary_head.shared_pool_scorer.*`.
+  They are built unconditionally (`model.py` ~329-335) but enter the graph only under `candidate_pool == "shared"`
+  (`model.py` ~564); every eb22c config runs `candidate_pool: per_query`, so their grads are `None` and AdamW skips
+  them. They sit at init in every checkpoint.
+- **11 tensors, 813,570 params (0.26%)**: `record_decoder.instance_embed`, `object_head`, `latent_seed_head`,
+  `q_proj`, `k_proj`, `v_proj` -- the LATENT / ANCHORLESS instance paths of `forward_groups_dense`. The dense forward
+  computes those branches for every group and selects them with `torch.where(modes == 1 / 2)`
+  (`records.py` ~640-672), but every record spec in training is `mode="natural"`: events via
+  `schema.py:762` (`mode="natural", anchor="trigger"`) and JSON structures via `runtime.py:2386`
+  (`record_mode = "natural"` whenever records are enabled; the first field is the anchor). `latent` and `anchorless`
+  are reachable only through an explicit `Schema.structure(..., mode=...)`, which no corpus uses. The branches are
+  masked, so their gradients are exact zeros; AdamW still applies decoupled weight decay to them every step.
+
+Structures DO train through the natural path: in-run structure strict micro F1 0.000 -> 0.147 over epoch 1
+(support 308). Impact on the eb22c programme: none on the metrics; ~1.7 M dead parameters in every checkpoint and
+in the warm-start name space. If the latent/anchorless modes are never going to be trained, removing them from the
+dense forward would also drop two masked branches from every record step.
+
 ## 3. Recommended Investigation Plan
 
 Following the repository's core guidelines (trace first, prove root causes with code and logs before altering implementations):

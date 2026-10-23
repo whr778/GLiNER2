@@ -24,5 +24,5 @@ fi
 export JOB_TIMEOUT=${JOB_TIMEOUT:-21600}
 export HARD_DEADLINE=${HARD_DEADLINE:-25200}
 echo "[$NAME] commit $EXPECT_COMMIT | stop after eval at step $STOP_STEP | logs -> $NAME/"
-exec env NAME="$NAME" JOB="CFG=$CFG DEST=$NAME STOP_STEP=$STOP_STEP STOP_EPOCH=${STOP_EPOCH:-} NGPU=${NGPU:-1} CKPT_REPO=${CKPT_REPO:-} bash tools/lambda/trace_job.sh" \
+exec env NAME="$NAME" JOB="CFG=$CFG DEST=$NAME STOP_STEP=$STOP_STEP STOP_EPOCH=${STOP_EPOCH:-} NGPU=${NGPU:-1} CKPT_REPO=${CKPT_REPO:-} RESUME_FROM=${RESUME_FROM:-} bash tools/lambda/trace_job.sh" \
      TYPES="${TYPES:-gpu_1x_h100_sxm5 gpu_1x_h100_pcie}" bash tools/lambda/launch_when_available.sh
