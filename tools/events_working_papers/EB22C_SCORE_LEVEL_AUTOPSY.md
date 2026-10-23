@@ -183,3 +183,53 @@ threshold (0.01) runs 0.2-0.4 on cmnee.
 **Floors at the robust readout** (two identical controls, 11 steps): mean best event_type differs by 0.03 maven, 0.07
 cmnee, 0.06 casie, 0.16 duee; late trigger F1 within ~0.05 on maven / cmnee / casie. These are the floors for the Issue 1
 and Issue 4 reads at 4k-16k, and the reason eb22d picks its thresholds per head on VAL (TODO 46).
+
+## 10. The link distance terms: the measurement behind the coref distance MLP (2026-10-22, floor 2026-10-23)
+
+**Question.** TriggerLink (trigger coref) and MentionLink (entity coref) score a pair as a bilinear content term plus a
+scalar distance bias, `w * log1p(token distance between span centres) + b`: one slope, strictly monotone. How much of
+the score is that bias, and does it help the ranking the coref loss trains?
+
+**Instrument.** `tools/events_working_papers/measure_coref_dist.py <repo:checkpoint-N> 20` (laptop CPU, fp32, ~60 s per
+checkpoint): on 20 CASIE + 20 CMNEE VAL records, a train-mode forward with gold-seeded instances, then the real
+`_coref_link_loss` pair accounting (gold × (gold + false) pairs per natural group) scored twice -- with the real coref
+logits and with the distance term subtracted. Reports the mean |bilinear| vs mean |distance term| share, and the coref
+pair AUC (coreferent pairs outscore non-coreferent) both ways. The sibling instrument for the junction is
+`measure_geom_share.py`; the held-out Issue 4 read is `junction_heldout.py`.
+
+**Finding on the 30k control (2026-10-22, the measurement that precipitated the MLP).** The distance term is 66-68% of
+the coref score, and REMOVING it at inference RAISES the AUC: CASIE 0.932 → 0.944 of 16,717 ranked pairs, CMNEE
+0.743 → 0.814 of 1,538. The learned line is w = -0.579, b = -2.956: a pair one token apart gets -3.4, a pair 500 tokens
+apart -6.6, a 3.2-logit penalty for distance against a content term of mean magnitude 2.4-3.3. One slope cannot say
+"near is good for a sentence, then neutral" or "adjacent same-type triggers are usually different events" (CMNEE lists
+them), so it costs ranking. The arm (`coref_link_distance: mlp`, width 64, last layer zero so the term is 0 at init)
+replaces the slope with a curve the link can shape or switch off; its result is in the catalog (eb22c-corefdist-trace,
+and the resume eb22c-corefdist-resume).
+
+**Floor (2026-10-23): the same read on all three originals at 20k / 24k / 28k / 30k.** Held-out coref pair AUC, with the
+scalar term → without it:
+
+| step | control CASIE / CMNEE | seed43 CASIE / CMNEE | sep CASIE / CMNEE |
+|---|---|---|---|
+| 20k | 0.890 → 0.910 / 0.806 → 0.869 | 0.910 → 0.917 / 0.618 → 0.655 | 0.881 → 0.892 / 0.772 → 0.868 |
+| 24k | 0.899 → 0.916 / 0.801 → 0.912 | 0.886 → 0.890 / 0.741 → 0.782 | 0.888 → 0.896 / 0.803 → 0.860 |
+| 28k | 0.916 → 0.933 / 0.793 → 0.865 | 0.927 → 0.938 / 0.718 → 0.770 | 0.885 → 0.898 / 0.763 → 0.811 |
+| 30k | 0.932 → 0.944 / 0.743 → 0.814 | 0.904 → 0.919 / 0.720 → 0.780 | 0.905 → 0.924 / 0.902 → 0.943 |
+
+Removing the scalar raises the AUC in **all 24 cells**: CASIE +0.004 to +0.020, CMNEE
++0.037 to +0.111; the term's share of the score is 0.61-0.70 everywhere, and all three
+runs learned the same line (30k: w -0.579 / -0.577 / -0.582, b -2.956 / -2.970 / -2.960). This is a property of the
+architecture, not of one seed.
+
+**The floor the resumed arm is read against** (deployed score, i.e. WITH the scalar, min-max over the three originals):
+
+| step | CASIE with scalar: min–max of 3 | CMNEE with scalar: min–max of 3 |
+|---|---|---|
+| 20k | 0.881–0.910 (spread 0.029) | 0.618–0.806 (spread 0.188) |
+| 24k | 0.886–0.899 (spread 0.013) | 0.741–0.803 (spread 0.062) |
+| 28k | 0.885–0.927 (spread 0.042) | 0.718–0.793 (spread 0.075) |
+| 30k | 0.904–0.932 (spread 0.028) | 0.720–0.902 (spread 0.182) |
+
+The CMNEE floor is wide (362 ranked pairs from 20 records), so the arm must sit above the TOP of the band at more than
+one matched step to count; a single step above the band is what the one-epoch A/B already showed at 16k (0.882 vs
+0.772 / 0.717). Raw outputs: /Volumes/Development/tmp/corefdist_resume/controls/<run>-<step>.txt.
