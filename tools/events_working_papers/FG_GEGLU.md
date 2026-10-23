@@ -127,7 +127,45 @@ benefit from the MC rule. The configuration decides, which motivates the sweep.
 
 ### 3.3 Parameter sweep (width 72, MC rule with K = 8 and plain GELU side by side)
 
-PENDING: `toy_fg_geglu_sweep.py` over (C, g, s) in {4, 6, 8, 12} x gates x skipped; table to be inserted when it lands.
+`toy_fg_geglu_sweep.py`, 17 configurations plus the two baselines; blind MSE (dev-blind gap in parentheses); short =
+1,500 full-batch steps, 6 seeds; long = 10,000 mini-batch steps, 4 seeds. Baselines: GELU 1.87 / 1.25, dropout 0.1
+1.17 (0.052) / 1.15 (0.047).
+
+| (C, g, s) | plain GELU short / long | **MC (K=8) short / long** |
+|---|---|---|
+| (4, 2, 1) | 1.70 / 2.68 | 2.14 / 2.44 |
+| (4, 2, 2) | 2.29 / 2.96 | 1.96 / 2.04 |
+| (6, 2, 1) | 2.43 / 2.31 | 1.20 (0.043) / 1.34 (0.033) |
+| (6, 2, 2) | 1.72 / 3.04 | 1.22 (0.070) / 1.35 (0.064) |
+| (6, 2, 3) | 1.65 / 2.86 | 1.30 / 1.58 |
+| (6, 3, 2) | 3.45 / 3.01 | 2.75 / 2.51 |
+| (8, 2, 2) | 1.80 / 2.23 | 1.06 (0.060) / 1.12 (0.072) |
+| (8, 2, 4) | 1.71 / 2.43 | 1.08 (0.069) / 1.16 (0.082) |
+| (8, 3, 3) | 4.77 / 3.70 | 1.42 / 1.35 |
+| (8, 4, 2) | 54.3 / 80.4 | 1.40 / **1.01** (0.060) |
+| (8, 4, 4) | 3.75 / 5.25 | 3.01 / one seed diverged (4023) |
+| (12, 2, 2) | 1.69 / 1.85 | 1.11 (0.062) / 1.17 (0.014) |
+| (12, 2, 4) | 1.62 / 2.08 | 1.04 (0.056) / **1.03 (0.029)** |
+| **(12, 3, 3)** | 4.39 / 2.84 | **1.02 (0.040)** / 1.05 (0.039) |
+| (12, 4, 2) | 10.1 / 7.8 | 1.05 (0.060) / 1.07 (0.050) |
+| (12, 4, 4) | 13.7 / 8.3 | 1.23 / 1.08 (0.089) |
+| (12, 6, 4) | 161 / 200 | 1.54 / 1.24 (0.030) |
+
+Reading, in order of confidence:
+
+1. **The inference rule is decisive.** Under plain GELU no configuration beats dropout and every configuration with
+   `g >= 4` is catastrophic (54 to 200 MSE): the product of four or more GELUs has mean `0.282^4 = 0.006`, so the
+   downstream layer learns gains of order 100, and plain GELU at inference feeds those gains full-size activations.
+   Under the MC rule the same configurations are among the best.
+2. **More chunks is better.** With `C = 12`, every configuration with `g <= 4` beats dropout at both budgets under
+   the MC rule; `C = 8` with `g = 2` does too; `C = 4` never does. Finer chunks make the per-forward perturbation
+   smaller and smoother, closer to dropout's regime.
+3. **Best stable configurations: (12, 3, 3) and (12, 2, 4)**: top-3 at both budgets, blind 1.02-1.05, dev-blind gap
+   0.03-0.04, below dropout's 1.15-1.17 and GELU's 1.25-1.87. (8, 4, 2) is the long-budget winner but 1.40 at the short
+   one. The module's defaults are now (12, 3, 3), MC, K = 8.
+4. **Skipped chunks matter less than gates**: at `C = 12`, `s` from 2 to 4 moves blind MSE by <= 0.1; `g` from 2 to 6
+   moves it from 1.03 to 1.24.
+5. One divergence: (8, 4, 4) under MC on one seed (blind 4023), so stability needs watching for `g + s = C`.
 
 ## 4. Where it could apply in GLiNER2, and the decision rule
 
@@ -137,15 +175,17 @@ problem today is the opposite (a fit failure, code review Issues 8-9), where a r
 Candidate insertion points, all post-activation MLPs where MC inference is cheap: the relation scorer's hidden GELU,
 the coref distance MLP, the junction geometry channel's activation arm. Not the encoder.
 
-Decision rule: if a head shows a gap beyond its floor after eb22d, run one one-epoch arm with fg (best sweep
-configuration, MC inference) on that head's MLP against the control, ~$17-23. If no head shows a gap, this note records
+Decision rule: if a head shows a gap beyond its floor after eb22d, run one one-epoch arm with fg (12, 3, 3), MC inference
+K = 8, on that head's MLP against the control, ~$17-23. Width constraint: the layer width must be divisible by C
+(768 is; the 64-wide coref distance MLP would take C = 8, e.g. (8, 2, 2)). If no head shows a gap, this note records
 a sound idea the programme does not need.
 
 ## 5. Open questions
 
-- Why (6, 2, 2) and not (4, 2, 1): the probability table in 2.2 gives both a third / a half of chunks as products; the
-  sweep separates chunk count from the activated/skipped fractions.
+- Why more chunks help (answered by the sweep in direction, not mechanism): C = 12 beats C = 6 beats C = 4 at matched
+  fractions; the per-forward perturbation is finer. Whether that holds at width 768 is untested.
 - The MC rule's `K`: 8 in the toy; the inference cost scales with it and the variance as `1 / K`.
 - Whether the random linear pass-through (`s > 0`) is doing the regularizing or the product is: (4, 2, 0) was worse
-  than (4, 2, 1) under plain GELU; the sweep includes `s = 0` cases.
+  than (4, 2, 1) under plain GELU, and at C = 12 the skipped count moved blind MSE by <= 0.1 while the gate count moved
+  it by 0.2: the product is the active ingredient, the pass-through a minor one.
 - Whether a learned rescale (one scalar per chunk role) would let plain-GELU inference work, removing the `K` cost.
