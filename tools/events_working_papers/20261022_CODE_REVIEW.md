@@ -270,8 +270,12 @@ defaults): the menu shrinks to 5.75 of 7 labels on average, the true label is AB
 records (all-zero gold: trained as "none of these"), 30.8% carry synthetic names with descriptions, 17.2% synthetic
 names WITHOUT descriptions (nothing to learn from), i.e. 74.2% usable supervision per step. Upstream trains under the
 same defaults, so this cannot be the whole deficit; whether it is part of it is testable with
-`tools/train/overfit_classification.py` (control vs `--no-schema-dropout`, 64 records x 400 steps), which runs at
-35 s/step on the laptop for news-length records and belongs on an A10 (~$0.50 for both arms).
+`tools/train/overfit_classification.py` (control vs `--no-schema-dropout`, 64 records x 400 steps), which ran on an A10
+(2026-10-23 18:42-18:52 UTC): with the sampling ON the head still fits 64 records (masakhanews 0.92, scientific_text 0.83
+accuracy at 400 steps), so the full-run collapse is NOT the sampling alone; with it OFF the fit is faster and steadier
+(masakhanews 1.00 by step 250, 0.95 at 400; scientific_text 0.92 vs 0.83; macro F1 0.83 vs 0.67). The sampling is a
+fit cost on top of whatever drives the one-label prior in the mix (label imbalance across the news classification
+tasks is the next suspect: 'politics' and 'neutral' are the labels it defaults to).
 
 ## 3. Recommended Investigation Plan
 
