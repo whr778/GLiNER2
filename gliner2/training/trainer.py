@@ -277,8 +277,11 @@ class TrainingConfig:
     # (SamplingConfig is imported into this module and never used). Sensible regularisation
     # at 174k records and 5 epochs; at A/B scale it withholds a fifth of the signal from the
     # very heads under test, and it has produced three false readings in tests by removing
-    # the only gold item in a small batch. `schema_dropout: false` zeroes every *_prob.
-    schema_dropout: bool = True
+    # the only gold item in a small batch. `schema_dropout: false` zeroes every *_prob; a dict
+    # ({remove_relations_prob: 0.0, ...}) sets only the named probabilities and leaves the rest
+    # at their defaults (2026-10-23: the relation drop is per gold INSTANCE and flips labels to
+    # negatives, the event drop is per TYPE; they deserve separate decisions).
+    schema_dropout: Union[bool, Dict[str, float]] = True
 
     # Restored feature knobs (pre-boundary; consumed by tools/train/train.py).
     # checkpoint_restart: resume selection ('last' | 'highest' | None).
@@ -510,6 +513,30 @@ def _length_proxy(text: str) -> int:
     """
     cjk = sum(1 for ch in text if _is_cjk(ch))
     return max(1, int((len(text) - cjk) / 4.0 + cjk / 1.42))
+
+def apply_schema_dropout(sampling_config, setting) -> Dict[str, float]:
+    """Apply `training.schema_dropout` to the processor's SamplingConfig; returns {field: new value} for what changed.
+
+    False zeroes every `*_prob` field. A dict sets exactly the named fields (each must be a `*_prob` field of
+    SamplingConfig, or the config is wrong and this raises). True changes nothing.
+    """
+    import dataclasses as _dc
+    probs = {f.name for f in _dc.fields(sampling_config) if f.name.endswith("_prob")}
+    if setting is True:
+        return {}
+    if setting is False:
+        wanted = {name: 0.0 for name in probs if getattr(sampling_config, name)}
+    elif isinstance(setting, dict):
+        unknown = sorted(set(setting) - probs)
+        if unknown:
+            raise ValueError(f"schema_dropout names unknown SamplingConfig probabilities {unknown}; known: {sorted(probs)}")
+        wanted = {name: float(value) for name, value in setting.items()}
+    else:
+        raise ValueError(f"schema_dropout must be true, false or a dict of *_prob values, got {setting!r}")
+    for name, value in wanted.items():
+        setattr(sampling_config, name, value)
+    return wanted
+
 
 def describe_links(model) -> List[str]:
     """One line per link module AS BUILT (not as configured): the in-run proof for the geometry / distance arms."""
@@ -974,16 +1001,11 @@ class ExtractorTrainer:
         # feature (a once-only flag capturing a pre-injector forward; a composition line read
         # before __getitem__ had run). Anything that PROVES a treatment applied must be
         # emitted after logging exists.
-        if not getattr(config, "schema_dropout", True) and self.processor is not None:
-            import dataclasses as _dc
-            sc = self.processor.sampling_config
-            zeroed = []
-            for f in _dc.fields(sc):
-                if f.name.endswith("_prob") and getattr(sc, f.name):
-                    setattr(sc, f.name, 0.0)
-                    zeroed.append(f.name)
-            logger.info("schema_dropout: false -- zeroed %d removal probabilities (%s)",
-                        len(zeroed), ", ".join(sorted(zeroed)) or "none were non-zero")
+        setting = getattr(config, "schema_dropout", True)
+        if setting is not True and self.processor is not None:
+            changed = apply_schema_dropout(self.processor.sampling_config, setting)
+            logger.info("schema_dropout: %s -- set %d removal probabilities (%s)", setting, len(changed),
+                        ", ".join(f"{k}={v}" for k, v in sorted(changed.items())) or "none changed")
 
         self.global_step = 0
         self.epoch = 0
