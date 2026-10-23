@@ -254,6 +254,25 @@ flag was added 2026-09-16 (2b379e1) after three false readings in small A/B batc
 at 174k records"; that predates knowing the drop is per instance for relations and that the relation head cannot fit.
 Also found: the `sampling: {}` block in the gate3 configs is wired to nothing (inert).
 
+### Issue 10: The Classification Head Collapses to One Label on News-Style Tasks (MEASURED 2026-10-23)
+
+**Status: MEASURED on the 30k control; cause not yet isolated.** `batch_extract` with each record's own gold menu,
+100 val records per task: chfinann_event (5 labels, 25k training records) accuracy 0.99 with predictions spread over
+the classes; cc_news_haiku45 'topic' (16 labels, in the mix) accuracy 0.16 with 'politics' predicted 69 times;
+cc_news_haiku45 'sentiment' (3 labels) 0.47 with 'neutral' 96 times; masakhanews_eng 'news topic' (7 labels, NOT in
+the mix) 0.14 with 'politics' 93 times. The same encoder's frozen label-token states carry the signal: a fresh
+768 -> 1536 -> 1 head trained on them reaches 0.71 blind accuracy on masakhanews_eng (FG_GEGLU.md 3.5). So the
+deficit the memory records (9-27% vs upstream's 82%) is the TRAINED head's behaviour on news-style tasks, a prior for
+one label ('politics', 'neutral') over content, while a well-represented closed task (chfinann) is fine.
+
+Measured alongside, from the training collate (masakhanews_eng, 200 records x 5 collates, the SamplingConfig
+defaults): the menu shrinks to 5.75 of 7 labels on average, the true label is ABSENT from the menu in 10.0% of collated
+records (all-zero gold: trained as "none of these"), 30.8% carry synthetic names with descriptions, 17.2% synthetic
+names WITHOUT descriptions (nothing to learn from), i.e. 74.2% usable supervision per step. Upstream trains under the
+same defaults, so this cannot be the whole deficit; whether it is part of it is testable with
+`tools/train/overfit_classification.py` (control vs `--no-schema-dropout`, 64 records x 400 steps), which runs at
+35 s/step on the laptop for news-length records and belongs on an A10 (~$0.50 for both arms).
+
 ## 3. Recommended Investigation Plan
 
 Following the repository's core guidelines (trace first, prove root causes with code and logs before altering implementations):
