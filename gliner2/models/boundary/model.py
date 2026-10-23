@@ -85,6 +85,7 @@ from gliner2.models.boundary.validation import (
     validate_candidate_indices,
     validate_masked_spans,
 )
+from gliner2.models.boundary.relations import append_gold_pairs, note_relation_gold
 from gliner2.models.boundary.relations import (
     RelationProposalSettings,
     RelationTypeSpec,
@@ -2194,6 +2195,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
             compact=False,
             routing=routing,
         )
+        gold_kept = gold_appended = None
+        if self.boundary_settings.relation_keep_gold_pairs and isinstance(edge_targets, tuple):
+            pairs, gold_kept, gold_appended = append_gold_pairs(pairs, edge_targets[0], edge_targets[1])
         relation_dim = (
             2 * self.hidden_size
             if self.boundary_settings.directional_relation_states
@@ -2251,6 +2255,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
             pair_mask = pair_mask[:logits.shape[0]] if pair_mask.numel() >= logits.numel() else torch.ones_like(logits, dtype=torch.bool)
         loss = F.binary_cross_entropy_with_logits(logits, labels, reduction="none")
         loss = (loss * pair_mask.to(loss.dtype)).sum() / pair_mask.sum().clamp_min(1)
+        if gold_kept is not None:
+            # after the loss succeeded, so a run that logs this line really trained on the appended pairs
+            note_relation_gold(gold_kept, gold_appended, int(gold_mask.sum()))
         return self.boundary_settings.relation_loss_weight * loss
 
     def _event_query_mask(self, batch, query_mask) -> Optional[torch.BoolTensor]:

@@ -333,6 +333,10 @@ class BoundaryHeadSettings:
     relation_argument_proposal_threshold: float = 0.0
     directional_relation_states: bool = False
     relation_biaffine_content: bool = False
+    # Training only: every gold (head, tail) pair the proposal ranking dropped is appended to the pairs the
+    # relation loss scores. Off, the loss sees only the gold pairs the ENTITY scores rank in (15-17% on biored /
+    # professorbob_re at 30k, 2026-10-23). Non-structural.
+    relation_keep_gold_pairs: bool = False
 
 
 # =============================================================================
@@ -718,6 +722,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "relation_biaffine_content": bool(
             values.get("relation_biaffine_content", d.relation_biaffine_content)
+        ),
+        "relation_keep_gold_pairs": bool(
+            values.get("relation_keep_gold_pairs", d.relation_keep_gold_pairs)
         ),
     }
     if result["export_mode"] not in ("auto", "streaming", "vectorized"):

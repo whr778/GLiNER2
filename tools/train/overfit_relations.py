@@ -121,6 +121,12 @@ def main(argv=None) -> None:
                          "layers zero-initialised so step 0 scores exactly as before)")
     ap.add_argument("--relation-gold-pairs", choices=["all", "nearest"], help="override training.relation_gold_pairs")
     ap.add_argument("--negative-pools", help="override the config's negative_pools (e.g. the committed eb21 JSON; `auto` reads every corpus)")
+    ap.add_argument("--keep-gold-pairs", action="store_true",
+                    help="boundary_head.relation_keep_gold_pairs: append every gold pair the proposal ranking dropped to the "
+                         "pairs the relation loss scores (the in-run 'relation pairs:' line counts kept vs appended)")
+    ap.add_argument("--no-schema-dropout", action="store_true",
+                    help="zero every SamplingConfig *_prob (what training.schema_dropout: false does): no gold relation "
+                         "instance is dropped from the collated schema, so no gold pair flips to a negative between steps")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
@@ -140,6 +146,24 @@ def main(argv=None) -> None:
     model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu")
     if args.relation_biaffine:
         _add_relation_biaffine(model)
+    if args.keep_gold_pairs:
+        import dataclasses
+        import logging
+        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)   # the in-run proof line
+        logging.getLogger("gliner2.models.boundary.relations").setLevel(logging.INFO)
+        model.boundary_settings = dataclasses.replace(model.boundary_settings, relation_keep_gold_pairs=True)
+        print(f"[overfit] relation_keep_gold_pairs: {model.boundary_settings.relation_keep_gold_pairs}", flush=True)
+    if args.no_schema_dropout:
+        import dataclasses
+        sc = model.processor.sampling_config
+        zeroed = [f.name for f in dataclasses.fields(sc) if f.name.endswith("_prob") and getattr(sc, f.name)]
+        for name in zeroed:
+            setattr(sc, name, 0.0)
+        print(f"[overfit] schema dropout OFF: zeroed {zeroed}", flush=True)
+    else:
+        sc = model.processor.sampling_config
+        print(f"[overfit] schema dropout ON: remove_relations_prob {sc.remove_relations_prob} swap_head_tail_prob {sc.swap_head_tail_prob} "
+              f"remove_events_prob {sc.remove_events_prob}", flush=True)
     model = model.to(args.device)
     negatives = None
     if tr.get("negative_pools") and tr.get("negative_labels_per_dim"):

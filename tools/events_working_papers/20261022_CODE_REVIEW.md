@@ -224,6 +224,36 @@ Structures DO train through the natural path: in-run structure strict micro F1 0
 in the warm-start name space. If the latent/anchorless modes are never going to be trained, removing them from the
 dense forward would also drop two masked branches from every record step.
 
+### Issue 8: The Relation Loss Never Sees Most of Its Gold Pairs (TRACED 2026-10-23)
+
+**Status: TRACED on the 30k control; fix BUILT as `relation_keep_gold_pairs` (off by default), overfit A/B pending.**
+`_relation_loss` scores the pairs `RelationPairGenerator.generate_batched` keeps: endpoints must clear
+`relation_argument_proposal_threshold` (0.2 in eb22c, upstream default 0.0), rank in the top `relation_heads/tails_per_type`
+(32) of their relation's member queries by ENTITY pair probability, and the pair must rank in the top `relation_pair_cap`
+(64) by product score. Gold mentions are all in the candidate pool (gold injection works), but the control scores them at
+0.003-0.17, so on 8-record batches (`tools/events_working_papers/trace_relation_gold_coverage.py`): biored 5 of 30 gold
+pairs reach the loss as positives, professorbob_re 4 of 27, sentence_rex 5 of 6. Threshold 0 alone recovers little
+(8 of 30, 11 of 21): the ranking caps drop the rest. The missing gold is ABSENT from the loss (neither positive nor
+negative). This is the shape of "cannot fit dense corpora" (TODO 40): the one corpus that fits (sentence_rex) is the one
+whose gold reaches the loss. Fix: append every gold pair the ranking dropped to the scored pair set, training only,
+non-structural; proof line `relation pairs: gold kept by the proposal ranking K, appended A of G gold pairs`. Traced:
+biored seed 0, flag off relation_loss 0.078 with 8 of 29 gold; flag on "kept 8, appended 21 of 29", loss 0.276.
+
+### Issue 9: Schema Dropout Removes 20% of Gold Relation Instances per Collate (TRACED 2026-10-23)
+
+**Status: TRACED; controllable today by `training.schema_dropout: false`; NOT set in any eb22 base.** Upstream's
+`SamplingConfig` (gliner2/processor.py) is live in every training collate: `remove_relations_prob` 0.2 drops each gold
+relation ITEM independently (`_process_relations`), `swap_head_tail_prob` 0.2 swaps the head/tail field order per type,
+`remove_events_prob` 0.2 drops each gold event TYPE (its mentions leave the schema), `remove_json_structure_prob` /
+`remove_json_field_prob` 0.2, `synthetic_entity_label_prob` 0.2. Measured: the same 8 biored records collated 10 times
+emit 26-32 gold pairs of 37 alignable (mean 0.78); one record's single relation is emitted on some collates and not
+others. A dropped instance whose type keeps other instances is no longer gold, so if the generator proposes that pair
+the loss scores it as a NEGATIVE: a fifth of the relation labels flip sign between collates ("positives below negatives
+for 250 steps", 2026-10-19). A dropped event type simply leaves the sample (fewer positives, no false negatives). The
+flag was added 2026-09-16 (2b379e1) after three false readings in small A/B batches and judged "sensible regularisation
+at 174k records"; that predates knowing the drop is per instance for relations and that the relation head cannot fit.
+Also found: the `sampling: {}` block in the gate3 configs is wired to nothing (inert).
+
 ## 3. Recommended Investigation Plan
 
 Following the repository's core guidelines (trace first, prove root causes with code and logs before altering implementations):

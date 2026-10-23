@@ -12,9 +12,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Sequence, Tuple
 
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+logger = logging.getLogger(__name__)
 
 from gliner2.models.base import QueryLayout, qualified_query_type
 from gliner2.models.outputs import CandidateTensorBatch
@@ -62,6 +66,58 @@ class RelationPairBatch:
 
     def __len__(self) -> int:
         return int(self.batch_index.shape[0])
+
+
+def append_gold_pairs(pairs: RelationPairBatch, gold_pairs: torch.Tensor, gold_mask: torch.Tensor) -> tuple[RelationPairBatch, int, int]:
+    """Every gold (head, tail) pair the proposal ranking dropped, appended as a kept pair (training only).
+
+    The generator keeps the pairs the ENTITY scores rank highest; on the 30k eb22c control that kept 15-17% of the
+    gold pairs on biored and professorbob_re (2026-10-23 trace), so the relation loss never saw the rest. Gold rows
+    carry their own spans and relation index, which is all the scorer and the loss read; `head_prob`/`tail_prob`
+    are 1 (unused there). Returns (pairs, kept_by_ranking, appended); the two counts are the treatment's own proof.
+    """
+    present = gold_mask.nonzero(as_tuple=False)                      # [G, 3]: (batch, relation, slot)
+    if present.numel() == 0:
+        return pairs, 0, 0
+    g = gold_pairs[present[:, 0], present[:, 1], present[:, 2]]      # [G, 4]
+    kept_valid = pairs.pair_mask if pairs.pair_mask is not None else torch.ones_like(pairs.batch_index, dtype=torch.bool)
+    kept = torch.stack((pairs.batch_index, pairs.relation_index, pairs.head_start, pairs.head_end,
+                        pairs.tail_start, pairs.tail_end), -1)[kept_valid]                          # [P, 6]
+    rows = torch.cat((present[:, :2], g), -1)                                                      # [G, 6]
+    already = (rows[:, None, :] == kept[None, :, :]).all(-1).any(-1) if kept.shape[0] else torch.zeros(len(rows), dtype=torch.bool, device=rows.device)
+    new = rows[~already]
+    n_new = int(new.shape[0])
+    if n_new == 0:
+        return pairs, int(already.sum()), 0
+    ones = torch.ones(n_new, dtype=pairs.head_prob.dtype, device=pairs.head_prob.device)
+    out = RelationPairBatch(
+        batch_index=torch.cat((pairs.batch_index, new[:, 0])), relation_index=torch.cat((pairs.relation_index, new[:, 1])),
+        head_start=torch.cat((pairs.head_start, new[:, 2])), head_end=torch.cat((pairs.head_end, new[:, 3])),
+        tail_start=torch.cat((pairs.tail_start, new[:, 4])), tail_end=torch.cat((pairs.tail_end, new[:, 5])),
+        head_prob=torch.cat((pairs.head_prob, ones)), tail_prob=torch.cat((pairs.tail_prob, ones)),
+        pair_mask=torch.cat((kept_valid, torch.ones(n_new, dtype=torch.bool, device=kept_valid.device))),
+    )
+    assert len(out) == len(pairs) + n_new and out.pair_mask.shape[0] == len(out)
+    return out, int(already.sum()), n_new
+
+
+_REL_GOLD_TOTAL = 0
+_REL_GOLD_KEPT = 0
+_REL_GOLD_APPENDED = 0
+_REL_GOLD_CALLS = 0
+
+
+def note_relation_gold(kept: int, appended: int, total: int) -> None:
+    """In-run proof and measurement: gold relation pairs the ranking kept vs appended, cumulative over batches."""
+    global _REL_GOLD_TOTAL, _REL_GOLD_KEPT, _REL_GOLD_APPENDED, _REL_GOLD_CALLS
+    _REL_GOLD_TOTAL += total
+    _REL_GOLD_KEPT += kept
+    _REL_GOLD_APPENDED += appended
+    _REL_GOLD_CALLS += 1
+    n = _REL_GOLD_CALLS
+    if n in (1, 200, 1000, 5000) or (n > 5000 and n % 25000 == 0):
+        logger.info("relation pairs: gold kept by the proposal ranking %d, appended %d of %d gold pairs "
+                    "(cumulative over %d batches)", _REL_GOLD_KEPT, _REL_GOLD_APPENDED, _REL_GOLD_TOTAL, n)
 
 
 def _query_type(layout: QueryLayout, query_id: int) -> str:
