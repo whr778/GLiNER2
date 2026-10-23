@@ -167,6 +167,47 @@ Reading, in order of confidence:
    moves it from 1.03 to 1.24.
 5. One divergence: (8, 4, 4) under MC on one seed (blind 4023), so stability needs watching for `g + s = C`.
 
+### 3.4 Scaling the chunk count: 12 to 32 chunks, and a zero-skip variant (width 96)
+
+The user's hypothesis: finer random stratification at the activation makes the layer harder to overfit, as dropout
+does per unit, and the stop dendrite blocks propagation outright. Two tests: keep the (1/4, 1/4) ratio while raising
+the chunk count ((12, 3, 3) -> (24, 6, 6) -> (32, 8, 8)), and raise the chunk count with the gate count held at 2-4;
+plus a variant where skipped chunks output zero instead of passing through ("z"). Width 96 (divisible by 4-32), MC
+inference K = 8, blind MSE (dev-blind gap); GELU 1.74 / 1.24, dropout 0.1 1.13 / 1.09.
+
+| config | short (1,500 full-batch, 6 seeds) | long (10,000 mini-batch, 4 seeds) |
+|---|---|---|
+| (12, 3, 3) | 1.048 (0.052) | 1.011 (0.041) |
+| (12, 2, 4) | 1.045 (0.041) | 1.023 (0.045) |
+| (16, 2, 2) | 1.075 (0.056) | 1.020 (0.027) |
+| (16, 4, 4) | **1.013** (0.092) | 1.046 (0.036) |
+| (24, 2, 2) | 1.089 (0.047) | 0.990 (0.048) |
+| (24, 2, 4) | 1.076 (0.054) | 1.070 (0.058) |
+| (24, 3, 3) | 1.115 (0.057) | **0.880** (0.039) |
+| (24, 4, 4) | 1.031 (0.057) | 0.900 (0.028) |
+| (24, 6, 6) same ratio as (12, 3, 3) | 1.147 (0.100) | 1.041 (0.038) |
+| (24, 8, 8) | 1.366 (0.128) | 1.354 (0.052) |
+| (32, 4, 4) | 1.130 (0.100) | 1.016 (0.045) |
+| (32, 8, 8) | 1.160 (0.065) | 1.304 (0.090) |
+| (12, 3, 3) zero-skip | 1.075 (0.079) | 0.897 (0.045; one seed 0.43) |
+| (24, 6, 6) zero-skip | 1.523 (0.105) | 1.063 (0.062) |
+
+Reading:
+
+1. **More chunks help only if the gate count stays small.** With gates fixed at 3-4, going from 12 to 24 chunks gives
+   the best long-budget results in the whole study (0.88-0.90 vs dropout 1.09) at no cost at the short budget for
+   (24, 4, 4). Scaling at a fixed ratio does not: (24, 6, 6) and (32, 8, 8) are worse than (12, 3, 3) at both budgets.
+   The constraint is the product depth, not the fraction of the width: six GELUs multiply to a mean of
+   `0.282^6 = 5e-4`, so a quarter of the layer carries almost nothing, and the MC average cannot restore a signal that
+   was never there. The hypothesis holds in the form "stratify finer, keep the veto shallow".
+2. **(24, 4, 4) is the most consistent configuration at width 96** (top-2 at both budgets); (12, 3, 3) remains the safe
+   default across widths 72 and 96. The module keeps (12, 3, 3); a 768-wide head can take (24, 4, 4).
+3. **Zero-skip is not clearly better.** Equal to pass-through at the short budget for (12, 3, 3), better at the long one
+   on the strength of one seed (0.43), and worse for (24, 6, 6) at the short budget. Four seeds cannot separate the
+   two; the pass-through stays as built, the zero variant stays as an option worth a matched-seed re-run.
+4. The dev-blind gaps of the good configurations (0.03-0.06) are at or below dropout's (0.064-0.066) and GELU's
+   (0.065-0.125): the regularizing claim holds on the toy.
+
 ## 4. Where it could apply in GLiNER2, and the decision rule
 
 The property measured is a smaller dev-to-blind gap, so the candidate is a head whose VAL-minus-blind gap exceeds its
@@ -175,9 +216,9 @@ problem today is the opposite (a fit failure, code review Issues 8-9), where a r
 Candidate insertion points, all post-activation MLPs where MC inference is cheap: the relation scorer's hidden GELU,
 the coref distance MLP, the junction geometry channel's activation arm. Not the encoder.
 
-Decision rule: if a head shows a gap beyond its floor after eb22d, run one one-epoch arm with fg (12, 3, 3), MC inference
+Decision rule: if a head shows a gap beyond its floor after eb22d, run one one-epoch arm with fg (12, 3, 3) or (24, 4, 4), MC inference
 K = 8, on that head's MLP against the control, ~$17-23. Width constraint: the layer width must be divisible by C
-(768 is; the 64-wide coref distance MLP would take C = 8, e.g. (8, 2, 2)). If no head shows a gap, this note records
+(768 is, by both; the 64-wide coref distance MLP would take C = 8, e.g. (8, 2, 2)). If no head shows a gap, this note records
 a sound idea the programme does not need.
 
 ## 5. Open questions
