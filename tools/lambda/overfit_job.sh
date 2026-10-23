@@ -8,7 +8,7 @@
 # log published on EVERY exit path.
 #
 #   JOB="CFG=tools/train/config/base/eb22c-ddp-trace.yaml DEST=overfit-matrix bash tools/lambda/overfit_job.sh"
-#   ARMS: name=flags pairs separated by ';' (flags may be empty); CORPORA: space list; CKPT: repo:checkpoint-dir.
+#   PRESET=relations|cls picks arms, corpora and harness; CKPT: repo:checkpoint-dir; RECORDS/STEPS pass through.
 set -uo pipefail
 cd ~/gliner2
 export PATH="$HOME/.local/bin:$PATH"
@@ -17,10 +17,18 @@ export CKPT_CACHE=$HOME/ckpts
 PY=./.venv/bin/python
 CFG=${CFG:?CFG}; DEST=${DEST:?DEST}
 CKPT=${CKPT:-whr778/gliner2-eb22c-collapse-trace:checkpoint-30000}
-ARMS=${ARMS:-"control=;dropoff=--no-schema-dropout;keepgold=--keep-gold-pairs;both=--no-schema-dropout --keep-gold-pairs"}
-CORPORA=${CORPORA:-"biored professorbob_re scierc sentence_rex"}
+# PRESET picks the arms, corpora and harness: the JOB string travels through provision_box.sh's remote `bash -lc '...'`, so
+# it cannot carry quotes, semicolons or spaces inside values (2026-10-23: an ARMS='a;b' JOB never started and the box
+# was terminated). Arms are "name=flags" pairs separated by "," (flags may be empty; spaces inside flags are fine here).
+PRESET=${PRESET:-relations}
+case "$PRESET" in
+  relations) ARMS="control=,dropoff=--no-schema-dropout,keepgold=--keep-gold-pairs,both=--no-schema-dropout --keep-gold-pairs"
+             CORPORA="biored professorbob_re scierc sentence_rex"; SCRIPT=tools/train/overfit_relations.py ;;
+  cls)       ARMS="control=,dropoff=--no-schema-dropout"
+             CORPORA="masakhanews_eng scientific_text"; SCRIPT=tools/train/overfit_classification.py ;;
+  *) echo "[overfit] *** FATAL: unknown PRESET $PRESET ***"; exit 1 ;;
+esac
 RECORDS=${RECORDS:-64}; STEPS=${STEPS:-400}; EVERY=${EVERY:-50}; BATCH=${BATCH:-8}
-SCRIPT=${SCRIPT:-tools/train/overfit_relations.py}   # or tools/train/overfit_classification.py (same flags)
 RUN_TIMEOUT=${RUN_TIMEOUT:-1800}
 OUT=$HOME/overfit
 JOBLOG=${JOBLOG:-$HOME/job.log}
@@ -60,7 +68,7 @@ run_one() {  # arm flags corpus   (separate `local` statements: `local a=$1 b=$a
   if [ "$rc" -eq 0 ] && [ -s "$out" ]; then done_n=$((done_n+1)); else failed=$((failed+1)); grep -aE "Error|Traceback" "$log" | tail -2; fi
   publish "$DEST" "$log" $([ -s "$out" ] && echo "$out") || echo "[overfit] publish of $tag failed (continuing; final publish retries)"
 }
-IFS=';' read -r -a arm_list <<< "$ARMS"
+IFS=',' read -r -a arm_list <<< "$ARMS"
 for corpus in $CORPORA; do
   for entry in "${arm_list[@]}"; do
     run_one "${entry%%=*}" "${entry#*=}" "$corpus"
