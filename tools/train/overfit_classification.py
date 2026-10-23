@@ -68,7 +68,9 @@ def main(argv=None) -> None:
     args = ap.parse_args(argv)
 
     cfg = yaml.safe_load(open(args.config, encoding="utf-8")); tr, head = cfg["training"], cfg["model"]["boundary_head"]
-    rows = [json.loads(l) for l in open(f"data/{args.corpus}.train.jsonl", encoding="utf-8")]
+    path = f"data/{args.corpus}.train.jsonl"
+    T._fetch_if_missing(path)        # a box only carries the config's corpora; these classification sets are not in eb22c's mix
+    rows = [json.loads(l) for l in open(path, encoding="utf-8")]
     random.Random(0).shuffle(rows)
     records = [r for r in rows if r["output"].get("classifications")][:args.records]
     for r in records: r["_corpus"] = args.corpus
