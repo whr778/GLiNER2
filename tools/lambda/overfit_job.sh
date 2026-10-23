@@ -20,6 +20,7 @@ CKPT=${CKPT:-whr778/gliner2-eb22c-collapse-trace:checkpoint-30000}
 ARMS=${ARMS:-"control=;dropoff=--no-schema-dropout;keepgold=--keep-gold-pairs;both=--no-schema-dropout --keep-gold-pairs"}
 CORPORA=${CORPORA:-"biored professorbob_re scierc sentence_rex"}
 RECORDS=${RECORDS:-64}; STEPS=${STEPS:-400}; EVERY=${EVERY:-50}; BATCH=${BATCH:-8}
+SCRIPT=${SCRIPT:-tools/train/overfit_relations.py}   # or tools/train/overfit_classification.py (same flags)
 RUN_TIMEOUT=${RUN_TIMEOUT:-1800}
 OUT=$HOME/overfit
 JOBLOG=${JOBLOG:-$HOME/job.log}
@@ -48,10 +49,10 @@ run_one() {  # arm flags corpus   (separate `local` statements: `local a=$1 b=$a
   local log=$OUT/$tag.log
   local t0=$SECONDS
   if [ -n "$DRY" ]; then
-    echo "[overfit] DRY $tag: $PY tools/train/overfit_relations.py --config $CFG --checkpoint $CKDIR --corpus $corpus --records $RECORDS --steps $STEPS --every $EVERY --batch-size $BATCH --device cuda $flags --out $out"
+    echo "[overfit] DRY $tag: $PY $SCRIPT --config $CFG --checkpoint $CKDIR --corpus $corpus --records $RECORDS --steps $STEPS --every $EVERY --batch-size $BATCH --device cuda $flags --out $out"
     return
   fi
-  PYTHONUNBUFFERED=1 timeout "$RUN_TIMEOUT" $PY tools/train/overfit_relations.py --config "$CFG" --checkpoint "$CKDIR" --corpus "$corpus" \
+  PYTHONUNBUFFERED=1 timeout "$RUN_TIMEOUT" $PY $SCRIPT --config "$CFG" --checkpoint "$CKDIR" --corpus "$corpus" \
      --records "$RECORDS" --steps "$STEPS" --every "$EVERY" --batch-size "$BATCH" --device cuda $flags --out "$out" > "$log" 2>&1
   local rc=$?
   echo "[overfit] $tag: exit $rc | $((SECONDS - t0)) s | $(date -u +%H:%M:%S) | last: $(grep -a '^\[overfit\] {' "$log" | tail -1 | cut -c1-260)"
