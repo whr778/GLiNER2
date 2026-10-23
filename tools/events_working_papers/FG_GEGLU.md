@@ -208,6 +208,33 @@ Reading:
 4. The dev-blind gaps of the good configurations (0.03-0.06) are at or below dropout's (0.064-0.066) and GELU's
    (0.065-0.125): the regularizing claim holds on the toy.
 
+### 3.5 A real head on real features: the classifier MLP (NULL)
+
+The classifier head (`create_mlp`: 768 -> 1,536 -> 1 with dropout 0.1, one logit per label state, BCE per label) was
+trained from scratch on frozen eb22c-control encoder features for two classification corpora NOT in eb22c's mix:
+masakhanews_eng (7-way news topic, 3,308 / 472 / 948) and scientific_text (10-label menus from 21 domains, subsampled
+2,500 / 700 / 700). Pick the epoch on VAL accuracy, score the blind TEST once, 4 seeds; fg under the MC rule, K = 8.
+Instruments: `cache_cls_features.py`, `cls_head_ab.py` (this folder). Blind accuracy (val - blind gap):
+
+| head activation | masakhanews 40 ep | masakhanews 150 ep | scientific 40 ep | scientific 150 ep |
+|---|---|---|---|---|
+| ReLU (upstream's) | 0.635 (-0.017) | **0.717** (-0.008) | 0.340 (+0.019) | 0.437 (+0.010) |
+| GELU | **0.673** (-0.038) | 0.712 (+0.002) | **0.381** (-0.006) | **0.461** (+0.011) |
+| fg (12, 3, 3), MC | 0.527 (+0.001) | 0.634 (-0.021) | 0.213 (+0.013) | 0.321 (+0.013) |
+| fg (24, 4, 4), MC | 0.554 (-0.002) | 0.648 (-0.030) | 0.252 (+0.034) | 0.345 (+0.018) |
+
+Reading:
+
+1. **No gap to close.** Both baselines score within 0.02 of their val accuracy on the blind test, at or above it on
+   masakhanews; this head under-fits frozen features, it does not over-fit them. fg's property has nothing to act on.
+2. **fg costs accuracy at every budget**: 0.07-0.08 below the baselines on masakhanews and 0.12-0.14 on scientific_text
+   at 150 epochs, still climbing at the end (best epochs 139-149). The "more steps" cost is real and not recovered here.
+3. GELU vs ReLU is a convergence-rate effect, not a ceiling: +0.04 blind at 40 epochs on both corpora, converged on
+   masakhanews at 150 (0.712 vs 0.717) and +0.024 on scientific_text.
+
+Verdict for the classifier head: fg-GEGLU is not indicated, for the reason the decision rule predicts (no measured
+dev-blind gap). The option is not wired to this head.
+
 ## 4. Where it could apply in GLiNER2, and the decision rule
 
 The property measured is a smaller dev-to-blind gap, so the candidate is a head whose VAL-minus-blind gap exceeds its
@@ -230,3 +257,7 @@ a sound idea the programme does not need.
   than (4, 2, 1) under plain GELU, and at C = 12 the skipped count moved blind MSE by <= 0.1 while the gate count moved
   it by 0.2: the product is the active ingredient, the pass-through a minor one.
 - Whether a learned rescale (one scalar per chunk role) would let plain-GELU inference work, removing the `K` cost.
+- MC inference is stochastic across calls (K = 8: max logit difference 0.11 on a 37-pair relation probe); a deployed
+  head would want a fixed seed per forward or a larger K.
+- The toy's regularizing effect did not transfer to a real head that under-fits (3.5); the open case is a head that
+  over-fits, which no GLiNER2 head has yet been shown to do (eb22d's blind test will say).
