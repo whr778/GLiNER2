@@ -16,7 +16,7 @@ An event is a **typed instance** with a trigger and role-filled arguments:
 ```python
 from gliner2 import AutoExtractor
 
-model = AutoExtractor.from_pretrained("whr778/gliner2-eb21")   # the current base (2026-10); eb16-eventrecords-tr is the older example model
+model = AutoExtractor.from_pretrained("whr778/gliner2-eb21")   # the current base (2026-10); PRIVATE on the Hub, like every project model: set HF_TOKEN
 
 text = "On 16 March, Acme Corp acquired Beta Inc for $2.1 billion."
 
@@ -195,7 +195,9 @@ before being caught. Size it from your own data:
 uv run python tools/train/size_gold_capacity.py --config <your-config> --apply
 ```
 
-**Label negatives** teach the model to say no. Build the pools first:
+**Label negatives** teach the model to say no. `negative_pools: auto` builds the per-corpus pools
+from the training gold at launch (`negative_pools.auto.json` in the output dir); to build and inspect
+them yourself, or to commit a fixed file:
 
 ```bash
 uv run python tools/data/build_negative_pools.py --config <your-config>

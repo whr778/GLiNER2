@@ -687,6 +687,19 @@ merge is read on: merging two mentions of one event into one instance changes `e
 and leaves `event_argument` relaxed alone ([COREFERENT_LINK_SPEC](tools/events_working_papers/COREFERENT_LINK_SPEC.md) s5).
 Keys follow the scheme above (`eval_event_cluster_strict_micro_f1`, ...).
 
+**Two reads that live beside the scorer, not in it.** The **held-out coreference pair AUC**
+(`tools/events_working_papers/measure_coref_dist.py`) ranks, per natural group of a val record,
+the trained TriggerLink / MentionLink score of every gold-coreferent trigger pair against the
+same-type non-coreferent pairs and reports the AUC with and without the link's distance term;
+it is the measure the coref link is trained toward ([COREFERENT_LINK_SPEC](tools/events_working_papers/COREFERENT_LINK_SPEC.md)
+s5) and the one that qualified eb22d's distance MLP against a three-control floor
+([EB22C_SCORE_LEVEL_AUTOPSY](tools/events_working_papers/EB22C_SCORE_LEVEL_AUTOPSY.md) s10). The
+**threshold-robust per-source read** (`tools/train/diagnose_checkpoint.py`) scores ONE checkpoint
+per val source over a threshold grid and reports each source at its own best threshold (precision
+kept beside F1), so a head that is mis-thresholded is told apart from one that is unlearned; it
+is a diagnostic, never a published number, because picking the best over a grid per source is
+fitting the read to the split.
+
 **Per-head thresholds (2026-10-24).** `compute_metrics_per_head` scores at ONE threshold per
 decode head -- `entity`, `relation`, `classification`, `structure`, `event` (the three event
 categories are read off one `event_extraction` decode, so they share a value) -- by decoding
