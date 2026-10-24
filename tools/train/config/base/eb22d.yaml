@@ -3,6 +3,7 @@
 # 21088c7); here: training.seed 42 explicit, save_epoch_checkpoint (restart points), eval.metric_sweep (checkpoint selection
 # at the best threshold, not the 0.3 gate), threshold_sweep kept, the full 5 epochs. TIER 2 (proposal 2026-10-24, user decides):
 # coref_link_distance mlp width 64 -- the resumed corefdist arm cleared the three-control floor on both corpora; caveat: `none` untested.
+# boundary_marginal_loss bce (DECIDED 2026-10-24): eb22c.yaml trains asymmetric_focal, every proven arm trained bce.
 model:
   encoder: jhu-clsp/mmBERT-base
   architecture: boundary
@@ -34,7 +35,7 @@ model:
     query_conditioned_inside_weight: true
     boundary_attention_layers: 2
     boundary_attention_window: 128
-    boundary_marginal_loss: asymmetric_focal
+    boundary_marginal_loss: bce
     boundary_negative_weight: 0.5
     boundary_top_k_alpha: 0.08
     hard_negatives_per_positive: 20

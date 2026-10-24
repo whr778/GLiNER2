@@ -137,3 +137,39 @@ class TestShipping:
         assert T._read_per_head_picks(tmp_path) == {}
         (tmp_path / "threshold_sweep.json").write_text(json.dumps({"chosen_threshold": 0.3, "per_head_thresholds": {"entity": 0.1}}))
         assert T._read_per_head_picks(tmp_path) == {"entity": 0.1}
+
+
+class TestTrainingSplits:
+    """training_splits returns the val/test training scores: train_only out by BARE name, event_files in, and the
+    cross-split hygiene applied (split_hygiene.py: train yields to val and test, val yields to test). The tool used
+    raw files and missed all three."""
+
+    def _write(self, path, texts):
+        path.write_text("".join(json.dumps({"input": t, "output": {"entities": {"PER": [t.split()[0]]}}}) + "\n" for t in texts),
+                        encoding="utf-8")
+
+    def _cfg(self, tmp_path):
+        d = tmp_path / "data"; d.mkdir()
+        self._write(d / "a.train.jsonl", ["Ann trains here."])
+        self._write(d / "a.val.jsonl", ["Ann validates.", "Ann is also in test."])
+        self._write(d / "a.test.jsonl", ["Ann tests.", "Ann is also in test."])
+        self._write(d / "b.train.jsonl", ["Bob trains only."])
+        self._write(d / "b.val.jsonl", ["Bob must not be scored."])
+        self._write(d / "b.test.jsonl", ["Bob must not be tested."])
+        self._write(d / "c.val.jsonl", ["Cy is an event-file val."])
+        return {"data": {"corpora": [str(d / "a"), str(d / "b")], "train_only": ["b"],
+                         "event_files": {"c": {"val": str(d / "c.val.jsonl")}}}, "training": {}}
+
+    def test_val_and_test_match_training(self, tmp_path):
+        import train as T
+        val, test = T.training_splits(self._cfg(tmp_path), str(tmp_path / "c.yaml"))
+        assert sorted(r["input"] for r in val) == ["Ann validates.", "Cy is an event-file val."]   # val yields to test
+        assert sorted(r["input"] for r in test) == ["Ann is also in test.", "Ann tests."]
+        assert {r["_corpus"] for r in val} == {"a", "c"}
+
+    def test_sample_per_corpus_takes_n_from_each(self):
+        import per_head_thresholds as P
+        recs = [{"_corpus": c, "i": i} for c in ("x", "y") for i in range(5)]
+        out = P.sample_per_corpus(recs, 2)
+        assert [r["_corpus"] for r in out] == ["x", "x", "y", "y"]
+        assert P.sample_per_corpus(recs, None) is recs

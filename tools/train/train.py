@@ -1536,6 +1536,24 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
     }
 
 
+def training_splits(cfg: Dict, config_path: str) -> Tuple[List[Dict], List[Dict]]:
+    """``(val, test)`` records exactly as ``main`` builds them for a non-streaming config: each corpus's split
+    with ``train_only`` excluded (matched by bare name), the ``event_files`` splits, duplicate files dropped, the
+    label map applied, every record tagged with its ``_corpus``, then the cross-split hygiene against TRAIN.
+    For tools that pick or score on a trained config's own splits; reading train is what the hygiene needs."""
+    data = cfg.get("data") or {}
+    corpora, event_files = data.get("corpora") or [], data.get("event_files") or {}
+    train_only = set(data.get("train_only") or ())
+    files = {s: _dedupe_paths(_split_files(corpora, s, train_only) + _event_split(event_files, s), s)
+             for s in ("train", "val", "test")}
+    fns = _category_fns(load_labels_cfg(cfg, config_path))
+    passthrough = labels_passthrough(cfg)
+    read = lambda paths: read_transformed(paths, fns, passthrough)   # an empty map transforms nothing, and still tags _corpus
+    policy = str((cfg.get("training") or {}).get("split_hygiene", "drop"))
+    _, val, test = _enforce_split_hygiene(read(files["train"]), read(files["val"]), read(files["test"]), policy, True)
+    return val, test
+
+
 def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
                      checkpoint, config_path, per_head_thresholds=None) -> dict:
     """The operating point behind a metrics file, so two numbers can be compared.

@@ -8,7 +8,9 @@ existing checkpoint without retraining:
     uv run tools/train/per_head_thresholds.py --config CFG --checkpoint DIR [--grid 0.1 0.3 0.5]
         [--per-corpus 8] [--test] [--device cpu] --out picks.json
 
-``--per-corpus N`` samples N val (and test) records per corpus for a laptop read; omit it for the full splits.
+VAL and TEST are the config's splits exactly as training builds them (``train.training_splits``: train_only excluded,
+event_files included, label map applied, cross-split hygiene); ``--per-corpus N`` samples N records per corpus of each
+for a laptop read (each corpus then weighs the same, unlike the support-weighted full split); omit it for the full splits.
 ``--picks entity=0.3 relation=0.5 ...`` overrides the val picks (the splice gate is only exercised when heads differ).
 ``--test`` scores the test split at the global pick and at the per-head picks, and prints the splice gate:
 for every head, the per-head run's metrics for that head's categories must EQUAL the single-threshold run
@@ -37,21 +39,15 @@ from gliner2.training.trainer import ExtractorDataset  # noqa: E402
 MISMATCH_TOL = 1e-9
 
 
-def split_records(cfg: dict, split: str, per_corpus: int | None, seed: int = 0) -> list:
-    """The config's val/test records (train_only excluded), optionally N per corpus."""
-    d = cfg["data"]; train_only = set(d.get("train_only") or []); rng = random.Random(seed); out = []
-    for c in d["corpora"]:
-        p = Path(f"{c}.{split}.jsonl")
-        if c in train_only or not p.exists():
-            continue
-        T._fetch_if_missing(str(p))
-        rows = [json.loads(l) for l in open(p, encoding="utf-8")]
-        if per_corpus:
-            rows = rng.sample(rows, min(per_corpus, len(rows)))
-        for r in rows:
-            r["_corpus"] = c
-        out.extend(rows)
-    return out
+def sample_per_corpus(records: list, per_corpus: int | None, seed: int = 0) -> list:
+    """``per_corpus`` records from each ``_corpus`` (all of them when None), in a fixed order."""
+    if not per_corpus:
+        return records
+    by_corpus: dict = {}
+    for r in records:
+        by_corpus.setdefault(r["_corpus"], []).append(r)
+    rng = random.Random(seed)
+    return [r for c in sorted(by_corpus) for r in rng.sample(by_corpus[c], min(per_corpus, len(by_corpus[c])))]
 
 
 def splice_gate(per_head: dict, picks: dict, by_threshold: dict) -> list:
@@ -86,7 +82,8 @@ def main(argv=None) -> None:
               global_decode_config=ev["global_decode_config"])
     kw = dict(batch_size=ev["batch_size"], stopwords=ev["stopwords"], **gd)
     model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu").to(args.device).eval()
-    val = split_records(cfg, "val", args.per_corpus)
+    val_all, test_all = T.training_splits(cfg, args.config)   # the splits training scores, not the raw files
+    val = sample_per_corpus(val_all, args.per_corpus)
     print(f"[per-head] val: {len(val)} records from {len({r['_corpus'] for r in val})} corpora | grid {args.grid} | {gd}", flush=True)
     global_t, _, by_t = sweep_thresholds(model, ExtractorDataset(val, shuffle=False, validate=False), thresholds=args.grid, **kw)
     picks = pick_per_head_thresholds(by_t, global_t)
@@ -105,7 +102,7 @@ def main(argv=None) -> None:
               "val_records": len(val), "global_threshold": global_t, "per_head_thresholds": picks, "per_head_report": report,
               "val_by_threshold": {str(t): m for t, m in by_t.items()}}
     if args.test:
-        test = split_records(cfg, "test", args.per_corpus)
+        test = sample_per_corpus(test_all, args.per_corpus)
         ds = ExtractorDataset(test, shuffle=False, validate=False)
         print(f"[per-head] test: {len(test)} records; scoring at global {global_t} and per-head {picks}", flush=True)
         single = {t: compute_metrics(model, ds, threshold=t, report=False, **kw) for t in sorted({global_t, *picks.values()})}
