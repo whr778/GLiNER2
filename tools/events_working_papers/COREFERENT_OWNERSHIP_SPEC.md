@@ -3,6 +3,8 @@
 **Status:** 3a BUILT + traced 2026-10-06 (opt-in `record_coreferent_ownership`); 3b-i BUILT, traced NEGATIVE, left off; 3b-ii BUILT (`COREFERENT_LINK_SPEC.md`). eb20 trains 3a + 3b-ii, merge off until its threshold is picked. See section 7. Priority: before the English v2 annotations, or with them
 (`ENGLISH_ANNOTATION_SPEC.md`). Those annotations list every coreferent trigger per event.
 
+**Status update 2026-10-24:** eb20 was skipped; eb21 and every eb22 config train 3a (`record_coreferent_ownership: true`) and the 3b-ii link, with the merge threshold picked on VAL at the end of training (`eval.coref_calibration`, [[COREFERENT_LINK_SPEC]] s11). The English v2 annotations were bought 2026-10-06 ([[ENGLISH_ANNOTATION_SPEC]]) and are in the eb22c mix as `cc_news_events_sonnet55_v2`.
+
 ## 1. What happens today (traced, not read)
 
 One event, two coreferent triggers ("Rebels **attacked** the base ... The **assault** killed four

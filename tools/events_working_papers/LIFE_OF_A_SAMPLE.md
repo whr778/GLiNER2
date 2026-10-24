@@ -3,6 +3,8 @@
 **Status:** working paper, 2026-10-02. **eb18 is a PROVISIONAL base** (its LR ran out at epoch 5 with
 the selection metric still rising); numbers here describe the mechanism, not a final model.
 
+**Status update 2026-10-24:** eb18 and eb19 are superseded; **eb21** is the base (2026-10-15), eb22c is the trace-era config under autopsy ([[EB22C_SCORE_LEVEL_AUTOPSY]]), and eb22d is the proposed next base ([[TODO]] 46/48). The mechanism traced here (dataset -> collator -> targets -> loss) is unchanged; the sampling and negatives differ (dose 20, `negative_pools: auto`, `negative_gold_full_roles`). Use `tools/train/trace_sample_life.py` against the current config for current numbers.
+
 ## Purpose
 
 This follows ONE real training record from its JSONL line to the optimizer step. At each stage it

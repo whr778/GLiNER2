@@ -2,6 +2,8 @@
 
 **The runs on this line are rows in [[EXPERIMENT_CATALOG]]** (research line: Events).
 
+**Status update 2026-10-24:** the line has run through eb17-best, eb18, eb19 (judged broken), eb21 (the base) and the eb22 series; eb22c's event score-level swing is in [[EB22C_SCORE_LEVEL_AUTOPSY]], the three eb22c arms read on 2026-10-24 (corefdist resume QUALIFIES, relfix NEGATIVE, clsfix NULL) are in [[EXPERIMENT_CATALOG]], and the next base is the eb22d proposal ([[TODO]] 46/48). The risks below are the 2026-09-15 register; check them against the catalog, not the reverse.
+
 Status: **stated 2026-09-15, first base training.** This is the research line, its named
 incumbent, and its risks written down BEFORE the numbers arrive so they can be checked
 against rather than reconstructed afterwards. Companion to

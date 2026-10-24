@@ -4432,3 +4432,14 @@ eb19 was judged broken; eb20 was skipped. eb21, from scratch on the merge, is th
 
 **The standing lesson.** The gold-menu eval could not fail on this defect, because it shows a gold type exactly
 as training does. A menu shaped like production surfaced it in one run.
+
+### 2026-10-18 to 2026-10-24 -- the eb22 series, a trace era, and a per-head readout
+
+Rows for every run are in [[EXPERIMENT_CATALOG]] (2026-10-18 .. 2026-10-24); this is the thread.
+
+- **rolesym A/B POSITIVE (10-18):** `negative_gold_full_roles` removes the menu poison; news55 event_type F1 0.153 -> 0.541 with precision up. eb22 was to be eb21 + rolesym + corefC.
+- **eb22 CRASHED (10-19)** at step 5,779: coref clusters matched by text instead of position (fixed 590d038). Not restarted; re-specified as **option B** from scratch with fastino's structural flags (`eb22b`, smoke clean), then **eb22c** = eb22b + offset-anchored event gold + unified-full-v4.
+- **eb22c's events swing (10-20..21).** Two launches lost to infrastructure (a dead startup, then cuDNN SDPA recompiling per sequence length on H100, 2.9 samples/s); once running, events fell after the LR peak. The autopsy ([[EB22C_SCORE_LEVEL_AUTOPSY]]) located it to the score LEVEL: gold triggers stay top-ranked while every score slides across the gate; gradient conflict between entity and event supervision was measured and NOT found; the control run to 30k shows the events oscillate ~15k steps and then climb. Along the way: DDP had never averaged gradients (pytree vs the output dataclass; fixed 0b21629), and the warm-start resume handed Adam moments to the wrong parameters (fixed by name, 21088c7).
+- **The trace era (10-20..24):** one-change arms on the bce trace base, each stopped at the epoch boundary and read against a three-control floor at matched steps: seed43, sep, encfix, colfix, geomgelu (NULL), tasklr4e5, corefdist (the distance MLP; inside the floor on CASIE, +0.110 CMNEE at 16k; **resumed to the end of epoch 2 and QUALIFIES**, 4/4 CASIE and 3/4 CMNEE matched steps above the band), relfix (the two relation leaks fixed; **NEGATIVE**), clsfix (classification sampling off; **NULL**). The code review that fed the arms is [[20261022_CODE_REVIEW]] (Issues 1-10).
+- **fg-GEGLU** ([[FG_GEGLU]]): the user's activation, built, tested, swept on a toy, null on the classifier head; set aside.
+- **eb22d proposed (10-24, not launched):** eb22c + tier-1 correctness fixes + `coref_link_distance: mlp`; two decisions with the user. Before the launch, the **per-head VAL threshold readout** was built: one threshold per decode head from the sweep already run, the blind test scored beside the global pick, and `inference_defaults` now records the swept threshold (METRICS.md "Per-head thresholds").

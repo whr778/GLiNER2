@@ -11,7 +11,7 @@
 > the record of what was measured and believed at the time; do not compare new results
 > against them.
 
-Status: index. Date: 2026-08-17. Covers all 93 files in `tools/train/config/`.
+Status: index. Date: 2026-08-17; Stage 6 extended 2026-10-24. `tools/train/config/` holds 248 YAML files (63 under `base/`); the stages below cover the ones that are links in a lineage.
 
 Every model we trained is a chain: some base checkpoint, then one or more training stages,
 each stage a YAML in `tools/train/config/`. This document walks those stages in the order
@@ -266,6 +266,11 @@ instead (see its own row).
 | **eb21** | from scratch: label negatives at dose 20 (MENU_SPEC s8-9), unified-full-v3 labels (Title_Snake), the news55 app menu for eval, the entity-shuffle fix (be581a1), on the fastino v2.1.0 merge (`merge/upstream-20261014`; contained-span dedupe on) | **the base going forward**: the most likely usable events architecture |
 | corefC-control / -treatment / -treatment-free | warm eb21, 2 epochs: 34% exact replay + the bought LLM news coref; entity-coref link weight 0 / 0.3 / 0.3 + GUM/LitBank/GAP ([[COREF_DATA_SOURCES]]) | **DONE 2026-10-16**: treatment link learns news pronouns (AUC 0.811 vs 0.685); eb21 heads inside the floor; GUM/LitBank/GAP dropped |
 | rolesym-control / -treatment | warm eb21, 2 epochs: exact eb21 replay without casie/rams_merged/wikievents + those three in full; ONLY `negative_gold_full_roles` differs ([[MENU_SPEC]] s10, [[LABEL_NEGATIVES_PLAN]] s5g) | **DONE 2026-10-18, POSITIVE**: news55 event_type F1 0.153 -> 0.541, poison gone on CASIE (2 -> 72 hits), heads inside the floor |
+| eb22 (option A) | warm eb21 = rolesym-treatment + corefC-treatment | **CRASHED** at step 5,779 (coref clusters matched by text; fixed 590d038); not restarted |
+| eb22b | eb22 as OPTION B, from scratch, with fastino's structural relation/span flags | smoke DONE + CLEAN 2026-10-19; memory 96.7% of 40 GB |
+| eb22c | eb22b + OFFSET-anchored event gold (casie_off, cmnee_ner_off, wikievents_off), unified-full-v4 | launched 2026-10-19/20; events swing at the score LEVEL after the LR peak ([[EB22C_SCORE_LEVEL_AUTOPSY]]); the collapse-trace control to 30k is the reference every arm is read against |
+| eb22c-*-trace arms | one change each on `base/eb22c-ddp-trace.yaml` (bce marginal loss): seed43, sep, encfix, colfix, geomgelu, tasklr4e5, corefdist (+ resume to epoch 2), relfix, clsfix | corefdist QUALIFIES; geomgelu / clsfix NULL; relfix NEGATIVE; the rest inside the floor ([[EXPERIMENT_CATALOG]] 2026-10-20..24) |
+| **eb22d** (proposed) | eb22c + tier-1 fixes (seed, DDP gradient averaging, by-name optimizer restore, epoch checkpoints, metric_sweep readout) + `coref_link_distance: mlp` 64; `make_eb22d_config.py` | **NOT LAUNCHED**; two decisions with the user (marginal loss bce vs asymmetric_focal; the untested `none` alternative) -- [[TODO]] 46/48 |
 
 Entity and classification scores do not compare across eb21 and earlier bases. eb21's training data differs by
 the entity position fix, the classification gold-as-negative fix (22.6% of views) and the contained-span dedupe

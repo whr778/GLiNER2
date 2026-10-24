@@ -4,6 +4,8 @@ Working paper, 2026-10-20 to 2026-10-21. Status: **mechanism located to the scor
 MEASURED and NOT FOUND (2026-10-21); cause still open.** Rows in [[EXPERIMENT_CATALOG]] (2026-10-20/21, Events line);
 TODO rows 41-44.
 
+**Status update 2026-10-24:** cause still open. Since 10-21: the collapse-trace control reached 30k (events oscillate ~15k steps then climb to 0.73, catalog 2026-10-21); s10 measured the coref distance bias and the corefdist arm, resumed to the end of epoch 2, QUALIFIES (2026-10-24); geomgelu NULL, relfix NEGATIVE, clsfix NULL; eb22d is proposed with `coref_link_distance: mlp` as the only tier-2 treatment ([[TODO]] 46/48). The per-head VAL threshold readout the next base ships with is in METRICS.md.
+
 ## 1. What was believed, and what is true
 
 Believed (2026-10-19/20): eb22c's events learn in epoch 1 and **collapse to 0.0** after the LR peak; focal loss,

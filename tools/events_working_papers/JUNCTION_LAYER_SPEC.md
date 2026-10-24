@@ -2,6 +2,8 @@
 
 **Status:** BUILT (21f357e) and A/B'd 2026-10-04 (p5link): argument F1 +0.035*, per-column junction AUC 0.58 -> 0.74 / 0.77, English arguments move for the first time. Going into eb19.
 
+**Status update 2026-10-24:** in eb19, eb21 and the eb22 series. Measured on the eb22c 30k control (2026-10-22): the GEOMETRY channel (Linear(2 -> 16) on order + log distance, no activation) is 86-92% of the junction term and carries the English column discrimination (CASIE gold-beats-false 0.853 -> 0.709 without it); its width is rank-2, so 16 and 64 are the same function class and capacity needs a nonlinearity. `record_link_geom_dim` is built with RNG parity; the GELU-in-geometry arm `eb22c-geomgelu-trace` is NULL at one epoch (a small lean inside the seed floor). [[EXPERIMENT_CATALOG]] 2026-10-22.
+
 ## 1. Why: the assignment has no join
 
 In a relational database, `Person` and `Address` are related many-to-many through a third table that holds both primary keys. That table makes the link queryable in **both** directions. Our event head has no such table.

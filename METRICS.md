@@ -656,8 +656,9 @@ eval_argc_external_triggerless_gold     # integer count, not an F1
 eval_argc_external_triggerless_pred
 ```
 
-`<category>` ∈ `entity, relation, classification, event_type, event_trigger,
-event_argument, event`. `<regime>` ∈ `strict, relaxed`.
+`<category>` ∈ `entity, relation, classification, structure, event_type, event_trigger,
+event_argument, event`. `<regime>` ∈ `strict, relaxed`. Two more categories carry `strict`
+only: `event_cluster` and `event_cluster_argument` (next paragraph).
 
 Example: `eval_event_strict_micro_f1`, `eval_entity_relaxed_macro_precision`,
 `eval_event_argument_strict_support`.
@@ -673,6 +674,18 @@ eval_event_argument_per_event_support
 
 These carry no `<regime>`: they are built from the strict argument set, whose
 `trigger_key` is what supplies event identity.
+
+**Event clusters (strict only; emitted whenever gold events are present).** `event_cluster`
+scores EVENTS rather than mentions: each predicted event (type, its trigger mentions, its
+(role, entity) arguments, read from `event_extraction`) is matched to an unmatched gold event of
+the same type that shares a trigger mention, largest trigger overlap first; a matched pair is a
+TP under the type, an unmatched predicted event an FP and an unmatched gold event an FN.
+`event_cluster_argument` then scores arguments WITHIN matched events by (role, entity), and an
+unmatched event carries every one of its arguments as FP or FN. Compared with `event_argument`
+strict, which binds each argument to a trigger KEY, this is the per-event view the coreference
+merge is read on: merging two mentions of one event into one instance changes `event_cluster`
+and leaves `event_argument` relaxed alone ([COREFERENT_LINK_SPEC](tools/events_working_papers/COREFERENT_LINK_SPEC.md) s5).
+Keys follow the scheme above (`eval_event_cluster_strict_micro_f1`, ...).
 
 **Per-head thresholds (2026-10-24).** `compute_metrics_per_head` scores at ONE threshold per
 decode head -- `entity`, `relation`, `classification`, `structure`, `event` (the three event
@@ -859,6 +872,7 @@ oversights.
 | `event_trigger` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `event_argument` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `classification`, `structure` | ✅ | ✅ | ❌ | ✅ | ✅ |
+| `event_cluster`, `event_cluster_argument` | ✅ | ❌ (structural: the match IS the trigger overlap) | ❌ | ✅ | ✅ |
 
 **The `fair` regime covers labeled spans only — entities, event triggers and
 event arguments — and deliberately not relations.** FairEval's error categories

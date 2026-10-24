@@ -17,7 +17,7 @@
 >
 > Do not cost or schedule a combined arm on the strength of this document.
 
-**Status: PLAN, nothing built.** Written 2026-09-21, the day absent negatives got their first
+**Status: PLAN, nothing built -- and as of 2026-10-24 superseded in full:** the typed half died the same day (below) and the absent-negatives half went to the menu DOSE instead ([[LABEL_NEGATIVES_PLAN]] status, [[MENU_SPEC]] s8). Written 2026-09-21, the day absent negatives got their first
 legal measurement and option 2's decode-time arm came back a null on F1. Companion to
 [[LABEL_NEGATIVES_PLAN]] and [[OPTION_2_TYPED_ROLE_CONSTRAINTS]].
 

@@ -5,6 +5,8 @@ files in `label_style/` are awaiting the user's `decision` column. Labels are an
 this changes what the model reads: it needs a new label file (v3) and a NEW BASE. No warm start from
 eb19 or earlier.
 
+**Status update 2026-10-24:** v3 (`labels/unified-full-v3.yaml`) trained **eb21**, the base (2026-10-15). **v4** (2026-10-19, drops `No_Relation` so the relation head is not asked to predict the absence of a relation) is what eb22c and its trace arms train on (`labels_file: labels/unified-full-v4.yaml`, 22 base configs) and what eb22d inherits.
+
 ## 1. Why (measured 2026-10-07)
 
 **The unified maps have no style.** `build_label_maps.py` groups spellings that are identical once

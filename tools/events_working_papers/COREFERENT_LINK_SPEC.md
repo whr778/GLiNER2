@@ -3,6 +3,8 @@
 **Status:** BUILT 2026-10-06 (section 9), opt-in; eb20 trains it at the user's office (section 10). Gates 3-5 wait for the trained link. This is `COREFERENT_OWNERSHIP_SPEC.md` 3b-ii. It replaces
 3b-i, the merge on shared high-scoring arguments, which traced NEGATIVE.
 
+**Status update 2026-10-24:** eb20 was skipped; **eb21** (the base, 2026-10-15) trains the link at `record_coref_link_weight: 0.3` with the merge calibrated at the end of the run by `gliner2/training/coref_calibration.py` (section 11). The ENTITY-mention link that followed: corefB (gold GUM/LitBank/GAP/WikiEvents clusters) learns in-genre and NOTHING on news pronouns; corefC (bought LLM news coref) is POSITIVE, news pronoun AUC 0.685 -> 0.811, blind test inside the floor ([[EXPERIMENT_CATALOG]] 2026-10-15/17). On the eb22c 30k control the link's scalar distance bias is 66-68% of the coref score; replacing it with a zero-at-init MLP (`coref_link_distance: mlp`, width 64) is the one eb22c arm that cleared its floor and is eb22d's tier-2 treatment ([[EB22C_SCORE_LEVEL_AUTOPSY]] s10; catalog 2026-10-22/23).
+
 ## 1. Why (measured)
 
 `record_coreferent_ownership` (3a) trains every mention of an event to own its arguments. Without

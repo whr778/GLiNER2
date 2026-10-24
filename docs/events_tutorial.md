@@ -16,7 +16,7 @@ An event is a **typed instance** with a trigger and role-filled arguments:
 ```python
 from gliner2 import AutoExtractor
 
-model = AutoExtractor.from_pretrained("whr778/gliner2-eb16-eventrecords-tr")
+model = AutoExtractor.from_pretrained("whr778/gliner2-eb21")   # the current base (2026-10); eb16-eventrecords-tr is the older example model
 
 text = "On 16 March, Acme Corp acquired Beta Inc for $2.1 billion."
 
@@ -118,7 +118,16 @@ uv run python tools/train/eval.py --config <cfg> --checkpoint <ckpt> --split tes
 ```
 
 That emits `eval_fullmenu_*` keys beside the originals; the originals keep their historical
-meaning.
+meaning. The menu a number was read under is part of its identity: `eval.menu: app:<name>`
+scores a curated application menu beside the gold one (`by_menu` in `test_metrics.json`;
+[MENU_SPEC](../tools/events_working_papers/MENU_SPEC.md)).
+
+**The threshold is part of the number too.** A checkpoint's `threshold_sweep.json` holds the
+VAL sweep that picked its global threshold, and since 2026-10-24 one threshold per decode head
+(`per_head_thresholds`; the three event categories share one, because they are one decode).
+The blind test is scored at the global pick, with the per-head operating point BESIDE it under
+`per_head`. Two models quoted at their own thresholds are at different operating points; fix
+one before comparing ([METRICS.md](../METRICS.md), "Per-head thresholds").
 
 ---
 
@@ -159,11 +168,18 @@ model:
     training_candidate_budget: 384
 
 training:
-  on_capacity_exceeded: skip_sample
+  on_capacity_exceeded: truncate_with_warning
   # label negatives: the model must be shown types it should REJECT
-  negative_pools: tools/train/config/labels/negative_pools.json
-  negative_labels_per_dim: {entities: 2, events: 1, relations: 1}
+  negative_pools: auto                       # built per corpus from the training gold
+  negative_labels_per_dim: {entities: 20, events: 20}   # dose 20: the dose A/B (MENU_SPEC s8)
+labels_file: labels/unified-full-v4.yaml     # one spelling per label across every corpus
 ```
+
+This is the shape of the current bases (eb21, eb22c: `tools/train/config/base/`). Two flags that
+each fixed a measured defect belong beside it: `negative_gold_full_roles: true` (an absent event
+type must list its full role pool, or a rarely argued role reads as "absent" and silences the
+type -- MENU_SPEC s10) and the entity-label shuffle, on by default since 2026-10-08 (gold labels
+used to come first in every training menu, so the model read position instead of text).
 
 **`event_records: true` is the flag most people miss.** Without it, events decode through the
 mention path, one instance per type per document, and no amount of training or threshold
@@ -200,6 +216,8 @@ positive as absent.
 4. Was `event_records: true` set at training time?
 5. Was `max_gold_per_query` sized from the data, or left at 32?
 6. Were **label negatives** used, or was every training menu built from the answer key?
+7. Which **threshold** -- the global pick or a per-head one -- and was it picked on validation,
+   never on the test split?
 
 ---
 

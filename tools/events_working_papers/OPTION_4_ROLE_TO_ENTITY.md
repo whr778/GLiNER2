@@ -1,5 +1,7 @@
 # Option 4 — remap event ROLES into the ENTITY space
 
+**Status update 2026-10-24:** the re-run (`roles2`, 2026-09-21) is **VOID** on two confounds (arms shipped epoch 2 vs 5 under `metric_for_best: eval_loss`, and were scored on different test sets; `compare_runs.py` refused it), so the 2026-09-20 NEGATIVE stands as the verdict and Option 4 is refuted; only Option 2 remained, and its typed half was later refuted too ([[TYPED_NEGATIVES_COMBINED]]). Section 2026-10-21 below scopes the verdict after the eb22c autopsy.
+
 **Status: A/B COMPLETE 2026-09-20 — NEGATIVE — and RE-RUNNING, because the first run's
 REGIME was broken rather than the idea.**
 

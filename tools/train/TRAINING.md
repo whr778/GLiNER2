@@ -651,6 +651,29 @@ afterwards returned a digit when asked for a `location`. Mix 5–10% of the orig
 distribution back in — `build_warmstart_mix.py` samples replay across **both** old task
 families, because taking only events preserves one head and starves the other.
 
+### The current bases (2026-10) and the runbook fixes that bit a run
+
+The 137k joint configs above are the recipe's origin; the bases trained since are in
+[`MODEL_LINEAGE.md`](../events_working_papers/MODEL_LINEAGE.md) Stage 6. As of 2026-10-24:
+**eb21** is the base (`base/eb21.yaml`, Hub `whr778/gliner2-eb21`), **eb22c** is the trace-era
+config every A/B arm is read against (`base/eb22c-ddp-trace.yaml`; its event score-level swing
+is in `EB22C_SCORE_LEVEL_AUTOPSY.md`), and **eb22d** is the proposed next base
+(`make_eb22d_config.py`, not launched). Four things the trace era fixed, each of which had
+silently changed a run:
+
+- **DDP never averaged gradients** (0b21629): upstream's `static_graph` DDP saw the output
+  dataclass as a leaf, so two ranks drifted apart. Plain DDP with the dataclass registered;
+  `tools/lambda/ddp_sync_probe.sh` is the weight-checksum gate that found it.
+- **Warm-start resume restored Adam moments to the wrong parameters** (21088c7): the optimizer
+  state was loaded positionally against late-registered link modules. Restored by name now;
+  checkpoints written before the fix resume weights-only.
+- **Resuming a run**: `training.checkpoint_restart: last|highest` picks a `checkpoint-*` dir
+  carrying `training_state.pt` in `output_dir`; on Lambda `RESUME_FROM=<repo>:<checkpoint>` on
+  `trace_launch.sh` fetches it through `fetch_resume_checkpoint.sh`, which refuses unless the
+  run can use it, and the job is killed if it steps without printing `Resumed at epoch`.
+- **H100 cuDNN SDPA recompiles per sequence length** (1.2-1.5 s each; eb22c ran at 2.9
+  samples/s with the GPU 2% busy). The trainer now disables the cuDNN SDPA backend.
+
 ### What the configs encode, and why
 
 | Setting | Reason |

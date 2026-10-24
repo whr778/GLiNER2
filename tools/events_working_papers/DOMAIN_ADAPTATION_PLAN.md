@@ -1,7 +1,7 @@
 # Domain-adapting mmBERT: plan, constraints, and what would make it worth doing
 
 **Status: NOT STARTED. Still deliberately held — but the stated gate has now PASSED, so the
-hold is a choice rather than a dependency.** The gate was the `casualty_ml` run finishing and
+hold is a choice rather than a dependency.** *(Still not started as of 2026-10-24; the event line went to the eb21/eb22 bases and the eb22c autopsy instead -- [[EXPERIMENT_CATALOG]].)* The gate was the `casualty_ml` run finishing and
 the EKF gates being re-tested against it: `casualty_ml` completed 2026-09-03 and gates 3+4
 passed 2026-08-23, with the rebuilt front end beating the incumbent on all 8 strict heads.
 Reviewed 2026-09-19; what holds it now is that the event line (§Events in

@@ -4,6 +4,8 @@
 toy evidence only. This note exists so the idea is not re-run from the wrong inference rule and dropped (which is what
 the first toy run would have concluded).
 
+**Status update 2026-10-24:** SET ASIDE. `relation_scorer_activation: fg_geglu` is wired as an option (off); on the classifier head (section 3.5, cached frozen eb22c features, two corpora) fg-GEGLU is NULL and under-fits, GELU matches ReLU. No head trains with it; revisit only with an overfitting problem to solve.
+
 ## 1. The idea (the user's design)
 
 A stochastic gated activation, zero parameters, used in place of GELU inside an MLP. A biological picture: a nerve

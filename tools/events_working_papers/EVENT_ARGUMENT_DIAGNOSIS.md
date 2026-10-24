@@ -1283,6 +1283,8 @@ deduplicating on text would silently discard 728 supervised examples.
 > extracts — is the only one that adds EXTRACTION supervision rather than constraining
 > binding, and so the only one that can move a span that was never proposed at all.** It is
 > built and its A/B is running: see [[OPTION_4_ROLE_TO_ENTITY]] and [[EXPERIMENT_CATALOG]].
+>
+> **Outcome (2026-09-20, re-run 2026-09-21): NEGATIVE** -- event_argument strict -0.0300, event_trigger strict -0.0541, 0 up / 10 down outside the floor; the re-run was VOID on two confounds. Option 4 is refuted.
 > Read the three options below as the state of the question before that was written.
 
 In OneIE an argument **is an entity node**: the graph joins a trigger to an *entity mention*

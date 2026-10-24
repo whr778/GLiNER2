@@ -1,6 +1,6 @@
 # Phase B — the beam in the loss
 
-Status: **PLAN, not started.** Written 2026-09-15, after Phase A returned and after the
+Status: **PLAN, not started.** *(Still not started as of 2026-10-24; the event line went to the eb21/eb22 bases and the eb22c autopsy instead -- [[EXPERIMENT_CATALOG]].)* Written 2026-09-15, after Phase A returned and after the
 artefact that made Phase A's headline wrong was found and removed. Companion to
 [[JOINT_IE_DESIGN_RECORD]] §7 (which this expands) and [[RESEARCH_PROGRAM]] §3.
 

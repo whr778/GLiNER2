@@ -2,6 +2,8 @@
 
 **Status: BUILT, RUN, MEASURED — and the 2026-09-18 verdict is CONFOUNDED AND REOPENED.**
 
+**Status update 2026-10-24:** the reopened question was answered: `absneg2` (3rd attempt, the first legal comparison, 2026-09-21) gives event_argument strict **+0.0376** at classification **-0.1977**, unshippable; `absneg4-roles` (pool scoped to event roles, 2026-09-22) is NEGATIVE and worse than the null. What shipped instead is the menu DOSE: the dose A/B (dose 20 vs 1, 2026-10-07, [[MENU_SPEC]] s8) is POSITIVE with no gold-menu cost, eb21 and the eb22 series train at dose 20 per dimension with `negative_pools: auto`, and the role-list leak in those negatives (menu poison, s5g here) is fixed by `negative_gold_full_roles` (rolesym A/B POSITIVE 2026-10-18).
+
 > ## *** THE FEATURE NEVER APPLIED IN ANY SLIDING-WINDOW RUN (found 2026-09-19) ***
 >
 > `negatives=` was passed at exactly ONE of the two dataset branches in

@@ -75,7 +75,7 @@ was not asked the menu's question. The menu reaches the model through the checkp
 - Production menus are CURATED PER APPLICATION, not the 320-type union.
 - Cheapest-first: build the metric, measure, and run the A/B only if the gap is material.
 
-**Proposed here, awaiting the user:**
+**Proposed here, awaiting the user** (2026-10-07; decided since -- the vocabulary is built (s7), dose 20 shipped in eb21 after the s8 A/B, the news55 app menu is eb21's and eb22's eval menu, and `widened:K` is a scoring mode, not the selection metric):
 - The mode vocabulary.
 - Always keeping the gold keys.
 - `widened:K` for checkpoint selection.

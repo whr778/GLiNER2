@@ -226,7 +226,7 @@ dense forward would also drop two masked branches from every record step.
 
 ### Issue 8: The Relation Loss Never Sees Most of Its Gold Pairs (TRACED 2026-10-23)
 
-**Status: TRACED on the 30k control; fix BUILT as `relation_keep_gold_pairs` (off by default), overfit A/B pending.**
+**Status: TRACED on the 30k control; fix BUILT as `relation_keep_gold_pairs` (off by default); overfit matrix RUN on an A10 and the one-epoch arm `eb22c-relfix-trace` DONE 2026-10-23 -- NEGATIVE** (robust relation F1 inside or below the two-control band at every step, below both controls on the sparse corpora at 16k, plus a CMNEE / DuEE trigger cost; mechanism: an un-rebalanced ~3.5x relation loss). Not in eb22d. [[EXPERIMENT_CATALOG]] 2026-10-23.
 `_relation_loss` scores the pairs `RelationPairGenerator.generate_batched` keeps: endpoints must clear
 `relation_argument_proposal_threshold` (0.2 in eb22c, upstream default 0.0), rank in the top `relation_heads/tails_per_type`
 (32) of their relation's member queries by ENTITY pair probability, and the pair must rank in the top `relation_pair_cap`
@@ -256,7 +256,7 @@ Also found: the `sampling: {}` block in the gate3 configs is wired to nothing (i
 
 ### Issue 10: The Classification Head Collapses to One Label on News-Style Tasks (MEASURED 2026-10-23)
 
-**Status: MEASURED on the 30k control; cause not yet isolated.** `batch_extract` with each record's own gold menu,
+**Status: MEASURED on the 30k control; the sampling is NOT the cause** -- `eb22c-clsfix-trace` (all three classification sampling probabilities -> 0) DONE 2026-10-23, NULL: the probes equal the control at 12k and 16k on every task. The news one-label prior lives in the mix; label imbalance across the news classification tasks is the next suspect ([[EXPERIMENT_CATALOG]] 2026-10-23; TODO 48). `batch_extract` with each record's own gold menu,
 100 val records per task: chfinann_event (5 labels, 25k training records) accuracy 0.99 with predictions spread over
 the classes; cc_news_haiku45 'topic' (16 labels, in the mix) accuracy 0.16 with 'politics' predicted 69 times;
 cc_news_haiku45 'sentiment' (3 labels) 0.47 with 'neutral' 96 times; masakhanews_eng 'news topic' (7 labels, NOT in

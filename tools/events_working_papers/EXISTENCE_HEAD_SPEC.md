@@ -2,6 +2,8 @@
 
 **Status:** spec only, 2026-10-04. Nothing built. **Build after the p3arg result** (see Prerequisite).
 
+**Status update 2026-10-24:** the prerequisite FAILED: on eb18 + p3arg-hard, wrong-trigger attachments are dominated by FALSE TRIGGERS and arguments do not vouch for their trigger after the hard role loss ([[EXPERIMENT_CATALOG]] 2026-10-04, "existence-head precondition fails"). Decode-time pooling of boundary variants was built instead. Not built, not planned.
+
 ## 1. The problem, measured
 
 In natural mode, an event instance *is* a trigger candidate:

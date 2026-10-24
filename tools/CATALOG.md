@@ -1,6 +1,6 @@
 # The tools catalog
 
-Every executable under `tools/` — **301 scripts** — and what each one is for. Compiled
+Every executable under `tools/` — **375 scripts** — and what each one is for (36 added 2026-10-24: the eb22c trace era, sections 3 and 4). Compiled
 2026-09-22 from the tools' own docstrings; the 49 scripts added since were catalogued
 2026-10-05, including the new `tools/derive`, and 24 more (missed or new) on 2026-10-14, and 18 more on 2026-10-17 (coreference, menu poison, common menus).
 
@@ -210,7 +210,7 @@ construction), `cost.py` (token-and-price model), `ab_generation.sh`.
 
 ## 3. `tools/train` — training, probing, scoring
 
-`train.py` (1,670 lines) is the entry point. Around it: `eval.py`, `finalize_run.py`
+`train.py` (2,178 lines) is the entry point. Around it: `eval.py`, `finalize_run.py`
 (re-runs the post-training tail), `save_or_die.py` (gets a checkpoint off the machine or
 refuses to let it die quietly), `push_to_hub.py`, `model_card.py`, `backfill_schema.py`,
 `refresh_structure_metrics.py`, `update_dose_cards.py`, `precompute_guide_scores.py`,
@@ -226,6 +226,10 @@ How to run a trained checkpoint is in [`train/INFER.md`](train/INFER.md).
 **Mix builders** — `build_137k_replay.py`, `build_scaling_mix.py`,
 `build_joint_scaling_mix.py`, `build_warmstart_mix.py`, `build_turkish_dose_mix.py`,
 `build_zh_multitask_mix.py`, `build_casualty_multilingual.py`, `build_loc_control.py`.
+
+**Added 2026-10-24 (the eb22c trace era).** `per_head_thresholds.py` (**one decision threshold per decode head**, picked on VAL from the sweep, test scored once beside the global pick; `--picks` forces the splice gate), `probe_event_collapse.py` (follow each gold event through event inference, stage by stage, per checkpoint: where do events vanish?), `decompose_pair_score.py` (split each gold trigger's pair logit into the pair scorer's additive parts), `gradient_conflict.py` (do entity and event supervision push the SHARED weights in opposite directions? per-group gradient cosines), `measure_negative_balance.py` (positive vs negative event queries a config's mix carries, after the real injector), `overfit_classification.py` (can the classification head fit a FEW records, and what does schema dropout cost it?), `check_train_files.py` (which TRAIN files a config resolves to on THIS machine, and the task counts), `run_logged.sh` (torchrun with everything captured to a timestamped log, detached). Config writers: `make_eb21_trace_configs.py`, `make_eb22c_config.py`, `make_eb22c_trace_config.py`, `make_eb22c_bisect_configs.py` (one-change arms from the bce trace base), `make_eb22d_config.py` (asserts the only divergence from the proven trace base).
+
+**Instruments kept beside their papers, `tools/events_working_papers/`:** `measure_coref_dist.py` (how much of TriggerLink is its scalar distance bias, per natural group; the measurement behind `coref_link_distance: mlp`), `measure_geom_share.py` (how much of the junction is the geometry channel), `junction_heldout.py` (held-out junction read on val records), `trace_relation_gold_coverage.py` (which gold relation pairs reach the relation loss, on a real batch), `cache_cls_features.py` + `cls_head_ab.py` (classifier-head A/B on frozen eb22c features: ReLU vs GELU vs fg-GEGLU), `toy_fg_geglu.py` / `_sweep.py` / `_sweep24.py` (the fg-GEGLU toy reads behind FG_GEGLU.md), `md2pdf.py` (render a paper to PDF), `label_style/scripts/` (the label-style review helpers).
 
 Probes, sweeps, gates and measures are in [section 1](#1-instruments--the-things-that-measure).
 
@@ -258,6 +262,8 @@ on GPU against three structurally different bases.
 **pin the card**, or an A/B silently lands on two different GPUs), `provision.sh`,
 `provision_box.sh`, `bootstrap_box.sh` (proves each step), `box_run.sh`, `_publish.sh`
 (retry 6× and verify against the Hub's own file list — a clean return is not proof).
+
+**Trace-era runners (2026-10-20..24)** — `trace_launch.sh` + `trace_job.sh` (ONE single-GPU `train.py` on a config, stopped right after the eval at `STOP_STEP` / `STOP_EPOCH`, every log published; `RESUME_FROM` resumes from a Hub checkpoint through `fetch_resume_checkpoint.sh`, which refuses unless the run can use it, with an in-run kill gate if no "Resumed at epoch" line appears), `eb21_traces_launch.sh` (eb21-trace + eb21-5ep-trace in parallel), `rescore_launch.sh` + `rescore_job.sh` (threshold-robust per-source re-score of the A/B checkpoints on an A10), `overfit_launch.sh` + `overfit_job.sh` (the overfit matrix, `PRESET=relations|cls`; the JOB string travels through a remote `bash -lc`, so no quotes or semicolons in values), `gradient_launch.sh` + `gradient_job.sh` (gradient_conflict.py on CUDA), `ddp_sync_launch.sh` + `ddp_sync_probe.sh` + `ddp_trace.py` (do 2-GPU ranks drift apart? the probe that found DDP never averaging gradients, fixed 0b21629).
 
 **Experiment runners** — `event_base_run.sh`, `absneg_ab_launch.sh`, `roles_ab_launch.sh`,
 `pool_ab.sh`, `cardinality_ab.sh`, `decode_arms.sh`, `negatives_ab.sh`,
