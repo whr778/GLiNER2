@@ -303,6 +303,18 @@ def compute_metrics(
         Flat ``{metric_name: value}`` dict. Empty if the eval set has no
         records with usable gold structure.
     """
+    golds, preds = _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negatives,
+                            chunk_size, chunk_overlap, global_decode, global_decode_config, menus)
+    if not golds:
+        return {}
+    return score_predictions(golds, preds, stopwords=stopwords, report=report)
+
+
+def _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negatives, chunk_size, chunk_overlap,
+             global_decode, global_decode_config, menus) -> Tuple[List[Dict], List[Dict]]:
+    """The decode half of :func:`compute_metrics`: ``(golds, preds)`` for the records with a usable gold
+    structure, decoded at ONE threshold. The record filter does not depend on the threshold, so two calls
+    at different thresholds return golds in the same order (what :func:`compute_metrics_per_head` splices)."""
     texts: List[str] = []
     golds: List[Dict] = []
     schemas: List[Dict] = []
@@ -322,7 +334,7 @@ def compute_metrics(
         schemas.append(schema)
 
     if not texts:
-        return {}
+        return [], []
     if menus is not None:
         print(f"[menu] offered per document (min, median, max): {menu_sizes(schemas)} over {len(schemas)} documents")
 
@@ -336,8 +348,7 @@ def compute_metrics(
         preds = model.batch_extract(
             texts, schemas, batch_size=batch_size, threshold=threshold,
         )
-
-    return score_predictions(golds, preds, stopwords=stopwords, report=report)
+    return golds, preds
 
 
 def score_predictions(golds: List[Dict], preds: List[Dict], stopwords: frozenset = _DEFAULT_STOPWORDS,
@@ -1551,8 +1562,19 @@ _SWEEP_CATEGORIES = (
 )
 
 
-def _selection_score(metrics: Dict[str, Any], regime: str = "strict") -> float:
-    """Support-weighted average micro-F1 across whatever categories are present.
+# One decode head per threshold. The three event categories are read off ONE ``event_extraction``
+# decode, so they share a threshold; the other four heads decode independently.
+HEAD_CATEGORIES: Dict[str, Tuple[str, ...]] = {
+    "entity": ("entity",), "relation": ("relation",), "classification": ("classification",),
+    "structure": ("structure",), "event": ("event_type", "event_trigger", "event_argument"),
+}
+# The prediction key each span head writes; classification tasks and structures are keyed by their own names.
+_HEAD_KEYS = {"entity": "entities", "relation": "relation_extraction", "event": "event_extraction"}
+
+
+def _selection_score(metrics: Dict[str, Any], regime: str = "strict",
+                     categories: Tuple[str, ...] = _SWEEP_CATEGORIES) -> float:
+    """Support-weighted average micro-F1 across whatever ``categories`` are present.
 
     Weighting by support means a large, genuinely threshold-sensitive category
     (e.g. entities) drives the choice, while a small category can't swing the
@@ -1561,7 +1583,7 @@ def _selection_score(metrics: Dict[str, Any], regime: str = "strict") -> float:
     """
     total_support = 0
     weighted = 0.0
-    for category in _SWEEP_CATEGORIES:
+    for category in categories:
         support = metrics.get(f"eval_{category}_{regime}_support")
         f1 = metrics.get(f"eval_{category}_{regime}_micro_f1")
         if support and f1 is not None:
@@ -1621,6 +1643,90 @@ def sweep_thresholds(
 
     best_threshold = max(results, key=lambda t: _selection_score(results[t]))
     return best_threshold, results[best_threshold], results
+
+
+def pick_per_head_thresholds(by_threshold: Dict[float, Dict[str, Any]], global_threshold: float) -> Dict[str, float]:
+    """One threshold per decode head (:data:`HEAD_CATEGORIES`) from a sweep already run.
+
+    A head moves off ``global_threshold`` only when some grid value scores its own categories'
+    support-weighted strict micro-F1 STRICTLY higher than the global threshold does; a tie keeps
+    the global pick, so a head is never read at a different operating point for zero measured
+    gain (classification is argmax over the menu and never reads the decode threshold, so it is
+    flat across the grid and always stays). Heads with no support are left out.
+    """
+    assert global_threshold in by_threshold, f"global threshold {global_threshold} is not on the swept grid"
+    picks: Dict[str, float] = {}
+    for head, cats in HEAD_CATEGORIES.items():
+        scores = {t: _selection_score(m, categories=cats) for t, m in by_threshold.items()}
+        if not any(m.get(f"eval_{c}_strict_support") for m in by_threshold.values() for c in cats):
+            continue
+        best = max(scores, key=scores.get)
+        picks[head] = best if scores[best] > scores[global_threshold] else global_threshold
+    return picks
+
+
+def per_head_report(by_threshold: Dict[float, Dict[str, Any]], picks: Dict[str, float],
+                    global_threshold: float) -> Dict[str, Dict[str, Any]]:
+    """Per head: its pick, its score at that pick and at the global threshold, and whether it was flat."""
+    out = {}
+    for head, t in picks.items():
+        cats = HEAD_CATEGORIES[head]
+        scores = {u: _selection_score(m, categories=cats) for u, m in by_threshold.items()}
+        out[head] = {"threshold": t, "f1_at_own": round(scores[t], 4), "f1_at_global": round(scores[global_threshold], 4),
+                     "flat": len(set(scores.values())) == 1}
+    return out
+
+
+def splice_heads(gold: Dict, pred_by_threshold: Dict[float, Dict], thresholds: Dict[str, float], default: float) -> Dict:
+    """One record's prediction assembled head by head from decodes at several thresholds.
+
+    Entities, relations and events come from the run at their head's threshold; each gold
+    classification task from the classification run; every remaining top-level key (the
+    structures, named by the schema) from the structure run.
+    """
+    run = lambda head: pred_by_threshold[thresholds.get(head, default)]
+    tasks = {c["task"] for c in gold.get("classifications") or [] if isinstance(c, dict) and isinstance(c.get("task"), str)}
+    out = {k: v for k, v in run("structure").items() if k not in _HEAD_KEYS.values() and k not in tasks}
+    for head, key in _HEAD_KEYS.items():
+        if key in run(head):
+            out[key] = run(head)[key]
+    for task in tasks:
+        if task in run("classification"):
+            out[task] = run("classification")[task]
+    return out
+
+
+def compute_metrics_per_head(
+    model,
+    eval_dataset,
+    thresholds: Dict[str, float],
+    default: float,
+    batch_size: int = 8,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
+    report: bool = True,
+) -> Dict[str, Any]:
+    """:func:`compute_metrics` with ONE threshold per decode head (``thresholds``, see
+    :func:`pick_per_head_thresholds`); heads it does not name decode at ``default``.
+
+    Decodes once per distinct value, splices every record head by head (:func:`splice_heads`) and
+    scores the spliced predictions ONCE, so the overall keys pool the per-head operating points.
+    The thresholds are stamped in as ``per_head_thresholds``.
+    """
+    values = sorted(set(thresholds.values()) | {default})
+    runs = {t: _predict(model, eval_dataset, batch_size, t, None, 0, chunk_size, chunk_overlap,
+                        global_decode, global_decode_config, None) for t in values}
+    golds = runs[default][0]
+    if not golds:
+        return {}
+    assert all(len(preds) == len(golds) for _, preds in runs.values()), "per-head decodes disagree on the record set"
+    merged = [splice_heads(gold, {t: runs[t][1][i] for t in values}, thresholds, default) for i, gold in enumerate(golds)]
+    metrics = score_predictions(golds, merged, stopwords=stopwords, report=report)
+    metrics["per_head_thresholds"] = dict(thresholds)
+    return metrics
 
 
 def make_sweeping_compute_metrics(

@@ -3,7 +3,7 @@
 `tools/infer.py` runs a checkpoint over text, the same way the viewer does:
 
 - **Schema:** `--model-schema` starts from the schema the checkpoint ships (`config.json` `default_schema`).
-- **Decode settings:** any setting you don't pass comes from the checkpoint's `inference_defaults`. These are the settings its eval was measured at.
+- **Decode settings:** any setting you don't pass comes from the checkpoint's `inference_defaults`. These are the settings its eval was measured at; from 2026-10-24 the end-of-run sweep writes the SWEPT global threshold there (earlier checkpoints carry the config's pre-sweep value) and records `per_head_thresholds`, which `infer.py` does not apply -- it decodes at the one `--threshold`.
 - **Labels:** your labels go through the checkpoint's `label_map`, so `person` reaches eb18 as the `Person` it trained on.
 
 Results are printed as JSON on stdout. Every run first prints two `[infer]` lines: the label rewrites, and the exact schema sizes and decode settings used.

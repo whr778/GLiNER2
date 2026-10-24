@@ -72,5 +72,5 @@ A library user therefore runs a different operating point and a different label 
 ## 6. Risks
 
 - **Upstream API behaviour changes**, but only for checkpoints that carry the fields, which are all ours. Upstream checkpoints are unaffected (gate 1).
-- **The threshold is the eval setting, not the sweep.** `inference_defaults.threshold` is written from the config's eval threshold. If a run's validation sweep settles elsewhere, `backfill_model_config.py` must update it, as eb18 was backfilled. eb19 needs this check after its sweep.
+- **The threshold is the eval setting, not the sweep -- FIXED 2026-10-24 for runs from that date:** the end-of-run sweep now rewrites `inference_defaults.threshold` to the swept value and adds `per_head_thresholds` (one per decode head, picked on val; recorded, not applied by the library). Before that, `inference_defaults.threshold` was written from the config's eval threshold. If a run's validation sweep settles elsewhere, `backfill_model_config.py` must update it, as eb18 was backfilled. eb19 needs this check after its sweep.
 - **Double snapshots.** `eb18-balanced` exists on the Hub both with and without the fields (before and after backfill). A pinned old revision gets today's behaviour.

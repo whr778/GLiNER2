@@ -534,6 +534,7 @@ def build_model_card(
     limitations: Optional[str] = None,
     oneie_metrics: Optional[Dict[str, Any]] = None,
     oneie_source: Optional[str] = None,
+    per_head_thresholds: Optional[Dict[str, float]] = None,
 ) -> str:
     """Render a complete MODEL_CARD.md as a Markdown string.
 
@@ -621,6 +622,11 @@ def build_model_card(
                 "sweep for exactly this.",
                 "",
             ]
+        if per_head_thresholds:
+            picks = ", ".join(f"{head} {t}" for head, t in per_head_thresholds.items())
+            parts += [f"Per-head thresholds (one per decode head, picked on the validation set): {picks}. "
+                      "The blind-test table below is read at the single decision threshold; the per-head "
+                      "operating point sits beside it under `per_head` in `test_metrics.json`.", ""]
 
     blind = _metrics_table(test_metrics or {}, "Blind test (held-out test splits)")
     val = _metrics_table(eval_metrics or {}, "Best checkpoint (validation)")

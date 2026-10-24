@@ -962,8 +962,22 @@ Six rules that have each changed a conclusion in this project:
 1. **Sweep the threshold per checkpoint, then compare at matched thresholds.**
    `metric_sweep: true` selects each checkpoint at *its own* best threshold — right for
    shipping one model, **wrong for a curve**. Re-DocRED alternated 0.1/0.3 and looked
-   non-monotonic until split by threshold. `test_metrics.json` does not record the
-   threshold; pull `best/threshold_sweep.json`.
+   non-monotonic until split by threshold. `test_metrics.json` records the threshold under
+   `eval_provenance`; the full grid is in `best/threshold_sweep.json`.
+   **One threshold per decode head, beside the global one (2026-10-24).** The same sweep
+   also picks each head's own best (entity, relation, classification, structure, event --
+   the three event categories share one `event_extraction` decode); a head whose score is
+   flat across the grid (classification is argmax over the menu) keeps the global pick.
+   The picks go to `threshold_sweep.json` (`per_head_thresholds`, `per_head_report`) and to
+   `best/config.json` `inference_defaults` (which now also carries the SWEPT global
+   threshold, not the config's pre-sweep value). The blind test is then scored once more at
+   the per-head operating point -- combined over all languages only -- and the result sits
+   BESIDE the global-threshold keys under `per_head` in `test_metrics.json`; the published
+   keys do not move. `eval.threshold_per_head: false` skips that extra pass (one test decode
+   per distinct pick). For an existing checkpoint:
+   `uv run tools/train/per_head_thresholds.py --config <cfg> --checkpoint <dir> --test --out picks.json`
+   (`--per-corpus N` for a laptop read; the `--test` pass prints a splice gate that fails if
+   any head's spliced metrics differ from the single-threshold run at that head's value).
 2. **Judge deltas against a measured noise floor, not a guess.** Re-running an identical
    control on a second seed gave relation strict **±0.041** on `mix_natural`, four times the
    0.01 that had been assumed — large enough to void a published-looking result.

@@ -97,6 +97,7 @@ from gliner2 import AutoExtractor
 from gliner2.inference.schema import derive_schema
 from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics, sweep_thresholds
 from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID, _selection_score, make_sweeping_compute_metrics
+from gliner2.training.eval_metrics import compute_metrics_per_head, per_head_report, pick_per_head_thresholds
 from gliner2.training.trainer import ExtractorDataset, GLiNER2Trainer, TrainingConfig
 
 
@@ -334,7 +335,7 @@ def _build_streaming_data(hf_streaming: Dict, config: TrainingConfig):
 
 def _write_model_card(
     cfg, config, corpora, event_files, results, test_metrics, best: Path,
-    threshold: float, threshold_calibrated: bool,
+    threshold: float, threshold_calibrated: bool, per_head_thresholds: Dict[str, float] = None,
 ) -> None:
     """Generate MODEL_CARD.md in the best checkpoint folder. Never fatal -- a
     card bug must not lose a model that already trained for hours."""
@@ -376,6 +377,7 @@ def _write_model_card(
             generated_at=datetime.now().strftime("%Y-%m-%d"), registry=registry,
             dataset_counts=_dataset_counts(corpora, event_files),
             threshold=threshold, threshold_calibrated=threshold_calibrated,
+            per_head_thresholds=per_head_thresholds,
         )
         path = best / "MODEL_CARD.md"
         path.write_text(card, encoding="utf-8")
@@ -1522,6 +1524,9 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
         "threshold": overrides.get("threshold", eval_cfg.get("threshold", 0.5)),
         "by_language": by_language,
         "threshold_sweep": eval_cfg.get("threshold_sweep"),
+        # Score the blind test once more at one threshold per decode head (picked on val by the sweep),
+        # BESIDE the global-threshold keys. Costs one extra test decode per distinct pick.
+        "threshold_per_head": bool(eval_cfg.get("threshold_per_head", True)),
         "metric_sweep": eval_cfg.get("metric_sweep", False),
         "stopwords": _build_eval_stopwords(eval_cfg, config_path, corpus_data=corpus_data),
         "chunk_size": chunk_size,
@@ -1532,7 +1537,7 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
 
 
 def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
-                     checkpoint, config_path) -> dict:
+                     checkpoint, config_path, per_head_thresholds=None) -> dict:
     """The operating point behind a metrics file, so two numbers can be compared.
 
     ONE helper for BOTH writers on purpose. A `<split>_metrics.json` used to carry 314
@@ -1551,7 +1556,52 @@ def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
         "records": records,
         "checkpoint": str(checkpoint),
         "config": str(config_path),
+        "per_head_thresholds": per_head_thresholds,
     }
+
+
+def _ship_thresholds(best: Path, threshold: float, per_head: Dict[str, float]) -> None:
+    """Record the swept operating point in ``best/config.json`` ``inference_defaults``: the global
+    threshold the model card quotes, and the per-head picks. Until this, ``inference_defaults`` kept
+    the config's PRE-sweep threshold (eb18/eb19 shipped 0.3 while their cards quoted the swept value).
+    The library ignores ``inference_defaults`` (CHECKPOINT_DEFAULTS_SPEC.md); it is a record."""
+    path = best / "config.json"
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    defaults = dict(cfg.get("inference_defaults") or {})
+    defaults["threshold"] = threshold
+    defaults["per_head_thresholds"] = dict(per_head)
+    cfg["inference_defaults"] = defaults
+    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[threshold sweep] shipped inference_defaults {defaults} -> {path}")
+
+
+def _read_per_head_picks(best: Path) -> Dict[str, float]:
+    """The per-head thresholds training wrote beside the checkpoint, or {} when the sweep never ran."""
+    path = best / "threshold_sweep.json"
+    if not path.is_file():
+        return {}
+    return dict(json.loads(path.read_text(encoding="utf-8")).get("per_head_thresholds") or {})
+
+
+def _per_head_pass(best: Path, records, ev: Dict, picks: Dict[str, float], gd_kwargs: Dict) -> Dict:
+    """The blind test once more at ONE threshold per decode head -- combined over all languages only,
+    not per language -- to sit BESIDE the global-threshold keys under ``test_metrics["per_head"]``.
+    Both operating points were picked on val; the test is still scored, not swept."""
+    from gliner2.training.metrics import _print_micro_report
+    from gliner2.training.trainer import ExtractorDataset
+    if set(picks.values()) == {ev["threshold"]}:
+        # every head sits at the global threshold: the pass would repeat the combined blind test byte for byte
+        print(f"\n[blind test] per-head thresholds {picks} all equal the global {ev['threshold']}; not decoding again")
+        return {"thresholds": dict(picks), "identical_to_global": True}
+    if records and isinstance(records[0], str):
+        records = _read_records(records)
+    gd = {k: gd_kwargs[k] for k in ("chunk_size", "chunk_overlap", "global_decode", "global_decode_config") if k in gd_kwargs}
+    print(f"\n[blind test] scoring again at per-head thresholds {picks} (default {ev['threshold']}; combined, all languages)")
+    metrics = compute_metrics_per_head(
+        AutoExtractor.from_pretrained(str(best)), ExtractorDataset(records, shuffle=False, validate=False),
+        picks, ev["threshold"], batch_size=ev["batch_size"], stopwords=ev["stopwords"], report=False, **gd) or {}
+    _print_micro_report(metrics, label="per-head")
+    return {"thresholds": dict(picks), "metrics": metrics}
 
 
 def _run_blind_test(best, split_data, batch_size, threshold, by_language, gd_kwargs) -> Dict:
@@ -1654,6 +1704,12 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         metrics["by_menu"] = {menu_mode: score_under_menu(
             load_with_overrides(best, gd_kwargs.get("boundary_overrides")), cfg, config_path, menu_mode, split,
             ev["batch_size"], ev["threshold"], gd)}
+    per_head = _read_per_head_picks(Path(best))
+    if metrics and per_head and ev["threshold_per_head"]:
+        if "boundary_overrides" in gd_kwargs:
+            print(f"[eval] per-head thresholds {per_head} not scored: boundary overrides change the decode they were picked under")
+        else:
+            metrics["per_head"] = _per_head_pass(Path(best), split_data, ev, per_head, gd_kwargs)
     if metrics:
         # RECORD THE OPERATING POINT. A <split>_metrics.json used to carry 314 numbers and
         # nothing about the threshold or menu behind them, so establishing that a published
@@ -2053,12 +2109,19 @@ def main(config_path: str) -> None:
         print(f"[threshold sweep] Chose threshold={eval_thr} "
               f"(support-weighted strict micro-F1={_selection_score(sweep_best_metrics):.4f}); "
               f"this only recalibrates the decision cutoff, it does not retrain the model.")
+        per_head = pick_per_head_thresholds(sweep_all, eval_thr)
+        head_report = per_head_report(sweep_all, per_head, eval_thr)
+        for head, row in head_report.items():
+            print(f"[threshold sweep] per-head {head}: {row['threshold']} (strict micro-F1 {row['f1_at_own']:.4f}"
+                  f" vs {row['f1_at_global']:.4f} at the global {eval_thr}{'; flat across the grid' if row['flat'] else ''})")
         sweep_path = best / "threshold_sweep.json"
         sweep_path.write_text(json.dumps(
-            {"chosen_threshold": eval_thr, "by_threshold": {str(t): m for t, m in sweep_all.items()}},
+            {"chosen_threshold": eval_thr, "per_head_thresholds": per_head, "per_head_report": head_report,
+             "by_threshold": {str(t): m for t, m in sweep_all.items()}},
             indent=2, ensure_ascii=False,
         ))
         print(f"[threshold sweep] Wrote {sweep_path}")
+        _ship_thresholds(best, eval_thr, per_head)
         del sweep_model
 
     gd_kwargs = dict(
@@ -2083,12 +2146,15 @@ def main(config_path: str) -> None:
         test_metrics["coref_merge_off"] = _run_blind_test(
             best, test_data, eval_bs, eval_thr, eval_by_language,
             dict(gd_kwargs, boundary_overrides={"record_merge_coreferent": "off"}))
+    per_head = _read_per_head_picks(best)
+    if test_metrics and per_head and ev["threshold_per_head"]:
+        test_metrics["per_head"] = _per_head_pass(best, test_data, dict(ev, threshold=eval_thr), per_head, gd_kwargs)
 
     if test_metrics:
         # The runners publish THIS file, so it is the one an A/B verdict is read from.
         test_metrics["eval_provenance"] = _eval_provenance(
             threshold=eval_thr, full_menu=False, menu_negatives=0, split="test",
-            records=len(test_data), checkpoint=best, config_path=config_path,
+            records=len(test_data), checkpoint=best, config_path=config_path, per_head_thresholds=per_head or None,
         )
         metrics_path = Path(config.output_dir) / "test_metrics.json"
         metrics_path.write_text(json.dumps(test_metrics, indent=2, ensure_ascii=False))
@@ -2101,7 +2167,7 @@ def main(config_path: str) -> None:
     # ----- model card (best/ exists at this point) -----
     _write_model_card(
         cfg, config, corpora, event_files, results, test_metrics, best,
-        threshold=eval_thr, threshold_calibrated=bool(threshold_sweep_cfg),
+        threshold=eval_thr, threshold_calibrated=bool(threshold_sweep_cfg), per_head_thresholds=per_head,
     )
 
 

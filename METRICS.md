@@ -674,6 +674,19 @@ eval_event_argument_per_event_support
 These carry no `<regime>`: they are built from the strict argument set, whose
 `trigger_key` is what supplies event identity.
 
+**Per-head thresholds (2026-10-24).** `compute_metrics_per_head` scores at ONE threshold per
+decode head -- `entity`, `relation`, `classification`, `structure`, `event` (the three event
+categories are read off one `event_extraction` decode, so they share a value) -- by decoding
+once per distinct value, splicing every record head by head and scoring the spliced
+predictions once, so the `eval_overall_*` keys pool the per-head operating points. It returns
+the same key scheme plus `per_head_thresholds` (`{head: threshold}`). `pick_per_head_thresholds`
+derives the picks from the end-of-run sweep (each head's own support-weighted strict micro-F1;
+a head flat across the grid keeps the global pick). In `test_metrics.json` the per-head pass
+sits beside the published keys under `per_head` (`{"thresholds", "metrics"}`, combined over all
+languages only), and `eval_provenance.per_head_thresholds` records the picks; the sweep file
+`best/threshold_sweep.json` carries `per_head_thresholds` and `per_head_report` (per head:
+threshold, F1 at its own pick, F1 at the global pick, `flat`).
+
 ---
 
 ## Class weighting: micro and macro are two points on a spectrum
