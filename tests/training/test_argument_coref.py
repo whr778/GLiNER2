@@ -1,5 +1,6 @@
 """Argument coreference mentions become gold fillers of the same role, and only that cluster."""
 import random
+from dataclasses import replace
 
 import torch
 
@@ -121,9 +122,15 @@ def test_the_pronoun_span_is_a_positive_column_and_the_other_pronoun_is_not():
     assert flat.count("he") == 1
 
     seen = []
+    returned = []
     real = compute_group_loss
 
     def spy(group, records, *args, **kwargs):
+        out = real(group, records, *args, **kwargs)
+        returned.append({
+            k: (float(v.detach()) if torch.is_tensor(v) and v.numel() == 1 else v)
+            for k, v in out.items()
+        })
         for rec in records:
             for f_idx, fspec in enumerate(group.field_specs):
                 cols, _ = _field_target_cols(fspec, rec, {
@@ -138,14 +145,78 @@ def test_the_pronoun_span_is_a_positive_column_and_the_other_pronoun_is_not():
                     start, end = spans[col - 1]
                     texts.append(" ".join(toks[start:end]))
                 seen.append(texts)
-        return real(group, records, *args, **kwargs)
+        return out
 
     import gliner2.models.boundary.records as records_mod
+    model.boundary_settings = replace(model.boundary_settings, record_link_column_weight=0.3)
     records_mod.compute_group_loss = spy
     try:
         out = model(batch)
     finally:
         records_mod.compute_group_loss = real
     assert torch.isfinite(out.loss)
+    assert float(out.losses["record_object_loss"].detach()) == 0.0
+    field_loss = out.losses["record_field_loss"].detach()
+    assert float(field_loss) > 0.0
+    assert torch.isfinite(field_loss)
+    assert any(item.get("column_count", 0) > 0 and item.get("column_loss", 0.0) > 0.0 for item in returned), returned
     assert any("he" in texts for texts in seen), seen
     assert all(texts.count("he") <= 1 for texts in seen)
+
+
+def _collate(text, schema):
+    from gliner2.processor import SamplingConfig, SchemaTransformer
+    from tests.fixtures.tiny_tokenizer import build_tiny_tokenizer
+
+    proc = SchemaTransformer(
+        tokenizer=build_tiny_tokenizer(),
+        sampling_config=SamplingConfig(remove_events_prob=0.0, shuffle_event_roles=False),
+    )
+    coll = ExtractorCollator(
+        proc, is_training=True, architecture="boundary", max_gold_per_query=64,
+        on_capacity_exceeded="raise", error_policy="raise", event_records=True,
+    )
+    random.seed(0)
+    return coll([(text, schema)])
+
+
+def _event_surfaces(batch):
+    words = batch.text_tokens[0]
+    found = []
+    for rec in batch.targets.records[0]:
+        spec = batch.record_specs[0][rec.task_index]
+        if spec.task_type != "events":
+            continue
+        for field in rec.fields:
+            name = next(item.name for item in spec.fields if item.query_id == field.query_id)
+            for value in field.values:
+                for start, end in value:
+                    found.append((name, " ".join(words[int(start):int(end)])))
+    return found
+
+
+def test_expanded_counts_survive_the_collator_and_the_pronoun_is_gold():
+    record = _record()
+    schema = expand_argument_coreferents(record["output"], record["coref_clusters"], TEXT)
+    batch = _collate(TEXT, schema)
+    assert batch.original_schemas[0]["_argument_coref_added"] == 1
+    assert batch.original_schemas[0]["_argument_coref_skipped"] == 0
+    surfaces = _event_surfaces(batch)
+    assert ("Person", "he") in surfaces
+    assert ("Person", "paul") in surfaces
+    assert sum(1 for name, surface in surfaces if surface == "he") == 1
+
+
+def test_a_gold_span_inside_a_longer_word_is_not_widened():
+    text = "bombs in TexasA string of deadly bombs"
+    start = text.index("Texas")
+    schema = {"events": [{
+        "event_type": "Attack",
+        "triggers": ["bombs"],
+        "arguments": [{"role": "Place", "entity": {"text": "Texas", "start": start, "end": start + len("Texas")}}],
+    }]}
+    batch = _collate(text, schema)
+    surfaces = _event_surfaces(batch)
+    assert ("trigger", "bombs") in surfaces
+    assert ("Place", "texasa") not in surfaces
+    assert ("Place", "texas") not in surfaces
