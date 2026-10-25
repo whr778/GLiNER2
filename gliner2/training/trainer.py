@@ -1113,13 +1113,11 @@ class ExtractorTrainer:
         elif torch.backends.mps.is_available():
             self.device = torch.device("mps")
             self.is_distributed = False
-            if self.config.fp16 or self.config.bf16:
-                logger.warning(
-                    "Mixed precision disabled on MPS (fp16/bf16 with GradScaler is "
-                    "CUDA-only)."
-                )
-                self.config.fp16 = False
+            if self.config.bf16:
+                logger.warning("bf16 disabled on MPS (sdpa bf16 is the NaN path).")
                 self.config.bf16 = False
+            if self.config.fp16:
+                logger.info("fp16 autocast on MPS")
             if self.config.pin_memory:
                 logger.info("Disabling pin_memory on MPS (not supported).")
                 self.config.pin_memory = False
@@ -1677,6 +1675,14 @@ class ExtractorTrainer:
                     enabled=use_amp,
                     dtype=amp_dtype,
                 ):
+                    if use_amp and not getattr(self, "_amp_logged", False):
+                        self._amp_logged = True
+                        logger.info(
+                            "autocast live: device=%s dtype=%s enabled=%s",
+                            self.device.type,
+                            amp_dtype,
+                            torch.is_autocast_enabled(self.device.type),
+                        )
                     outputs = self.model(batch)
                     loss = outputs.get("total_loss")
                     if loss is None:
@@ -1988,7 +1994,14 @@ class ExtractorTrainer:
         # trained on zero event data. The draw has its OWN seed so arms that differ in
         # `seed` still train on the identical subset.
         if max_samples > 0 and len(records) > max_samples:
+            n_before = len(records)
             records = random.Random(self.config.max_samples_seed).sample(records, max_samples)
+            # The caller still holds the full list. Drop it, or the cap does not free the memory.
+            if isinstance(data, list):
+                data.clear()
+            import gc
+            gc.collect()
+            logger.info("sample cap: kept %d of %d %s records", len(records), n_before, "train" if is_train else "eval")
         window_size = int(self.config.max_len or 512)
         stride = int(self.config.window_stride or window_size)
         split = "train" if is_train else "eval"
