@@ -591,6 +591,7 @@ class ExtractorDataset(Dataset):
             guide_scores=None,
             rivals_per_record: int = 3,
             negatives=None,
+            expand_argument_coref: bool = True,
     ):
         """
         Initialize dataset from various input formats.
@@ -621,6 +622,7 @@ class ExtractorDataset(Dataset):
         self.guide_scores = guide_scores
         self.rivals_per_record = rivals_per_record
         self.negatives = negatives
+        self.expand_argument_coref = expand_argument_coref
         self.data = DataLoader_Factory.load(
             data=data,
             max_samples=max_samples,
@@ -628,6 +630,7 @@ class ExtractorDataset(Dataset):
             seed=seed,
             validate=validate,
         )
+        self.coref_attach_stats = {"attached": 0, "ambiguous": 0, "coref_only": 0}
         self.lengths = self._load_or_compute_lengths(data)
 
     @staticmethod
@@ -709,6 +712,9 @@ class ExtractorDataset(Dataset):
             # staying deterministic in (seed, epoch, index), which is what DDP ranks and
             # dataloader workers need to agree.
             schema = self.negatives.inject(schema, idx, record.get("_corpus"))
+        from gliner2.processing.argument_coref import expand_argument_coreferents
+        if self.expand_argument_coref:
+            schema = expand_argument_coreferents(schema, record.get("coref_clusters"), text)
         return text, coref.attach(schema, record.get("coref_clusters"))
 
     # Factory methods for explicit creation
@@ -1924,6 +1930,13 @@ class ExtractorTrainer:
                 "training dataset carries NO injector -- the run would train without them. "
                 "Refusing to start."
             )
+        stats = getattr(dataset, "coref_attach_stats", None)
+        if stats and self.is_main_process:
+            logger.info(
+                "[argument-coref] attached clusters to %d event records "
+                "(%d coref-only records left in the mix, %d ambiguous texts)",
+                stats["attached"], stats["coref_only"], stats["ambiguous"],
+            )
         return dataset
 
     def _prepare_data(self, data: TrainDataInput, is_train: bool = True) -> ExtractorDataset:
@@ -1940,7 +1953,7 @@ class ExtractorTrainer:
         negatives = self._negative_labels() if is_train else None
 
         if not self.config.sliding_window:
-            return self._wired(ExtractorDataset(
+            dataset = ExtractorDataset(
                 data=data,
                 max_samples=max_samples,
                 shuffle=is_train,
@@ -1949,7 +1962,12 @@ class ExtractorTrainer:
                 guide_scores=guide_scores,
                 rivals_per_record=self.config.rivals_per_record,
                 negatives=negatives,
-            ), is_train)
+                expand_argument_coref=is_train,
+            )
+            if is_train and dataset is not None:
+                from gliner2.processing.argument_coref import attach_coref_copies
+                dataset.coref_attach_stats = attach_coref_copies(dataset.data)
+            return self._wired(dataset, is_train)
 
         # Sliding window: load records, expand each into overlapping subword windows
         # (max_len window / window_stride step; each chunk keeps only annotations whose
@@ -1975,6 +1993,9 @@ class ExtractorTrainer:
         stride = int(self.config.window_stride or window_size)
         split = "train" if is_train else "eval"
         n_in = len(records)
+        from gliner2.processing.argument_coref import attach_coref_copies
+        coref_attach_stats = attach_coref_copies(records) if is_train else {
+            "attached": 0, "ambiguous": 0, "coref_only": 0}
         records = chunk_records(
             records,
             tokenizer=self.processor.tokenizer,
@@ -1993,7 +2014,7 @@ class ExtractorTrainer:
         # Chunking rewrites the text, so cached scores (keyed by the full record's text)
         # simply will not be found -- the veto goes quiet rather than acting on the wrong
         # spans. Precompute against the chunked corpus if the two are to be combined.
-        return self._wired(ExtractorDataset(
+        dataset = ExtractorDataset(
             data=records,
             max_samples=-1,   # already applied
             shuffle=False,    # already shuffled
@@ -2007,7 +2028,11 @@ class ExtractorTrainer:
             # at all -- silently, because `label negatives ON` is logged by the LOADER and
             # says nothing about whether the dataset ever received the injector.
             negatives=negatives,
-        ), is_train)
+            expand_argument_coref=is_train,
+        )
+        if is_train and dataset is not None:
+            dataset.coref_attach_stats = coref_attach_stats
+        return self._wired(dataset, is_train)
 
     def _negative_labels(self):
         """Load the negative-label injector once, or None when the feature is off."""
@@ -2502,6 +2527,8 @@ class ExtractorTrainer:
 
         start_time = time.time()
         samples_seen = 0
+        argument_coref_added = 0
+        argument_coref_skipped = 0
 
         self.progress_bar = tqdm(total=max_steps, initial=self.global_step,
                                  desc="Training", disable=not self.is_main_process)
@@ -2533,6 +2560,10 @@ class ExtractorTrainer:
 
             for step, batch in enumerate(train_loader):
                 samples_seen += len(batch)
+                for schema in getattr(batch, "original_schemas", ()) or ():
+                    if isinstance(schema, dict):
+                        argument_coref_added += int(schema.get("_argument_coref_added") or 0)
+                        argument_coref_skipped += int(schema.get("_argument_coref_skipped") or 0)
                 is_last_micro = (
                     (micro + 1) % accum == 0 or step + 1 == len(train_loader)
                 )
@@ -2694,6 +2725,10 @@ class ExtractorTrainer:
                     # was falling could not be read from any log of any run (eb22c, 2026-10-20). Last micro-batch,
                     # like classification_loss above, so read it as a trend, not a value.
                     if self.is_main_process and isinstance(_losses, dict):
+                        logger.info(
+                            "argument coref gold: %d mentions added, %d arguments skipped as ambiguous (cumulative)",
+                            argument_coref_added, argument_coref_skipped,
+                        )
                         heads = {k: float(v) for k, v in _losses.items()
                                  if not str(k).endswith("_used") and torch.is_tensor(v) and v.numel() == 1}
                         # The pre-clip total gradient norm: an exploding (large/inf) or vanishing (~0) gradient is
