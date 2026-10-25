@@ -1285,10 +1285,20 @@ def _field_target_cols(fspec, record: RecordTarget, span_to_idx):
     return cols, False
 
 
-def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices, hard_k: int = 0) -> torch.Tensor:
+def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices, hard_k: int = 0,
+                         drop_anchor: bool = False) -> torch.Tensor:
+    """Mean over the record's fields of each field's assignment loss for instance ``inst``.
+
+    ``drop_anchor`` (natural mode, `record_drop_anchor_field_loss`) leaves the ANCHOR field's own row out of the
+    sum -- decode never reads it -- while the divisor still counts it, so every role term keeps its exact weight.
+    """
     total = group.object_logits.new_zeros(())
     n_fields = 0
     for f_idx, fspec in enumerate(group.field_specs):
+        if drop_anchor and group.spec.mode == "natural" and fspec.query_id == group.spec.anchor_query_id:
+            n_fields += 1
+            _note_anchor_field_drop()
+            continue
         cols, is_scalar = _field_target_cols(fspec, record, span_indices[f_idx])
         row = group.assign_logits[f_idx][inst]
         total = total + (
@@ -1717,6 +1727,17 @@ _ANCHOR_GATE = {"trained": 0, "anchor_not_proposed": 0, "anchor_not_seeded": 0,
 # "<task_type>/<outcome>".
 _ANCHOR_GATE_BY_TASK: Dict[str, int] = {}
 _ANCHOR_GATE_CALLS = 0
+_ANCHOR_FIELD_DROPS = 0
+
+
+def _note_anchor_field_drop() -> None:
+    """In-run proof for `record_drop_anchor_field_loss`: anchor rows left out of the field loss, cumulative.
+    Called where the row is skipped, so a run that logs this line really trained without it."""
+    global _ANCHOR_FIELD_DROPS
+    _ANCHOR_FIELD_DROPS += 1
+    n = _ANCHOR_FIELD_DROPS
+    if n in (1, 1000, 10000) or (n > 10000 and n % 250000 == 0):
+        logger.info("record_drop_anchor_field_loss: %d anchor rows dropped from the field loss (cumulative)", n)
 
 
 def _note_anchor_gate(outcome: str, task_type: str = "?") -> None:
@@ -1946,13 +1967,15 @@ def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indice
 def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget],
                        negative_instances: int = 0, role_hard_negatives: int = 0,
                        column_negatives: int = 0, coreferent_ownership: bool = False,
-                       coref_negatives: int = 0, column_siblings: bool = False) -> Dict[str, torch.Tensor]:
+                       coref_negatives: int = 0, column_siblings: bool = False,
+                       drop_anchor_field: bool = False) -> Dict[str, torch.Tensor]:
     """Compute object and field-assignment losses for one record group.
 
     ``negative_instances`` > 0 (natural mode) also trains that many of the highest-scoring
     FALSE instances on their ROLE fields (no candidate is theirs), returned as ``negative_loss``
     (mean over the group's negatives) and ``negative_count`` for a separate batch mean.
     ``column_siblings`` adds same-type sibling gold triggers to the column negatives (see _column_loss).
+    ``drop_anchor_field`` leaves the anchor's own row out of each record's field loss (see _instance_field_loss).
     """
     device = group.object_logits.device
     zero = torch.zeros((), device=device)
@@ -1988,7 +2011,8 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
                 _note_anchor_gate("anchor_not_seeded", group.spec.task_type)
                 continue
             _note_anchor_gate("trained", group.spec.task_type)
-            field_loss = field_loss + sum(_instance_field_loss(group, i, record, span_indices, role_hard_negatives)
+            field_loss = field_loss + sum(_instance_field_loss(group, i, record, span_indices, role_hard_negatives,
+                                                               drop_anchor_field)
                                           for i in owners) / len(owners)
             n += 1
             trained.update(owners)

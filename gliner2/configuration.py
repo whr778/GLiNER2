@@ -138,6 +138,11 @@ class BoundaryHeadSettings:
     # gold trigger is never contrasted for a column it does not own (94% of CASIE / 81% of WikiEvents argument
     # terms). True adds the siblings as column negatives, except where the sibling's own gold holds the filler.
     record_link_column_siblings: bool = False
+    # Code review Issue 2 (measured 2026-10-25): in natural mode the ANCHOR field's own row (an instance pointing at
+    # its own trigger) is supervised in the field loss but never read at decode, and at step 1k its gradient opposes
+    # the role terms' on every shared layer (cos -0.16..-0.71). True drops that term from the field loss; the 1/n
+    # divisor is unchanged, so every role term keeps its exact weight. Non-structural; sparse (per_query) path only.
+    record_drop_anchor_field_loss: bool = False
     # Width of the junction's GEOMETRY channel: Linear(2 -> geom_dim) on (order, log distance) dotted with
     # Linear(hidden -> geom_dim) on the role query, with NO activation between. The term is therefore bilinear
     # in a 2-d feature and the query -- rank <= 2 for ANY width >= 2 -- so 16 and 64 represent the same
@@ -484,6 +489,7 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
         "record_link_column_siblings": bool(values.get("record_link_column_siblings", d.record_link_column_siblings)),
+        "record_drop_anchor_field_loss": bool(values.get("record_drop_anchor_field_loss", d.record_drop_anchor_field_loss)),
         "record_link_geom_dim": int(values.get("record_link_geom_dim", d.record_link_geom_dim)),
         "record_link_geom_activation": str(values.get("record_link_geom_activation", d.record_link_geom_activation)),
         "coref_link_distance": str(values.get("coref_link_distance", d.coref_link_distance)),
@@ -795,6 +801,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError("boundary_head.record_link_column_weight needs record_link_mode: junction")
     if result["record_link_mode"] == "junction" and result.get("candidate_pool") == "shared":
         raise ValueError("boundary_head.record_link_mode: junction is implemented for candidate_pool: per_query only")
+    if result["record_drop_anchor_field_loss"] and result.get("candidate_pool") == "shared":
+        raise ValueError("boundary_head.record_drop_anchor_field_loss is implemented for candidate_pool: per_query only "
+                         "(the dense shared-pool loss would ignore it)")
     if result["record_role_hard_negatives"] < 0:
         raise ValueError("boundary_head.record_role_hard_negatives must be >= 0")
     if result["record_merge_coreferent"] not in ("off", "args", "link"):

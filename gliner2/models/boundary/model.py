@@ -2764,6 +2764,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                             ("column_negatives", self.boundary_settings.record_link_column_negatives
                              if self.boundary_settings.record_link_column_weight > 0 else 0),
                             ("column_siblings", self.boundary_settings.record_link_column_siblings),
+                            ("drop_anchor_field", self.boundary_settings.record_drop_anchor_field_loss),
                         ) if v}
                         losses = compute_group_loss(group, recs, **opts)
                 except (TargetCapacityError, ValueError, IndexError):
