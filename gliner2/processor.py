@@ -1805,8 +1805,12 @@ class SchemaTransformer:
         )
         # The word span has to be exactly the gold span. A partial word used to be
         # widened onto the whole token: "Texas" in "TexasA" trained as "texasa".
-        if (ctx.start_idx_map[token_start] != value.start
-                or ctx.end_idx_map[token_end - 1] != value.end):
+        # max_len drops whole tokens from the tail, so a span that starts on a word
+        # edge and runs past that cut keeps the tokens that survived.
+        start_exact = ctx.start_idx_map[token_start] == value.start
+        end_exact = ctx.end_idx_map[token_end - 1] == value.end
+        cut = ctx.char_limit is not None and value.end > ctx.char_limit
+        if not start_exact or not (end_exact or cut):
             return (-1, -1)
         # mirrors word_offsets on the decode side: maps are unprefixed, tokens are not
         return token_start + ctx.len_prefix, token_end - 1 + ctx.len_prefix
