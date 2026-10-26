@@ -122,3 +122,34 @@ def expand_argument_coreferents(schema: Dict[str, Any], clusters, text: str) -> 
     out["_argument_coref_added"] = added
     out["_argument_coref_skipped"] = skipped
     return out
+
+
+def added_argument_mentions(schema: Dict[str, Any], clusters, text: str) -> List[Tuple[str, str, str]]:
+    """``(event_type, role, surface)`` for mentions expansion appends.
+
+    Annotated arguments are not included. The surface is the mention text, stripped.
+    """
+    if not isinstance(schema, dict):
+        return []
+    bare = {k: v for k, v in schema.items() if not str(k).startswith("_")}
+    expanded = expand_argument_coreferents(bare, clusters, text)
+    src_events = bare.get("events") if isinstance(bare.get("events"), list) else []
+    dst_events = expanded.get("events") if isinstance(expanded.get("events"), list) else []
+    keys: List[Tuple[str, str, str]] = []
+    for src, dst in zip(src_events, dst_events):
+        if not isinstance(src, dict) or not isinstance(dst, dict):
+            continue
+        etype = dst.get("event_type")
+        if not isinstance(etype, str) or not etype.strip():
+            continue
+        src_args = src.get("arguments") if isinstance(src.get("arguments"), list) else []
+        dst_args = dst.get("arguments") if isinstance(dst.get("arguments"), list) else []
+        for arg in dst_args[len(src_args):]:
+            if not isinstance(arg, dict):
+                continue
+            role = arg.get("role")
+            entity = arg.get("entity")
+            surface = entity.get("text") if isinstance(entity, dict) else None
+            if isinstance(role, str) and isinstance(surface, str) and role.strip() and surface.strip():
+                keys.append((etype.strip(), role.strip(), surface.strip()))
+    return keys

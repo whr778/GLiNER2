@@ -329,6 +329,12 @@ def _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negativ
         if full_menu:
             schema = _widen_with_absent(schema, full_menu,
                                         max_absent=menu_negatives, index=i)
+        clusters = output.get("_coref_clusters") if isinstance(output, dict) else None
+        if clusters:
+            from gliner2.processing.argument_coref import added_argument_mentions
+            mentions = added_argument_mentions(output, clusters, text)
+            if mentions:
+                output = dict(output, _argument_coref_opportunities=mentions)
         texts.append(text)
         golds.append(output)
         schemas.append(schema)
@@ -386,6 +392,9 @@ def score_predictions(golds: List[Dict], preds: List[Dict], stopwords: frozenset
     has_event_types = has_event_triggers = has_event_arguments = False
     evt_jaccard = evt_exact = 0.0
     evt_count = 0
+    # Mentions training would add from coref clusters, and how many this decode emitted
+    # as that event type and role. Not a head: see the keys emitted after primitive_heads.
+    coref_opportunities = coref_emitted = 0
 
     for gold, pred in zip(golds, preds):
         g, p = _gold_entity_set(gold), _pred_entity_set(pred)
@@ -470,6 +479,15 @@ def score_predictions(golds: List[Dict], preds: List[Dict], stopwords: frozenset
             evt_jaccard += j
             evt_exact += x
             evt_count += n
+
+        opp = Counter(
+            tuple(key) for key in (gold.get("_argument_coref_opportunities") or [])
+            if isinstance(key, (list, tuple)) and len(key) == 3
+        )
+        if opp:
+            have = _pred_argument_role_surfaces(pred)
+            coref_opportunities += sum(opp.values())
+            coref_emitted += sum(min(n, have[key]) for key, n in opp.items())
 
     # Overall event score: sum the type, trigger, and argument counters
     # (namespaced so the per-label report keeps distinct rows; micro is the
@@ -581,6 +599,13 @@ def score_predictions(golds: List[Dict], preds: List[Dict], stopwords: frozenset
         metrics["eval_event_argument_per_event_mean_jaccard"] = evt_jaccard / evt_count
         metrics["eval_event_argument_per_event_exact_set_rate"] = evt_exact / evt_count
         metrics["eval_event_argument_per_event_support"] = evt_count
+    if coref_opportunities:
+        # Recall of fillers the trainer would have added and the published argument F1
+        # does not ask for. Kept out of primitive_heads: a hit here is a false positive
+        # on event_argument strict, so folding it into head_min would reward that.
+        metrics["eval_argument_coref_opportunities"] = coref_opportunities
+        metrics["eval_argument_coref_emitted"] = coref_emitted
+        metrics["eval_argument_coref_recall"] = coref_emitted / coref_opportunities
     if report:
         _print_micro_report(metrics)
     return metrics
@@ -1152,6 +1177,40 @@ def _pred_event_argc_set(output: Dict) -> Tuple[Set[Tuple[str, str, str]], int]:
     """
     sets, triggerless = _pred_oneie_sets(output)
     return sets["argc"], triggerless
+
+def _pred_argument_role_surfaces(pred: Dict) -> Counter:
+    """``(event_type, role, surface)`` counts from ``event_extraction``.
+
+    The trigger is not part of the key. A mention the argument-coref companion asks
+    about can be emitted without the annotated trigger being present.
+    """
+    out: Counter = Counter()
+    block = pred.get("event_extraction") or {}
+    if not isinstance(block, dict):
+        return out
+    for etype, mentions in block.items():
+        if not isinstance(etype, str) or not isinstance(mentions, list):
+            continue
+        etype = etype.strip()
+        if not etype:
+            continue
+        for ev in mentions:
+            if not isinstance(ev, dict):
+                continue
+            for arg in ev.get("arguments") or []:
+                if not isinstance(arg, dict):
+                    continue
+                role = arg.get("role")
+                entity = arg.get("entity")
+                if isinstance(entity, dict):
+                    entity = entity.get("text")
+                if not isinstance(role, str) or not isinstance(entity, str):
+                    continue
+                role, entity = role.strip(), entity.strip()
+                if role and entity:
+                    out[(etype, role, entity)] += 1
+    return out
+
 
 def _pred_event_argument_set(pred: Dict) -> Set[Tuple[str, str, str, Tuple[str, ...]]]:
     """Same shape as the gold argument set, sourced from ``event_extraction``.

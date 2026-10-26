@@ -687,6 +687,16 @@ merge is read on: merging two mentions of one event into one instance changes `e
 and leaves `event_argument` relaxed alone ([COREFERENT_LINK_SPEC](tools/events_working_papers/COREFERENT_LINK_SPEC.md) s5).
 Keys follow the scheme above (`eval_event_cluster_strict_micro_f1`, ...).
 
+**Argument-coref fillers (recall only; not a head).** Training adds a cluster's other mentions as gold fillers of the same role (`expand_argument_coreferents`). Eval does not, so `event_argument` strict F1 scores the annotated arguments and an emitted pronoun is a false positive there. When the eval item carries `_coref_clusters`, the scorer counts the mentions that expansion would have added and how many the decode emitted as that event type and role. The surface must match exactly. The trigger is not required.
+
+```
+eval_argument_coref_opportunities   # integer
+eval_argument_coref_emitted         # integer
+eval_argument_coref_recall          # emitted / opportunities
+```
+
+The three keys are omitted when there are no opportunities. They are absent from `primitive_heads`, so a hit cannot move `head_min`. This is a recall of extra fillers, not an F1, and not comparable to `event_argument` strict. On CMNEE val, 1,493 records carry events and clusters and expansion adds 5,650 mentions across 1,174 of them. Sonnet 5.5's val event records carry no clusters; those sit on the `train_only` coref file and never enter this count.
+
 **Two reads that live beside the scorer, not in it.** The **held-out coreference pair AUC**
 (`tools/events_working_papers/measure_coref_dist.py`) ranks, per natural group of a val record,
 the trained TriggerLink / MentionLink score of every gold-coreferent trigger pair against the

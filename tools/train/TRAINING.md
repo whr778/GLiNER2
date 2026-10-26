@@ -980,7 +980,7 @@ currently justify one.
 uv run python tools/train/eval.py --config <config> --checkpoint out/<run>/best --split test
 ```
 
-Six rules that have each changed a conclusion in this project:
+Seven rules that have each changed a conclusion in this project:
 
 1. **Sweep the threshold per checkpoint, then compare at matched thresholds.**
    `metric_sweep: true` selects each checkpoint at *its own* best threshold — right for
@@ -1025,6 +1025,17 @@ Six rules that have each changed a conclusion in this project:
    overall accuracy from 0.719 to 0.847, at 0.70 recall — no retraining. Every number
    recorded for this gate before that, including a 21.5% Turkish FP rate, was measured at
    the broken default. Choose the threshold on **val**, then report test once.
+7. **An event curve is read at one threshold, on the event heads.** `metric_sweep: true`
+   selects each checkpoint at its own best threshold, and a selection metric tied at 0
+   across the grid makes the sweep keep the first point. `eb22d-trace.yaml` sets
+   `metric_sweep: false`, so each 500-step eval is at `eval.threshold` (0.3). Read
+   `eval_event_trigger_strict_micro_f1` and `eval_event_argument_strict_micro_f1`. A
+   single run carries about ±0.02. `eval_overall_strict_head_min_f1` stays the selector
+   for a finished base, and it stays 0 while any primitive head is 0, which relations
+   were at step 1,500 of the eb22d smoke. The event roll-up hides a dead argument head
+   behind event type. `eval_argument_coref_recall` is the extra-filler count beside the
+   annotated argument F1; it is not the selection metric. Score the full val once on the
+   epoch checkpoint with `uv run python tools/train/eval.py --config <cfg> --checkpoint <dir> --split val --threshold 0.3`.
 
 `tools/ekf_showcase/gate_perclass.py --sweep` does 4, 5 and 6 for the relevance gate — stratified
 sampling, paired scoring, exact McNemar (the normal approximation reports p = 1.32 at three

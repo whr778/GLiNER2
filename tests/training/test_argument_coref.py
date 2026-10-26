@@ -4,7 +4,10 @@ from dataclasses import replace
 
 import torch
 
-from gliner2.processing.argument_coref import attach_coref_copies, expand_argument_coreferents
+from gliner2.processing.argument_coref import (
+    added_argument_mentions, attach_coref_copies, expand_argument_coreferents,
+)
+from gliner2.training.eval_metrics import score_predictions
 from gliner2.training.chunking import _chunk_clusters, _filter_events
 from gliner2.training.trainer import ExtractorCollator, ExtractorDataset
 from tests.models.boundary.test_record_head_pipeline import _build_tiny_records_model
@@ -220,3 +223,37 @@ def test_a_gold_span_inside_a_longer_word_is_not_widened():
     assert ("trigger", "bombs") in surfaces
     assert ("Place", "texasa") not in surfaces
     assert ("Place", "texas") not in surfaces
+
+
+def _leave(arguments):
+    return {"event_extraction": {"Leave": [{"triggers": ["left"], "arguments": arguments}]}}
+
+
+def test_argument_coref_recall_counts_an_emitted_mention_and_is_not_a_head():
+    """The published argument F1 scores the annotated filler. The companion counts the
+    mention expansion would have added, and stays out of head_min."""
+    import inspect
+
+    from gliner2.training import eval_metrics
+
+    keys = added_argument_mentions(_record()["output"], _record()["coref_clusters"], TEXT)
+    assert keys == [("Leave", "Person", "he")]
+    gold = dict(_record()["output"], entities={"person": ["Paul"]}, _argument_coref_opportunities=keys)
+    missed = _leave([{"role": "Person", "entity": "Paul"}])
+    hit = _leave([{"role": "Person", "entity": "Paul"}, {"role": "Person", "entity": "he"}])
+    wrong = _leave([{"role": "Person", "entity": "Paul"}, {"role": "Place", "entity": "he"}])
+    for pred in (missed, hit, wrong):
+        pred["entities"] = {"person": ["Paul"]}
+    m0 = score_predictions([gold], [missed], report=False)
+    m1 = score_predictions([gold], [hit], report=False)
+    m2 = score_predictions([gold], [wrong], report=False)
+    assert m0["eval_argument_coref_opportunities"] == 1
+    assert m0["eval_argument_coref_emitted"] == 0 and m0["eval_argument_coref_recall"] == 0.0
+    assert m1["eval_argument_coref_emitted"] == 1 and m1["eval_argument_coref_recall"] == 1.0
+    assert m2["eval_argument_coref_emitted"] == 0
+    assert m0["eval_event_argument_strict_micro_f1"] == 1.0
+    assert m1["eval_event_argument_strict_micro_f1"] < 1.0
+    assert m1["eval_overall_strict_head_min_f1"] == min(
+        m1["eval_entity_strict_micro_f1"], m1["eval_event_argument_strict_micro_f1"])
+    block = inspect.getsource(eval_metrics.score_predictions).split("primitive_heads = (", 1)[1].split("\n    )", 1)[0]
+    assert "event_argument" in block and "argument_coref" not in block

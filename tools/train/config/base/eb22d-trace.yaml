@@ -1,6 +1,7 @@
 # eb22d-trace. eb22d with the trace eval: eval and checkpoint every 500 steps, 60 kept,
-# 1500 eval records. Model, data, loss and the 5-epoch schedule are unchanged.
-# Stop the box from the outside (trace_job STOP_STEP). Do not set max_steps: it rescales warmup.
+# 1500 eval records, at eval.threshold (metric_sweep off, so the curve is one operating
+# point). Model, data, loss and the 5-epoch schedule are unchanged.
+# Stop the box from the outside (trace_job STOP_EPOCH). Do not set max_steps: it rescales warmup.
 model:
   encoder: jhu-clsp/mmBERT-base
   architecture: boundary
@@ -101,7 +102,7 @@ eval:
   coref_control:
   - data/cmnee
   - data/maven
-  metric_sweep: true
+  metric_sweep: false
 labels_file: labels/unified-full-v4.yaml
 data:
   corpora:
