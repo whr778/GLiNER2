@@ -224,6 +224,7 @@ export type InferenceJob = {
   text?: string | null;
   result?: { text: string; result: Record<string, any> } | null;
   schema?: Record<string, any> | null;
+  delete_after?: boolean;
 };
 
 export type DatasetFile = { path: string; name: string; bytes: number };
@@ -263,4 +264,8 @@ export async function getJob(id: string): Promise<InferenceJob> {
 
 export async function cancelJob(id: string): Promise<InferenceJob> {
   return jsonOrThrow(await fetch(`${API_BASE}/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }));
+}
+
+export async function deleteJob(id: string): Promise<InferenceJob> {
+  return jsonOrThrow(await fetch(`${API_BASE}/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }));
 }

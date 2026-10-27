@@ -103,15 +103,22 @@ input:focus, textarea:focus, select:focus {
   align-items: start;
 }
 .jobrail { position: sticky; top: 12px; max-height: calc(100vh - 32px); overflow: auto; }
-.job-wrap { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; }
-.job-wrap > button:last-child { align-self: center; }
+.job-commands {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.job-commands button { min-width: 108px; }
+.job-wrap { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.job-actions { display: flex; gap: 6px; }
+.job-actions button { flex: 1; }
 button.job {
   display: block;
   width: 100%;
   text-align: left;
   margin-top: 0;
   padding: 8px;
-  flex: 1;
 }
 button.job.active { border-color: var(--accent); }
 button.job .meta { color: var(--muted); font-size: 12px; display: block; }

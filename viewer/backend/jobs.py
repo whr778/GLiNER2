@@ -62,6 +62,7 @@ class Job:
     schema: Dict[str, Any] = field(default_factory=dict)
     options: Dict[str, Any] = field(default_factory=dict)
     result: Optional[Dict[str, Any]] = None
+    delete_after: bool = False
     label_map: Any = None
     label_style: Any = None
 
@@ -72,6 +73,7 @@ class Job:
             "created": self.created, "done": self.done, "total": self.total,
             "output_path": self.output_path, "error": self.error, "device": self.device,
             "ran_on": self.ran_on, "limit": self.limit,
+            "delete_after": self.delete_after,
         }
         if full:
             out["text"] = self.text
@@ -210,6 +212,51 @@ def cancel(job_id: str) -> Optional[Job]:
         return job
 
 
+def _unlink(job: Job) -> None:
+    """Remove the ticket file and its output, when the output is under predictions_dir."""
+    state = _state_path(job.id)
+    if state.is_file():
+        state.unlink()
+    raw = job.output_path
+    if not raw:
+        return
+    root = predictions_dir().resolve()
+    path = Path(raw).resolve()
+    if path != root and root not in path.parents:
+        return
+    if path.is_file():
+        path.unlink()
+
+
+def _drop(job: Job) -> None:
+    """Forget the ticket and delete its files. Caller holds ``_LOCK``."""
+    job.status = "cancelled"
+    _JOBS.pop(job.id, None)
+    _ORDER[:] = [item for item in _ORDER if item.id != job.id]
+    _CANCEL.pop(job.id, None)
+    _unlink(job)
+
+
+def delete(job_id: str) -> Optional[Job]:
+    """Remove a ticket and its output file.
+
+    A job inside the model is cancelled first. Its files go when that batch ends,
+    so the writer is not deleting a file it still has open until the batch returns.
+    """
+    with _LOCK:
+        job = _JOBS.get(job_id)
+        if job is None:
+            return None
+        if job.status in ("running", "stopping"):
+            job.delete_after = True
+            job.status = "stopping"
+            _CANCEL[job_id].set()
+            save(job)
+            return job
+        _drop(job)
+        return job
+
+
 def load() -> None:
     """Reload tickets. A job that was queued or running when the process died stays interrupted."""
     folder = predictions_dir() / "jobs"
@@ -220,6 +267,15 @@ def load() -> None:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("delete_after"):
+            ghost = Job(
+                id=data["id"], kind=data.get("kind") or "text", status="cancelled",
+                label=data.get("label") or data["id"], model=data.get("model") or "",
+                source=data.get("source") or "", schema_mode=data.get("schema_mode") or "panel",
+                created=float(data.get("created") or 0), output_path=data.get("output_path"),
+            )
+            _unlink(ghost)
             continue
         if data.get("status") in ("queued", "running", "stopping"):
             data["status"] = "interrupted"
@@ -233,7 +289,7 @@ def load() -> None:
             error=data.get("error"), device=data.get("device"), ran_on=data.get("ran_on"),
             limit=int(data.get("limit") or 0), text=data.get("text"),
             schema=data.get("schema") or {}, options=data.get("options") or {},
-            result=data.get("result"),
+            result=data.get("result"), delete_after=bool(data.get("delete_after")),
         )
         found.append(job)
         save(job)
@@ -279,14 +335,26 @@ def _mark_cancelled(job: Job) -> None:
     save(job)
 
 
+def _stopped(job: Job) -> bool:
+    """End the job when stop was asked. A delete removes the files instead of keeping a cancelled ticket."""
+    if not (_stop_requested(job.id) or job.delete_after):
+        return False
+    if job.delete_after:
+        with _LOCK:
+            if job.id in _JOBS:
+                _drop(job)
+        return True
+    _mark_cancelled(job)
+    return True
+
+
 def execute(job: Job, predict: Predict, *, batch_size: int = 4) -> None:
     """Run one claimed job. ``predict`` decodes a batch of texts against already-mapped schemas.
 
     Stop finishes the batch already inside the model, writes it, and does not start another.
     A one-record job is that single batch, so the ticket ends cancelled rather than done.
     """
-    if _stop_requested(job.id):
-        _mark_cancelled(job)
+    if _stopped(job):
         return
     job.status = "running"
     save(job)
@@ -297,8 +365,7 @@ def execute(job: Job, predict: Predict, *, batch_size: int = 4) -> None:
         save(job)
         step = max(1, batch_size)
         for start in range(0, len(records), step):
-            if _stop_requested(job.id):
-                _mark_cancelled(job)
+            if _stopped(job):
                 return
             chunk = records[start:start + step]
             schemas = [_schema(job, rec) for rec in chunk]
@@ -321,12 +388,16 @@ def execute(job: Job, predict: Predict, *, batch_size: int = 4) -> None:
                 job.result = {"text": chunk[0]["input"], "result": preds[0]}
             job.done = min(start + step, len(records))
             save(job)
-            if _stop_requested(job.id):
-                _mark_cancelled(job)
+            if _stopped(job):
                 return
         job.status = "done"
         save(job)
     except Exception as exc:
+        if job.delete_after:
+            with _LOCK:
+                if job.id in _JOBS:
+                    _drop(job)
+            return
         job.status = "failed"
         job.error = getattr(exc, "detail", None) or str(exc)
         save(job)

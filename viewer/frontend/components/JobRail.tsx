@@ -7,6 +7,7 @@ type Props = {
   selected: string | null;
   onSelect: (id: string | null) => void;
   onCancel: (id: string) => void;
+  onDelete: (id: string) => void;
 };
 
 function statusLine(job: InferenceJob): string {
@@ -15,17 +16,17 @@ function statusLine(job: InferenceJob): string {
   return [job.status, n, cap].filter(Boolean).join(" · ");
 }
 
-function canStop(job: InferenceJob): boolean {
+export function canCancel(job: InferenceJob): boolean {
   return job.status === "queued" || job.status === "running" || job.status === "stopping";
 }
 
-export default function JobRail({ jobs, selected, onSelect, onCancel }: Props) {
-  const active = jobs.some(canStop);
+export default function JobRail({ jobs, selected, onSelect, onCancel, onDelete }: Props) {
+  const active = jobs.some(canCancel);
   return (
     <div className="card jobrail">
       <div className="row between">
         <h2>Jobs</h2>
-        <button type="button" className={selected === null ? "" : "secondary"} onClick={() => onSelect(null)}>New</button>
+        <button type="button" className="primary" onClick={() => onSelect(null)}>New job</button>
       </div>
       <div className="hint">
         {active
@@ -44,11 +45,18 @@ export default function JobRail({ jobs, selected, onSelect, onCancel }: Props) {
             <div className="meta">{job.kind === "jsonl" ? "JSONL" : "Text"} · {statusLine(job)}</div>
             <div className="meta mono">{job.model}</div>
           </button>
-          {canStop(job) && (
-            <button type="button" onClick={() => onCancel(job.id)} disabled={job.status === "stopping"}>
-              {job.status === "stopping" ? "Stopping…" : "Stop"}
+          <div className="job-actions">
+            <button
+              type="button"
+              onClick={() => onCancel(job.id)}
+              disabled={!canCancel(job) || job.delete_after}
+            >
+              {job.status === "stopping" && !job.delete_after ? "Stopping…" : "Stop"}
             </button>
-          )}
+            <button type="button" onClick={() => onDelete(job.id)} disabled={!!job.delete_after}>
+              {job.delete_after ? "Deleting…" : "Delete"}
+            </button>
+          </div>
         </div>
       ))}
     </div>

@@ -84,6 +84,32 @@ def test_cancel_stops_before_the_next_record(tmp_path, monkeypatch):
     assert len(rows) == 1 and rows[0]["gold"]["events"]
 
 
+def test_delete_removes_the_ticket_and_its_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "predictions_dir", lambda: tmp_path)
+    job = jobs.create("jsonl", None, "data/casie.test.jsonl", "panel", PANEL, {}, 1, "unit-model")
+    jobs.execute(job, lambda texts, schemas: [{"entities": {}} for _ in texts], batch_size=1)
+    out = Path(job.output_path)
+    assert out.is_file()
+    jobs.delete(job.id)
+    assert jobs.get(job.id) is None
+    assert not out.exists()
+    assert not (tmp_path / "jobs" / f"{job.id}.json").exists()
+
+
+def test_delete_while_running_removes_the_file_when_the_batch_ends(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "predictions_dir", lambda: tmp_path)
+    job = jobs.create("jsonl", None, "data/casie.test.jsonl", "panel", PANEL, {}, 3, "unit-model")
+
+    def predict(texts, schemas):
+        jobs.delete(job.id)
+        assert job.delete_after and job.status == "stopping"
+        return [{"entities": {}} for _ in texts]
+
+    jobs.execute(job, predict, batch_size=1)
+    assert jobs.get(job.id) is None
+    assert not Path(job.output_path).exists()
+
+
 def test_dataset_path_outside_data_root_is_refused():
     try:
         jobs.resolve_dataset("/etc/passwd")

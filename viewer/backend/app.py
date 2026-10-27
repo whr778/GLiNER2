@@ -545,6 +545,16 @@ def cancel_job(job_id: str) -> Dict[str, Any]:
     return job.public()
 
 
+@app.delete("/jobs/{job_id}")
+def delete_job(job_id: str) -> Dict[str, Any]:
+    import jobs
+
+    job = jobs.delete(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"unknown job {job_id}")
+    return job.public()
+
+
 @app.get("/predictions")
 def predictions(path: str) -> Dict[str, Any]:
     """Open a ``tools/infer.py --output`` file: per-record strict F1 for the pager."""

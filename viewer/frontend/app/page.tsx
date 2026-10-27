@@ -7,8 +7,8 @@ import ResultView from "@/components/ResultView";
 import ModelManager from "@/components/ModelManager";
 import EkfPanel from "@/components/EkfPanel";
 import PredictionsPanel from "@/components/PredictionsPanel";
-import JobRail from "@/components/JobRail";
-import { addModel, cancelJob, createJob, getJob, getModelSchema, getModels, getPresets, listJobs, type InferenceJob } from "@/lib/api";
+import JobRail, { canCancel } from "@/components/JobRail";
+import { addModel, cancelJob, createJob, deleteJob, getJob, getModelSchema, getModels, getPresets, listJobs, type InferenceJob } from "@/lib/api";
 import { matchCorpusPreset } from "@/lib/models";
 import { MODEL_PRESET_VALUE, pruneSchema, scaffoldSchema } from "@/lib/schema";
 import {
@@ -24,24 +24,28 @@ const DEFAULT_SCHEMA: Record<string, any> = {
   entities: ["person", "organization", "location", "date"],
 };
 
-function JobBody({ ticket, full, onStop }: {
+function JobBody({ ticket, full, onNew, onCancel, onDelete }: {
   ticket: InferenceJob;
   full: InferenceJob | null;
-  onStop: (id: string) => void;
+  onNew: () => void;
+  onCancel: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const textResult = full && full.id === ticket.id ? full.result : null;
   const textSchema = full && full.id === ticket.id ? full.schema ?? null : null;
-  const stopping = ticket.status === "queued" || ticket.status === "running" || ticket.status === "stopping";
+  const stopping = canCancel(ticket);
   return (
     <div>
       <div className="card">
-        <div className="row between">
-          <h2>{ticket.label}</h2>
-          {stopping && (
-            <button type="button" onClick={() => onStop(ticket.id)} disabled={ticket.status === "stopping"}>
-              {ticket.status === "stopping" ? "Stopping…" : "Stop"}
-            </button>
-          )}
+        <h2>{ticket.label}</h2>
+        <div className="job-commands">
+          <button type="button" className="primary" onClick={onNew}>New job</button>
+          <button type="button" onClick={() => onCancel(ticket.id)} disabled={!stopping || ticket.delete_after}>
+            {ticket.status === "stopping" && !ticket.delete_after ? "Stopping…" : "Stop"}
+          </button>
+          <button type="button" onClick={() => onDelete(ticket.id)} disabled={!!ticket.delete_after}>
+            {ticket.delete_after ? "Deleting…" : "Delete"}
+          </button>
         </div>
         {stopping && (
           <div className="hint" style={{ marginBottom: 8 }}>
@@ -142,15 +146,16 @@ export default function Home() {
     const m = options.model?.trim();
     if (!m) {
       setCoref(null);
+      setSchemaLoading(false);
       return;
     }
     if (m === appliedModel.current) return;
     let cancelled = false;
-    setSchemaLoading(true); // disable extraction until this model's schema resolves
+    setSchemaLoading(true);
     (async () => {
       const { schema: shipped, inferenceDefaults, recordDefaults, coref: shippedCoref } = await getModelSchema(m);
       if (cancelled) return;
-      setSchemaLoading(false); // network resolved; the schema apply below is synchronous
+      setSchemaLoading(false);
       setCoref(shippedCoref);
       // Decode the way this model was evaluated; the user can still move the controls.
       // Record/argument gates start at the model's own values (null = follow threshold).
@@ -192,6 +197,7 @@ export default function Home() {
     })();
     return () => {
       cancelled = true;
+      setSchemaLoading(false);
     };
   }, [options.model, presets]);
 
@@ -244,6 +250,17 @@ export default function Home() {
     }
   }
 
+  async function onDelete(id: string) {
+    try {
+      await deleteJob(id);
+      const rows = await listJobs();
+      setJobs(rows);
+      if (!rows.some((job) => job.id === id)) setSelected((cur) => (cur === id ? null : cur));
+    } catch (e: any) {
+      setError(e.message || "could not delete");
+    }
+  }
+
   // Restore a previously-saved results snapshot (text + schema + result) so the
   // viewer renders it without re-running the model. Older files (just
   // {text, result}) still load; the tabs then fall back to the result's layers.
@@ -281,11 +298,27 @@ export default function Home() {
       ) : mode === "predictions" ? (
         <PredictionsPanel />
       ) : (
-
+      <>
+      <div className="job-commands">
+        <button type="button" className="primary" onClick={() => setSelected(null)}>New job</button>
+        <button
+          type="button"
+          onClick={() => ticket && onCancel(ticket.id)}
+          disabled={!ticket || !canCancel(ticket) || !!ticket.delete_after}
+        >
+          {ticket?.status === "stopping" && !ticket.delete_after ? "Stopping…" : "Stop"}
+        </button>
+        <button type="button" onClick={() => ticket && onDelete(ticket.id)} disabled={!ticket || !!ticket.delete_after}>
+          {ticket?.delete_after ? "Deleting…" : "Delete"}
+        </button>
+        <span className="hint">
+          {ticket ? ticket.label : "Stop and Delete use the job selected in the list."}
+        </span>
+      </div>
       <div className="sessions">
-        <JobRail jobs={jobs} selected={selected} onSelect={setSelected} onCancel={onCancel} />
+        <JobRail jobs={jobs} selected={selected} onSelect={setSelected} onCancel={onCancel} onDelete={onDelete} />
         {ticket ? (
-          <JobBody ticket={ticket} full={full} onStop={onCancel} />
+          <JobBody ticket={ticket} full={full} onNew={() => setSelected(null)} onCancel={onCancel} onDelete={onDelete} />
         ) : (
           <div className="grid">
             <div>
@@ -343,6 +376,7 @@ export default function Home() {
           </div>
         )}
       </div>
+      </>
 
       )}
 

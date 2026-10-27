@@ -61,11 +61,16 @@ export default function InputPanel({ text, setText, options, setOptions, queuein
     let cancelled = false;
     const timer = setTimeout(() => {
       listDatasets(datasetQuery)
-        .then((rows) => { if (!cancelled) { setDatasets(rows); setDatasetErr(null); } })
+        .then((rows) => {
+          if (cancelled) return;
+          setDatasets(rows);
+          setDatasetErr(null);
+          if (rows.length === 1) setDataset(rows[0].path);
+        })
         .catch((e) => { if (!cancelled) setDatasetErr(e.message); });
     }, 200);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [source, datasetQuery]);
+  }, [source, datasetQuery, setDataset]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -429,14 +434,21 @@ export default function InputPanel({ text, setText, options, setOptions, queuein
 
       {coref && <CorefLine coref={coref} />}
       <div className="field row between">
-        <span className="hint">Returns a ticket. One model runs at a time.</span>
+        <span className="hint">
+          {source === "text" && !text.trim()
+            ? "Paste text, then Queue job."
+            : source === "jsonl" && !dataset
+              ? "Choose a JSONL file, then Queue job."
+              : schemaLoading
+                ? "Loading this model's schema. You can queue with the schema on screen."
+                : "Returns a ticket. One model runs at a time."}
+        </span>
         <button
           className="primary"
           onClick={onQueue}
-          disabled={queueing || schemaLoading || (source === "text" ? !text.trim() : !dataset)}
-          title={schemaLoading ? "Loading the selected model's schema…" : undefined}
+          disabled={queueing || (source === "text" ? !text.trim() : !dataset)}
         >
-          {queueing ? "Queuing…" : schemaLoading ? "Loading schema…" : "Queue job"}
+          {queueing ? "Queuing…" : "Queue job"}
         </button>
       </div>
     </div>
