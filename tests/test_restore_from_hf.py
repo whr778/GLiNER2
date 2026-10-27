@@ -45,3 +45,37 @@ def test_wanted_from_config_reads_corpora_and_event_files():
     assert "data/sentence_rex.val.jsonl" in wanted          # a corpora base split
     assert "data/scaling_joint/chfinann.val.jsonl" in wanted  # an event_files path
     assert len(wanted) == 36
+
+
+def test_wanted_from_config_includes_coref_control_val(tmp_path):
+    """The control val is a different file from the event-files slice."""
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text(
+        "eval:\n"
+        "  coref_calibration: data/cc_news_events_sonnet55_v2\n"
+        "  coref_control:\n"
+        "  - data/cmnee\n"
+        "  - data/maven\n"
+        "data:\n"
+        "  corpora:\n"
+        "  - data/maven\n"
+        "  event_files:\n"
+        "    cmnee:\n"
+        "      val: data/scaling_joint/cmnee.val.jsonl\n"
+        "      test: data/cmnee.test.jsonl\n",
+        encoding="utf-8",
+    )
+    wanted = restore.wanted_from_config(cfg)
+    assert "data/cmnee.val.jsonl" in wanted
+    assert "data/scaling_joint/cmnee.val.jsonl" in wanted
+    assert "data/cmnee.test.jsonl" in wanted
+    assert "data/maven.val.jsonl" in wanted
+    assert "data/cc_news_events_sonnet55_v2.val.jsonl" in wanted
+
+
+def test_eb22d_h100_config_wants_base_cmnee_val():
+    cfg = (Path(__file__).resolve().parents[1] / "tools" / "train" / "config" / "base"
+           / "eb22d-trace-h100.yaml")
+    wanted = restore.wanted_from_config(cfg)
+    assert "data/cmnee.val.jsonl" in wanted
+    assert "data/scaling_joint/cmnee.val.jsonl" in wanted

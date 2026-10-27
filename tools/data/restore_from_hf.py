@@ -41,15 +41,30 @@ def repo_files(api, repo):
 
 
 def wanted_from_config(config_path):
-    """The exact split files one training config reads."""
+    """The exact split files one training config reads.
+
+    ``eval.coref_calibration`` and ``eval.coref_control`` open ``{corpus}.val.jsonl``.
+    That path is not implied by ``corpora`` or by ``event_files``: eb22d trains
+    ``cmnee_ner_off`` and scores events on ``data/scaling_joint/cmnee.val.jsonl``,
+    while the control reads ``data/cmnee.val.jsonl``.
+    """
     import yaml
-    data = (yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}).get("data") or {}
+    raw = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+    data = raw.get("data") or {}
     files = []
     for base in data.get("corpora") or []:
         files += [f"{base}.{split}.jsonl" for split in ("train", "val", "test")]
     for entry in (data.get("event_files") or {}).values():
         if isinstance(entry, dict):
             files += [v for v in entry.values() if isinstance(v, str)]
+    ev = raw.get("eval") or {}
+    for key in ("coref_calibration", "coref_control"):
+        named = ev.get(key) or []
+        if isinstance(named, str):
+            named = [named]
+        for base in named:
+            if isinstance(base, str):
+                files.append(f"{base}.val.jsonl")
     return sorted(set(files))
 
 
