@@ -105,8 +105,39 @@ def validate_masked_spans(
     if invalid.any().item():
         first = invalid.nonzero(as_tuple=False)[0].tolist()
         location = tuple(int(value) for value in first)
-        pair = spans[tuple(first)].detach().cpu().tolist()
+        raw = spans[tuple(first)].detach()
+        pair = raw.cpu().tolist()
         sample = int(first[0])
+        # #region agent log
+        try:
+            import json
+            import time
+            device_pair = [int(raw[i].item()) for i in range(raw.numel())]
+            payload = {
+                "sessionId": "834c72",
+                "runId": "post-fix",
+                "hypothesisId": "E",
+                "location": "validation.py:validate_masked_spans",
+                "message": "invalid span read",
+                "data": {
+                    "name": name,
+                    "location": location,
+                    "cpu_pair": pair,
+                    "device_pair": device_pair,
+                    "same": device_pair == pair,
+                    "text_length": int(text_lengths[sample]),
+                },
+                "timestamp": int(time.time() * 1000),
+            }
+            with open(
+                "/Users/williamroe/development/git/GLiNER2/.cursor/debug-834c72.log",
+                "a",
+                encoding="utf-8",
+            ) as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # #endregion
         raise ValueError(
             f"{name}: invalid active span {pair} at {location} for "
             f"text length {int(text_lengths[sample])}"
