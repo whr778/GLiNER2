@@ -31,6 +31,21 @@ def test_legacy_extra_special_tokens_are_normalized(monkeypatch):
     ]
 
 
+def test_hub_subfolder_stays_a_tokenizer_keyword(tmp_path):
+    from gliner2.models.loading import tokenizer_load_target
+
+    repo = "whr778/gliner2-eb22d-trace-epoch"
+    source, kwargs = tokenizer_load_target(repo, {"subfolder": "checkpoint-epoch-1"})
+    assert source == repo
+    assert kwargs == {"subfolder": "checkpoint-epoch-1"}
+
+    local = tmp_path / "repo"
+    (local / "checkpoint-epoch-1").mkdir(parents=True)
+    source, kwargs = tokenizer_load_target(str(local), {"subfolder": "checkpoint-epoch-1"})
+    assert source == str(local / "checkpoint-epoch-1")
+    assert kwargs == {}
+
+
 def test_unrelated_attribute_error_is_not_hidden(monkeypatch):
     def fake_load(repo_or_dir, **kwargs):
         raise AttributeError("unrelated tokenizer failure")

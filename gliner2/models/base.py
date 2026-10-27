@@ -120,17 +120,17 @@ def _enable_mps_flash_attention() -> None:
     replace_sdpa()
 
 
-def load_extractor_tokenizer(repo_or_dir: str):
+def load_extractor_tokenizer(repo_or_dir: str, **kwargs):
     """Load checkpoint tokenizers across Transformers metadata versions.
 
     Older GLiNER2 checkpoints serialized ``extra_special_tokens`` as a list.
     Newer Transformers releases reserve that field for a name-to-token mapping
     and fail before ``SchemaTransformer`` can register GLiNER2's special tokens.
     Retry only that known incompatibility while leaving all other load failures
-    untouched.
+    untouched. ``kwargs`` is the Hub load (``subfolder``, and nothing else here).
     """
     try:
-        return AutoTokenizer.from_pretrained(repo_or_dir)
+        return AutoTokenizer.from_pretrained(repo_or_dir, **kwargs)
     except AttributeError as exc:
         if "'list' object has no attribute 'keys'" not in str(exc):
             raise
@@ -141,7 +141,7 @@ def load_extractor_tokenizer(repo_or_dir: str):
             stacklevel=2,
         )
         return AutoTokenizer.from_pretrained(
-            repo_or_dir, extra_special_tokens={}
+            repo_or_dir, **kwargs, extra_special_tokens={}
         )
 
 

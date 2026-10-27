@@ -85,6 +85,7 @@ export default function PredictionsHelp({ onClose }: { onClose: () => void }) {
         <ul className="hint">
           <li><b>No gold_mapped:</b> gold is in the corpus spellings, so <span className="mono">location</span> vs
             <span className="mono"> Location</span> is a miss (dashed). Real for the scorer, but not a model error.</li>
+          <li><b>Coref:</b> entity-mention clusters. Mention-pair F1 is scored only when the prediction contains <span className="mono">coref_clusters</span>; gold clusters with no such key are shown and not scored.</li>
           <li><b>No spans:</b> predictions have no positions, so none can be drawn and every gold span reads as missed.
             The F1 numbers and classifications are still right.</li>
         </ul>

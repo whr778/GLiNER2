@@ -121,6 +121,46 @@ def test_coref_merge_marks_the_smaller_side_and_pairs_score():
     assert len(gold.coref_pairs(gold_c)) == 4
 
 
+def test_missing_coref_key_is_not_scored_and_gold_clusters_stay_visible():
+    row = json.loads(json.dumps(ROW))
+    row["gold_coref"] = [[_m("Ann", 0), _m("she", 9)]]
+    assert "coref" not in gold._f1(row["gold"], row["output"], row["gold_coref"])
+    v = gold.record_view(row)
+    assert v["entity_coref_decoded"] is False
+    assert "coref" not in v["f1"]
+    assert "coref_clusters" not in v["pred"]
+    assert [[m["text"] for m in c] for c in v["gold"]["coref_clusters"]] == [["Ann", "she"]]
+    assert "match" not in v["gold"]["coref_clusters"][0][0]
+
+
+def test_empty_coref_list_scores_mention_pair_f1_at_zero():
+    row = json.loads(json.dumps(ROW))
+    row["gold_coref"] = [[_m("Ann", 0), _m("she", 9)]]
+    row["output"]["coref_clusters"] = []
+    v = gold.record_view(row)
+    assert v["entity_coref_decoded"] is True
+    assert v["f1"]["coref"] == 0.0
+
+
+def test_multi_trigger_event_keeps_strict_zero_and_adds_cluster_f1():
+    text = "They shot Lee then killed him."
+    killed = text.index("killed")
+    lee = text.index("Lee")
+    row = {
+        "input": text,
+        "output": {"event_extraction": {"Attack": [{
+            "triggers": [{"text": "killed", "start": killed, "end": killed + 6}],
+            "arguments": [{"role": "Target", "entity": {"text": "Lee", "start": lee, "end": lee + 3}}],
+        }]}},
+        "gold": {"events": [{"event_type": "Attack", "triggers": ["shot", "killed"],
+                             "arguments": [{"role": "Target", "entity": "Lee"}]}]},
+    }
+    v = gold.record_view(json.loads(json.dumps(row)))
+    assert v["f1"]["event_argument"] == 0.0
+    assert v["f1"]["event_cluster"] == 1.0
+    assert v["f1"]["event_cluster_argument"] == 1.0
+
+
 def test_data_row_carries_its_coref_clusters(tmp_path):
     row = {"input": "Ann said she left.", "output": {},
            "coref_clusters": [[_m("Ann", 0), _m("she", 9)], [_m("left", 13)]]}

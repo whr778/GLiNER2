@@ -26,13 +26,30 @@ def _load_saved() -> List[Dict[str, str]]:
             data = json.loads(_STORE.read_text(encoding="utf-8"))
             if isinstance(data, list):
                 return [
-                    {"path": m["path"], "label": m.get("label") or m["path"]}
+                    _saved_entry(m)
                     for m in data
                     if isinstance(m, dict) and m.get("path")
                 ]
         except (OSError, json.JSONDecodeError, KeyError):
             pass
     return []
+
+
+def _saved_entry(raw: Dict[str, str]) -> Dict[str, str]:
+    entry = {"path": raw["path"], "label": raw.get("label") or raw["path"]}
+    subfolder = raw.get("subfolder")
+    if isinstance(subfolder, str) and subfolder.strip():
+        entry["subfolder"] = subfolder.strip()
+    return entry
+
+
+def hub_load_kwargs(path: str) -> Dict[str, str]:
+    """Hub kwargs for a saved repo id. Empty when the checkpoint is the repo root."""
+    path = path.strip()
+    for entry in _load_saved():
+        if entry["path"] == path and entry.get("subfolder"):
+            return {"subfolder": entry["subfolder"]}
+    return {}
 
 
 def _save(saved: List[Dict[str, str]]) -> None:

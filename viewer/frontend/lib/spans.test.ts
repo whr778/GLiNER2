@@ -1,7 +1,7 @@
 // Run: node --test lib/   (Node >= 23 runs TypeScript directly)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSegments, codeUnitOffsets, collectMarks } from "./spans.ts";
+import { buildSegments, codeUnitOffsets, collectMarks, eventTriggerLabel, viewLayers } from "./spans.ts";
 
 const marked = (text: string, result: any, layer: any) =>
   buildSegments(text, collectMarks(result, layer)).filter((s) => s.mark).map((s) => s.text);
@@ -33,6 +33,24 @@ test("nested sub-range offsets are local UTF-16, as DOM ranges need", () => {
 
 test("codeUnitOffsets maps each code point to its UTF-16 index", () => {
   assert.deepEqual(codeUnitOffsets("a😀b"), [0, 1, 3, 4]);
+});
+
+test("two triggers of one event share one id", () => {
+  const result = { event_extraction: { Attack: [{ triggers: [
+    { text: "shot", start: 0, end: 4 },
+    { text: "killed", start: 5, end: 11 },
+  ], arguments: [] }] } };
+  const marks = collectMarks(result, "events");
+  assert.equal(marks.length, 2);
+  assert.equal(marks[0].eid, "evt-0");
+  assert.equal(marks[1].eid, marks[0].eid);
+  assert.equal(eventTriggerLabel(2, 1, 0), "2 trigger mentions, one event");
+  assert.equal(eventTriggerLabel(1, 2, 1), "trigger #2");
+});
+
+test("an empty coref_clusters list still opens the coref layer", () => {
+  assert.deepEqual(viewLayers({ entities: ["Person"] }, { coref_clusters: [] }), ["entities", "coref"]);
+  assert.deepEqual(viewLayers({ entities: ["Person"] }, {}), ["entities"]);
 });
 
 test("gold marks carry gold + match, and gold event ids never collide with predicted ones", () => {

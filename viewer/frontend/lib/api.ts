@@ -1,4 +1,4 @@
-import type { ExtractOptions, ExtractResponse, ModelEntry, Preset } from "./types";
+import type { CorefInfo, ExtractOptions, ExtractResponse, ModelEntry, Preset } from "./types";
 
 // Same-origin by default: "/api/*" is proxied to the backend by Next (see
 // next.config.mjs), so the browser only talks to the page's own origin -- no
@@ -63,20 +63,22 @@ export type ModelInfo = {
   schema: Record<string, any> | null;
   inferenceDefaults: Partial<ExtractOptions> | null;
   recordDefaults: { record_threshold: number | null; argument_threshold: number | null; boundary: boolean } | null;
+  coref: CorefInfo | null;
 };
 
 export async function getModelSchema(model: string): Promise<ModelInfo> {
   try {
     const res = await fetch(`${API_BASE}/model-schema?model=${encodeURIComponent(model)}`);
-    if (!res.ok) return { schema: null, inferenceDefaults: null, recordDefaults: null };
+    if (!res.ok) return { schema: null, inferenceDefaults: null, recordDefaults: null, coref: null };
     const body = await res.json();
     return {
       schema: body.schema ?? null,
       inferenceDefaults: body.inference_defaults ?? null,
       recordDefaults: body.record_defaults ?? null,
+      coref: body.coref ?? null,
     };
   } catch {
-    return { schema: null, inferenceDefaults: null, recordDefaults: null };
+    return { schema: null, inferenceDefaults: null, recordDefaults: null, coref: null };
   }
 }
 
@@ -175,6 +177,8 @@ export type PredictionRecord = {
   unlocated: string[];
   f1: Record<string, number>;
   diffs: PredictionDiff[];
+  // False when the prediction file has gold clusters but output has no coref_clusters key.
+  entity_coref_decoded?: boolean;
 };
 
 // One reason a gold or predicted item does not match (backend diffs.py), grouped over occurrences.

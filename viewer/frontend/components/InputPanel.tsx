@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { importUrl } from "@/lib/api";
-import type { ExtractOptions, ExtractResponse, ModelEntry } from "@/lib/types";
+import type { CorefInfo, ExtractOptions, ExtractResponse, ModelEntry } from "@/lib/types";
 
 type Props = {
   text: string;
@@ -17,9 +17,26 @@ type Props = {
   resultData: ExtractResponse | null;
   resultSchema?: Record<string, any> | null;
   onLoadResults: (snap: any) => void;
+  coref?: CorefInfo | null;
 };
 
-export default function InputPanel({ text, setText, options, setOptions, loading, schemaLoading, onExtract, models, onManage, resultData, resultSchema, onLoadResults }: Props) {
+function CorefLine({ coref }: { coref: CorefInfo }) {
+  const link = coref.record_coref_link
+    ? "The trigger link is trained."
+    : "This checkpoint has no trigger link.";
+  const merge = coref.record_merge_coreferent === "link"
+    ? `Trigger merge is link at threshold ${coref.record_coref_link_threshold}. Extra triggers on one event are merged mentions. Arguments are the representative's. Entity mention clusters stay off unless you turn them on.`
+    : coref.record_merge_coreferent === "args"
+      ? "Trigger merge is args. That joins triggers which share a high-scoring argument. It is not TriggerLink."
+      : `Trigger merge is off. Each selected trigger is its own event. ${link} Entity mention clusters are not part of Extract unless you turn them on.`;
+  return (
+    <div className="hint" style={{ marginBottom: 8 }}>
+      {merge} Global decode joins overlapping trigger spans across windows. It is not TriggerLink.
+    </div>
+  );
+}
+
+export default function InputPanel({ text, setText, options, setOptions, loading, schemaLoading, onExtract, models, onManage, resultData, resultSchema, onLoadResults, coref }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const loadRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState("");
@@ -252,6 +269,79 @@ export default function InputPanel({ text, setText, options, setOptions, loading
             high per-op overhead). Unavailable devices fall back to auto.
           </div>
         </div>
+        {coref?.record_coref_link && (
+          <div className="field">
+            <label>
+              <input
+                type="checkbox" style={{ width: "auto", marginRight: 6 }}
+                checked={options.merge_coreferent != null}
+                onChange={(e) => {
+                  setOptions({
+                    ...options,
+                    merge_coreferent: e.target.checked ? "off" : null,
+                    coref_threshold: e.target.checked ? options.coref_threshold : null,
+                  });
+                }}
+              />
+              Override trigger merge
+            </label>
+            {options.merge_coreferent != null && (
+              <>
+                <select
+                  value={options.merge_coreferent}
+                  onChange={(e) => set("merge_coreferent", e.target.value as "off" | "link")}
+                >
+                  <option value="off">off</option>
+                  <option value="link">link</option>
+                </select>
+                {options.merge_coreferent === "link" && (
+                  <label>
+                    <input
+                      type="checkbox" style={{ width: "auto", marginRight: 6 }}
+                      checked={options.coref_threshold != null}
+                      onChange={(e) => set("coref_threshold", e.target.checked ? (coref.record_coref_link_threshold ?? 0.5) : null)}
+                    />
+                    Link threshold: {options.coref_threshold != null ? options.coref_threshold.toFixed(2) : "checkpoint"}
+                  </label>
+                )}
+                {options.merge_coreferent === "link" && options.coref_threshold != null && (
+                  <input
+                    type="range" min={0} max={1} step={0.05}
+                    value={options.coref_threshold}
+                    onChange={(e) => set("coref_threshold", parseFloat(e.target.value))}
+                  />
+                )}
+                <div className="hint">
+                  Off until you check this. Link merges same-type triggers at the threshold; arguments stay the
+                  representative&apos;s. The checkpoint value is used when the threshold box is unchecked.
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {coref?.entity_coref_link && (
+          <div className="field">
+            <label>
+              <input
+                type="checkbox" style={{ width: "auto", marginRight: 6 }}
+                checked={options.entity_coref_threshold != null}
+                onChange={(e) => set("entity_coref_threshold", e.target.checked ? 0.5 : null)}
+              />
+              Entity mention clusters{options.entity_coref_threshold != null ? `: ${options.entity_coref_threshold.toFixed(2)}` : ""}
+            </label>
+            {options.entity_coref_threshold != null && (
+              <input
+                type="range" min={0} max={1} step={0.05}
+                value={options.entity_coref_threshold}
+                onChange={(e) => set("entity_coref_threshold", parseFloat(e.target.value))}
+              />
+            )}
+            <div className="hint">
+              Off until you set a link-logit cut-off. That number is not from the checkpoint. Clusters are
+              predicted entity spans plus pronouns. They are not added as event arguments.
+            </div>
+          </div>
+        )}
         <div className="field">
           <label>Model (blank = server default)</label>
           <div className="row">
@@ -273,6 +363,7 @@ export default function InputPanel({ text, setText, options, setOptions, loading
         </div>
       </details>
 
+      {coref && <CorefLine coref={coref} />}
       <div className="field row between">
         <span className="hint">Runs the model on the backend.</span>
         <button

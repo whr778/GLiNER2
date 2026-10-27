@@ -18,6 +18,21 @@ function sideText(d: DiffSide | null): string {
 const LAYERS: Layer[] = ["entities", "events", "relations", "coref"];
 const LAYER_KEY: Record<Layer, string> = { entities: "entities", events: "event_extraction", relations: "relation_extraction", coref: "coref_clusters" };
 const HEADS = ["entity", "event_trigger", "event_argument", "relation"];
+const STRICT = new Set(HEADS);
+const CLUSTER = ["event_cluster", "event_cluster_argument"];
+
+function f1Text(f1: Record<string, number>): string {
+  const parts: string[] = [];
+  const strict = HEADS.filter((h) => h in f1).map((h) => `${h} ${f1[h].toFixed(3)}`);
+  if (strict.length) parts.push(`strict micro F1 ${strict.join(" · ")}`);
+  if ("coref" in f1) parts.push(`mention-pair F1 coref ${f1.coref.toFixed(3)}`);
+  const cluster = CLUSTER.filter((h) => h in f1).map((h) => `${h} ${f1[h].toFixed(3)}`);
+  if (cluster.length) parts.push(`cluster F1 ${cluster.join(" · ")}`);
+  for (const [h, v] of Object.entries(f1)) {
+    if (!STRICT.has(h) && h !== "coref" && !CLUSTER.includes(h)) parts.push(`${h} ${v.toFixed(3)}`);
+  }
+  return parts.join(" · ") || "nothing to score";
+}
 const PATH_KEY = "predictions.path";
 
 function hasLayer(r: Record<string, any>, l: Layer): boolean {
@@ -67,6 +82,11 @@ export default function PredictionsPanel() {
     return [...rs].sort((a, b) => f(a) - f(b) || a.i - b.i).map((r) => r.i);
   }, [summary, order]);
   const index = sequence[pos];
+  const scoreHeads = useMemo(() => {
+    const heads = [...HEADS];
+    if (summary?.records.some((r) => "coref" in (r.f1 || {}))) heads.push("coref");
+    return heads;
+  }, [summary]);
 
   useEffect(() => {
     if (!summary || index === undefined) return;
@@ -154,7 +174,7 @@ export default function PredictionsPanel() {
                     disabled={pos >= sequence.length - 1}>Next</button>
             <select value={order} onChange={(e) => { setOrder(e.target.value); setPos(0); }}>
               <option value="file">file order</option>
-              {HEADS.map((h) => <option key={h} value={h}>worst {h} F1 first</option>)}
+              {scoreHeads.map((h) => <option key={h} value={h}>worst {h} F1 first</option>)}
             </select>
             <label className="hint"><input type="checkbox" checked={showGold} onChange={(e) => setShowGold(e.target.checked)} /> show gold</label>
             <label className="hint"><input type="checkbox" checked={diffOnly} onChange={(e) => setDiffOnly(e.target.checked)} /> differences only</label>
@@ -176,7 +196,7 @@ export default function PredictionsPanel() {
           </div>
           <div className="hint" style={{ marginBottom: 8 }}>
             {rec.has_gold
-              ? <>Strict F1 this record: {Object.entries(rec.f1).map(([h, v]) => `${h} ${v.toFixed(3)}`).join(" · ") || "nothing to score"}</>
+              ? <>This record: {f1Text(rec.f1)}</>
               : rec.data_row ? "Data file: the record's stored annotations (gold), placed as training places them."
               : "No gold in this record: predictions only."}
           </div>
@@ -187,12 +207,18 @@ export default function PredictionsPanel() {
               prediction not in gold. Click an event or relation span to cycle its mentions (pred / gold).
             </div>
           )}
+          {("event_cluster" in rec.f1 || "event_cluster_argument" in rec.f1) && (
+            <div className="hint" style={{ marginBottom: 8 }}>
+              Strict event-argument F1 keys the whole trigger set. Cluster F1 matches a gold event on one shared
+              trigger mention, then scores arguments inside that pair. More than one trigger on an event is not,
+              by itself, a TriggerLink merge.
+            </div>
+          )}
           {layer === "coref" && (
             <div className="hint" style={{ marginBottom: 8 }}>
-              Coref: one colour per entity cluster (C1, C2, ...; singletons hidden); hover a mention to join its
-              cluster. Gold rim solid = most of the mention&apos;s cluster-mates are its mates in gold too; a merge
-              of two entities leaves its smaller side (or both, if even) unmatched. Record F1 &quot;coref&quot; is
-              mention-pair F1.
+              {rec.entity_coref_decoded === false
+                ? "Gold entity-mention clusters are shown. This file has no predicted coref_clusters, so mention-pair F1 is not scored. These are not event arguments."
+                : "Coref: one colour per entity cluster (C1, C2, ...; singletons hidden); hover a mention to join its cluster. Gold rim solid = most of the mention's cluster-mates are its mates in gold too; a merge of two entities leaves its smaller side (or both, if even) unmatched. The coref number is mention-pair F1."}
             </div>
           )}
           <AnnotatedText text={rec.text} marks={marks} layer={layer} activeEid={pinned} onSelectEid={setPinned} />

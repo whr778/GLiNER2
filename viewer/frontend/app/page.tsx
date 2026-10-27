@@ -12,6 +12,7 @@ import { matchCorpusPreset } from "@/lib/models";
 import { MODEL_PRESET_VALUE, pruneSchema, scaffoldSchema } from "@/lib/schema";
 import {
   DEFAULT_OPTIONS,
+  type CorefInfo,
   type ExtractOptions,
   type ExtractResponse,
   type ModelEntry,
@@ -39,6 +40,7 @@ export default function Home() {
   const [schemaNote, setSchemaNote] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
   const [modelPreset, setModelPreset] = useState<Record<string, any> | null>(null);
+  const [coref, setCoref] = useState<CorefInfo | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const appliedModel = useRef<string | null>(null);
 
@@ -54,20 +56,29 @@ export default function Home() {
   // preset or edit the JSON below.
   useEffect(() => {
     const m = options.model?.trim();
-    if (!m || m === appliedModel.current) return;
+    if (!m) {
+      setCoref(null);
+      return;
+    }
+    if (m === appliedModel.current) return;
     let cancelled = false;
     setSchemaLoading(true); // disable extraction until this model's schema resolves
     (async () => {
-      const { schema: shipped, inferenceDefaults, recordDefaults } = await getModelSchema(m);
+      const { schema: shipped, inferenceDefaults, recordDefaults, coref: shippedCoref } = await getModelSchema(m);
       if (cancelled) return;
       setSchemaLoading(false); // network resolved; the schema apply below is synchronous
+      setCoref(shippedCoref);
       // Decode the way this model was evaluated; the user can still move the controls.
       // Record/argument gates start at the model's own values (null = follow threshold).
+      // Merge and entity-cluster overrides stay off until the user turns them on.
       setOptions((o) => ({
         ...o,
         ...(inferenceDefaults ?? {}),
         record_threshold: recordDefaults?.record_threshold ?? null,
         argument_threshold: recordDefaults?.argument_threshold ?? null,
+        merge_coreferent: null,
+        coref_threshold: null,
+        entity_coref_threshold: null,
       }));
       if (shipped && Object.keys(shipped).length > 0) {
         // Open-vocab task types ship as an `open_vocab` marker; scaffold them into
@@ -177,6 +188,7 @@ export default function Home() {
             resultData={resp}
             resultSchema={usedSchema}
             onLoadResults={onLoadResults}
+            coref={coref}
           />
           <SchemaPanel
             presets={presets}

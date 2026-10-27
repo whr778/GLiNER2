@@ -37,6 +37,16 @@ def test_argument_without_entity_gets_one_typed_derived_entity():
     assert all(d["id"] != sp["id"] for v in p["entities"].values() for sp in v)
 
 
+def test_a_float_confidence_argument_is_skipped_instead_of_raising():
+    p = _pred()
+    p["event_extraction"]["Attack"][0]["arguments"].append({"role": "confidence", "entity": 0.81})
+    linked = link_arguments(p)
+    roles = [a["role"] for a in linked["event_extraction"]["Attack"][0]["arguments"]]
+    assert roles == ["Attacker", "Place", "confidence"]
+    assert "entity_id" not in linked["event_extraction"]["Attack"][0]["arguments"][-1]
+    assert linked["event_extraction"]["Attack"][0]["arguments"][0]["entity_id"]
+
+
 def test_unmapped_role_derives_untyped():
     assert link_arguments(_pred())["derived_entities"][0]["types"] == []
 

@@ -23,14 +23,18 @@ function asSpan(x: any): Span | null {
     : null;
 }
 
-// Reserved top-level keys with a known shape.
-export const KNOWN_KEYS = new Set(["entities", "event_extraction", "relation_extraction"]);
+// Reserved top-level keys with a known shape. coref_clusters is entity-mention clusters,
+// not a structure and not event arguments.
+export const KNOWN_KEYS = new Set(["entities", "event_extraction", "relation_extraction", "coref_clusters"]);
 
 export function availableLayers(result: ExtractionResult): Layer[] {
   const layers: Layer[] = [];
   if (result.entities && Object.keys(result.entities).length) layers.push("entities");
   if (result.event_extraction && Object.keys(result.event_extraction).length) layers.push("events");
   if (result.relation_extraction && Object.keys(result.relation_extraction).length) layers.push("relations");
+  if (Array.isArray(result.coref_clusters) && result.coref_clusters.some((c) => Array.isArray(c) && c.length > 1)) {
+    layers.push("coref");
+  }
   return layers;
 }
 
@@ -46,6 +50,23 @@ export function schemaLayers(schema: Record<string, any> | null | undefined): La
     if (has(schema.relations)) layers.push("relations");
   }
   return layers;
+}
+
+// Tabs for Extract: the schema's tasks, plus entity-mention clusters when the
+// result carries coref_clusters (including an empty list, so a request that
+// found none still shows the empty state).
+export function viewLayers(schema: Record<string, any> | null | undefined, result: ExtractionResult): Layer[] {
+  const requested = schemaLayers(schema);
+  const layers = requested.length ? [...requested] : availableLayers(result).filter((l) => l !== "coref");
+  if (Array.isArray(result?.coref_clusters) && !layers.includes("coref")) layers.push("coref");
+  return layers;
+}
+
+// Row label for one event. Several triggers are several mentions of that one event.
+// The count does not say whether TriggerLink merged them.
+export function eventTriggerLabel(triggerCount: number, mentionCount: number, mentionIndex: number): string {
+  if (triggerCount > 1) return `${triggerCount} trigger mentions, one event`;
+  return mentionCount > 1 ? `trigger #${mentionIndex + 1}` : "trigger";
 }
 
 // Entity id -> "e12 Person, GPE"; a derived entity (an argument with no entity on its span) is

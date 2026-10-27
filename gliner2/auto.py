@@ -171,6 +171,10 @@ class AutoExtractor:
             )
 
         model_class = cls._resolve_class(requested_architecture)
+        # revision and token stay on the config fetch. subfolder has to follow the
+        # weights: they live beside config.json, not at the Hub repo root.
+        if "subfolder" in hub_kwargs:
+            model_kwargs = {**model_kwargs, "subfolder": hub_kwargs["subfolder"]}
         return model_class.from_pretrained(
             pretrained_model_name_or_path,
             *model_args,

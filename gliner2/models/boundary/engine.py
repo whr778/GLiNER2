@@ -134,7 +134,9 @@ def _record_instances_to_events(
         triggers = anchor if isinstance(anchor, list) else ([anchor] if anchor else [])
         arguments: List[Dict[str, Any]] = []
         for name, value in instance.items():
-            if name == anchor_name:
+            # include_confidence writes the instance score on this key. It is not a role;
+            # leaving it here emits {"role": "confidence", "entity": 0.81}.
+            if name == anchor_name or name == "confidence":
                 continue
             for filler in (value if isinstance(value, list) else [value]):
                 if filler:

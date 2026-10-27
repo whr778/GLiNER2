@@ -122,6 +122,25 @@ def pop_disentangled_flash_options(
     return options
 
 
+def tokenizer_load_target(
+    repo_or_dir: str,
+    hub_kwargs: Mapping[str, Any] | None = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """Tokenizer path plus the Hub kwargs ``AutoTokenizer`` must see.
+
+    A local subfolder is a joined directory. A Hub subfolder stays a keyword:
+    ``namespace/name/subfolder`` is not a repo id, and the tokenizer files sit
+    next to ``config.json``.
+    """
+    subfolder = dict(hub_kwargs or {}).get("subfolder")
+    source = str(repo_or_dir)
+    if not subfolder:
+        return source, {}
+    if os.path.isdir(source):
+        return os.path.join(source, str(subfolder)), {}
+    return source, {"subfolder": subfolder}
+
+
 def checkpoint_file(
     repo_or_dir: str,
     filename: str,

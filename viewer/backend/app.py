@@ -17,7 +17,7 @@ import os
 import threading
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,12 +60,18 @@ def get_model(model_id: str, device: Optional[str] = None):
     # AutoExtractor; this loader was the last span-only path in the viewer.
     from gliner2 import AutoExtractor
 
+    from models import hub_load_kwargs
+
     map_location = _map_location(device)
-    key = (model_id, map_location or "auto")  # cache one copy per (model, device)
+    extra = hub_load_kwargs(model_id)
+    key = (model_id, extra.get("subfolder", ""), map_location or "auto")
     if key not in _models:
-        model = AutoExtractor.from_pretrained(model_id, map_location=map_location)
+        model = AutoExtractor.from_pretrained(model_id, map_location=map_location, **extra)
         dev = next(model.parameters()).device
-        logger.info("Loaded model %s on device %s (requested %s)", model_id, dev, device or "auto")
+        logger.info(
+            "Loaded model %s subfolder=%s on device %s (requested %s)",
+            model_id, extra.get("subfolder") or "<root>", dev, device or "auto",
+        )
         _models[key] = model
     return _models[key]
 
@@ -98,6 +104,11 @@ class Options(BaseModel):
     # the span threshold. None = the model's own setting (its checkpoint config).
     record_threshold: Optional[float] = None
     argument_threshold: Optional[float] = None
+    # None keeps the checkpoint. Same fields as infer.py --merge-coreferent / --coref-threshold.
+    merge_coreferent: Optional[Literal["off", "args", "link"]] = None
+    coref_threshold: Optional[float] = None
+    # None leaves entity mention clusters out of the result. A number runs the mention link.
+    entity_coref_threshold: Optional[float] = None
 
 
 class ExtractRequest(BaseModel):
@@ -159,10 +170,17 @@ def _declare_records(input_schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _GATE_LOCK = threading.Lock()
+# apply_boundary_overrides only writes keys. A checkpoint that omitted one
+# has to have that key removed again, or the override stays on the cached model.
+_DROP = object()
 
 
 def _gate_overrides(options: "Options") -> Dict[str, Any]:
-    """Boundary-head overrides for this request's record and argument gates (TODO 19/22)."""
+    """Boundary-head overrides for this request's record and argument gates (TODO 19/22).
+
+    Merge fields match ``infer.py --merge-coreferent`` and ``--coref-threshold``.
+    None leaves the checkpoint's ``record_merge_coreferent`` and threshold.
+    """
     ov: Dict[str, Any] = {}
     if options.record_threshold is not None:
         ov.update(record_anchor_threshold=options.record_threshold,
@@ -170,17 +188,55 @@ def _gate_overrides(options: "Options") -> Dict[str, Any]:
                   record_anchor_threshold_wins=True)
     if options.argument_threshold is not None:
         ov.update(record_field_threshold=options.argument_threshold, record_field_threshold_wins=True)
+    if options.merge_coreferent is not None:
+        ov["record_merge_coreferent"] = options.merge_coreferent
+    if options.coref_threshold is not None:
+        ov["record_coref_link_threshold"] = options.coref_threshold
     return ov
 
 
+def _attach_entity_coref(model, text: str, result: Dict[str, Any], threshold: float) -> Dict[str, Any]:
+    """Cluster predicted entity spans and pronouns with the trained mention link.
+
+    The same call as ``infer.py --entity-coref``: multi-mention clusters only.
+    It does not add those mentions as event-argument fillers.
+    """
+    if getattr(model, "mention_link", None) is None:
+        raise HTTPException(
+            status_code=422,
+            detail="entity mention clusters need a checkpoint with a trained mention link",
+        )
+    from gliner2.inference.entity_coref import candidate_mentions, resolve
+
+    mentions = candidate_mentions(text, result.get("entities"))
+    result["coref_clusters"] = [
+        c for c in resolve(model, text, mentions, threshold) if len(c) > 1
+    ]
+    return result
+
+
 def _apply_gates(model, gates: Dict[str, Any]) -> Dict[str, Any]:
-    """Apply gates to a boundary model; return the overrides that restore its prior state."""
+    """Apply gates to a boundary model; return the overrides that restore its prior state.
+
+    A key the checkpoint did not have is returned as ``_DROP``. The restore call
+    removes it and rebuilds the head, because ``apply_boundary_overrides`` cannot
+    delete a key it just wrote.
+    """
     current = getattr(model.config, "boundary_head", None)
     if not gates or not current:
         return {}
     from gliner2.training.eval_metrics import apply_boundary_overrides
-    restore = {k: current.get(k) for k in gates if k in current}
-    apply_boundary_overrides(model, gates)
+    drops = [k for k, v in gates.items() if v is _DROP]
+    present = {k: v for k, v in gates.items() if v is not _DROP}
+    if drops:
+        current = {k: v for k, v in current.items() if k not in drops}
+        model.config.boundary_head = current
+    restore = {k: current[k] if k in current else _DROP for k in present}
+    if present:
+        apply_boundary_overrides(model, present)
+    elif drops and current:
+        key = next(iter(current))
+        apply_boundary_overrides(model, {key: current[key]})
     return restore
 
 
@@ -216,6 +272,13 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
     except Exception as e:  # noqa: BLE001 - surface schema errors to the client
         raise HTTPException(status_code=422, detail=f"invalid schema: {e}") from e
     gates = _gate_overrides(req.options)
+    if req.options.merge_coreferent == "link":
+        bh = getattr(model.config, "boundary_head", None) or {}
+        if not bh.get("record_coref_link"):
+            raise HTTPException(
+                status_code=422,
+                detail="trigger merge link needs a checkpoint trained with record_coref_link",
+            )
     try:
         # The cached model is shared across requests: apply this request's gates, extract,
         # and restore, under one lock so a concurrent request never sees another's gates.
@@ -235,6 +298,11 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
                 )[0]
             finally:
                 _apply_gates(model, restore)
+            if req.options.entity_coref_threshold is not None:
+                result = _attach_entity_coref(
+                    model, req.text, result, req.options.entity_coref_threshold)
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001 - surface extraction errors to the client
         raise HTTPException(status_code=500, detail=f"extraction failed: {e}") from e
     device = str(next(model.parameters()).device)
@@ -284,8 +352,9 @@ def model_schema(model: str) -> Dict[str, Any]:
     corpus-name matching.
     """
     from gliner2.configuration import ExtractorConfig
+    from models import hub_load_kwargs
 
-    cfg = ExtractorConfig.from_pretrained(model)
+    cfg = ExtractorConfig.from_pretrained(model, **hub_load_kwargs(model))
     bh = getattr(cfg, "boundary_head", None) or {}
     return {"model": model, "schema": getattr(cfg, "default_schema", None),
             # The model's own gates; None means "follows the span threshold".
@@ -293,6 +362,13 @@ def model_schema(model: str) -> Dict[str, Any]:
                 "record_threshold": bh.get("record_anchor_threshold") if bh.get("record_anchor_threshold_wins") else None,
                 "argument_threshold": bh.get("record_field_threshold") if bh.get("record_field_threshold_wins") else None,
                 "boundary": bool(bh)},
+            # Absent merge mode is off. The threshold default is the head's own 0.5.
+            "coref": {
+                "record_merge_coreferent": bh.get("record_merge_coreferent") or "off",
+                "record_coref_link": bool(bh.get("record_coref_link")),
+                "record_coref_link_threshold": float(bh.get("record_coref_link_threshold", 0.5)),
+                "entity_coref_link": bool(bh.get("entity_coref_link")),
+            },
             "inference_defaults": getattr(cfg, "inference_defaults", None),
             "has_label_map": bool(getattr(cfg, "label_map", None))}
 

@@ -1,5 +1,9 @@
 # Python (backend)
 .venv/
+# uv interpreter pin. Root .gitignore ignores .python-version (pyenv); this
+# one must stay. mps-flash-attn==0.6.1 has no cp315 wheel, and an unpinned
+# `uv run` rebuilds .venv on Homebrew python3 (3.15) and never starts.
+!backend/.python-version
 __pycache__/
 *.pyc
 

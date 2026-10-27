@@ -40,6 +40,18 @@ export type ExtractOptions = {
   // the model's own setting, which by default follows `threshold`.
   record_threshold?: number | null;
   argument_threshold?: number | null;
+  // null = the checkpoint's record_merge_coreferent and threshold. Set only when the user overrides.
+  merge_coreferent?: "off" | "args" | "link" | null;
+  coref_threshold?: number | null;
+  // null = do not cluster entity mentions. A number is the link-logit cut-off the user set.
+  entity_coref_threshold?: number | null;
+};
+
+export type CorefInfo = {
+  record_merge_coreferent: string;
+  record_coref_link: boolean;
+  record_coref_link_threshold: number;
+  entity_coref_link: boolean;
 };
 
 export const DEFAULT_OPTIONS: ExtractOptions = {
@@ -52,6 +64,9 @@ export const DEFAULT_OPTIONS: ExtractOptions = {
   device: "auto",
   record_threshold: null,
   argument_threshold: null,
+  merge_coreferent: null,
+  coref_threshold: null,
+  entity_coref_threshold: null,
 };
 
 export type ExtractResponse = {

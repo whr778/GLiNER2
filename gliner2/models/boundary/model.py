@@ -40,6 +40,7 @@ from gliner2.models.loading import (
     apply_post_load_options,
     checkpoint_file,
     load_checkpoint_state_dict,
+    tokenizer_load_target,
     pop_attention_backend,
     pop_disentangled_flash_options,
     reconcile_encoder_embeddings,
@@ -2906,12 +2907,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 repo_or_dir, "encoder_config/config.json", hub_kwargs
             )
         )
-        tokenizer_source = repo_or_dir
-        if os.path.isdir(str(repo_or_dir)) and hub_kwargs.get("subfolder"):
-            tokenizer_source = os.path.join(
-                str(repo_or_dir), str(hub_kwargs["subfolder"])
-            )
-        tokenizer = load_extractor_tokenizer(tokenizer_source)
+        tokenizer_source, tokenizer_kwargs = tokenizer_load_target(repo_or_dir, hub_kwargs)
+        tokenizer = load_extractor_tokenizer(tokenizer_source, **tokenizer_kwargs)
         model = cls(
             config,
             encoder_config=encoder_config,

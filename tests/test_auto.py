@@ -157,6 +157,38 @@ def test_hub_options_are_used_for_config_but_not_forwarded(monkeypatch):
     )
 
 
+def test_subfolder_is_forwarded_to_the_architecture_loader(monkeypatch):
+    import gliner2.auto as auto_module
+
+    captured = {}
+
+    class DummySpan:
+        @classmethod
+        def from_pretrained(cls, path, *args, **kwargs):
+            captured["model"] = kwargs
+            return object()
+
+    config = ExtractorConfig(model_name="unused")
+
+    def fake_load_config(path, hub_kwargs):
+        captured["config"] = hub_kwargs
+        return config
+
+    monkeypatch.setattr(auto_module, "_load_config", fake_load_config)
+    monkeypatch.setattr(AutoExtractor, "_registry", {"span": DummySpan})
+    monkeypatch.setattr(auto_module, "_ensure_registered", lambda: None)
+
+    AutoExtractor.from_pretrained(
+        "whr778/gliner2-eb22d-trace-epoch",
+        subfolder="checkpoint-epoch-1",
+        map_location="cpu",
+    )
+
+    assert captured["config"] == {"subfolder": "checkpoint-epoch-1"}
+    assert captured["model"]["subfolder"] == "checkpoint-epoch-1"
+    assert captured["model"]["map_location"] == "cpu"
+
+
 def test_from_config_forwards_word_splitter(tiny_tokenizer, tiny_encoder_config):
     from gliner2.processor import CharLevelSplitter, WhitespaceTokenSplitter
 

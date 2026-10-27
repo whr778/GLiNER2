@@ -35,7 +35,9 @@ def link_arguments(pred: Dict[str, Any], role_types: Optional[Dict[str, Dict[str
     role_types = role_types or {}
     ents = [sp for spans in (pred.get("entities") or {}).values() for sp in spans or []]
     args = [(etype, a) for etype, ms in (pred.get("event_extraction") or {}).items()
-            for m in ms or [] for a in m.get("arguments") or []]
+            for m in ms or [] for a in m.get("arguments") or []
+            if isinstance(a, dict) and isinstance(a.get("entity"), dict)
+            and "start" in a["entity"] and "end" in a["entity"]]
     spans = sorted({_key(sp) for sp in ents} | {_key(a["entity"]) for _, a in args})
     ids = {s: f"e{i + 1}" for i, s in enumerate(spans)}
     for sp in ents:

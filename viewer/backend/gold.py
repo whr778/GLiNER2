@@ -230,14 +230,20 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     _mark_events(g["event_extraction"], M._pred_event_trigger_set(pred), M._pred_event_argument_set(pred))
     _mark_relations(pred.get("relation_extraction") or {}, M._gold_relation_set(gold))
     _mark_relations(g["relation_extraction"], M._pred_relation_set(pred))
-    if pred.get("coref_clusters") or row.get("gold_coref"):
-        pred["coref_clusters"] = coref_view(pred.get("coref_clusters"))
+    # Score coref BEFORE writing the view onto pred: a missing key must stay missing.
+    # An empty list is a decode that found no multi-mention cluster and is scored.
+    decoded = "coref_clusters" in pred
+    f1 = _f1(gold, pred, row.get("gold_coref"))
+    if decoded or row.get("gold_coref"):
         g["coref_clusters"] = coref_view(row.get("gold_coref"))
-        _mark_coref(pred["coref_clusters"], g["coref_clusters"])
-        _mark_coref(g["coref_clusters"], pred["coref_clusters"])
+        if decoded:
+            pred["coref_clusters"] = coref_view(pred.get("coref_clusters"))
+            _mark_coref(pred["coref_clusters"], g["coref_clusters"])
+            _mark_coref(g["coref_clusters"], pred["coref_clusters"])
     view = {"text": text, "pred": pred, "gold": g, "has_gold": bool(gold) or bool(g.get("coref_clusters")),
+            "entity_coref_decoded": decoded,
             "classifications": _classifications(gold, pred),
-            "unlocated": sorted(set(missed)), "f1": _f1(gold, pred, row.get("gold_coref"))}
+            "unlocated": sorted(set(missed)), "f1": f1}
     view["diffs"] = diffs.annotate(view) if gold else []
     link_arguments(pred, _ROLE_TYPES)
     link_arguments(g, _ROLE_TYPES)
@@ -260,17 +266,71 @@ def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
             "classifications": [], "unlocated": sorted(set(missed)), "f1": {}, "diffs": []}
 
 
+def _trigger_texts(triggers: Any) -> List[str]:
+    out = []
+    for trigger in triggers or []:
+        if isinstance(trigger, dict):
+            trigger = trigger.get("text")
+        if isinstance(trigger, str) and trigger.strip():
+            out.append(trigger.strip())
+    return out
+
+
+def _multi_trigger(gold: Dict[str, Any], pred: Dict[str, Any]) -> bool:
+    """True when any gold or predicted event lists more than one trigger mention."""
+    for ev in gold.get("events") or []:
+        if isinstance(ev, dict) and len(_trigger_texts(ev.get("triggers"))) > 1:
+            return True
+    block = pred.get("event_extraction") or {}
+    if isinstance(block, dict):
+        for mentions in block.values():
+            if not isinstance(mentions, list):
+                continue
+            for ev in mentions:
+                if isinstance(ev, dict) and len(_trigger_texts(ev.get("triggers"))) > 1:
+                    return True
+    return False
+
+
+def _cluster_f1(gold: Dict[str, Any], pred: Dict[str, Any]) -> Dict[str, float]:
+    """Cluster F1 for one record, from the scorer's own cluster tally.
+
+    Strict event-argument F1 keys the whole trigger set. Cluster F1 matches a
+    predicted event to a gold event on one shared trigger, then scores arguments
+    inside that pair. Added only when some event has more than one trigger.
+    """
+    ecl, ecla = M._counters(), M._counters()
+    g_cl, p_cl = M._gold_event_clusters(gold), M._pred_event_clusters(pred)
+    if not g_cl and not p_cl:
+        return {}
+    M._tally_event_clusters(g_cl, p_cl, ecl, ecla)
+    out = {}
+    for name, counters in (("event_cluster", ecl), ("event_cluster_argument", ecla)):
+        tp, fp, fn = (sum(c.values()) for c in counters)
+        if tp or fp or fn:
+            out[name] = round(M._pr_f1(tp, fp, fn)[2], 4)
+    return out
+
+
 def _f1(gold: Dict[str, Any], pred: Dict[str, Any], gold_coref: Any = None) -> Dict[str, float]:
-    """Strict F1 of this one record per head, from the scorer's own sets; ``coref`` is mention-pair F1."""
+    """Strict micro F1 of this one record per head, from the scorer's own sets.
+
+    ``coref`` is mention-pair F1, and only when ``pred`` actually contains
+    ``coref_clusters`` (including an empty list). A missing key was not decoded.
+    ``event_cluster`` and ``event_cluster_argument`` are cluster F1, added when
+    any event has more than one trigger.
+    """
     pairs = {"entity": (M._gold_entity_set(gold), M._pred_entity_set(pred)),
              "event_trigger": (M._gold_event_trigger_set(gold), M._pred_event_trigger_set(pred)),
              "event_argument": (M._gold_event_argument_set(gold), M._pred_event_argument_set(pred)),
              "relation": (M._gold_relation_set(gold), M._pred_relation_set(pred))} if gold else {}
-    if gold_coref or pred.get("coref_clusters"):
+    if "coref_clusters" in pred and (gold_coref or pred.get("coref_clusters")):
         pairs["coref"] = (coref_pairs(gold_coref), coref_pairs(pred.get("coref_clusters")))
     out = {}
     for head, (g, p) in pairs.items():
         if g or p:
             tp = len(g & p)
             out[head] = round(2 * tp / (len(g) + len(p)), 4)
+    if gold and _multi_trigger(gold, pred):
+        out.update(_cluster_f1(gold, pred))
     return out
