@@ -1,22 +1,24 @@
-# Life trace of the eb22d event path on one fully readable corpus.
-# Encoder is mDeBERTa-v3, not mmBERT: the laptop trace has to fit, and flash
-# attention is not available on MPS. Budgets are smaller than eb22d-trace so a
-# single document fits; the event path (natural records, junction, coref link,
-# argument-coref expansion, identity gold) is the eb22d path.
-# Data is WikiEvents only. The traced document is chosen by the life script
-# from data/wikievents.dev.jsonl (the Kandahar item: every argument surface
-# sits in a coref cluster). Negatives are drawn from data/wikievents.train.jsonl.
+# WikiEvents event training on mDeBERTa-v3.
+# The encoder position limit is 512, so documents are windowed. The train
+# median is 2977 characters. The event head is the eb22d head.
+# record_merge_coreferent stays unset, so decode stays off. It does not
+# enter the record loss. The args merge was measured negative, and link is
+# a calibration after training.
+# Train gold is the offset file: a string binds every occurrence of those
+# words. After argument-coref expansion the largest role has 284 fillers
+# (61 roles exceed 32), so the gold budget is 384. Val and test are the
+# string splits. The scorer matches text.
 model:
   encoder: microsoft/mdeberta-v3-base
   architecture: boundary
   max_len: 512
   attn_implementation: sdpa
   boundary_head:
-    max_gold_per_query: 32
-    training_candidate_budget: 128
-    candidate_budget: 64
-    start_top_k: 64
-    end_top_k: 64
+    max_gold_per_query: 384
+    training_candidate_budget: 384
+    candidate_budget: 192
+    start_top_k: 128
+    end_top_k: 128
     candidate_pool: per_query
     enable_relations: true
     enable_records: true
@@ -29,9 +31,6 @@ model:
     record_coref_link: true
     record_coref_link_weight: 0.3
     record_coref_link_negatives: 4
-    # Decode only. The record loss does not read this. The life script still
-    # decodes off, args, and link on the same document.
-    record_merge_coreferent: link
     relation_biaffine_content: true
     directional_relation_states: true
     enable_span_content: true
@@ -60,12 +59,17 @@ training:
     entities: 20
     events: 20
   negative_label_seed: 42
+  # The default drops event types. This corpus is 199 documents.
+  schema_dropout: false
+  gold_injection_start: 1.0
+  gold_injection_end: 0.25
+  gold_injection_hold_frac: 0.15
   output_dir: /Volumes/Development/tmp/life-mdeberta-wikievents
   experiment_name: life-mdeberta-wikievents
   data_parallel: false
-  num_epochs: 1
+  num_epochs: 5
   batch_size: 1
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 16
   encoder_lr: 2.0e-05
   task_lr: 0.0005
   warmup_ratio: 0.05
@@ -73,14 +77,19 @@ training:
   bf16: false
   fp16: false
   max_grad_norm: 1.0
-  eval_strategy: "no"
-  logging_steps: 1
+  eval_strategy: epoch
+  metric_for_best: eval_overall_strict_head_min_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 6
+  save_epoch_checkpoint: true
+  logging_steps: 20
   num_workers: 0
   validate_data: true
   sliding_window: true
   window_stride: 384
   max_len: 512
-  gradient_checkpointing: false
+  gradient_checkpointing: true
   pin_memory: false
   early_stopping: false
   error_policy: raise
@@ -91,8 +100,16 @@ training:
 eval:
   batch_size: 1
   threshold: 0.3
-  metric_sweep: false
+  threshold_sweep: true
+  metric_sweep: true
+  global_decode: true
 labels_file: labels/unified-full-v4.yaml
 data:
   corpora:
-  - data/wikievents
+  - data/wikievents_off
+  train_only:
+  - wikievents_off
+  event_files:
+    wikievents:
+      val: data/wikievents.dev.jsonl
+      test: data/wikievents.test.jsonl
