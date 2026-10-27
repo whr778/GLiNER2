@@ -987,6 +987,7 @@ def decode_group(
     ]
     coref_members: Dict[int, List[int]] = {}
     merge_coreferent = {True: "args", False: "off"}.get(merge_coreferent, merge_coreferent)
+    n_selected_before = len(selected_instances)
     if merge_coreferent != "off" and group.spec.mode == "natural" and len(selected_instances) > 1:
         if merge_coreferent == "link":
             # A merge the setting promises and the model cannot do must fail LOUDLY: traced 2026-10-06,
@@ -999,6 +1000,29 @@ def decode_group(
         elif merge_coreferent == "args":
             selected_instances, coref_members = _merge_coreferent_instances(
                 group, selected_instances, field_threshold, temperature)
+    # #region agent log
+    try:
+        import json as _json, time as _time
+        _max = None
+        if group.coref_logits is not None:
+            _max = round(float(torch.sigmoid(group.coref_logits.detach()).max()), 4)
+        with open("/Users/williamroe/development/git/GLiNER2/.cursor/debug-834c72.log", "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "834c72", "runId": "life1", "hypothesisId": "M",
+                "location": "records.py:decode_group", "message": "merge",
+                "data": {
+                    "spec_mode": group.spec.mode, "merge": merge_coreferent,
+                    "num_instances": ni, "selected_before": n_selected_before,
+                    "selected_after": len(selected_instances),
+                    "member_groups": len(coref_members),
+                    "members": sum(len(v) for v in coref_members.values()),
+                    "coref_logits": group.coref_logits is not None, "coref_max": _max,
+                },
+                "timestamp": int(_time.time() * 1000),
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # #endregion
 
     # Exclusive fields are a global assignment problem: greedily letting the
     # highest-object instance claim its favorite candidate can force later

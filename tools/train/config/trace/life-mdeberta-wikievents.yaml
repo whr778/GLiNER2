@@ -1,0 +1,98 @@
+# Life trace of the eb22d event path on one fully readable corpus.
+# Encoder is mDeBERTa-v3, not mmBERT: the laptop trace has to fit, and flash
+# attention is not available on MPS. Budgets are smaller than eb22d-trace so a
+# single document fits; the event path (natural records, junction, coref link,
+# argument-coref expansion, identity gold) is the eb22d path.
+# Data is WikiEvents only. The traced document is chosen by the life script
+# from data/wikievents.dev.jsonl (the Kandahar item: every argument surface
+# sits in a coref cluster). Negatives are drawn from data/wikievents.train.jsonl.
+model:
+  encoder: microsoft/mdeberta-v3-base
+  architecture: boundary
+  max_len: 512
+  attn_implementation: sdpa
+  boundary_head:
+    max_gold_per_query: 32
+    training_candidate_budget: 128
+    candidate_budget: 64
+    start_top_k: 64
+    end_top_k: 64
+    candidate_pool: per_query
+    enable_relations: true
+    enable_records: true
+    event_records: true
+    record_role_hard_negatives: 8
+    proposal_gold: identity
+    record_link_mode: junction
+    record_link_column_weight: 0.3
+    record_coreferent_ownership: true
+    record_coref_link: true
+    record_coref_link_weight: 0.3
+    record_coref_link_negatives: 4
+    # Decode only. The record loss does not read this. The life script still
+    # decodes off, args, and link on the same document.
+    record_merge_coreferent: link
+    relation_biaffine_content: true
+    directional_relation_states: true
+    enable_span_content: true
+    enable_rotary_endpoints: true
+    endpoint_difference_features: true
+    query_conditioned_inside_weight: true
+    boundary_attention_layers: 2
+    boundary_attention_window: 128
+    boundary_marginal_loss: bce
+    boundary_negative_weight: 0.5
+    boundary_top_k_alpha: 0.08
+    hard_negatives_per_positive: 20
+    minimum_hard_negatives: 16
+    hard_negative_keep_all_when_absent: true
+    negative_query_ratio: 1.0
+    relation_pair_cap: 64
+    relation_argument_proposal_threshold: 0.2
+    entity_coref_link: true
+    entity_coref_link_weight: 0.3
+    entity_coref_link_negatives: 4
+    coref_link_distance: mlp
+    coref_link_distance_dim: 64
+training:
+  negative_pools: auto
+  negative_labels_per_dim:
+    entities: 20
+    events: 20
+  negative_label_seed: 42
+  output_dir: /Volumes/Development/tmp/life-mdeberta-wikievents
+  experiment_name: life-mdeberta-wikievents
+  data_parallel: false
+  num_epochs: 1
+  batch_size: 1
+  gradient_accumulation_steps: 1
+  encoder_lr: 2.0e-05
+  task_lr: 0.0005
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: false
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: "no"
+  logging_steps: 1
+  num_workers: 0
+  validate_data: true
+  sliding_window: true
+  window_stride: 384
+  max_len: 512
+  gradient_checkpointing: false
+  pin_memory: false
+  early_stopping: false
+  error_policy: raise
+  on_capacity_exceeded: raise
+  negative_gold_full_roles: true
+  relation_gold_pairs: nearest
+  seed: 42
+eval:
+  batch_size: 1
+  threshold: 0.3
+  metric_sweep: false
+labels_file: labels/unified-full-v4.yaml
+data:
+  corpora:
+  - data/wikievents

@@ -1957,6 +1957,19 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         metadata = metadata or {}
         query_states_i = core["query_states"][sample_index]
         out: Dict[str, Any] = {}
+        # #region agent log
+        span_drop: Dict[str, Dict[str, Any]] = {}
+
+        def _note(name: str, key: str, prob: Optional[float] = None) -> None:
+            bucket = span_drop.setdefault(name, {
+                "spans": 0, "bounds": 0, "empty": 0, "below": 0, "other": 0, "kept": 0,
+                "max_pair": None, "min_pair": None,
+            })
+            bucket[key] = bucket.get(key, 0) + 1
+            if prob is not None:
+                bucket["max_pair"] = prob if bucket["max_pair"] is None else max(bucket["max_pair"], prob)
+                bucket["min_pair"] = prob if bucket["min_pair"] is None else min(bucket["min_pair"], prob)
+        # #endregion
 
         def _format_field(
             spans,
@@ -2063,6 +2076,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         formatted.append((surface, probability, cs, ce))
                     continue
                 if ts < 0 or te > text_len or te <= ts:
+                    # #region agent log
+                    _note(fspec.name, "spans")
+                    _note(fspec.name, "bounds")
+                    # #endregion
                     continue
                 cs, ce = token_boundaries_to_character_offsets(ts, te, start_map, end_map)
                 surface = text[cs:ce].strip()
@@ -2085,6 +2102,9 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     else candidate_probability
                 )
                 configured_threshold = field_metadata.get("threshold")
+                # #region agent log
+                _note(fspec.name, "spans", float(candidate_probability))
+                # #endregion
                 if (
                     surface
                     and (
@@ -2104,12 +2124,34 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         )
                     )
                 ):
+                    # #region agent log
+                    _note(fspec.name, "kept")
+                    # #endregion
                     formatted.append((surface, probability, cs, ce))
+                # #region agent log
+                else:
+                    if not surface:
+                        _note(fspec.name, "empty")
+                    elif fspec.allows_absent and candidate_probability < field_threshold:
+                        _note(fspec.name, "below")
+                    else:
+                        _note(fspec.name, "other")
+                # #endregion
+            # #region agent log
+            if fspec.name in span_drop:
+                span_drop[fspec.name]["after_overlap"] = None
+                span_drop[fspec.name]["thr"] = field_threshold
+                span_drop[fspec.name]["absent"] = bool(fspec.allows_absent)
+            # #endregion
             formatted = finalize_spans(
                 formatted,
                 dtype="str" if is_scalar else "list",
                 overlap_policy=self._resolved_overlap_policy(overlap_policy),
             )
+            # #region agent log
+            if fspec.name in span_drop:
+                span_drop[fspec.name]["after_overlap"] = len(formatted)
+            # #endregion
             if choices:
                 anchor_char_spans = []
                 for anchor_span in record_anchors or ():
@@ -2229,6 +2271,15 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 merge_coreferent=settings.record_merge_coreferent,
                 coref_threshold=settings.record_coref_link_threshold,
             )
+            n_decoded = len(decoded)
+            n_prefix = sum(
+                1 for r in decoded
+                if r.anchor_span is not None and r.anchor_span[0] < offset
+            )
+            sample_anchors = [
+                list(r.anchor_span) if r.anchor_span is not None else None
+                for r in decoded[:2]
+            ]
             decoded = self._drop_prefix_anchored(decoded, spec, metadata, offset)
             instances = []
             record_anchors = [record.anchor_span for record in decoded]
@@ -2262,6 +2313,54 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     if include_confidence:
                         inst["confidence"] = rec.score
                     instances.append(inst)
+            # #region agent log
+            try:
+                import json as _json, time as _time
+                field_counts = []
+                if decoded:
+                    field_counts = [
+                        [f.name, len(decoded[0].fields.get(f.query_id, []))]
+                        for f in spec.fields[:6]
+                    ]
+                sample = None
+                if instances:
+                    sample = {
+                        k: [type(v).__name__, len(v) if isinstance(v, (list, str)) else None]
+                        for k, v in list(instances[0].items())[:6]
+                    }
+                with open("/Users/williamroe/development/git/GLiNER2/.cursor/debug-834c72.log", "a", encoding="utf-8") as _f:
+                    _f.write(_json.dumps({
+                        "sessionId": "834c72", "runId": "life2", "hypothesisId": "F",
+                        "location": "engine.py:decode_records", "message": "format",
+                        "data": {
+                            "task": spec.task_name,
+                            "merge": settings.record_merge_coreferent,
+                            "offset": offset,
+                            "decoded": n_decoded,
+                            "prefix_anchored": n_prefix,
+                            "kept": len(decoded),
+                            "emitted": len(instances),
+                            "anchors": sample_anchors,
+                            "field_counts": field_counts,
+                            "sample": sample,
+                },
+                "timestamp": int(_time.time() * 1000),
+            }, ensure_ascii=False) + "\n")
+                _f.write(_json.dumps({
+                    "sessionId": "834c72", "runId": "life2", "hypothesisId": "G",
+                    "location": "engine.py:format_field", "message": "span-drop",
+                    "data": {
+                        "task": spec.task_name,
+                        "merge": settings.record_merge_coreferent,
+                        "record_threshold": record_threshold,
+                        "field_threshold": field_threshold,
+                        "drops": span_drop,
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                }, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+            # #endregion
             if instances:
                 out[spec.task_name] = instances
         return out
