@@ -20,9 +20,32 @@ SUB=${SUB:-checkpoint-epoch-1}
 CKPT=$HOME/ckpt/$SUB
 source tools/lambda/_publish.sh
 mkdir -p "$HOME/ckpt"
+# box_run terminates the disk on any exit. A failure note has to be on the Hub first,
+# or the only copy dies with the box (eb22d-epoch-read, 2026-10-27, box 27fab264).
+fail() {
+  echo "[epoch-read] *** FATAL: $* ***"
+  printf '%s\n' "[epoch-read] *** FATAL: $* ***" >> "$HOME/epoch-read-fatal.txt"
+  publish "$DEST" "$HOME/epoch-read-fatal.txt" || echo "[epoch-read] the failure note did not reach the hub"
+  exit 1
+}
 echo "[epoch-read] ===== START $(date -u) | $(git rev-parse --short HEAD) | $REPO:$SUB ====="
 
-$PY - "$REPO" "$SUB" "$HOME/ckpt" <<'PY' || { echo "[epoch-read] *** FATAL: download failed ***"; exit 1; }
+# Bootstrap restores data only when CFG is set on the provision, and the first read
+# launch set it only inside this job. Calibration opens the val files directly and
+# does not fetch them, so a bare box dies at FileNotFoundError.
+echo "[epoch-read] restoring data $(date -u)"
+$PY tools/data/restore_from_hf.py --config "$CFG" > "$HOME/restore.log" 2>&1
+rc=$?
+cat "$HOME/restore.log"
+if [ "$rc" -ne 0 ]; then
+  cat "$HOME/restore.log" >> "$HOME/epoch-read-fatal.txt"
+  fail "data restore"
+fi
+for f in data/cc_news_events_sonnet55_v2.val.jsonl data/cmnee.val.jsonl data/maven.val.jsonl; do
+  [ -s "$f" ] || fail "missing $f after restore"
+done
+
+$PY - "$REPO" "$SUB" "$HOME/ckpt" <<'PY' || fail "download failed"
 import os, sys
 from huggingface_hub import snapshot_download
 repo, sub, out = sys.argv[1:4]
@@ -30,12 +53,18 @@ snapshot_download(
     repo, allow_patterns=[f"{sub}/*"], ignore_patterns=[f"{sub}/training_state.pt"],
     local_dir=out, token=os.environ["HF_TOKEN"])
 PY
-[ -s "$CKPT/model.safetensors" ] || { echo "[epoch-read] *** FATAL: $CKPT has no weights ***"; exit 1; }
+[ -s "$CKPT/model.safetensors" ] || fail "$CKPT has no weights"
 echo "[epoch-read] downloaded $(date -u) | $(ls "$CKPT" | tr '\n' ' ')"
 
 echo "[epoch-read] calibrating $(date -u)"
 $PY -u tools/train/calibrate_coref_threshold.py --config "$CFG" --checkpoint "$CKPT" --batch-size 2 --write \
-  || { echo "[epoch-read] *** FATAL: calibration failed ***"; exit 1; }
+  > "$HOME/calibrate.log" 2>&1
+rc=$?
+cat "$HOME/calibrate.log"
+if [ "$rc" -ne 0 ]; then
+  cat "$HOME/calibrate.log" >> "$HOME/epoch-read-fatal.txt"
+  fail "calibration failed"
+fi
 $PY - "$CKPT" <<'PY'
 import json, sys
 from pathlib import Path
@@ -47,8 +76,14 @@ PY
 
 echo "[epoch-read] full val at threshold 0.3 $(date -u)"
 $PY -u tools/train/eval.py --config "$CFG" --checkpoint "$CKPT" --split val --threshold 0.3 --batch-size 2 \
-  || { echo "[epoch-read] *** FATAL: val eval failed ***"; exit 1; }
-[ -s "$CKPT/val_metrics.json" ] || { echo "[epoch-read] *** FATAL: val_metrics.json was not written ***"; exit 1; }
+  > "$HOME/val.log" 2>&1
+rc=$?
+cat "$HOME/val.log"
+if [ "$rc" -ne 0 ]; then
+  cat "$HOME/val.log" >> "$HOME/epoch-read-fatal.txt"
+  fail "val eval failed"
+fi
+[ -s "$CKPT/val_metrics.json" ] || fail "val_metrics.json was not written"
 $PY - "$CKPT/val_metrics.json" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))
@@ -59,9 +94,9 @@ PY
 
 # The metrics are the finding. Land them before the checkpoint config, which is the decision.
 publish "$DEST" "$CKPT/coref_threshold_sweep.json" "$CKPT/val_metrics.json" \
-  || { echo "[epoch-read] *** FATAL: run-logs publish failed ***"; exit 1; }
+  || fail "run-logs publish failed"
 
-$PY - "$REPO" "$SUB" "$CKPT" <<'PY' || { echo "[epoch-read] *** FATAL: checkpoint upload failed ***"; exit 1; }
+$PY - "$REPO" "$SUB" "$CKPT" <<'PY' || fail "checkpoint upload failed"
 import os, sys
 from huggingface_hub import HfApi
 repo, sub, ckpt = sys.argv[1:4]
