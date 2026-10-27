@@ -24,16 +24,32 @@ const DEFAULT_SCHEMA: Record<string, any> = {
   entities: ["person", "organization", "location", "date"],
 };
 
-function JobBody({ ticket, full }: {
+function JobBody({ ticket, full, onStop }: {
   ticket: InferenceJob;
   full: InferenceJob | null;
+  onStop: (id: string) => void;
 }) {
   const textResult = full && full.id === ticket.id ? full.result : null;
   const textSchema = full && full.id === ticket.id ? full.schema ?? null : null;
+  const stopping = ticket.status === "queued" || ticket.status === "running" || ticket.status === "stopping";
   return (
     <div>
       <div className="card">
-        <h2>{ticket.label}</h2>
+        <div className="row between">
+          <h2>{ticket.label}</h2>
+          {stopping && (
+            <button type="button" onClick={() => onStop(ticket.id)} disabled={ticket.status === "stopping"}>
+              {ticket.status === "stopping" ? "Stopping…" : "Stop"}
+            </button>
+          )}
+        </div>
+        {stopping && (
+          <div className="hint" style={{ marginBottom: 8 }}>
+            {ticket.status === "queued"
+              ? "Stop removes this ticket before it starts."
+              : "Stop finishes the batch already in the model, then ends the job. Records already written stay in the file."}
+          </div>
+        )}
         <div className="hint">
           {ticket.status}
           {ticket.total ? ` · ${ticket.done}/${ticket.total}` : ""}
@@ -269,7 +285,7 @@ export default function Home() {
       <div className="sessions">
         <JobRail jobs={jobs} selected={selected} onSelect={setSelected} onCancel={onCancel} />
         {ticket ? (
-          <JobBody ticket={ticket} full={full} />
+          <JobBody ticket={ticket} full={full} onStop={onCancel} />
         ) : (
           <div className="grid">
             <div>

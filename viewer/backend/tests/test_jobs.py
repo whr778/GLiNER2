@@ -56,6 +56,20 @@ def test_jsonl_job_writes_a_file_the_predictions_screen_can_open(tmp_path, monke
     assert job.output_path in listed
 
 
+def test_stop_during_the_only_batch_is_not_marked_done(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "predictions_dir", lambda: tmp_path)
+    job = jobs.create("text", "Ann said she left.", None, "panel", PANEL, {}, 0, "unit-model")
+
+    def predict(texts, schemas):
+        jobs.cancel(job.id)
+        assert job.status == "stopping"
+        return [{"entities": {"person": ["Ann"]}} for _ in texts]
+
+    jobs.execute(job, predict, batch_size=1)
+    assert job.status == "cancelled"
+    assert job.result["result"]["entities"]["person"] == ["Ann"]
+
+
 def test_cancel_stops_before_the_next_record(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs, "predictions_dir", lambda: tmp_path)
     job = jobs.create("jsonl", None, "data/casie.test.jsonl", "panel", PANEL, {}, 4, "unit-model")

@@ -203,7 +203,10 @@ def cancel(job_id: str) -> Optional[Job]:
             job.status = "cancelled"
             save(job)
         elif job.status == "running":
+            # The forward already in flight finishes. The loop stops before the next batch.
+            job.status = "stopping"
             _CANCEL[job_id].set()
+            save(job)
         return job
 
 
@@ -218,7 +221,7 @@ def load() -> None:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if data.get("status") in ("queued", "running"):
+        if data.get("status") in ("queued", "running", "stopping"):
             data["status"] = "interrupted"
             data["error"] = "the server stopped while this job was in the queue"
         job = Job(
@@ -266,8 +269,25 @@ def _schema(job: Job, rec: Dict[str, Any]) -> Dict[str, Any]:
     return mapped
 
 
+def _stop_requested(job_id: str) -> bool:
+    event = _CANCEL.get(job_id)
+    return event is not None and event.is_set()
+
+
+def _mark_cancelled(job: Job) -> None:
+    job.status = "cancelled"
+    save(job)
+
+
 def execute(job: Job, predict: Predict, *, batch_size: int = 4) -> None:
-    """Run one claimed job. ``predict`` decodes a batch of texts against already-mapped schemas."""
+    """Run one claimed job. ``predict`` decodes a batch of texts against already-mapped schemas.
+
+    Stop finishes the batch already inside the model, writes it, and does not start another.
+    A one-record job is that single batch, so the ticket ends cancelled rather than done.
+    """
+    if _stop_requested(job.id):
+        _mark_cancelled(job)
+        return
     job.status = "running"
     save(job)
     handle = None
@@ -277,9 +297,8 @@ def execute(job: Job, predict: Predict, *, batch_size: int = 4) -> None:
         save(job)
         step = max(1, batch_size)
         for start in range(0, len(records), step):
-            if _CANCEL.get(job.id) and _CANCEL[job.id].is_set():
-                job.status = "cancelled"
-                save(job)
+            if _stop_requested(job.id):
+                _mark_cancelled(job)
                 return
             chunk = records[start:start + step]
             schemas = [_schema(job, rec) for rec in chunk]
@@ -302,6 +321,9 @@ def execute(job: Job, predict: Predict, *, batch_size: int = 4) -> None:
                 job.result = {"text": chunk[0]["input"], "result": preds[0]}
             job.done = min(start + step, len(records))
             save(job)
+            if _stop_requested(job.id):
+                _mark_cancelled(job)
+                return
         job.status = "done"
         save(job)
     except Exception as exc:
