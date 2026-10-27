@@ -342,6 +342,11 @@ class TrainingConfig:
     # token boundaries -- notably for languages without whitespace delimiters --
     # and "raise" then aborts a whole run over ~10% of records.
     error_policy: str = "raise"
+    # Drop an entity mention whose surface is not a whole word, and keep the
+    # record. The span is not widened onto the enclosing word. Malformed records
+    # still follow error_policy. Pair with suppress_orphaned_queries so a type
+    # whose every surface missed is not trained as absent.
+    ignore_missing_entities: bool = False
 
 
     # Filter an entity query's independently re-searched listed-value matches
@@ -755,6 +760,7 @@ class ExtractorCollator:
             error_policy: str = "raise",
             event_records: bool = False,
             allow_invalid_samples: bool = False,
+            ignore_missing_entities: bool = False,
             suppress_orphaned_queries: bool = False,
 
 
@@ -785,6 +791,9 @@ class ExtractorCollator:
         self.error_policy = error_policy
         self.skipped_records = 0
         self.allow_invalid_samples = allow_invalid_samples
+        # Skip an entity mention that is not a whole word. Off by default, so a
+        # training collate with error_policy="raise" still aborts on it.
+        self.ignore_missing_entities = ignore_missing_entities
         # Filter phantom contained-span entity matches (see
         # gliner2.processing.boundary_preprocessing._dedupe_contained_spans);
         # defaults to the corrected behavior.
@@ -814,6 +823,8 @@ class ExtractorCollator:
                 dedupe_contained_entity_spans=self.dedupe_contained_entity_spans,
                 relation_gold_pairs=self.relation_gold_pairs,
             )
+            if self.ignore_missing_entities:
+                kwargs["ignore_missing_entities"] = True
             if self.allow_invalid_samples:
                 kwargs.update(
                     error_policy="skip",
@@ -2312,6 +2323,7 @@ class ExtractorTrainer:
                 getattr(model_config, "boundary_head", {}).get("event_records", False)
             ),
             allow_invalid_samples=self.config.allow_invalid_samples,
+            ignore_missing_entities=bool(getattr(self.config, "ignore_missing_entities", False)),
             suppress_orphaned_queries=(
                 is_training and bool(getattr(self.config, "suppress_orphaned_queries", False))
             ),

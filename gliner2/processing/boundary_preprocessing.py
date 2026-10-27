@@ -590,6 +590,9 @@ def build_boundary_batch_metadata(
         build_targets = is_training
     layouts = []
     graphs = []
+    # Marker slots removed because the query was suppressed. The encoder counts every
+    # marker; leaving a suppressed one in makes query_mask one wider than the gold.
+    dropped_markers: List[List[int]] = []
     record_specs_out: List[Dict[int, RecordSpec]] = []
     relation_gold_out: List[List[List[Tuple[int, int, int, int]]]] = []
 
@@ -610,6 +613,8 @@ def build_boundary_batch_metadata(
         mentions: list[MentionTarget] = []
         sample_relation_gold: List[List[Tuple[int, int, int, int]]] = []
         query_id = 0
+        marker_at = 0
+        dropped: List[int] = []
 
         for task_index, (schema_tokens, task_type, labels) in enumerate(
             zip(sample_schemas, sample_types, sample_labels)
@@ -640,23 +645,27 @@ def build_boundary_batch_metadata(
                     # `None` keeps this list positionally aligned with `fields` so the
                     # mention loop still indexes by field_index; `query_id` stays
                     # contiguous because it only advances for queries that survive.
+                    # The marker slot is dropped with the query, or the encoder still
+                    # emits a query state the gold tensor does not have a row for.
                     field_query_ids.append(None)
+                    dropped.append(marker_at)
                     _SUPPRESSED_QUERIES[field] += 1
-                    continue
-                field_query_ids.append(query_id)
-                queries.append(
-                    QuerySpec(
-                        query_id=query_id,
-                        task_index=task_index,
-                        task_type=task_type,
-                        task_name=name,
-                        role_index=role_index,
-                        role_name=field,
-                        field_path=(name, field) if name != "entities" else (field,),
-                        extractive=True,
+                else:
+                    field_query_ids.append(query_id)
+                    queries.append(
+                        QuerySpec(
+                            query_id=query_id,
+                            task_index=task_index,
+                            task_type=task_type,
+                            task_name=name,
+                            role_index=role_index,
+                            role_name=field,
+                            field_path=(name, field) if name != "entities" else (field,),
+                            extractive=True,
+                        )
                     )
-                )
-                query_id += 1
+                    query_id += 1
+                marker_at += 1
 
             if task_type == "relations":
                 gold_pairs: List[Tuple[int, int, int, int]] = []
@@ -739,6 +748,7 @@ def build_boundary_batch_metadata(
 
         layout = QueryLayout(queries=tuple(queries))
         layouts.append(layout)
+        dropped_markers.append(dropped)
 
         sample_meta = (
             record_metadata_list[sample_idx]
@@ -808,7 +818,30 @@ def build_boundary_batch_metadata(
         )
         targets.record_targets = _pack_record_targets(graphs, record_specs_out)
         targets.edge_targets = _pack_relation_routes(layouts, relation_gold_out)
-    return tuple(layouts), targets, tuple(record_specs_out)
+    return tuple(layouts), targets, tuple(record_specs_out), dropped_markers
+
+
+def compact_query_markers(indices, mask, groups, dropped: Sequence[Sequence[int]]):
+    """Remove suppressed query markers. Kept order matches the layout's query ids."""
+    if indices is None or not any(dropped):
+        return indices, mask, groups
+    kept_rows = []
+    for i, drop in enumerate(dropped):
+        gone = set(drop)
+        width = int(mask[i].sum()) if mask is not None else indices.shape[1]
+        kept_rows.append([j for j in range(width) if j not in gone])
+    width = max((len(row) for row in kept_rows), default=0)
+    new_indices = indices.new_zeros((indices.shape[0], width))
+    new_mask = torch.zeros((indices.shape[0], width), dtype=torch.bool)
+    new_groups = groups.new_zeros((indices.shape[0], width)) if groups is not None else None
+    for i, keep in enumerate(kept_rows):
+        if not keep:
+            continue
+        new_indices[i, : len(keep)] = indices[i, keep]
+        new_mask[i, : len(keep)] = True
+        if new_groups is not None:
+            new_groups[i, : len(keep)] = groups[i, keep]
+    return new_indices, new_mask, new_groups
 
 
 __all__ = ["build_boundary_batch_metadata"]

@@ -93,6 +93,11 @@ training:
   pin_memory: false
   early_stopping: false
   error_policy: raise
+  # An entity string that is not its own word is dropped. The span is not
+  # widened onto the enclosing word. A type whose every surface missed leaves
+  # the menu, so it is not trained as absent. A malformed record still raises.
+  ignore_missing_entities: true
+  suppress_orphaned_queries: true
   on_capacity_exceeded: raise
   negative_gold_full_roles: true
   relation_gold_pairs: nearest

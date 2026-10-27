@@ -663,7 +663,7 @@ class SchemaTransformer:
                     stacklevel=2,
                 )
 
-        layouts, targets, record_specs = build_boundary_batch_metadata(
+        layouts, targets, record_specs, dropped_markers = build_boundary_batch_metadata(
             schema_tokens_list=batch.schema_tokens_list,
             task_types=batch.task_types,
             structure_labels=batch.structure_labels,
@@ -689,6 +689,18 @@ class SchemaTransformer:
         batch.query_layouts = layouts
         batch.targets = targets
         batch.record_specs = record_specs
+        if any(dropped_markers):
+            from gliner2.processing.boundary_preprocessing import compact_query_markers
+            (
+                batch.query_marker_indices,
+                batch.query_marker_mask,
+                batch.query_group_index,
+            ) = compact_query_markers(
+                batch.query_marker_indices,
+                batch.query_marker_mask,
+                batch.query_group_index,
+                dropped_markers,
+            )
         _log_record_cardinality_once(record_specs, field_dtypes_list)
         return batch
 
