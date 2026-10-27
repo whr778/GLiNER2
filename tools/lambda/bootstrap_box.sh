@@ -32,7 +32,9 @@ export PATH="$HOME/.local/bin:$PATH"
 cd ~/gliner2 || fail "no ~/gliner2"
 
 echo "[bs] venv + sync $(date -u)"
-uv venv --python 3.12 || fail "uv venv"
+# --clear: a dropped ssh leaves a half-written .venv, and the retry then dies on
+# "a virtual environment already exists" (eb22d-epoch-read, 2026-10-27, box 9f717079).
+uv venv --python 3.12 --clear || fail "uv venv"
 uv sync || fail "uv sync"
 
 echo "[bs] torch cu128 $(date -u)"
