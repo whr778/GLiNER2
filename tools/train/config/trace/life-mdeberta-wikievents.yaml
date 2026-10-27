@@ -69,7 +69,7 @@ training:
   data_parallel: false
   num_epochs: 5
   batch_size: 1
-  gradient_accumulation_steps: 16
+  gradient_accumulation_steps: 4
   encoder_lr: 2.0e-05
   task_lr: 0.0005
   warmup_ratio: 0.05
