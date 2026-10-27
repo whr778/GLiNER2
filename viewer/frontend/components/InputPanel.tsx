@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { importUrl } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { importUrl, listDatasets, type DatasetFile } from "@/lib/api";
 import type { CorefInfo, ExtractOptions, ExtractResponse, ModelEntry } from "@/lib/types";
 
 type Props = {
@@ -9,9 +9,17 @@ type Props = {
   setText: (t: string) => void;
   options: ExtractOptions;
   setOptions: (o: ExtractOptions) => void;
-  loading: boolean;
-  schemaLoading?: boolean; // a model's schema is being fetched; block extraction
-  onExtract: () => void;
+  queueing: boolean;
+  schemaLoading?: boolean; // a model's schema is being fetched; block a new ticket
+  onQueue: () => void;
+  source: "text" | "jsonl";
+  setSource: (s: "text" | "jsonl") => void;
+  dataset: string;
+  setDataset: (path: string) => void;
+  schemaMode: "gold" | "panel";
+  setSchemaMode: (m: "gold" | "panel") => void;
+  limit: string;
+  setLimit: (n: string) => void;
   models: ModelEntry[];
   onManage: () => void;
   resultData: ExtractResponse | null;
@@ -36,7 +44,10 @@ function CorefLine({ coref }: { coref: CorefInfo }) {
   );
 }
 
-export default function InputPanel({ text, setText, options, setOptions, loading, schemaLoading, onExtract, models, onManage, resultData, resultSchema, onLoadResults, coref }: Props) {
+export default function InputPanel({ text, setText, options, setOptions, queueing, schemaLoading, onQueue, source, setSource, dataset, setDataset, schemaMode, setSchemaMode, limit, setLimit, models, onManage, resultData, resultSchema, onLoadResults, coref }: Props) {
+  const [datasetQuery, setDatasetQuery] = useState("");
+  const [datasets, setDatasets] = useState<DatasetFile[]>([]);
+  const [datasetErr, setDatasetErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const loadRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState("");
@@ -44,6 +55,17 @@ export default function InputPanel({ text, setText, options, setOptions, loading
   const [importing, setImporting] = useState(false);
   const [importErr, setImportErr] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (source !== "jsonl") return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      listDatasets(datasetQuery)
+        .then((rows) => { if (!cancelled) { setDatasets(rows); setDatasetErr(null); } })
+        .catch((e) => { if (!cancelled) setDatasetErr(e.message); });
+    }, 200);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [source, datasetQuery]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -171,15 +193,57 @@ export default function InputPanel({ text, setText, options, setOptions, loading
 
   return (
     <div className="card">
-      <h2>Input</h2>
+      <h2>New job</h2>
+      <div className="toggle" style={{ marginBottom: 10 }}>
+        <button type="button" className={source === "text" ? "active" : ""} onClick={() => setSource("text")}>Text</button>
+        <button type="button" className={source === "jsonl" ? "active" : ""} onClick={() => setSource("jsonl")}>JSONL</button>
+      </div>
+      {source === "text" ? (
       <textarea
         rows={9}
         placeholder="Paste text to analyze…"
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
+      ) : (
+      <div className="field">
+        <label>Dataset under data/</label>
+        <input
+          type="text"
+          placeholder="casie_off.test"
+          value={datasetQuery}
+          onChange={(e) => setDatasetQuery(e.target.value)}
+        />
+        <select style={{ marginTop: 8 }} value={dataset} onChange={(e) => setDataset(e.target.value)}>
+          <option value="">{datasets.length ? `${datasets.length} file(s)` : "no match"}</option>
+          {dataset && !datasets.some((d) => d.path === dataset) && (
+            <option value={dataset}>{dataset}</option>
+          )}
+          {datasets.map((d) => (
+            <option key={d.path} value={d.path}>{d.path} ({(d.bytes / 1024).toFixed(0)} KB)</option>
+          ))}
+        </select>
+        {datasetErr && <div className="error">{datasetErr}</div>}
+        <div className="field">
+          <label>Schema</label>
+          <select value={schemaMode} onChange={(e) => setSchemaMode(e.target.value as "gold" | "panel")}>
+            <option value="gold">Each record's own gold labels (evaluation)</option>
+            <option value="panel">The schema on this screen</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>First N records (blank = the whole file)</label>
+          <input type="number" min={1} value={limit} onChange={(e) => setLimit(e.target.value)} />
+        </div>
+        <div className="hint">
+          Writes an infer.py JSONL with spans, then this job opens in Predictions vs gold.
+          A long file on MPS keeps memory for every new length. CPU is the safe device here.
+          {schemaMode === "gold" ? " The schema below is not sent." : ""}
+        </div>
+      </div>
+      )}
 
-      <div className="field row">
+      {source === "text" && <div className="field row">
         <button type="button" onClick={() => fileRef.current?.click()}>Upload .txt</button>
         <button type="button" onClick={saveText} disabled={!text.trim()} title="Save the current text to a file">Save text…</button>
         <button type="button" onClick={saveResults} disabled={!resultData} title="Save the extracted results as <input>.results.json">Save results…</button>
@@ -188,10 +252,10 @@ export default function InputPanel({ text, setText, options, setOptions, loading
         <input ref={loadRef} type="file" accept=".json,application/json" hidden onChange={handleLoadResults} />
         <span className="spacer" />
         <span className="hint">{text.length.toLocaleString()} chars</span>
-      </div>
-      {loadErr && <div className="error">{loadErr}</div>}
+      </div>}
+      {loadErr && source === "text" && <div className="error">{loadErr}</div>}
 
-      <div className="field">
+      {source === "text" && <div className="field">
         <label>Import from URL</label>
         <div className="row">
           <input
@@ -206,7 +270,7 @@ export default function InputPanel({ text, setText, options, setOptions, loading
           </button>
         </div>
         {importErr && <div className="error">{importErr}</div>}
-      </div>
+      </div>}
 
       <details className="field">
         <summary className="hint" style={{ cursor: "pointer" }}>Options</summary>
@@ -365,14 +429,14 @@ export default function InputPanel({ text, setText, options, setOptions, loading
 
       {coref && <CorefLine coref={coref} />}
       <div className="field row between">
-        <span className="hint">Runs the model on the backend.</span>
+        <span className="hint">Returns a ticket. One model runs at a time.</span>
         <button
           className="primary"
-          onClick={onExtract}
-          disabled={loading || schemaLoading || !text.trim()}
+          onClick={onQueue}
+          disabled={queueing || schemaLoading || (source === "text" ? !text.trim() : !dataset)}
           title={schemaLoading ? "Loading the selected model's schema…" : undefined}
         >
-          {loading ? "Extracting…" : schemaLoading ? "Loading schema…" : "Extract"}
+          {queueing ? "Queuing…" : schemaLoading ? "Loading schema…" : "Queue job"}
         </button>
       </div>
     </div>

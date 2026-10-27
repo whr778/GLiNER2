@@ -203,3 +203,64 @@ export type PredictionFile = { path: string; name: string; mtime: number; size: 
 export async function listPredictionFiles(): Promise<{ root: string; files: PredictionFile[] }> {
   return jsonOrThrow(await fetch(`${API_BASE}/predictions/files`));
 }
+
+// A ticket. Text and JSONL both wait in one queue: the loaded model has one set of gates.
+export type InferenceJob = {
+  id: string;
+  kind: "text" | "jsonl";
+  status: string;
+  label: string;
+  model: string;
+  source: string;
+  schema_mode: "gold" | "panel";
+  created: number;
+  done: number;
+  total: number;
+  output_path?: string | null;
+  error?: string | null;
+  device?: string | null;
+  ran_on?: string | null;
+  limit: number;
+  text?: string | null;
+  result?: { text: string; result: Record<string, any> } | null;
+  schema?: Record<string, any> | null;
+};
+
+export type DatasetFile = { path: string; name: string; bytes: number };
+
+export async function listDatasets(q: string): Promise<DatasetFile[]> {
+  const res = await fetch(`${API_BASE}/datasets?q=${encodeURIComponent(q)}`);
+  const body = await jsonOrThrow(res);
+  return body.datasets ?? [];
+}
+
+export async function createJob(body: {
+  kind: "text" | "jsonl";
+  text?: string;
+  path?: string;
+  schema_mode: "gold" | "panel";
+  schema: Record<string, any>;
+  options: ExtractOptions;
+  limit: number;
+}): Promise<InferenceJob> {
+  const res = await fetch(`${API_BASE}/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function listJobs(): Promise<InferenceJob[]> {
+  const res = await fetch(`${API_BASE}/jobs`);
+  const body = await jsonOrThrow(res);
+  return body.jobs ?? [];
+}
+
+export async function getJob(id: string): Promise<InferenceJob> {
+  return jsonOrThrow(await fetch(`${API_BASE}/jobs/${encodeURIComponent(id)}`));
+}
+
+export async function cancelJob(id: string): Promise<InferenceJob> {
+  return jsonOrThrow(await fetch(`${API_BASE}/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }));
+}

@@ -42,7 +42,7 @@ function hasLayer(r: Record<string, any>, l: Layer): boolean {
 // Pages through a tools/infer.py --output file: the prediction drawn as usual, the record's own
 // gold as a rim (solid = matches, dashed = overlap that differs -- diffs.py names how -- rim only = missed),
 // matched under the scorer's strict keys so the view agrees with the strict F1.
-export default function PredictionsPanel() {
+export default function PredictionsPanel({ openPath, reloadKey = "" }: { openPath?: string; reloadKey?: string }) {
   const [path, setPath] = useState(() => {
     try { return localStorage.getItem(PATH_KEY) ?? ""; } catch { return ""; }
   });
@@ -73,6 +73,17 @@ export default function PredictionsPanel() {
       setSummary(null);
     }
   }
+
+  // A job hands its output path in. Reload when the job settles, not on every record.
+  useEffect(() => {
+    if (!openPath) return;
+    let cancelled = false;
+    setPath(openPath);
+    openPredictions(openPath)
+      .then((s) => { if (!cancelled) { setSummary(s); setPos(0); setError(null); } })
+      .catch((e) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [openPath, reloadKey]);
 
   // File order, or worst-first on one head (records without that head go last).
   const sequence = useMemo(() => {

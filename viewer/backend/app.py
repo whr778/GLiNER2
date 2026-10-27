@@ -17,6 +17,7 @@ import os
 import threading
 
 import logging
+from contextlib import asynccontextmanager
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -76,7 +77,17 @@ def get_model(model_id: str, device: Optional[str] = None):
     return _models[key]
 
 
-app = FastAPI(title="GLiNER2 Viewer API")
+@asynccontextmanager
+async def _lifespan(_app):
+    import jobs
+
+    jobs.load()
+    jobs.start(_run_inference_job)
+    yield
+    jobs.stop()
+
+
+app = FastAPI(title="GLiNER2 Viewer API", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
     # The frontend proxies /api/* to this backend same-origin (see the viewer's
@@ -238,6 +249,49 @@ def _apply_gates(model, gates: Dict[str, Any]) -> Dict[str, Any]:
         key = next(iter(current))
         apply_boundary_overrides(model, {key: current[key]})
     return restore
+
+
+def _run_inference_job(job) -> None:
+    """Decode one queued job on the cached model. The gate lock is held for the whole job."""
+    import jobs
+    from gliner2.inference.global_decode import GlobalDecodeConfig
+    from gliner2.inference.schema import Schema
+
+    opts = Options(**(job.options or {}))
+    model = get_model(job.model, opts.device)
+    job.label_map = getattr(model.config, "label_map", None)
+    job.label_style = getattr(model.config, "label_style", None)
+    job.ran_on = str(next(model.parameters()).device)
+    if opts.merge_coreferent == "link":
+        bh = getattr(model.config, "boundary_head", None) or {}
+        if not bh.get("record_coref_link"):
+            raise RuntimeError("trigger merge link needs a checkpoint trained with record_coref_link")
+
+    def predict(texts, schemas):
+        prepared = [Schema.from_dict(_declare_records(schema)) for schema in schemas]
+        out = model.batch_extract_long(
+            texts,
+            prepared,
+            batch_size=len(texts),
+            threshold=opts.threshold,
+            chunk_size=opts.chunk_size,
+            chunk_overlap=opts.chunk_overlap,
+            include_spans=True,
+            include_confidence=True,
+            global_decode=opts.global_decode,
+            global_decode_config=GlobalDecodeConfig(beam_width=opts.beam_width),
+        )
+        if opts.entity_coref_threshold is not None:
+            out = [_attach_entity_coref(model, text, result, opts.entity_coref_threshold)
+                   for text, result in zip(texts, out)]
+        return out
+
+    with _GATE_LOCK:
+        restore = _apply_gates(model, _gate_overrides(opts))
+        try:
+            jobs.execute(job, predict)
+        finally:
+            _apply_gates(model, restore)
 
 
 @app.post("/extract")
@@ -427,6 +481,68 @@ class EkfRequest(BaseModel):
     # Turkiye: without it the 1999 Izmit toll was tracked as a 2023 figure in every
     # configuration. Read but never declared until 2026-08-30, so it silently did nothing.
     event_year: int = 0
+
+
+class JobRequest(BaseModel):
+    """A text extraction or a JSONL evaluation. The response is the ticket, not the result."""
+    model_config = ConfigDict(populate_by_name=True)
+    kind: Literal["text", "jsonl"]
+    text: Optional[str] = None
+    path: Optional[str] = None
+    schema_mode: Literal["gold", "panel"] = "panel"
+    input_schema: Dict[str, Any] = Field(default_factory=dict, alias="schema")
+    options: Options = Field(default_factory=Options)
+    limit: int = 0
+
+
+@app.get("/datasets")
+def datasets(q: str = "") -> Dict[str, Any]:
+    """JSONL files under data_root. ``q`` matches the repo-relative path."""
+    import jobs
+
+    return {"datasets": jobs.list_datasets(q)}
+
+
+@app.post("/jobs")
+def create_job(req: JobRequest) -> Dict[str, Any]:
+    import jobs
+
+    model = (req.options.model or DEFAULT_MODEL).strip()
+    try:
+        job = jobs.create(
+            req.kind, req.text, req.path, req.schema_mode, req.input_schema,
+            req.options.model_dump(), req.limit, model,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return job.public()
+
+
+@app.get("/jobs")
+def get_jobs() -> Dict[str, Any]:
+    import jobs
+
+    return {"jobs": [job.public() for job in jobs.list_jobs()]}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str) -> Dict[str, Any]:
+    import jobs
+
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"unknown job {job_id}")
+    return job.public(full=True)
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> Dict[str, Any]:
+    import jobs
+
+    job = jobs.cancel(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"unknown job {job_id}")
+    return job.public()
 
 
 @app.get("/predictions")

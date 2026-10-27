@@ -96,7 +96,26 @@ input:focus, textarea:focus, select:focus {
   gap: 16px;
   align-items: start;
 }
-@media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+.sessions {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.jobrail { position: sticky; top: 12px; max-height: calc(100vh - 32px); overflow: auto; }
+button.job {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 8px;
+  padding: 8px;
+}
+button.job.active { border-color: var(--accent); }
+button.job .meta { color: var(--muted); font-size: 12px; display: block; }
+@media (max-width: 920px) {
+  .grid, .sessions { grid-template-columns: 1fr; }
+  .jobrail { position: static; max-height: none; }
+}
 
 .card {
   background: var(--panel);

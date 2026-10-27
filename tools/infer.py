@@ -33,6 +33,19 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
+_OMIT = object()
+
+
+def prediction_row(rec: Dict[str, Any], pred: Dict[str, Any], gold_mapped: Any = _OMIT) -> Dict[str, Any]:
+    """One ``--output`` line. The viewer lists a file only when ``input``, ``output`` and ``gold`` are present."""
+    row = {"input": rec["input"], "output": pred, "gold": rec.get("output")}
+    if rec.get("coref_clusters"):
+        row["gold_coref"] = rec["coref_clusters"]
+    if gold_mapped is not _OMIT:
+        row["gold_mapped"] = gold_mapped
+    return row
+
+
 def _read_records(inp: str) -> List[Dict[str, Any]]:
     """A literal string, a ``.txt`` file (one document), or a ``.jsonl`` file (one record per
     line; its ``input`` is the text and its ``output``, if any, the gold)."""
@@ -311,12 +324,8 @@ def main(argv: List[str] = None) -> None:
         for start in range(0, len(records), step):
             chunk = records[start:start + step]
             for i, (rec, pred) in enumerate(zip(chunk, predict(chunk, schemas[start:start + step]))):
-                row = {"input": rec["input"], "output": pred, "gold": rec.get("output")}
-                if rec.get("coref_clusters"):
-                    row["gold_coref"] = rec["coref_clusters"]
-                if gold_mapped is not None:
-                    row["gold_mapped"] = gold_mapped[start + i]
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                mapped = gold_mapped[start + i] if gold_mapped is not None else _OMIT
+                f.write(json.dumps(prediction_row(rec, pred, mapped), ensure_ascii=False) + "\n")
             f.flush()
             print(f"[infer] {min(start + step, len(records))}/{len(records)} records -> {args.output}", flush=True)
 
