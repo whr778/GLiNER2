@@ -39,7 +39,10 @@ the threshold.
 Selecting a model loads the decode settings it was evaluated with (`inference_defaults`
 in its `config.json`), and `/extract` rewrites schema labels to the spellings the model
 trained on (`label_map`), listing each rewrite under the results. Checkpoints saved
-before 2026-10-01 carry neither, and run as typed.
+before 2026-10-01 carry neither, and run as typed. The model row's **Model card**
+button prints the metrics stored with that checkpoint (same text as
+`tools/train/format_metrics.py`), including a Hub id with a subfolder (`repo@subfolder`).
+It reads the JSON files only.
 
 Choose the model (blank uses `fastino/gliner2-base-v1`):
 

@@ -1,4 +1,10 @@
-import type { Preset } from "./types";
+import type { ModelEntry, Preset } from "./types";
+
+// The string a job sends to load one checkpoint. Two epochs of one Hub repo
+// share `path` and differ by `id` (`path@subfolder`).
+export function managedModelId(model: Pick<ModelEntry, "id" | "path">): string {
+  return model.id ?? model.path;
+}
 
 // Map a model path to the corpus preset it was trained on, so selecting e.g.
 // `out/fastino/gliner2-base-v1-casie/best` can auto-load the `corpus: casie`

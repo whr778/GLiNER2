@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { importUrl, listDatasets, type DatasetFile } from "@/lib/api";
+import { managedModelId } from "@/lib/models";
 import type { CorefInfo, ExtractOptions, ExtractResponse, ModelEntry } from "@/lib/types";
+import ModelCard from "./ModelCard";
 
 type Props = {
   text: string;
@@ -55,6 +57,7 @@ export default function InputPanel({ text, setText, options, setOptions, queuein
   const [importing, setImporting] = useState(false);
   const [importErr, setImportErr] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [cardOpen, setCardOpen] = useState(false);
 
   useEffect(() => {
     if (source !== "jsonl") return;
@@ -414,23 +417,35 @@ export default function InputPanel({ text, setText, options, setOptions, queuein
         <div className="field">
           <label>Model (blank = server default)</label>
           <div className="row">
-            <input
-              type="text"
-              list="model-list"
-              placeholder="fastino/gliner2-base-v1 or a local path"
+            <select
               value={options.model ?? ""}
               onChange={(e) => set("model", e.target.value || null)}
-            />
-            <datalist id="model-list">
-              {models.map((m) => (
-                <option key={m.id ?? m.path} value={m.id ?? m.path}>{m.label}</option>
-              ))}
-            </datalist>
+            >
+              <option value="">server default</option>
+              {!!options.model && !models.some((m) => managedModelId(m) === options.model) && (
+                <option value={options.model}>{options.model}</option>
+              )}
+              {models.map((m) => {
+                const id = managedModelId(m);
+                return <option key={id} value={id}>{m.label}</option>;
+              })}
+            </select>
             <button type="button" onClick={onManage} title="Manage models">Manage</button>
+            <button
+              type="button"
+              onClick={() => setCardOpen(true)}
+              disabled={!options.model?.trim()}
+              title="Metrics stored with this checkpoint"
+            >
+              Model card
+            </button>
           </div>
           <div className="hint">Used models are remembered; local checkpoints are auto-discovered.</div>
         </div>
       </details>
+      {cardOpen && options.model?.trim() && (
+        <ModelCard model={options.model.trim()} onClose={() => setCardOpen(false)} />
+      )}
 
       {coref && <CorefLine coref={coref} />}
       <div className="field row between">

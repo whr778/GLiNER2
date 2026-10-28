@@ -66,6 +66,49 @@ export type ModelInfo = {
   coref: CorefInfo | null;
 };
 
+export type MetricRow = {
+  category: string;
+  precision?: string;
+  recall?: string;
+  f1?: string;
+  support?: string;
+  relaxed_f1?: string;
+};
+
+export type CardPair = { key: string; value: string };
+
+export type MetricSection = {
+  name: string;
+  provenance: CardPair[] | null;
+  fields: CardPair[];
+  rows: MetricRow[];
+  full_menu: MetricRow[];
+  notes: CardPair[];
+  per_head: {
+    identical_to_global: boolean;
+    thresholds: string | null;
+    rows: MetricRow[];
+  } | null;
+  coref_merge_off: MetricRow[] | null;
+  by_menu: { menu: string; rows: MetricRow[] }[];
+  by_language: string | null;
+};
+
+// Same fields as the CLI card. Cells are already display strings.
+export type ModelCardView = {
+  title: string;
+  inference_defaults: CardPair[] | null;
+  train_results: CardPair[] | null;
+  sections: MetricSection[];
+  empty: boolean;
+};
+
+export async function getModelCard(model: string): Promise<ModelCardView> {
+  const res = await fetch(`${API_BASE}/model-card?model=${encodeURIComponent(model)}`);
+  const body = await jsonOrThrow(res);
+  return body.view;
+}
+
 export async function getModelSchema(model: string): Promise<ModelInfo> {
   try {
     const res = await fetch(`${API_BASE}/model-schema?model=${encodeURIComponent(model)}`);

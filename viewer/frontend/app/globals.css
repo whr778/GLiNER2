@@ -168,6 +168,48 @@ button.job .meta { color: var(--muted); font-size: 12px; display: block; }
   max-height: calc(100vh - 32px);
   overflow: auto;
 }
+.modal.wide { width: min(920px, calc(100vw - 32px)); }
+
+.model-card-head { align-items: flex-start; }
+.model-card-id { min-width: 0; flex: 1; }
+.model-card-id h2 { margin-bottom: 2px; }
+.model-card-name {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+  word-break: break-word;
+  margin-top: 2px;
+}
+.model-card-kicker { margin-top: 10px; }
+.model-card .kv {
+  display: grid;
+  grid-template-columns: minmax(8.5em, 16em) minmax(0, 1fr);
+  gap: 3px 14px;
+  margin: 6px 0 0;
+}
+.model-card .kv dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.model-card .kv dd {
+  margin: 0;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.model-card .table-wrap { overflow-x: auto; margin-top: 8px; }
+.model-card table { font-size: 12px; }
+.model-card th, .model-card td { padding: 5px 8px; }
+.model-card th.num, .model-card td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.model-card td.num { white-space: nowrap; }
+.model-card th.num { white-space: normal; line-height: 1.3; vertical-align: bottom; }
+.model-card td.cat { font-weight: 600; white-space: nowrap; }
+.model-card .subhead { margin-top: 12px; }
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row.between { justify-content: space-between; }

@@ -429,6 +429,33 @@ def model_schema(model: str) -> Dict[str, Any]:
             "has_label_map": bool(getattr(cfg, "label_map", None))}
 
 
+@app.get("/model-card")
+def model_card(model: str) -> Dict[str, Any]:
+    """Metrics stored with a checkpoint.
+
+    ``card`` is the same text as tools/train/format_metrics.py. ``view`` is
+    those same fields for the popup. Reads the JSON files only. Does not load
+    weights.
+    """
+    import sys
+    from pathlib import Path
+
+    train = Path(__file__).resolve().parents[2] / "tools" / "train"
+    if str(train) not in sys.path:
+        sys.path.insert(0, str(train))
+    import format_metrics
+
+    try:
+        title, files = format_metrics.load(model)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "model": model,
+        "card": format_metrics.format_card(title, files),
+        "view": format_metrics.structure_card(title, files),
+    }
+
+
 @app.post("/models")
 def create_model(entry: ModelEntry) -> Dict[str, Any]:
     from models import add_model, list_models

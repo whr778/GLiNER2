@@ -978,7 +978,14 @@ currently justify one.
 
 ```bash
 uv run python tools/train/eval.py --config <config> --checkpoint out/<run>/best --split test
+uv run python tools/train/format_metrics.py <checkpoint>
 ```
+
+`<checkpoint>` is a local directory (a checkpoint dir or `best/`), a Hub id, or
+`repo@subfolder`. The command prints the strict micro precision, recall, and F1
+already stored in `val_metrics.json`, `test_metrics.json`, and `eval_metrics.json`,
+plus `eval_provenance` and `config.json` `inference_defaults`. It does not download
+weights. The viewer's Model card button prints the same text.
 
 Seven rules that have each changed a conclusion in this project:
 
