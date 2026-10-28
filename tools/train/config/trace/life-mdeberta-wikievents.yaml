@@ -64,17 +64,17 @@ training:
   gold_injection_start: 1.0
   gold_injection_end: 0.25
   gold_injection_hold_frac: 0.15
-  output_dir: /Volumes/Development/tmp/life-mdeberta-wikievents
+  output_dir: ./out/life-mdeberta-wikievents
   experiment_name: life-mdeberta-wikievents
   data_parallel: false
   num_epochs: 5
-  batch_size: 1
-  gradient_accumulation_steps: 4
+  batch_size: 4
+  gradient_accumulation_steps: 1
   encoder_lr: 2.0e-05
   task_lr: 0.0005
   warmup_ratio: 0.05
   scheduler_type: cosine_restarts
-  bf16: false
+  bf16: true
   fp16: false
   max_grad_norm: 1.0
   eval_strategy: epoch
@@ -84,13 +84,13 @@ training:
   save_total_limit: 6
   save_epoch_checkpoint: true
   logging_steps: 20
-  num_workers: 0
+  num_workers: 2
   validate_data: true
   sliding_window: true
   window_stride: 384
   max_len: 512
   gradient_checkpointing: true
-  pin_memory: false
+  pin_memory: true
   early_stopping: false
   error_policy: raise
   # An entity string that is not its own word is dropped. The span is not
@@ -103,7 +103,7 @@ training:
   relation_gold_pairs: nearest
   seed: 42
 eval:
-  batch_size: 1
+  batch_size: 4
   threshold: 0.3
   threshold_sweep: true
   metric_sweep: true
