@@ -67,7 +67,9 @@ training:
   output_dir: ./out/life-mdeberta-wikievents
   experiment_name: life-mdeberta-wikievents
   data_parallel: false
-  num_epochs: 5
+  num_epochs: 30
+  # Resume the epoch checkpoint. 30 is the whole cosine, not 30 more epochs.
+  checkpoint_restart: last
   batch_size: 4
   gradient_accumulation_steps: 1
   encoder_lr: 2.0e-05
