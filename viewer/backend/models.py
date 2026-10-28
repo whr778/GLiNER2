@@ -43,12 +43,31 @@ def _saved_entry(raw: Dict[str, str]) -> Dict[str, str]:
     return entry
 
 
+def entry_id(entry: Dict[str, str]) -> str:
+    """The string the viewer sends to load one checkpoint.
+
+    Two epochs of one repo share ``path``. The id carries the subfolder so the
+    loader can tell them apart.
+    """
+    sub = (entry.get("subfolder") or "").strip()
+    return f"{entry['path']}@{sub}" if sub else entry["path"]
+
+
 def hub_load_kwargs(path: str) -> Dict[str, str]:
-    """Hub kwargs for a saved repo id. Empty when the checkpoint is the repo root."""
+    """Hub kwargs for a saved repo id. Empty when the checkpoint is the repo root.
+
+    ``repo@subfolder`` names one epoch. A bare repo id still resolves when that
+    repo has exactly one saved subfolder. Two subfolders and no ``@`` do not
+    pick one.
+    """
     path = path.strip()
-    for entry in _load_saved():
-        if entry["path"] == path and entry.get("subfolder"):
-            return {"subfolder": entry["subfolder"]}
+    repo, sep, sub = path.partition("@")
+    if sep:
+        sub = sub.strip()
+        return {"subfolder": sub} if sub else {}
+    matches = [e["subfolder"] for e in _load_saved() if e["path"] == path and e.get("subfolder")]
+    if len(matches) == 1:
+        return {"subfolder": matches[0]}
     return {}
 
 
@@ -78,9 +97,10 @@ def list_models(default_model: str) -> List[Dict[str, str]]:
     result: List[Dict[str, str]] = []
     seen: set = set()
     for e in entries:
-        if e["path"] in seen:
+        e = {**e, "id": entry_id(e)}
+        if e["id"] in seen:
             continue
-        seen.add(e["path"])
+        seen.add(e["id"])
         result.append(e)
     return result
 
@@ -96,4 +116,5 @@ def add_model(path: str, label: Optional[str]) -> None:
 
 
 def remove_model(path: str) -> None:
-    _save([m for m in _load_saved() if m["path"] != path.strip()])
+    key = path.strip()
+    _save([m for m in _load_saved() if entry_id(m) != key])

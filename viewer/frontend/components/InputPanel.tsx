@@ -423,7 +423,7 @@ export default function InputPanel({ text, setText, options, setOptions, queuein
             />
             <datalist id="model-list">
               {models.map((m) => (
-                <option key={m.path} value={m.path}>{m.label}</option>
+                <option key={m.id ?? m.path} value={m.id ?? m.path}>{m.label}</option>
               ))}
             </datalist>
             <button type="button" onClick={onManage} title="Manage models">Manage</button>

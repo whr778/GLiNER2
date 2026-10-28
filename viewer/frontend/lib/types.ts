@@ -26,6 +26,9 @@ export type ModelEntry = {
   path: string;
   label: string;
   source?: string; // default | discovered | saved
+  subfolder?: string;
+  // repo@subfolder when a Hub repo holds more than one checkpoint.
+  id?: string;
 };
 
 export type ExtractOptions = {

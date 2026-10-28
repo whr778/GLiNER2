@@ -59,6 +59,16 @@ def resolve_feed(feed: str) -> Path:
     return p
 
 
+def _load_extractor(name: str, device):
+    """Load a viewer model id, including ``repo@subfolder``."""
+    from gliner2 import AutoExtractor
+    from models import hub_load_kwargs
+
+    extra = hub_load_kwargs(name)
+    repo = name.split("@", 1)[0] if "@" in name else name
+    return AutoExtractor.from_pretrained(resolve_model(repo), map_location=device, **extra)
+
+
 def resolve_model(name: str) -> str:
     """Local checkpoint paths -> absolute; Hub ids pass through unchanged.
 
@@ -239,7 +249,6 @@ def _ground_truth_series(path: Path, grid: List[float]) -> Optional[Dict[str, An
 def _run(job: Job, params: Dict[str, Any]) -> None:
     import json
     import run_pipeline as rp
-    from gliner2 import AutoExtractor
 
     try:
         feed_path = resolve_feed(params["feed"])
@@ -274,7 +283,7 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
 
         job.stage = "gate"
         job.log.append(f"gate: {params['gate_model']} on {len(feed)} articles")
-        gate_model = AutoExtractor.from_pretrained(resolve_model(params["gate_model"]), map_location=device)
+        gate_model = _load_extractor(params["gate_model"], device)
         gates = rp.gate(gate_model, texts, float(params.get("gate_threshold", 0.5)))
         kept = [i for i, g in enumerate(gates) if g["relevant"]]
         job.log.append(f"gate kept {len(kept)}/{len(feed)}")
@@ -283,7 +292,7 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
         if params.get("event_model"):
             job.stage = "events"
             job.log.append(f"events: {params['event_model']}")
-            ev_model = AutoExtractor.from_pretrained(resolve_model(params["event_model"]), map_location=device)
+            ev_model = _load_extractor(params["event_model"], device)
             found = rp.extract_stage1(ev_model, [texts[i] for i in kept],
                                       float(params.get("event_threshold", 0.3)))
             for i, e in zip(kept, found):
@@ -292,7 +301,7 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
 
         job.stage = "casualty"
         job.log.append(f"casualty: {params['casualty_model']}")
-        cas_model = AutoExtractor.from_pretrained(resolve_model(params["casualty_model"]), map_location=device)
+        cas_model = _load_extractor(params["casualty_model"], device)
         # associate: the viewer shipped 6h BEFORE association landed in the pipeline and
         # then never caught up, so every observation was pooled into one stream -- the
         # exact failure association fixed (multi-event nRMSE 102 -> 27.975). Reuse the

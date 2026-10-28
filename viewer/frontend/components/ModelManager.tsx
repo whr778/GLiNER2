@@ -79,15 +79,17 @@ export default function ModelManager({ models, setModels, onClose }: Props) {
           <table>
             <tbody>
               {models.map((m) => (
-                <tr key={m.path}>
+                <tr key={m.id ?? m.path}>
                   <td style={{ width: 92 }}><span className="hint">{m.source}</span></td>
                   <td>
                     <strong>{m.label}</strong>
-                    <div className="hint mono" style={{ wordBreak: "break-all" }}>{m.path}</div>
+                    <div className="hint mono" style={{ wordBreak: "break-all" }}>
+                      {m.subfolder ? `${m.path} / ${m.subfolder}` : m.path}
+                    </div>
                   </td>
                   <td style={{ width: 90, textAlign: "right" }}>
                     {m.source === "saved" ? (
-                      <button onClick={() => remove(m.path)} disabled={busy}>Remove</button>
+                      <button onClick={() => remove(m.id ?? m.path)} disabled={busy}>Remove</button>
                     ) : (
                       <span className="hint">built-in</span>
                     )}

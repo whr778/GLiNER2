@@ -484,11 +484,11 @@ export default function EkfPanel() {
                 {/* The configured model may not be in the registry (a local path, or a
                     checkpoint added since load); keep it selectable rather than silently
                     switching the run to a different model. */}
-                {!models.some((m) => m.path === casualtyModel) && (
+                {!models.some((m) => (m.id ?? m.path) === casualtyModel) && (
                   <option value={casualtyModel}>{casualtyModel}</option>
                 )}
                 {models.map((m) => (
-                  <option key={m.path} value={m.path}>{m.label}</option>
+                  <option key={m.id ?? m.path} value={m.id ?? m.path}>{m.label}</option>
                 ))}
               </select>
             </div>
@@ -496,11 +496,11 @@ export default function EkfPanel() {
               <label>Event model (stage 1, optional)</label>
               <select value={eventModel} onChange={(e) => setEventModel(e.target.value)}>
                 <option value="">none — skip stage 1</option>
-                {!!eventModel && !models.some((m) => m.path === eventModel) && (
+                {!!eventModel && !models.some((m) => (m.id ?? m.path) === eventModel) && (
                   <option value={eventModel}>{eventModel}</option>
                 )}
                 {models.map((m) => (
-                  <option key={m.path} value={m.path}>{m.label}</option>
+                  <option key={m.id ?? m.path} value={m.id ?? m.path}>{m.label}</option>
                 ))}
               </select>
               <div className="hint">

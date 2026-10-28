@@ -231,7 +231,7 @@ export default function Home() {
       setSelected(job.id);
       setJobs(await listJobs());
       const m = options.model?.trim();
-      if (m && !models.some((x) => x.path === m)) {
+      if (m && !models.some((x) => (x.id ?? x.path) === m)) {
         addModel(m).then(setModels).catch(() => {});
       }
     } catch (e: any) {

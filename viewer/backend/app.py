@@ -65,9 +65,10 @@ def get_model(model_id: str, device: Optional[str] = None):
 
     map_location = _map_location(device)
     extra = hub_load_kwargs(model_id)
-    key = (model_id, extra.get("subfolder", ""), map_location or "auto")
+    repo = model_id.split("@", 1)[0] if "@" in model_id else model_id
+    key = (repo, extra.get("subfolder", ""), map_location or "auto")
     if key not in _models:
-        model = AutoExtractor.from_pretrained(model_id, map_location=map_location, **extra)
+        model = AutoExtractor.from_pretrained(repo, map_location=map_location, **extra)
         dev = next(model.parameters()).device
         logger.info(
             "Loaded model %s subfolder=%s on device %s (requested %s)",
@@ -408,7 +409,8 @@ def model_schema(model: str) -> Dict[str, Any]:
     from gliner2.configuration import ExtractorConfig
     from models import hub_load_kwargs
 
-    cfg = ExtractorConfig.from_pretrained(model, **hub_load_kwargs(model))
+    repo = model.split("@", 1)[0] if "@" in model else model
+    cfg = ExtractorConfig.from_pretrained(repo, **hub_load_kwargs(model))
     bh = getattr(cfg, "boundary_head", None) or {}
     return {"model": model, "schema": getattr(cfg, "default_schema", None),
             # The model's own gates; None means "follows the span threshold".

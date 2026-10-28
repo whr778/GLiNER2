@@ -22,6 +22,50 @@ def _store(tmp_path, monkeypatch):
     return store
 
 
+def test_two_epochs_of_one_repo_load_apart(tmp_path, monkeypatch):
+    store = tmp_path / "models.json"
+    store.write_text(json.dumps([
+        {"path": REPO, "label": "eb22d epoch 1", "subfolder": "checkpoint-epoch-1"},
+        {"path": REPO, "label": "eb22d epoch 2", "subfolder": "checkpoint-epoch-2"},
+    ]), encoding="utf-8")
+    monkeypatch.setattr(models, "_STORE", store)
+    listed = [m for m in models.list_models("fastino/gliner2-base-v1") if m["path"] == REPO]
+    assert [m["id"] for m in listed] == [
+        f"{REPO}@checkpoint-epoch-1",
+        f"{REPO}@checkpoint-epoch-2",
+    ]
+    assert models.hub_load_kwargs(f"{REPO}@checkpoint-epoch-2") == {"subfolder": "checkpoint-epoch-2"}
+    assert models.hub_load_kwargs(f"{REPO}@checkpoint-epoch-1") == {"subfolder": "checkpoint-epoch-1"}
+    assert models.hub_load_kwargs(REPO) == {}
+    models.remove_model(f"{REPO}@checkpoint-epoch-2")
+    kept = json.loads(store.read_text(encoding="utf-8"))
+    assert [m["subfolder"] for m in kept] == ["checkpoint-epoch-1"]
+
+    # put epoch 2 back and prove the loader strips the id before the Hub call
+    store.write_text(json.dumps([
+        {"path": REPO, "label": "eb22d epoch 1", "subfolder": "checkpoint-epoch-1"},
+        {"path": REPO, "label": "eb22d epoch 2", "subfolder": "checkpoint-epoch-2"},
+    ]), encoding="utf-8")
+    seen = {}
+
+    def fake_from_pretrained(repo, **kwargs):
+        seen["repo"] = repo
+        seen["kwargs"] = kwargs
+
+        class _Weights:
+            def parameters(self):
+                import torch
+                yield torch.nn.Parameter(torch.zeros(1))
+
+        return _Weights()
+
+    monkeypatch.setattr("gliner2.AutoExtractor.from_pretrained", fake_from_pretrained)
+    app._models.clear()
+    app.get_model(f"{REPO}@checkpoint-epoch-2", device="cpu")
+    assert seen["repo"] == REPO
+    assert seen["kwargs"]["subfolder"] == "checkpoint-epoch-2"
+
+
 def test_saved_subfolder_is_the_load_kwarg(tmp_path, monkeypatch):
     store = _store(tmp_path, monkeypatch)
     assert models.hub_load_kwargs(REPO) == {"subfolder": "checkpoint-epoch-1"}
