@@ -410,7 +410,7 @@ export default function InputPanel({ text, setText, options, setOptions, queuein
             )}
             <div className="hint">
               Off until you set a link-logit cut-off. That number is not from the checkpoint. Clusters are
-              predicted entity spans plus pronouns. They are not added as event arguments. An argument span that equals one cluster's mention is marked with that cluster.
+              predicted entity spans plus pronouns. An argument span that equals one cluster's mention is marked with that cluster, and the cluster's other mentions are added as arguments of the same role.
             </div>
           </div>
         )}

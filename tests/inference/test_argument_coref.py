@@ -25,20 +25,24 @@ def _gold():
     }
 
 
-def test_one_exact_span_writes_the_cluster_index():
+def test_one_exact_span_writes_the_cluster_index_and_copies_the_other_mentions():
     pred = _pred()
     counts = attach_argument_clusters(pred)
-    assert pred["event_extraction"]["Leave"][0]["arguments"][0]["coref_cluster"] == 0
+    args = pred["event_extraction"]["Leave"][0]["arguments"]
+    assert [(a["entity"]["text"], a["coref_cluster"]) for a in args] == [("Paul", 0), ("he", 0)]
     assert counts == {"linked": 1, "ambiguous": 0, "none": 0}
     attach_argument_clusters(pred)
-    assert pred["event_extraction"]["Leave"][0]["arguments"][0]["coref_cluster"] == 0
+    args = pred["event_extraction"]["Leave"][0]["arguments"]
+    assert [(a["entity"]["text"], a["coref_cluster"]) for a in args] == [("Paul", 0), ("he", 0)]
 
 
 def test_a_span_in_two_clusters_writes_nothing():
     paul = _sp("Paul", 0)
     pred = _pred(paul, [[paul, _sp("he", 5)], [paul, _sp("him", 20)]])
     counts = attach_argument_clusters(pred)
-    assert "coref_cluster" not in pred["event_extraction"]["Leave"][0]["arguments"][0]
+    args = pred["event_extraction"]["Leave"][0]["arguments"]
+    assert "coref_cluster" not in args[0]
+    assert len(args) == 1
     assert counts["ambiguous"] == 1 and counts["linked"] == 0
 
 
@@ -62,12 +66,13 @@ def test_missing_clusters_empty_clusters_and_a_string_entity_do_not_raise():
     assert "coref_cluster" not in string_arg["event_extraction"]["Leave"][0]["arguments"][0]
 
 
-def test_event_argument_sets_are_unchanged():
+def test_the_copied_mention_is_an_argument_of_the_same_role():
     pred = _pred()
     before = M._pred_event_argument_set(pred)
     attach_argument_clusters(pred)
-    assert M._pred_event_argument_set(pred) == before
-    assert len(pred["event_extraction"]["Leave"][0]["arguments"]) == 1
+    after = M._pred_event_argument_set(pred)
+    assert before < after
+    assert any(item[2] == "he" for item in after)
 
 
 def test_score_is_strict_micro_f1_when_gold_clusters_exist():
@@ -76,9 +81,10 @@ def test_score_is_strict_micro_f1_when_gold_clusters_exist():
     assert metrics["eval_argument_cluster_link_strict_micro_f1"] == 1.0
     assert metrics["eval_argument_cluster_link_strict_micro_precision"] == 1.0
     assert metrics["eval_argument_cluster_link_strict_micro_recall"] == 1.0
-    assert metrics["eval_argument_cluster_link_support"] == 1
+    assert metrics["eval_argument_cluster_link_support"] == 2
     assert metrics["eval_argument_cluster_link_gold_documents"] == 1
-    assert pred["event_extraction"]["Leave"][0]["arguments"][0]["coref_cluster"] == 0
+    args = pred["event_extraction"]["Leave"][0]["arguments"]
+    assert [(a["entity"]["text"], a["coref_cluster"]) for a in args] == [("Paul", 0), ("he", 0)]
 
 
 def test_a_miss_scores_zero_recall():
@@ -87,7 +93,17 @@ def test_a_miss_scores_zero_recall():
     metrics = score_argument_clusters([_gold()], [pred])
     assert metrics["eval_argument_cluster_link_strict_micro_recall"] == 0.0
     assert metrics["eval_argument_cluster_link_strict_micro_f1"] == 0.0
-    assert metrics["eval_argument_cluster_link_support"] == 1
+    assert metrics["eval_argument_cluster_link_support"] == 2
+
+
+def test_a_copied_mention_outside_the_gold_cluster_is_a_false_positive():
+    gold = _gold()
+    gold["coref_clusters"] = [[_sp("Paul", 0), _sp("Mary", 30)]]
+    metrics = score_argument_clusters([gold], [_pred()])
+    assert metrics["eval_argument_cluster_link_strict_micro_precision"] == 0.5
+    assert metrics["eval_argument_cluster_link_strict_micro_recall"] == 0.5
+    assert metrics["eval_argument_cluster_link_strict_micro_f1"] == 0.5
+    assert metrics["eval_argument_cluster_link_support"] == 2
 
 
 def test_every_document_without_clusters_omits_f1():

@@ -168,9 +168,9 @@ def test_data_row_marks_an_argument_span_with_its_cluster():
         "arguments": [{"role": "Person", "entity": "Ann"}],
     }]}}
     marked = gold.data_view(dict(base, coref_clusters=[[_m("Ann", 0), _m("she", 9)]]))
-    arg = marked["pred"]["event_extraction"]["Leave"][0]["arguments"][0]
-    assert arg["coref_cluster"] == 0
-    assert [a["role"] for a in marked["pred"]["event_extraction"]["Leave"][0]["arguments"]] == ["Person"]
+    args = marked["pred"]["event_extraction"]["Leave"][0]["arguments"]
+    assert [(a["entity"]["text"], a["coref_cluster"], a["role"]) for a in args] == [
+        ("Ann", 0, "Person"), ("she", 0, "Person")]
     plain = gold.data_view(base)
     assert "coref_cluster" not in plain["pred"]["event_extraction"]["Leave"][0]["arguments"][0]
 

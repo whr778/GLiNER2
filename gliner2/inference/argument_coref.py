@@ -2,9 +2,9 @@
 
 The mention link and the argument head stay separate. This is the decode-time join:
 an argument whose ``[start, end)`` equals a mention in exactly one cluster records
-that cluster's index. No cluster, an empty list, a string argument, or a span that
-meets zero clusters or two or more leaves the field off. Other mentions are not
-copied onto the event.
+that cluster's index, and the cluster's other mentions are appended as arguments of
+the same role. No cluster, an empty list, a string argument, or a span that meets
+zero clusters or two or more leaves the field off and adds nothing.
 
 Gold ``coref_clusters`` are not an input. They are only the reference for
 :func:`score_argument_clusters`, and a document that has none is left out of that
@@ -12,44 +12,68 @@ score.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 Span = Tuple[int, int]
-Link = Tuple[str, str, str, frozenset]
+Member = Tuple[str, str, Span]
 
 
 def attach_argument_clusters(pred: Dict[str, Any]) -> Dict[str, int]:
-    """Write ``coref_cluster`` on uniquely matched arguments. Return linked, ambiguous, none.
+    """Write ``coref_cluster`` and copy the cluster's other mentions onto the event.
 
-    Idempotent: a previous index is cleared before the span test runs again.
+    The counts describe the arguments present at the start of the call. A second call
+    does not append those mentions again.
     """
     counts = {"linked": 0, "ambiguous": 0, "none": 0}
     if not isinstance(pred, dict):
         return counts
     clusters = _clusters(pred)
-    for arg in _pred_arguments(pred):
-        arg.pop("coref_cluster", None)
-        span = _entity_span(arg.get("entity"))
-        hits = _hits(span, clusters) if span is not None else []
-        if len(hits) == 1:
-            arg["coref_cluster"] = hits[0]
-            counts["linked"] += 1
-        elif len(hits) > 1:
-            counts["ambiguous"] += 1
-        else:
-            counts["none"] += 1
+    block = pred.get("event_extraction")
+    if not isinstance(block, dict):
+        return counts
+    for mentions in block.values():
+        if not isinstance(mentions, list):
+            continue
+        for event in mentions:
+            if not isinstance(event, dict):
+                continue
+            arguments = event.get("arguments")
+            if not isinstance(arguments, list):
+                continue
+            originals = [arg for arg in arguments if isinstance(arg, dict)]
+            present = set()
+            for arg in originals:
+                span = _entity_span(arg.get("entity"))
+                role = arg.get("role")
+                if span is not None and isinstance(role, str) and role.strip():
+                    present.add((role.strip(), span))
+            for arg in originals:
+                arg.pop("coref_cluster", None)
+                span = _entity_span(arg.get("entity"))
+                hits = _hits(span, clusters) if span is not None else []
+                if len(hits) == 1:
+                    index = hits[0]
+                    arg["coref_cluster"] = index
+                    counts["linked"] += 1
+                    role = arg.get("role")
+                    if isinstance(role, str) and role.strip():
+                        _copy_members(arguments, role.strip(), clusters[index], index, present)
+                elif len(hits) > 1:
+                    counts["ambiguous"] += 1
+                else:
+                    counts["none"] += 1
     return counts
 
 
 def score_argument_clusters(golds: Sequence[Dict[str, Any]],
                             preds: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """Strict micro precision, recall and F1 of argument-to-cluster links.
+    """Strict micro precision, recall and F1 of cluster mentions carried as arguments.
 
-    Calls :func:`attach_argument_clusters` on each prediction. A gold link is one
-    argument string that sits in exactly one gold cluster. A predicted link matches
-    it when the event type, role and surface agree and the two clusters share a
-    mention span. Documents with no gold clusters are counted and excluded. When
-    every document is excluded, the three rates are omitted.
+    Calls :func:`attach_argument_clusters` on each prediction. A gold argument whose
+    surface sits in exactly one gold cluster requires every mention span in that
+    cluster, under that role. A predicted argument of that role is a true positive
+    when its span equals one of those mentions. Documents with no gold clusters are
+    counted and excluded. When every document is excluded, the three rates are omitted.
     """
     tp = fp = fn = 0
     counts = {"linked": 0, "ambiguous": 0, "none": 0}
@@ -64,17 +88,15 @@ def score_argument_clusters(golds: Sequence[Dict[str, Any]],
             continue
         gold_documents += 1
         gold_spans, gold_texts = _pack(_gold_clusters(gold))
-        pred_spans, _ = _pack(_clusters(pred))
-        gold_links = list(_gold_links(gold, gold_texts, gold_spans))
-        pred_links = list(_pred_links(pred, pred_spans))
-        used = [False] * len(pred_links)
-        for etype, role, surface, spans in gold_links:
-            match = _take(pred_links, used, etype, role, surface, spans)
-            if match:
+        required = _gold_members(gold, gold_texts, gold_spans)
+        matched: Set[Member] = set()
+        for member in _pred_members(pred):
+            if member in required and member not in matched:
+                matched.add(member)
                 tp += 1
             else:
-                fn += 1
-        fp += sum(1 for flag in used if not flag)
+                fp += 1
+        fn += len(required - matched)
     out: Dict[str, Any] = {
         "eval_argument_cluster_link_support": tp + fn,
         "eval_argument_cluster_link_linked": counts["linked"],
@@ -105,19 +127,21 @@ def _gold_clusters(gold: Dict[str, Any]) -> List[Any]:
     return []
 
 
-def _pred_arguments(pred: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
-    block = pred.get("event_extraction")
-    if not isinstance(block, dict):
+def _copy_members(arguments: List[Dict[str, Any]], role: str, cluster: Any, index: int,
+                  present: Set[Tuple[str, Span]]) -> None:
+    if not isinstance(cluster, list):
         return
-    for mentions in block.values():
-        if not isinstance(mentions, list):
+    for mention in cluster:
+        span = _span(mention)
+        text = mention.get("text") if isinstance(mention, dict) else None
+        if span is None or not isinstance(text, str) or (role, span) in present:
             continue
-        for event in mentions:
-            if not isinstance(event, dict):
-                continue
-            for arg in event.get("arguments") or []:
-                if isinstance(arg, dict):
-                    yield arg
+        arguments.append({
+            "role": role,
+            "entity": {"text": text, "start": span[0], "end": span[1]},
+            "coref_cluster": index,
+        })
+        present.add((role, span))
 
 
 def _span(mention: Any) -> Optional[Span]:
@@ -171,10 +195,11 @@ def _pack(clusters: Sequence[Any]) -> Tuple[List[frozenset], List[set]]:
     return spans, texts
 
 
-def _gold_links(gold: Dict[str, Any], texts: Sequence[set], spans: Sequence[frozenset]) -> Iterable[Link]:
+def _gold_members(gold: Dict[str, Any], texts: Sequence[set], spans: Sequence[frozenset]) -> Set[Member]:
+    required: Set[Member] = set()
     events = gold.get("events") if isinstance(gold, dict) else None
     if not isinstance(events, list):
-        return
+        return required
     for event in events:
         if not isinstance(event, dict) or not isinstance(event.get("event_type"), str):
             continue
@@ -189,10 +214,12 @@ def _gold_links(gold: Dict[str, Any], texts: Sequence[set], spans: Sequence[froz
                 continue
             hits = [i for i, names in enumerate(texts) if surface in names]
             if len(hits) == 1:
-                yield etype, role, surface, spans[hits[0]]
+                for span in spans[hits[0]]:
+                    required.add((etype, role, span))
+    return required
 
 
-def _pred_links(pred: Dict[str, Any], spans: Sequence[frozenset]) -> Iterable[Link]:
+def _pred_members(pred: Dict[str, Any]) -> Iterable[Member]:
     block = pred.get("event_extraction") if isinstance(pred, dict) else None
     if not isinstance(block, dict):
         return
@@ -205,19 +232,8 @@ def _pred_links(pred: Dict[str, Any], spans: Sequence[frozenset]) -> Iterable[Li
             for arg in event.get("arguments") or []:
                 if not isinstance(arg, dict) or not isinstance(arg.get("role"), str):
                     continue
-                role, surface = arg["role"].strip(), _surface(arg.get("entity"))
+                span = _entity_span(arg.get("entity"))
                 index = arg.get("coref_cluster")
-                if (not role or not surface or isinstance(index, bool) or not isinstance(index, int)
-                        or not 0 <= index < len(spans)):
+                if span is None or isinstance(index, bool) or not isinstance(index, int):
                     continue
-                yield etype.strip(), role, surface, spans[index]
-
-
-def _take(links: Sequence[Link], used: List[bool], etype: str, role: str, surface: str,
-          spans: frozenset) -> bool:
-    for index, (petype, prole, psurface, pspans) in enumerate(links):
-        if used[index] or petype != etype or prole != role or psurface != surface or not (pspans & spans):
-            continue
-        used[index] = True
-        return True
-    return False
+                yield etype.strip(), arg["role"].strip(), span

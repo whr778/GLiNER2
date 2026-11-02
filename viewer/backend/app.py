@@ -212,7 +212,7 @@ def _attach_entity_coref(model, text: str, result: Dict[str, Any], threshold: fl
 
     The same call as ``infer.py --entity-coref``: multi-mention clusters only.
     An argument span that equals a mention in exactly one cluster records that
-    index. The other mentions are not added as argument fillers.
+    index, and the cluster's other mentions are added as arguments of the same role.
     """
     if getattr(model, "mention_link", None) is None:
         raise HTTPException(

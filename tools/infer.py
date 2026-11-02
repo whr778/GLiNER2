@@ -193,7 +193,8 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                         "clusters only. The value is the link-logit cut-off picked on val "
                         "(tools/train/coref_threshold.py; 0.2 for gliner2-corefC-treatment). Needs --include-spans "
                         "and a checkpoint with the link. With spans, an argument whose span equals a "
-                        "mention in exactly one of those clusters gets coref_cluster; no clusters leaves it off.")
+                        "mention in exactly one of those clusters gets coref_cluster, and the cluster's "
+                        "other mentions are added as arguments of the same role. No clusters adds nothing.")
     p.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], default="auto",
                    help="auto (default) picks cuda, else mps, else cpu. On Apple silicon prefer "
                         "cpu for a long file: MPS keeps memory for every new input length and never returns it "
