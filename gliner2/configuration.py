@@ -329,6 +329,11 @@ class BoundaryHeadSettings:
     # construction; entities, relations and structures keep the shared pair. The encoder, boundary heads and
     # every loss stay shared. per_query candidate pool only. The eb22c separation A/B (2026-10-21).
     separate_event_scorer: bool = False
+    # From-scratch only. The span terms added after eb21 (endpoint difference, span content,
+    # query-conditioned inside weight, boundary attention) start so the pair logit equals the
+    # eb21 sum: additive layers output 0, the inside weight outputs 1, attention is a pass-through.
+    # A loaded checkpoint overwrites these values. Rotary is not covered; leave it off from scratch.
+    span_residual_zero_init: bool = False
     # Sparse typed relation scorer.
     enable_relations: bool = True
     relation_heads_per_type: int = 32
@@ -698,6 +703,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "separate_event_scorer": bool(
             values.get("separate_event_scorer", d.separate_event_scorer)
+        ),
+        "span_residual_zero_init": bool(
+            values.get("span_residual_zero_init", d.span_residual_zero_init)
         ),
         "task_loss_weights": (
             {str(k): float(v) for k, v in values["task_loss_weights"].items()}

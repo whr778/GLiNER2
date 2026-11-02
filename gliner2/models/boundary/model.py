@@ -349,6 +349,34 @@ class BoundaryHead(nn.Module):
             text_hidden_size=hidden_size,
         )
         torch.random.set_rng_state(shared_rng_state)
+        if settings.span_residual_zero_init:
+            self._zero_span_residuals()
+
+    def _zero_span_residuals(self) -> None:
+        """Start the post-eb21 span terms at the eb21 pair logit.
+
+        Additive projections output 0, the query-conditioned inside weight outputs 1,
+        and each boundary-attention block is a residual pass-through. Applied after
+        construction, so the initialization stream of every other parameter is unchanged.
+        """
+        scorers = [self.pair_scorer]
+        if self.event_pair_scorer is not None:
+            scorers.append(self.event_pair_scorer)
+        for scorer in scorers:
+            if isinstance(scorer.inside_weight, nn.Linear):
+                nn.init.zeros_(scorer.inside_weight.weight)
+                nn.init.ones_(scorer.inside_weight.bias)
+            for layer in (
+                scorer.endpoint_difference_projection,
+                scorer.content_query_projection,
+                scorer.content_bias,
+            ):
+                if layer is not None:
+                    nn.init.zeros_(layer.weight)
+                    nn.init.zeros_(layer.bias)
+        for block in self.boundary_encoder.attention_blocks:
+            nn.init.zeros_(block.output_projection.weight)
+            nn.init.zeros_(block.output_projection.bias)
 
     def set_gold_injection_prob(self, value: float) -> None:
         if not 0.0 <= value <= 1.0:
