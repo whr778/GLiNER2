@@ -1,0 +1,19 @@
+# Score eb22e on the WikiEvents splits from life-mdeberta-wikievents.
+# Dev is val, test is the 20-document blind split. The window is eb22e's
+# training window (4096), not the life encoder's 512.
+model:
+  encoder: jhu-clsp/mmBERT-base
+  architecture: boundary
+training:
+  output_dir: ./out/eb22e-wikievents-eval
+  max_len: 4096
+eval:
+  batch_size: 2
+  threshold: 0.1
+  global_decode: true
+labels_file: labels/unified-full-v4.yaml
+data:
+  event_files:
+    wikievents:
+      val: data/wikievents.dev.jsonl
+      test: data/wikievents.test.jsonl
