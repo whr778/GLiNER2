@@ -1027,6 +1027,7 @@ class ExtractorTrainer:
             changed = apply_schema_dropout(self.processor.sampling_config, setting)
             logger.info("schema_dropout: %s -- set %d removal probabilities (%s)", setting, len(changed),
                         ", ".join(f"{k}={v}" for k, v in sorted(changed.items())) or "none changed")
+        self._log_span_residual_init()
 
         self.global_step = 0
         self.epoch = 0
@@ -1928,6 +1929,38 @@ class ExtractorTrainer:
         logger.info(
             "[pool] candidate_pool=%s  shared-pool grad norm %.3e over %d tensor(s)",
             pool, total ** 0.5, found,
+        )
+
+    def _log_span_residual_init(self) -> None:
+        """One line after logging exists, from the weights, so a from-scratch eb22e run can fail this gate.
+
+        The flag zeros the post-eb21 span terms at construction. This reads those tensors at trainer
+        construction, before any step. A fresh eb22e run prints zeros. A resume that loaded weights
+        first prints the loaded values.
+        """
+        head = getattr(self.model, "boundary_head", None)
+        settings = getattr(head, "settings", None)
+        if settings is None or not settings.span_residual_zero_init:
+            return
+        scorer = head.pair_scorer
+
+        def _absmax(layer) -> float:
+            if layer is None:
+                return float("nan")
+            return float(layer.weight.detach().abs().max())
+
+        inside = scorer.inside_weight
+        inside_bias = float(inside.bias.detach()) if isinstance(inside, nn.Linear) else float("nan")
+        blocks = head.boundary_encoder.attention_blocks
+        attn = float(blocks[0].output_projection.weight.detach().abs().max()) if blocks else float("nan")
+        logger.info(
+            "[span-residual] zero_init live endpoint_absmax=%.6g content_bias_absmax=%.6g "
+            "inside_bias=%.6g attn_out_absmax=%.6g rotary=%s",
+            _absmax(scorer.endpoint_difference_projection),
+            _absmax(scorer.content_bias),
+            inside_bias,
+            attn,
+            settings.enable_rotary_endpoints,
         )
 
     def _wired(self, dataset, is_train: bool):

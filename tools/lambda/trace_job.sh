@@ -62,6 +62,28 @@ for d in sorted(Path(out).glob("checkpoint-*"), key=lambda p: int(re.sub(r"\D", 
         print(f"[trace] *** upload of {d.name} NOT visible on the Hub; will retry ***", flush=True)
 PYU
 }
+upload_best() {  # best/ is not named checkpoint-*, so the loop above never sees it
+  [ -n "$CKPT_REPO" ] || return 0
+  [ -s "$OUTDIR/best/model.safetensors" ] || return 0
+  $PY - "$OUTDIR/best" "$CKPT_REPO" <<'PYB'
+import os, sys
+from huggingface_hub import HfApi
+folder, repo = sys.argv[1], sys.argv[2]
+api = HfApi(token=os.environ["HF_TOKEN"])
+api.create_repo(repo, private=True, exist_ok=True)
+if "best/model.safetensors" in set(api.list_repo_files(repo)):
+    print(f"[trace] best already on {repo}", flush=True)
+    sys.exit(0)
+api.upload_folder(folder_path=folder, path_in_repo="best", repo_id=repo,
+                  ignore_patterns=["training_state.pt"], commit_message="best")
+files = set(api.list_repo_files(repo))
+if "best/model.safetensors" in files and "best/config.json" in files:
+    print(f"[trace] uploaded best -> {repo} (verified)", flush=True)
+else:
+    print("[trace] *** upload of best NOT visible on the Hub ***", flush=True)
+    sys.exit(1)
+PYB
+}
 last_pub=$(date +%s)
 last_step() { [ -s "$HIST" ] && $PY -c "import json; print(json.loads(open('$HIST').read().splitlines()[-1])['eval_step'])" || echo 0; }
 while kill -0 $TRAIN 2>/dev/null; do
@@ -97,6 +119,7 @@ while kill -0 $TRAIN 2>/dev/null; do
   if [ $(( $(date +%s) - last_pub )) -ge 1200 ]; then
     publish "$DEST" "$LOG" $([ -s "$HIST" ] && echo "$HIST") || echo "[trace] periodic publish failed (continuing)"
     upload_new_checkpoints || echo "[trace] checkpoint upload failed (continuing; retried next round)"
+    upload_best || echo "[trace] best upload failed (continuing; retried next round)"
     last_pub=$(date +%s)
   fi
 done
@@ -104,4 +127,5 @@ wait $TRAIN 2>/dev/null
 echo "[trace] training ended at eval step $(last_step) $(date -u)"
 publish "$DEST" "$LOG" "$HIST" || { echo "[trace] *** FINAL PUBLISH FAILED ***"; exit 1; }
 upload_new_checkpoints || { echo "[trace] *** FINAL CHECKPOINT UPLOAD FAILED ***"; exit 1; }
+upload_best || { echo "[trace] *** FINAL BEST UPLOAD FAILED ***"; exit 1; }
 echo "[trace] ===== DONE $(date -u) ====="
