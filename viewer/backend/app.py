@@ -211,7 +211,8 @@ def _attach_entity_coref(model, text: str, result: Dict[str, Any], threshold: fl
     """Cluster predicted entity spans and pronouns with the trained mention link.
 
     The same call as ``infer.py --entity-coref``: multi-mention clusters only.
-    It does not add those mentions as event-argument fillers.
+    An argument span that equals a mention in exactly one cluster records that
+    index. The other mentions are not added as argument fillers.
     """
     if getattr(model, "mention_link", None) is None:
         raise HTTPException(
@@ -224,6 +225,8 @@ def _attach_entity_coref(model, text: str, result: Dict[str, Any], threshold: fl
     result["coref_clusters"] = [
         c for c in resolve(model, text, mentions, threshold) if len(c) > 1
     ]
+    from gliner2.inference.argument_coref import attach_argument_clusters
+    attach_argument_clusters(result)
     return result
 
 

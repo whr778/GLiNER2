@@ -192,7 +192,8 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                         "(gliner2/inference/entity_coref.py) into output['coref_clusters'], multi-mention "
                         "clusters only. The value is the link-logit cut-off picked on val "
                         "(tools/train/coref_threshold.py; 0.2 for gliner2-corefC-treatment). Needs --include-spans "
-                        "and a checkpoint with the link.")
+                        "and a checkpoint with the link. With spans, an argument whose span equals a "
+                        "mention in exactly one of those clusters gets coref_cluster; no clusters leaves it off.")
     p.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], default="auto",
                    help="auto (default) picks cuda, else mps, else cpu. On Apple silicon prefer "
                         "cpu for a long file: MPS keeps memory for every new input length and never returns it "
@@ -314,6 +315,14 @@ def main(argv: List[str] = None) -> None:
             for rec, r in zip(recs, out):
                 mentions = candidate_mentions(rec["input"], r.get("entities"))
                 r["coref_clusters"] = [c for c in resolve(model, rec["input"], mentions, args.entity_coref) if len(c) > 1]
+        if args.include_spans:
+            from gliner2.inference.argument_coref import attach_argument_clusters
+            totals = {"linked": 0, "ambiguous": 0, "none": 0}
+            for r in out:
+                for key, value in attach_argument_clusters(r).items():
+                    totals[key] += value
+            print(f"[infer] argument clusters linked={totals['linked']} "
+                  f"ambiguous={totals['ambiguous']} none={totals['none']}", flush=True)
         return out
 
     if not args.output:

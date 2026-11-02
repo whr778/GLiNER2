@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import diffs
+from gliner2.inference.argument_coref import attach_argument_clusters
 from gliner2.inference.argument_links import link_arguments, load_role_types
 from gliner2.processing.word_splitter import WhitespaceTokenSplitter
 from gliner2.training import eval_metrics as M
@@ -247,6 +248,8 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     view["diffs"] = diffs.annotate(view) if gold else []
     link_arguments(pred, _ROLE_TYPES)
     link_arguments(g, _ROLE_TYPES)
+    attach_argument_clusters(pred)
+    attach_argument_clusters(g)
     return view
 
 
@@ -262,6 +265,7 @@ def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
         for m in mentions:
             m.pop("trigger_key", None)
     link_arguments(shown, _ROLE_TYPES)
+    attach_argument_clusters(shown)
     return {"text": text, "pred": shown, "gold": {}, "has_gold": False, "data_row": True,
             "classifications": [], "unlocated": sorted(set(missed)), "f1": {}, "diffs": []}
 

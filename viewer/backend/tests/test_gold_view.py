@@ -161,6 +161,20 @@ def test_multi_trigger_event_keeps_strict_zero_and_adds_cluster_f1():
     assert v["f1"]["event_cluster_argument"] == 1.0
 
 
+def test_data_row_marks_an_argument_span_with_its_cluster():
+    text = "Ann said she left."
+    base = {"input": text, "output": {"events": [{
+        "event_type": "Leave", "triggers": ["left"],
+        "arguments": [{"role": "Person", "entity": "Ann"}],
+    }]}}
+    marked = gold.data_view(dict(base, coref_clusters=[[_m("Ann", 0), _m("she", 9)]]))
+    arg = marked["pred"]["event_extraction"]["Leave"][0]["arguments"][0]
+    assert arg["coref_cluster"] == 0
+    assert [a["role"] for a in marked["pred"]["event_extraction"]["Leave"][0]["arguments"]] == ["Person"]
+    plain = gold.data_view(base)
+    assert "coref_cluster" not in plain["pred"]["event_extraction"]["Leave"][0]["arguments"][0]
+
+
 def test_data_row_carries_its_coref_clusters(tmp_path):
     row = {"input": "Ann said she left.", "output": {},
            "coref_clusters": [[_m("Ann", 0), _m("she", 9)], [_m("left", 13)]]}
