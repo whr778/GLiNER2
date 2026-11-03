@@ -278,6 +278,79 @@ def test_dense_unresolved_role_is_withheld_and_an_empty_role_is_not():
     assert float(batched["field_loss"]) == pytest.approx(float(withheld))
 
 
+def test_dense_latent_matching_withholds_unresolved_field():
+    """Hungarian matching in latent mode must not reward predicting ABSENT on a missed gold field.
+
+    Traced before the change: instance 0 had the lower name NLL (0.275722 vs 0.397188),
+    and the solver still picked instance 1 because the unresolved role field scored
+    instance 0's positive logits as wrong.
+    """
+    spec = RecordSpec(
+        task_index=0, task_name="s", task_type="json_structures", mode="latent",
+        fields=(
+            RecordFieldSpec(0, "name", 0, FieldCardinality.REQUIRED_ONE),
+            RecordFieldSpec(1, "role", 1, FieldCardinality.ZERO_OR_MORE),
+        ),
+        anchor_query_id=None,
+    )
+    assign = torch.zeros(2, 2, 3)
+    assign[0, 0] = torch.tensor([0.0, 1.0, 0.0])
+    assign[1, 0] = torch.tensor([0.0, 0.5, 0.0])
+    assign[0, 1] = torch.tensor([0.0, 4.0, 4.0])
+    assign[1, 1] = torch.tensor([0.0, -4.0, -4.0])
+    group = DenseRecordGroupOutput(
+        spec=spec,
+        object_logits=torch.zeros(2),
+        assign_logits=assign,
+        instance_mask=torch.ones(2, dtype=torch.bool),
+        field_membership=torch.ones(2, 2, dtype=torch.bool),
+        pool_spans=torch.tensor([[0, 1], [2, 3]]),
+        field_specs=spec.fields,
+        field_query_ids=torch.tensor([0, 1]),
+        instance_pool_index=torch.tensor([0, 1]),
+    )
+    records = [RecordTarget(
+        "r0", 0, (
+            RecordFieldTarget(0, (((0, 1),),)),
+            RecordFieldTarget(1, (((10, 11),),)),
+        ),
+        anchor_query_id=None,
+    )]
+    expected = float(-F.log_softmax(assign[0, 0], -1)[1] / 2)
+    losses = compute_dense_group_loss(group, records)
+    assert float(losses["field_loss"]) == pytest.approx(expected)
+
+
+def test_dense_batch_loss_means_list_field_over_real_candidates():
+    """compute_dense_batch_loss must divide list-field BCE by field_membership, not padded pool width."""
+    cands_logits = torch.full((1, 1, 1, 2, 7), -1e4)
+    cands_logits[..., 0] = 0.0
+    cands_logits[..., 1:3] = 2.0
+    membership = torch.zeros(1, 1, 2, 6, dtype=torch.bool)
+    membership[..., :2] = True
+    gold = torch.zeros(1, 1, 1, 2, 6, dtype=torch.bool)
+    gold[0, 0, 0, 0, 0] = True
+    batch = DenseRecordBatchOutput(
+        object_logits=torch.zeros(1, 1, 1),
+        assign_logits=cands_logits,
+        instance_mask=torch.ones(1, 1, 1, dtype=torch.bool),
+        field_membership=membership,
+        pool_spans=torch.tensor([[[0, 1], [2, 3], [0, 0], [0, 0], [0, 0], [0, 0]]]),
+        field_mask=torch.ones(1, 1, 2, dtype=torch.bool),
+        scalar_fields=torch.tensor([[[True, False]]]),
+        modes=torch.zeros(1, 1, dtype=torch.long),
+        anchor_fields=torch.zeros(1, 1, dtype=torch.long),
+        group_mask=torch.ones(1, 1, dtype=torch.bool),
+    )
+    losses = compute_dense_batch_loss(
+        batch, gold, torch.ones(1, 1, 1, dtype=torch.bool),
+        annotated=torch.tensor([[[[True, False]]]]),
+    )
+    anchor_nll = float(-F.log_softmax(cands_logits[0, 0, 0, 0], -1)[1])
+    real_list_nll = float(F.binary_cross_entropy_with_logits(torch.tensor([2.0, 2.0]), torch.zeros(2)))
+    assert float(losses["field_loss"]) == pytest.approx((anchor_nll + real_list_nll) / 2)
+
+
 def test_dense_record_capacity_counts_only_real_instances():
     spec = RecordSpec(
         task_index=0,

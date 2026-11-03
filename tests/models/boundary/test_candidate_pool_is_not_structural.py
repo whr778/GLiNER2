@@ -106,6 +106,7 @@ def test_override_reaches_the_head_not_just_the_config():
     assert model.boundary_head.settings.candidate_pool == "shared", \
         "the head kept its checkpoint value -- the arm would be inert"
     assert model.config.boundary_head["candidate_pool"] == "shared"
+    assert all(p.requires_grad for n, p in model.boundary_head.named_parameters() if "shared_pool" in n)
 
 
 def _shared_pool_grad_norm(head, golden_batch):

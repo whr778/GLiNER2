@@ -90,6 +90,18 @@ def test_a_partial_match_still_supervises_the_matched_span():
     assert torch.allclose(R._instance_field_loss(g, 0, partial, spans), (anchor + role) / 2)
 
 
+def test_a_partial_match_masks_candidates_overlapping_the_unresolved_filler():
+    """Filler (5, 7) matches col 1. Filler (25, 26) misses, and col 2 is (25, 27), which overlaps it."""
+    g = group()
+    g.assign_logits[1][0] = torch.tensor([0.0, 1.0, 4.0, -2.0])
+    spans = [R._span_index(s) for s in g.field_spans]
+    partial = record("P", (2, 3), [(5, 7), (25, 26)])
+    anchor = R._scalar_field_nll(g.assign_logits[0][0], [1])
+    pos_bce = torch.nn.functional.binary_cross_entropy_with_logits(torch.tensor(1.0), torch.tensor(1.0))
+    neg_bce = torch.nn.functional.binary_cross_entropy_with_logits(torch.tensor(-2.0), torch.tensor(0.0))
+    assert torch.allclose(R._instance_field_loss(g, 0, partial, spans, hard_k=1), (anchor + pos_bce + neg_bce) / 2)
+
+
 def test_setting_parses_refuses_the_shared_pool_and_reaches_the_group_loss():
     assert validate_boundary_head({})["record_drop_anchor_field_loss"] is False
     assert validate_boundary_head({"record_drop_anchor_field_loss": True})["record_drop_anchor_field_loss"] is True

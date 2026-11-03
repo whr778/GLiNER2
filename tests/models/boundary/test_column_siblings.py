@@ -81,6 +81,26 @@ def test_siblings_train_a_column_even_without_false_negatives():
     assert torch.allclose(on[0], term(col[:, 2], [2], [0, 1]))
 
 
+def test_column_loss_respects_coreferent_ownership_flag():
+    group, records, spans = two_event_group()
+    col = group.assign_logits[1]
+    false = [3, 4]
+    expected_single = (
+        term(col[:, 1], [0], false)
+        + term(col[:, 1], [2], false)
+        + term(col[:, 2], [2], false + [0])
+    )
+    total, terms, *_ = R._column_loss(
+        group, records, 0, spans, 8, siblings=True, coreferent_ownership=False,
+    )
+    assert terms == 3
+    assert torch.allclose(total, expected_single)
+    gl_single = R.compute_group_loss(
+        group, records, column_negatives=8, column_siblings=True, coreferent_ownership=False,
+    )
+    assert torch.allclose(gl_single["column_loss"], expected_single / 3)
+
+
 def test_setting_parses_and_reaches_the_group_loss():
     assert validate_boundary_head({"record_link_column_siblings": True})["record_link_column_siblings"] is True
     assert validate_boundary_head({})["record_link_column_siblings"] is False

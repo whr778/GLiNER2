@@ -349,8 +349,19 @@ class BoundaryHead(nn.Module):
             text_hidden_size=hidden_size,
         )
         torch.random.set_rng_state(shared_rng_state)
+        self._sync_candidate_pool_grad()
         if settings.span_residual_zero_init:
             self._zero_span_residuals()
+
+    def _sync_candidate_pool_grad(self) -> None:
+        """Train shared_pool_* only when candidate_pool == 'shared'.
+
+        The modules stay in state_dict and named_parameters under per_query for
+        checkpoint compatibility, without sitting in the optimizer with None grads.
+        """
+        use_shared = self.settings.candidate_pool == "shared"
+        self.shared_pool_builder.requires_grad_(use_shared)
+        self.shared_pool_scorer.requires_grad_(use_shared)
 
     def _zero_span_residuals(self) -> None:
         """Start the post-eb21 span terms at the eb21 pair logit.
@@ -1581,7 +1592,8 @@ class BoundaryExtractorModel(BaseExtractorModel):
             module = getattr(self, name, None)
             if module is not None:
                 for parameter in getattr(module, "parameters", lambda: ())():
-                    total = total + parameter.sum() * 0.0
+                    if parameter.requires_grad:
+                        total = total + parameter.sum() * 0.0
         return total
 
     def _zero_loss(self, device) -> torch.Tensor:
@@ -2637,7 +2649,9 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 if output.total_loss is not None
                 else torch.zeros((), device=cls_loss.device)
             )
-            combined = span_total + cls_loss + self._head_touch(cls_loss.device)
+            combined = span_total + cls_loss
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                combined = combined + self._head_touch(cls_loss.device)
             if record_loss is not None:
                 combined = combined + record_loss["total"]
             if relation_loss is not None:

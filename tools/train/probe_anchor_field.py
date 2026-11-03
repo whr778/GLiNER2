@@ -57,7 +57,8 @@ def field_loss_split(group, inst, record, span_indices, hard_k=0, drop_anchor=Fa
             n_fields += 1
             continue
         row = group.assign_logits[f_idx][inst]
-        term = R._scalar_field_nll(row, cols) if is_scalar else R._list_field_bce(row, cols, hard_k)
+        ignore = () if is_scalar else R._unresolved_overlap_cols(record, fspec, span_indices[f_idx])
+        term = R._scalar_field_nll(row, cols) if is_scalar else R._list_field_bce(row, cols, hard_k, ignore)
         anchor = _is_anchor(group, fspec)
         if anchor and LOG[0]:
             p = torch.softmax(row.detach().float(), -1)

@@ -828,22 +828,44 @@ class RecordHead(nn.Module):
             for query_id in field_query_ids
         ]
 
-        # Gather per-field candidate tensors (state / span / mask / logit).
+        # Gather per-field candidate tensors (state / span / mask / logit) with one
+        # host transfer for the group rather than a per-field torch.nonzero sync.
         field_cand_states: List[torch.Tensor] = []
         field_spans: List[torch.LongTensor] = []
         field_cand_mask: List[torch.BoolTensor] = []
         field_cand_logits: List[torch.Tensor] = []
+        field_spans_list: List[List[List[int]]] = []
         cand_states_all = candidates.candidate_states
-        for qid, query_valid in zip(safe_field_query_ids, valid_query_ids):
-            mask = candidates.valid_mask[sample_index, qid] & query_valid  # [C]
-            keep = torch.nonzero(mask, as_tuple=False).flatten()
-            spans = candidates.indices[sample_index, qid][keep]    # [Cf, 2]
-            logits = candidates.pair_logits[sample_index, qid][keep]  # [Cf]
-            states = cand_states_all[sample_index, qid][keep]      # [Cf, H]
+        valid_rows = candidates.valid_mask[sample_index, safe_field_query_ids].cpu().tolist()
+        spans_rows = candidates.indices[sample_index, safe_field_query_ids].cpu().tolist()
+        total_cands = candidates.valid_mask.shape[2]
+        for f_idx, (qid, query_valid) in enumerate(zip(safe_field_query_ids, valid_query_ids)):
+            keep_list = (
+                [c for c, ok in enumerate(valid_rows[f_idx]) if ok]
+                if query_valid else []
+            )
+            if len(keep_list) == total_cands:
+                spans = candidates.indices[sample_index, qid]
+                logits = candidates.pair_logits[sample_index, qid]
+                states = cand_states_all[sample_index, qid]
+                span_pairs = spans_rows[f_idx]
+            elif keep_list:
+                keep = torch.tensor(keep_list, dtype=torch.long, device=device)
+                spans = candidates.indices[sample_index, qid][keep]    # [Cf, 2]
+                logits = candidates.pair_logits[sample_index, qid][keep]  # [Cf]
+                states = cand_states_all[sample_index, qid][keep]      # [Cf, H]
+                row_spans = spans_rows[f_idx]
+                span_pairs = [row_spans[c] for c in keep_list]
+            else:
+                spans = candidates.indices.new_zeros((0, 2))
+                logits = candidates.pair_logits.new_zeros((0,))
+                states = cand_states_all.new_zeros((0, cand_states_all.shape[-1]))
+                span_pairs = []
             field_cand_states.append(states)
             field_spans.append(spans.to(torch.long))
-            field_cand_mask.append(torch.ones(keep.shape[0], dtype=torch.bool, device=device))
+            field_cand_mask.append(torch.ones(len(keep_list), dtype=torch.bool, device=device))
             field_cand_logits.append(logits)
+            field_spans_list.append(span_pairs)
 
         fq = query_states[safe_field_query_ids]                    # [F, H]
 
@@ -858,9 +880,9 @@ class RecordHead(nn.Module):
             ni = anchor_states.shape[0]
             inst_states = anchor_states
             object_logits = anchor_logits
-            for c, (start, end) in enumerate(anchor_spans.tolist()):
+            for c, (start, end) in enumerate(field_spans_list[anchor_field_idx]):
                 instance_seed.append((anchor_field_idx, c))
-                instance_spans.append((start, end))
+                instance_spans.append((int(start), int(end)))
         elif spec.mode == "latent":
             seed_states: List[torch.Tensor] = []
             seed_scores: List[torch.Tensor] = []
@@ -868,11 +890,12 @@ class RecordHead(nn.Module):
                 if states.shape[0] == 0:
                     continue
                 scores = self.latent_seed_head(states).squeeze(-1)  # [Cf]
+                span_pairs = field_spans_list[f_idx]
                 for c in range(states.shape[0]):
                     seed_states.append(states[c])
                     seed_scores.append(scores[c])
                     instance_seed.append((f_idx, c))
-                    sp = field_spans[f_idx][c]
+                    sp = span_pairs[c]
                     instance_spans.append((int(sp[0]), int(sp[1])))
             if seed_states:
                 inst_states = torch.stack(seed_states, dim=0)
@@ -1243,7 +1266,8 @@ def _scalar_field_nll(logits_row: torch.Tensor, target_cols) -> torch.Tensor:
     return -torch.logsumexp(logp[idx], dim=-1)
 
 
-def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0) -> torch.Tensor:
+def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0,
+                    ignore_cols=()) -> torch.Tensor:
     """BCE over a list field's candidates.
 
     ``hard_k`` = 0 (historical): the mean over EVERY candidate (up to the 768 budget), which
@@ -1252,7 +1276,8 @@ def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0) ->
     candidates, plus the mean over the ``hard_k`` highest-scoring wrong ones. The two means
     are added, so a missed gold argument's gradient is ``(P - 1) / n_gold`` and does not
     shrink as K grows. An empty role has no gold mean; it is the mean over those K wrong
-    candidates only.
+    candidates only. ``ignore_cols`` excludes candidates overlapping an unresolved gold value
+    on a partially matched field from the negative set.
     """
     cand_logits = logits_row[1:]
     if cand_logits.numel() == 0:
@@ -1263,23 +1288,37 @@ def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0) ->
         idx = col - 1
         if 0 <= idx < n:
             target[idx] = 1.0
+    ignore = torch.zeros(n, dtype=torch.bool, device=cand_logits.device)
+    if ignore_cols:
+        for col in ignore_cols:
+            idx = col - 1
+            if 0 <= idx < n and target[idx] == 0:
+                ignore[idx] = True
     if hard_k > 0:
         pos = target > 0
         n_pos = int(pos.sum())
-        k = min(hard_k, n - n_pos)
+        n_ignore = int(ignore.sum()) if ignore_cols else 0
+        k = min(hard_k, max(n - n_pos - n_ignore, 0))
         loss = cand_logits.new_zeros(())
         if n_pos:
             loss = loss + F.binary_cross_entropy_with_logits(
                 cand_logits[pos], target[pos], reduction="mean"
             )
         if k:
-            wrong = cand_logits.detach().masked_fill(pos, float("-inf"))
+            wrong = cand_logits.detach().masked_fill(pos | ignore, float("-inf"))
             neg = torch.zeros_like(pos)
             neg = neg.index_fill(0, torch.topk(wrong, k).indices, True)
             loss = loss + F.binary_cross_entropy_with_logits(
                 cand_logits[neg], target[neg], reduction="mean"
             )
         return loss
+    if ignore_cols:
+        keep = ~ignore
+        if not bool(keep.any()):
+            return logits_row.new_zeros(())
+        return F.binary_cross_entropy_with_logits(
+            cand_logits[keep], target[keep], reduction="mean"
+        )
     return F.binary_cross_entropy_with_logits(cand_logits, target, reduction="mean")
 
 
@@ -1320,6 +1359,26 @@ def _field_target_cols(fspec, record: RecordTarget, span_to_idx):
     return cols, False
 
 
+def _unresolved_overlap_cols(record: RecordTarget, fspec, span_to_idx) -> List[int]:
+    """Candidate columns that overlap an unresolved gold value of this field."""
+    ft = record.field_for_query(fspec.query_id)
+    if ft is None or not ft.values:
+        return []
+    missed = [
+        (int(s[0]), int(s[1]))
+        for value in ft.values
+        if not _resolve_value_cols(value, span_to_idx)
+        for s in value
+    ]
+    if not missed:
+        return []
+    return [
+        idx + 1
+        for (cs, ce), idx in span_to_idx.items()
+        if any(cs < ge and gs < ce for gs, ge in missed)
+    ]
+
+
 def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices, hard_k: int = 0,
                          drop_anchor: bool = False) -> torch.Tensor:
     """Mean over the record's fields of each field's assignment loss for instance ``inst``.
@@ -1341,9 +1400,10 @@ def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices, h
             n_fields += 1
             continue
         row = group.assign_logits[f_idx][inst]
+        ignore = () if is_scalar else _unresolved_overlap_cols(record, fspec, span_indices[f_idx])
         total = total + (
             _scalar_field_nll(row, cols)
-            if is_scalar else _list_field_bce(row, cols, hard_k)
+            if is_scalar else _list_field_bce(row, cols, hard_k, ignore)
         )
         n_fields += 1
     return total / max(n_fields, 1)
@@ -1436,6 +1496,7 @@ def _dense_gold_indicator(
 def build_dense_record_cost(
     group: DenseRecordGroupOutput,
     gold_indicator: torch.BoolTensor,
+    unresolved: Optional[torch.BoolTensor] = None,
 ) -> torch.Tensor:
     """Vectorized ``[I,N_gold]`` matching cost for one dense group."""
     n_gold = gold_indicator.shape[0]
@@ -1452,6 +1513,7 @@ def build_dense_record_cost(
         gold_indicator,
         scalar,
         group.instance_mask,
+        unresolved=unresolved,
     )
 
 
@@ -1543,7 +1605,7 @@ def compute_dense_group_loss(
         object_loss = zero
     else:
         with torch.no_grad():
-            cost = build_dense_record_cost(group, gold)
+            cost = build_dense_record_cost(group, gold, unresolved=unresolved)
         rows, cols = linear_sum_assignment(cost)
         matched_rows = rows.to(device)
         matched_cols = cols.to(device)
@@ -1616,7 +1678,20 @@ def compute_dense_batch_loss(
         -1,
     )
     candidates = output.assign_logits[..., 1:]
-    list_nll = F.binary_cross_entropy_with_logits(
+    membership = output.field_membership.to(device=device, dtype=candidates.dtype)
+    if membership.shape[-1] > n_cands_logits:
+        membership = membership[..., :n_cands_logits]
+    elif membership.shape[-1] < n_cands_logits:
+        membership = torch.cat(
+            [
+                membership,
+                membership.new_zeros(
+                    *membership.shape[:-1], n_cands_logits - membership.shape[-1]
+                ),
+            ],
+            -1,
+        )
+    list_bce = F.binary_cross_entropy_with_logits(
         candidates.unsqueeze(3).expand(
             *candidates.shape[:3],
             gold_indicator.shape[2],
@@ -1631,12 +1706,15 @@ def compute_dense_batch_loss(
             gold_indicator.shape[4],
         ).to(candidates.dtype),
         reduction="none",
-    ).mean(-1)
+    )
+    membership_exp = membership[:, :, None, None, :, :]
+    list_nll = (list_bce * membership_exp).sum(-1) / membership_exp.sum(-1).clamp_min(1)
     field_terms = torch.where(
         output.scalar_fields[:, :, None, None, :],
         scalar_nll,
         list_nll,
     )
+    unresolved = None
     if annotated is not None:
         unresolved = annotated.to(device=device, dtype=torch.bool) & ~present
         field_terms = field_terms.masked_fill(unresolved.unsqueeze(2), 0)
@@ -1651,6 +1729,7 @@ def compute_dense_batch_loss(
             gold_indicator,
             output.scalar_fields,
             output.instance_mask,
+            unresolved=unresolved,
         )
         # One explicit host transfer covers capacity checks and the unavoidable
         # Hungarian matching boundary for every latent/anchorless group.
@@ -1974,7 +2053,8 @@ def _note_coreferent_owners(owners: int) -> None:
                     _COREF["records"], _COREF["owners"], _COREF["owners"] / max(_COREF["records"], 1))
 
 
-def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int, siblings: bool = False):
+def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indices, k: int, siblings: bool = False,
+                 coreferent_ownership: bool = True):
     """(sum of column terms, n terms, wins, pairs, sibling wins, sibling pairs): which trigger owns each gold argument.
 
     The negatives are the k highest-scoring NON-GOLD triggers of the group, picked once and shared by every column, so
@@ -1985,24 +2065,31 @@ def _column_loss(group: RecordGroupOutput, records, anchor_qid: int, span_indice
     af = group.field_query_ids.index(anchor_qid)
     seed_to_inst = {s[1]: i for i, s in enumerate(group.instance_seed) if s is not None and s[0] == af}
     owners = []
+    gold_all = set()
     for rec in records:
         a = rec.field_for_query(anchor_qid)
         cols = _resolve_value_cols(a.values[0], span_indices[af]) if a is not None and a.values else []
-        insts = sorted({seed_to_inst[c - 1] for c in cols if (c - 1) in seed_to_inst})
+        all_insts = sorted({seed_to_inst[c - 1] for c in cols if (c - 1) in seed_to_inst})
+        gold_all.update(all_insts)
+        insts = (
+            all_insts
+            if coreferent_ownership
+            else [i for i in [seed_to_inst.get(cols[0] - 1)] if i is not None]
+            if cols else []
+        )
         if insts:
             gold = [set() if fs.cardinality.is_scalar else set(_field_target_cols(fs, rec, span_indices[f])[0])
                     for f, fs in enumerate(group.field_specs)]
-            owners.append((rec, insts, gold))
-    gold_all = {i for _, insts, _ in owners for i in insts}
+            owners.append((rec, insts, all_insts, gold))
     false = _negative_instances(group, records, anchor_qid, gold_all, k)
     total, terms, wins, pairs, sib_wins, sib_pairs = group.object_logits.new_zeros(()), 0, 0, 0, 0, 0
-    for rec, insts, gold in owners:
+    for rec, insts, all_insts, gold in owners:
         for f, fspec in enumerate(group.field_specs):
             if fspec.cardinality.is_scalar:
                 continue
             for c in sorted(gold[f]):
-                sib = [i for r2, insts2, gold2 in owners if r2 is not rec for i in insts2
-                       if c not in gold2[f] and i not in insts] if siblings else []
+                sib = [i for r2, insts2, _, gold2 in owners if r2 is not rec for i in insts2
+                       if c not in gold2[f] and i not in all_insts] if siblings else []
                 if not false and not sib:
                     continue
                 column = group.assign_logits[f][:, c]
@@ -2090,8 +2177,10 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
         if column_negatives > 0:
             # The JUNCTION's training signal, returned separately with its own count (never in the
             # gold field denominator). R is identical down a column, so only the link can lower it.
-            col, terms, wins, pairs, sib_wins, sib_pairs = _column_loss(group, records, anchor_qid, span_indices,
-                                                                         column_negatives, column_siblings)
+            col, terms, wins, pairs, sib_wins, sib_pairs = _column_loss(
+                group, records, anchor_qid, span_indices,
+                column_negatives, column_siblings, coreferent_ownership,
+            )
             if terms:
                 out["column_loss"] = col / terms
                 out["column_count"] = terms

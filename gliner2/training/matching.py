@@ -184,6 +184,7 @@ def build_dense_record_matching_cost(
     gold_indicator: torch.BoolTensor,  # [...,N,F,C]
     scalar_fields: torch.BoolTensor,   # [...,F] or [F]
     instance_mask: torch.BoolTensor | None = None,  # [...,I]
+    unresolved: torch.BoolTensor | None = None,     # [...,N,F]
 ) -> torch.Tensor:
     """Vectorized record cost ``[...,I,N]`` for dense document pools."""
     present = gold_indicator.any(-1)
@@ -213,11 +214,17 @@ def build_dense_record_matching_cost(
         ).to(candidates.dtype),
         reduction="none",
     ).sum(-1)
-    field_logprob = torch.where(
+    field_terms = torch.where(
         scalar_fields.unsqueeze(-2).unsqueeze(-2),
         scalar_logprob,
         list_logprob,
-    ).sum(-1)
+    )
+    if unresolved is not None:
+        field_terms = field_terms.masked_fill(
+            unresolved.to(device=field_terms.device, dtype=torch.bool).unsqueeze(-3),
+            0,
+        )
+    field_logprob = field_terms.sum(-1)
     cost = -(F.logsigmoid(object_logits).unsqueeze(-1) + field_logprob)
     if instance_mask is not None:
         cost = cost.masked_fill(~instance_mask.unsqueeze(-1), -MASK_LOGIT)
