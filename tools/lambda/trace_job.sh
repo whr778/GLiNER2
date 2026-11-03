@@ -15,7 +15,11 @@ export GLINER2_STRICT_ATTN=1
 PY=./.venv/bin/python
 CFG=${CFG:?CFG}; DEST=${DEST:?DEST}; STOP_STEP=${STOP_STEP:?STOP_STEP}
 STOP_EPOCH=${STOP_EPOCH:-}  # set: stop once checkpoint-epoch-N (with training_state.pt) is fully written -- a clean restart point
-NGPU=${NGPU:-1}          # >1: torchrun (plain DDP since 0b21629; [ddp-sync] at every eval proves the ranks agree)
+NGPU=${NGPU:-auto}       # >1: torchrun (plain DDP since 0b21629; [ddp-sync] at every eval proves the ranks agree)
+if [ "$NGPU" = "auto" ]; then
+  NGPU=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
+  [ "${NGPU:-0}" -ge 1 ] || NGPU=1
+fi
 CKPT_REPO=${CKPT_REPO:-} # set: upload each new checkpoint-<step> (weights + configs, NOT training_state.pt) to this repo
 RESUME_FROM=${RESUME_FROM:-} # set: REPO:checkpoint-dir on the Hub, fetched (with training_state.pt) into output_dir before
                              # train.py starts; CFG must carry checkpoint_restart, and the trainer must LOG the resume
@@ -35,6 +39,7 @@ if torch.cuda.is_available():
     vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
     name = torch.cuda.get_device_name(0)
     bs = 8 if vram_gb >= 70 else (4 if vram_gb >= 35 else 2)
+    bs = min(bs, max(1, eff // ngpu))
     acc = max(1, eff // (bs * ngpu))
     tr["batch_size"], tr["gradient_accumulation_steps"] = bs, acc
     yaml.safe_dump(c, open(cfg_path, "w", encoding="utf-8"), sort_keys=False, allow_unicode=True)
