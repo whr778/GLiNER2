@@ -23,12 +23,14 @@ CKPT=${CKPT:-whr778/gliner2-eb22c-collapse-trace:checkpoint-30000}
 PRESET=${PRESET:-relations}
 case "$PRESET" in
   relations) ARMS="control=,dropoff=--no-schema-dropout,keepgold=--keep-gold-pairs,both=--no-schema-dropout --keep-gold-pairs"
-             CORPORA="biored professorbob_re scierc sentence_rex"; SCRIPT=tools/train/overfit_relations.py ;;
+             CORPORA="biored professorbob_re scierc sentence_rex"; SCRIPT=tools/train/overfit_relations.py; DEFAULT_BATCH=8 ;;
   cls)       ARMS="control=,dropoff=--no-schema-dropout"
-             CORPORA="masakhanews_eng scientific_text"; SCRIPT=tools/train/overfit_classification.py ;;
+             CORPORA="masakhanews_eng scientific_text"; SCRIPT=tools/train/overfit_classification.py; DEFAULT_BATCH=8 ;;
+  events)    ARMS="control=--legacy-role-loss,treatment="
+             CORPORA="casie_off cmnee_ner_off"; SCRIPT=tools/train/overfit_events.py; DEFAULT_BATCH=4 ;;
   *) echo "[overfit] *** FATAL: unknown PRESET $PRESET ***"; exit 1 ;;
 esac
-RECORDS=${RECORDS:-64}; STEPS=${STEPS:-400}; EVERY=${EVERY:-50}; BATCH=${BATCH:-8}
+RECORDS=${RECORDS:-64}; STEPS=${STEPS:-400}; EVERY=${EVERY:-50}; BATCH=${BATCH:-$DEFAULT_BATCH}
 RUN_TIMEOUT=${RUN_TIMEOUT:-1800}
 OUT=$HOME/overfit
 JOBLOG=${JOBLOG:-$HOME/job.log}
@@ -63,8 +65,8 @@ run_one() {  # arm flags corpus   (separate `local` statements: `local a=$1 b=$a
   PYTHONUNBUFFERED=1 timeout "$RUN_TIMEOUT" $PY $SCRIPT --config "$CFG" --checkpoint "$CKDIR" --corpus "$corpus" \
      --records "$RECORDS" --steps "$STEPS" --every "$EVERY" --batch-size "$BATCH" --device cuda $flags --out "$out" > "$log" 2>&1
   local rc=$?
-  echo "[overfit] $tag: exit $rc | $((SECONDS - t0)) s | $(date -u +%H:%M:%S) | last: $(grep -a '^\[overfit\] {' "$log" | tail -1 | cut -c1-260)"
-  grep -a "schema dropout\|relation_keep_gold_pairs\|^relation pairs:" "$log" | tail -n 3 | cut -c1-200
+  echo "[overfit] $tag: exit $rc | $((SECONDS - t0)) s | $(date -u +%H:%M:%S) | last: $(grep -a '^\[overfit[a-z-]*\] {' "$log" | tail -1 | cut -c1-260)"
+  grep -a "schema dropout\|relation_keep_gold_pairs\|^relation pairs:\|PROOF role_loss_mode\|stripped offsets" "$log" | tail -n 3 | cut -c1-200
   if [ "$rc" -eq 0 ] && [ -s "$out" ]; then done_n=$((done_n+1)); else failed=$((failed+1)); grep -aE "Error|Traceback" "$log" | tail -2; fi
   publish "$DEST" "$log" $([ -s "$out" ] && echo "$out") || echo "[overfit] publish of $tag failed (continuing; final publish retries)"
 }

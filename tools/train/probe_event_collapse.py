@@ -40,7 +40,12 @@ def local_checkpoint(ref: str) -> str:
         from huggingface_hub import snapshot_download
         repo, sub = ref.split(":", 1)
         cache = os.environ.get("CKPT_CACHE", "/Volumes/Development/tmp/autopsy_ckpts")
-        root = snapshot_download(repo, allow_patterns=[f"{sub}/*"], local_dir=f"{cache}/{repo.replace('/', '__')}")
+        root = snapshot_download(
+            repo,
+            allow_patterns=[f"{sub}/*"],
+            ignore_patterns=["*training_state*", "*optimizer*", "*scheduler*"],
+            local_dir=f"{cache}/{repo.replace('/', '__')}",
+        )
         ref = str(Path(root) / sub)
     return ref
 
