@@ -49,7 +49,6 @@ model:
     coref_link_distance: mlp
     coref_link_distance_dim: 64
     span_residual_zero_init: true
-    record_drop_anchor_field_loss: true
 training:
   negative_pools: auto
   negative_labels_per_dim:

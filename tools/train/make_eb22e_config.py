@@ -18,10 +18,7 @@ assert head["enable_rotary_endpoints"] is True
 assert "span_residual_zero_init" not in head
 cfg = dict(src)
 cfg["model"] = dict(src["model"], boundary_head=dict(
-    head,
-    span_residual_zero_init=True,
-    enable_rotary_endpoints=False,
-    record_drop_anchor_field_loss=True,
+    head, span_residual_zero_init=True, enable_rotary_endpoints=False,
 ))
 cfg["training"] = dict(src["training"], output_dir="./out/eb22e", experiment_name="eb22e")
 note = (

@@ -24,6 +24,22 @@ OUTDIR=$($PY -c "import yaml; print(yaml.safe_load(open('$CFG'))['training']['ou
 HIST=$OUTDIR/eval_history.jsonl
 LOG=$HOME/trace.log
 source tools/lambda/_publish.sh
+$PY - "$CFG" "$NGPU" <<'PYS'
+import sys, torch, yaml
+cfg_path, ngpu = sys.argv[1], max(1, int(sys.argv[2]))
+if torch.cuda.is_available():
+    c = yaml.safe_load(open(cfg_path, encoding="utf-8"))
+    tr = c["training"]
+    old_bs, old_acc = int(tr["batch_size"]), int(tr["gradient_accumulation_steps"])
+    eff = old_bs * old_acc
+    vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+    name = torch.cuda.get_device_name(0)
+    bs = 8 if vram_gb >= 70 else (4 if vram_gb >= 35 else 2)
+    acc = max(1, eff // (bs * ngpu))
+    tr["batch_size"], tr["gradient_accumulation_steps"] = bs, acc
+    yaml.safe_dump(c, open(cfg_path, "w", encoding="utf-8"), sort_keys=False, allow_unicode=True)
+    print(f"[trace] GPU scaling: {name} ({vram_gb:.1f} GB x {ngpu}) -> batch_size={bs} grad_accum={acc} (effective {bs * acc * ngpu}, was {old_bs}x{old_acc})", flush=True)
+PYS
 echo "[trace] ===== START $(date -u) | $(git rev-parse --short HEAD) | $CFG | stop after eval at step $STOP_STEP ====="
 if [ -n "$RESUME_FROM" ]; then
   PY=$PY bash tools/lambda/fetch_resume_checkpoint.sh "$RESUME_FROM" "$OUTDIR" "$CFG" || { echo "[trace] *** FATAL: resume checkpoint not usable ***"; exit 1; }
