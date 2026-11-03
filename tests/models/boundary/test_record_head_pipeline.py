@@ -255,7 +255,7 @@ def test_format_keeps_an_argument_the_assignment_accepted_when_the_pair_score_is
 ):
     """Event arguments are ZERO_OR_MORE. decode_group keeps a span on the assignment
     score; formatting must not drop it because the span-pair score is below the same threshold.
-    The stored confidence stays min(pair, assignment)."""
+    The stored confidence is that assignment score."""
     from types import SimpleNamespace
 
     model = _build_tiny_records_model()
@@ -298,7 +298,8 @@ def test_format_keeps_an_argument_the_assignment_accepted_when_the_pair_score_is
     kept = model._decode_records(**kwargs)
     item = kept["purchase"][0]["item"]
     assert item[0]["text"] == "apples"
-    assert item[0]["confidence"] < 0.5
+    assert item[0]["confidence"] == pytest.approx(float(torch.sigmoid(torch.tensor(6.0))), abs=1e-5)
+    assert item[0]["confidence"] > 0.5
 
     blocked = model._decode_records(
         **kwargs,
@@ -402,6 +403,86 @@ def test_engine_choice_field_uses_per_record_assignment_not_global_fallback(
     assert "dish" in out
     by_name = {inst["name"]["text"]: inst["sentiment"]["text"] for inst in out["dish"]}
     assert by_name == {"Alice": "positive", "Bob": "negative"}
+
+
+def test_a_prefix_choice_keeps_the_assignment_score_when_the_pair_score_is_low(
+    monkeypatch,
+):
+    """A choices= token is not a document span, so its pair score is ~0.
+
+    The configured threshold used to read min(pair, assignment) and drop the
+    choice. It reads the assignment score, and that score is the confidence.
+    """
+    from types import SimpleNamespace
+
+    model = _build_tiny_records_model()
+    hidden = model.hidden_size
+    tokens = ["Alice", "bought", "apples", "then", "Bob", "left", "now"]
+    text = " ".join(tokens)
+    start_map, end_map, pos = [], [], 0
+    for tok in tokens:
+        start_map.append(pos)
+        end_map.append(pos + len(tok))
+        pos += len(tok) + 1
+    offset = 2
+    cands = make_candidates(
+        [[(offset + 0, offset + 1), (offset + 4, offset + 5)], [(0, 1), (1, 2)]],
+        hidden,
+        high_logit_field=0,
+    )
+    cands.pair_logits[0, 1] = -20.0
+    spec = RecordSpec(
+        task_index=0, task_name="dish", task_type="json_structures", mode="natural",
+        fields=(
+            RecordFieldSpec(0, "name", 0, FieldCardinality.REQUIRED_ONE, is_anchor=True),
+            RecordFieldSpec(1, "sentiment", 1, FieldCardinality.REQUIRED_ONE),
+        ),
+        anchor_query_id=0,
+    )
+    batch = SimpleNamespace(
+        record_specs=({0: spec},),
+        text_tokens=[["positive", "negative"] + tokens],
+    )
+    total_tokens = offset + len(tokens)
+    core = {
+        "query_states": torch.randn(1, 2, hidden),
+        "query_mask": torch.ones(1, 2, dtype=torch.bool),
+        "text_states": torch.randn(1, total_tokens, hidden),
+        "text_mask": torch.ones(1, total_tokens, dtype=torch.bool),
+    }
+    original_forward_group = model.record_decoder.forward_group
+
+    def patched_forward_group(spec_, query_states_i, candidates_, sample_index_):
+        group = original_forward_group(spec_, query_states_i, candidates_, sample_index_)
+        with torch.no_grad():
+            group.assign_logits[1] = torch.tensor([
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ])
+        return group
+
+    monkeypatch.setattr(model.record_decoder, "forward_group", patched_forward_group)
+    monkeypatch.setattr(
+        model.boundary_head,
+        "score_explicit_spans",
+        lambda *args, **kwargs: torch.tensor([[[-5.0, 5.0]]]),
+    )
+    out = model._decode_records(
+        batch, 0, core, cands, offset=offset, start_map=start_map, end_map=end_map,
+        text=text, text_len=len(tokens), include_confidence=True, include_spans=False,
+        metadata={"field_metadata": {"dish.sentiment": {
+            "choices": ["positive", "negative"],
+            "threshold": 0.5,
+        }}},
+    )
+    by_name = {inst["name"]["text"]: inst["sentiment"] for inst in out["dish"]}
+    assert set(by_name) == {"Alice", "Bob"}
+    assert by_name["Alice"]["text"] == "positive"
+    assert by_name["Bob"]["text"] == "negative"
+    expected = float(torch.softmax(torch.tensor([0.0, 1.0, 0.0]), dim=-1)[1])
+    assert by_name["Alice"]["confidence"] == pytest.approx(expected, abs=1e-5)
+    assert by_name["Bob"]["confidence"] == pytest.approx(expected, abs=1e-5)
+    assert expected > 0.5
 
 
 def test_engine_does_not_fall_back_to_legacy_for_empty_record_decode(

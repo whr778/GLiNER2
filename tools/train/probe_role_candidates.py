@@ -17,8 +17,9 @@ An empty role is a real absence and is not a filler. Counts that do not match
 the anchor gate, or a logit row that does not line up with the candidate spans,
 are a refusal.
 
-Injection is the schedule at the checkpoint's step, then zero. Zero is the
-model's own proposals. The schedule is what the loss saw.
+Injection is the schedule at the checkpoint's step, then zero, on one collate.
+Zero is the model's own proposals. The schedule is what the loss saw. A second
+collate would redraw schema dropout, and the two filler totals would differ.
 
     uv run tools/train/probe_role_candidates.py \\
         --config tools/train/config/base/eb22e.yaml \\
@@ -266,19 +267,21 @@ def main() -> None:
     by_corpus: dict[str, list[dict]] = {}
     for rec in records:
         by_corpus.setdefault(rec["_corpus"], []).append(rec)
-    loaders = {}
+    frozen: dict[str, list] = {}
     for name, subset in by_corpus.items():
         dataset = trainer._prepare_data([dict(r) for r in subset], is_train=True)
-        loaders[name] = trainer._create_dataloader(dataset, 1, shuffle=False, is_training=True)
-        print(f"[roles] {name}: {len(dataset)} training windows", flush=True)
+        loader = trainer._create_dataloader(dataset, 1, shuffle=False, is_training=True)
+        frozen[name] = list(loader)
+        print(f"[roles] {name}: {len(dataset)} training windows, "
+              f"{len(frozen[name])} collated batches", flush=True)
     _orig, wrapped = _wrap(owns)
     R.compute_group_loss = wrapped
     try:
         for injection, label in ((schedule, "schedule"), (0.0, "injection-0")):
             ROWS.clear()
             SEEN.clear()
-            for name, corpus_loader in loaders.items():
-                run_pass(model, corpus_loader, injection, label, name)
+            for name, batches in frozen.items():
+                run_pass(model, batches, injection, label, name)
             block = summarize(ROWS)
             block["injection"] = injection
             if label == "schedule":
@@ -287,6 +290,12 @@ def main() -> None:
                 at_zero = block
     finally:
         R.compute_group_loss = _orig
+    if at_schedule["fillers"] != at_zero["fillers"]:
+        raise RuntimeError(
+            f"paired collate broke: schedule fillers {at_schedule['fillers']} "
+            f"!= injection-0 fillers {at_zero['fillers']}"
+        )
+    print(f"[roles] paired collate: both passes {at_schedule['fillers']} fillers", flush=True)
     result = {"args": vars(args), "scheduled_injection": schedule,
               "schedule": at_schedule, "injection_0": at_zero}
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

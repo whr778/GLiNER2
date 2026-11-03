@@ -1294,6 +1294,17 @@ def _gold_spans_unresolved(record: RecordTarget, fspec, cols) -> bool:
     return target is not None and bool(target.values) and not cols
 
 
+def _annotated_field_mask(records: Sequence[RecordTarget], field_specs, device) -> torch.Tensor:
+    """``[n_gold, n_fields]``: the annotation has values, matched or not."""
+    mask = torch.zeros(len(records), len(field_specs), dtype=torch.bool, device=device)
+    for gold_index, record in enumerate(records):
+        for field_index, field_spec in enumerate(field_specs):
+            target = record.field_for_query(field_spec.query_id)
+            if target is not None and target.values:
+                mask[gold_index, field_index] = True
+    return mask
+
+
 def _field_target_cols(fspec, record: RecordTarget, span_to_idx):
     ft = record.field_for_query(fspec.query_id)
     if fspec.cardinality.is_scalar:
@@ -1516,9 +1527,11 @@ def compute_dense_group_loss(
         reduction="none",
     )
     list_nll = (list_bce * membership).sum(-1) / membership.sum(-1).clamp_min(1)
-    field_nll = torch.where(
-        scalar[None, None], scalar_nll, list_nll
-    ).mean(-1)
+    # A field whose gold spans missed the pool is not an empty annotation. Zero its
+    # term and keep it in the mean, the same divisor the per-query path uses.
+    field_terms = torch.where(scalar[None, None], scalar_nll, list_nll)
+    unresolved = _annotated_field_mask(records, group.field_specs, device) & ~present
+    field_nll = field_terms.masked_fill(unresolved[None], 0).mean(-1)
 
     if group.spec.mode == "natural":
         anchor_field = group.field_query_ids == group.spec.anchor_query_id
@@ -1573,8 +1586,14 @@ def compute_dense_batch_loss(
     output: DenseRecordBatchOutput,
     gold_indicator: torch.BoolTensor,
     record_mask: torch.BoolTensor,
+    annotated: Optional[torch.Tensor] = None,
 ) -> Dict[str, torch.Tensor]:
-    """Vectorized record loss; only Hungarian assignment remains per group."""
+    """Vectorized record loss; only Hungarian assignment remains per group.
+
+    ``annotated`` is ``[batch, group, record, field]`` and is true where the
+    annotation has values. A true cell whose gold span missed the pool contributes
+    nothing and stays in the field mean. An omitted mask keeps every cell.
+    """
     device = output.object_logits.device
     record_mask = record_mask.to(device)
     gold_indicator = gold_indicator.to(device)
@@ -1613,13 +1632,16 @@ def compute_dense_batch_loss(
         ).to(candidates.dtype),
         reduction="none",
     ).mean(-1)
-    field_nll = torch.where(
+    field_terms = torch.where(
         output.scalar_fields[:, :, None, None, :],
         scalar_nll,
         list_nll,
     )
+    if annotated is not None:
+        unresolved = annotated.to(device=device, dtype=torch.bool) & ~present
+        field_terms = field_terms.masked_fill(unresolved.unsqueeze(2), 0)
     field_nll = (
-        field_nll * output.field_mask[:, :, None, None, :].to(field_nll.dtype)
+        field_terms * output.field_mask[:, :, None, None, :].to(field_terms.dtype)
     ).sum(-1) / output.field_mask.sum(-1)[:, :, None, None].clamp_min(1)
 
     with torch.no_grad():

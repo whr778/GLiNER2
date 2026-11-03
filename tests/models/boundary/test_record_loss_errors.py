@@ -1,7 +1,8 @@
 """A record group that exceeds instance capacity is logged and skipped.
 
-ValueError and IndexError from the role loss propagate. TargetCapacityError is a
-ValueError subclass and is the one capacity miss that stays non-fatal.
+ValueError and IndexError from the role loss and the relation loss propagate.
+TargetCapacityError is a ValueError subclass and is the one capacity miss that
+stays non-fatal. A non-fatal RuntimeError is still logged and dropped.
 """
 import logging
 import random
@@ -45,6 +46,24 @@ def _forward(monkeypatch, exc):
 def test_role_loss_errors_propagate(monkeypatch, exc):
     with pytest.raises(type(exc), match=str(exc)):
         _forward(monkeypatch, exc)
+
+
+@pytest.mark.parametrize("exc", [ValueError("relation loss failed"), IndexError("relation column")])
+def test_relation_loss_errors_propagate(monkeypatch, exc):
+    def boom(*_args, **_kwargs):
+        raise exc
+
+    random.seed(0)
+    torch.manual_seed(0)
+    model = build_tiny_boundary_model()
+    T._apply_boundary_head_overrides(model, {})
+    model.train()
+    batch = ExtractorCollator(
+        model.processor, is_training=True, architecture="boundary", event_records=True,
+    )([(TEXT, SCHEMA)])
+    monkeypatch.setattr(model, "_relation_loss", boom)
+    with pytest.raises(type(exc), match=str(exc)):
+        model(batch)
 
 
 def test_capacity_miss_is_logged_and_the_step_continues(monkeypatch, caplog):

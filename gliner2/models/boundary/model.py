@@ -2611,13 +2611,6 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     "Dropped relation auxiliary loss after RuntimeError: %s", exc
                 )
                 relation_loss = None
-            except (IndexError, ValueError) as exc:
-                logger.warning(
-                    "Dropped relation auxiliary loss after %s: %s",
-                    type(exc).__name__,
-                    exc,
-                )
-                relation_loss = None
         if record_loss is not None:
             record_loss = {
                 name: _finite_loss_term(value)
@@ -2715,7 +2708,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
             gold_indicator &= dense.field_membership.unsqueeze(2)
             try:
                 losses = compute_dense_batch_loss(
-                    dense, gold_indicator, record_mask
+                    dense, gold_indicator, record_mask, packed_mask.any(-1)
                 )
             except TargetCapacityError:
                 return {

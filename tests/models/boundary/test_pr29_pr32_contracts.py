@@ -11,8 +11,10 @@ import torch.nn.functional as F
 from gliner2.configuration import BoundaryHeadSettings, migrate_config_dict
 from gliner2.models.base import QueryLayout
 from gliner2.models.boundary.records import (
+    DenseRecordBatchOutput,
     DenseRecordGroupOutput,
     build_dense_record_cost,
+    compute_dense_batch_loss,
     compute_dense_group_loss,
 )
 from gliner2.models.boundary.relations import (
@@ -172,6 +174,108 @@ def test_dense_natural_loss_skips_missing_anchor_instead_of_using_row_zero():
     losses = compute_dense_group_loss(group, [missing])
     assert losses["field_loss"].item() == 0.0
     assert losses["field_count"] == 0
+
+
+def _missed_role_group(victim_values, victim_logits):
+    """One natural event. Date is empty. Victim's candidate logits are the caller's."""
+    spec = RecordSpec(
+        task_index=0, task_name="event", task_type="events", mode="natural",
+        fields=(
+            RecordFieldSpec(0, "trigger", 0, FieldCardinality.REQUIRED_ONE, is_anchor=True),
+            RecordFieldSpec(1, "date", 1, FieldCardinality.ZERO_OR_MORE),
+            RecordFieldSpec(2, "victim", 2, FieldCardinality.ZERO_OR_MORE),
+        ),
+        anchor_query_id=0,
+    )
+    logits = torch.zeros(1, 3, 4)
+    logits[0, 2, 1:] = victim_logits
+    group = DenseRecordGroupOutput(
+        spec=spec,
+        object_logits=torch.zeros(1),
+        assign_logits=logits,
+        instance_mask=torch.ones(1, dtype=torch.bool),
+        field_membership=torch.ones(3, 3, dtype=torch.bool),
+        pool_spans=torch.tensor([[0, 1], [2, 3], [4, 5]]),
+        field_specs=spec.fields,
+        field_query_ids=torch.tensor([0, 1, 2]),
+        instance_pool_index=torch.tensor([0]),
+    )
+    records = [RecordTarget(
+        "e0", 0, (
+            RecordFieldTarget(0, (((0, 1),),)),
+            RecordFieldTarget(1, ()),
+            RecordFieldTarget(2, victim_values),
+        ),
+        anchor_query_id=0,
+    )]
+    return group, records
+
+
+def _field_mean(anchor, date, victim):
+    return (anchor + date + victim) / 3
+
+
+def test_dense_unresolved_role_is_withheld_and_an_empty_role_is_not():
+    """A gold span outside the pool adds nothing. An empty role stays all-negative.
+
+    Traced before the change, both paths: field loss 0.924196, which is
+    (log 4 + 2 * log 2) / 3. The missed victim was the second log 2.
+    """
+    victim_logits = torch.ones(3)
+    group, records = _missed_role_group((((10, 11),),), victim_logits)
+    anchor = -F.log_softmax(group.assign_logits[0, 0], -1)[1]
+    date = F.binary_cross_entropy_with_logits(
+        group.assign_logits[0, 1, 1:], torch.zeros(3), reduction="mean"
+    )
+    as_empty = F.binary_cross_entropy_with_logits(
+        victim_logits, torch.zeros(3), reduction="mean"
+    )
+    withheld = _field_mean(anchor, date, group.assign_logits.new_zeros(()))
+    trained_as_empty = _field_mean(anchor, date, as_empty)
+    losses = compute_dense_group_loss(group, records)
+    assert losses["field_count"] == 3
+    assert float(losses["field_loss"]) == pytest.approx(float(withheld))
+    assert float(withheld) < float(trained_as_empty)
+
+    empty_group, empty_records = _missed_role_group((), victim_logits)
+    empty = compute_dense_group_loss(empty_group, empty_records)
+    assert float(empty["field_loss"]) == pytest.approx(float(trained_as_empty))
+
+    partial_logits = torch.tensor([0.0, 1.0, 0.0])
+    partial_group, partial_records = _missed_role_group(
+        (((2, 3), (10, 11)),), partial_logits
+    )
+    matched = F.binary_cross_entropy_with_logits(
+        partial_logits, torch.tensor([0.0, 1.0, 0.0]), reduction="mean"
+    )
+    partial_anchor = -F.log_softmax(partial_group.assign_logits[0, 0], -1)[1]
+    partial_date = F.binary_cross_entropy_with_logits(
+        partial_group.assign_logits[0, 1, 1:], torch.zeros(3), reduction="mean"
+    )
+    partial = compute_dense_group_loss(partial_group, partial_records)
+    assert float(partial["field_loss"]) == pytest.approx(
+        float(_field_mean(partial_anchor, partial_date, matched))
+    )
+
+    gold = torch.zeros(1, 1, 1, 3, 3, dtype=torch.bool)
+    gold[0, 0, 0, 0, 0] = True
+    batch = DenseRecordBatchOutput(
+        object_logits=torch.zeros(1, 1, 1),
+        assign_logits=group.assign_logits.view(1, 1, 1, 3, 4),
+        instance_mask=torch.ones(1, 1, 1, dtype=torch.bool),
+        field_membership=torch.ones(1, 1, 3, 3, dtype=torch.bool),
+        pool_spans=group.pool_spans.unsqueeze(0),
+        field_mask=torch.ones(1, 1, 3, dtype=torch.bool),
+        scalar_fields=torch.tensor([[[True, False, False]]]),
+        modes=torch.zeros(1, 1, dtype=torch.long),
+        anchor_fields=torch.zeros(1, 1, dtype=torch.long),
+        group_mask=torch.ones(1, 1, dtype=torch.bool),
+    )
+    batched = compute_dense_batch_loss(
+        batch, gold, torch.ones(1, 1, 1, dtype=torch.bool),
+        annotated=torch.tensor([[[[True, False, True]]]]),
+    )
+    assert float(batched["field_loss"]) == pytest.approx(float(withheld))
 
 
 def test_dense_record_capacity_counts_only_real_instances():

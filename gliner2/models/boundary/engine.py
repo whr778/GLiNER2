@@ -222,11 +222,12 @@ def resolve_record_field_threshold(settings, record_threshold: float) -> float:
 
 
 def record_field_decision_score(assignment_probability, candidate_probability) -> float:
-    """The score the field threshold reads.
+    """The score the field threshold reads, and the confidence that is stored.
 
     ``decode_group`` already accepted the span on the assignment probability.
     The span-pair score is a different head and does not get a second vote.
-    A span with no assignment score keeps the pair score.
+    A span with no assignment score keeps the pair score. The stored confidence
+    is this same number, so a later filter at the same threshold agrees with the gate.
     """
     if assignment_probability is not None:
         return float(assignment_probability)
@@ -2038,15 +2039,13 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         and span_index < len(assignment_scores)
                         else None
                     )
-                    probability = (
-                        min(candidate_probability, float(assignment_probability))
-                        if assignment_probability is not None
-                        else candidate_probability
+                    decision = record_field_decision_score(
+                        assignment_probability, candidate_probability
                     )
                     configured_threshold = field_metadata.get("threshold")
                     if (
                         configured_threshold is None
-                        or probability >= float(configured_threshold)
+                        or decision >= float(configured_threshold)
                     ) and (
                         not validators
                         or all(
@@ -2072,7 +2071,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                             )
                         else:
                             cs, ce = 0, 0
-                        formatted.append((surface, probability, cs, ce))
+                        formatted.append((surface, decision, cs, ce))
                     continue
                 if ts < 0 or te > text_len or te <= ts:
                     continue
@@ -2090,11 +2089,6 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     if assignment_scores is not None
                     and span_index < len(assignment_scores)
                     else None
-                )
-                probability = (
-                    min(candidate_probability, float(assignment_probability))
-                    if assignment_probability is not None
-                    else candidate_probability
                 )
                 configured_threshold = field_metadata.get("threshold")
                 decision = record_field_decision_score(
@@ -2118,7 +2112,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         )
                     )
                 ):
-                    formatted.append((surface, probability, cs, ce))
+                    formatted.append((surface, decision, cs, ce))
             formatted = finalize_spans(
                 formatted,
                 dtype="str" if is_scalar else "list",
