@@ -53,6 +53,9 @@ def field_loss_split(group, inst, record, span_indices, hard_k=0, drop_anchor=Fa
     total, n_fields = group.object_logits.new_zeros(()), 0
     for f_idx, fspec in enumerate(group.field_specs):
         cols, is_scalar = R._field_target_cols(fspec, record, span_indices[f_idx])
+        if R._gold_spans_unresolved(record, fspec, cols):
+            n_fields += 1
+            continue
         row = group.assign_logits[f_idx][inst]
         term = R._scalar_field_nll(row, cols) if is_scalar else R._list_field_bce(row, cols, hard_k)
         anchor = _is_anchor(group, fspec)

@@ -136,6 +136,10 @@ base_models:
     name: DeBERTa-v3-base
     license: mit
     source_url: https://huggingface.co/microsoft/deberta-v3-base
+  microsoft/mdeberta-v3-base:
+    name: mDeBERTa-v3-base
+    license: mit
+    source_url: https://huggingface.co/microsoft/mdeberta-v3-base
   whr778/mmbert-base-rams:
     name: mmBERT-base RAMS (GLiNER2)
     license: see model card

@@ -1,19 +1,19 @@
 """Candidate spans must survive long documents on every backend, MPS included.
 
-`torch.gather` on an int64 tensor rounds through float32 on MPS: above 2^24 only even
-integers are representable, so odd values round down. GLiNER2 used to pack a candidate
-span into one integer, `start * n + end`, and gather that. For a document with more than
-~4,096 boundaries -- every Chinese article, since the word splitter yields about one word
-per character -- n^2 crosses 2^24 and a gathered key unpacks to a DIFFERENT span.
+GLiNER2 used to pack a candidate span into one integer, `start * n + end`, and gather
+that. For a document with more than ~4,096 boundaries -- every Chinese article, since
+the word splitter yields about one word per character -- n^2 crosses 2^24.
 
-Observed 2026-09-03: gold (4340, 4341) with n=5593 packs to 24,277,961, MPS returned
-24,277,960, which unpacks to (4340, 4340). `validate_candidate_indices` rejected the
-zero-width span and killed training at step 2. A key rounding to a different but still
-valid pair would have been silently wrong at inference instead.
+Observed 2026-09-03: gold (4340, 4341) with n=5593 packs to 24,277,961, and MPS
+`torch.gather` on int64 returned 24,277,960, which unpacks to (4340, 4340).
+`validate_candidate_indices` rejected the zero-width span and killed training at step 2.
+A key rounding to a different but still valid pair would have been silently wrong at
+inference instead.
 
-The fix carries (start, end) through the permutations rather than the packed key; both
-stay below n, where gather is exact. These tests pin that: the components must round-trip,
-and both call sites must agree with CPU.
+Re-measured 2026-11-03: the same gather returns 24,277,961. The candidate path still
+carries (start, end) through the permutations. Both stay below n, where gather was
+exact even on the day the packed key was not. These tests pin the platform fact and
+the contract: the components round-trip, and both call sites agree with CPU.
 """
 
 import pytest
@@ -43,14 +43,15 @@ def _pairs(b=2, q=2, p=64, g=8, n=N, seed=0):
 
 
 @mps_only
-def test_int64_gather_is_lossy_on_mps_above_2_24():
-    """The platform fact the fix exists for. If this ever fails, the fix can be simpler."""
+def test_int64_gather_of_the_historical_packed_key_round_trips():
+    """The packed key that MPS gathered wrong on 2026-09-03.
+
+    24,277,961 came back 24,277,960 that day. The candidate path no longer gathers
+    this key. This pins the platform fact, so a return to the rounded value is visible.
+    """
     key = torch.tensor([[24277961]], dtype=torch.long, device="mps")
     gathered = int(torch.gather(key, -1, torch.zeros_like(key)))
-    assert gathered != 24277961, (
-        "MPS int64 gather is exact now; the component-carrying workaround in "
-        "assemble_candidates/_deduplicate_pool can be reconsidered"
-    )
+    assert gathered == 24277961
 
 
 @mps_only

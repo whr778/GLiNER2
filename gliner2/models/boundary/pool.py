@@ -78,13 +78,11 @@ def _deduplicate_pool(
     """Deduplicate document spans, retaining the highest-priority occurrence.
 
     Spans are carried as (start, end) rather than as the packed ``start * n + end`` key
-    they used to be. ``torch.gather`` on int64 rounds through float32 on MPS above 2^24,
-    and n^2 crosses that for any document over ~4,096 boundaries -- every Chinese article,
-    since the splitter yields about one word per character -- so a gathered key unpacked to
-    a DIFFERENT span. Components stay below n, where gather is exact everywhere. Ordering
-    is unchanged: a stable sort by ``end`` then by ``start`` is lexicographic ascending,
-    which is what sorting the packed key gave. An invalid entry is (n, 0), the pair the
-    retired ``invalid_key = n * n`` decoded to.
+    they used to be. On 2026-09-03 MPS ``torch.gather`` of that int64 rounded a key above
+    2^24 to a different span. The same gather round-trips on 2026-11-03. Components stay
+    below n. Ordering is unchanged: a stable sort by ``end`` then by ``start`` is
+    lexicographic ascending, which is what sorting the packed key gave. An invalid entry
+    is (n, 0), the pair the retired ``invalid_key = n * n`` decoded to.
     """
     invalid_start, invalid_end = n_boundaries, 0
     starts = torch.where(valid, starts, torch.full_like(starts, invalid_start))

@@ -3,7 +3,10 @@ import sys
 from pathlib import Path
 
 from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
-from gliner2.models.boundary.engine import resolve_record_field_threshold
+from gliner2.models.boundary.engine import (
+    record_field_decision_score,
+    resolve_record_field_threshold,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "train"))
 import train as T  # noqa: E402
@@ -22,6 +25,11 @@ def test_off_by_default_fields_follow_the_record_gate():
 def test_on_makes_the_field_threshold_real():
     s = _settings(record_field_threshold=0.05, record_field_threshold_wins=True)
     assert resolve_record_field_threshold(s, 0.3) == 0.05
+
+
+def test_field_threshold_reads_the_assignment_score():
+    assert record_field_decision_score(0.9, 0.01) == 0.9
+    assert record_field_decision_score(None, 0.2) == 0.2
 
 
 def test_field_gate_is_an_eval_time_override_not_structural():

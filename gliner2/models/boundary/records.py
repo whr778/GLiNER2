@@ -987,7 +987,6 @@ def decode_group(
     ]
     coref_members: Dict[int, List[int]] = {}
     merge_coreferent = {True: "args", False: "off"}.get(merge_coreferent, merge_coreferent)
-    n_selected_before = len(selected_instances)
     if merge_coreferent != "off" and group.spec.mode == "natural" and len(selected_instances) > 1:
         if merge_coreferent == "link":
             # A merge the setting promises and the model cannot do must fail LOUDLY: traced 2026-10-06,
@@ -1000,29 +999,6 @@ def decode_group(
         elif merge_coreferent == "args":
             selected_instances, coref_members = _merge_coreferent_instances(
                 group, selected_instances, field_threshold, temperature)
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        _max = None
-        if group.coref_logits is not None:
-            _max = round(float(torch.sigmoid(group.coref_logits.detach()).max()), 4)
-        with open("/Users/williamroe/development/git/GLiNER2/.cursor/debug-834c72.log", "a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({
-                "sessionId": "834c72", "runId": "life1", "hypothesisId": "M",
-                "location": "records.py:decode_group", "message": "merge",
-                "data": {
-                    "spec_mode": group.spec.mode, "merge": merge_coreferent,
-                    "num_instances": ni, "selected_before": n_selected_before,
-                    "selected_after": len(selected_instances),
-                    "member_groups": len(coref_members),
-                    "members": sum(len(v) for v in coref_members.values()),
-                    "coref_logits": group.coref_logits is not None, "coref_max": _max,
-                },
-                "timestamp": int(_time.time() * 1000),
-            }, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
     # Exclusive fields are a global assignment problem: greedily letting the
     # highest-object instance claim its favorite candidate can force later
@@ -1272,8 +1248,11 @@ def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0) ->
 
     ``hard_k`` = 0 (historical): the mean over EVERY candidate (up to the 768 budget), which
     divides a missed gold argument's surprisal by ~768 -- traced on eb18, gold arguments at
-    P 0.000-0.038 scored a loss of 0.004-0.07. ``hard_k`` > 0: the mean over the gold candidates
-    plus the ``hard_k`` highest-scoring wrong ones, so the loss reports the errors that matter.
+    P 0.000-0.038 scored a loss of 0.004-0.07. ``hard_k`` > 0: the mean over the gold
+    candidates, plus the mean over the ``hard_k`` highest-scoring wrong ones. The two means
+    are added, so a missed gold argument's gradient is ``(P - 1) / n_gold`` and does not
+    shrink as K grows. An empty role has no gold mean; it is the mean over those K wrong
+    candidates only.
     """
     cand_logits = logits_row[1:]
     if cand_logits.numel() == 0:
@@ -1285,13 +1264,34 @@ def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0) ->
         if 0 <= idx < n:
             target[idx] = 1.0
     if hard_k > 0:
-        wrong = cand_logits.detach().masked_fill(target > 0, float("-inf"))
-        k = min(hard_k, int((target == 0).sum()))
-        keep = target > 0
-        if k > 0:
-            keep = keep.index_fill(0, torch.topk(wrong, k).indices, True)
-        return F.binary_cross_entropy_with_logits(cand_logits[keep], target[keep], reduction="mean")
+        pos = target > 0
+        n_pos = int(pos.sum())
+        k = min(hard_k, n - n_pos)
+        loss = cand_logits.new_zeros(())
+        if n_pos:
+            loss = loss + F.binary_cross_entropy_with_logits(
+                cand_logits[pos], target[pos], reduction="mean"
+            )
+        if k:
+            wrong = cand_logits.detach().masked_fill(pos, float("-inf"))
+            neg = torch.zeros_like(pos)
+            neg = neg.index_fill(0, torch.topk(wrong, k).indices, True)
+            loss = loss + F.binary_cross_entropy_with_logits(
+                cand_logits[neg], target[neg], reduction="mean"
+            )
+        return loss
     return F.binary_cross_entropy_with_logits(cand_logits, target, reduction="mean")
+
+
+def _gold_spans_unresolved(record: RecordTarget, fspec, cols) -> bool:
+    """Gold values exist, and none of their spans are candidates of this field.
+
+    An empty ``values`` tuple is a real absence and stays supervised. A miss is
+    not an absence: an all-negative target pushes the hardest candidates down
+    and there is no positive column for the gold span.
+    """
+    target = record.field_for_query(fspec.query_id)
+    return target is not None and bool(target.values) and not cols
 
 
 def _field_target_cols(fspec, record: RecordTarget, span_to_idx):
@@ -1315,6 +1315,8 @@ def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices, h
 
     ``drop_anchor`` (natural mode, `record_drop_anchor_field_loss`) leaves the ANCHOR field's own row out of the
     sum -- decode never reads it -- while the divisor still counts it, so every role term keeps its exact weight.
+    A field whose gold spans missed the candidate pool is likewise left out of the sum and kept in the divisor:
+    it is not trained as an empty role.
     """
     total = group.object_logits.new_zeros(())
     n_fields = 0
@@ -1324,6 +1326,9 @@ def _instance_field_loss(group, inst: int, record: RecordTarget, span_indices, h
             _note_anchor_field_drop()
             continue
         cols, is_scalar = _field_target_cols(fspec, record, span_indices[f_idx])
+        if _gold_spans_unresolved(record, fspec, cols):
+            n_fields += 1
+            continue
         row = group.assign_logits[f_idx][inst]
         total = total + (
             _scalar_field_nll(row, cols)
@@ -1337,6 +1342,8 @@ def _instance_field_logprob(group, inst: int, record: RecordTarget, span_indices
     total = group.object_logits.new_zeros(())
     for f_idx, fspec in enumerate(group.field_specs):
         cols, is_scalar = _field_target_cols(fspec, record, span_indices[f_idx])
+        if _gold_spans_unresolved(record, fspec, cols):
+            continue
         row = group.assign_logits[f_idx][inst]
         if is_scalar:
             total = total - _scalar_field_nll(row, cols)

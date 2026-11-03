@@ -68,6 +68,28 @@ def test_group_loss_drops_one_anchor_row_per_trained_owner_and_counts_it():
     assert float(off) > float(on)
 
 
+def test_an_unresolved_gold_role_is_not_trained_as_empty():
+    g = group()
+    spans = [R._span_index(s) for s in g.field_spans]
+    missed = record("A", (2, 3), [(9, 10)])
+    empty = record("E", (2, 3), [])
+    anchor = R._scalar_field_nll(g.assign_logits[0][0], [1])
+    missed_loss = R._instance_field_loss(g, 0, missed, spans, hard_k=8)
+    empty_loss = R._instance_field_loss(g, 0, empty, spans, hard_k=8)
+    assert torch.allclose(missed_loss, anchor / 2)
+    assert float(empty_loss) > float(missed_loss)
+    assert torch.allclose(R._instance_field_logprob(g, 0, missed, spans), -anchor)
+
+
+def test_a_partial_match_still_supervises_the_matched_span():
+    g = group()
+    spans = [R._span_index(s) for s in g.field_spans]
+    partial = record("P", (2, 3), [(5, 7), (9, 10)])
+    anchor = R._scalar_field_nll(g.assign_logits[0][0], [1])
+    role = R._list_field_bce(g.assign_logits[1][0], [1], 0)
+    assert torch.allclose(R._instance_field_loss(g, 0, partial, spans), (anchor + role) / 2)
+
+
 def test_setting_parses_refuses_the_shared_pool_and_reaches_the_group_loss():
     assert validate_boundary_head({})["record_drop_anchor_field_loss"] is False
     assert validate_boundary_head({"record_drop_anchor_field_loss": True})["record_drop_anchor_field_loss"] is True

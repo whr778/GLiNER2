@@ -250,6 +250,63 @@ def test_engine_decode_records_emits_public_structure_shape():
     assert all(0.0 <= inst["confidence"] <= 1.0 for inst in scored["purchase"])
 
 
+def test_format_keeps_an_argument_the_assignment_accepted_when_the_pair_score_is_low(
+    monkeypatch,
+):
+    """Event arguments are ZERO_OR_MORE. decode_group keeps a span on the assignment
+    score; formatting must not drop it because the span-pair score is below the same threshold.
+    The stored confidence stays min(pair, assignment)."""
+    from types import SimpleNamespace
+
+    model = _build_tiny_records_model()
+    hidden = model.hidden_size
+    tokens = ["Alice", "bought", "apples", "then", "Bob", "left", "now"]
+    text = " ".join(tokens)
+    start_map, end_map, pos = [], [], 0
+    for tok in tokens:
+        start_map.append(pos)
+        end_map.append(pos + len(tok))
+        pos += len(tok) + 1
+    cands = make_candidates([[(0, 1)], [(2, 3)]], hidden, high_logit_field=0)
+    cands.pair_logits[0, 1, 0] = -8.0
+    spec = RecordSpec(
+        task_index=0, task_name="purchase", task_type="json_structures", mode="natural",
+        fields=(
+            RecordFieldSpec(0, "buyer", 0, FieldCardinality.REQUIRED_ONE, is_anchor=True),
+            RecordFieldSpec(1, "item", 1, FieldCardinality.ZERO_OR_MORE),
+        ),
+        anchor_query_id=0,
+    )
+    batch = SimpleNamespace(record_specs=({0: spec},))
+    core = {"query_states": torch.randn(1, 2, hidden)}
+    original = model.record_decoder.forward_group
+
+    def patched(spec_, query_states_i, candidates_, sample_index_):
+        group = original(spec_, query_states_i, candidates_, sample_index_)
+        with torch.no_grad():
+            row = group.assign_logits[1]
+            row.fill_(-8.0)
+            row[:, 1] = 6.0
+        return group
+
+    monkeypatch.setattr(model.record_decoder, "forward_group", patched)
+    kwargs = dict(
+        batch=batch, sample_index=0, core=core, candidates=cands, offset=0,
+        start_map=start_map, end_map=end_map, text=text, text_len=len(tokens),
+        include_confidence=True, include_spans=False, threshold=0.5,
+    )
+    kept = model._decode_records(**kwargs)
+    item = kept["purchase"][0]["item"]
+    assert item[0]["text"] == "apples"
+    assert item[0]["confidence"] < 0.5
+
+    blocked = model._decode_records(
+        **kwargs,
+        metadata={"field_metadata": {"purchase.item": {"threshold": 0.999}}},
+    )
+    assert blocked["purchase"][0]["item"] == []
+
+
 def test_engine_choice_field_uses_per_record_assignment_not_global_fallback(
     monkeypatch,
 ):

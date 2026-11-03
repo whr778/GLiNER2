@@ -22,51 +22,6 @@ from gliner2.models.boundary.indexing import gather_states
 from gliner2.models.boundary.rotary import RotaryBoundaryEmbedding
 
 
-def _span_dbg(hypothesis: str, location: str, message: str, data: dict) -> None:
-    """Append one NDJSON line for the candidate-span investigation."""
-    # #region agent log
-    try:
-        import json
-        import time
-        payload = {
-            "sessionId": "834c72",
-            "runId": "post-fix",
-            "hypothesisId": hypothesis,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(
-            "/Users/williamroe/development/git/GLiNER2/.cursor/debug-834c72.log",
-            "a",
-            encoding="utf-8",
-        ) as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
-
-def _long_stats(tensor: torch.Tensor, limit: int) -> dict:
-    """Range of an index tensor and the first entry outside ``[0, limit)``."""
-    flat = tensor.detach()
-    if flat.numel() == 0:
-        return {"shape": list(flat.shape), "oob": 0}
-    oob = (flat < 0) | (flat >= limit)
-    stats = {
-        "shape": list(flat.shape),
-        "min": int(flat.min().item()),
-        "max": int(flat.max().item()),
-        "oob": int(oob.sum().item()),
-    }
-    if stats["oob"]:
-        pos = oob.nonzero(as_tuple=False)[0].tolist()
-        stats["first"] = [int(v) for v in pos]
-        stats["value"] = int(flat[tuple(pos)].item())
-    return stats
-
-
 # =============================================================================
 # Settings and outputs
 # =============================================================================
@@ -145,14 +100,6 @@ def select_top_boundaries(
     scores, idx = torch.sort(masked, dim=-1, descending=True, stable=True)
     scores = scores[..., :k]
     idx = idx[..., :k]
-    # #region agent log
-    _span_dbg("A", "proposal.py:select_top_boundaries", "sort indices", {
-        "n": n,
-        "k": k,
-        "nonfinite": int((~torch.isfinite(logits)).sum().item()),
-        **_long_stats(idx, n),
-    })
-    # #endregion
     valid = torch.gather(valid_mask, -1, idx)
     scores = torch.where(valid, scores, torch.zeros_like(scores))
     idx = torch.where(valid, idx, torch.zeros_like(idx))
@@ -194,16 +141,6 @@ def merge_running_topk(
     top_scores = top_scores[..., :take]
     order = order[..., :take]
     top_indices = torch.gather(indices, -1, order)
-    # #region agent log
-    length = int(indices.shape[-1])
-    _span_dbg("B", "proposal.py:merge_running_topk", "gathered block indices", {
-        "length": length,
-        "order": _long_stats(order, length),
-        "gathered": _long_stats(top_indices, 1_000_000),
-        "source_min": int(indices.min().item()) if indices.numel() else None,
-        "source_max": int(indices.max().item()) if indices.numel() else None,
-    })
-    # #endregion
     return top_scores, top_indices
 
 
@@ -462,15 +399,11 @@ def assemble_candidates(
     # span-ascending order; PR-10 permits a tie-order change only in the merge.
     #
     # A span's identity used to be packed into one int64, `start * n + end`, and that
-    # packed value was gathered. `torch.gather` on int64 rounds through float32 on MPS
-    # above 2^24, and n^2 crosses that for any document over ~4,096 boundaries -- which
-    # every Chinese article is, the splitter yielding about one word per character. The
-    # rounded key unpacks to a DIFFERENT span, sometimes zero-width. Only gather is
-    # affected (arithmetic, comparison and argsort are exact), so the components are
-    # carried through the permutations instead: both stay below n, where gather is exact
-    # on every backend. Ordering is unchanged -- a stable sort by `end` followed by a
-    # stable sort by `start` is lexicographic (start, end) ascending, which is what
-    # sorting the packed key produced.
+    # packed value was gathered. On 2026-09-03 MPS `torch.gather` of that int64 rounded
+    # 24,277,961 down to 24,277,960, and the unpacked span was zero-width. The same
+    # gather round-trips on 2026-11-03. The components are still what is gathered:
+    # both stay below n, and a stable sort by `end` then by `start` is the lexicographic
+    # (start, end) order sorting the packed key produced.
     by_score = torch.argsort(scores, dim=-1, descending=True, stable=True)
     starts = torch.gather(starts, -1, by_score)
     ends = torch.gather(ends, -1, by_score)
@@ -510,25 +443,6 @@ def assemble_candidates(
         indices = F.pad(indices, (0, 0, 0, pad))
         selected_valid = F.pad(selected_valid, (0, pad), value=False)
         selected_gold = F.pad(selected_gold, (0, pad), value=False)
-    # #region agent log
-    active = selected_valid
-    bad = active & (
-        (indices[..., 0] < 0) | (indices[..., 1] < 0)
-        | (indices[..., 0] >= n_boundaries) | (indices[..., 1] > n_boundaries)
-        | (indices[..., 1] <= indices[..., 0])
-    )
-    slot0 = indices[0, 0, 0].detach()
-    _span_dbg("D", "proposal.py:assemble_candidates", "assembled spans", {
-        "n_boundaries": int(n_boundaries),
-        "incoming_starts": _long_stats(pair_starts, n_boundaries + 1),
-        "incoming_ends": _long_stats(pair_ends, n_boundaries + 1),
-        "active": int(active.sum().item()),
-        "bad_active": int(bad.sum().item()),
-        "slot0": [int(slot0[0].item()), int(slot0[1].item())],
-        "slot0_valid": bool(selected_valid[0, 0, 0].item()),
-        "slot0_gold": bool(selected_gold[0, 0, 0].item()),
-    })
-    # #endregion
     return indices, selected_valid, selected_gold, pre_keys, pre_valid
 
 
@@ -704,12 +618,6 @@ class SparseBoundaryProposer(nn.Module):
             ).view_as(fwd_end_idx)
             & (fwd_end_idx > fwd_start)
         ).reshape(b, q, -1)
-        # #region agent log
-        _span_dbg("A", "proposal.py:forward_pairs", "forward start indices", {
-            "n": n, "q": q, "starts": _long_stats(fwd_pairs_s, n),
-            "ends": _long_stats(fwd_pairs_e, n + 1),
-        })
-        # #endregion
 
         pair_starts = [fwd_pairs_s]
         pair_ends = [fwd_pairs_e]
@@ -744,12 +652,6 @@ class SparseBoundaryProposer(nn.Module):
                     & (bwd_end > bwd_start_idx)
                 ).reshape(b, q, -1)
             )
-            # #region agent log
-            _span_dbg("B", "proposal.py:backward_pairs", "backward start indices", {
-                "n": n, "q": q, "starts": _long_stats(bwd_start_idx, n),
-                "ends": _long_stats(bwd_end, n),
-            })
-            # #endregion
 
         all_s = torch.cat(pair_starts, dim=-1)   # [B,Q,P]
         all_e = torch.cat(pair_ends, dim=-1)
@@ -761,14 +663,6 @@ class SparseBoundaryProposer(nn.Module):
         # Batched deduplication and optional gold injection. Gold tensors are
         # still available during eval for diagnostics, but are only injected
         # while training.
-        # #region agent log
-        if gold_pairs is not None and training:
-            _span_dbg("C", "proposal.py:gold_pairs", "gold spans before assemble", {
-                "n": n,
-                "pairs": _long_stats(gold_pairs, n + 1),
-                "injection": float(gold_injection_prob),
-            })
-        # #endregion
         with torch.no_grad():
             out_idx, out_valid, out_gold, pre_keys, pre_valid = assemble_candidates(
                 all_s,

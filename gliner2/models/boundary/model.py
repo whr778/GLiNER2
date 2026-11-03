@@ -2592,13 +2592,6 @@ class BoundaryExtractorModel(BaseExtractorModel):
                     "Dropped record auxiliary loss after RuntimeError: %s", exc
                 )
                 record_loss = None
-            except (IndexError, ValueError) as exc:
-                logger.warning(
-                    "Dropped record auxiliary loss after %s: %s",
-                    type(exc).__name__,
-                    exc,
-                )
-                record_loss = None
         coref_loss = None
         if (self.mention_link is not None and self.training
                 and self.boundary_settings.entity_coref_link_weight > 0 and getattr(batch, "coref_mentions", ())):
@@ -2796,7 +2789,11 @@ class BoundaryExtractorModel(BaseExtractorModel):
                             ("drop_anchor_field", self.boundary_settings.record_drop_anchor_field_loss),
                         ) if v}
                         losses = compute_group_loss(group, recs, **opts)
-                except (TargetCapacityError, ValueError, IndexError):
+                except TargetCapacityError as err:
+                    logger.warning(
+                        "record loss skipped task=%s index=%s: %s",
+                        spec.task_name, task_index, err,
+                    )
                     continue
                 group_object_count = int(losses.get("object_count", 1))
                 group_field_count = int(losses.get("field_count", 1))

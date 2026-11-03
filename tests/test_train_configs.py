@@ -83,11 +83,20 @@ def test_config_builds(path):
                 f"{path.name}: boundary configs must not set max_width (a span_head "
                 f"field); removing that cap is the point of the boundary head"
             )
+        # train.py's from_encoder takes max_len only when the model section sets it.
+        # Eval reads the window from training.max_len (train.py `_parse_eval_settings`),
+        # and a score-only config such as trace/eb22e-wikievents-eval.yaml sets it there.
+        max_len = model.pop("max_len", None)
+        if max_len is None:
+            max_len = cfg["training"].get("max_len")
+        assert max_len is not None, (
+            f"{path.name}: max_len is set on neither model nor training"
+        )
         ec = ExtractorConfig(
             model_name=encoder,
             architecture=architecture,
             max_width=model.pop("max_width", 8),
-            max_len=model.pop("max_len"),
+            max_len=max_len,
             **model,
         )
         assert ec.architecture == architecture, f"{path.name}: architecture not applied"

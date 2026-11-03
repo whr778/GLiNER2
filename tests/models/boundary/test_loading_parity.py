@@ -179,7 +179,7 @@ def test_dropped_auxiliary_losses_are_logged(monkeypatch, caplog):
     batch = _training_batch(model)
     monkeypatch.setattr(
         model, "_record_loss", lambda *args, **kwargs: (_ for _ in ()).throw(
-            ValueError("bad record target")
+            RuntimeError("bad record target")
         )
     )
     monkeypatch.setattr(
