@@ -16,7 +16,6 @@ export HF_TOKEN=$(cat ~/.hf_token)
 export CKPT_CACHE=$HOME/ckpts
 PY=./.venv/bin/python
 CFG=${CFG:?CFG}; DEST=${DEST:?DEST}
-CKPT=${CKPT:-whr778/gliner2-eb22c-collapse-trace:checkpoint-30000}
 # PRESET picks the arms, corpora and harness: the JOB string travels through provision_box.sh's remote `bash -lc '...'`, so
 # it cannot carry quotes, semicolons or spaces inside values (2026-10-23: an ARMS='a;b' JOB never started and the box
 # was terminated). Arms are "name=flags" pairs separated by "," (flags may be empty; spaces inside flags are fine here).
@@ -27,9 +26,11 @@ case "$PRESET" in
   cls)       ARMS="control=,dropoff=--no-schema-dropout"
              CORPORA="masakhanews_eng scientific_text"; SCRIPT=tools/train/overfit_classification.py; DEFAULT_BATCH=8 ;;
   events)    ARMS="control=--legacy-role-loss,treatment="
-             CORPORA="casie_off cmnee_ner_off"; SCRIPT=tools/train/overfit_events.py; DEFAULT_BATCH=4 ;;
+             CORPORA="casie_off cmnee_ner_off"; SCRIPT=tools/train/overfit_events.py; DEFAULT_BATCH=4
+             CKPT=${CKPT:-whr778/gliner2-eb22e-epoch:checkpoint-epoch-1} ;;
   *) echo "[overfit] *** FATAL: unknown PRESET $PRESET ***"; exit 1 ;;
 esac
+CKPT=${CKPT:-whr778/gliner2-eb22c-collapse-trace:checkpoint-30000}
 RECORDS=${RECORDS:-64}; STEPS=${STEPS:-400}; EVERY=${EVERY:-50}; BATCH=${BATCH:-$DEFAULT_BATCH}
 RUN_TIMEOUT=${RUN_TIMEOUT:-1800}
 OUT=$HOME/overfit

@@ -16,5 +16,5 @@ uv run python tools/train/check_corpora_fetchable.py --config "$CFG" --offline \
 export JOB_TIMEOUT=${JOB_TIMEOUT:-10800}
 export HARD_DEADLINE=${HARD_DEADLINE:-12600}
 echo "[$NAME] commit $EXPECT_COMMIT | logs -> $NAME/"
-exec env NAME="$NAME" JOB="CFG=$CFG DEST=$NAME PRESET=${PRESET:-relations}${CKPT:+ CKPT=$CKPT}${RECORDS:+ RECORDS=$RECORDS}${STEPS:+ STEPS=$STEPS} bash tools/lambda/overfit_job.sh" \
+exec env -u CKPT NAME="$NAME" JOB="CFG=$CFG DEST=$NAME PRESET=${PRESET:-relations}${CKPT:+ CKPT=$CKPT}${RECORDS:+ RECORDS=$RECORDS}${STEPS:+ STEPS=$STEPS} bash tools/lambda/overfit_job.sh" \
      TYPES="${TYPES:-gpu_1x_a10}" bash tools/lambda/launch_when_available.sh
