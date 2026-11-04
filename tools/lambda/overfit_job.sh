@@ -28,6 +28,9 @@ case "$PRESET" in
   events)    ARMS="control=--legacy-role-loss,treatment="
              CORPORA="casie_off cmnee_ner_off"; SCRIPT=tools/train/overfit_events.py; DEFAULT_BATCH=4
              CKPT=${CKPT:-whr778/gliner2-eb22e-epoch:checkpoint-epoch-1} ;;
+  eb22g)     ARMS="control=--remove-events-prob 0.2 --head-override pair_split_reduction=false hard_negative_keep_all_when_absent=true,treatment="
+             CORPORA="casie_off cmnee_ner_off"; SCRIPT=tools/train/overfit_events.py; DEFAULT_BATCH=4
+             CKPT=${CKPT:-whr778/gliner2-eb22f-epoch:checkpoint-epoch-1} ;;
   *) echo "[overfit] *** FATAL: unknown PRESET $PRESET ***"; exit 1 ;;
 esac
 CKPT=${CKPT:-whr778/gliner2-eb22c-collapse-trace:checkpoint-30000}

@@ -166,6 +166,8 @@ def main(argv=None) -> None:
     ap.add_argument("--legacy-role-loss", action="store_true",
                     help="control arm: combined (1+K) mean in _list_field_bce, unresolved roles trained as empty, "
                          "anchor row kept, and format gate reading min(pair, assignment)")
+    ap.add_argument("--remove-events-prob", type=float,
+                    help="override processor.sampling_config.remove_events_prob")
     ap.add_argument("--head-override", nargs="+", default=[], metavar="KEY=VALUE",
                     help="override boundary_head settings, e.g. boundary_marginal_loss=bce (one arm of an A/B)")
     ap.add_argument("--out")
@@ -176,7 +178,6 @@ def main(argv=None) -> None:
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
     for kv in args.head_override:
         k, v = kv.split("=", 1)
-        assert k in cfg["model"]["boundary_head"], f"{k} is not a boundary_head key of {args.config}"
         cfg["model"]["boundary_head"][k] = yaml.safe_load(v)
     tr, head = cfg["training"], dict(cfg["model"]["boundary_head"])
     if args.legacy_role_loss:
@@ -229,12 +230,21 @@ def main(argv=None) -> None:
         if hasattr(model.encoder, "config"):
             model.encoder.config.use_cache = False
     model = model.to(args.device)
+    from gliner2.training.trainer import apply_schema_dropout
+    sd_setting = tr.get("schema_dropout", True)
+    if sd_setting is not True:
+        apply_schema_dropout(model.processor.sampling_config, sd_setting)
+    if args.remove_events_prob is not None:
+        model.processor.sampling_config.remove_events_prob = float(args.remove_events_prob)
     _install_role_loss_probe(args.legacy_role_loss)
     bh_settings = getattr(getattr(model, "boundary_head", None), "settings", None)
     print(f"[overfit-events] PROOF role_loss_mode={'control(legacy)' if args.legacy_role_loss else 'treatment(split+withhold)'} "
           f"hard_k={getattr(bh_settings, 'record_role_hard_negatives', '?')} "
           f"drop_anchor={getattr(bh_settings, 'record_drop_anchor_field_loss', '?')} "
-          f"coref_ownership={getattr(bh_settings, 'record_coreferent_ownership', '?')}", flush=True)
+          f"coref_ownership={getattr(bh_settings, 'record_coreferent_ownership', '?')} "
+          f"pair_split={getattr(bh_settings, 'pair_split_reduction', '?')} "
+          f"keep_all_absent={getattr(bh_settings, 'hard_negative_keep_all_when_absent', '?')} "
+          f"remove_events_prob={model.processor.sampling_config.remove_events_prob}", flush=True)
 
     negatives = None
     if tr.get("negative_pools") and tr.get("negative_labels_per_dim"):
@@ -255,13 +265,16 @@ def main(argv=None) -> None:
     opt = torch.optim.AdamW([{"params": enc, "lr": enc_lr}, {"params": rest, "lr": task_lr}])
     use_bf16 = args.device == "cuda" and bool(tr.get("bf16", False))
 
-    log, rng, t0, losses = [], random.Random(0), time.time(), {"record_field_loss": [], "loss": []}
+    log, rng, t0, losses = [], random.Random(0), time.time(), {"record_field_loss": [], "pair_loss": [], "loss": []}
     model.train()
+    model.processor.change_mode(is_training=True)
     for step in range(args.steps + 1):
         if step % args.every == 0 and not (args.from_scratch and step == 0):
+            model.processor.change_mode(is_training=False)
             row = {"step": step, "seconds": round(time.time() - t0)}
             for thr in (0.5, 0.3, 0.1):
                 row[f"@{thr}"] = event_scores(model, eval_records, thr)
+            model.processor.change_mode(is_training=True)
             train_stats = {k: round(sum(v) / max(len(v), 1), 4) for k, v in losses.items()}
             if GOLD_PROBS:
                 sp = sorted(GOLD_PROBS)
@@ -279,6 +292,7 @@ def main(argv=None) -> None:
         opt.zero_grad(set_to_none=True)
         step_loss = 0.0
         step_rfl = []
+        step_pl = []
         for micro in range(grad_accum):
             idx = rng.sample(range(len(ds)), min(batch_size, len(ds)))
             if negatives is not None:
@@ -290,10 +304,14 @@ def main(argv=None) -> None:
             step_loss += float(loss.detach())
             if out.losses.get("record_field_loss") is not None:
                 step_rfl.append(float(out.losses["record_field_loss"].detach()))
+            if out.losses.get("pair_loss") is not None:
+                step_pl.append(float(out.losses["pair_loss"].detach()))
             loss.backward()
         losses["loss"].append(step_loss)
         if step_rfl:
             losses["record_field_loss"].append(sum(step_rfl) / len(step_rfl))
+        if step_pl:
+            losses["pair_loss"].append(sum(step_pl) / len(step_pl))
         if step % 10 == 0:
             print(f"[overfit-events] step {step} loss {step_loss:.4f} | {time.time() - t0:.0f}s", flush=True)
         torch.nn.utils.clip_grad_norm_(model.parameters(), float(tr.get("max_grad_norm", 1.0)))
