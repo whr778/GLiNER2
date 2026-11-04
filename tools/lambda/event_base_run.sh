@@ -51,6 +51,33 @@ RESCUE=0
 echo "[base] ===== START $(date -u) ====="
 echo "[base] config $CFG -> $REPO"
 
+NGPU=${NGPU:-auto}
+if [ "$NGPU" = "auto" ]; then
+  NGPU=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
+  [ "${NGPU:-0}" -ge 1 ] || NGPU=1
+fi
+$PY - "$CFG" "$NGPU" <<'PYS'
+import sys, torch, yaml
+cfg_path, ngpu = sys.argv[1], max(1, int(sys.argv[2]))
+if torch.cuda.is_available():
+    c = yaml.safe_load(open(cfg_path, encoding="utf-8"))
+    tr = c["training"]
+    old_bs, old_acc = int(tr["batch_size"]), int(tr["gradient_accumulation_steps"])
+    eff = old_bs * old_acc
+    vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+    name = torch.cuda.get_device_name(0)
+    bs = 8 if vram_gb >= 70 else (4 if vram_gb >= 35 else 2)
+    bs = min(bs, max(1, eff // ngpu))
+    acc = max(1, eff // (bs * ngpu))
+    tr["batch_size"], tr["gradient_accumulation_steps"] = bs, acc
+    ev = c.setdefault("eval", {})
+    old_ebs = int(ev.get("batch_size", 2))
+    ebs = max(old_ebs, 4) if vram_gb >= 70 else old_ebs
+    ev["batch_size"] = ebs
+    yaml.safe_dump(c, open(cfg_path, "w", encoding="utf-8"), sort_keys=False, allow_unicode=True)
+    print(f"[base] GPU scaling: {name} ({vram_gb:.1f} GB x {ngpu}) -> batch_size={bs} grad_accum={acc} eval_batch_size={ebs} (effective {bs * acc * ngpu}, was {old_bs}x{old_acc})", flush=True)
+PYS
+
 # PROVENANCE, PUBLISHED AT MINUTE ZERO. Establishing whether a finished model predated the
 # bf16 consistency-loss fix had to be done by arithmetic on push timestamps, because nothing
 # recorded what code built it. Write it down before the run can fail.
@@ -84,18 +111,60 @@ disown
 # convenience stream, and it must never be able to fail the run it is reporting on.
 ( while sleep 1800; do
     tail -c 200000 "$LOG" > "$HOME/progress.log" 2>/dev/null
-    publish "$DEST" "$HOME/heartbeat.log" "$HOME/progress.log" >/dev/null 2>&1 || true
+    HIST_ARG=""
+    [ -s "$OUTDIR/eval_history.jsonl" ] && HIST_ARG="$OUTDIR/eval_history.jsonl"
+    publish "$DEST" "$HOME/heartbeat.log" "$HOME/progress.log" $HIST_ARG >/dev/null 2>&1 || true
+    if [ "${PUSH_EPOCHS:-0}" = "1" ]; then
+      for ck in "$OUTDIR"/checkpoint-epoch-*; do
+        [ -d "$ck" ] && [ -s "$ck/training_state.pt" ] && [ -s "$ck/model.safetensors" ] || continue
+        bname=$(basename "$ck")
+        grep -qxF "$bname" "$HOME/uploaded_epochs.txt" 2>/dev/null && continue
+        sz=$(stat -c %s "$ck/training_state.pt" 2>/dev/null || echo 0)
+        sleep 20
+        [ "$(stat -c %s "$ck/training_state.pt" 2>/dev/null || echo -1)" = "$sz" ] || continue
+        $PY - "$ck" "$REPO" "$bname" <<'PYE' && echo "$bname" >> "$HOME/uploaded_epochs.txt" || true
+import os, sys
+from huggingface_hub import HfApi
+ck, repo, bname = sys.argv[1], sys.argv[2], sys.argv[3]
+api = HfApi(token=open(os.path.expanduser("~/.hf_token")).read().strip())
+api.create_repo(repo, private=True, exist_ok=True)
+api.upload_folder(folder_path=ck, path_in_repo=bname, repo_id=repo, commit_message=bname)
+files = set(api.list_repo_files(repo))
+if not ({f"{bname}/model.safetensors", f"{bname}/config.json", f"{bname}/training_state.pt"} <= files):
+    sys.exit(1)
+print(f"[base] uploaded {bname} (with training_state.pt) -> {repo}/{bname}", flush=True)
+PYE
+      done
+    fi
   done ) >> "$HOME/publisher.log" 2>&1 &
 disown
 
 # JOB_TIMEOUT stops TRAIN.PY, not the box: the runner then publishes logs and
 # terminates on the normal path. A watchdog kill skips the publish, so a short
 # diagnostic run wants this knob and not a short deadline.
-timeout ${JOB_TIMEOUT:-72000} $PY -u tools/train/train.py --config "$CFG" 2>&1 | tee "$LOG"
+if [ "${NGPU:-1}" -gt 1 ]; then
+  timeout ${JOB_TIMEOUT:-72000} $PY -m torch.distributed.run --standalone --nproc_per_node="$NGPU" tools/train/train.py --config "$CFG" 2>&1 | tee "$LOG"
+else
+  timeout ${JOB_TIMEOUT:-72000} $PY -u tools/train/train.py --config "$CFG" 2>&1 | tee "$LOG"
+fi
 rc=${PIPESTATUS[0]}
 echo "[base] train.py rc=$rc  $(date -u)"
 
-# 1. THE MODEL, FIRST AND REGARDLESS OF rc.
+# 1. METRICS AND LOGS FIRST (kilobytes; published before the 600MB+ model pushes).
+cp "$OUTDIR/test_metrics.json" "$HOME/test_metrics.json" 2>/dev/null || echo "[base] no test_metrics.json"
+EXTRA=""
+for opt_f in eval_metrics.json eval_history.jsonl train_results.json; do
+  if [ -s "$OUTDIR/$opt_f" ]; then
+    cp "$OUTDIR/$opt_f" "$HOME/$opt_f" 2>/dev/null && EXTRA="$EXTRA $HOME/$opt_f"
+  fi
+done
+if [ -s "$HOME/test_metrics.json" ]; then
+  publish "$DEST" "$HOME/test_metrics.json" $EXTRA "$LOG" "$HOME/heartbeat.log" "$CFG" || RESCUE=1
+else
+  publish "$DEST" $EXTRA "$LOG" "$HOME/heartbeat.log" "$CFG" || RESCUE=1
+fi
+
+# 2. THE MODEL, REGARDLESS OF rc.
 if [ -d "$OUTDIR/best" ]; then
   echo "[base] pushing checkpoint (this is the irreplaceable artefact)"
   n=0
@@ -110,17 +179,7 @@ else
   RESCUE=1
 fi
 
-# 1b. THE FINAL-EPOCH CHECKPOINT, to a SEPARATE repo.
-#
-# `best/` is whichever epoch won on `metric_for_best`, and two arms of one A/B can win on
-# DIFFERENT epochs: roles2 shipped its control at epoch 2 against its treatment at epoch 5,
-# so every head rose and the run was void. The trainer already writes `final/` and
-# `checkpoint-epoch-N/`; the box then terminates and destroys them, which is why that run
-# could not be rescued by re-scoring and needs the control retrained (~$20).
-#
-# Pushing `final/` makes a like-for-like comparison possible AFTER THE FACT, whatever
-# selection did. Non-fatal by design: this is the diagnostic copy, and it must never cost
-# the run its irreplaceable `best/`.
+# 2b. THE FINAL-EPOCH CHECKPOINT, to a SEPARATE repo.
 if [ -d "$OUTDIR/final" ]; then
   echo "[base] pushing the final-epoch checkpoint (diagnostic copy, non-fatal)"
   $PY -u tools/train/push_to_hub.py --checkpoint "$OUTDIR/final" \
@@ -131,31 +190,35 @@ else
   echo "[base] no $OUTDIR/final to push"
 fi
 
-# 1c. OPTIONAL PER-EPOCH CHECKPOINTS (PUSH_EPOCHS=1), each to its own private repo. Non-fatal:
+# 2c. OPTIONAL PER-EPOCH CHECKPOINTS (PUSH_EPOCHS=1), each to its own private repo. Non-fatal:
 # they are the diagnostic curve (e.g. the trigger-miss probe per epoch), never the deliverable.
 # Needs save_total_limit >= num_epochs in the config, or the trainer has deleted the early ones.
 if [ "${PUSH_EPOCHS:-0}" = "1" ]; then
   for ck in "$OUTDIR"/checkpoint-epoch-*; do
     [ -d "$ck" ] || continue
-    echo "[base] pushing $(basename "$ck") (diagnostic, non-fatal)"
-    $PY -u tools/train/push_to_hub.py --checkpoint "$ck" --repo-id "$REPO-$(basename "$ck")" --private \
+    bname=$(basename "$ck")
+    if ! grep -qxF "$bname" "$HOME/uploaded_epochs.txt" 2>/dev/null; then
+      $PY - "$ck" "$REPO" "$bname" <<'PYE' && echo "$bname" >> "$HOME/uploaded_epochs.txt" || true
+import os, sys
+from huggingface_hub import HfApi
+ck, repo, bname = sys.argv[1], sys.argv[2], sys.argv[3]
+api = HfApi(token=open(os.path.expanduser("~/.hf_token")).read().strip())
+api.create_repo(repo, private=True, exist_ok=True)
+api.upload_folder(folder_path=ck, path_in_repo=bname, repo_id=repo, commit_message=bname)
+files = set(api.list_repo_files(repo))
+if not ({f"{bname}/model.safetensors", f"{bname}/config.json"} <= files):
+    sys.exit(1)
+print(f"[base] uploaded {bname} -> {repo}/{bname}", flush=True)
+PYE
+    fi
+    echo "[base] pushing $bname to $REPO-$bname (diagnostic, non-fatal)"
+    $PY -u tools/train/push_to_hub.py --checkpoint "$ck" --repo-id "$REPO-$bname" --private \
         --commit-message "per-epoch checkpoint, for the per-epoch curve" 2>&1 | tail -2 \
-      || echo "[base] $(basename "$ck") push failed; continuing"
+      || echo "[base] $bname push failed; continuing"
   done
 fi
 
-# 2. METRICS AND LOGS, whatever happened to the model.
-cp "$OUTDIR/test_metrics.json" "$HOME/test_metrics.json" 2>/dev/null || echo "[base] no test_metrics.json"
-# eval_metrics.json is OPTIONAL -- train.py writes test_metrics.json and val_metrics.json,
-# never this name. Copying it with `|| true` and then NAMING IT IN THE PUBLISH LIST made the
-# publish correctly report a never-written artefact and hold the box, after a 16-hour run
-# whose model and metrics had both already landed. An optional file must not appear in a
-# required list: only pass it when it exists.
-EXTRA=""
-cp "$OUTDIR/eval_metrics.json" "$HOME/eval_metrics.json" 2>/dev/null \
-  && EXTRA="$HOME/eval_metrics.json"
-publish "$DEST" "$HOME/test_metrics.json" $EXTRA "$LOG" \
-        "$HOME/heartbeat.log" "$CFG" || RESCUE=1
+publish "$DEST" "$LOG" "$HOME/heartbeat.log" >/dev/null 2>&1 || true
 
 # 3. OPTIONAL TRIGGER-MISS PROBE (PROBE=1), AFTER the model AND the metrics are published,
 # so a timeout during the probe can cost only the probe. Non-fatal by design: a
