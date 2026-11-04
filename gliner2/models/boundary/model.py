@@ -1101,6 +1101,7 @@ class BoundaryHead(nn.Module):
             query_weights=query_weights,
             pos_weight=query_pos_weights,
             capture=captures.setdefault("pair", {}) if want_task_losses else None,
+            split_positive_negative=getattr(self.settings, "pair_split_reduction", False),
         )
         # soft-IoU deliberately gets NO pos_weight: its targets are fractional
         # overlaps, not 0/1, so "the positive term" is not a defined thing to scale.

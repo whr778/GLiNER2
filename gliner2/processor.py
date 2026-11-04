@@ -1439,8 +1439,6 @@ class SchemaTransformer:
                 if not isinstance(roles, list):
                     continue
                 role_list = [r for r in roles if isinstance(r, str) and r.strip()]
-                if sampling and random.random() < getattr(sampling, "remove_events_prob", 0.0):
-                    continue
                 if sampling and getattr(sampling, "shuffle_event_roles", False) and len(role_list) > 1:
                     role_list = list(role_list)
                     random.shuffle(role_list)
@@ -1496,29 +1494,40 @@ class SchemaTransformer:
             spans: List[List[Any]] = []
             for occ in occurrences:
                 # `{text, start, end}` gold (offset-anchored, TODO #26) becomes a SurfaceSpan and resolves to
-                # that ONE occurrence; a plain string still resolves to every occurrence of its words.
+                # that ONE occurrence; a plain string resolves to the occurrence nearest the event's trigger.
                 trigger_list = [_parse_gold(t) for t in occ.get("triggers") or []]
                 row: List[Any] = [trigger_list]
                 role_to_spans: Dict[str, List[Any]] = {r: [] for r in field_names[1:]}
-                for arg in occ.get("arguments") or []:
+                arg_groups: Dict[int, List[Any]] = {}
+                for arg_idx, arg in enumerate(occ.get("arguments") or []):
                     if not isinstance(arg, dict):
                         continue
                     role = arg.get("role")
                     entity = arg.get("entity")
                     if role in role_to_spans and entity:
-                        role_to_spans[role].append(_parse_gold(entity))
+                        parsed = _parse_gold(entity)
+                        parent_idx = arg.get("_coref_group")
+                        if isinstance(parent_idx, int) and parent_idx in arg_groups:
+                            arg_groups[parent_idx].append(parsed)
+                        else:
+                            grp = [parsed]
+                            arg_groups[arg_idx] = grp
+                            role_to_spans[role].append(grp)
                 for role in field_names[1:]:
-                    row.append(list(role_to_spans[role]))
+                    row.append([
+                        grp[0] if len(grp) == 1 else grp
+                        for grp in role_to_spans[role]
+                    ])
                 spans.append(row)
 
             # Dedup whole-mention rows.
+            def _freeze(x):
+                return tuple(_freeze(i) for i in x) if isinstance(x, list) else x
+
             seen_rows: set = set()
             uniq: List[List[Any]] = []
             for row in spans:
-                key = tuple(
-                    tuple(x) if isinstance(x, list) else x
-                    for x in row
-                )
+                key = _freeze(row)
                 if key not in seen_rows:
                     seen_rows.add(key)
                     uniq.append(row)
@@ -1710,11 +1719,19 @@ class SchemaTransformer:
 
                 for span in spans:
                     positions = []
-                    for element in span:
+                    for field_idx, element in enumerate(span):
                         if isinstance(element, list):
                             nested = []
                             for sub in element:
-                                nested.extend(self._resolve_gold(sub, ctx))
+                                if task_type == "events" and field_idx > 0 and isinstance(sub, list):
+                                    grp = []
+                                    for member in sub:
+                                        grp.extend(self._resolve_gold(member, ctx))
+                                    nested.append(grp)
+                                elif task_type == "events" and field_idx > 0:
+                                    nested.append(self._resolve_gold(sub, ctx))
+                                else:
+                                    nested.extend(self._resolve_gold(sub, ctx))
                             positions.append(nested)
                         else:
                             positions.append(self._resolve_gold(element, ctx))

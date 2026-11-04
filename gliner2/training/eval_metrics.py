@@ -914,6 +914,8 @@ def _gold_event_trigger_set(output: Dict) -> Set[Tuple[str, str]]:
         if not etype:
             continue
         for trigger in triggers:
+            if isinstance(trigger, dict):
+                trigger = trigger.get("text")
             if isinstance(trigger, str) and trigger.strip():
                 out.add((etype, trigger.strip()))
     return out
@@ -1045,9 +1047,13 @@ def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, Tuple[str
         if not isinstance(etype, str) or not isinstance(triggers, list):
             continue
         etype = etype.strip()
-        trigger_key = tuple(sorted(
-            t.strip() for t in triggers if isinstance(t, str) and t.strip()
-        ))
+        trigger_texts = []
+        for t in triggers:
+            if isinstance(t, dict):
+                t = t.get("text")
+            if isinstance(t, str) and t.strip():
+                trigger_texts.append(t.strip())
+        trigger_key = tuple(sorted(trigger_texts))
         if not etype or not trigger_key:
             continue
         for arg in ev.get("arguments") or []:
@@ -1055,6 +1061,8 @@ def _gold_event_argument_set(output: Dict) -> Set[Tuple[str, str, str, Tuple[str
                 continue
             role = arg.get("role")
             entity = arg.get("entity")
+            if isinstance(entity, dict):
+                entity = entity.get("text")
             if not isinstance(role, str) or not isinstance(entity, str):
                 continue
             role, entity = role.strip(), entity.strip()
@@ -1096,8 +1104,13 @@ def _gold_oneie_sets(output: Dict) -> Tuple[Dict[str, Set], int]:
             continue
         etype = etype.strip().lower()
         triggers = ev.get("triggers")
-        texts = [t.strip().lower() for t in (triggers or [])
-                 if isinstance(t, str) and t.strip()] if isinstance(triggers, list) else []
+        texts = []
+        if isinstance(triggers, list):
+            for t in triggers:
+                if isinstance(t, dict):
+                    t = t.get("text")
+                if isinstance(t, str) and t.strip():
+                    texts.append(t.strip().lower())
         for t in texts:
             out["trigi"].add((t,))
             out["trigc"].add((etype, t))
@@ -1105,6 +1118,8 @@ def _gold_oneie_sets(output: Dict) -> Tuple[Dict[str, Set], int]:
             if not isinstance(arg, dict):
                 continue
             role, entity = arg.get("role"), arg.get("entity")
+            if isinstance(entity, dict):
+                entity = entity.get("text")
             if not isinstance(role, str) or not isinstance(entity, str):
                 continue
             role, entity = role.strip().lower(), entity.strip().lower()

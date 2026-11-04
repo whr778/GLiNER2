@@ -991,6 +991,7 @@ _EVAL_TIME_BOUNDARY_KEYS = ("decode_mode", "joint_beam_width", "abstention_thres
                             "record_anchor_proposal_threshold",
                             # The ARGUMENT gate (TODO 22): read at decode, sizes nothing.
                             "record_field_threshold", "record_field_threshold_wins",
+                            "record_merge_coreferent", "record_coref_link_threshold",
                             # PROPOSAL WIDTH is an operating point: it adds and removes no
                             # tensors and is read at decode. It is also the binding
                             # constraint on long documents -- gold coverage at a 4096
@@ -1638,36 +1639,54 @@ def _run_blind_test(best, split_data, batch_size, threshold, by_language, gd_kwa
     return metrics
 
 
+def _eval_split_records(cfg: Dict, config_path: str, split: str) -> List[Dict]:
+    """Resolve and clean ``val`` or ``test`` records identically to ``main``.
+
+    Excludes ``data.train_only`` corpora by bare name and runs ``check_and_clean``
+    with ``test`` authoritative over ``val`` (``PRIORITY = ('test', 'val', 'train')``),
+    so ``evaluate_config`` scores the exact same 19,286 val / 20,602 test records
+    that in-run evaluation and ``training_splits`` score.
+    """
+    data = cfg.get("data") or {}
+    corpora, event_files = data.get("corpora") or [], data.get("event_files") or {}
+    train_only = set(data.get("train_only") or ())
+    suffix = "val" if split == "val" else "test"
+    fns = _category_fns(load_labels_cfg(cfg, config_path))
+    passthrough = labels_passthrough(cfg)
+
+    def _load(sfx: str) -> List[Dict]:
+        paths = _dedupe_paths(
+            _split_files(corpora, sfx, train_only) + _event_split(event_files, sfx), sfx
+        )
+        if not paths:
+            return []
+        return read_transformed(paths, fns, passthrough) if fns else _read_records(paths)
+
+    split_data = _load(suffix)
+    if not split_data:
+        return []
+    policy = str((cfg.get("training") or {}).get("split_hygiene", "drop"))
+    if policy != "off":
+        from gliner2.training.split_hygiene import check_and_clean
+        if suffix == "val":
+            test_records = _load("test")
+            _, split_data, _, report = check_and_clean(None, split_data, test_records or None, policy=policy)
+        else:
+            _, _, split_data, report = check_and_clean(None, None, split_data, policy=policy)
+        print(report.format())
+    return split_data
+
+
 def evaluate_config(config_path: str, split: str = "test", checkpoint: str = None,
                     overrides: Dict = None) -> Dict:
     """Load a saved checkpoint for ``config_path`` and score its ``val`` or
     ``test`` split without retraining, writing ``<split>_metrics.json`` next to
     the checkpoint. Reuses the same blind-test path as training."""
     cfg = yaml.safe_load(Path(config_path).read_text())
-    data = cfg.get("data") or {}
-    suffix = "val" if split == "val" else "test"
-    split_data = _dedupe_paths(
-        _split_files(data.get("corpora") or [], suffix)
-        + _event_split(data.get("event_files") or {}, suffix), suffix)
-    fns = _category_fns(load_labels_cfg(cfg, config_path))
-    if fns:
-        split_data = read_transformed(split_data, fns, labels_passthrough(cfg))
+    split_data = _eval_split_records(cfg, config_path, split)
     if not split_data:
         print(f"[eval] config has no {split} split; nothing to score.")
         return {}
-
-    # SAME SPLIT AS TRAINING'S BLIND TEST, or the two are not comparable. Training runs
-    # every split through `check_and_clean`, which drops exact duplicates; this path did
-    # not. On eb16 that is a 36% difference in the test set -- 29,615 records here
-    # against 18,786 there -- because 9 of 13 corpora are listed in BOTH `corpora:` and
-    # `event_files:` and so resolve to the same file twice. Any comparison between an
-    # eval.py number and a training-time number was measuring two different test sets.
-    policy = str((cfg.get("training") or {}).get("split_hygiene", "drop"))
-    if policy != "off":
-        from gliner2.training.split_hygiene import check_and_clean
-        records = _read_records(split_data) if isinstance(split_data[0], str) else split_data
-        _, _, split_data, report = check_and_clean(None, None, records, policy=policy)
-        print(report.format())
 
     ev = _parse_eval_settings(cfg, config_path, corpus_data=split_data, overrides=overrides)
     best = Path(checkpoint) if checkpoint else Path(cfg["training"]["output_dir"]) / "best"

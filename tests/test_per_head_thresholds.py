@@ -162,10 +162,15 @@ class TestTrainingSplits:
 
     def test_val_and_test_match_training(self, tmp_path):
         import train as T
-        val, test = T.training_splits(self._cfg(tmp_path), str(tmp_path / "c.yaml"))
+        cfg = self._cfg(tmp_path)
+        val, test = T.training_splits(cfg, str(tmp_path / "c.yaml"))
         assert sorted(r["input"] for r in val) == ["Ann validates.", "Cy is an event-file val."]   # val yields to test
         assert sorted(r["input"] for r in test) == ["Ann is also in test.", "Ann tests."]
         assert {r["_corpus"] for r in val} == {"a", "c"}
+        eval_val = T._eval_split_records(cfg, str(tmp_path / "c.yaml"), "val")
+        eval_test = T._eval_split_records(cfg, str(tmp_path / "c.yaml"), "test")
+        assert [r["input"] for r in eval_val] == [r["input"] for r in val]
+        assert [r["input"] for r in eval_test] == [r["input"] for r in test]
 
     def test_sample_per_corpus_takes_n_from_each(self):
         import per_head_thresholds as P

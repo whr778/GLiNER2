@@ -201,6 +201,8 @@ def test_the_record_operating_point_survives_the_eval_time_filter():
         "record_anchor_threshold",
         "record_anchor_threshold_wins",
         "record_anchor_proposal_threshold",
+        "record_merge_coreferent",
+        "record_coref_link_threshold",
     )
     missing = [k for k in required if k not in _EVAL_TIME_BOUNDARY_KEYS]
     assert not missing, (

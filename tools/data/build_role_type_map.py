@@ -127,7 +127,8 @@ def scan(paths: list[Path], limit: int, joins_by_corpus: dict = None,
                             if not isinstance(a, dict):
                                 continue
                             role = str(a.get("role") or "").strip()
-                            ent = str(a.get("entity") or "").strip()
+                            raw_ent = a.get("entity")
+                            ent = str((raw_ent.get("text") if isinstance(raw_ent, dict) else raw_ent) or "").strip()
                             if not (et and role and ent):
                                 continue
                             seen[(et, role)] += 1

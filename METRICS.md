@@ -687,7 +687,7 @@ merge is read on: merging two mentions of one event into one instance changes `e
 and leaves `event_argument` relaxed alone ([COREFERENT_LINK_SPEC](tools/events_working_papers/COREFERENT_LINK_SPEC.md) s5).
 Keys follow the scheme above (`eval_event_cluster_strict_micro_f1`, ...).
 
-**Argument-coref fillers (recall only; not a head).** Training adds a cluster's other mentions as gold fillers of the same role (`expand_argument_coreferents`). Eval does not, so `event_argument` strict F1 scores the annotated arguments and an emitted pronoun is a false positive there. When the eval item carries `_coref_clusters`, the scorer counts the mentions that expansion would have added and how many the decode emitted as that event type and role. The surface must match exactly. The trigger is not required.
+**Argument-coref fillers (recall only; not a head).** Training adds a cluster's other mentions as occurrence-alternative spans of the parent role filler (`expand_argument_coreferents`, controllable via `TrainingConfig.expand_argument_coref`). Eval does not expand gold arguments, so `event_argument` strict F1 scores the annotated arguments (both bare strings and `{text, start, end}` offset dicts are unwrapped to surface text across `_gold_event_trigger_set`, `_gold_event_argument_set`, and `_gold_oneie_sets`) and an emitted pronoun is a false positive there. When the eval item carries `_coref_clusters`, the scorer counts the mentions that expansion would have added and how many the decode emitted as that event type and role. The surface must match exactly. The trigger is not required.
 
 ```
 eval_argument_coref_opportunities   # integer

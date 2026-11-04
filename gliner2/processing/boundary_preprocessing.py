@@ -254,6 +254,13 @@ def _build_record_field_target(
         values: Tuple[Tuple[Tuple[int, int], ...], ...] = (
             (tuple(spans),) if spans else ()
         )
+    elif isinstance(raw, (list, tuple)) and any(isinstance(item, list) for item in raw):
+        grouped: List[Tuple[Tuple[int, int], ...]] = []
+        for item in raw:
+            g_spans = tuple(dict.fromkeys(_resolve_field_spans(item, text_length)))
+            if g_spans:
+                grouped.append(g_spans)
+        values = tuple(grouped)
     else:
         values = tuple((sp,) for sp in spans)
     return RecordFieldTarget(query_id=fspec.query_id, values=values)

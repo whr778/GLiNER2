@@ -118,7 +118,8 @@ def derive(rec: dict, lmap: dict) -> tuple[dict, "Counter"]:
     surface_labels: dict[str, set] = {}
     for ev in rec.get("output", {}).get("events") or []:
         for arg in ev.get("arguments") or []:
-            role, surface = arg.get("role"), arg.get("entity")
+            role, raw_ent = arg.get("role"), arg.get("entity")
+            surface = raw_ent.get("text") if isinstance(raw_ent, dict) else raw_ent
             if not isinstance(role, str) or not isinstance(surface, str) or not surface:
                 continue
             stats[f"role:{role}"] += 1

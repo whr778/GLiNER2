@@ -93,3 +93,24 @@ def test_inside_consistency_loss_masks_padding():
     loss = inside_consistency_loss(logits, targets, text_mask, query_mask)
     assert torch.isfinite(loss)
     assert float(loss) > 0.0
+
+
+def test_candidate_pair_loss_split_positive_negative_preserves_positive_gradient():
+    logits = torch.full((1, 4, 32), -3.0, requires_grad=True)
+    with torch.no_grad():
+        logits[0, 0, 0] = -5.0
+    labels = torch.zeros(1, 4, 32)
+    labels[0, 0, 0] = 1.0
+    valid = torch.ones(1, 4, 32, dtype=torch.bool)
+    qmask = torch.ones(1, 4, dtype=torch.bool)
+    hard = select_hard_negative_candidates(
+        logits.detach(), labels, valid,
+        negatives_per_positive=8, minimum_negatives=8, keep_all_when_no_positive=False,
+    )
+    loss = candidate_pair_loss(
+        logits, labels, valid, hard_negative_mask=hard,
+        query_mask=qmask, reduction="global", split_positive_negative=True,
+    )
+    loss.backward()
+    expected_grad = float(torch.sigmoid(torch.tensor(-5.0)) - 1.0)
+    assert float(logits.grad[0, 0, 0]) == pytest.approx(expected_grad, rel=1e-5)

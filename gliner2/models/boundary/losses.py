@@ -448,8 +448,14 @@ def candidate_pair_loss(
     query_weights: Optional[torch.Tensor] = None,
     pos_weight: Optional[torch.Tensor] = None,
     capture: Optional[dict] = None,
+    split_positive_negative: bool = False,
 ) -> torch.Tensor:
-    """BCE over candidates; optionally restrict negatives to a hard subset."""
+    """BCE over candidates; optionally restrict negatives to a hard subset.
+
+    When ``split_positive_negative=True``, positive candidates and selected negative
+    candidates are reduced over their own counts and added, so a missed gold span's
+    gradient is ``(P - 1) / N_pos`` and is not diluted by the negative pool size.
+    """
     logits = _to_query_candidate(logits, query_axis, candidate_axis)
     labels = _to_query_candidate(labels, query_axis, candidate_axis)
     valid_mask = _to_query_candidate(valid_mask, query_axis, candidate_axis)
@@ -464,6 +470,15 @@ def candidate_pair_loss(
     bce = _safe_bce(logits, labels, effective, pos_weight)
     if capture is not None:
         _note_capture(capture, bce, effective, query_mask, labels > 0.5)
+    if split_positive_negative:
+        pos_mask = effective & (labels > 0.5)
+        neg_mask = effective & (labels <= 0.5)
+        loss = logits.new_zeros(())
+        if bool(pos_mask.any()):
+            loss = loss + _reduce(bce, pos_mask, query_mask, reduction, query_weights)
+        if bool(neg_mask.any()):
+            loss = loss + _reduce(bce, neg_mask, query_mask, reduction, query_weights)
+        return loss
     return _reduce(bce, effective, query_mask, reduction, query_weights)
 
 

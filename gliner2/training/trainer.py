@@ -357,6 +357,8 @@ class TrainingConfig:
     # "all": a text-level relation labels every head-occurrence x tail-occurrence pair; "nearest":
     # only the closest pair (see boundary_preprocessing._pair_gap).
     relation_gold_pairs: str = "all"
+    # Expand gold event arguments with coreferent mentions from coref_clusters (argument_coref.py).
+    expand_argument_coref: bool = True
     group_by_length: bool = True
     length_group_window_batches: int = 50
     # "charclass" (default) approximates tokens from character classes and works for
@@ -2012,7 +2014,7 @@ class ExtractorTrainer:
                 guide_scores=guide_scores,
                 rivals_per_record=self.config.rivals_per_record,
                 negatives=negatives,
-                expand_argument_coref=is_train,
+                expand_argument_coref=is_train and bool(getattr(self.config, "expand_argument_coref", True)),
             )
             if is_train and dataset is not None:
                 from gliner2.processing.argument_coref import attach_coref_copies

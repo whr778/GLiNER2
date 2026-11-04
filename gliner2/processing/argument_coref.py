@@ -83,7 +83,7 @@ def expand_argument_coreferents(schema: Dict[str, Any], clusters, text: str) -> 
                 for a in arguments
                 if isinstance(a, dict) and isinstance(a.get("entity"), dict)
                 and {"start", "end"} <= a["entity"].keys()}
-        for argument in arguments:
+        for arg_idx, argument in enumerate(arguments):
             if not isinstance(argument, dict):
                 continue
             entity = argument.get("entity")
@@ -107,7 +107,11 @@ def expand_argument_coreferents(schema: Dict[str, Any], clusters, text: str) -> 
                     continue
                 if text[start:end] != mention_text or (role, start, end) in seen:
                     continue
-                extra.append({"role": role, "entity": {"text": mention_text, "start": start, "end": end}})
+                extra.append({
+                    "role": role,
+                    "entity": {"text": mention_text, "start": start, "end": end},
+                    "_coref_group": arg_idx,
+                })
                 seen.add((role, start, end))
                 added += 1
         if extra:

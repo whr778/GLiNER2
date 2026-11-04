@@ -124,16 +124,22 @@ def gold_entities(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[st
             for label, surfaces in (gold.get("entities") or {}).items()}
 
 
+def _placed(text: str, item: Any, missed: List[str]) -> List[Dict[str, Any]]:
+    if isinstance(item, dict) and {"text", "start", "end"} <= item.keys():
+        return [{"text": str(item["text"]), "start": int(item["start"]), "end": int(item["end"])}]
+    s = _surface(item)
+    return _spans(text, s, missed) if s else []
+
+
 def gold_events(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[str, list]:
     out: Dict[str, list] = {}
     for ev in gold.get("events") or []:
-        triggers = [sp for t in ev.get("triggers") or [] if isinstance(t, str) and t.strip()
-                    for sp in _spans(text, t.strip(), missed)]
+        triggers = [sp for t in ev.get("triggers") or [] for sp in _placed(text, t, missed)]
         args = [{"role": a["role"], "entity": sp} for a in ev.get("arguments") or []
-                for sp in _spans(text, _surface(a.get("entity")), missed)]
+                for sp in _placed(text, a.get("entity"), missed)]
         out.setdefault(ev["event_type"].strip(), []).append(
             {"triggers": triggers, "arguments": args,
-             "trigger_key": sorted(t.strip() for t in ev.get("triggers") or [] if isinstance(t, str) and t.strip())})
+             "trigger_key": sorted(_surface(t) for t in ev.get("triggers") or [] if _surface(t))})
     return out
 
 

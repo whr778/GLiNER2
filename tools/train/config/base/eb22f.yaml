@@ -36,7 +36,7 @@ model:
     boundary_top_k_alpha: 0.08
     hard_negatives_per_positive: 20
     minimum_hard_negatives: 16
-    hard_negative_keep_all_when_absent: true
+    hard_negative_keep_all_when_absent: false
     negative_query_ratio: 1.0
     relation_pair_cap: 64
     relation_argument_proposal_threshold: 0.2
@@ -47,6 +47,7 @@ model:
     coref_link_distance_dim: 64
     span_residual_zero_init: true
     record_drop_anchor_field_loss: true
+    pair_split_reduction: true
 training:
   negative_pools: auto
   negative_labels_per_dim:
@@ -86,6 +87,8 @@ training:
   relation_gold_pairs: nearest
   seed: 42
   save_epoch_checkpoint: true
+  schema_dropout:
+    remove_events_prob: 0.0
 eval:
   batch_size: 2
   threshold: 0.3

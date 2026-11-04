@@ -31,8 +31,9 @@ def to_entity_record(rec: dict) -> dict:
         if not isinstance(etype, str) or not etype:
             continue
         for trig in ev.get("triggers") or []:
-            if isinstance(trig, str) and trig and trig not in labels.setdefault(etype, []):
-                labels[etype].append(trig)
+            s = trig.get("text") if isinstance(trig, dict) else trig
+            if isinstance(s, str) and s and s not in labels.setdefault(etype, []):
+                labels[etype].append(s)
     return {"input": rec["input"], "output": {"entities": labels}}
 
 

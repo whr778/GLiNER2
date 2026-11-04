@@ -249,6 +249,9 @@ class BoundaryHeadSettings:
     classification_temperature: float = 1.0
     negative_query_ratio: float = 0.5
     max_negative_queries_per_batch: int = 64
+    # Split candidate_pair_loss into positive mean + hard-negative mean so positive
+    # span gradients are not diluted by the negative pool size.
+    pair_split_reduction: bool = False
     # Weight on the (label-count-normalized) classification BCE when combined
     # with the boundary losses.
     classification_loss_weight: float = 1.0
@@ -666,6 +669,9 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
                 "max_negative_queries_per_batch",
                 d.max_negative_queries_per_batch,
             )
+        ),
+        "pair_split_reduction": bool(
+            values.get("pair_split_reduction", d.pair_split_reduction)
         ),
         "classification_loss_weight": float(
             values.get("classification_loss_weight", d.classification_loss_weight)

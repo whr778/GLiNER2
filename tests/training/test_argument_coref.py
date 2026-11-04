@@ -208,6 +208,28 @@ def test_expanded_counts_survive_the_collator_and_the_pronoun_is_gold():
     assert ("Person", "he") in surfaces
     assert ("Person", "paul") in surfaces
     assert sum(1 for name, surface in surfaces if surface == "he") == 1
+    # Coreferent mentions are grouped as occurrence alternatives of the single filler.
+    rec = batch.targets.records[0][0]
+    spec = batch.record_specs[0][rec.task_index]
+    person_qid = next(f.query_id for f in spec.fields if f.name == "Person")
+    ft = rec.field_for_query(person_qid)
+    assert len(ft.values) == 1
+    assert len(ft.values[0]) == 2
+
+
+def test_string_event_argument_groups_multiple_occurrences_as_one_value():
+    text = "hackers attacked the bank yesterday . later the mayor visited the bank ."
+    schema = {"events": [{
+        "event_type": "Attack",
+        "triggers": ["attacked"],
+        "arguments": [{"role": "Target", "entity": "bank"}],
+    }]}
+    batch = _collate(text, schema)
+    rec = batch.targets.records[0][0]
+    spec = batch.record_specs[0][rec.task_index]
+    target_qid = next(f.query_id for f in spec.fields if f.name == "Target")
+    ft = rec.field_for_query(target_qid)
+    assert ft.values == (((3, 4), (11, 12)),)
 
 
 def test_a_gold_span_inside_a_longer_word_is_not_widened():

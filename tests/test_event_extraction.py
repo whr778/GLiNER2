@@ -206,6 +206,24 @@ def test_gold_argument_set_uses_canonical_sorted_trigger_key():
     }
 
 
+def test_offset_gold_events_extract_triggers_arguments_and_oneie_sets():
+    from gliner2.training.eval_metrics import _gold_oneie_sets
+
+    gold = {"events": [{
+        "event_type": "Attack",
+        "triggers": [{"text": "killed", "start": 7, "end": 13}, {"text": "shot", "start": 0, "end": 4}],
+        "arguments": [{"role": "Attacker", "entity": {"text": "Rebels", "start": 20, "end": 26}}],
+    }]}
+    assert _gold_event_trigger_set(gold) == {("Attack", "shot"), ("Attack", "killed")}
+    assert _gold_event_argument_set(gold) == {
+        ("Attack", "Attacker", "Rebels", ("killed", "shot")),
+    }
+    sets, triggerless = _gold_oneie_sets(gold)
+    assert triggerless == 0
+    assert sets["argc"] == {("attack", "attacker", "rebels")}
+    assert sets["trigc"] == {("attack", "shot"), ("attack", "killed")}
+
+
 def test_pred_argument_set_matches_gold_when_both_triggers_predicted():
     """A two-trigger mention only strict-matches on the argument metric when
     BOTH trigger spans are predicted -- the whole trigger set is the key."""

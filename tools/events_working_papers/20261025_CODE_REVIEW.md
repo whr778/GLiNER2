@@ -159,3 +159,29 @@ The older taxonomy on a pre-record-head checkpoint was correct **44.5%**, never 
 Relation follow-ups (dropout off alone, or keep-gold with the loss reweighted near 0.3) and the news classification prior are real and unrebutted. They are not boundary defects, and they are not the next argument experiment.
 
 Issue 7 (about 1.7M parameters that never receive a gradient: the shared pool under `per_query`, and the latent / anchorless record branches) is real and informational. Removing those branches is cleanup. It is not an argument treatment, and it does not belong in the Issue 2 arm.
+
+---
+
+## 10. Addendum (2026-11-03..04): Role-loss dilution, `eb22e`/`eb22f`, and the 7-finding events pipeline audit
+
+1. **Role-loss reduction, unresolved-role withholding, and format gate (`29633b0`, `3c21b48`, `8d9f6f8`):**
+   - `_list_field_bce` (`records.py`) with `hard_k > 0` now sums the mean over gold columns and the mean over the `hard_k` hardest wrong columns (`(P - 1) / n_gold` instead of `(P - 1) / (n_gold + K)`).
+   - `_instance_field_loss`, `_instance_field_logprob`, `compute_dense_group_loss`, `compute_dense_batch_loss`, and `build_dense_record_matching_cost` withhold fields whose gold spans exist in the annotation and have zero matches in the candidate pool (keeping the field in the divisor instead of supervising it as `ABSENT`), and mask candidates overlapping an unresolved filler on partially matched list roles.
+   - `_format_field` (`engine.py`) gates and stores `record_field_decision_score` (the assignment probability when present, else the span-pair probability) in both the document-span branch and the prefix `choices=` branch.
+   - `shared_pool_*` parameters are frozen (`requires_grad=False`) under `candidate_pool: per_query` (`_sync_candidate_pool_grad`), and `_head_touch` runs only when `torch.distributed.is_initialized()`.
+
+2. **Paired role-candidate split on `eb22e` epoch 1 (`probe_role_candidates.py`):**
+   - Across 3,568 gold role fillers (`casie`, `cmnee`, `duee`, `wikievents.dev`) on a single paired collate: under the step-16,586 injection schedule (`0.9559`), **97.1%** are candidates (median assignment probability `0.0155`); with injection off (`0.0`), **38.3%** are candidates (`28.8%` not in pool, `32.9%` trigger not proposed; `casie` `34.8%`, `wikievents` `30.0%`, `cmnee` `96.4%`, `duee` `100.0%`).
+
+3. **A10 64-doc × 400-step control-vs-treatment overfit (`overfit-events-eb22e`) and `eb22f-epoch` (4x H100):**
+   - On 64 training docs from `eb22e` `checkpoint-epoch-1`, the treatment lifted median gold role assignment probability from `0.0316 -> 0.5545` on `casie_off` and `0.5078 -> 0.9196` on `cmnee_ner_off`, and lifted `event_argument` strict micro F1 `@0.5` by **`+0.055`** on `casie_off` (`0.1389 -> 0.1938`) and **`+0.266`** on `cmnee_ner_off` (`0.3119 -> 0.5778`).
+   - On the full 265k-chunk mix at epoch 1 (`eb22f-epoch`, 4x H100, step 16,585), `entity` rose `+0.042` (`0.4262 -> 0.4679`) and `relation` `+0.034` (`0.1326 -> 0.1665`), while `event_trigger` (`0.1619` vs `0.1608`) and `event_argument` (`0.0767` vs `0.0755`) stayed at the epoch-1 proposal-reachability ceiling because gold injection remains `1.00 -> 0.96` throughout epoch 1.
+
+4. **Seven pipeline fixes from the 2026-11-04 `train.py` events audit:**
+   - `evaluate_config` (`train.py`) now routes through `_eval_split_records`, excluding `data.train_only` and running `check_and_clean(None, val, test)` so standalone `eval.py` reads the exact 19,286 val / 20,602 test records rather than leaking 11,034 `train_only` records into `val`.
+   - `_gold_event_trigger_set`, `_gold_event_argument_set`, and `_gold_oneie_sets` (`eval_metrics.py`) unwrap `{text, start, end}` offset dicts (matching `_event_cluster` and `_pred_event_*`), as do `viewer/backend/gold.py` and `tools/data/` (`measure_surface_alignment.py`, `build_role_type_map.py`, `events_to_entities.py`, `roles_to_entities.py`).
+   - `expand_argument_coreferents` (`argument_coref.py`) groups coreferent mentions into their parent filler's `RecordFieldTarget.values` entry as occurrence alternatives `((sp_parent, sp_coref),)` instead of separate required fillers, controllable via `TrainingConfig.expand_argument_coref`.
+   - Unanchored string-gold event arguments (`_resolve_event_arg` in `processor.py`) with multiple document matches resolve to the occurrence nearest the event's trigger.
+   - `candidate_pair_loss` (`losses.py`) supports `split_positive_negative=True` (`boundary_head.pair_split_reduction: true`), preventing positive span gradients from being diluted by `keep_all_when_no_positive` absent queries.
+   - `_process_events` (`processor.py`) no longer applies `remove_events_prob` to inference dict schemas, and `eb22f.yaml` sets `schema_dropout: {remove_events_prob: 0.0}`.
+   - `_EVAL_TIME_BOUNDARY_KEYS` (`train.py`) now includes `record_merge_coreferent` and `record_coref_link_threshold`.

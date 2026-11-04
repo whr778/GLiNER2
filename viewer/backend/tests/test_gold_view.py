@@ -182,3 +182,19 @@ def test_data_row_carries_its_coref_clusters(tmp_path):
     p.write_text(json.dumps(row) + "\n", encoding="utf-8")
     r = gold.record(str(p), 0)
     assert [[m["text"] for m in c] for c in r["pred"]["coref_clusters"]] == [["Ann", "she"]]
+
+
+def test_offset_gold_events_keep_exact_spans_and_score_strict_matches():
+    row = json.loads(json.dumps(ROW))
+    row["gold"]["events"] = [{
+        "event_type": "Contact.Communicate",
+        "triggers": [{"text": "said", "start": 9, "end": 13}],
+        "arguments": [{"role": "Speaker", "entity": {"text": "Ed Smith", "start": 0, "end": 8}}],
+    }]
+    v = gold.record_view(row)
+    g_ev = v["gold"]["event_extraction"]["Contact.Communicate"][0]
+    assert g_ev["triggers"] == [{"text": "said", "start": 9, "end": 13, "match": True}]
+    assert g_ev["arguments"][0]["entity"]["start"] == 0
+    assert g_ev["arguments"][0]["entity"]["match"] is True
+    assert v["f1"]["event_trigger"] == 1.0
+    assert v["f1"]["event_argument"] == 1.0

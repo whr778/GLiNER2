@@ -689,25 +689,15 @@ class SpanExtractorModel(BaseExtractorModel):
                 f"score count dimension {scores.shape[0]} != gold count {gold_count}"
             )
 
+        from gliner2.processing.boundary_preprocessing import _iter_inclusive_spans
         labs = torch.zeros_like(scores)
         for i in range(gold_count):
             gold_spans = structure[1][i]
             for k, span in enumerate(gold_spans):
-                if span is None or span == (-1, -1):
-                    continue
-                if isinstance(span, tuple):
-                    start, end = span
+                for start, end in _iter_inclusive_spans(span):
                     width = end - start
                     if 0 <= start < scores.shape[2] and 0 <= width < scores.shape[3]:
                         labs[i, k, start, width] = 1
-                elif isinstance(span, list):
-                    for sub in span:
-                        if sub is None or sub == (-1, -1):
-                            continue
-                        start, end = sub
-                        width = end - start
-                        if 0 <= start < scores.shape[2] and 0 <= width < scores.shape[3]:
-                            labs[i, k, start, width] = 1
 
         if masking_rate > 0.0 and self.training:
             negative = (labs == 0)

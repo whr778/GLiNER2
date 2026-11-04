@@ -73,6 +73,23 @@ def iter_surfaces(output):
     for ev in output.get("events") or []:
         if not isinstance(ev, dict):
             continue
+        if "event_type" in ev:
+            etype = ev.get("event_type")
+            if not isinstance(etype, str) or not etype:
+                continue
+            for trig in ev.get("triggers") or []:
+                s = trig.get("text") if isinstance(trig, dict) else trig
+                if isinstance(s, str) and s:
+                    yield "events", f"{etype}.trigger", s
+            for arg in ev.get("arguments") or []:
+                if not isinstance(arg, dict):
+                    continue
+                role = arg.get("role")
+                ent = arg.get("entity")
+                s = ent.get("text") if isinstance(ent, dict) else ent
+                if isinstance(role, str) and role and isinstance(s, str) and s:
+                    yield "events", f"{etype}.{role}", s
+            continue
         for etype, body in ev.items():
             if not isinstance(body, dict):
                 continue

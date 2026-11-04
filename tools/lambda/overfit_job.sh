@@ -44,7 +44,7 @@ if [ -z "$DRY" ]; then
   nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
   echo "start $(date -u) commit $(git rev-parse --short HEAD) gpu $(nvidia-smi --query-gpu=name --format=csv,noheader)" > "$OUT/start.txt"
   publish "$DEST" "$OUT/start.txt" || { echo "[overfit] *** FATAL: cannot publish the start marker ***"; exit 1; }
-  CKDIR=$($PY -c "import sys; sys.path.insert(0,'tools/train'); import probe_event_collapse as P; print(P.local_checkpoint('$CKPT'))" 2>"$OUT/ckpt.dl.log" | tail -1)
+  CKDIR=$($PY -c "import sys; sys.path.insert(0,'tools/train'); import probe_event_collapse as P; print(P.local_checkpoint('$CKPT', ignore_patterns=['*training_state*','*optimizer*','*scheduler*']))" 2>"$OUT/ckpt.dl.log" | tail -1)
   [ -d "$CKDIR" ] || { echo "[overfit] *** FATAL: checkpoint $CKPT not downloaded ($CKDIR) ***"; tail -n 3 "$OUT/ckpt.dl.log"; exit 1; }
   echo "[overfit] checkpoint at $CKDIR"
 else
