@@ -119,7 +119,7 @@ ONCE: pick settings on the validation split first.
 |---|---|
 | `--model-schema` | start from the checkpoint's `default_schema` |
 | `--tasks events,relations` | with `--model-schema`, keep only these task types: entities, relations, events, classifications, structures |
-| `--entities`, `--events` | add to, or replace, that task in the schema |
+| `--entities`, `--relations`, `--events`, `--structures` | add to, or replace, that task in the schema |
 | `--schema-json` | a full schema file; overrides all of the above |
 | `--no-label-map` | send labels exactly as typed |
 | `--threshold`, `--chunk-size`, `--chunk-overlap`, `--global-decode` / `--no-global-decode` | override the checkpoint |
@@ -320,7 +320,8 @@ uv run tools/infer.py --model out/eb20/best \
 ## Cautions (measured)
 
 - **Don't send the whole event menu.** On one 743-character CASIE article, the full shipped menu (320 event types) fired **225 types and 773 instances**. The same article with a one-type menu gave 0. Eval only ever offers each document its own gold types, so no reported score covers the full-menu case. Use `--tasks` and `--events` to send the types you mean.
-- **Structures need record metadata on boundary models.** Without `mode`/`anchor`, a structure decodes to `{}` with no error. The viewer adds them for you, and `infer.py` does not, so put `"mode": "natural", "anchor": "<first field>"` in your `--schema-json`.
+- **Structures need record metadata on boundary models.** Without `mode`/`anchor`, a structure decodes to `{}` with no error. Both the viewer and `infer.py` (`_declare_records`) now fill `"mode": "natural", "anchor": "<first field>"` automatically when omitted; if you want `"mode": "anchorless"` or a non-first anchor field, declare it explicitly in `--structures` or `--schema-json`.
+- **Subfolder checkpoints on the Hub:** `--model` accepts `repo@subfolder` or `repo:subfolder` (e.g. `whr778/gliner2-eb22g@checkpoint-epoch-1`), passing `subfolder=...` to `AutoExtractor.from_pretrained`.
 - **Checkpoints before 2026-10-24 (or mid-run `checkpoint-epoch-N` dirs before the end-of-run sweep) store the config's pre-sweep threshold (`0.3`), not the post-training sweep result.** From 2026-10-24 onward, `train.py` writes the swept global threshold and `per_head_thresholds` into `best/config.json` `inference_defaults` at the end of training; for earlier checkpoints or mid-run epoch checkpoints, pass `--threshold` explicitly or backfill with `backfill_model_config.py`.
 - **On Apple silicon (MPS), batched results depend on the batch.** The `mps-flash-attn` SDPA patch
   does not apply padding exactly: measured 2026-10-05, 3 of 5 CASIE docs decoded differently alone

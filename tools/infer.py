@@ -105,21 +105,69 @@ def _model_schema(config, tasks: str = None) -> Dict[str, Any]:
     return shipped
 
 
+def _declare_records(input_schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Give every structure an explicit ``mode``/``anchor`` when it has none, matching the viewer."""
+    structures = input_schema.get("structures")
+    if not isinstance(structures, dict):
+        return input_schema
+    out = dict(input_schema)
+    out["structures"] = {}
+    for name, spec in structures.items():
+        if isinstance(spec, list):
+            first = next((f if isinstance(f, str) else f.get("name") for f in spec if f), None)
+            fields = [{"name": f} if isinstance(f, str) else f for f in spec]
+            d: Dict[str, Any] = {"fields": fields, "mode": "natural"}
+            if first:
+                d["anchor"] = first
+            out["structures"][name] = d
+            continue
+        if not isinstance(spec, dict) or spec.get("mode"):
+            out["structures"][name] = spec
+            continue
+        fields = spec.get("fields") or []
+        first = next(
+            ((f if isinstance(f, str) else f.get("name")) for f in fields
+             if (isinstance(f, str) and f) or (isinstance(f, dict) and f.get("name"))),
+            None,
+        )
+        spec = dict(spec, mode="natural")
+        if first and not spec.get("anchor"):
+            spec["anchor"] = first
+        out["structures"][name] = spec
+    return out
+
+
+def _split_model_subfolder(spec: str):
+    """Split ``repo@subfolder`` or ``repo:subfolder`` into ``(repo, {'subfolder': sub})``."""
+    if not Path(spec).exists():
+        for sep in ("@", ":"):
+            if sep in spec:
+                repo, sub = spec.split(sep, 1)
+                if repo and sub and "/" in repo:
+                    return repo, {"subfolder": sub}
+    return spec, {}
+
+
 def _build_schema(args: argparse.Namespace, config=None) -> Dict[str, Any]:
-    """Assemble a raw schema dict from CLI options; --entities/--events add to --model-schema."""
+    """Assemble a raw schema dict from CLI options; --entities/--events/--relations/--structures add to --model-schema."""
     if args.schema_json:
         data = json.loads(Path(args.schema_json).read_text(encoding="utf-8"))
         # An application menu file (tools/train/config/menus/*.json, MENU_SPEC.md) carries its schema
         # under "schema" beside its name and the corpora it is exhaustive for.
-        return data["schema"] if "schema" in data and "exhaustive_for" in data else data
+        raw = data["schema"] if "schema" in data and "exhaustive_for" in data else data
+        return _declare_records(raw)
     schema: Dict[str, Any] = _model_schema(config, args.tasks) if args.model_schema else {}
     if args.entities:
         schema["entities"] = [e.strip() for e in args.entities.split(",") if e.strip()]
+    if getattr(args, "relations", None):
+        schema["relations"] = [r.strip() for r in args.relations.split(",") if r.strip()]
     if args.events:
         schema["events"] = json.loads(args.events)
+    if getattr(args, "structures", None):
+        schema["structures"] = json.loads(args.structures)
     if not schema:
-        raise SystemExit("Provide --entities, --events, --schema-json, or --model-schema.")
-    return schema
+        raise SystemExit("Provide --entities, --relations, --events, --structures, --schema-json, or --model-schema.")
+    return _declare_records(schema)
 
 
 def _decode_settings(args: argparse.Namespace, model) -> Dict[str, Any]:
@@ -136,11 +184,13 @@ def _decode_settings(args: argparse.Namespace, model) -> Dict[str, Any]:
 
 def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="GLiNER2 inference with optional global event decoding.")
-    p.add_argument("--model", required=True, help="HF repo id or local checkpoint path.")
+    p.add_argument("--model", required=True, help="HF repo id (optionally repo@subfolder or repo:subfolder) or local checkpoint path.")
     p.add_argument("--input", required=True,
                    help="Literal text, a .txt file, or a .jsonl with an 'input' field per line.")
     p.add_argument("--entities", help="Comma-separated entity types.")
+    p.add_argument("--relations", help="Comma-separated relation types.")
     p.add_argument("--events", help='JSON mapping event type -> [roles], e.g. \'{"Attack":["Target"]}\'.')
+    p.add_argument("--structures", help='JSON mapping structure name -> [fields] or {fields, mode, anchor}.')
     p.add_argument("--schema-json", help="Path to a full schema JSON, or an application menu file "
                                          "(tools/train/config/menus/*.json); overrides every other schema option.")
     p.add_argument("--model-schema", action="store_true",
@@ -254,7 +304,10 @@ def main(argv: List[str] = None) -> None:
         raise SystemExit("--entity-coref clusters predicted spans and needs --include-spans.")
     role_types = load_role_types(args.link_arguments) if args.link_arguments else None
     records = _read_records(args.input)
-    model = AutoExtractor.from_pretrained(args.model, map_location=None if args.device == "auto" else args.device)
+    model_id, load_extra = _split_model_subfolder(args.model)
+    model = AutoExtractor.from_pretrained(
+        model_id, map_location=None if args.device == "auto" else args.device, **load_extra
+    )
     print(f"[infer] device {getattr(model, 'device', args.device)}")
     if args.entity_coref is not None and getattr(model, "mention_link", None) is None:
         raise SystemExit(f"--entity-coref: {args.model} has no trained entity coref link (mention_link).")

@@ -254,3 +254,50 @@ class TestDevice:
     def test_unknown_device_is_rejected(self):
         with pytest.raises(SystemExit):
             infer._parse_args(["--model", "m", "--input", "x", "--device", "gpu"])
+
+
+class TestSubfolderAndStructures:
+    def test_split_model_subfolder_at_and_colon(self, tmp_path):
+        assert infer._split_model_subfolder("whr778/gliner2-eb22g@checkpoint-epoch-1") == (
+            "whr778/gliner2-eb22g", {"subfolder": "checkpoint-epoch-1"}
+        )
+        assert infer._split_model_subfolder("whr778/gliner2-eb22g:checkpoint-epoch-2") == (
+            "whr778/gliner2-eb22g", {"subfolder": "checkpoint-epoch-2"}
+        )
+        assert infer._split_model_subfolder("whr778/gliner2-eb22g") == ("whr778/gliner2-eb22g", {})
+        local = tmp_path / "a:b"
+        local.mkdir()
+        assert infer._split_model_subfolder(str(local)) == (str(local), {})
+
+    def test_declare_records_defaults_mode_and_anchor(self):
+        sc = {"structures": {"r": {"fields": [{"name": "a"}, {"name": "b"}]}}}
+        out = infer._declare_records(sc)
+        assert out["structures"]["r"]["mode"] == "natural"
+        assert out["structures"]["r"]["anchor"] == "a"
+
+    def test_declare_records_accepts_list_shorthand_and_preserves_explicit_mode(self):
+        sc = {
+            "structures": {
+                "s1": ["dead", "injured"],
+                "s2": {"mode": "anchorless", "fields": [{"name": "x"}]},
+            }
+        }
+        out = infer._declare_records(sc)
+        assert out["structures"]["s1"] == {
+            "fields": [{"name": "dead"}, {"name": "injured"}],
+            "mode": "natural",
+            "anchor": "dead",
+        }
+        assert out["structures"]["s2"]["mode"] == "anchorless"
+        assert "anchor" not in out["structures"]["s2"]
+
+    def test_cli_relations_and_structures_flags(self):
+        ns = infer._parse_args([
+            "--model", "m", "--input", "x",
+            "--relations", "located_in, part_of",
+            "--structures", '{"casualty": ["dead", "injured"]}',
+        ])
+        sc = infer._build_schema(ns)
+        assert sc["relations"] == ["located_in", "part_of"]
+        assert sc["structures"]["casualty"]["mode"] == "natural"
+        assert sc["structures"]["casualty"]["anchor"] == "dead"
