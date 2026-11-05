@@ -17,9 +17,10 @@ ancestor of that branch, so nothing was lost. Everything dated on or before 2026
 | branch | span | commits |
 |---|---|---|
 | `mmbert_training` | 2025-07-07 → 2026-08-05 | 373 |
-| `merge/main-20260805` | 2026-08-05 → present | 1,185 total |
+| `merge/main-20260805` | 2026-08-05 → 2026-10-14 | 1,185 total |
+| `merge/upstream-20261014` | 2026-10-14 → present | active branch (`eb21` → `eb22g`) |
 | `fix/consistency-loss-half-precision-nan` | → 2026-09-17 | 189 |
-| `main` | → 2026-07-01 (upstream tracking) | 147 |
+| `main` | → 2026-10-14 (upstream tracking) | upstream base |
 
 ## Research lines
 
@@ -28,12 +29,12 @@ productive and the counts say so.
 
 | line | n | what it is | where it stands |
 |---|---:|---|---|
-| **Base** | 14 | the base model itself — scaling curves, label space, warm starts, head init | head-init identified as the argument bottleneck; the 137k curve is clean; label unification confounded by a changed test set |
-| **Events** | 15 | event records, arguments, decode, and Option 4 | the live line — a third of `event_argument` loss is spans NEVER PROPOSED, and extraction supervision is the only untried lever |
-| **EKF** | 9 | text→tracking: the disaster pipeline, MHT, casualty extraction | front-end rebuilt and winning (binding precision 67–100% vs 0–7.7%); gate 2 proven unreachable by any data-mix change |
+| **Base** | 14 | the base model itself — scaling curves, label space, warm starts, head init | head-init identified as the argument bottleneck; the 137k curve is clean; label unification in `labels/unified-full-v4.yaml` |
+| **Events** | 95+ | event records, junction layer, trigger/argument coreference, and positive-gradient starvation (`eb17` → `eb22g`) | **the live line (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`)** — `eb22g` solves both role-assignment (`_list_field_bce`) and proposal (`candidate_pair_loss`) starvation, lifting 64-doc overfit `@0.5` argument F1 to `0.4319` (CASIE) / `0.8005` (CMNEE) and Epoch 2 full-mix val argument F1 to `0.1639` (`0.3992` relaxed, `0.3632` fair) |
+| **EKF** | 9 | text→tracking: the disaster pipeline, MHT, casualty extraction | front-end rebuilt and winning (binding precision 67–100% vs 0–7.7%); sequenced to resume on `eb22g` after Epoch 5 completes |
 | **Gates** | 8 | relevance gating ahead of the pipeline | the model we REPLACED still wins swept (AUC 0.9635); the lever was never training, it was the operating point (0.5 → 0.998) |
-| **Infra** | 7 | tooling, DDP, throughput, upstream fixes | PR #155 filed upstream; most runs now fail locally in seconds instead of minutes on a billing box |
-| **Data** | 7 | corpus generation and annotation purchase | synthetic alone costs −23% on general NER, and the real+synthetic MIX preserved worst of three arms |
+| **Infra** | 12 | tooling, DDP, throughput, upstream fixes | DDP gradient-averaging (0b21629, PR #199) and by-name optimizer restore (21088c7) fixed; GPU batch/accum auto-scaling live |
+| **Data** | 12 | corpus generation, coreference annotation, and split hygiene | `cc_news_events_sonnet55_v2` and `*_coref_llm` bought and validated; `evaluate_config` and `train.py` split hygiene unified |
 | **Multiling** | 2 | non-English capability | the extractor cannot read Turkish (proven with an English control); the gate now can, after a language fix |
 
 **Standing rule this catalog exists to serve:** a delta is not a result without a noise floor

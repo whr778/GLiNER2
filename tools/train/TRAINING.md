@@ -651,22 +651,28 @@ afterwards returned a digit when asked for a `location`. Mix 5–10% of the orig
 distribution back in — `build_warmstart_mix.py` samples replay across **both** old task
 families, because taking only events preserves one head and starves the other.
 
-### The current bases (2026-10) and the runbook fixes that bit a run
+### The current bases (2026-10 to 2026-11) and the runbook fixes that bit a run
 
 The 137k joint configs above are the recipe's origin; the bases trained since are in
-[`MODEL_LINEAGE.md`](../events_working_papers/MODEL_LINEAGE.md) Stage 6. As of 2026-10-24:
-**eb21** is the base (`base/eb21.yaml`, Hub `whr778/gliner2-eb21`), **eb22c** is the trace-era
-config every A/B arm is read against (`base/eb22c-ddp-trace.yaml`; its event score-level swing
-is in `EB22C_SCORE_LEVEL_AUTOPSY.md`), and **eb22d** is the proposed next base
-(`make_eb22d_config.py`, not launched). Four things the trace era fixed, each of which had
-silently changed a run:
+[`MODEL_LINEAGE.md`](../events_working_papers/MODEL_LINEAGE.md) Stage 6 and
+[`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`](../events_working_papers/PAPER_3_DOCUMENT_EVENTS_AND_COREF.md).
+As of 2026-11-05:
+- **eb21** (`base/eb21.yaml`, Hub `whr778/gliner2-eb21`): first base with `record_link_mode: junction`, `record_coreferent_ownership: true`, `record_coref_link: true`, and `entity_coref_link: true`.
+- **eb22c / eb22d** (`base/eb22d.yaml`, Hub `whr778/gliner2-eb22d-trace-epoch`): added `boundary_marginal_loss: bce` and `coref_link_distance: mlp` (width 64) after the `EB22C_SCORE_LEVEL_AUTOPSY.md` diagnosis.
+- **eb22e** (`base/eb22e.yaml`, Hub `whr778/gliner2-eb22e-epoch`): added `span_residual_zero_init: true` and `enable_rotary_endpoints: false`.
+- **eb22f** (`base/eb22f.yaml`, Hub `whr778/gliner2-eb22f-epoch`): fixed `_list_field_bce` $(1+K)$ gradient dilution (split positive/hard-negative mean), withheld unresolved gold roles, masked overlapping candidates on partial matches, added `record_drop_anchor_field_loss: true`, and stored assignment probability as field confidence in `engine.py`.
+- **eb22g** (`base/eb22g.yaml`, Hub `whr778/gliner2-eb22g`, 5-epoch base run): added `pair_split_reduction: true`, `hard_negative_keep_all_when_absent: false`, `remove_events_prob: 0.0`, and occurrence/coreferent target grouping (`RecordFieldTarget.values`), solving the 7,700× absent-query positive-gradient dilution in `candidate_pair_loss`.
 
-- **DDP never averaged gradients** (0b21629): upstream's `static_graph` DDP saw the output
-  dataclass as a leaf, so two ranks drifted apart. Plain DDP with the dataclass registered;
-  `tools/lambda/ddp_sync_probe.sh` is the weight-checksum gate that found it.
-- **Warm-start resume restored Adam moments to the wrong parameters** (21088c7): the optimizer
+Six runbook and trainer fixes from the `eb22c`–`eb22g` era, each of which had silently changed a run:
+
+- **DDP never averaged gradients** (`0b21629`, upstream PR #199): upstream's `static_graph` DDP saw the output
+  dataclass as a leaf, so ranks drifted apart. Plain DDP with the dataclass registered;
+  `tools/lambda/ddp_sync_probe.sh` and the in-run `[ddp-sync]` checksum gate verify all 33 module groups match across ranks at every eval.
+- **Warm-start resume restored Adam moments to the wrong parameters** (`21088c7`): the optimizer
   state was loaded positionally against late-registered link modules. Restored by name now;
   checkpoints written before the fix resume weights-only.
+- **Unused `shared_pool_*` parameters under `candidate_pool: per_query`** (`8d9f6f8`): `_sync_candidate_pool_grad` freezes the 70 `shared_pool_*` tensors when `candidate_pool: per_query` so AdamW and DDP only register live parameters (`[optim] encoder_lr 2.0e-05: 164 tensors | task_lr 5.0e-04: 100 tensors`).
+- **Standalone `evaluate_config` (`eval.py`) vs `train.py` split hygiene** (`0607b29`): `evaluate_config` now routes through `_eval_split_records`, excluding `data.train_only` corpora and running `check_and_clean(None, val, test)` so standalone evaluation and in-run evaluation score the exact same 19,286 val and 20,602 test records.
 - **Resuming a run**: `training.checkpoint_restart: last|highest` picks a `checkpoint-*` dir
   carrying `training_state.pt` in `output_dir`; on Lambda `RESUME_FROM=<repo>:<checkpoint>` on
   `trace_launch.sh` fetches it through `fetch_resume_checkpoint.sh`, which refuses unless the
@@ -674,14 +680,18 @@ silently changed a run:
 - **H100 cuDNN SDPA recompiles per sequence length** (1.2-1.5 s each; eb22c ran at 2.9
   samples/s with the GPU 2% busy). The trainer now disables the cuDNN SDPA backend.
 
-### What the configs encode, and why
+### What the `eb22g` boundary config encodes, and why
 
 | Setting | Reason |
 |---|---|
-| `struct_loss: bce_posweight`, `struct_pos_weight: 4.0` | Bootstraps the argument head. Plain `bce` left argument recall near **0** on fresh heads; focal **collapsed** it. |
+| `event_records: true`, `candidate_pool: per_query` | Individuates event instances by trigger anchor span (`record_instance_queries = 32`); `per_query` preserves 2.4× higher span reachability at 4096 tokens than `shared`. |
+| `record_link_mode: junction`, `record_link_column_weight: 0.3` | Role-gated bilinear + relative-geometry trigger×argument join and contrastive column loss (`JUNCTION_LAYER_SPEC.md`). |
+| `record_coreferent_ownership: true`, `record_coref_link: true`, `coref_link_distance: mlp` (64) | Every coreferent trigger mention owns its event's arguments; `TriggerLink` scores trigger pairs for validation-calibrated cluster merging (`COREFERENT_LINK_SPEC.md`). |
+| `pair_split_reduction: true`, `hard_negative_keep_all_when_absent: false` | Prevents absent queries (`~85–90%` of queries under `k=20` negative sampling) from diluting positive `candidate_pair_loss` gradients by 7,700× (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md` §5.3). |
+| `record_role_hard_negatives: 8`, `record_drop_anchor_field_loss: true` | Splits positive and hard-negative BCE means in `_list_field_bce`, withholds unresolved gold roles, and drops the trigger anchor self-row from `record_field_loss`. |
+| `span_residual_zero_init: true`, `enable_rotary_endpoints: false` | Starts post-`eb21` span residual terms at zero so initial span logits equal the clean `eb21` pair logit. |
 | `bf16: true` + FlashAttention 2 | On mmBERT, **sdpa + bf16 produces NaN** (reproduced on 1×H100 at step 15). FA2 is also 11× faster. |
-| `attn_implementation` unset on the `pretrained` path | It is applied to `model.config` *after* the encoder is built — a silent no-op. FA2 is inherited from the base checkpoint. |
-| `metric_for_best: eval_event_argument_strict_micro_f1` | Arguments are what head-init moves; selecting on loss hides it. |
+| `metric_for_best: eval_overall_strict_head_min_f1`, `metric_sweep: true` | Selects checkpoints by the weakest primitive head across the swept threshold grid (`[0.1, 0.3, 0.5, 0.7, 0.9]`). |
 
 ### Overrides on the `pretrained` path
 
@@ -1049,9 +1059,7 @@ sampling, paired scoring, exact McNemar (the normal approximation reports p = 1.
 discordant pairs each way). Its per-class p-values are labelled exploratory in the output:
 five uncorrected comparisons are not five results.
 
-Structures are **not scored by the blind test**: `_schema_from_gold` builds no schema for
-`json_structures`, so structure-only records are skipped — 35.1% of `mix_natural`'s val. Use
-`tools/train/probe_records.py` for structure quality.
+Structures **are** scored by `compute_metrics` (`eval_structure_strict_micro_f1` and `eval_structure_relaxed_micro_f1`) whenever `record_metadata` (`mode` and `anchor`) is present on the corpus's `json_structures` (repaired repo-wide on 2026-09-08 and gated by `audit_corpora.py`). Use `tools/train/probe_records.py` to decompose structure quality into instance separation, value binding, and field fill.
 
 ---
 
@@ -1124,7 +1132,12 @@ under-trained head, since relations are the minority task at 26.98% of the mix. 
 at the 1-GPU recipe recovered +0.098 of it.
 
 Under `torchrun --nproc_per_node=N`, divide `gradient_accumulation_steps` by N to keep the
-effective batch, or accept an off-curve model and re-baseline everything downstream.
+effective batch, or accept an off-curve model and re-baseline everything downstream. Both
+`tools/lambda/trace_job.sh` and `tools/lambda/event_base_run.sh` now **auto-scale**
+`batch_size` and `gradient_accumulation_steps` from the detected GPU VRAM and `NGPU` before
+`train.py` starts (`batch_size=8, grad_accum=2` on 1×80 GB H100; `batch_size=4, grad_accum=4`
+on 1×40 GB A100; `batch_size=4, grad_accum=1` per GPU on 4×80 GB H100), preserving
+`effective batch = 16` (`16,586` steps/epoch) automatically.
 
 The base configs train at `max_len=4096` with `sliding_window: true`; mmBERT's positional cap
 is 8192. Local-global attention keeps memory near-linear in sequence length, but activations
