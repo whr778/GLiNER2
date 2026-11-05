@@ -1,9 +1,19 @@
-# The life of a sample: eb18 (and eb19 candidates), traced
+# The life of a sample: from `eb18` to `eb22g`, traced
 
-**Status:** working paper, 2026-10-02. **eb18 is a PROVISIONAL base** (its LR ran out at epoch 5 with
-the selection metric still rising); numbers here describe the mechanism, not a final model.
+**Status:** working paper, originally traced 2026-10-02 on `eb18`, updated **2026-11-05** for **`eb22g`** (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`).
 
-**Status update 2026-10-24:** eb18 and eb19 are superseded; **eb21** is the base (2026-10-15), eb22c is the trace-era config under autopsy ([[EB22C_SCORE_LEVEL_AUTOPSY]]), and eb22d is the proposed next base ([[TODO]] 46/48). The mechanism traced here (dataset -> collator -> targets -> loss) is unchanged; the sampling and negatives differ (dose 20, `negative_pools: auto`, `negative_gold_full_roles`). Use `tools/train/trace_sample_life.py` against the current config for current numbers.
+**Status update 2026-11-05:** While the high-level pipeline skeleton (`JSONL -> label map -> sliding window -> argument coref -> negative pools -> collator -> boundary & record heads -> loss -> AdamW`) is the same, **eight load-bearing stages of the sample lifecycle changed between `eb18` and `eb22g`**:
+1. **Stage `S2.5` (Argument Coreference & Multi-Occurrence Grouping):** `expand_argument_coreferents` (`gliner2/processing/argument_coref.py`) attaches coreferent entity mentions from `output.coreferences` with `_coref_group` tags, and `_build_outputs` (`processor.py`) + `_build_record_field_target` (`boundary_preprocessing.py`) compile coreferent mentions and repeated string occurrences as **span alternatives inside a single `RecordFieldTarget.values` entry** (`len(ft.values) = 1`) rather than separate required fillers.
+2. **Stage `S3` (`ExtractorDataset.__getitem__`):** `remove_events_prob` is now `0.0` (eliminating the double 20% event-schema dropout on top of negative sampling), and `NegativePoolSampler` (`negative_pools: auto`, `negative_labels_per_dim: {entities: 20, events: 20}`, `negative_gold_full_roles: true`) injects up to 20 absent entity labels and 20 absent event types per document while listing all unargued roles on gold event types (`labels/unified-full-v4.yaml`).
+3. **Stage `S5` (Span Scoring & Residual Init):** `enable_rotary_endpoints: false` and `span_residual_zero_init: true` zero-initialize the post-`eb21` span residual terms (`endpoint`, `content_bias`, `attn_out`, with `inside_bias = 1`) so span logits start at the clean `eb21` pair logit; under `candidate_pool: per_query`, the 70 unused `shared_pool_*` parameters are frozen (`requires_grad = False`).
+4. **§2.3–2.4 (`candidate_pair_loss` & Absent-Query Hard Negatives):** In `eb21`–`eb22f`, `hard_negative_keep_all_when_absent: true` kept all 768 candidates on every absent query (`~85–90%` of queries under `k = 20` negative sampling) in one global denominator, diluting positive `pair_loss` by 7,700× (`pair_loss ~ 0.005–0.011`). In **`eb22g`**, `hard_negative_keep_all_when_absent: false` (absent queries keep `minimum_hard_negatives: 16`) and **`pair_split_reduction: true`** average positive BCE over `pos_mask.sum()` and negative BCE over `neg_mask.sum()` (`0.5 * (pos_mean + neg_mean)`), restoring `pair_loss` to `~1.0–1.9` and `boundary_head.pair_scorer` to the 4th largest gradient norm in the model.
+5. **§2.10 (`record_field_loss` in `natural` mode):**
+   - **Anchor self-row dropped (`record_drop_anchor_field_loss: true`):** `field_idx = 0` (the trigger anchor that seeded the instance) is excluded from the field loss (`1 anchor rows dropped`), so `record_field_loss` averages only over argument roles `f >= 1`.
+   - **Split positive/hard-negative BCE mean (`_list_field_bce`):** Instead of averaging over all 768 candidates (`eb18`) or averaging `G` positives and `K = 8` hard negatives in one `(G + K)` denominator (`eb21`–`eb22e`, equilibrium `P = 1/9 = 0.111`), `_list_field_bce` (`record_role_hard_negatives: 8`) computes `pos_loss.mean() + neg_loss.mean()`, with candidates overlapping unresolved gold spans masked out on partial matches (`_unresolved_overlap_cols`).
+   - **Unresolved gold roles withheld:** When a non-empty gold role has no candidate in the pool (`gold_cols = []`), it is **withheld (`0.0` loss, excluded from `fields_counted`)** rather than trained toward `0.0`.
+6. **§2.10b (Relational Junction Layer & Contrastive Column Loss):** `record_link_mode: junction` adds the role-gated bilinear + relative-geometry junction term to `_assign_logits`, and `record_link_column_weight: 0.3` adds a per-column listwise cross-entropy over triggers for each gold argument column (`_column_loss`).
+7. **§2.10c (Multi-Mention Coreferent Ownership, `TriggerLink`, and `EntityCorefLink`):** `record_coreferent_ownership: true` seeds a gold instance row for every coreferent trigger mention in `values[0]` (normalized by `1 / |G|`); `record_coref_link: true` (`record_coref_link_weight: 0.3`, `coref_link_distance: mlp`, width 64) trains pairwise trigger coreference; and `entity_coref_link: true` (`entity_coref_link_weight: 0.3`) trains pairwise entity-mention coreference (`entity_coref_loss`).
+8. **§2.12 (Silent Exception Guards Removed):** `ValueError` and `IndexError` in record and relation losses are no longer silently swallowed; only `TargetCapacityError` is caught and handled per `on_capacity_exceeded: truncate_with_warning`.
 
 ## Purpose
 
@@ -41,33 +51,42 @@ S0  RAW JSONL  data/casie.train.jsonl
     gold: entities Person x5, Organization x2, Capabilities, PaymentMethod, Money
           events   Cyber.Ransom x3  (triggers 'held to ransom' | 'demanded money' | 'demanded')
         |
-S1  LABEL TRANSFORM   labels_file: labels/unified-full.yaml        (no change for this record)
+S1  LABEL TRANSFORM   labels_file: labels/unified-full-v4.yaml     (no change for this record)
         |
 S2  SLIDING WINDOW    max_len 4096 subwords, stride 3072  ->  1 chunk (114 subword tokens)
         |
-S3  ExtractorDataset.__getitem__   (runs in a worker; re-samples on EVERY call)
-    - schema sampling: remove_events_prob 0.2 may drop a gold type (query AND gold together)
-    - NegativeLabels.inject: +1 absent entity label, +1 absent event type from the same corpus
-      here: + Device (entity, empty gold), + Cyber.Databreach (event, empty gold)
+S2.5 ARGUMENT COREF   expand_argument_coreferents (training.expand_argument_coref: true)
+    - attaches coreferent entity mentions from output.coreferences with _coref_group tags
+      so coreferent mentions compile as span alternatives of one filler (len(ft.values) = 1)
         |
-S4  COLLATOR    107 words, 218 subword ids, 24 queries
+S3  ExtractorDataset.__getitem__   (runs in a worker; re-samples on EVERY call)
+    - [eb18]: remove_events_prob 0.2 could drop a gold event type; +1 entity, +1 event negative
+    - [eb22g]: remove_events_prob 0.0 (no gold event types dropped);
+      NegativePoolSampler (negative_pools: auto, k=20 entities, k=20 events,
+      negative_gold_full_roles: true) injects up to 20 absent entity labels + 20 absent
+      event types and lists all unargued roles on gold event types
+        |
+S4  COLLATOR    107 words, 218 subword ids, queries expanded per schema
     - an EVENT TYPE expands to a trigger query + one query per role:
-      Cyber.Databreach -> 12 queries (trigger + 11 roles), all ABSENT (no gold)
-      Cyber.Ransom     -> 6 queries (trigger gold 4, roles gold 1-5)
-    - 13 of 24 queries carry no gold (Device + all 12 Databreach)
+      absent event types -> trigger + all roles, all ABSENT (no gold)
+      present event types -> trigger + all roles (gold spans grouped by filler alternatives)
     - mention_mask [B,Q,G] = gold spans per query; record_specs: natural groups
       (event_records: true -> anchor = trigger field)
         |
 S5  FORWARD (train mode)
     encoder mmBERT-base, FA2, bf16 on GPU
       -> boundary marginals: start/end logits [B,Q,L+1], inside logits [B,Q,T]
-      -> proposal: top-128 starts x conditional ends, per query
+      -> proposal: top-128 starts x conditional ends, per query (candidate_pool: per_query)
          + GOLD INJECTION with prob p_inj(t): 1.0 for the first 15% of planned optimizer
-           steps, then linear to 0.25 (trainer defaults; eb18 overrides none)
+           steps, then linear to 0.25 (proposal_gold: identity)
          -> up to 768 candidates per query (training_candidate_budget)
-      -> pair scorer (compat + start marginal + end marginal), null head, count head
-      -> record head, natural mode: instances = anchor (trigger) candidates;
-         assign logits per field = [ABSENT column | candidates of that field's query]
+      -> pair scorer (compat + start marginal + end marginal + zero-init span residuals),
+         null head, count head, entity_coref_link head
+      -> record head, natural mode (record_link_mode: junction):
+         instances = anchor (trigger) candidates (every coreferent trigger mention in G
+         seeds a gold row under record_coreferent_ownership: true);
+         assign logits per field = [ABSENT column | P_ij + R_fj + bilinear_junction + geom];
+         TriggerLink scores trigger x trigger pairs (64-width MLP distance)
       -> relation scorer, classifier
         |
 S6  LOSSES (section 2)      model loss 0.807443
@@ -118,73 +137,86 @@ Share is defined as share_k = ⟨g_k, g⟩ / |g|², where g_k = ∇(w_k L_k).
 
 ### 2.1 start / end boundary BCE (`model.py:856-873`, `losses.py:189-212`)
 
-e[b,q,ℓ] = BCE(s[b,q,ℓ], y[b,q,ℓ]) · (1 if y = 1 else `boundary_negative_weight` = 1.0)
+    e[b,q,ℓ] = BCE(s[b,q,ℓ], y[b,q,ℓ]) · (1 if y = 1 else boundary_negative_weight)
+             [boundary_negative_weight = 1.0 in eb18, 0.5 in eb22g]
 
-**pooled** (eb18):
+**pooled** (`eb18` and `eb22g`):
 
-$$L_{start} = \frac{\sum_{keep} e}{|keep|} = \pi_P\,\bar L_P + \pi_A\,\bar L_A,\qquad \pi_P = \frac{N_P}{N_P+N_A}$$
+    L_start = (Σ_{keep} e) / |keep| = π_P · L̄_P + π_A · L̄_A,    π_P = N_P / (N_P + N_A)
 
 **separate** (opt-in, `df162a0`):
 
-$$L_{start} = \texttt{present\_loss\_scale}\cdot\bar L_P + \texttt{absent\_loss\_weight}\cdot\bar L_A$$
+    L_start = present_loss_scale · L̄_P + absent_loss_weight · L̄_A
 
 - Weight in the total: 1.0, hard-coded in `DEFAULT_LOSS_WEIGHTS` (`model.py:105`). It is not settable from YAML.
 - The end loss is the same with end targets.
-- **Measured** π_P on eb18's mix (6,765 records, 20,000 simulated micro-batches of 4):
+- **Measured** `π_P` on `eb18`'s mix (6,765 records, 20,000 simulated micro-batches of 4):
   - negatives on: mean 0.713, p10 0.493, p90 0.887;
   - negatives off: mean 0.862.
 
 ### 2.2 inside (`model.py:1019-1026`, `losses.py:470-493`)
 
-- Balanced BCE over inside logits [b,q,t].
-- keep = text_mask ∧ query_mask; global mean.
+- Balanced BCE over inside logits `[b,q,t]`.
+- `keep = text_mask ∧ query_mask`; global mean.
 - Weight 0.5, hard-coded.
 
 ### 2.3 candidate labels and hard negatives (`losses.py:251-316`, `:402-435`)
 
-- **Label:** z[b,q,c] = 1 iff the candidate (s,e) exactly equals a gold (s,e) of that query, i.e. by **span identity**. The candidates include injected gold.
-- **Hard negatives:** per query, keep all positives plus the top-k negatives by detached pair logit, with k = max(5·n_pos, 8).
-  - An absent query keeps 8 negatives (`hard_negative_keep_all_when_absent=False`).
-- The guide veto is inert in eb18 (no `guide_scores`).
+- **Label:** `z[b,q,c] = 1` iff the candidate `(s,e)` exactly equals a gold `(s,e)` of that query, i.e. by **span identity**. The candidates include injected gold.
+- **Hard negatives (`select_hard_negatives`):** per query, keep all positives plus the top-`k` negatives by detached pair logit:
+  - In `eb18`: `k = max(5 · n_pos, 8)` (`hard_negatives_per_positive: 5`, `minimum_hard_negatives: 8`), `hard_negative_keep_all_when_absent: false`.
+  - In `eb21`–`eb22f`: `k = max(20 · n_pos, 16)` (`hard_negatives_per_positive: 20`, `minimum_hard_negatives: 16`), **`hard_negative_keep_all_when_absent: true`** — which kept **all 768 candidates** on every absent query!
+  - In **`eb22g`**: `k = max(20 · n_pos, 16)` with **`hard_negative_keep_all_when_absent: false`**, so an absent query keeps at most 16 hard negatives instead of all 768.
+- The guide veto is inert (no `guide_scores`).
 
-### 2.4 pair (`model.py:934-964`, `losses.py:438-467`)
+### 2.4 pair (`model.py:934-964`, `losses.py:438-493`)
 
-$$L_{pair} = \frac{\sum_{eff} BCE(p_{bqc}, z_{bqc})}{|eff|},\qquad eff = valid \wedge (z \vee hard)$$
+**Combined reduction** (`eb18` through `eb22f`, `pair_split_reduction: false`):
+
+    L_pair = (Σ_{eff} BCE(p_bqc, z_bqc)) / |eff|,    eff = valid ∧ (z ∨ hard)
+
+- Under `eb21`–`eb22f` (`hard_negative_keep_all_when_absent: true` + `k = 20` negative sampling), 85–90% of queries were absent and contributed 768 negatives each to `|eff|`, diluting positive `pair_loss` by ~7,700× (`pair_loss` pinned at `0.005–0.011`) and leaving candidate logit levels unanchored under shift-invariant listwise losses (`EB22C_SCORE_LEVEL_AUTOPSY.md`).
+
+**Split positive/negative reduction** (**`eb22g`**, `pair_split_reduction: true`):
+
+    pos_mean = (Σ_{pos} BCE(p_bqc, 1)) / |pos|,      pos = valid ∧ (z > 0.5)
+    neg_mean = (Σ_{neg} BCE(p_bqc, 0)) / |neg|,      neg = valid ∧ (z ≤ 0.5) ∧ hard
+    L_pair   = 0.5 · (pos_mean + neg_mean)           (or pos_mean / neg_mean if only one side is non-empty)
 
 - Weight 1.0, hard-coded.
-- **`negative_query_ratio` (0.5) is INERT under global reduction.** The sampled query mask reaches `_reduce` only as `query_mask`, which global mode ignores.
-  - Every absent query contributes its 8 hard negatives, every step.
-  - A subagent probe confirmed it: pair loss 0.700418 with the full mask and with the sampled mask. It differs under `per_query` and `sum`.
+- On a traced batch with 1 positive at `-5.0` and 10 absent queries × 768 candidates at `-3.0`, switching from `eb22f` to `eb22g` moves `L_pair` from `0.0492` to `5.0553` and restores the positive logit gradient from `-0.000129` to `-0.993307` (`= P - 1`).
 
 ### 2.5 soft-IoU (`model.py:967-982`)
 
-$$L_{iou} = \frac{\sum_{eff} BCE(p_{bqc}, \max_g IoU(c, g))}{|eff|}$$
+    L_iou = (Σ_{eff} BCE(p_bqc, max_g IoU(c, g))) / |eff|
 
 - Same `eff` set and the same logits as pair.
-- Weight 0.2·σ_iou(t), with **σ_iou(t) = max(1 − t/20000, 0)** (`trainer.py:1417-1421`). It is off after 20,000 optimizer steps.
+- Weight `0.2 · σ_iou(t)`, with **`σ_iou(t) = max(1 − t/20000, 0)`** (`trainer.py:1417-1421`). It is off after 20,000 optimizer steps.
 - **Double counting:** an exact positive gets target 1 in both pair and soft-IoU.
 - **Conflict:** an overlapping hard negative gets target 0 from pair and a fractional IoU from soft-IoU, on the same logit.
 
 ### 2.6 rerank listwise (`losses.py:715-752` → `proposal_listwise_loss`)
 
-$$\ell_{bq} = \operatorname{LSE}_{c\in valid} p_{bqc} - \operatorname{LSE}_{c\in G_{bq}} p_{bqc},\quad G = \{c: z>0.5\},\qquad L_{rerank} = \frac{\sum_{q:G\neq\emptyset}\ell_{bq}}{\#\{q: G\neq\emptyset\}}$$
+    ℓ_bq = LSE_{c ∈ valid} p_bqc − LSE_{c ∈ G_bq} p_bqc,    G_bq = {c : z > 0.5}
+    L_rerank = (Σ_{q : G_bq ≠ ∅} ℓ_bq) / #{q : G_bq ≠ ∅}
 
 - Weight 0.3.
 - A query with no gold contributes exactly 0.
-- `absent_negatives_in_denominator` is False in eb18. It was measured only at `start_top_k` 16 (absneg2/4); see the catalog note.
+- `absent_negatives_in_denominator` is False.
 
 ### 2.7 proposal listwise: the injected-only gold defect (`model.py:1028-1065`)
 
 The same listwise form as 2.6, but on proposer logits (compat + start marginal + end marginal), with
 
-$$G^{prop}_{bq} = \{c : \texttt{is\_gold}_c\}\quad\text{where is\_gold marks only the INJECTED copy}$$
+    G^prop_bq = {c : is_gold_c}    [in eb18, where is_gold marked only the INJECTED copy]
+    G^prop_bq = {c : z_bqc > 0.5}  [in eb21..eb22g, under proposal_gold: identity]
 
 `assemble_candidates` (`proposal.py:343-450`) works like this:
 1. Gold spans are injected with a ceiling score.
 2. After de-duplication, only the injected copy keeps `is_gold`.
-3. A gold span the proposer found **naturally**, but that this step's injection did not sample, survives as an ordinary candidate. It sits in the **denominator as a negative**, while the pair and rerank losses label the same span **positive**. Because the proposal logit includes the start/end marginals, this also pushes down the boundary scores of real gold.
+3. A gold span the proposer found **naturally**, but that this step's injection did not sample, survives as an ordinary candidate. Under `proposal_gold: injected` (`eb18`), it sat in the **denominator as a negative**, while the pair and rerank losses labelled the same span **positive**.
 
-**Probe** (one real CASIE batch, eb18, 26 gold-bearing candidates by span identity):
+**Probe** (one real CASIE batch, `eb18`, 26 gold-bearing candidates by span identity):
 
 | p_inj | proposal-loss gold | identity-gold labelled NEGATIVE in proposal loss | proposal loss |
 |---:|---:|---:|---:|
@@ -192,15 +224,9 @@ $$G^{prop}_{bq} = \{c : \texttt{is\_gold}_c\}\quad\text{where is\_gold marks onl
 | 0.25 | 4 | **22** | 2.0605 |
 | 0.0 | 0 | 26 | **0.0000** (no query has gold, so the term switches itself off) |
 
-eb18 ran with p_inj below 1.0 for the last 85% of its planned steps, ending at 0.25. So the
-contradiction was active in the term with the largest gradient share (one record: 0.39 of the
-whole-model gradient).
+**Fix (adopted in `eb21`–`eb22g`): `boundary_head.proposal_gold: identity`.** It labels proposal-loss gold by span identity, the same `z` as pair and rerank.
 
-**Fix (built, opt-in): `boundary_head.proposal_gold: identity`.** It labels proposal-loss gold by span identity, the same z as pair and rerank.
-- The default `injected` is bit-identical to eb18.
-- A log line from inside the loss reports the mode that executed and the cumulative count of gold candidates under each definition.
-
-Traced after the change on a real eb18 CASIE batch with 16 gold candidates (the schema re-sampled, so this batch differs from the one in the table above):
+Traced after the change on a real `eb18` CASIE batch with 16 gold candidates:
 
 | mode | p_inj | proposal-loss gold | identity-gold labelled NEGATIVE | proposal loss |
 |---|---:|---:|---:|---:|
@@ -211,87 +237,90 @@ Traced after the change on a real eb18 CASIE batch with 16 gold candidates (the 
 | identity | 0.25 | 16 | 0 | 2.322924 |
 | identity | 0.0 | 16 | 0 | 2.322924 |
 
-The two modes agree to 8 decimals at p_inj 1.0. Under `identity` the proposal loss no longer depends on p_inj for gold that was proposed naturally. Tests: `tests/models/boundary/test_proposal_gold.py`, mutation-checked.
+The two modes agree to 8 decimals at `p_inj = 1.0`. Under `identity` the proposal loss no longer depends on `p_inj` for gold that was proposed naturally. Tests: `tests/models/boundary/test_proposal_gold.py`, mutation-checked.
 
 ### 2.8 consistency (`losses.py:755-808`)
 
-$$\hat P^{start}_{bq\ell} = 1-\prod_{c\in valid,\ s_c=\ell}(1-\sigma(p_{bqc})),\qquad L_{cons} = \tfrac12\left[\frac{\sum_{k_s}(\hat P^{start}-\sigma(s))^2}{|k_s|} + \text{end}\right]$$
+    P̂^start_bqℓ = 1 − Π_{c ∈ valid, s_c = ℓ} (1 − σ(p_bqc))
+    L_cons      = 0.5 · [ (Σ_{k_s} (P̂^start − σ(s))²) / |k_s| + end ]
 
-- k = (some candidate reaches ℓ) ∧ keep.
-- The target σ(marginal) is **not detached**, so the loss pulls on both the pair logits and the marginal logits.
-- Weight 0.1·min(t/2000, 1), a warmup from 0 (`trainer.py:1450-1460`).
+- `k = (some candidate reaches ℓ) ∧ keep`.
+- The target `σ(marginal)` is **not detached**, so the loss pulls on both the pair logits and the marginal logits.
+- Weight `0.1 · min(t/2000, 1)`, a warmup from 0 (`trainer.py:1450-1460`).
 
 ### 2.9 abstention and count (`losses.py:811-859`)
 
 - **Abstention:**
-  $$L_{null} = \frac{\sum_q BCE(n_{bq}, \mathbb 1[q\text{ has no gold}])}{\#\text{valid } q}$$
-  Weight 0.2.
-  - At decode it gates entity and extractive queries only. `_decode_records` (events) never reads it.
+      L_null = (Σ_q BCE(n_bq, 1[q has no gold])) / #{valid q}
+  Weight 0.2. At decode it gates entity and extractive queries only; `_decode_records` (events) never reads it.
 - **Count:**
-  $$L_{count} = \text{mean}_q\,(e^{r_{bq}} - y_{bq}\, r_{bq})$$
+      L_count = mean_q (exp(r_bq) − y_bq · r_bq)
   Poisson NLL with `full=False`, so the value **can be negative** (−0.0375 on the traced record). Weight 0.2.
 
-### 2.10 record loss, natural mode = events (`records.py:1432-1521`, `model.py:2436-2547`)
+### 2.10 record loss, natural mode = events (`records.py`, `model.py`)
 
-**Object loss:** identically 0 (`records.py:1468-1473`).
+**Object loss:** identically 0 in `natural` mode (`records.py`).
 
-**Field loss, per gold record r:**
-- First, the gold trigger is resolved against the model's own anchor candidates.
-  - If it is neither proposed nor injected, **the record trains nothing**.
-  - Since p_inj ≤ 1, this happens more often as injection anneals.
-- Otherwise:
-  - **Trigger (scalar):** ℓ = −log Σ_{c∈T} softmax(A_{i,f})_c, where A = [ABSENT | candidates]. If no column matches the gold, the target is the ABSENT column.
-  - **Role (list):** ℓ = mean over the field's candidates (up to 768) of BCE(A_{i,f}[1+c], 1[c matches a gold value]).
-    - The ABSENT column is excluded.
-    - A gold filler that was not proposed is silently dropped.
-  - ℓ_r = (1/F)·Σ_f ℓ_{r,f}.
+**Field, junction-column, and trigger-coref loss (`eb22g` vs `eb18`):**
+- **Anchor seeding & coreferent ownership (`record_coreferent_ownership: true`):**
+  - The gold trigger alternatives in `values[0]` are resolved against the model's anchor candidates.
+  - If none is proposed or injected, the record trains nothing (`_note_anchor_gate`).
+  - Under `record_coreferent_ownership: true` (`eb21`–`eb22g`), **every** resolved coreferent trigger mention `t_m ∈ G` seeds a gold instance row that owns the record's argument targets, with the record's role loss weighted by `1 / |G|` (in `eb18`, only `cols[0]` was seeded).
+- **Anchor self-row exclusion (`record_drop_anchor_field_loss: true` in `eb22f`/`eb22g`):**
+  - `field_idx = 0` is the trigger anchor that seeded the instance. In `eb22f`/`eb22g`, it is dropped from the field loss (`record_drop_anchor_field_loss: true`), so `record_field_loss` averages strictly over argument roles `f >= 1`.
+- **Role assignment logits (`record_link_mode: junction` in `eb19`–`eb22g`):**
+      s_ijf = P_ij + R_fj + <(U t_i) ⊙ (V a_j) ⊙ σ(G q_f), 1> / sqrt(d) + w_f · e_geom(i, j)
+- **Role list loss (`_list_field_bce` with `record_role_hard_negatives: 8`):**
+  - **Empty gold role (`len(ft.values) == 0`):** averages BCE(`target = 0`) over the `K = 8` highest-scoring candidate columns.
+  - **Non-empty gold role (`len(ft.values) > 0`) with `gold_cols == []` (not in candidate pool):** **withheld** (`0.0` loss, excluded from `fields_counted`; in `eb21`–`eb22e`, this was erroneously trained as empty `target = 0`).
+  - **Non-empty gold role with `gold_cols != []`:** any candidate overlapping an unresolved gold filler is masked out (`_unresolved_overlap_cols`), the top `K = 8` remaining non-gold columns are selected as hard negatives, and **`_list_field_bce` sums the separate positive and negative means**:
+        ℓ_{r,f} = mean_{c ∈ gold_cols} BCE(s_c, 1) + mean_{c ∈ neg_cols} BCE(s_c, 0)
+    (fixing the `(1 + K)` denominator in `eb21`–`eb22e` that pinned the equilibrium at `P = 1 / (1 + K) = 0.111`).
+- **Junction contrastive column loss (`record_link_column_weight: 0.3` in `eb19`–`eb22g`):**
+  - For every gold argument column `j` of role `f`, a listwise softmax over triggers in column `j` maximizes the probability mass on the gold trigger(s) `G_j` against competing triggers:
+        ℓ_col = −log ( Σ_{i ∈ G_j} exp(s_ijf) / Σ_{i ∈ all_triggers} exp(s_ijf) )
+- **Trigger × trigger coreference loss (`record_coref_link: true`, `record_coref_link_weight: 0.3`, `coref_link_distance: mlp` width 64 in `eb22d`–`eb22g`):**
+  - `TriggerLink` scores trigger instance pairs `(i, j)` via `<W t_i, W t_j> / sqrt(d) + MLP_64(g(i, j))` and computes split positive/hard-negative BCE (`record_coref_link_negatives: 4`) over same-event coreferent trigger pairs vs different-event same-type trigger pairs.
 
-**Batch aggregation:**
+**Batch aggregation (`eb22g`):**
 
-$$L_{field} = \frac{\sum_g\sum_{r}\sum_f \ell_{r,f}}{\sum_g n_g F_g}$$
+    L_record = (Σ_{r, f ∈ counted} ℓ_{r,f}) / (# counted cells)
+             + 0.3 · L_junction_col
+             + 0.3 · L_trigger_coref
 
-A uniform mean over (record, field) cells, so groups with more roles weigh more.
-
-**Normalisation mismatch:** a scalar cell is one log-prob, while a list cell is a mean BCE over up to 768 mostly easy negatives.
-
-**Total:** `record_loss_weight` (1.0) · (L_obj + L_field).
-
-### 2.11 relation and classification
+### 2.11 relation, entity coreference, and classification
 
 - **Relation:**
-  $$L_{rel} = \frac{\sum_{mask} BCE(x_k, y_k)}{|mask|}$$
-  y_k is exact edge identity. Weight 1.0 (`model.py:1993-2075`).
+      L_rel = (Σ_{mask} BCE(x_k, y_k)) / |mask|
+  `y_k` is exact edge identity. Weight 1.0 (`model.py:1993-2075`).
+- **Entity coreference (`entity_coref_link: true`, `entity_coref_link_weight: 0.3` in `eb21`–`eb22g`):**
+  Pairwise bilinear + MLP-distance coreference loss over entity mentions (`entity_coref_loss`), weight 0.3 (`entity_coref_link_negatives: 4`).
 - **Classification:** BCE over choices, divided by the label count, weight 1.0 (`model.py:1918-1969`).
 
-### 2.12 silent guards
+### 2.12 silent guards (updated `2026-11-03`)
 
-- `_finite_loss_term` (`nan_to_num`) zeroes **each** of the 10 head terms on its own, plus span_total, cls, every record value and relation. There is no log at that level.
-- The trainer's non-finite counter sees only the combined scalar.
-- The checks are forward-only: bf16 has no gradient-NaN guard.
-- Record groups that raise TargetCapacityError, ValueError or IndexError are skipped without a log (`model.py:2533`).
+- `_finite_loss_term` (`nan_to_num`) zeroes non-finite head terms.
+- **Fixed in `3c21b48` (`2026-11-03`):** `ValueError` and `IndexError` in record and relation losses are **no longer silently caught and skipped**; they now propagate immediately so shape or indexing bugs fail fast. Only `TargetCapacityError` is caught and handled according to `on_capacity_exceeded: truncate_with_warning`.
 
 ---
 
-## 3. The compound equation (eb18, one micro-batch, optimizer step t)
+## 3. The compound equation (`eb22g` vs `eb18`, one micro-batch, optimizer step `t`)
 
-$$
-\begin{aligned}
-L(t) =\;& L_{start} + L_{end} + L_{pair} + 0.5\,L_{inside}
- + 0.2\max(1-\tfrac{t}{20000},0)\,L_{iou} + 0.3\,L_{rerank} + 0.3\,L_{prop}\!\left[p_{inj}(t)\right]\\
-&+ 0.1\min(\tfrac{t}{2000},1)\,L_{cons} + 0.2\,L_{null} + 0.2\,L_{count}
- + L_{cls} + 1.0\,(0 + L_{field}[p_{inj}(t)]) + 1.0\,L_{rel}
-\end{aligned}
-$$
+    L(t) = L_start + L_end + L_pair[split_pos_neg] + 0.5 · L_inside
+         + 0.2 · max(1 − t/20000, 0) · L_iou
+         + 0.3 · L_rerank + 0.3 · L_prop[identity]
+         + 0.1 · min(t/2000, 1) · L_cons + 0.2 · L_null + 0.2 · L_count
+         + L_cls + 1.0 · L_record[split_bce + withhold + junction + trigger_coref]
+         + 0.3 · L_entity_coref + 1.0 · L_rel
 
 - Every term passes through `nan_to_num`.
-- p_inj(t) = 1.0 for the first 15% of planned steps, then linear to 0.25. It enters through:
+- `p_inj(t) = 1.0` for the first 15% of planned steps, then linear to `0.25`. It enters through:
   - the candidate positives (pair, rerank, soft-IoU),
-  - the proposal gold mask,
-  - the record anchor gate.
+  - the record anchor gate (`_note_anchor_gate`; `L_prop` uses `proposal_gold: identity` so naturally proposed gold is never flipped to negative as `p_inj` decays).
 
 **The update:**
 
-$$\theta \leftarrow \text{AdamW}\Big(\theta,\ \operatorname{clip}_{1.0}\Big(\sum_{m=1}^{4}\nabla_\theta \tfrac{L_m(t)}{4}\Big)\Big)$$
+    θ ← AdamW(θ, clip_{1.0}( Σ_{m=1..grad_accum} ∇_θ (L_m(t) / grad_accum) ))
 
 with encoder LR 2e-5, task LR 5e-4, and cosine_restarts.
 
@@ -402,14 +431,14 @@ Each candidate is opt-in and none is adopted yet.
    - On one record, proposal and rerank supplied 0.69 of the gradient direction from 56% of the loss (0.453 of 0.807).
    - start + end supplied 0.016 of the direction from 5.6% of the loss.
 
-## 6. Open questions to check
+## 6. Status of the 2026-10-02 open questions (as of `eb22g`, 2026-11-05)
 
-- **Injection schedule × record anchor gate.**
-  - From 15% of training onward, a gold trigger that is neither proposed nor injected trains no argument record at all.
-  - How many event records went untrained per epoch in eb18? This is measurable with `_note_anchor_gate`.
-- **Soft-IoU conflict:** the same logit gets target 0 from pair and a fractional IoU from soft-IoU on overlapping hard negatives, until step 20,000.
-- **Consistency's undetached target:** is pulling the marginals toward the noisy-OR of the pair scores intended?
-- **`nan_to_num` silence:** a term that went non-finite and was zeroed for many steps would leave no trace. Add a per-term counter?
-- **Hard-coded weights:** start/end/pair/inside (1, 1, 1, 0.5) cannot be set from a config, so any A/B on them needs code.
-- **Record field normalisation:** a scalar NLL cell is averaged with a list cell that is a mean over up to 768 BCEs, so role cells are diluted relative to trigger cells.
-- **Abstention unused for events at decode,** while it separates absent from present near-perfectly on one record (P(null) 1.000 vs 0.001).
+- **Injection schedule × record anchor gate (`_note_anchor_gate`):**
+  - **Measured (`probe_role_candidates.py`, paired collate on `eb22e:checkpoint-epoch-1`, 2026-11-03):** Under Epoch-1 scheduled injection (`0.9559`), `97.1%` of `3,568` gold role fillers are in the candidate pool (`0.6%` trigger not proposed, `2.3%` span not in pool). With injection off (`0.0`), `38.3%` are candidates, `28.8%` are not in the pool, and `32.9%` lose their trigger — traced to `candidate_pair_loss` absent-query dilution and fixed in `eb22g` (`pair_split_reduction: true`, `hard_negative_keep_all_when_absent: false`).
+- **Record field normalisation (scalar trigger NLL vs list role BCE):**
+  - **Resolved (`eb22f`/`eb22g`):** (1) `record_drop_anchor_field_loss: true` drops the scalar trigger anchor self-row (`field_idx = 0`) from `record_field_loss` in `natural` mode; (2) `record_role_hard_negatives: 8` selects at most 8 hard negatives per role; (3) `_list_field_bce` splits the positive and hard-negative means (`pos_loss.mean() + neg_loss.mean()`); and (4) unresolved non-empty gold roles (`gold_cols == []`) are withheld (`0.0` loss) instead of trained as empty.
+- **Soft-IoU conflict:** Same logit still receives target 0 from `pair` and fractional IoU from `soft_iou` on overlapping hard negatives for the first 20,000 steps (`σ_iou(t) = max(1 − t/20000, 0)`), after which `soft_iou` switches off.
+- **Consistency's undetached target:** Retained unchanged (`weight = 0.1 · min(t/2000, 1)`).
+- **Silent exception guards in record/relation losses:**
+  - **Resolved (`3c21b48`, 2026-11-03):** `ValueError` and `IndexError` now propagate immediately; only `TargetCapacityError` is caught and handled per `on_capacity_exceeded`.
+- **Abstention unused for events at decode:** Retained as designed; event instance admission is gated by the calibrated trigger/record threshold (`threshold_sweep.json`) and `TriggerLink` coreference calibration (`coref_calibration.py`).
