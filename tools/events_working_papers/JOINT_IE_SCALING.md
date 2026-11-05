@@ -1,11 +1,12 @@
 # Constrained Joint Decoding over Boundary-Head Candidates: Data Scaling, Replay, and Three Silent Defects
 
-**William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
+**William Roe**¹ (whr778@gmail.com), **Gemini**², and **Claude**³ (noreply@anthropic.com)
 
-¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
+¹ Project author and maintainer  ·  ² AI assistant (Google, Gemini) — diagnosis, architecture, experiments, and drafting  ·  ³ AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
 **Paper 2 of the research programme stated in `RESEARCH_PROGRAM.md`.** Revision of
-2026-08-28.
+2026-11-05 (results locked 2026-08-28; §5 updated to cross-reference the event-record,
+junction, and coreference resolution in `PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`).
 
 *Companion to `PAPER_0_FOUNDATION.md` (the substrate) and `EKF_MHT_DESIGN.md` (the temporal
 instantiation of the same thesis: the two papers are the combinatorial and temporal scopes
@@ -326,10 +327,23 @@ experiment rather than a speculative cleanup.
   reading of that inversion is an interpretation, not a measurement.
 - **The warm start's protection is not uniform.** Relation and event_type both declined;
   no mechanism is established for why those two and not the others.
-- **Structure supervision is not reaching the record head from most corpora**, so any
-  future arm claiming structure capability from them will add none. Fixing it requires
-  assigning a record mode and anchor per structure type — a data-design decision, not a
-  patch.
+- **Structure supervision is not reaching the record head from most corpora** in the 137K
+  configs above, so any arm claiming structure capability from them added none. **Resolved
+  2026-09-08 (`RESEARCH_PROGRAM.md` §3):** all 60,948 affected rows across 13 corpora and the
+  synthetic validator were repaired to declare `record_metadata` (`mode` and `anchor`), gated
+  by `audit_corpora.py`.
+- **Events in the 10K–137K configs above were supervised through the mention-structure path
+  (`event_records: false`), not the record head.** That pooled multi-instance same-type
+  events into a single record per type (collapsing 64.2% of multi-instance gold events) and
+  explained why `event_argument` strict micro-F1 stalled at `0.069–0.098` in §4.2–4.3 while
+  relaxed micro-F1 reached `0.506`. **Resolved in Paper 3
+  (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`):** enabling `event_records: true`, adding the
+  gated bilinear + geometry junction layer (`record_link_mode: junction`), training
+  coreferent trigger and argument clusters (`TriggerLink`, `EntityCorefLink`,
+  `record_coreferent_ownership: true`), and fixing positive-gradient starvation in both
+  `_list_field_bce` and `candidate_pair_loss` (`eb22g`) lifts 64-doc overfit `@0.5` argument
+  strict micro-F1 to `0.4319` on CASIE and `0.8005` on CMNEE, and lifts full-mix Epoch 2
+  validation `event_argument` strict micro-F1 to `0.1639` (relaxed `0.3992`, fair `0.3632`).
 
 ## 6. Reproducibility
 

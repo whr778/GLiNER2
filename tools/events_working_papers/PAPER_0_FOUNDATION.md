@@ -1,10 +1,13 @@
 # Schema-Driven Information Extraction Beyond the Sentence: Event Extraction, Multilingual Training, and Document-Level Global Decoding for GLiNER2
 
-**William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
+**William Roe**¹ (whr778@gmail.com), **Gemini**², and **Claude**³ (noreply@anthropic.com)
 
-¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
+¹ Project author and maintainer  ·  ² AI assistant (Google, Gemini) — diagnosis, architecture, experiments, and drafting  ·  ³ AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
-*Revision of 2026-08-19. The from-encoder / long-context mmBERT results and the
+*Revision of 2026-11-05 (original results locked 2026-08-19; §4 and §12 updated to
+cross-reference the boundary-head event record architecture, relational junction layer,
+and coreference clustering in `PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`). The from-encoder /
+long-context mmBERT results and the
 head-initialization finding (§10.5), a broad-data head-init A/B reported as a negative
 result (§10.6), and an mmBERT data-scaling curve (§10.7) are complete; the §10.1–10.4
 tables are the fastino DeBERTa-v3 baselines. All results were re-checked against a
@@ -859,8 +862,19 @@ more is better), then fine-tune. Checkpoints (private):
 - Long-range arguments beyond one window remain an upstream recall ceiling;
   trigger-anchored windows or a two-stage document-level argument reader are the
   natural next steps (retired RECOMMENDATIONS note, Options 2-3; see PROJECT_HISTORY.md).
-- Argument coreference is not resolved; document-level benchmarks score against
-  any coreferential mention, so measured argument F1 is a lower bound.
+- Argument coreference is not resolved in the span-architecture models reported here;
+  document-level benchmarks score against any coreferential mention, so measured argument F1
+  in §10 is a lower bound. **Resolved on the boundary architecture in Paper 3
+  (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md` §4):** `record_coreferent_ownership: true`,
+  `TriggerLink` (`record_coref_link: true` with 64-width MLP distance), `EntityCorefLink`
+  (`entity_coref_link: true`), and occurrence-grouped coreferent argument targets
+  (`expand_argument_coreferents`) now train and decode coreferent event and argument
+  clusters directly.
+- Similarly, the 263,949-document multi-task curriculum, trigger-seeded record individuation
+  (`event_records: true`), relational junction layer (`record_link_mode: junction`), and
+  split positive-negative supervision (`pair_split_reduction: true`) in `eb22g` complete the
+  from-encoder mmBERT head-pretraining programme proposed in the first bullet above; see
+  `PAPER_3_DOCUMENT_EVENTS_AND_COREF.md` §5–6.
 - Packaging: several training-only dependencies and the raised Python floor
   should move to a `training` extra before any of this lands in the base
   inference package (see PROJECT_HISTORY.md (retired documents)).

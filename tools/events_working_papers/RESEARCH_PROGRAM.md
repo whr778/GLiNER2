@@ -2,13 +2,14 @@
 
 **Every experiment this programme has run is catalogued chronologically in [[EXPERIMENT_CATALOG]]**, with its research line, outcome and real billed cost.
 
-**William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
+**William Roe**¹ (whr778@gmail.com), **Gemini**², and **Claude**³ (noreply@anthropic.com)
 
-¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
+¹ Project author and maintainer  ·  ² AI assistant (Google, Gemini) — diagnosis, architecture, experiments, and drafting  ·  ³ AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
-*Programme map, revision of 2026-09-08. States the unifying thesis, the three papers it
-decomposes into, what is established, and what is still open. Numbers quoted here are
-summaries; each one's primary record is the working paper cited beside it.*
+*Programme map, revision of 2026-11-05. States the unifying thesis, the four papers it
+decomposes into, what is established (including the September–November 2026 document-level
+event and coreference line, `eb17` through `eb22g`), and what is still open. Numbers quoted
+here are summaries; each one's primary record is the working paper cited beside it.*
 
 ---
 
@@ -107,6 +108,57 @@ halving the abstention weight — and neither moved it.
 **Method consequence, now a rule:** *the menu is part of a metric's identity* (METRICS.md). A
 precision figure from a schema-driven task is uninterpretable without stating what the model
 was offered.
+
+### 2g. Document-level event extraction with coreferent clusters (`eb17` → `eb22g`, 2026-09-15 to 2026-11-05)
+
+**Established.** Between September and November 2026, the programme traced and solved four
+compounding bottlenecks that had held `event_argument` strict micro-F1 near `0.06–0.10`
+even when relaxed argument micro-F1 reached `0.50–0.59` (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`):
+
+1. **Instance individuation by trigger span (`event_records: true`).** Prior to `eb17`,
+   `event_records: true` was absent from every base config, so events were trained through
+   the mention-structure path, which keys instances by *event type* (at most 1 per type per
+   window) and pooled **64.2%** of multi-instance gold events (`EVENT_ARGUMENT_DIAGNOSIS.md`).
+   Routing events through the record head in `natural` (`per_query`) mode individuates each
+   event instance by its trigger anchor span (`record_instance_queries = 32`).
+2. **Relational junction scoring (`record_link_mode: junction`).** Decomposing the record
+   head's additive assignment logit $s_{ijf} = P_{ij} + R_{fj}$ proved that role fit $R_{fj}$
+   (identical across all triggers) accounted for 95% of row discrimination while pairwise
+   compatibility $P_{ij}$ sat at per-column AUC `0.576`, letting false triggers steal 52–74%
+   of arguments (`JUNCTION_LAYER_SPEC.md`). Adding a role-gated bilinear + relative-geometry
+   junction term trained with a contrastive per-column trigger softmax lifted per-column
+   junction AUC to **`0.74–0.77`** and unlocked English argument binding (`p5link` `+0.035`
+   strict micro-F1).
+3. **Coreferent trigger and argument clusters (`record_coreferent_ownership`, `TriggerLink`,
+   `EntityCorefLink`).** Training every coreferent trigger mention to own its event's
+   arguments (`COREFERENT_OWNERSHIP_SPEC.md`), grouping coreferent and multi-occurrence
+   argument spans as occurrence alternatives of a single filler (`RecordFieldTarget.values`),
+   and adding a symmetric bilinear + 64-width MLP-distance `TriggerLink` scorer (pair AUC
+   **`0.802–0.843`**, calibrated on validation by `coref_calibration.py`;
+   `COREFERENT_LINK_SPEC.md`) together with `EntityCorefLink` (news pronoun AUC
+   `0.685 -> 0.811`) enabled end-to-end document-level event cluster extraction (`event_cluster`
+   and `event_cluster_argument`).
+4. **Positive-gradient starvation in role assignment and span proposal (`eb22e` → `eb22f` →
+   `eb22g`).** A paired-collate probe on `eb22e:checkpoint-epoch-1` (`3,568` gold role
+   fillers) proved two simultaneous starvations: under scheduled injection (`0.956`), `97.1%`
+   of gold fillers were in the candidate pool yet had median assignment probability `0.0155`
+   because `_list_field_bce` averaged 1 positive with $K=8$ hard negatives in one denominator;
+   with injection off (`0.0`), `61.7%` of gold fillers were missing from the pool or lost
+   their trigger because `candidate_pair_loss` with `hard_negative_keep_all_when_absent: true`
+   included all 768 candidates on absent queries (`~85–90%` of queries) in one global
+   denominator, diluting positive pair gradients by $7{,}700\times$ (`pair_loss` pinned at
+   `0.005–0.011`) and leaving logit levels unanchored (`EB22C_SCORE_LEVEL_AUTOPSY.md`).
+   Splitting positive and negative reductions in both `_list_field_bce` and
+   `candidate_pair_loss` (`pair_split_reduction: true`,
+   `hard_negative_keep_all_when_absent: false`), withholding unresolved gold roles, and
+   eliminating double event dropout (`remove_events_prob: 0.0`) broke the `~0.25` CASIE
+   proposal ceiling on 64-doc overfit (`overfit-events-eb22g`: CASIE `@0.5` trigger strict
+   micro-F1 `0.3619 -> 0.5210`, argument `0.2506 -> 0.4319`; CMNEE `@0.5` trigger
+   `0.6375 -> 0.9394`, argument `0.5470 -> 0.8005`). On the full 263,949-document training
+   mix (`eb22g`), Epoch 2 validation strict micro-F1 at `@0.3` reaches `event_type`
+   **`0.9762`**, `event_trigger` **`0.2522`** (recall **`0.7434`**), `event_argument`
+   **`0.1639`** (relaxed **`0.3992`**, fair **`0.3632`**, vs `eb22d` Epoch 2's `0.0627`),
+   and `event_cluster_argument` **`0.1427`** (vs `eb22d` Epoch 2's `0.0579`).
 
 ## 3. What is not established
 
@@ -216,28 +268,35 @@ mode and anchor, never per-field **cardinality**, so a `dtype: str` field is sti
 with list BCE rather than the scalar softmax over candidates plus `ABSENT`. Changing that
 moves every future model's structure numbers and needs an A/B first. *(`TODO.md`.)*
 
-## 4. The three papers
+## 4. The four papers
 
 **Paper 0 — Foundation.** *Schema-Driven Information Extraction Beyond the Sentence.*
 GLiNER2 plus the boundary head plus head-initialisation and multi-corpus training: the
-substrate the other two build on. Complete; no new experiments required.
+substrate the other three build on. Complete; no new experiments required. Design and
+results: `PAPER_0_FOUNDATION.md`.
 
-**Paper 1 — Real-time events (temporal).** The EKF/MHT line: censored measurement model,
-learned gate, text-to-observation normalisation, held-out synthetic validation, then a
-genuinely blind real event. Most mature on the tracking half. Blocked on the diarisation
-half, which is the honest statement of where it stands. Design and results:
-`EKF_MHT_DESIGN.md`.
+**Paper 1 — Real-time events across documents (temporal).** The EKF/MHT line: censored
+measurement model, learned gate, text-to-observation normalisation, Viterbi three-state
+association (`own place`, `aggregate`, `reject`), held-out synthetic validation, and blind
+real events. Sequenced to resume immediately after `eb22g` completes, as EKF/MHT requires
+an upstream extractor that reliably binds arguments to specific event instances and clusters
+coreferent mentions within each document. Design and results: `EKF_MHT_DESIGN.md`.
 
-**Paper 2 — Traditional events (combinatorial).** Global decode wired to the boundary
-head, measured on both RAMS (events) and Re-DocRED (relations), then structured joint
-training. The base-volume × architecture curve is complete on repaired data, **and as of
-2026-09-08 so is the decode arm** — its result is a null at parity (§3), which is the
-honest negative the paper reports rather than the win it was built to find. Phase B (beam
-in the loss) remains unrun and is the only untouched version of the thesis. Design and
-results: `JOINT_IE_SCALING.md`.
+**Paper 2 — Constrained joint decoding & data scaling (combinatorial).** Constrained joint
+selection wired to the boundary head (`+0.052` strict micro-F1 at `W=1` on Re-DocRED), the
+10K–137K boundary data-scaling curve on repaired data, 30% exact replay, and the post-fix
+parity negative on multi-head beam decoding. Design and results: `JOINT_IE_SCALING.md`.
 
-Papers 1 and 2 share the framing in §1 and cross-cite; a later extended version may
-merge them into the single global-inference statement.
+**Paper 3 — Document-level event extraction with coreferent clusters.** Instance
+individuation by trigger span (`event_records: true`), relational junction scoring and
+contrastive column loss (`record_link_mode: junction`), multi-mention trigger ownership and
+learned trigger/entity coreference (`TriggerLink`, `EntityCorefLink`, validation-calibrated
+cluster merging), occurrence-grouped coreferent argument compilation, and balanced
+positive-negative supervision (`pair_split_reduction`, split `_list_field_bce`, withheld
+unresolved roles) across the `eb17` → `eb22g` progression. Design and results:
+`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`.
+
+Papers 1, 2, and 3 share the framing in §1 and cross-cite.
 
 ## 5. Method rules adopted after being learned the hard way
 
@@ -281,11 +340,16 @@ The working papers are the primary record; this map is a summary of them.
 
 | document | role |
 |---|---|
-| `PAPER_0_FOUNDATION.md` | Paper 0 draft — substrate, head-init finding, data-integrity audit |
-| `JOINT_IE_SCALING.md` | Paper 2 — joint decoding, scaling curve, replay, the three silent defects |
+| `PAPER_0_FOUNDATION.md` | Paper 0 — substrate, head-init finding, data-integrity audit |
+| `JOINT_IE_SCALING.md` | Paper 2 — joint decoding, 137K scaling curve, 30% replay, the three silent defects |
+| `PAPER_3_DOCUMENT_EVENTS_AND_COREF.md` | Paper 3 — document-level events with coreferent clusters, relational junction scoring, and balanced positive-negative supervision (`eb17` → `eb22g`) |
 | `JOINT_IE_DESIGN_RECORD.md` | Paper 2's build record — decisions, wiring map, cost model |
-| `EVENT_LINE.md` | **line 3** — full event support: the named incumbent, what counts as proving out, and the risk register including the EKF bet |
-| `EVENT_ARGUMENT_DIAGNOSIS.md` | why event arguments fail — binding, not extraction. The mention path keys instances by TYPE and pools them (observed: 0/12 multi-instance, 11/12 pooled); no content-derived key fixes it (type collapses 69.7%, OneIE's trigger 39.9%), only an index. Incumbent re-baselined at threshold 0.2. |
+| `EVENT_LINE.md` | **line 3** — full event support on the record head: incumbent, risk register, and diagnostic trail |
+| `JUNCTION_LAYER_SPEC.md` | gated bilinear + geometry trigger×argument junction layer and contrastive column loss |
+| `COREFERENT_OWNERSHIP_SPEC.md` | multi-mention trigger ownership (`record_coreferent_ownership: true`) |
+| `COREFERENT_LINK_SPEC.md` | learned `TriggerLink` and `EntityCorefLink` coreference scorers and validation-calibrated cluster merging |
+| `EB22C_SCORE_LEVEL_AUTOPSY.md` | score-level swing autopsy, gradient-conflict measurement, and coref MLP distance discovery |
+| `EVENT_ARGUMENT_DIAGNOSIS.md` | why mention-path event arguments fail — type pooling collapses 64.2% of multi-instance events |
 | `PHASE_B_PLAN.md` | the beam **in the loss** — the only untested version of the thesis, with pre-registered bars and a throughput probe that gates the spend |
 | `EKF_MHT_DESIGN.md` | Paper 1 — the filter, the real-event defeat, and the association half rebuilt as a global decode (§7.7) |
 | `EKF_MHT_BUILD_RECORD.md` | Paper 1's build record — attachment points, generator spec, blind-test protocol |
