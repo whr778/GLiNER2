@@ -58,25 +58,30 @@ correct observation, not failures of either pipeline's internals.
         |   ext_specs: one query per (task, field);  QueryLayout types them by role_name
         v
   [D] BoundaryHead -> CandidateTensorBatch                  models/boundary/heads.py
-        |   start/end boundary scores -> sparse (query, candidate) spans
-        |   NOT fixed-width enumeration: this is what removes the span 20-instance cap
+        |   start/end boundary scores -> sparse (query, candidate) spans (start/end_top_k=128)
+        |   pair_split_reduction: true, hard_negative_keep_all_when_absent: false (eb22g)
+        |   NOT fixed-width enumeration: removes the span 19-instance cap
         v
         +----------------------------+----------------------------+
         |                            |                            |
-        v decode_mode=greedy         v decode_mode=joint           v
-  [E1] per-query threshold      [E2] joint_ie                 [E3] classifications
-       _decode_records               boundary_candidates_to_             pooled logits
-       _decode_relations             candidate_score_set                 -> labels
-       null-abstention ✅            + relation pairs -> edges
-       adaptive threshold ✅         + record groups -> role edges
-                                     -> JointProblem
-                                     -> BeamOptimizer + TypedEndpoints
+        v decode_mode=greedy (ship)  v decode_mode=joint (parity) v
+  [E1] per-query + record decode [E2] joint_ie                 [E3] classifications
+       _decode_records (records.py):  boundary_candidates_to_       pooled logits
+       - event_records: true          candidate_score_set           -> labels
+       - record_link_mode: junction   + relation pairs -> edges
+         (gated bilinear + geom)      + record groups -> role edges
+       - TriggerLink coref merge      -> JointProblem
+         (coref_link_distance: mlp)   -> BeamOptimizer (W=1)
+       - EntityCorefLink clusters
+       _decode_relations (biaffine)
+       null-abstention ✅
         |                            |
         +----------------------------+
         v
-  [F] span -> char offsets, format_results                  models/boundary/engine.py
+  [F] span -> char offsets, format_results                  inference/engine.py
+        |   field confidence = assignment probability (pair_confidence stored alongside)
         v
-   {entities: [...], relations: [...], <task>: [instances], classifications: {...}}
+   {entities: [...], relations: [...], event_extraction: {...}, structures: {...}, classifications: {...}}
 ```
 
 **Long documents** bypass nothing — they re-enter at [A] per chunk:
@@ -97,8 +102,17 @@ correct observation, not failures of either pipeline's internals.
   are greedy-only. Any arm comparison inherits that asymmetry.
 - **Record role edges bypass threshold centering** — a scalar role's utility is the
   ABSENT-relative `logit_c - logit_ABSENT`, which has no probability cutoff to centre on.
-- ⚠ **A `json_structures` schema without `record_metadata` silently yields no records** on
-  the boundary architecture. The processor warns; it does not fail.
+- **⚠ `json_structures` without `record_metadata`:** All corpora on disk were repaired on
+  2026-09-08 (`stamp_record_metadata.py`, gated by `audit_corpora.py`), and both the viewer
+  and `tools/infer.py` (`_declare_records`) now default omitted structure metadata to
+  `mode="natural", anchor="<first field>"`.
+- **✅ Events now train and decode on the record head (`eb17` → `eb22g`, `PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`).**
+  With `event_records: true`, each trigger candidate seeds a distinct event instance;
+  `record_link_mode: junction` binds arguments to triggers via a role-gated bilinear +
+  geometry join; `TriggerLink` (`record_coref_link: true`, 64-width MLP distance) merges
+  coreferent trigger mentions into document-level event clusters; and `eb22g`
+  (`pair_split_reduction: true`, `hard_negative_keep_all_when_absent: false`, split
+  `_list_field_bce`) resolves both role-assignment and candidate-proposal gradient starvation.
 
 ---
 
@@ -111,8 +125,11 @@ Stage 2 calls the *whole* of pipeline 1 as a subroutine.
   feed.jsonl   [{t_hours, text, url}, ...]        one row per archived article
         |
         v
-  [0] GATE                        classification, gliner2-base-v1              ✅
-        |   "is this article a mass-casualty report?"  --gate-threshold 0.5
+  [0a] LANGUAGE GATE              language_gate.py, SUPPORTED={en,zh,tr}       ✅
+        |   rejects unsupported scripts/languages before the neural gate runs
+        v
+  [0] GATE                        classification, gliner2-gate2-mmbert-tr      ✅
+        |   "is this article a mass-casualty report?"  --gate-threshold 0.9
         |   ⚠ answers "is this article ABOUT one", never "does this number
         |     belong to THAT one" -- the source of cross-event contamination
         v
@@ -122,10 +139,11 @@ Stage 2 calls the *whole* of pipeline 1 as a subroutine.
         |   and --associate envelope / type+location degrade to no key
         v
   [2] EXTRACT                     casualty structure model  === PIPELINE 1 === ✅
-        |   Schema().structure("casualty_report")
-        |     .field(dead|injured|missing) .field(location)
+        |   default: whr778/gliner2-casualty-multilingual (to be rebased onto eb22g)
+        |   Schema().structure("casualty_report", mode="natural", anchor="dead")
+        |     .field(dead|injured|missing, exclusive=True) .field(location)
         |   --record-mode natural   (REQUIRED for boundary models)
-        |   --window whole | event | long   (long = extract_long)
+        |   --window article | event | lead | long   (long = extract_long)
         v
   [3] NORMALIZE                   span -> (value, qualifier, source)           ✅
         |   --normalizer heuristic | classify | hybrid | both
@@ -142,18 +160,17 @@ Stage 2 calls the *whole* of pipeline 1 as a subroutine.
         |   envelope : nearest location span by char distance (heuristic)
         |   -> event_key,  e.g. "Floods|north carolina"
         v
-  [3d] ROLLUP                     --rollup datasets/<event>/rollup.json        ✅
+  [3d] ROLLUP & SCOPE FILTER      --rollup datasets/<event>/rollup.json        ✅
         |   collapse_type: Floods|florida == Storm|florida
         |   aliases:   asheville -> north carolina;  six states -> __aggregate__
         |   hierarchy: {aggregate: __aggregate__, parts: [...]}   <- declares scope
-        |   unmapped places are left ALONE, never guessed
+        |   --scope-filter: drops places outside declared hierarchy (4/6 cross-event @ 1.2% FP)
         v
-  [3e] SCOPE GATE                 ratio 2.0 vs the __aggregate__ series        ✅ NEW
-        |   keep     value <  natl/ratio          plausibly this place's own
-        |   reroute  value <= natl*ratio          it IS the national figure
-        |   drop     otherwise                    exceeds the whole; not a toll
-        |   per-state nRMSE 5.247 -> 0.591; the aggregate improves too (0.402 -> 0.316)
-        |   ⚠ needs an __aggregate__ stream. No aggregate => no gate.
+  [3e] GLOBAL SCOPE DECODE (M4')  --scope-method decode (scope_gate.hmm_gate)  ✅ DEFAULT
+        |   Viterbi decode over {own, aggregate, reject} across the full stream
+        |   (sigma=0.3, reject_cost=4.0, stay=0.1, warmup=0; legacy ratio=2.0 available)
+        |   pooled RMSE in deaths: Helene 29.3 -> 20.7 (-29.4%),
+        |     Turkiye 11,581.5 -> 10,695.5 (-7.6%), Aegean 74.4 -> 15.7 (-78.8%)
         v
   [4] TRACK                       per event_key                                ✅
         |   HARD assignment on the string key -> one single-stream EKF per key
@@ -497,3 +514,107 @@ in-domain-good / real-news-zero. The gates are on AP prose for that reason.
 **Smoke, 1× A100-SXM4-40GB:** 18.4 samples/s — 34% faster than the extrapolation every earlier
 cost estimate used. `num_workers` is *not* the bottleneck (18.4 at 0 workers, 18.5 at 4);
 utilisation swings 28–81% on variable sequence length while memory stays flat at 10.6 GB of 40.
+
+---
+
+## 5. Status & Training Plan on Top of `eb22g` (Updated 2026-11-05)
+
+### 5.1 What `eb22g` Changes for the EKF Pipeline
+
+In §4.4 above (written 2026-08-23), the EKF front-end was blocked on one architectural
+limitation: *"What still blocks the router is not the mix but the decode: one event instance
+per type, all spans pooled."* Between September and November 2026 (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`),
+that exact limitation and the three training starvations behind it were resolved in `eb22g`:
+
+1. **Multi-instance individuation (`event_records: true`):** Event instances are now seeded
+   per trigger anchor span (`record_instance_queries = 32`), not pooled 1-per-type.
+2. **Relational trigger-argument binding (`record_link_mode: junction`):** Gated bilinear +
+   geometry scoring with contrastive column loss (`junction AUC 0.74–0.77`) stops false or
+   competing triggers from stealing figures.
+3. **Within-document event & entity coreference (`TriggerLink` + `EntityCorefLink`):**
+   Multi-mention events within an article consolidate into a single cluster (`pair AUC
+   0.802–0.843`) while distinct same-type events stay split.
+4. **Balanced positive-negative supervision (`pair_split_reduction: true`, split
+   `_list_field_bce`):** Lifted 64-doc overfit `@0.5` argument strict micro-F1 to `0.4319` on
+   CASIE and `0.8005` on CMNEE, and lifted full-mix Epoch 2 validation `event_argument`
+   strict micro-F1 to `0.1639` (relaxed `0.3992`, fair `0.3632`).
+
+### 5.2 Audit of Outdated Data & Configs in `datasets/` and `data/`
+
+Auditing `datasets/` and `tools/train/config/{casualty,gate}/` against `eb22g` surfaced four
+concrete mismatches that must be fixed before training the `eb22g` EKF models:
+
+1. **Anchor mismatch between `data/casualty_ml` and `run_pipeline.py` (`build_casualty_schema`):**
+   - `data/casualty_ml.{train,val,test}.jsonl` (62,703 real EN/TR/ZH news records) stamps
+     `record_metadata: {"casualty_report": {"mode": "natural", "anchor": "location"}}`.
+   - Meanwhile, `tools/ekf_showcase/run_pipeline.py:345` (`build_casualty_schema`) constructs
+     the inference schema with **`anchor="dead"`**! On the boundary record head in `natural`
+     mode, the anchor field (`role_index 0`) seeds the record instances: training with
+     `anchor: "location"` and decoding with `anchor: "dead"` (or decoding an injured-only
+     report with `anchor: "dead"`) mismatches the trained anchor.
+   - **Fix:** Standardize the anchor between training and `build_casualty_schema` (either
+     `anchor: "location"` for place-keyed `casualty_report` structures, or event-trigger-anchored
+     `casualty_events` where the event trigger is always the anchor and `location`, `dead`,
+     `injured`, `missing`, `displaced`, `rescued` are argument roles).
+2. **Label-map version mismatch (`labels/unified.yaml` vs `labels/unified-full-v4.yaml`):**
+   - Existing configs (`casualty-full-multilingual.yaml`, `casualty-events-boundary.yaml`,
+     `gate3-mmbert.yaml`) reference `labels/unified.yaml` (or no `labels_file`) and warm-start
+     from `eb16-rebuild-tr` (which also used the deprecated charclass length proxy).
+   - **Fix:** Every model warm-started from `whr778/gliner2-eb22g` must reference
+     `labels_file: labels/unified-full-v4.yaml` and inherit `eb22g`'s structural boundary
+     settings (`enable_rotary_endpoints: false`, `coref_link_distance: mlp`, etc.).
+3. **Zero-replay forgetting in `casualty-full-multilingual.yaml`:**
+   - Training `casualty-multilingual-eb16tr` on `data/casualty_ml` alone (0% replay) collapsed
+     general capability (`entity` `0.5695 -> 0.0801`, `event_type` `0.7545 -> 0.0209`).
+   - **Fix:** Include **30% exact replay** drawn from `eb22g`'s training pool
+     (`build_warmstart_mix.py` / `build_137k_replay.py` updated for `eb22g`).
+4. **Stale cached observation files in `datasets/`:**
+   - `datasets/helene2024/_rescore/`, `datasets/turkey2023/_rescore/`, and
+     `datasets/ekf_showcase/*.json` hold observations extracted in August/September 2026
+     (before `build_helene_feed.py` stripped embedded AP related-coverage rails on
+     2026-09-21, and before `eb22g`).
+   - **Fix:** Once the `eb22g` EKF models are trained, regenerate the feeds (`build_helene_feed.py`,
+     `build_turkey_feed*.py`, `build_aegean_feed.py`) and re-extract all four real-event
+     benchmark feeds (`helene2024`, `turkey2023`, `aegean2020`, and the double-blind
+     `venezuela_2026` holdout).
+
+### 5.3 Step-by-Step Training Plan for the EKF Pipeline Components (Post-`eb22g`)
+
+Once `eb22g` (`bcfe500c`) finishes Epoch 5 and passes its blind test:
+
+| Step | Component / Config | Base Checkpoint | Training Data & Recipe | Pre-Registered Acceptance Gate |
+|---|---|---|---|---|
+| **1** | **Zero-Shot `eb22g` Front-End Readout** (no training, ~$0) | `whr778/gliner2-eb22g` (`best`) | Run `frontend_gates.py` + `binding_accuracy.py` on the Helene/Katrina multi-event passages and DocEE 27-label set | Does `eb22g` pass **Gate 2** (separating Helene and Katrina into two distinct event instances in one passage) and bind the right toll? |
+| **2** | **Stage 0 Relevance & Normalizer Gate (`gate4-eb22g.yaml`)** | `whr778/gliner2-eb22g` | `data/gate3` (token-balanced `en`/`tr`/`zh` `relevance` + `toll_kind`) + `qualifier`/`source` normalizer tasks + 30% `eb22g` replay; `labels/unified-full-v4.yaml`; 4 epochs | Val-calibrated threshold (`sweep_thresholds`): EN/TR/ZH admission >= `gate3-mmbert` (`97%` TR, `98%` ZH), 0 regression on Helene/Aegean/Türkiye-EN |
+| **3** | **Stage 2 Multilingual Casualty Extractor (`casualty-ml-eb22g.yaml`)** | `whr778/gliner2-eb22g` | `data/casualty_ml` (62,703 real EN/TR/ZH news records, anchor aligned with `build_casualty_schema`) + `data/casualty_events` + **30% exact `eb22g` replay**; `pair_split_reduction: true`, `record_link_mode: junction`; 4 epochs | (1) `casualty_ml` blind-test `structure` strict micro-F1 > `0.6078` across all 3 languages; (2) `eb22g` replay heads hold within `±0.02`; (3) Helene binding precision >= `67–100%` and Turkish digit-in-location < `5.8%` |
+| **4** | **End-to-End Re-Extraction & Re-Baseline of `datasets/`** | `gate4-eb22g` + `casualty-ml-eb22g` | Re-run `run_pipeline.py` (`--window long --associate record --scope-filter --scope-method decode`) on `helene2024`, `turkey2023` (`en`/`tr`/`zh`), and `aegean2020`, then score `venezuela_2026` once | Pooled RMSE in deaths <= current `hmm_gate` baselines (`20.7` Helene, `10,695.5` Türkiye, `15.7` Aegean) and beats `est_last_value` on all feeds |
+
+### 5.4 Are We Ready for MHT? — The Exact Prerequisite Gate
+
+**Answer: Not before Steps 1–4 above complete — and Steps 1–4 will tell us whether MHT has
+any remaining headroom to win.**
+
+Specifically:
+1. **Why MHT was not justified previously (§4):** On single-event-per-region feeds (Helene,
+   Türkiye–Syria, Aegean) where observations are already keyed by `(event_type, location)`,
+   the two-way assignment oracle had **zero** headroom over the shipped gate (`29.3` vs
+   `29.3` deaths on Helene), and the 3-state global Viterbi decode (`hmm_gate` over
+   `{own, aggregate, reject}`) captured 73% of the 3-way reject oracle's headroom without a
+   hypothesis tree.
+2. **Where MHT *can* earn its keep once `eb22g` is in place:** MHT (`[M1–M4]`: cost matrix
+   over innovation likelihood + `candidate_states` / `TriggerLink` embedding affinity →
+   top-`K` hypothesis tree) is needed **if and only if** a feed contains **multiple
+   concurrent events of the same type in the same geographic scope** (e.g., two simultaneous
+   attacks or accidents in the same city/province, or an unkeyed stream where `location` is
+   absent on >20% of observations so observations must be associated to tracks by
+   `candidate_states` embedding + trajectory innovation jointly).
+3. **The MHT Go/No-Go Gate (run immediately after Step 4):**
+   - Re-run `reject_headroom.py` and the two-way vs three-way oracle on the Step-4
+     `casualty-ml-eb22g` observations across `helene2024`, `turkey2023`, `aegean2020`, and
+     the multi-incident synthetic feed (`datasets/ekf_showcase/feed_multi.jsonl`).
+   - **Go criterion for MHT:** If the gap between `hmm_gate` (hard key + Viterbi `{own,
+     aggregate, reject}`) and the oracle with ground-truth track assignment exceeds **15%
+     relative pooled RMSE** on multi-incident feeds (and Gate 2 passes so each incident
+     carries distinct `candidate_states` embeddings), we build `[M1–M4]` using the
+     `TriggerLink` / `candidate_states` cosine + Kalman innovation cost matrix. Otherwise,
+     `hmm_gate` remains the complete association layer for Paper 1.

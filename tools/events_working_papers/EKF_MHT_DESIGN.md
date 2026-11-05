@@ -1,12 +1,14 @@
 # Tracking Events Through a News Stream: A Filter, and the Association Layer It Needed
 
-**William Roe**¹ (whr778@gmail.com) and **Claude**² (noreply@anthropic.com)
+**William Roe**¹ (whr778@gmail.com), **Gemini**², and **Claude**³ (noreply@anthropic.com)
 
-¹ Project author and maintainer  ·  ² AI assistant (Anthropic, Claude Opus 5) — design,
+¹ Project author and maintainer  ·  ² AI assistant (Google, Gemini) — diagnosis, architecture, experiments, and drafting  ·  ³ AI assistant (Anthropic, Claude Opus 5) — design,
 implementation, and drafting
 
 **Paper 1 of the research programme stated in `RESEARCH_PROGRAM.md`.** Revision of
-2026-08-28.
+2026-11-05 (results locked 2026-08-28; §7 updated to cross-reference the multi-instance
+event record, junction, and coreference architecture in `PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`
+and the post-`eb22g` EKF component training plan in `PIPELINES.md` §5).
 
 *Provenance. Condensed 2026-08-25 from a 1,033-line chronological draft (git `1e27878`);
 every measured result and every negative is carried forward, and what was removed is
@@ -428,9 +430,14 @@ conditional on that admission set, not invalidated by it.
   Helene's contaminants differ by 6× and Türkiye's by 3×-and-crossing — with a registered
   prediction that the collapse would show a large gain. It did not, for the reason above,
   which has nothing to do with scale separation.
-- **Two same-type events in one passage remain inseparable.** A property of the record head,
-  which pools them into one instance. No corpus fixes it; the instance dimension is the next
-  constraint.
+- **Two same-type events in one passage remain inseparable** in the mention-path models
+  measured here, which pooled same-type events into one instance. **Resolved architecturally
+  in Paper 3 (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`):** `event_records: true` seeds a
+  distinct record instance per trigger span (`record_instance_queries = 32`),
+  `record_link_mode: junction` binds arguments to their specific trigger instance, and
+  `TriggerLink` (`record_coref_link: true`) merges coreferent mentions while keeping distinct
+  same-type events separate. Re-running the EKF front-end on `eb22g` is Step 1 of the
+  post-`eb22g` plan in `PIPELINES.md` §5.3.
 - **Four instrument defects produced confident wrong answers.** A threshold sweep that was
   inert for five measurements; a strict-vs-relaxed comparison that turned a doubling into an
   apparent halving; gate 1 counting firings as though they were hits; and a metric that
@@ -443,9 +450,11 @@ conditional on that admission set, not invalidated by it.
   rescued person is a *counterfactual* casualty. The schema has four roles — location,
   injured, missing, dead — and none for exposure, so a number with no correct home lands in a
   wrong one. That is a data-modelling gap, not a gate.
-- **The relevance gate does not filter non-English at all.** The shipped model admits 199 of
-  200 clean Turkish articles, because it is English-only by vocabulary — worse than the 58.5%
-  that forced an earlier rewrite, and silent. Translation does not fix it.
+- **The relevance gate does not filter non-English at all** in the original English-only
+  `fastino/gliner2-base-v1` default (admitting 199 of 200 clean Turkish articles). **Resolved
+  2026-09-01 (`GATES.md` [0]):** `language_gate.py` (`SUPPORTED = {"en", "zh", "tr"}`) paired
+  with `whr778/gliner2-gate2-mmbert-tr` (Turkish AUC `0.4980 -> 0.8105`, 58/60 Turkish held-out
+  admitted) and `gate3-mmbert` (58/60 Turkish, 59/60 Chinese) now ships as the stage-0 default.
 - **Conflict casualties are out of scope for validation.** The taxonomy extends (KIA/WIA are
   realized harm; belligerent side is the scope axis again), but conflict ground truth is
   contested by construction and could not be scored the way these three events are.
