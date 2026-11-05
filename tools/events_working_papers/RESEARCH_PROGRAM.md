@@ -122,9 +122,9 @@ even when relaxed argument micro-F1 reached `0.50–0.59` (`PAPER_3_DOCUMENT_EVE
    Routing events through the record head in `natural` (`per_query`) mode individuates each
    event instance by its trigger anchor span (`record_instance_queries = 32`).
 2. **Relational junction scoring (`record_link_mode: junction`).** Decomposing the record
-   head's additive assignment logit $s_{ijf} = P_{ij} + R_{fj}$ proved that role fit $R_{fj}$
+   head's additive assignment logit `s_ijf = P_ij + R_fj` proved that role fit `R_fj`
    (identical across all triggers) accounted for 95% of row discrimination while pairwise
-   compatibility $P_{ij}$ sat at per-column AUC `0.576`, letting false triggers steal 52–74%
+   compatibility `P_ij` sat at per-column AUC `0.576`, letting false triggers steal 52–74%
    of arguments (`JUNCTION_LAYER_SPEC.md`). Adding a role-gated bilinear + relative-geometry
    junction term trained with a contrastive per-column trigger softmax lifted per-column
    junction AUC to **`0.74–0.77`** and unlocked English argument binding (`p5link` `+0.035`
@@ -142,11 +142,11 @@ even when relaxed argument micro-F1 reached `0.50–0.59` (`PAPER_3_DOCUMENT_EVE
    `eb22g`).** A paired-collate probe on `eb22e:checkpoint-epoch-1` (`3,568` gold role
    fillers) proved two simultaneous starvations: under scheduled injection (`0.956`), `97.1%`
    of gold fillers were in the candidate pool yet had median assignment probability `0.0155`
-   because `_list_field_bce` averaged 1 positive with $K=8$ hard negatives in one denominator;
+   because `_list_field_bce` averaged 1 positive with `K = 8` hard negatives in one denominator;
    with injection off (`0.0`), `61.7%` of gold fillers were missing from the pool or lost
    their trigger because `candidate_pair_loss` with `hard_negative_keep_all_when_absent: true`
    included all 768 candidates on absent queries (`~85–90%` of queries) in one global
-   denominator, diluting positive pair gradients by $7{,}700\times$ (`pair_loss` pinned at
+   denominator, diluting positive pair gradients by 7,700× (`pair_loss` pinned at
    `0.005–0.011`) and leaving logit levels unanchored (`EB22C_SCORE_LEVEL_AUTOPSY.md`).
    Splitting positive and negative reductions in both `_list_field_bce` and
    `candidate_pair_loss` (`pair_split_reduction: true`,
