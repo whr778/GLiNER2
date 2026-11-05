@@ -138,3 +138,33 @@ def test_structure_card_matches_text_fields(tmp_path):
     assert defaults["threshold"] == "0.5000"
     assert defaults["chunk_size"] == "4,096"
     assert view["empty"] is False
+
+
+def test_format_table_and_epoch_progression(tmp_path):
+    root = tmp_path / "run"
+    root.mkdir()
+    ep1 = {
+        "eval_epoch": 1, "eval_step": 16586, "eval_loss": 1.6277, "is_best": True,
+        "eval_entity_strict_micro_precision": 0.2, "eval_entity_strict_micro_recall": 0.5,
+        "eval_entity_strict_micro_f1": 0.2857, "eval_entity_relaxed_micro_f1": 0.35,
+        "eval_entity_fair_micro_f1": 0.33, "eval_entity_strict_support": 1000,
+        "eval_event_argument_strict_micro_f1": 0.0974,
+        "eval_overall_strict_head_min_f1": 0.0448,
+    }
+    ep2 = {
+        "eval_epoch": 2, "eval_step": 33172, "eval_loss": 1.4125, "is_best": True,
+        "eval_entity_strict_micro_precision": 0.16, "eval_entity_strict_micro_recall": 0.54,
+        "eval_entity_strict_micro_f1": 0.2445, "eval_entity_relaxed_micro_f1": 0.31,
+        "eval_entity_fair_micro_f1": 0.29, "eval_entity_strict_support": 1000,
+        "eval_event_argument_strict_micro_f1": 0.1639,
+        "eval_overall_strict_head_min_f1": 0.0562,
+    }
+    (root / "eval_history.jsonl").write_text(
+        json.dumps(ep1) + "\n" + json.dumps(ep2) + "\n", encoding="utf-8"
+    )
+    tbl = format_metrics.render(str(root), fmt="table")
+    assert "| Category" in tbl
+    assert "Fair Micro F1" in tbl
+    assert "0.1639" in tbl
+    assert "Epoch Progression (`eval_history.jsonl` — Strict Micro F1)" in tbl
+    assert "16,586" in tbl and "33,172" in tbl

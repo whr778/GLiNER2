@@ -74,16 +74,20 @@ def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _last_jsonl(path: Path) -> Optional[dict]:
-    last = None
+def _all_jsonl(path: Path) -> list[dict]:
+    rows: list[dict] = []
     with path.open(encoding="utf-8") as handle:
         for line in handle:
             if line.strip():
-                last = line
-    if not last:
-        return None
-    row = json.loads(last)
-    return row if isinstance(row, dict) else None
+                row = json.loads(line)
+                if isinstance(row, dict):
+                    rows.append(row)
+    return rows
+
+
+def _last_jsonl(path: Path) -> Optional[dict]:
+    rows = _all_jsonl(path)
+    return rows[-1] if rows else None
 
 
 def _read_local(root: Path) -> dict[str, Any]:
@@ -96,14 +100,15 @@ def _read_local(root: Path) -> dict[str, Any]:
             if path.is_file():
                 found[name] = _load_json(path)
                 break
-    if not any(name in found for name in METRIC_FILES):
-        for directory in _dirs(root):
-            path = directory / "eval_history.jsonl"
-            if path.is_file():
-                row = _last_jsonl(path)
-                if row:
-                    found["eval_history.jsonl"] = row
-                break
+    for directory in _dirs(root):
+        path = directory / "eval_history.jsonl"
+        if path.is_file():
+            rows = _all_jsonl(path)
+            if rows:
+                found["eval_history_all"] = rows
+                if not any(name in found for name in METRIC_FILES):
+                    found["eval_history.jsonl"] = rows[-1]
+            break
     return found
 
 
@@ -154,17 +159,18 @@ def _read_hub(repo: str, subfolder: Optional[str]) -> dict[str, Any]:
     if not found and not reached:
         where = f"{repo}@{subfolder}" if subfolder else repo
         raise FileNotFoundError(f"Hub repo not found: {where}")
-    if not any(name in found for name in METRIC_FILES):
-        for repo_type in ("model", "dataset"):
-            got = _hub_file(repo, "eval_history.jsonl", subfolder, repo_type)
-            if got in ("no-repo", "local-miss"):
-                continue
-            if got == "absent":
-                break
-            row = _last_jsonl(Path(got))
-            if row:
-                found["eval_history.jsonl"] = row
+    for repo_type in ("model", "dataset"):
+        got = _hub_file(repo, "eval_history.jsonl", subfolder, repo_type)
+        if got in ("no-repo", "local-miss"):
+            continue
+        if got == "absent":
             break
+        rows = _all_jsonl(Path(got))
+        if rows:
+            found["eval_history_all"] = rows
+            if not any(name in found for name in METRIC_FILES):
+                found["eval_history.jsonl"] = rows[-1]
+        break
     return found
 
 
@@ -229,7 +235,10 @@ def _micro_rows(metrics: dict, prefix: str) -> list[dict[str, Any]]:
         relaxed = metrics.get(f"{head}{cat}_relaxed_micro_f1")
         if _is_number(relaxed):
             row["relaxed_f1"] = relaxed
-        if any(key in row for key in ("precision", "recall", "f1", "support", "relaxed_f1")):
+        fair = metrics.get(f"{head}{cat}_fair_micro_f1")
+        if _is_number(fair):
+            row["fair_f1"] = fair
+        if any(key in row for key in ("precision", "recall", "f1", "support", "relaxed_f1", "fair_f1")):
             rows.append(row)
     return rows
 
@@ -472,9 +481,200 @@ def structure_card(title: str, files: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def render(spec: str, subfolder: Optional[str] = None) -> str:
-    """Load a local directory or a Hub id and return the card text."""
+def _markdown_table(headers: list[str], rows: list[list[str]], right_align_from: int = 1) -> list[str]:
+    if not rows:
+        return []
+    widths = [len(h) for h in headers]
+    for r in rows:
+        for i, cell in enumerate(r):
+            widths[i] = max(widths[i], len(cell))
+
+    def fmt_row(cells: list[str]) -> str:
+        parts = []
+        for i, cell in enumerate(cells):
+            parts.append(cell.rjust(widths[i]) if i >= right_align_from else cell.ljust(widths[i]))
+        return "| " + " | ".join(parts) + " |"
+
+    sep_parts = []
+    for i, w in enumerate(widths):
+        if i >= right_align_from:
+            sep_parts.append("-" * max(w - 1, 1) + ":")
+        else:
+            sep_parts.append("-" * max(w, 3))
+    sep = "| " + " | ".join(sep_parts) + " |"
+    return [fmt_row(headers), sep, *[fmt_row(r) for r in rows]]
+
+
+def _rows_to_md_table(rows: list[dict[str, Any]]) -> list[str]:
+    if not rows:
+        return []
+    has_rel = any("relaxed_f1" in r for r in rows)
+    has_fair = any("fair_f1" in r for r in rows)
+    has_sup = any("support" in r for r in rows)
+    headers = ["Category", "Strict Micro P", "Strict Micro R", "Strict Micro F1"]
+    if has_rel:
+        headers.append("Relaxed Micro F1")
+    if has_fair:
+        headers.append("Fair Micro F1")
+    if has_sup:
+        headers.append("Support")
+    table_rows = []
+    for r in rows:
+        line = [
+            str(r["category"]),
+            _fmt(r["precision"]) if "precision" in r else "—",
+            _fmt(r["recall"]) if "recall" in r else "—",
+            _fmt(r["f1"]) if "f1" in r else "—",
+        ]
+        if has_rel:
+            line.append(_fmt(r["relaxed_f1"]) if "relaxed_f1" in r else "—")
+        if has_fair:
+            line.append(_fmt(r["fair_f1"]) if "fair_f1" in r else "—")
+        if has_sup:
+            line.append(_fmt(r["support"]) if "support" in r else "—")
+        table_rows.append(line)
+    return _markdown_table(headers, table_rows, right_align_from=1)
+
+
+def _section_table(name: str, metrics: dict) -> list[str]:
+    lines = [f"#### `{name}`"]
+    meta_bits = []
+    provenance = metrics.get("eval_provenance")
+    if isinstance(provenance, dict):
+        for key in PROVENANCE_KEYS:
+            if key in provenance and provenance[key] is not None:
+                meta_bits.append(f"**{key}**: `{_fmt(provenance[key])}`")
+    for key in ("eval_epoch", "epoch", "eval_step", "eval_loss", "is_best"):
+        if key in metrics and metrics[key] is not None:
+            val = metrics[key] + 1 if key == "epoch" and isinstance(metrics[key], int) and "eval_epoch" not in metrics else metrics[key]
+            label = "eval_epoch" if key == "epoch" else key
+            if any(b.startswith(f"**{label}**:") for b in meta_bits):
+                continue
+            meta_bits.append(f"**{label}**: `{_fmt(val)}`")
+    for key, label in (
+        ("eval_overall_strict_head_min_f1", "head_min_strict_micro_f1"),
+        ("eval_fullmenu_overall_strict_head_min_f1", "fullmenu_head_min_strict_micro_f1"),
+    ):
+        value = metrics.get(key)
+        if _is_number(value):
+            meta_bits.append(f"**{label}**: `{_fmt(value)}`")
+    if meta_bits:
+        lines.append("- " + " · ".join(meta_bits))
+        lines.append("")
+    lines.extend(_rows_to_md_table(_micro_rows(metrics, "")))
+    full_rows = _micro_rows(metrics, "fullmenu_")
+    if full_rows:
+        lines.extend(["", "**Full Menu**", ""])
+        lines.extend(_rows_to_md_table(full_rows))
+    per_head = metrics.get("per_head")
+    if isinstance(per_head, dict):
+        lines.extend(["", "**Per-Head Thresholds**"])
+        if isinstance(per_head.get("thresholds"), dict):
+            lines.append(f"- **thresholds**: `{_fmt(per_head['thresholds'])}`")
+        if per_head.get("identical_to_global"):
+            lines.append("- Identical to global threshold")
+        elif isinstance(per_head.get("metrics"), dict):
+            lines.append("")
+            lines.extend(_rows_to_md_table(_micro_rows(per_head["metrics"], "")))
+    off = metrics.get("coref_merge_off")
+    if isinstance(off, dict):
+        off_rows = _micro_rows(off, "")
+        if off_rows:
+            lines.extend(["", "**Coref Merge Off**", ""])
+            lines.extend(_rows_to_md_table(off_rows))
+    by_menu = metrics.get("by_menu")
+    if isinstance(by_menu, dict):
+        for menu, block in by_menu.items():
+            if isinstance(block, dict):
+                m_rows = _micro_rows(block, "")
+                if m_rows:
+                    lines.extend(["", f"**Menu `{menu}`**", ""])
+                    lines.extend(_rows_to_md_table(m_rows))
+    languages = metrics.get("by_language")
+    if isinstance(languages, dict) and languages:
+        lines.extend(["", f"- **by_language**: `{', '.join(str(k) for k in languages)}`"])
+    return lines
+
+
+def _history_progression_table(history: list[dict]) -> list[str]:
+    if len(history) <= 1:
+        return []
+    head_cols = [
+        ("entity", "entity"),
+        ("relation", "relation"),
+        ("classification", "cls"),
+        ("structure", "structure"),
+        ("event_type", "ev_type"),
+        ("event_trigger", "ev_trig"),
+        ("event_argument", "ev_arg"),
+        ("event_cluster_argument", "cluster_arg"),
+        ("overall", "overall"),
+    ]
+    present_cols = [
+        (cat, short) for cat, short in head_cols
+        if any(_is_number(h.get(f"eval_{cat}_strict_micro_f1")) for h in history)
+    ]
+    headers = ["Epoch", "Step", "Eval Loss", "Head-Min F1", *[short for _, short in present_cols]]
+    rows = []
+    for idx, h in enumerate(history, 1):
+        ep = h.get("eval_epoch")
+        if ep is None and isinstance(h.get("epoch"), int):
+            ep = h["epoch"] + 1
+        ep_str = str(ep if ep is not None else idx)
+        if h.get("is_best"):
+            ep_str += " *"
+        step_str = _fmt(h["eval_step"]) if "eval_step" in h else (_fmt(h["step"]) if "step" in h else "—")
+        loss_str = _fmt(h["eval_loss"]) if _is_number(h.get("eval_loss")) else "—"
+        hmin_str = _fmt(h["eval_overall_strict_head_min_f1"]) if _is_number(h.get("eval_overall_strict_head_min_f1")) else "—"
+        row = [ep_str, step_str, loss_str, hmin_str]
+        for cat, _ in present_cols:
+            v = h.get(f"eval_{cat}_strict_micro_f1")
+            row.append(_fmt(v) if _is_number(v) else "—")
+        rows.append(row)
+    return [
+        "#### Epoch Progression (`eval_history.jsonl` — Strict Micro F1)",
+        "",
+        *_markdown_table(headers, rows, right_align_from=1),
+    ]
+
+
+def format_table(title: str, files: dict[str, Any]) -> str:
+    """Render a clean Markdown table summary of all stored metrics."""
+    lines = [f"### `{title}`", ""]
+    config = files.get("config.json")
+    defaults = config.get("inference_defaults") if isinstance(config, dict) else None
+    if isinstance(defaults, dict) and defaults:
+        lines.append("- **inference_defaults**: " + ", ".join(f"`{k}={_fmt(v)}`" for k, v in defaults.items()))
+    results = files.get("train_results.json")
+    if isinstance(results, dict):
+        picked = [k for k in ("best_epoch", "best_step", "best_metric") if k in results]
+        if picked:
+            lines.append("- **train_results**: " + ", ".join(f"`{k}={_fmt(results[k])}`" for k in picked))
+    if len(lines) > 2:
+        lines.append("")
+    shown = False
+    for name in (*METRIC_FILES, "eval_history.jsonl"):
+        metrics = files.get(name)
+        if isinstance(metrics, dict):
+            shown = True
+            lines.extend(_section_table(name, metrics))
+            lines.append("")
+    history = files.get("eval_history_all")
+    if isinstance(history, list) and len(history) > 1:
+        shown = True
+        lines.extend(_history_progression_table(history))
+        lines.append("")
+    if not shown:
+        lines.append("No metrics file (val_metrics.json, test_metrics.json, eval_metrics.json).")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render(spec: str, subfolder: Optional[str] = None, fmt: str = "card") -> str:
+    """Load a local directory or a Hub id and return the formatted metrics."""
     title, files = load(spec, subfolder)
+    if fmt == "table":
+        return format_table(title, files)
     return format_card(title, files)
 
 
@@ -482,9 +682,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Print the metrics card stored with a checkpoint.")
     parser.add_argument("checkpoint", help="local directory, Hub id, or repo@subfolder")
     parser.add_argument("--subfolder", help="subfolder inside a Hub repo (same as repo@subfolder)")
+    parser.add_argument("--format", choices=("table", "card"), default="table",
+                        help="output format: 'table' (aligned Markdown tables, default) or 'card' (plain text)")
     args = parser.parse_args(argv)
     try:
-        sys.stdout.write(render(args.checkpoint, args.subfolder))
+        sys.stdout.write(render(args.checkpoint, args.subfolder, fmt=args.format))
     except FileNotFoundError as exc:
         print(exc, file=sys.stderr)
         return 1
