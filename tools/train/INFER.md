@@ -123,7 +123,7 @@ ONCE: pick settings on the validation split first.
 | `--schema-json` | a full schema file; overrides all of the above |
 | `--no-label-map` | send labels exactly as typed |
 | `--threshold`, `--chunk-size`, `--chunk-overlap`, `--global-decode` / `--no-global-decode` | override the checkpoint |
-| `--include-confidence`, `--include-spans` | add scores and character offsets |
+| `--include-confidence`, `--include-spans` | add scores and character offsets (for event/structure record fields, `confidence` is the role assignment probability that gated the filler and `pair_confidence` is the candidate span-pair score) |
 | `--gold-schema` | each `.jsonl` record gets the schema of its own gold labels, as eval scores it |
 | `--labels-file <unified YAML>` | add `gold_mapped`, and with `--gold-schema` build each schema from the mapped gold (eval's path). Warns if the file's map differs from the checkpoint's `label_map` -- usually the wrong file for that model |
 | `--output preds.jsonl` | write `{input, output, gold}` per record as JSONL instead of printing |
@@ -140,9 +140,9 @@ Each decode setting resolves in this order:
 
 Checkpoints from before 63eb320 store no defaults and no label map, so they use step 3 and labels as typed.
 
-## Label style (checkpoints trained on unified-full-v3)
+## Label style (checkpoints trained on `unified-full-v3` and `unified-full-v4`)
 
-A checkpoint whose config.json carries `label_style` (LABEL_STYLE_SPEC.md) gets every label you send restyled
+A checkpoint whose `config.json` carries `label_style` (`LABEL_STYLE_SPEC.md`; `eb21` uses `labels/unified-full-v3.yaml` and all `eb22` models use `labels/unified-full-v4.yaml`) gets every label you send restyled
 before the map applies, including labels the map never saw: `military rank` -> `Military_Rank`,
 `person` -> `Person`, and structure names and fields too. The `[infer] label_map rewrites` line shows each change.
 `--no-label-map` turns off both the map and the style. Older checkpoints are unchanged.
@@ -255,12 +255,12 @@ harmless; renamed `Damage`, it is still poison. Removing the other money labels 
   forward with clean query states scores as if the role were absent.
 - The cue is the token `▁Damage`, and in eb21's training it occurs only in CASIE's role. `Damager`
   tokenizes as `▁Dama ger` and is harmless.
-- **Cause, the training recipe:** a gold event type lists only the roles argued in its document, while
-  an injected absent type lists its full role list. Damage_Amount was listed 26 times on gold types
+- **Cause, the training recipe (in `eb21` and earlier):** a gold event type listed only the roles argued in its document, while
+  an injected absent type listed its full role list. `Damage_Amount` was listed 26 times on gold types
   and 1,543 times on absent ones, so the model learned it as "this type is absent".
 - The absent-type dose amplifies it. At dose 1 the role cuts Ransom's trigger by about half; at dose
   20 (eb21) it removes it.
-- So any rarely argued role can poison a menu. Run the check below on every new menu.
+- **Training fix (`negative_gold_full_roles: true` in `eb22c`–`eb22g`):** gold event types now list their full role inventory (unargued roles included with empty gold) symmetrically with injected negative event types. Still run the check above when evaluating older checkpoints (`eb21`) or new menus.
 
 **3. Run and score** every model on the same menu (`--batch-size 1` keeps CPU memory near 6 GB):
 
@@ -321,7 +321,7 @@ uv run tools/infer.py --model out/eb20/best \
 
 - **Don't send the whole event menu.** On one 743-character CASIE article, the full shipped menu (320 event types) fired **225 types and 773 instances**. The same article with a one-type menu gave 0. Eval only ever offers each document its own gold types, so no reported score covers the full-menu case. Use `--tasks` and `--events` to send the types you mean.
 - **Structures need record metadata on boundary models.** Without `mode`/`anchor`, a structure decodes to `{}` with no error. The viewer adds them for you, and `infer.py` does not, so put `"mode": "natural", "anchor": "<first field>"` in your `--schema-json`.
-- **The stored threshold is the eval setting, not a sweep result.** If a run's validation sweep chose a different threshold, check that the checkpoint was backfilled (`backfill_model_config.py`).
+- **Checkpoints before 2026-10-24 (or mid-run `checkpoint-epoch-N` dirs before the end-of-run sweep) store the config's pre-sweep threshold (`0.3`), not the post-training sweep result.** From 2026-10-24 onward, `train.py` writes the swept global threshold and `per_head_thresholds` into `best/config.json` `inference_defaults` at the end of training; for earlier checkpoints or mid-run epoch checkpoints, pass `--threshold` explicitly or backfill with `backfill_model_config.py`.
 - **On Apple silicon (MPS), batched results depend on the batch.** The `mps-flash-attn` SDPA patch
   does not apply padding exactly: measured 2026-10-05, 3 of 5 CASIE docs decoded differently alone
   than when batched with longer docs, while CPU and stock SDPA on MPS were identical either way. Until
