@@ -634,3 +634,294 @@ resume the EKF/MHT multi-event tracking experiments once Epoch 5 completes.
   Knowledge Graph Construction* (SciERC). EMNLP.
 - Luo, L., et al. (2022). *BioRED: A Rich Biomedical Relation Extraction
   Dataset.* Briefings in Bioinformatics.
+
+---
+
+## Appendix A: Worked Example — Document-Level Event Record with Coreferent Triggers and Arguments
+
+This appendix traces one multi-paragraph document with **two distinct `Attack` events** — the
+first evoked by two coreferent trigger mentions (`"attacked"` and `"assault"`) and a
+coreferent argument cluster (`["Al-Shabaab militants", "the group"]`), and the second evoked
+by a separate trigger (`"detonated"`) in another city — from the raw training JSONL through
+target compilation, relational junction scoring, `TriggerLink` coreference clustering, and
+decoded output.
+
+### A.1 End-to-End Architecture & Data-Flow Diagram
+
+```
++-----------------------------------------------------------------------------------+
+| INPUT DOCUMENT (4,096-token window) + SCHEMA PROMPT                               |
+|   Schema: [E] Attack ( [V] trigger, [A] Attacker, [A] Target, [A] Place )         |
+|   Text:   "Al-Shabaab militants [attacked]_t1 a convoy in Baidoa on Tuesday.      |
+|            Officials said [the group]_a1_alt fled before dawn. ...                |
+|            Four soldiers died in the [assault]_t2. Meanwhile, an insurgent cell   |
+|            [detonated]_t3 a roadside bomb in Mogadishu."                          |
++-----------------------------------------------------------------------------------+
+                                         |
+                                         v
++-----------------------------------------------------------------------------------+
+| 1. PER-QUERY BOUNDARY PROPOSER & PAIR SCORER (pair_split_reduction: true)         |
+|    - Query q_0 (Attack.trigger): proposes candidate spans t1=(2,3), t2=(17,18),   |
+|      t3=(23,24)                                                                   |
+|    - Query q_1 (Attack.Attacker): proposes a1=(0,2) "Al-Shabaab militants",       |
+|      a1_alt=(10,12) "the group", a2=(21,23) "insurgent cell"                      |
+|    - Query q_2 (Attack.Target):   proposes b1=(4,5) "convoy",                     |
+|      b2=(25,27) "roadside bomb"                                                   |
+|    - Query q_3 (Attack.Place):    proposes c1=(6,7) "Baidoa",                     |
+|      c2=(28,29) "Mogadishu"                                                       |
++-----------------------------------------------------------------------------------+
+                     |                                           |
+                     v                                           v
++-----------------------------------------+   +-------------------------------------+
+| 2. TRIGGER-SEEDED RECORD INSTANCES      |   | 3. TRIGGER x TRIGGER COREF LINK     |
+|    (event_records: true)                |   |    (TriggerLink + 64-d MLP geom)    |
+|    - Instance i=0 seeded by t1 (2,3)    |   |    s_coref(i, j) = <W t_i, W t_j>   |
+|      "attacked"                         |   |                    + MLP(g(i, j))   |
+|    - Instance i=1 seeded by t2 (17,18)  |   |                                     |
+|      "assault"                          |   |    - (t1 "attacked", t2 "assault"): |
+|    - Instance i=2 seeded by t3 (23,24)  |   |      p_coref = 0.89 >= tau  [MERGE] |
+|      "detonated"                        |   |    - (t1 "attacked", t3 "detonated")|
+|                                         |   |      p_coref = 0.08 <  tau  [SPLIT] |
++-----------------------------------------+   +-------------------------------------+
+                     |                                           |
+                     v                                           |
++-----------------------------------------+                      |
+| 4. RELATIONAL JUNCTION LAYER            |                      |
+|    (record_link_mode: junction)         |                      |
+|    s_ijf = P_ij + R_fj                  |                      |
+|          + <(U t_i)*(V a_j)*sig(G q_f)> |                      |
+|          + w_f . e_geom(i, j)           |                      |
+|                                         |                      |
+|    Row i=0 ("attacked") & Row i=1       |                      |
+|    ("assault") both bind:               |                      |
+|      Attacker -> a1 / a1_alt            |                      |
+|      Target   -> b1 ("convoy")          |                      |
+|      Place    -> c1 ("Baidoa")          |                      |
+|    Row i=2 ("detonated") binds:         |                      |
+|      Attacker -> a2 ("insurgent cell")  |                      |
+|      Target   -> b2 ("roadside bomb")   |                      |
+|      Place    -> c2 ("Mogadishu")       |                      |
++-----------------------------------------+                      |
+                     |                                           |
+                     +---------------------+---------------------+
+                                           |
+                                           v
++-----------------------------------------------------------------------------------+
+| 5. CONSOLIDATED DOCUMENT-LEVEL EVENT CLUSTERS (decode_group + union-find merge)   |
+|    - Cluster 0 (Attack): triggers=["attacked", "assault"],                        |
+|      Attacker=["Al-Shabaab militants"], Target=["convoy"], Place=["Baidoa"]       |
+|    - Cluster 1 (Attack): triggers=["detonated"],                                  |
+|      Attacker=["insurgent cell"], Target=["roadside bomb"], Place=["Mogadishu"]   |
++-----------------------------------------------------------------------------------+
+```
+
+---
+
+### A.2 Input Training Record JSONL (with Coreferent Triggers and Entity Coreference Clusters)
+
+In the training corpora (`cc_news_events_sonnet55_v2` paired with
+`cc_news_events_sonnet55_v2_coref_llm`, or offset-gold corpora such as `wikievents_off` and
+`casie_off`), a document record carries its event annotations under `output.events` (with
+all coreferent triggers of one event listed in `triggers`) and its entity coreference
+clusters under `output.coreferences`:
+
+```json
+{
+  "text": "Al-Shabaab militants attacked a convoy in Baidoa on Tuesday. Officials said the group fled before dawn. Four soldiers died in the assault. Meanwhile, an insurgent cell detonated a roadside bomb in Mogadishu.",
+  "output": {
+    "entities": {
+      "Organization": ["Al-Shabaab militants", "insurgent cell"],
+      "Facility": ["convoy"],
+      "Location": ["Baidoa", "Mogadishu"],
+      "Weapon": ["roadside bomb"]
+    },
+    "coreferences": [
+      {
+        "canonical": "Al-Shabaab militants",
+        "mentions": [
+          {"text": "Al-Shabaab militants", "start": 0, "end": 20},
+          {"text": "the group", "start": 76, "end": 85}
+        ]
+      }
+    ],
+    "events": [
+      {
+        "event_type": "Attack",
+        "trigger": "attacked",
+        "triggers": [
+          {"text": "attacked", "start": 21, "end": 29},
+          {"text": "assault", "start": 130, "end": 137}
+        ],
+        "arguments": {
+          "Attacker": ["Al-Shabaab militants"],
+          "Target": ["convoy"],
+          "Place": ["Baidoa"]
+        }
+      },
+      {
+        "event_type": "Attack",
+        "trigger": "detonated",
+        "triggers": [
+          {"text": "detonated", "start": 168, "end": 177}
+        ],
+        "arguments": {
+          "Attacker": ["insurgent cell"],
+          "Target": ["roadside bomb"],
+          "Place": ["Mogadishu"]
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+### A.3 Compiled Internal Target (`RecordGroupTarget` & `RecordFieldTarget`)
+
+When `expand_argument_coreferents` (`gliner2/processing/argument_coref.py`),
+`_process_events` (`gliner2/processor.py`), and `_build_record_field_target`
+(`gliner2/processing/boundary_preprocessing.py`) compile the first `Attack` event above into
+word-span targets:
+
+1. **Coreferent triggers stay grouped as alternatives of the anchor field (`field_idx = 0`):**
+   `values = ( ((2, 2), (21, 21)), )` — under `record_coreferent_ownership: true`, both
+   `t_1 = (2, 2)` (`"attacked"`) and `t_2 = (21, 21)` (`"assault"`) seed gold instance rows
+   that own the record's arguments, and `(t_1, t_2)` forms a positive pair for `TriggerLink`
+   while `(t_1, t_3)` and `(t_2, t_3)` form hard-negative pairs (`t_3 = (26, 26)`
+   `"detonated"`).
+2. **Coreferent argument mentions stay grouped as alternatives of a single filler
+   (`len(ft.values) = 1`):** `expand_argument_coreferents` expands `"Al-Shabaab militants"`
+   with `"the group"` under the same `_coref_group` id, so `Attacker` compiles to
+   `values = ( ((0, 1), (11, 12)), )` — **one** required filler with **two** acceptable span
+   alternatives (`(0, 1)` `"Al-Shabaab militants"` or `(11, 12)` `"the group"`), rather than
+   two separate required fillers.
+
+```python
+RecordGroupTarget(
+    group_name="Attack",
+    mode="natural",
+    anchor_field="trigger",
+    fields=("trigger", "Attacker", "Target", "Place"),
+    instances=(
+        # Event 0: coreferent triggers ("attacked" @ (2,2), "assault" @ (21,21))
+        RecordInstanceTarget(
+            fields=(
+                RecordFieldTarget(name="trigger",  values=(((2, 2), (21, 21)),)),
+                RecordFieldTarget(name="Attacker", values=(((0, 1), (11, 12)),)),
+                RecordFieldTarget(name="Target",   values=(((4, 4),),)),
+                RecordFieldTarget(name="Place",    values=(((6, 6),),)),
+            )
+        ),
+        # Event 1: distinct Attack instance ("detonated" @ (26,26))
+        RecordInstanceTarget(
+            fields=(
+                RecordFieldTarget(name="trigger",  values=(((26, 26),),)),
+                RecordFieldTarget(name="Attacker", values=(((24, 25),),)),
+                RecordFieldTarget(name="Target",   values=(((28, 29),),)),
+                RecordFieldTarget(name="Place",    values=(((31, 31),),)),
+            )
+        ),
+    ),
+)
+```
+
+---
+
+### A.4 Decoded Inference Output JSON (`event_extraction`)
+
+At inference time (`model.extract(text, schema, include_confidence=True, include_spans=True)`),
+`decode_group` scores each trigger instance, binds arguments through the junction logits
+`s_ijf`, merges coreferent trigger instances whose `TriggerLink` probability clears the
+calibrated threshold `τ_coref` into a single cluster (unioning `triggers` and deduplicating
+role fillers by highest assignment probability), and emits:
+
+```json
+{
+  "event_extraction": {
+    "Attack": [
+      {
+        "trigger": {
+          "text": "attacked",
+          "start": 21,
+          "end": 29,
+          "confidence": 0.91
+        },
+        "triggers": [
+          {"text": "attacked", "start": 21, "end": 29, "confidence": 0.91},
+          {"text": "assault", "start": 130, "end": 137, "confidence": 0.84}
+        ],
+        "arguments": {
+          "Attacker": [
+            {
+              "text": "Al-Shabaab militants",
+              "start": 0,
+              "end": 20,
+              "confidence": 0.88,
+              "pair_confidence": 0.79
+            }
+          ],
+          "Target": [
+            {
+              "text": "convoy",
+              "start": 32,
+              "end": 38,
+              "confidence": 0.86,
+              "pair_confidence": 0.81
+            }
+          ],
+          "Place": [
+            {
+              "text": "Baidoa",
+              "start": 42,
+              "end": 48,
+              "confidence": 0.93,
+              "pair_confidence": 0.89
+            }
+          ]
+        }
+      },
+      {
+        "trigger": {
+          "text": "detonated",
+          "start": 168,
+          "end": 177,
+          "confidence": 0.94
+        },
+        "triggers": [
+          {"text": "detonated", "start": 168, "end": 177, "confidence": 0.94}
+        ],
+        "arguments": {
+          "Attacker": [
+            {
+              "text": "insurgent cell",
+              "start": 153,
+              "end": 167,
+              "confidence": 0.85,
+              "pair_confidence": 0.77
+            }
+          ],
+          "Target": [
+            {
+              "text": "roadside bomb",
+              "start": 180,
+              "end": 193,
+              "confidence": 0.90,
+              "pair_confidence": 0.84
+            }
+          ],
+          "Place": [
+            {
+              "text": "Mogadishu",
+              "start": 197,
+              "end": 206,
+              "confidence": 0.95,
+              "pair_confidence": 0.92
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
