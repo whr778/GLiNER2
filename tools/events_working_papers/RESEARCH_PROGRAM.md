@@ -155,10 +155,12 @@ even when relaxed argument micro-F1 reached `0.50–0.59` (`PAPER_3_DOCUMENT_EVE
    proposal ceiling on 64-doc overfit (`overfit-events-eb22g`: CASIE `@0.5` trigger strict
    micro-F1 `0.3619 -> 0.5210`, argument `0.2506 -> 0.4319`; CMNEE `@0.5` trigger
    `0.6375 -> 0.9394`, argument `0.5470 -> 0.8005`). On the full 263,949-document training
-   mix (`eb22g`), Epoch 2 validation strict micro-F1 at `@0.3` reaches `event_type`
-   **`0.9762`**, `event_trigger` **`0.2522`** (recall **`0.7434`**), `event_argument`
-   **`0.1639`** (relaxed **`0.3992`**, fair **`0.3632`**, vs `eb22d` Epoch 2's `0.0627`),
-   and `event_cluster_argument` **`0.1427`** (vs `eb22d` Epoch 2's `0.0579`).
+   mix (`eb22g`), Epoch 3 validation strict micro-F1 at swept threshold `@0.5` reaches
+   `event_type` **`0.9654`**, `event_trigger` **`0.4113`** (recall **`0.7563`**, fair
+   **`0.4298`**), `event_argument` **`0.2181`** (relaxed **`0.4801`**, fair **`0.4544`**, vs
+   `eb22d` Epoch 2's `0.0627`), `event_cluster` **`0.4149`**, `event_cluster_argument`
+   **`0.1878`** (vs `eb22d` Epoch 2's `0.0579`), `relation` **`0.2058`**, `structure`
+   **`0.1957`**, `classification` **`0.6794`**, and `head_min` **`0.1957`**.
 
 ## 3. What is not established
 
