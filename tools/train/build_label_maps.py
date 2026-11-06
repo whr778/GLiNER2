@@ -190,36 +190,66 @@ def config_files(config_path: str) -> list[str]:
 
     A passthrough corpus is never mapped, so it must never DRIVE the map either: NuNER's
     ~200k open-vocabulary labels would otherwise vote on the taxonomy's spellings.
+    Corpora declared in `data.train_only` contribute only their `.train.jsonl` split,
+    matching `train.py::_split_files`. `train_only`, `partial_annotation`, and
+    `labels_passthrough` are validated against the config's declared corpora so a typo
+    cannot silently drop or mis-configure a corpus.
     """
     cfg = yaml.safe_load(open(config_path, encoding="utf-8"))["data"]
-    passthrough = set(cfg.get("labels_passthrough") or ())
-    files = []
-    for base in cfg.get("corpora") or []:
-        if Path(base).name not in passthrough:
-            found = [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")
-                     if Path(f"{base}.{split}.jsonl").exists()]
-            if not found:
-                # Keep the train path so inputs_to_files's missing-file gate raises loudly.
-                found = [f"{base}.train.jsonl"]
-            files += found
+    corpora = cfg.get("corpora") or []
     ev_files = cfg.get("event_files") or {}
+    known = ({Path(c).name for c in corpora}
+             | (set(ev_files) if isinstance(ev_files, dict) else {Path(c).name for c in ev_files}))
+    passthrough = {Path(c).name for c in (cfg.get("labels_passthrough") or ())}
+    train_only = {Path(c).name for c in (cfg.get("train_only") or ())}
+    partial = {Path(c).name for c in (cfg.get("partial_annotation") or {})}
+    for section, names in (
+        ("labels_passthrough", passthrough),
+        ("train_only", train_only),
+        ("partial_annotation", partial),
+    ):
+        unknown = sorted(names - known)
+        if unknown:
+            raise SystemExit(
+                f"build_label_maps: {config_path} `{section}` names corpora not in "
+                f"`corpora` or `event_files`: {unknown}")
+
+    files = []
+    for base in corpora:
+        name = Path(base).name
+        if name in passthrough:
+            continue
+        splits = ("train",) if name in train_only else ("train", "val", "dev", "test")
+        found = [f"{base}.{split}.jsonl" for split in splits
+                 if Path(f"{base}.{split}.jsonl").exists()]
+        if not found:
+            # Keep the train path so inputs_to_files's missing-file gate raises loudly.
+            found = [f"{base}.train.jsonl"]
+        files += found
     if isinstance(ev_files, dict):
         for name, entry in ev_files.items():
-            if name not in passthrough:
-                if isinstance(entry, dict):
+            if name in passthrough:
+                continue
+            if isinstance(entry, dict):
+                if name in train_only:
+                    files += [p for k, p in entry.items() if k == "train"]
+                else:
                     files += list(entry.values())
-                elif isinstance(entry, list):
-                    files += list(entry)
-                elif isinstance(entry, str):
-                    files.append(entry)
+            elif isinstance(entry, list):
+                files += list(entry)
+            elif isinstance(entry, str):
+                files.append(entry)
     elif isinstance(ev_files, list):
         for base in ev_files:
-            if Path(base).name not in passthrough:
-                found = [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")
-                         if Path(f"{base}.{split}.jsonl").exists()]
-                if not found:
-                    found = [f"{base}.train.jsonl"]
-                files += found
+            name = Path(base).name
+            if name in passthrough:
+                continue
+            splits = ("train",) if name in train_only else ("train", "val", "dev", "test")
+            found = [f"{base}.{split}.jsonl" for split in splits
+                     if Path(f"{base}.{split}.jsonl").exists()]
+            if not found:
+                found = [f"{base}.train.jsonl"]
+            files += found
     return sorted(set(files))
 
 

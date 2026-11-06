@@ -81,3 +81,28 @@ def test_canonical_config_includes_event_files_and_refuses_missing(tmp_path):
     maps, _ = B.build([str(cfg), str(downstream)], canonical=[str(cfg)])
     assert maps["events"]["cyber_attack"] == "CyberAttack"
     assert maps["events"]["victim"] == "Victim"
+
+
+def test_config_files_respects_train_only_and_validates_partial_annotation(tmp_path):
+    import pytest
+    for split, label in (("train", "Person"), ("val", "person"), ("test", "person")):
+        (tmp_path / f"to_corp.{split}.jsonl").write_text(
+            json.dumps({"input": "x", "output": {"entities": {label: ["x"]}}}) + "\n",
+            encoding="utf-8",
+        )
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(
+        f"data:\n  corpora:\n    - {tmp_path / 'to_corp'}\n  train_only:\n    - to_corp\n"
+        f"  partial_annotation:\n    to_corp:\n      - entities\n",
+        encoding="utf-8",
+    )
+    files = B.config_files(str(cfg))
+    assert files == [str(tmp_path / "to_corp.train.jsonl")]
+
+    bad_partial = tmp_path / "bad_partial.yaml"
+    bad_partial.write_text(
+        f"data:\n  corpora:\n    - {tmp_path / 'to_corp'}\n  partial_annotation:\n    typo_corp:\n      - entities\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match="partial_annotation"):
+        B.config_files(str(bad_partial))
