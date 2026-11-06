@@ -37,5 +37,30 @@ def test_include_eval_offers_them(tmp_path, monkeypatch):
 
 
 def test_drop_removes_a_label_wherever_it_occurs():
-    schema = {"entities": ["Money", "Person"], "events": {"Ransom": ["Damage-Amount", "Victim"], "Damage-Amount": ["X"]}}
-    assert B.drop(schema, ["Damage-Amount", "Money"]) == {"entities": ["Person"], "events": {"Ransom": ["Victim"]}}
+    schema = {
+        "entities": ["Money", "Person"],
+        "events": {"Ransom": ["Damage-Amount", "Victim"], "Damage-Amount": ["X"], "EmptyAfterDrop": ["Damage-Amount"]},
+        "classifications": [{"task": "sentiment", "labels": ["pos", "neg", "Damage-Amount"]}],
+    }
+    assert B.drop(schema, ["Damage-Amount", "Money"]) == {
+        "entities": ["Person"],
+        "events": {"Ransom": ["Victim"]},
+        "classifications": [{"task": "sentiment", "labels": ["pos", "neg"]}],
+    }
+
+
+def test_labels_file_transforms_derived_schema(tmp_path, monkeypatch):
+    ev = lambda t, r: {"event_type": t, "arguments": [{"role": r, "text": "x"}]}  # noqa: E731
+    _write(tmp_path / "c.train.jsonl", [{"entities": {"Company Name": ["x"]}, "events": [ev("Attack", "Target")]}])
+    lfile = tmp_path / "labels.yaml"
+    lfile.write_text(
+        "labels:\n  entities:\n    rollup: false\n    separator: .\n    map:\n      Company Name: CompanyName\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "c.json"
+    monkeypatch.setattr(sys, "argv", [
+        "build_schema.py", str(tmp_path / "c"), "--labels-file", str(lfile), "--out", str(out)
+    ])
+    assert B.main() == 0
+    menu = json.loads(out.read_text(encoding="utf-8"))
+    assert menu["schema"]["entities"] == ["CompanyName"]

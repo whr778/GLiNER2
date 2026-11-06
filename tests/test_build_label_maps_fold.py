@@ -25,3 +25,28 @@ def test_follower_labels_never_map_onto_an_unrelated_script(tmp_path):
                         encoding="utf-8")
     maps, _ = B.build([str(voter)], None, [str(follower)])
     assert "학교" not in maps["entities"] and "?" not in maps["entities"]
+
+
+def test_labels_by_category_handles_list_entities_dict_args_absent_events_and_head_tail_relations():
+    rec = {
+        "input": "Alice works for Acme.",
+        "output": {
+            "entities": [{"Person": ["Alice"], "Organization": ["Acme"]}],
+            "events": [{"event_type": "Attack", "arguments": {"Attacker": ["Alice"], "Target": ["Acme"]}}],
+            "absent_events": {"Databreach": ["Compromised-Data"]},
+            "relations": [{"head": "Alice", "tail": "Acme", "relation": "works_for"}],
+            "record_metadata": {"casualty_report": {"mode": "natural", "anchor": "location"}},
+        },
+    }
+    got = B.labels_by_category(rec)
+    assert ("entities", "Person") in got
+    assert ("entities", "Organization") in got
+    assert ("relations", "works_for") in got
+    assert ("relations", "head") not in got
+    assert ("events", "Attack") in got
+    assert ("events", "Attacker") in got
+    assert ("events", "Target") in got
+    assert ("events", "Databreach") in got
+    assert ("events", "Compromised-Data") in got
+    assert ("structures", "casualty_report") in got
+    assert ("structures", "location") in got

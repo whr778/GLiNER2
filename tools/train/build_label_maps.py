@@ -87,21 +87,54 @@ def labels_by_category(record: dict) -> list[tuple[str, str]]:
     """Yield (category, label) for every label the trainer can transform."""
     out = []
     body = record.get("output") or record.get("schema") or {}
-    for label in (body.get("entities") or {}):
-        out.append(("entities", label))
+    ents = body.get("entities") or {}
+    if isinstance(ents, dict):
+        out.extend(("entities", label) for label in ents)
+    elif isinstance(ents, list):
+        for item in ents:
+            if isinstance(item, dict):
+                out.extend(("entities", label) for label in item)
+            elif isinstance(item, str):
+                out.append(("entities", item))
     for label in (body.get("entity_descriptions") or {}):
         out.append(("entities", label))
-    for rel in body.get("relations") or []:
-        if isinstance(rel, dict):
-            out.extend(("relations", name) for name in rel)
-    for event in body.get("events") or []:
-        if not isinstance(event, dict):
-            continue
-        if isinstance(event.get("event_type"), str):
-            out.append(("events", event["event_type"]))
-        for arg in event.get("arguments") or []:
-            if isinstance(arg, dict) and isinstance(arg.get("role"), str):
-                out.append(("events", arg["role"]))
+    rels = body.get("relations") or []
+    if isinstance(rels, dict):
+        out.extend(("relations", name) for name in rels)
+    elif isinstance(rels, list):
+        for rel in rels:
+            if isinstance(rel, dict):
+                if isinstance(rel.get("relation"), str) and ("head" in rel or "tail" in rel):
+                    out.append(("relations", rel["relation"]))
+                else:
+                    out.extend(("relations", name) for name in rel)
+            elif isinstance(rel, str):
+                out.append(("relations", rel))
+    events = body.get("events") or []
+    if isinstance(events, dict):
+        for etype, roles in events.items():
+            out.append(("events", etype))
+            if isinstance(roles, list):
+                out.extend(("events", r) for r in roles if isinstance(r, str))
+            elif isinstance(roles, dict):
+                out.extend(("events", r) for r in (roles.get("roles") or roles))
+    elif isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            if isinstance(event.get("event_type"), str):
+                out.append(("events", event["event_type"]))
+            args = event.get("arguments") or []
+            if isinstance(args, dict):
+                out.extend(("events", role) for role in args if isinstance(role, str))
+            elif isinstance(args, list):
+                for arg in args:
+                    if isinstance(arg, dict) and isinstance(arg.get("role"), str):
+                        out.append(("events", arg["role"]))
+    for etype, roles in (body.get("absent_events") or {}).items():
+        out.append(("events", etype))
+        if isinstance(roles, list):
+            out.extend(("events", r) for r in roles if isinstance(r, str))
     for block in body.get("classifications") or []:
         if not isinstance(block, dict):
             continue
@@ -115,6 +148,21 @@ def labels_by_category(record: dict) -> list[tuple[str, str]]:
             out.append(("structures", name))
             if isinstance(fields, dict):
                 out.extend(("structures", f) for f in fields)
+    for name, spec in (body.get("structures") or {}).items() if isinstance(body.get("structures"), dict) else ():
+        out.append(("structures", name))
+        if isinstance(spec, dict):
+            for f in spec.get("fields") or []:
+                fname = f.get("name") if isinstance(f, dict) else f
+                if isinstance(fname, str):
+                    out.append(("structures", fname))
+            if isinstance(spec.get("anchor"), str):
+                out.append(("structures", spec["anchor"]))
+        elif isinstance(spec, list):
+            out.extend(("structures", f) for f in spec if isinstance(f, str))
+    for name, meta in (body.get("record_metadata") or {}).items() if isinstance(body.get("record_metadata"), dict) else ():
+        out.append(("structures", name))
+        if isinstance(meta, dict) and isinstance(meta.get("anchor"), str):
+            out.append(("structures", meta["anchor"]))
     return [(c, l) for c, l in out if isinstance(l, str)]
 
 
@@ -148,10 +196,21 @@ def config_files(config_path: str) -> list[str]:
     files = []
     for base in cfg.get("corpora") or []:
         if Path(base).name not in passthrough:
-            files += [f"{base}.{split}.jsonl" for split in ("train", "val", "test")]
-    for name, entry in (cfg.get("event_files") or {}).items():
-        if name not in passthrough:
-            files += list(entry.values())
+            files += [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")]
+    ev_files = cfg.get("event_files") or {}
+    if isinstance(ev_files, dict):
+        for name, entry in ev_files.items():
+            if name not in passthrough:
+                if isinstance(entry, dict):
+                    files += list(entry.values())
+                elif isinstance(entry, list):
+                    files += list(entry)
+                elif isinstance(entry, str):
+                    files.append(entry)
+    elif isinstance(ev_files, list):
+        for base in ev_files:
+            if Path(base).name not in passthrough:
+                files += [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")]
     return [f for f in sorted(set(files)) if Path(f).exists()]
 
 

@@ -57,7 +57,9 @@ def labels(schema: dict) -> set[tuple]:
 
 
 def drop(schema: dict, names: list[str]) -> dict:
-    """The schema without these labels, wherever they occur: entity, relation, event type, or event role."""
+    """The schema without these labels, wherever they occur: entity, relation, event type, event role, or classification."""
+    if not names:
+        return dict(schema)
     gone = set(names)
     out = dict(schema)
     if "entities" in out:
@@ -65,7 +67,20 @@ def drop(schema: dict, names: list[str]) -> dict:
     if "relations" in out:
         out["relations"] = [r for r in out["relations"] if r not in gone]
     if "events" in out:
-        out["events"] = {t: [r for r in rs if r not in gone] for t, rs in out["events"].items() if t not in gone}
+        out["events"] = {
+            t: [r for r in rs if r not in gone]
+            for t, rs in out["events"].items()
+            if t not in gone and (not rs or any(r not in gone for r in rs))
+        }
+    if "classifications" in out:
+        kept_cls = []
+        for c in out["classifications"]:
+            if not isinstance(c, dict) or c.get("task") in gone:
+                continue
+            labs = [lab for lab in (c.get("labels") or []) if lab not in gone]
+            if len(labs) >= 2:
+                kept_cls.append(dict(c, labels=labs))
+        out["classifications"] = kept_cls
     return out
 
 
@@ -78,8 +93,10 @@ def main() -> int:
     ap.add_argument("corpora", nargs="+", type=Path, help="split bases, e.g. data/casie -> data/casie.train.jsonl")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--include-eval", action="store_true", help="also take labels from the val and test gold")
+    ap.add_argument("--labels-file", type=Path, default=None,
+                    help="optional unified labels YAML (e.g. tools/train/config/labels/unified-full-v4.yaml) to map and style the derived schema")
     ap.add_argument("--drop", nargs="+", default=[], metavar="LABEL",
-                    help="remove these labels (corpus spelling), e.g. a poison role menu_poison_check.py found")
+                    help="remove these labels, e.g. a poison role menu_poison_check.py found")
     ap.add_argument("--exhaustive", action="store_true",
                     help="claim every document was annotated against the whole ontology (exhaustive_for)")
     args = ap.parse_args()
@@ -89,8 +106,18 @@ def main() -> int:
         raise SystemExit(f"no train split under {[str(c) for c in args.corpora]}")
     evals = split_records(args.corpora, "val") + split_records(args.corpora, "test")
     schema = derive_schema(train + (evals if args.include_eval else []))
+    eval_schema = derive_schema(evals) if evals else {}
+    if args.labels_file:
+        import yaml
+        from gliner2.inference.label_map import apply_label_map
+        doc = yaml.safe_load(args.labels_file.read_text(encoding="utf-8")) or {}
+        lmap = doc.get("labels", doc)
+        lstyle = doc.get("style")
+        schema, _ = apply_label_map(schema, lmap, lstyle)
+        if eval_schema:
+            eval_schema, _ = apply_label_map(eval_schema, lmap, lstyle)
     schema = drop(schema, args.drop)
-    missing = labels(derive_schema(evals)) - labels(schema) if evals else set()
+    missing = labels(eval_schema) - labels(schema) if eval_schema else set()
     print(f"[schema] {len(train)} train records -> {summary(schema)}")
     print(f"[schema] val/test gold labels not offered: {len(missing)}" + (f" {sorted(missing)[:10]}" if missing else ""))
     args.out.parent.mkdir(parents=True, exist_ok=True)

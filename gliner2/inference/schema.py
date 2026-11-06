@@ -60,20 +60,42 @@ def derive_schema(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     classifications: Dict[str, set] = {}
     for rec in records:
         out = (rec or {}).get("output") or {}
-        for label in out.get("entities") or {}:
-            entities.add(label)
+        ents = out.get("entities") or {}
+        if isinstance(ents, dict):
+            entities.update(k for k in ents if isinstance(k, str))
+        elif isinstance(ents, list):
+            for item in ents:
+                if isinstance(item, dict):
+                    entities.update(k for k in item if isinstance(k, str))
+                elif isinstance(item, str):
+                    entities.add(item)
         for ev in out.get("events") or []:
+            if not isinstance(ev, dict):
+                continue
             etype = ev.get("event_type")
             if not etype:
                 continue
             roles = events.setdefault(etype, set())
-            for arg in ev.get("arguments") or []:
-                if arg.get("role"):
-                    roles.add(arg["role"])
+            args = ev.get("arguments") or []
+            if isinstance(args, dict):
+                roles.update(r for r in args if isinstance(r, str) and r)
+            elif isinstance(args, list):
+                for arg in args:
+                    if isinstance(arg, dict) and arg.get("role"):
+                        roles.add(arg["role"])
+        for etype, rlist in (out.get("absent_events") or {}).items():
+            if etype and isinstance(rlist, list):
+                events.setdefault(etype, set()).update(r for r in rlist if isinstance(r, str) and r)
         for rel in out.get("relations") or []:
-            relations.update(rel or {})
+            if isinstance(rel, dict):
+                if isinstance(rel.get("relation"), str) and ("head" in rel or "tail" in rel):
+                    relations.add(rel["relation"])
+                else:
+                    relations.update(k for k in rel if isinstance(k, str))
+            elif isinstance(rel, str):
+                relations.add(rel)
         for c in out.get("classifications") or []:
-            if c.get("task") and c.get("labels"):
+            if isinstance(c, dict) and c.get("task") and c.get("labels"):
                 classifications.setdefault(c["task"], set()).update(c["labels"])
 
     schema: Dict[str, Any] = {}

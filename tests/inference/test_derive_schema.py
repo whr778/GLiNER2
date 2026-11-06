@@ -66,3 +66,20 @@ def test_at_limit_entities_kept():
 def test_empty_records_give_empty_schema():
     assert derive_schema([]) == {}
     assert derive_schema([{"output": {}}]) == {}
+
+
+def test_derive_schema_handles_list_entities_dict_args_absent_events_and_head_tail_relations():
+    rec = {
+        "output": {
+            "entities": [{"Person": ["Alice"], "Organization": ["Acme"]}],
+            "events": [{"event_type": "Attack", "arguments": {"Attacker": ["Alice"], "Target": ["Acme"]}}],
+            "absent_events": {"Databreach": ["Compromised-Data"]},
+            "relations": [{"head": "Alice", "tail": "Acme", "relation": "works_for"}],
+        }
+    }
+    s = derive_schema([rec])
+    assert s == {
+        "entities": ["Organization", "Person"],
+        "events": {"Attack": ["Attacker", "Target"], "Databreach": ["Compromised-Data"]},
+        "relations": ["works_for"],
+    }
