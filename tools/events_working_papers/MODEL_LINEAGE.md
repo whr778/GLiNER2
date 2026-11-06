@@ -11,7 +11,7 @@
 > the record of what was measured and believed at the time; do not compare new results
 > against them.
 
-Status: index. Date: 2026-08-17; Stage 6 extended 2026-10-24. `tools/train/config/` holds 248 YAML files (63 under `base/`); the stages below cover the ones that are links in a lineage.
+Status: index. Date: 2026-08-17; Stage 6 extended **2026-11-06** through **`eb22g`** (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`). `tools/train/config/` holds 251 YAML files (66 under `base/`); the stages below cover the ones that are links in a lineage.
 
 Every model we trained is a chain: some base checkpoint, then one or more training stages,
 each stage a YAML in `tools/train/config/`. This document walks those stages in the order
@@ -48,7 +48,7 @@ two are not interchangeable — warm-starting across them raises `ArchitectureMi
                                    --[Stage 2]-->  mmbert-base-rams  --[Stage 4]--> mmbert-base-wikievents
                                    --[Stage 2]-->  scaling-mmbert-{10k,40k,100k}
 
-  C. mmBERT boundary line (Paper 2 — the main experimental spine)
+  C. mmBERT boundary line (Paper 2 — the 137K scaling spine)
      jhu-clsp/mmBERT-base
         --[Stage 2]--> joint-boundary-mmbert-{10k,40k,100k,137k}
                           |                         |
@@ -60,10 +60,26 @@ two are not interchangeable — warm-starting across them raises `ArchitectureMi
                           +--[Stage 4]--> joint-boundary-{rams,redocred}-{10k,40k,100k,137k}
                                                      |
                                                      +--[Stage 4]--> {maven,casie}-tier2-{control,eventrecords}
+
+  D. mmBERT event-record + junction + coref line (Paper 3 — the eb17..eb22g spine)
+     jhu-clsp/mmBERT-base
+        --[Stage 6]--> eb17-best --> eb18-balanced --> eb19 (junction) --> eb21 (negatives k=20, coref links)
+                                                                             |
+                                                                             +--> corefC-*, rolesym-*
+                                                                             |
+                                                                             +--> eb22b --> eb22c (offset gold)
+                                                                                              |
+                                                                                              +--> eb22d (coref MLP 64, bce)
+                                                                                                     |
+                                                                                                     +--> eb22e (zero-init span residuals)
+                                                                                                            |
+                                                                                                            +--> eb22f (split role BCE + withhold)
+                                                                                                                   |
+                                                                                                                   +--> eb22g (pair_split_reduction + occurrence/coref grouping)
 ```
 
-Chain C is the one the program rests on: [[JOINT_IE_SCALING]] is its design, and Stage 2 → 4
-is the 12-arm head-init curve.
+Chain C is the 137K scaling spine (`JOINT_IE_SCALING.md`); Chain D is the document-level
+event and coreference spine (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`), culminating in `eb22g`.
 
 ---
 
@@ -270,9 +286,11 @@ instead (see its own row).
 | eb22b | eb22 as OPTION B, from scratch, with fastino's structural relation/span flags | smoke DONE + CLEAN 2026-10-19; memory 96.7% of 40 GB |
 | eb22c | eb22b + OFFSET-anchored event gold (casie_off, cmnee_ner_off, wikievents_off), unified-full-v4 | launched 2026-10-19/20; events swing at the score LEVEL after the LR peak ([[EB22C_SCORE_LEVEL_AUTOPSY]]); the collapse-trace control to 30k is the reference every arm is read against |
 | eb22c-*-trace arms | one change each on `base/eb22c-ddp-trace.yaml` (bce marginal loss): seed43, sep, encfix, colfix, geomgelu, tasklr4e5, corefdist (+ resume to epoch 2), relfix, clsfix | corefdist QUALIFIES; geomgelu / clsfix NULL; relfix NEGATIVE; the rest inside the floor ([[EXPERIMENT_CATALOG]] 2026-10-20..24) |
-| **eb22d** | eb22c + tier-1 fixes (seed, DDP gradient averaging, by-name optimizer restore, epoch checkpoints, metric_sweep readout) + `coref_link_distance: mlp` 64 + `boundary_marginal_loss: bce`; `make_eb22d_config.py` | **TRAINED** (`whr778/gliner2-eb22d-trace-epoch`, epochs 1-2 on Hub; epoch 1 argument strict micro F1 0.1123, trigger 0.1608; epoch 2 argument 0.1236, trigger 0.3898 at threshold 0.1) |
+| **eb22d** | eb22c + tier-1 fixes (seed, DDP gradient averaging, by-name optimizer restore, epoch checkpoints, metric_sweep readout) + `coref_link_distance: mlp` 64 + `boundary_marginal_loss: bce`; `make_eb22d_config.py` | **TRAINED** (`whr778/gliner2-eb22d-trace-epoch`, epochs 1-2 on Hub; epoch 1 argument strict micro F1 0.1123, trigger 0.1608 at 0.1; full-val at 0.3 epoch 1 -> 2: trigger 0.1334 -> 0.3645, argument 0.0442 -> 0.0627) |
+| `life-mdeberta-wikievents` | `microsoft/mdeberta-v3-base` (`512` window) with the `eb22d` boundary/record head on `wikievents_off`, 30 epochs (`trace/life-mdeberta-wikievents.yaml`) | **DONE 2026-10-28** (`whr778/gliner2-life-mdeberta-wikievents`): val @0.1 strict micro F1 entity 0.3746, event_type 0.1825, trigger 0.1487, argument 0.0107 |
 | **eb22e** | eb22d + `span_residual_zero_init: true` + `enable_rotary_endpoints: false` (`make_eb22e_config.py`) | **DONE (epoch 1)** on 1x H100 (`whr778/gliner2-eb22e-epoch`): entity 0.4262 (+0.064 vs eb22d), structure 0.2231 (+0.054), trigger 0.1608, argument 0.0755 at threshold 0.1. Paired role-candidate probe (`probe_role_candidates.py`): 97.1% of gold role fillers are candidates under scheduled injection 0.9559 (median assignment P 0.0155), dropping to 38.3% with injection off |
-| **eb22f** | eb22e + split role-loss mean (`_list_field_bce`), withhold unresolved gold roles, mask overlapping partial-match candidates, `record_drop_anchor_field_loss: true`, assignment-score format gate, `pair_split_reduction: true`, `hard_negative_keep_all_when_absent: false`, `remove_events_prob: 0.0` (`make_eb22f_config.py`) | **DONE (epoch 1)** on 4x H100 (`whr778/gliner2-eb22f-epoch`), preceded by A10 64-doc overfit (`overfit-events-eb22e`, argument F1 @0.5 +0.055 on CASIE, +0.266 on CMNEE; median gold role P 0.032 -> 0.554 CASIE, 0.508 -> 0.920 CMNEE). Full mix epoch 1: entity 0.4679 (+0.042 vs eb22e), relation 0.1665 (+0.034), trigger 0.1619, argument 0.0767 at 0.1 (proposal reachability under high epoch-1 injection remains the bottleneck; 2026-11-04 pipeline fixes added for the next run) |
+| **eb22f** | eb22e + split role-loss mean (`_list_field_bce`), withhold unresolved gold roles, mask overlapping partial-match candidates, `record_drop_anchor_field_loss: true`, assignment-score format gate (`make_eb22f_config.py`) | **DONE (epoch 1)** on 4x H100 (`whr778/gliner2-eb22f-epoch`), preceded by A10 64-doc overfit (`overfit-events-eb22e`, argument F1 @0.5 +0.055 on CASIE, +0.266 on CMNEE; median gold role P 0.032 -> 0.554 CASIE, 0.508 -> 0.920 CMNEE). Full mix epoch 1: entity 0.4679 (+0.042 vs eb22e), relation 0.1665 (+0.034), trigger 0.1619, argument 0.0767 at 0.1 (confirmed proposal reachability was the remaining bottleneck) |
+| **eb22g** | eb22f + `pair_split_reduction: true`, `hard_negative_keep_all_when_absent: false`, `remove_events_prob: 0.0`, occurrence/coref target grouping in `RecordFieldTarget.values` (`make_eb22g_config.py`, `PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`) | **TRAINING (99% through 5 epochs on 1x A100 `bcfe500c`, `whr778/gliner2-eb22g`)**: preceded by A100 64-doc overfit (`overfit-events-eb22g`, lifting @0.5 strict micro F1 to `0.5210` trigger / `0.4319` argument on CASIE and `0.9394` trigger / `0.8005` argument on CMNEE). Full-mix Epoch 4 val @0.5 strict micro F1: `event_argument` **0.3046** (relaxed **0.5223**, fair **0.5080**; 4.86x `eb22d` Ep 2), `event_trigger` **0.5656** (R=0.7358), `event` **0.6317**, `event_cluster` **0.5681**, `event_cluster_argument` **0.2655**, `entity` **0.3689**, `relation` **0.2145**, `structure` **0.2635**, `classification` **0.7166**, `overall` **0.4149**, `head_min` **0.2145**. **New base for downstream EKF models** |
 
 Entity and classification scores do not compare across eb21 and earlier bases. eb21's training data differs by
 the entity position fix, the classification gold-as-negative fix (22.6% of views) and the contained-span dedupe
@@ -311,6 +329,12 @@ Given a checkpoint, walk up:
 | `whr778/deberta-base-fromenc-synthetic` | `deberta-base-fromenc-synthetic.yaml` | deberta-v3-base (raw) |
 | `whr778/gliner2-large-v1-docee` | `gliner2-large-v1-docee.yaml` | `fastino/gliner2-large-v1` |
 | `whr778/gliner2-maven-tier2-*` | `maven-tier2-*.yaml` | `whr778/gliner2-joint-boundary-rams-137k` |
+| `whr778/gliner2-eb21` | `base/eb21.yaml` | `jhu-clsp/mmBERT-base` (raw) |
+| `whr778/gliner2-eb22d-trace-epoch` | `base/eb22d-trace.yaml` + `base/eb22d-trace-h100.yaml` | `jhu-clsp/mmBERT-base` (raw, epochs 1-2) |
+| `whr778/gliner2-life-mdeberta-wikievents` | `trace/life-mdeberta-wikievents.yaml` | `microsoft/mdeberta-v3-base` (raw, 30 epochs) |
+| `whr778/gliner2-eb22e-epoch` | `base/eb22e.yaml` | `jhu-clsp/mmBERT-base` (raw, epoch 1) |
+| `whr778/gliner2-eb22f-epoch` | `base/eb22f.yaml` | `jhu-clsp/mmBERT-base` (raw, epoch 1, 4x H100) |
+| `whr778/gliner2-eb22g` | `base/eb22g.yaml` | `jhu-clsp/mmBERT-base` (raw, 5 epochs) |
 
 **A config is not a permanent record of the run that used it.** `pretrained:` gets re-pointed
 between arms and the previous value leaves no trace in git if the edit was never committed —
@@ -339,7 +363,8 @@ number in a table is not a substitute, and re-measuring the incumbent costs one 
 
 ## Related
 
-- [[RESEARCH_PROGRAM]] — which working paper feeds which of the three papers
+- [[RESEARCH_PROGRAM]] — which working paper feeds which of the four papers
+- [[PAPER_3_DOCUMENT_EVENTS_AND_COREF]] — Paper 3, synthesizing the `eb17` → `eb22g` event and coreference line
 - [[PIPELINES]] — the inference path these models are deployed into
 - [[BOUNDARY_ARCHITECTURE]] — what the boundary head actually does with these configs
 - [[PROJECT_HISTORY]] — chronological record, including the decisions later overturned
