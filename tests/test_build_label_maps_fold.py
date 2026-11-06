@@ -50,3 +50,34 @@ def test_labels_by_category_handles_list_entities_dict_args_absent_events_and_he
     assert ("events", "Compromised-Data") in got
     assert ("structures", "casualty_report") in got
     assert ("structures", "location") in got
+
+
+def test_canonical_config_includes_event_files_and_refuses_missing(tmp_path):
+    ev_val = tmp_path / "ev.val.jsonl"
+    ev_val.write_text(
+        json.dumps({"input": "x", "output": {"events": [{"event_type": "CyberAttack", "arguments": [{"role": "Victim"}]}]}}) + "\n",
+        encoding="utf-8",
+    )
+    corp_train = tmp_path / "corp.train.jsonl"
+    corp_train.write_text(
+        json.dumps({"input": "y", "output": {"entities": {"Person": ["y"]}}}) + "\n",
+        encoding="utf-8",
+    )
+    downstream = tmp_path / "down.train.jsonl"
+    downstream.write_text(
+        json.dumps({"input": "z", "output": {"events": [
+            {"event_type": "cyber_attack", "arguments": [{"role": "victim"}]},
+            {"event_type": "cyber_attack", "arguments": [{"role": "victim"}]},
+        ]}}) + "\n",
+        encoding="utf-8",
+    )
+    cfg = tmp_path / "base.yaml"
+    cfg.write_text(
+        f"data:\n  corpora:\n    - {tmp_path / 'corp'}\n  event_files:\n    ev:\n      val: {ev_val}\n",
+        encoding="utf-8",
+    )
+    # Without --canonical, downstream's 2x 'cyber_attack' / 'victim' would outvote ev_val's 1x 'CyberAttack' / 'Victim'.
+    # With --canonical base.yaml, event_files is scanned as canonical and 'CyberAttack' / 'Victim' win.
+    maps, _ = B.build([str(cfg), str(downstream)], canonical=[str(cfg)])
+    assert maps["events"]["cyber_attack"] == "CyberAttack"
+    assert maps["events"]["victim"] == "Victim"

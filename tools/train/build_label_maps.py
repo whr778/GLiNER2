@@ -196,7 +196,12 @@ def config_files(config_path: str) -> list[str]:
     files = []
     for base in cfg.get("corpora") or []:
         if Path(base).name not in passthrough:
-            files += [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")]
+            found = [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")
+                     if Path(f"{base}.{split}.jsonl").exists()]
+            if not found:
+                # Keep the train path so inputs_to_files's missing-file gate raises loudly.
+                found = [f"{base}.train.jsonl"]
+            files += found
     ev_files = cfg.get("event_files") or {}
     if isinstance(ev_files, dict):
         for name, entry in ev_files.items():
@@ -210,8 +215,12 @@ def config_files(config_path: str) -> list[str]:
     elif isinstance(ev_files, list):
         for base in ev_files:
             if Path(base).name not in passthrough:
-                files += [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")]
-    return [f for f in sorted(set(files)) if Path(f).exists()]
+                found = [f"{base}.{split}.jsonl" for split in ("train", "val", "dev", "test")
+                         if Path(f"{base}.{split}.jsonl").exists()]
+                if not found:
+                    found = [f"{base}.train.jsonl"]
+                files += found
+    return sorted(set(files))
 
 
 def scan(paths):
@@ -327,9 +336,9 @@ def main():
         i = argv.index("--out")
         out_path = argv[i + 1]
         del argv[i:i + 2]
-    if "--canonical" in argv:
+    while "--canonical" in argv:
         i = argv.index("--canonical")
-        canonical = [argv[i + 1]]
+        canonical = (canonical or []) + [argv[i + 1]]
         del argv[i:i + 2]
     maps, uses = build(argv, canonical)
     for category, mapping in maps.items():
