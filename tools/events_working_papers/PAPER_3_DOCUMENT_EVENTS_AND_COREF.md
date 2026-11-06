@@ -5,9 +5,9 @@
 ¹ Project author and maintainer  ·  ² AI assistant (Google, Gemini) — diagnosis, architecture, experiments, and drafting  ·  ³ AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
 **Paper 3 of the research programme stated in `RESEARCH_PROGRAM.md`.** Drafted 2026-11-05,
-updated 2026-11-06; `eb22g` 5-epoch training at 95% (`bcfe500c`, Epochs 1–4 complete;
-Epoch 5 at step 78,419 / 82,930, ~2 hours of training + end-of-run calibration and blind
-test remaining).
+updated 2026-11-06; `eb22g` 5-epoch training complete (`bcfe500c`, all 5 epochs and
+`checkpoint-epoch-1..5` with `training_state.pt` verified on `whr778/gliner2-eb22g`;
+end-of-run full-val threshold sweep, coref calibration, and blind test running now).
 
 *Companion to `PAPER_0_FOUNDATION.md` (the GLiNER2 substrate and head-initialisation
 curve), `JOINT_IE_SCALING.md` (Paper 2 — the boundary-head data-scaling curve and
@@ -72,15 +72,17 @@ each with a targeted, backwards-compatible mechanism:
    **CASIE** from `0.3619 -> 0.5210` (`+0.1591`, peaking at `0.5984`) on `event_trigger`
    and `0.2506 -> 0.4319` (`+0.1813`) on `event_argument`, and on **CMNEE** from
    `0.6375 -> 0.9394` (`+0.3019`) on `event_trigger` and `0.5470 -> 0.8005` (`+0.2535`) on
-   `event_argument`. On the full 263,949-document training mix (`eb22g`), Epoch 4 validation
-   strict micro-F1 at swept threshold `@0.5` reaches `event_type` **`0.9524`**,
-   `event_trigger` **`0.5656`** (precision `0.4594`, recall **`0.7358`**, fair **`0.5916`**),
-   `event_argument` **`0.3046`** (precision `0.3202`, recall `0.2905`, relaxed **`0.5223`**,
-   fair **`0.5080`** — nearly 5× `eb22d` Epoch 2's `0.0627`), `event` **`0.6317`** (relaxed
-   **`0.6818`**), `event_cluster` **`0.5681`**, `event_cluster_argument` **`0.2655`** (4.6×
-   `eb22d` Epoch 2's `0.0579`), `entity` **`0.3689`** (relaxed `0.4455`), `relation`
-   **`0.2145`** (precision `0.6322`), `structure` **`0.2635`**, `classification`
-   **`0.7166`**, `overall` **`0.4149`**, and `head_min` **`0.2145`**.
+   `event_argument`. On the full 263,949-document training mix (`eb22g`), Epoch 5 validation
+   strict micro-F1 at swept threshold `@0.5` reaches `event_type` **`0.9511`**,
+   `event_trigger` **`0.5720`** (precision `0.4663`, recall **`0.7399`**, relaxed **`0.5934`**,
+   fair **`0.5980`**), `event_argument` **`0.3038`** (`0.3046` at Epoch 4; precision `0.2992`,
+   recall **`0.3087`**, relaxed **`0.5342`**, fair **`0.5221`** — nearly 5× `eb22d` Epoch 2's
+   `0.0627`), `event` **`0.6314`** (relaxed **`0.6858`**), `event_cluster` **`0.5735`** (recall
+   **`0.7796`**), `event_cluster_argument` **`0.2614`** (`0.2655` at Epoch 4; 4.5× `eb22d`
+   Epoch 2's `0.0579`), `entity` **`0.3703`** (relaxed **`0.4466`**, fair **`0.4251`**),
+   `relation` **`0.2443`** (relaxed **`0.3130`**), `structure` **`0.2712`** (relaxed
+   **`0.2992`**), `classification` **`0.7210`**, `overall` **`0.4178`** (relaxed **`0.4846`**),
+   and `head_min` **`0.2443`**.
 
 ---
 
@@ -501,43 +503,45 @@ Three findings stand out from Tables 1 and 2:
 
 ---
 
-### 6.2 Full-Scale Training Progression: `eb22d` vs `eb22e` vs `eb22f` vs `eb22g` (Epochs 1–4, Live)
+### 6.2 Full-Scale 5-Epoch Training Progression: `eb22d` vs `eb22e` vs `eb22f` vs `eb22g`
 
 We trained `eb22g` from scratch (`from_encoder` on `jhu-clsp/mmBERT-base`, seed 42,
 `263,949` cleaned training records → `265,369` 4,096-token chunks, `19,286` validation
 records, `20,602` blind-test records, `82,930` steps across 5 epochs) on `1x A100 40 GB
 SXM4` (`bcfe500c`). At step 20, `boundary_head.pair_scorer` registered a gradient norm of
-`34.8` (4th largest in the model), compared to near-zero in `eb22d`–`eb22f`.
+`34.8` (4th largest in the model), compared to near-zero in `eb22d`–`eb22f`. Every single
+epoch (`1` through `5`) achieved a new best `eval_overall_strict_head_min_f1` (`0.0448 ->
+0.0562 -> 0.1957 -> 0.2145 -> 0.2443`).
 
-Table 3 compares the 1,500-document validation draw across **Epochs 1–4 (`steps 16,586` to
-`66,344`)** of `eb22g` against the earlier `eb22` runs (single-run noise floor **±0.02**,
+Table 3 compares the 1,500-document validation draw across all **5 epochs (`steps 16,586` to
+`82,930`)** of `eb22g` against the earlier `eb22` runs (single-run noise floor **±0.02**,
 relations **±0.041**):
 
-#### Table 3: Full-Mix Validation Progression Across the `eb22` Series
+#### Table 3: Full-Mix Validation Progression Across the `eb22` Series (Epochs 1–5)
 
-| Metric (Validation, Strict Micro-F1 unless noted) | `eb22d` Ep 1 (`@0.1`) | `eb22e` Ep 1 (`@0.1`) | `eb22f` Ep 1 (`@0.1`) | `eb22d` Ep 2 (`@0.3` full val) | **`eb22g` Ep 1 (`@0.3`)** | **`eb22g` Ep 2 (`@0.3`)** | **`eb22g` Ep 3 (`@0.5`)** | **`eb22g` Ep 4 (`@0.5`)** | **Delta (`eb22g` Ep 4 − `eb22d` Ep 2)** |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Selected Swept Threshold** | `0.1` | `0.1` | `0.1` | `0.3` | **`0.3`** | **`0.3`** | **`0.5`** | **`0.5`** | Standard `0.5` |
-| **`eval_loss`** | — | `1.0012` | `0.9923` | — | `1.6277` | `1.4125` | `1.2381` | **`1.2268`** | Monotonic descent |
-| **`event_argument` strict micro-F1** | `0.1123` | `0.0755` | `0.0767` | `0.0627` | `0.0974` | `0.1639` | `0.2181` | **`0.3046`** | **`+0.2419`** *(4.86× `eb22d` Ep 2)* |
-| **`event_argument` strict Precision / Recall** | — | `0.237 / 0.045` | `0.142 / 0.053` | `0.296 / 0.035` | `0.063 / 0.221` | `0.115 / 0.284` | `0.167 / 0.316` | **`0.320 / 0.291`** | Balanced P=`32.0%`, R=`29.1%` |
-| **`event_argument` relaxed micro-F1** | — | `0.1021` | `0.0985` | — | `0.2620` | `0.3992` | `0.4801` | **`0.5223`** | **`+0.4238` vs `eb22f` Ep 1** |
-| **`event_argument` fair (Ortmann) micro-F1** | — | `0.0989` | `0.1026` | — | `0.2191` | `0.3632` | `0.4544` | **`0.5080`** | **`+0.4054` vs `eb22f` Ep 1** |
-| **`event_type` strict micro-F1** | `0.6478` | `0.5988` | `0.3848` | — | `0.9681` | `0.9762` | `0.9654` | **`0.9524`** | **`+0.5676` vs `eb22f` Ep 1** |
-| **`event_trigger` strict micro-F1** | `0.1608` | `0.1608` | `0.1619` | `0.3645` *(R=`0.316`)* | `0.1610` | `0.2522` | `0.4113` | **`0.5656`** *(P=`0.459`, R=**`0.736`**, fair=**`0.592`**)* | **`+0.2011`** *(+55% relative)* |
-| **`event` (combined) strict micro-F1** | — | — | `0.2109` | — | `0.2543` | `0.3505` | `0.4945` | **`0.6317`** *(rel **`0.6818`**)* | **`+0.4208` vs `eb22f` Ep 1** |
-| **`event_cluster` strict micro-F1** | — | — | `0.1729` | `0.3660` | `0.1694` | `0.2584` | `0.4149` | **`0.5681`** *(P=`0.448`, R=**`0.775`**)* | **`+0.2021` vs `eb22d` Ep 2** |
-| **`event_cluster_argument` strict micro-F1** | — | — | `0.0635` | `0.0579` | `0.0821` | `0.1427` | `0.1878` | **`0.2655`** *(P=`0.273`, R=`0.259`)* | **`+0.2076`** *(4.59× `eb22d` Ep 2)* |
-| **`classification` strict micro-F1** | `0.4921` | `0.4802` | `0.4645` | — | `0.4574` | `0.5442` | `0.6794` | **`0.7166`** | **`+0.2521` vs `eb22f` Ep 1** |
-| **`relation` strict micro-F1** | `0.1340` | `0.1326` | `0.1665` | — | `0.0448` | `0.0562` | `0.2058` | **`0.2145`** *(P=`0.632`, rel **`0.2681`**)* | **`+0.0480` vs `eb22f` Ep 1** |
-| **`structure` strict micro-F1** | `0.1691` | `0.2231` | `0.1501` | — | `0.0648` | `0.0847` | `0.1957` | **`0.2635`** *(rel **`0.2893`**)* | **`+0.1134` vs `eb22f` Ep 1** |
-| **`entity` strict micro-F1** | `0.3617` *(@0.1)* | `0.4262` *(@0.1)* | `0.4679` *(@0.1)* | — | `0.2867` *(@0.3)* | `0.2445` *(@0.3)* | `0.3208` *(@0.5)* | **`0.3689`** *(@0.5, rel **`0.4455`**, fair **`0.4234`**)* | **`+0.0481` Ep 3 → Ep 4** |
-| **`overall` strict micro-F1** | — | — | `0.4017` *(@0.1)* | — | `0.2748` | `0.2627` | `0.3576` | **`0.4149`** *(rel **`0.4811`**)* | **`+0.0573` Ep 3 → Ep 4** |
-| **`head_min` (`eval_overall_strict_head_min_f1`)** | — | `0.0755` | `0.0767` | — | `0.0448` | `0.0562` | `0.1957` | **`0.2145`** | **`+0.1378` over `eb22f`** *(2.80×)* |
+| Metric (Validation, Strict Micro-F1 unless noted) | `eb22d` Ep 1 (`@0.1`) | `eb22e` Ep 1 (`@0.1`) | `eb22f` Ep 1 (`@0.1`) | `eb22d` Ep 2 (`@0.3` full val) | **`eb22g` Ep 1 (`@0.3`)** | **`eb22g` Ep 2 (`@0.3`)** | **`eb22g` Ep 3 (`@0.5`)** | **`eb22g` Ep 4 (`@0.5`)** | **`eb22g` Ep 5 (`@0.5`)** | **Delta (`eb22g` Ep 5 − `eb22d` Ep 2)** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **Selected Swept Threshold** | `0.1` | `0.1` | `0.1` | `0.3` | **`0.3`** | **`0.3`** | **`0.5`** | **`0.5`** | **`0.5`** | Standard `0.5` |
+| **`eval_loss`** | — | `1.0012` | `0.9923` | — | `1.6277` | `1.4125` | `1.2381` | `1.2268` | **`1.2696`** | Train loss `4.48 -> 2.03` |
+| **`event_argument` strict micro-F1** | `0.1123` | `0.0755` | `0.0767` | `0.0627` | `0.0974` | `0.1639` | `0.2181` | **`0.3046`** | **`0.3038`** | **`+0.2411`** *(4.85× `eb22d` Ep 2)* |
+| **`event_argument` strict Precision / Recall** | — | `0.237 / 0.045` | `0.142 / 0.053` | `0.296 / 0.035` | `0.063 / 0.221` | `0.115 / 0.284` | `0.167 / 0.316` | `0.320 / 0.291` | **`0.299 / 0.309`** | **Recall `8.8×` higher** (`30.9%` vs `3.5%`) |
+| **`event_argument` relaxed micro-F1** | — | `0.1021` | `0.0985` | — | `0.2620` | `0.3992` | `0.4801` | `0.5223` | **`0.5342`** | **`+0.4357` vs `eb22f` Ep 1** |
+| **`event_argument` fair (Ortmann) micro-F1** | — | `0.0989` | `0.1026` | — | `0.2191` | `0.3632` | `0.4544` | `0.5080` | **`0.5221`** | **`+0.4195` vs `eb22f` Ep 1** |
+| **`event_type` strict micro-F1** | `0.6478` | `0.5988` | `0.3848` | — | `0.9681` | `0.9762` | `0.9654` | `0.9524` | **`0.9511`** | **`+0.5663` vs `eb22f` Ep 1** |
+| **`event_trigger` strict micro-F1** | `0.1608` | `0.1608` | `0.1619` | `0.3645` *(R=`0.316`)* | `0.1610` | `0.2522` | `0.4113` | `0.5656` | **`0.5720`** *(P=`0.466`, R=**`0.740`**, fair=**`0.598`**)* | **`+0.2075`** *(+57% relative)* |
+| **`event` (combined) strict micro-F1** | — | — | `0.2109` | — | `0.2543` | `0.3505` | `0.4945` | `0.6317` | **`0.6314`** *(rel **`0.6858`**)* | **`+0.4205` vs `eb22f` Ep 1** |
+| **`event_cluster` strict micro-F1** | — | — | `0.1729` | `0.3660` | `0.1694` | `0.2584` | `0.4149` | `0.5681` | **`0.5735`** *(P=`0.454`, R=**`0.780`**)* | **`+0.2075` vs `eb22d` Ep 2** |
+| **`event_cluster_argument` strict micro-F1** | — | — | `0.0635` | `0.0579` | `0.0821` | `0.1427` | `0.1878` | **`0.2655`** | **`0.2614`** *(P=`0.252`, R=`0.272`)* | **`+0.2035`** *(4.51× `eb22d` Ep 2)* |
+| **`classification` strict micro-F1** | `0.4921` | `0.4802` | `0.4645` | — | `0.4574` | `0.5442` | `0.6794` | `0.7166` | **`0.7210`** | **`+0.2565` vs `eb22f` Ep 1** |
+| **`relation` strict micro-F1** | `0.1340` | `0.1326` | `0.1665` | — | `0.0448` | `0.0562` | `0.2058` | `0.2145` | **`0.2443`** *(P=`0.586`, rel **`0.3130`**)* | **`+0.0778` vs `eb22f` Ep 1** |
+| **`structure` strict micro-F1** | `0.1691` | `0.2231` | `0.1501` | — | `0.0648` | `0.0847` | `0.1957` | `0.2635` | **`0.2712`** *(rel **`0.2992`**)* | **`+0.1211` vs `eb22f` Ep 1** |
+| **`entity` strict micro-F1** | `0.3617` *(@0.1)* | `0.4262` *(@0.1)* | `0.4679` *(@0.1)* | — | `0.2867` *(@0.3)* | `0.2445` *(@0.3)* | `0.3208` *(@0.5)* | `0.3689` *(@0.5)* | **`0.3703`** *(@0.5, rel **`0.4466`**, fair **`0.4251`**)* | Monotonic climb at `@0.5` |
+| **`overall` strict micro-F1** | — | — | `0.4017` *(@0.1)* | — | `0.2748` | `0.2627` | `0.3576` | `0.4149` | **`0.4178`** *(rel **`0.4846`**)* | **`+0.0161` over `eb22f` Ep 1** |
+| **`head_min` (`eval_overall_strict_head_min_f1`)** | — | `0.0755` | `0.0767` | — | `0.0448` | `0.0562` | `0.1957` | `0.2145` | **`0.2443`** | **`+0.1676` over `eb22f`** *(3.19×)* |
 
-*(Epoch 5 [`step 82,930`, ~2 hours away], post-training `threshold_sweep.json` + per-head
-thresholds, `coref_calibration.json`, and the 20,602-record blind test `test_metrics.json`
-will be appended here upon completion of `bcfe500c`.)*
+*(Full-validation `threshold_sweep.json` + per-head thresholds, `coref_calibration.json`, and
+the 20,602-record blind test `test_metrics.json` are currently running on `bcfe500c` and will
+be appended here as Table 4 upon completion.)*
 
 ---
 
