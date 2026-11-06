@@ -12,27 +12,94 @@ Only user-saved entries can be removed; default/discovered are always offered.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from config import models_root
+from config import REPO, models_root
 
 _STORE = Path(__file__).resolve().parent / "models.json"
+_FALLBACK_STORE = Path("/tmp/gliner2-viewer-models.json")
+
+
+def resolve_local_checkpoint(path: str) -> str:
+    """Resolve a local checkpoint path if it exists on disk, else return stripped string.
+
+    Expands ``~``, checks relative to CWD, ``REPO``, and ``models_root()``, unwraps a
+    direct file path (``.../config.json`` or ``.../model.safetensors``) to its parent
+    directory, and descends into ``best/`` when given a run directory whose
+    ``config.json`` lives under ``best/``.
+    """
+    raw = (path or "").strip()
+    if not raw or "@" in raw:
+        return raw
+    expanded = Path(raw).expanduser()
+    candidates = [expanded]
+    if not expanded.is_absolute():
+        candidates.extend([REPO / expanded, models_root() / expanded])
+    for cand in candidates:
+        try:
+            if cand.name in ("config.json", "model.safetensors", "pytorch_model.bin") and (
+                cand.is_file() or cand.parent.is_dir()
+            ):
+                cand = cand.parent
+            if cand.is_dir():
+                if not (cand / "config.json").is_file() and (cand / "best" / "config.json").is_file():
+                    cand = cand / "best"
+                return str(cand.resolve())
+        except OSError:
+            continue
+    return str(expanded) if raw.startswith("~") else raw
+
+
+def _looks_like_local_path(raw: str) -> bool:
+    """True when ``raw`` is clearly a filesystem path rather than a Hub ``owner/repo`` id."""
+    if not raw or "@" in raw:
+        return False
+    if raw.startswith(("/", "~", "./", "../")) or "\\" in raw:
+        return True
+    parts = [p for p in raw.split("/") if p]
+    if len(parts) != 2:
+        return True
+    if parts[0] in ("out", "models", "checkpoints", "data", "tmp", "var", "opt", "home", "Users", "Volumes"):
+        return True
+    if raw.endswith((".safetensors", ".bin", ".json", "/best", "/final")):
+        return True
+    return False
+
+
+def _store_path() -> Path:
+    """Path to ``models.json``. Falls back to ``_FALLBACK_STORE`` if ``_STORE`` is on a read-only mount."""
+    if _STORE.exists():
+        if os.access(_STORE, os.W_OK):
+            return _STORE
+    elif os.access(_STORE.parent, os.W_OK):
+        return _STORE
+    return _FALLBACK_STORE
 
 
 def _load_saved() -> List[Dict[str, str]]:
-    if _STORE.is_file():
+    out: List[Dict[str, str]] = []
+    seen_ids: set = set()
+    paths = [_STORE]
+    if _store_path() == _FALLBACK_STORE and _FALLBACK_STORE not in paths:
+        paths.append(_FALLBACK_STORE)
+    for path in paths:
+        if not path.is_file():
+            continue
         try:
-            data = json.loads(_STORE.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, list):
-                return [
-                    _saved_entry(m)
-                    for m in data
-                    if isinstance(m, dict) and m.get("path")
-                ]
+                for m in data:
+                    if isinstance(m, dict) and m.get("path"):
+                        entry = _saved_entry(m)
+                        eid = entry_id(entry)
+                        if eid not in seen_ids:
+                            seen_ids.add(eid)
+                            out.append(entry)
         except (OSError, json.JSONDecodeError, KeyError):
             pass
-    return []
+    return out
 
 
 def _saved_entry(raw: Dict[str, str]) -> Dict[str, str]:
@@ -72,7 +139,14 @@ def hub_load_kwargs(path: str) -> Dict[str, str]:
 
 
 def _save(saved: List[Dict[str, str]]) -> None:
-    _STORE.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
+    target = _store_path()
+    try:
+        target.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        if target != _FALLBACK_STORE:
+            _FALLBACK_STORE.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
+        else:
+            raise
 
 
 def _discovered() -> List[Dict[str, str]]:
@@ -80,9 +154,20 @@ def _discovered() -> List[Dict[str, str]]:
     root = models_root()
     if not root.is_dir():
         return out
+    seen_paths: set = set()
     for best in sorted(root.glob("**/best")):
         if (best / "model.safetensors").is_file() or (best / "config.json").is_file():
+            resolved = str(best.resolve())
+            seen_paths.add(resolved)
             out.append({"path": str(best), "label": best.parent.name, "source": "discovered"})
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        if (child / "model.safetensors").is_file() or (child / "config.json").is_file():
+            resolved = str(child.resolve())
+            if resolved not in seen_paths:
+                seen_paths.add(resolved)
+                out.append({"path": str(child), "label": child.name, "source": "discovered"})
     return out
 
 
@@ -106,12 +191,33 @@ def list_models(default_model: str) -> List[Dict[str, str]]:
 
 
 def add_model(path: str, label: Optional[str]) -> None:
-    path = path.strip()
-    if not path:
+    raw = path.strip()
+    if not raw:
         raise ValueError("path is empty")
+    resolved = resolve_local_checkpoint(raw)
+    repo, sep, sub = resolved.partition("@")
+    repo = resolve_local_checkpoint(repo) if sep else resolved
+    sub = sub.strip() if sep else ""
+    if _looks_like_local_path(repo):
+        p = Path(repo)
+        target = p / sub if sub else p
+        if not target.is_dir():
+            raise ValueError(
+                f"local checkpoint directory not found on the server: '{raw}' "
+                f"(checked {target}, {REPO / raw}, and {models_root() / raw}; "
+                "if running in Docker, pass the container path under /app/out/...)"
+            )
+        if not ((target / "config.json").is_file() or (target / "model.safetensors").is_file() or (target / "pytorch_model.bin").is_file()):
+            raise ValueError(
+                f"directory '{target}' does not contain config.json or model.safetensors"
+            )
     saved = _load_saved()
-    if not any(m["path"] == path for m in saved):
-        saved.append({"path": path, "label": (label or path).strip()})
+    entry: Dict[str, str] = {"path": repo, "label": (label or raw).strip()}
+    if sub:
+        entry["subfolder"] = sub
+    key = entry_id(entry)
+    if not any(entry_id(m) == key for m in saved):
+        saved.append(entry)
         _save(saved)
 
 

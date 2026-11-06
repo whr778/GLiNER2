@@ -22,6 +22,7 @@ import yaml
 
 _BACKEND = Path(__file__).resolve().parent
 _REPO = _BACKEND.parents[1]  # viewer/backend -> viewer -> repo root
+REPO = _REPO
 
 
 @lru_cache(maxsize=1)

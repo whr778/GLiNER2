@@ -61,11 +61,12 @@ def get_model(model_id: str, device: Optional[str] = None):
     # AutoExtractor; this loader was the last span-only path in the viewer.
     from gliner2 import AutoExtractor
 
-    from models import hub_load_kwargs
+    from models import hub_load_kwargs, resolve_local_checkpoint
 
     map_location = _map_location(device)
     extra = hub_load_kwargs(model_id)
     repo = model_id.split("@", 1)[0] if "@" in model_id else model_id
+    repo = resolve_local_checkpoint(repo)
     key = (repo, extra.get("subfolder", ""), map_location or "auto")
     if key not in _models:
         model = AutoExtractor.from_pretrained(repo, map_location=map_location, **extra)
@@ -410,10 +411,17 @@ def model_schema(model: str) -> Dict[str, Any]:
     corpus-name matching.
     """
     from gliner2.configuration import ExtractorConfig
-    from models import hub_load_kwargs
+    from models import hub_load_kwargs, resolve_local_checkpoint
 
     repo = model.split("@", 1)[0] if "@" in model else model
-    cfg = ExtractorConfig.from_pretrained(repo, **hub_load_kwargs(model))
+    repo = resolve_local_checkpoint(repo)
+    try:
+        cfg = ExtractorConfig.from_pretrained(repo, **hub_load_kwargs(model))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"could not read config.json for '{model}' (resolved '{repo}'): {exc}",
+        ) from exc
     bh = getattr(cfg, "boundary_head", None) or {}
     return {"model": model, "schema": getattr(cfg, "default_schema", None),
             # The model's own gates; None means "follows the span threshold".
@@ -447,9 +455,15 @@ def model_card(model: str) -> Dict[str, Any]:
     if str(train) not in sys.path:
         sys.path.insert(0, str(train))
     import format_metrics
+    from models import resolve_local_checkpoint
 
+    target = (
+        f"{resolve_local_checkpoint(model.split('@', 1)[0])}@{model.split('@', 1)[1]}"
+        if "@" in model
+        else resolve_local_checkpoint(model)
+    )
     try:
-        title, files = format_metrics.load(model)
+        title, files = format_metrics.load(target)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {
@@ -465,7 +479,12 @@ def create_model(entry: ModelEntry) -> Dict[str, Any]:
 
     if not entry.path.strip():
         raise HTTPException(status_code=400, detail="path is empty")
-    add_model(entry.path, entry.label)
+    try:
+        add_model(entry.path, entry.label)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"could not save models.json: {exc}") from exc
     return {"models": list_models(DEFAULT_MODEL)}
 
 
