@@ -1,8 +1,7 @@
 # Phase B — the beam in the loss
 
-Status: **PLAN, not started.** *(Still not started as of 2026-10-24; the event line went to the eb21/eb22 bases and the eb22c autopsy instead -- [[EXPERIMENT_CATALOG]].)* Written 2026-09-15, after Phase A returned and after the
-artefact that made Phase A's headline wrong was found and removed. Companion to
-[[JOINT_IE_DESIGN_RECORD]] §7 (which this expands) and [[RESEARCH_PROGRAM]] §3.
+Status: **DEFERRED / SUPERSEDED FOR EVENTS BY `eb22g` (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`); OPEN ONLY FOR RELATIONS & EXCLUSIVE RECORD FIELDS.** *(Updated 2026-11-06. Written 2026-09-15 after Phase A returned; between September and November 2026 the event line solved its binding, clustering, and proposal bottlenecks directly inside the boundary record head via `event_records: true`, the relational junction layer `record_link_mode: junction`, `TriggerLink` / `EntityCorefLink` coreference, and balanced positive-negative supervision in `eb22g` — lifting full-mix validation `event_argument` strict micro-F1 from `0.0627` to **`0.3046`** [relaxed **`0.5223`**, fair **`0.5080`**] and `event_trigger` to **`0.5656`** without a training-time beam. See §10 and [[EXPERIMENT_CATALOG]].)* Companion to
+[[JOINT_IE_DESIGN_RECORD]] §7 (which this expands), [[RESEARCH_PROGRAM]] §3, and [[PAPER_3_DOCUMENT_EVENTS_AND_COREF]].
 
 ---
 
@@ -203,10 +202,31 @@ buried.
   question dissolves. One seed on one structures-only corpus, so this closes the
   *sequencing* worry rather than the regime question itself.
 
-- **Whether `event_records` changes what Phase B is measuring.** NEW, and more live than
-  the one it replaces. The event-capable base (`eb16-eventrecords-tr`, training 2026-09-15)
-  routes events through the RECORD head instead of the mention path. Phase B's structured
-  objective operates on role edges, and which head produces those edges is not a detail. If
-  that base lands, Phase B should be built against it rather than against a mention-path
-  base -- otherwise it optimises a decoder for a representation the shipping model no
-  longer uses.
+- **Whether `event_records` changes what Phase B is measuring — ANSWERED 2026-11-06 (`PAPER_3_DOCUMENT_EVENTS_AND_COREF.md`).**
+  When this section was written on 2026-09-15, `eb16-eventrecords-tr` was just launching and
+  §3 above assumed record assignment ran through `compute_dense_batch_loss` (Hungarian matching).
+  In the `eb17` → `eb22g` architecture that actually shipped:
+  1. **Events use `natural` (`per_query`) mode (`compute_group_loss`), not Hungarian matching:**
+     Each trigger candidate seeds an instance directly (`record_coreferent_ownership: true`),
+     arguments are scored by the gated bilinear + geometry **junction layer**
+     (`record_link_mode: junction`) and supervised by a contrastive per-column trigger softmax
+     (`_column_loss`) plus split positive/hard-negative BCE (`_list_field_bce`), and coreferent
+     triggers are merged by `TriggerLink` (`record_coref_link: true`).
+  2. **The event binding and proposal bottlenecks were solved without a beam in the loss:**
+     Fixing `_list_field_bce` `(1+K)` dilution (`eb22f`) and `candidate_pair_loss` absent-query
+     7,700× dilution (`eb22g`: `pair_split_reduction: true`,
+     `hard_negative_keep_all_when_absent: false`, occurrence/coref target grouping) lifted
+     64-doc overfit `@0.5` argument strict micro-F1 to `0.4319` on CASIE and `0.8005` on CMNEE,
+     and lifted full-mix Epoch 4 validation `event_argument` strict micro-F1 to **`0.3046`**
+     (relaxed **`0.5223`**, fair **`0.5080`**) and `event_trigger` to **`0.5656`**.
+  3. **The record-head throughput bottleneck in §7 was also fixed:** Removing per-field
+     `torch.nonzero` GPU-CPU syncs in `forward_group` (`8d9f6f8`) and disabling cuDNN SDPA
+     recompilation restored single-A100 training throughput to `8.2–9.0 samples/s`.
+  4. **What remains for Phase B (if ever pursued on top of `eb22g`):**
+     - **Document-level relations (`Re-DocRED`):** Where `W=1` constrained joint selection
+       already beat greedy by `+0.052` strict micro-F1 at decode time (`JOINT_IE_SCALING.md`
+       §4.1), a structured hinge loss over `W=1` joint relation selection remains a clean,
+       self-contained experiment.
+     - **Cross-instance exclusivity (`exclusive=True`) on multi-instance structures:** Where
+       Hungarian assignment Across instances prevents two `casualty_report` records from claiming
+       the same number (`run_pipeline.py:390`).
