@@ -536,8 +536,12 @@ that exact limitation and the three training starvations behind it were resolved
    0.802–0.843`) while distinct same-type events stay split.
 4. **Balanced positive-negative supervision (`pair_split_reduction: true`, split
    `_list_field_bce`):** Lifted 64-doc overfit `@0.5` argument strict micro-F1 to `0.4319` on
-   CASIE and `0.8005` on CMNEE, and lifted full-mix Epoch 2 validation `event_argument`
-   strict micro-F1 to `0.1639` (relaxed `0.3992`, fair `0.3632`).
+   CASIE and `0.8005` on CMNEE, lifted full-mix Epoch 5 validation `event_argument` strict
+   micro-F1 at `@0.5` to **`0.3038`** (`0.3046` Ep 4; relaxed **`0.5342`**, fair **`0.5221`**)
+   and `event_trigger` to **`0.5720`** (recall **`0.7399`**, fair **`0.5980`**), and on the
+   **20,602-document blind test** (per-head thresholds) reached **`0.4637`** strict /
+   **`0.5985`** relaxed / **`0.5901`** fair `event_argument` micro-F1 and **`0.6994`** strict
+   (`0.7227` `@0.9`) / **`0.7167`** relaxed `event_trigger` micro-F1.
 
 ### 5.2 Audit of Outdated Data & Configs in `datasets/` and `data/`
 
@@ -580,7 +584,7 @@ concrete mismatches that must be fixed before training the `eb22g` EKF models:
 
 ### 5.3 Step-by-Step Training Plan for the EKF Pipeline Components (Post-`eb22g`)
 
-Once `eb22g` (`bcfe500c`) finishes Epoch 5 and passes its blind test:
+With `eb22g` (`bcfe500c`, `whr778/gliner2-eb22g`) complete and verified on its 20,602-record blind test:
 
 | Step | Component / Config | Base Checkpoint | Training Data & Recipe | Pre-Registered Acceptance Gate |
 |---|---|---|---|---|

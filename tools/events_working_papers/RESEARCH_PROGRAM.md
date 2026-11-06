@@ -162,7 +162,17 @@ even when relaxed argument micro-F1 reached `0.50–0.59` (`PAPER_3_DOCUMENT_EVE
    **`0.6858`**), `event_cluster` **`0.5735`**, `event_cluster_argument` **`0.2614`** (`0.2655`
    at Epoch 4; vs `eb22d` Epoch 2's `0.0579`), `entity` **`0.3703`** (relaxed `0.4466`),
    `relation` **`0.2443`** (relaxed `0.3130`), `structure` **`0.2712`**, `classification`
-   **`0.7210`**, `overall` **`0.4178`**, and `head_min` **`0.2443`**.
+   **`0.7210`**, `overall` **`0.4178`**, and `head_min` **`0.2443`**. On the **20,602-document
+   blind test** (`152,996` gold extractions) at validation-selected per-head thresholds
+   (`entity=0.9, relation=0.3, classification=0.9, structure=0.7, event=0.7`), `eb22g` scores
+   strict micro-F1 of **`0.9414`** on `event_type`, **`0.6994`** on `event_trigger` (`0.7227`
+   at `@0.9`, relaxed **`0.7167`**, fair **`0.7222`**, OneIE `trigi` **`0.7835`**),
+   **`0.4637`** on `event_argument` (relaxed **`0.5985`**, fair **`0.5901`**, OneIE `argi`
+   **`0.5385`** / `argc` **`0.5297`**), **`0.6753`** on `event_cluster` (`0.7044` at `@0.9`),
+   **`0.3699`** on `event_cluster_argument`, **`0.5337`** on `entity` (relaxed **`0.6063`**,
+   fair **`0.5920`**), **`0.3256`** on `relation` (relaxed **`0.4351`**), **`0.7072`** on
+   `classification`, **`0.2953`** on `structure` (relaxed **`0.3286`**), **`0.5644`**
+   `overall` (relaxed **`0.6323`**), and **`0.2953`** `head_min`.
 
 ## 3. What is not established
 

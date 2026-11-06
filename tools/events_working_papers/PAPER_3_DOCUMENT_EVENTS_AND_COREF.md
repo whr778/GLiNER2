@@ -5,9 +5,9 @@
 ¹ Project author and maintainer  ·  ² AI assistant (Google, Gemini) — diagnosis, architecture, experiments, and drafting  ·  ³ AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
 **Paper 3 of the research programme stated in `RESEARCH_PROGRAM.md`.** Drafted 2026-11-05,
-updated 2026-11-06; `eb22g` 5-epoch training complete (`bcfe500c`, all 5 epochs and
-`checkpoint-epoch-1..5` with `training_state.pt` verified on `whr778/gliner2-eb22g`;
-end-of-run full-val threshold sweep, coref calibration, and blind test running now).
+updated 2026-11-06; `eb22g` 5-epoch training, full-validation calibration, and 20,602-record
+blind test complete (`bcfe500c`, published to `whr778/gliner2-eb22g`,
+`whr778/gliner2-eb22g-final`, and `whr778/gliner2-run-logs` `eb22g/`).
 
 *Companion to `PAPER_0_FOUNDATION.md` (the GLiNER2 substrate and head-initialisation
 curve), `JOINT_IE_SCALING.md` (Paper 2 — the boundary-head data-scaling curve and
@@ -82,7 +82,17 @@ each with a targeted, backwards-compatible mechanism:
    Epoch 2's `0.0579`), `entity` **`0.3703`** (relaxed **`0.4466`**, fair **`0.4251`**),
    `relation` **`0.2443`** (relaxed **`0.3130`**), `structure` **`0.2712`** (relaxed
    **`0.2992`**), `classification` **`0.7210`**, `overall` **`0.4178`** (relaxed **`0.4846`**),
-   and `head_min` **`0.2443`**.
+   and `head_min` **`0.2443`**. On the **20,602-document blind test** (`152,996` gold
+   extractions) at validation-calibrated per-head thresholds (`entity=0.9, relation=0.3,
+   classification=0.9, structure=0.7, event=0.7`), `eb22g` achieves strict micro-F1 of
+   **`0.9414`** on `event_type`, **`0.6994`** on `event_trigger` (`0.7227` at `@0.9`,
+   relaxed **`0.7167`**, fair **`0.7222`**, OneIE `trigi` **`0.7835`**), **`0.4637`** on
+   `event_argument` (`P = 0.5667, R = 0.3923`, relaxed **`0.5985`**, fair **`0.5901`**,
+   OneIE `argi` **`0.5385`** / `argc` **`0.5297`**), **`0.6753`** on `event_cluster`
+   (`0.7044` at `@0.9`), **`0.3699`** on `event_cluster_argument`, **`0.5337`** on `entity`
+   (relaxed **`0.6063`**, fair **`0.5920`**), **`0.3256`** on `relation` (relaxed
+   **`0.4351`**), **`0.7072`** on `classification`, **`0.2953`** on `structure` (relaxed
+   **`0.3286`**), **`0.5644`** `overall` (relaxed **`0.6323`**), and **`0.2953`** `head_min`.
 
 ---
 
@@ -539,9 +549,56 @@ relations **±0.041**):
 | **`overall` strict micro-F1** | — | — | `0.4017` *(@0.1)* | — | `0.2748` | `0.2627` | `0.3576` | `0.4149` | **`0.4178`** *(rel **`0.4846`**)* | **`+0.0161` over `eb22f` Ep 1** |
 | **`head_min` (`eval_overall_strict_head_min_f1`)** | — | `0.0755` | `0.0767` | — | `0.0448` | `0.0562` | `0.1957` | `0.2145` | **`0.2443`** | **`+0.1676` over `eb22f`** *(3.19×)* |
 
-*(Full-validation `threshold_sweep.json` + per-head thresholds, `coref_calibration.json`, and
-the 20,602-record blind test `test_metrics.json` are currently running on `bcfe500c` and will
-be appended here as Table 4 upon completion.)*
+### 6.3 Full-Validation Threshold Calibration, Coreference Readout, and 20,602-Document Blind Test (`eb22g`)
+
+After Epoch 5 (`step 82,930`, `45.77` hours, `8.05` samples/s), `train.py` calibrated both
+global and per-head thresholds across all **19,286 validation documents** over the grid
+`{0.1, 0.3, 0.5, 0.7, 0.9}` (`threshold_sweep.json`), calibrated `TriggerLink` cluster merging
+on `cc_news_events_sonnet55_v2.val` (`500` records) against single-trigger controls
+(`cmnee.val` + `maven.val`, `1,961` records), scored `EntityCorefLink` pairwise AUC across five
+coreference benchmarks (`coref_readout.json`), and evaluated the **20,602-document blind test**
+once at the global threshold (`0.9`) and once at the validation-selected per-head thresholds
+(`entity=0.9, relation=0.3, classification=0.9, structure=0.7, event=0.7`).
+
+#### Table 4: `eb22g` Full-Validation Sweep (`19,286` docs) and Blind Test (`20,602` docs)
+
+| Head / Metric | Full Val (`@0.5`) Strict / Relaxed F1 | Full Val (Per-Head) Strict / Relaxed F1 | Selected Per-Head Threshold | **Blind Test (Global `@0.9`) Strict (P / R / F1)** | **Blind Test (Per-Head) Strict (P / R / F1)** | **Blind Test (Per-Head) Relaxed F1** | **Blind Test (Per-Head) Fair (Ortmann) F1** |Blind Test Gold Support |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **`entity`** | `0.3704 / 0.4469` | `0.5447 / 0.6148` | `0.9` | `0.5462 / 0.5218 /` **`0.5337`** | `0.5462 / 0.5218 /` **`0.5337`** | **`0.6063`** | **`0.5920`** | `79,910` |
+| **`relation`** | `0.2421 / 0.3101` | `0.3045 / 0.4231` | `0.3` | `0.8544 / 0.0280 / 0.0543` | `0.4905 / 0.2437 /` **`0.3256`** | **`0.4351`** | — | `7,957` |
+| **`classification`** | `0.7219 / 0.7219` | `0.7219 / 0.7219` | `0.9` | `0.7147 / 0.6998 /` **`0.7072`** | `0.7147 / 0.6998 /` **`0.7072`** | **`0.7072`** | — | `10,291` |
+| **`structure`** | `0.2819 / 0.3110` | `0.3193 / 0.3456` | `0.7` | `0.5601 / 0.1889 / 0.2825` | `0.3631 / 0.2489 /` **`0.2953`** | **`0.3286`** | — | `4,167` |
+| **`event_type`** | `0.9511 / 0.9511` | `0.9256 / 0.9256` | `0.7` | `1.0000 / 0.8069 / 0.8932` | `1.0000 / 0.8894 /` **`0.9414`** | **`0.9414`** | — | `9,862` |
+| **`event_trigger`** | `0.5720 / 0.5934` | `0.6296 / 0.6512` | `0.7` | `0.7714 / 0.6797 /` **`0.7227`** | `0.6421 / 0.7680 /` **`0.6994`** | **`0.7167`** | **`0.7222`** *(`0.7420` `@0.9`)* | `14,041` |
+| **`event_argument`** | `0.3037 / 0.5337` | `0.3110 / 0.4568` | `0.7` | `0.7399 / 0.2162 / 0.3346` | `0.5667 / 0.3923 /` **`0.4637`** | **`0.5985`** | **`0.5901`** | `26,768` *(rel `24,176`, fair `23,066`)* |
+| **`event` (combined)** | `0.6314 / 0.6857` | `0.6760 / 0.7118` | `0.7` | `0.8273 / 0.4596 / 0.5909` | `0.6816 / 0.5932 /` **`0.6343`** | **`0.7113`** | — | `50,671` *(rel `48,079`)* |
+| **`event_cluster`** | — | — | `0.7` | `0.7133 / 0.6958 /` **`0.7044`** | `0.5894 / 0.7905 /` **`0.6753`** | — | — | `17,291` |
+| **`event_cluster_argument`** | — | — | `0.7` | `0.6113 / 0.1741 / 0.2710` | `0.4377 / 0.3204 /` **`0.3699`** | — | — | `31,143` |
+| **OneIE `trigi` (trigger id)** | — | — | `0.7` | `0.8457 / 0.7048 / 0.7688` | `0.7684 / 0.7993 /` **`0.7835`** | — | — | `13,890` |
+| **OneIE `trigc` (trigger cls)** | — | — | `0.7` | `0.7752 / 0.6802 /` **`0.7246`** | `0.6450 / 0.7675 /` **`0.7009`** | — | — | `13,954` |
+| **OneIE `argi` (arg id)** | — | — | `0.7` | `0.8270 / 0.2425 / 0.3750` | `0.6989 / 0.4381 /` **`0.5385`** | — | — | `24,070` |
+| **OneIE `argc` (arg role cls)** | — | — | `0.7` | `0.8224 / 0.2406 / 0.3723` | `0.6832 / 0.4326 /` **`0.5297`** | — | — | `24,153` |
+| **`overall` (micro)** | — | `0.5356` *(global `@0.9`)* | per-head | `0.6297 / 0.4784 / 0.5437` | `0.5966 / 0.5355 /` **`0.5644`** | **`0.6323`** | — | `152,996` *(rel `150,404`)* |
+| **`head_macro` / `head_min`** | — | — | per-head | `0.5040 / 0.0543` | **`0.5666` / `0.2953`** | **`0.6191` / `0.3286`** | — | 7 heads |
+
+#### Table 5: `eb22g` `EntityCorefLink` Pairwise AUC Readout (`coref_readout.json`)
+
+| Corpus | Docs | All Pairs (`n`) — String / Cosine / **`EntityCorefLink`** | Different Surface (`n`) — String / Cosine / **`EntityCorefLink`** | Pronoun Pairs (`n`) — String / Cosine / **`EntityCorefLink`** |
+|---|---:|---:|---:|---:|
+| **WikiEvents** | `20` | `86,102` — `0.6281 / 0.6904 /` **`0.8275`** | `84,056` — `0.5000 / 0.5907 /` **`0.7765`** | `38,098` — `0.5482 / 0.5794 /` **`0.7774`** |
+| **GUM (`gum_coref`)** | `16` | `538,302` — `0.7094 / 0.8041 /` **`0.8902`** | `523,971` — `0.5000 / 0.6747 /` **`0.8309`** | `230,804` — `0.7151 / 0.7913 /` **`0.8959`** |
+| **LitBank (`litbank_coref`)** | `8` | `322,618` — `0.6318 / 0.6990 /` **`0.8904`** | `305,635` — `0.5000 / 0.5961 /` **`0.8632`** | `255,299` — `0.6277 / 0.6839 /` **`0.8772`** |
+| **GAP (`gap_coref`)** | `454` | `1,362` — `0.5000 / 0.3610 /` **`0.6713`** | `1,362` — `0.5000 / 0.3610 /` **`0.6713`** | `908` — `0.5000 / 0.4151 /` **`0.5975`** |
+| **CMNEE (`cmnee`)** | `500` | `12,214` — `0.7639 / 0.8903 /` **`0.9376`** | `9,648` — `0.5000 / 0.8115 /` **`0.8965`** | `0` — — |
+
+On the `TriggerLink` calibration sweep (`cc_news_events_sonnet55_v2.val`, `500` records),
+enabling `record_merge_coreferent: link` lifted `event_cluster_f1` from `0.4374` (`off`) to
+**`0.5054`** at `τ = 0.7` (`+0.0680`, `196` right merges of `327`; at `τ = 0.90–0.95`,
+`0 / 127` hard-negative pairs were merged and merge precision reached `0.6578`), while
+distinct-event fusion (`0.218–0.223`) remained above the conservative `< 0.05` safety gate;
+`coref_calibration.py` therefore kept `record_merge_coreferent: "off"` as the default in
+`config.json`, while preserving the trained `TriggerLink` (`--merge-coreferent link`) for
+downstream consumers.
 
 ---
 
