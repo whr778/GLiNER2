@@ -536,8 +536,13 @@ class ExtractorRuntimeMixin:
             else:
                 schema_dict = schema
                 entities = schema_dict.get("entities")
-                if isinstance(entities, list):
-                    schema_dict = {**schema_dict, "entities": {e: "" for e in entities}}
+                if entities is not None:
+                    from gliner2.inference.schema import expand_entity_wildcards
+                    entities = expand_entity_wildcards(entities)
+                    if isinstance(entities, list):
+                        schema_dict = {**schema_dict, "entities": {e: "" for e in entities}}
+                    elif isinstance(entities, dict):
+                        schema_dict = {**schema_dict, "entities": entities}
                 # A raw dict carrying `structures` used to pass through verbatim: the
                 # processor looks for `json_structures` and field metadata, found neither,
                 # and returned {} with no warning. Build just that key through Schema so it

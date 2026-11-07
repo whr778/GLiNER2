@@ -12,7 +12,7 @@
 export const MODEL_PRESET_VALUE = "__model__";
 
 const EMPTY: Record<string, any> = {
-  entities: [],
+  entities: ["*"],
   relations: [],
   events: {},
   classifications: [],

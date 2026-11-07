@@ -120,7 +120,7 @@ ONCE: pick settings on the validation split first.
 |---|---|
 | `--model-schema` | start from the checkpoint's `default_schema` |
 | `--tasks events,relations` | with `--model-schema`, keep only these task types: entities, relations, events, classifications, structures |
-| `--entities`, `--relations`, `--events`, `--structures` | add to, or replace, that task in the schema |
+| `--entities`, `--relations`, `--events`, `--structures` | add to, or replace, that task in the schema (for `--entities`, `"*"` or `"any"` expands to the 125-type general taxonomy from `schema_spec.py`) |
 | `--schema-json` | a full schema file; overrides all of the above |
 | `--no-label-map` | send labels exactly as typed |
 | `--threshold`, `--chunk-size`, `--chunk-overlap`, `--global-decode` / `--no-global-decode` | override the checkpoint |

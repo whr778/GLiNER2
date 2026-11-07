@@ -180,7 +180,7 @@ export default function Home() {
         setPresetName(MODEL_PRESET_VALUE); // reflect it as the active selection
         setSchemaNote(
           ov.length
-            ? `Loaded the schema shipped with this model. It is open-vocabulary for ${ov.join(", ")} -- add labels to the empty field${ov.length > 1 ? "s" : ""}. You can still pick another below.`
+            ? `Loaded the schema shipped with this model. It is open-vocabulary for ${ov.join(", ")} (entities: ["*"] expands to the 125-type general taxonomy, or replace with your own labels). You can still pick another below.`
             : "Loaded the schema shipped with this model. You can still pick another below.",
         );
         appliedModel.current = m;

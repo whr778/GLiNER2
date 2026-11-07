@@ -98,9 +98,11 @@ def _model_schema(config, tasks: str = None) -> Dict[str, Any]:
     shipped = dict(getattr(config, "default_schema", None) or {})
     if not shipped:
         raise SystemExit("--model-schema: this checkpoint ships no default_schema.")
-    shipped.pop("open_vocab", None)
+    open_vocab = shipped.pop("open_vocab", None) or []
     if tasks:
         keep = {t.strip() for t in tasks.split(",") if t.strip()}
+        if "entities" in keep and "entities" in open_vocab and "entities" not in shipped:
+            shipped["entities"] = ["*"]
         shipped = {k: v for k, v in shipped.items() if k in keep}
     return shipped
 

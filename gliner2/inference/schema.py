@@ -13,7 +13,7 @@ import json
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Literal, Optional, Pattern, Union
+from typing import Any, Dict, Iterable, List, Literal, Optional, Pattern, Tuple, Union
 
 from pydantic import BaseModel
 
@@ -28,6 +28,90 @@ from gliner2.inference.schema_model import SchemaInput
 # curated ontology here is docee at 356 entity types, so 1000 keeps real
 # ontologies with generous headroom.
 _OPEN_VOCAB_LIMIT = 1000
+
+# Wildcard tokens ("*" or "any") expand to the 125-type general-domain entity taxonomy
+# from tools/data/synthetic/schema_spec.py (and tools/train/config/menus/news55.json).
+ENTITY_WILDCARD_TOKENS = frozenset({"*", "any"})
+
+DEFAULT_OPEN_VOCAB_ENTITIES: Tuple[str, ...] = (
+    # people and roles (14)
+    "person", "job title", "nationality", "ethnic group", "religious group",
+    "political affiliation", "academic degree", "military rank", "occupation",
+    "family relationship", "pseudonym", "honorific", "team role", "witness",
+    # organizations (12)
+    "organization", "company", "government agency", "political party",
+    "non-profit organization", "educational institution", "sports team",
+    "media outlet", "military unit", "criminal organization", "trade union",
+    "regulatory body",
+    # places (12)
+    "location", "geopolitical entity", "facility", "address", "region",
+    "body of water", "mountain", "road", "airport", "landmark", "border",
+    "postal code",
+    # time (7)
+    "date", "time", "duration", "frequency", "age", "era", "deadline",
+    # numbers and measures (13)
+    "money", "quantity", "percent", "ordinal", "cardinal", "measurement",
+    "temperature", "distance", "weight", "area", "speed", "voltage", "dosage",
+    # products and works (13)
+    "product", "work of art", "book", "film", "song", "software", "brand",
+    "model number", "vehicle", "aircraft", "vessel", "video game", "publication",
+    # legal (10)
+    "law", "court case", "contract", "patent", "regulation", "crime",
+    "sentence", "license", "treaty", "verdict",
+    # science, medicine, nature (16)
+    "disease", "symptom", "medication", "chemical", "organism", "gene",
+    "protein", "medical procedure", "anatomical structure", "species",
+    "mineral", "clinical trial", "diagnosis", "pathogen", "vaccine", "allergen",
+    # technology (10)
+    "programming language", "algorithm", "hardware component", "protocol",
+    "file format", "database", "operating system", "api", "framework",
+    "security vulnerability",
+    # finance (9)
+    "currency", "stock ticker", "financial instrument", "tax", "credit rating",
+    "market index", "interest rate", "fiscal quarter", "budget line",
+    # events and misc (9)
+    "event", "holiday", "conference", "sports competition", "natural disaster",
+    "war", "award", "language", "weapon",
+)
+
+
+def expand_entity_wildcards(entities: Any) -> Any:
+    """Expand ``"*"`` or ``"any"`` in an entities specification to :data:`DEFAULT_OPEN_VOCAB_ENTITIES`."""
+    if isinstance(entities, str):
+        if entities.strip().lower() in ENTITY_WILDCARD_TOKENS:
+            return list(DEFAULT_OPEN_VOCAB_ENTITIES)
+        return entities
+    if isinstance(entities, (list, tuple)):
+        out: List[Any] = []
+        seen: set = set()
+        for item in entities:
+            if isinstance(item, str) and item.strip().lower() in ENTITY_WILDCARD_TOKENS:
+                for default_ent in DEFAULT_OPEN_VOCAB_ENTITIES:
+                    if default_ent not in seen:
+                        seen.add(default_ent)
+                        out.append(default_ent)
+            else:
+                key = item if isinstance(item, str) else None
+                if key is not None:
+                    if key not in seen:
+                        seen.add(key)
+                        out.append(item)
+                else:
+                    out.append(item)
+        return out
+    if isinstance(entities, dict):
+        if any(isinstance(k, str) and k.strip().lower() in ENTITY_WILDCARD_TOKENS for k in entities):
+            out_dict: Dict[str, Any] = OrderedDict()
+            for k, v in entities.items():
+                if isinstance(k, str) and k.strip().lower() in ENTITY_WILDCARD_TOKENS:
+                    cfg = v if isinstance(v, dict) else ({} if not v else {"description": v})
+                    for default_ent in DEFAULT_OPEN_VOCAB_ENTITIES:
+                        out_dict.setdefault(default_ent, dict(cfg))
+                else:
+                    out_dict[k] = v
+            return out_dict
+        return entities
+    return entities
 
 
 # Extraction output is a FLAT namespace: these three are fixed container keys, while
@@ -607,6 +691,7 @@ class Schema:
         return self
 
     def _parse_entity_input(self, entity_types):
+        entity_types = expand_entity_wildcards(entity_types)
         if isinstance(entity_types, str):
             return {entity_types: {}}
         elif isinstance(entity_types, list):
@@ -845,7 +930,10 @@ class Schema:
         """
         # `open_vocab` is derive_schema's marker for task types trained but too open to list; it
         # names no labels, so it is dropped here rather than refused as an unknown key.
-        validated = SchemaInput(**{k: v for k, v in data.items() if k != "open_vocab"})
+        cleaned = {k: v for k, v in data.items() if k != "open_vocab"}
+        if "entities" in cleaned and cleaned["entities"] is not None:
+            cleaned["entities"] = expand_entity_wildcards(cleaned["entities"])
+        validated = SchemaInput(**cleaned)
 
         schema = cls()
 

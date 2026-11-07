@@ -404,3 +404,29 @@ class TestHeadSpansPostProcessing:
         assert args["Casualties"]["text"] == "at least 246 people"
         assert cleaned["relation_extraction"]["targeted"] == [("hackers", "hospital")]
 
+    def test_entity_wildcard_expansion_in_schema_and_label_map(self):
+        from gliner2.inference.label_map import apply_label_map
+        from gliner2.inference.schema import DEFAULT_OPEN_VOCAB_ENTITIES, Schema
+
+        assert len(DEFAULT_OPEN_VOCAB_ENTITIES) == 125
+        for token in ("*", "any", ["*"], ["any", "custom_type"]):
+            s = Schema.from_dict({"entities": token})
+            built = s.build()
+            assert "person" in built["entities"]
+            assert "organization" in built["entities"]
+            if isinstance(token, list) and "custom_type" in token:
+                assert len(built["entities"]) == 126
+                assert "custom_type" in built["entities"]
+            else:
+                assert len(built["entities"]) == 125
+
+        mapped, rewrites = apply_label_map(
+            {"entities": ["*"]},
+            {"entities": {"map": {"person": "Person"}}},
+            {"name": "title_snake"},
+        )
+        assert "Person" in mapped["entities"]
+        assert "Geopolitical_Entity" in mapped["entities"]
+        assert len(mapped["entities"]) == 125
+
+

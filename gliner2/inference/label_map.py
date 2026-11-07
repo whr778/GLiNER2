@@ -17,6 +17,7 @@ import copy
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from gliner2.inference.label_style import styler
+from gliner2.inference.schema import expand_entity_wildcards
 
 
 def label_fn(block: Mapping[str, Any], style: Optional[Callable[[str], str]] = None) -> Callable[[str], str]:
@@ -93,6 +94,8 @@ def apply_label_map(schema: Mapping[str, Any], label_map: Optional[Mapping[str, 
     ``label_style`` is the checkpoint's ``config.label_style``; None keeps the map-only behaviour.
     """
     out = copy.deepcopy(dict(schema))
+    if out.get("entities") is not None:
+        out["entities"] = expand_entity_wildcards(out["entities"])
     applied: Dict[str, Dict[str, str]] = {}
     style = styler(label_style)
     if not label_map and not style:
