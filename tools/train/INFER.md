@@ -3,8 +3,9 @@
 `tools/infer.py` runs a checkpoint over text, the same way the viewer does:
 
 - **Schema:** `--model-schema` starts from the schema the checkpoint ships (`config.json` `default_schema`).
-- **Decode settings:** any setting you don't pass comes from the checkpoint's `inference_defaults`. These are the settings its eval was measured at; from 2026-10-24 the end-of-run sweep writes the SWEPT global threshold there (earlier checkpoints carry the config's pre-sweep value) and records `per_head_thresholds`, which `infer.py` does not apply -- it decodes at the one `--threshold`.
-- **Labels:** your labels go through the checkpoint's `label_map`, so `person` reaches eb18 as the `Person` it trained on.
+- **Decode settings:** any setting you don't pass comes from the checkpoint's `inference_defaults`. These are the settings its eval was measured at; from 2026-10-24 the end-of-run sweep writes the SWEPT global threshold (`threshold`) and per-head picks (`per_head_thresholds`, e.g. `{"entity": 0.9, "relation": 0.3, "classification": 0.9, "structure": 0.7, "event": 0.7}` on `eb22g`) into `config.json`. Both `infer.py` and the viewer apply `per_head_thresholds` in a single forward pass by default unless you override `--threshold`, pass `--no-per-head-thresholds`, or uncheck the per-head option in the viewer.
+- **Head-normalized spans (`--head-spans`):** optional post-processing (`head_spans=True`) strips leading stopwords/articles (`"the hospital" -> "hospital"`, `"an attacker" -> "attacker"`) and advances `start` character offsets while preserving numeric quantifiers (`"at least 246 people"`) and proper-noun prefixes (`"New York"`).
+- **Labels:** your labels go through the checkpoint's `label_map`, so `person` reaches the model as the `Person` it trained on.
 
 Results are printed as JSON on stdout. Every run first prints two `[infer]` lines: the label rewrites, and the exact schema sizes and decode settings used.
 
@@ -137,11 +138,44 @@ ONCE: pick settings on the validation split first.
 | `--batch-size 8` | documents per forward pass |
 
 Each decode setting resolves in this order:
-1. the flag;
-2. the checkpoint's `inference_defaults` (eb18: 0.3 / 4096 / 0 / global on);
-3. 0.5, the model's own window, overlap 0, global off.
+1. the CLI flag (`--threshold`, `--per-head-thresholds`, `--no-per-head-thresholds`, `--chunk-size`, `--chunk-overlap`, `--global-decode`);
+2. the checkpoint's `inference_defaults` (`eb22g`: `threshold=0.9`, `per_head_thresholds={"entity": 0.9, "relation": 0.3, "classification": 0.9, "structure": 0.7, "event": 0.7}`, `chunk_size=2730`, `chunk_overlap=0`, `global_decode=False`; `eb18`: `0.3 / 4096 / 0 / global on`);
+3. `0.5`, the model's own window, overlap `0`, global `off`.
+
+Note: passing `--threshold <T>` explicitly without `--per-head-thresholds` disables the checkpoint's stored `per_head_thresholds` so all heads decode at `<T>`. Passing `--no-per-head-thresholds` uses the checkpoint's scalar `inference_defaults.threshold` across all heads.
 
 Checkpoints from before 63eb320 store no defaults and no label map, so they use step 3 and labels as typed.
+
+## Per-head thresholds and `--head-spans` (head-normalized spans)
+
+### Per-head operating points (`per_head_thresholds`)
+
+When `train.py` finishes its end-of-run validation sweep (`threshold_sweep.json`), `pick_per_head_thresholds` selects the best validation threshold per decode head (`entity`, `relation`, `classification`, `structure`, `event`) and writes `inference_defaults.per_head_thresholds` into `best/config.json`.
+
+- **Single-pass runtime execution:** `extract`, `batch_extract`, `extract_long`, and `batch_extract_long` accept `per_head_thresholds: Optional[Dict[str, float]] = None`. Rather than running multiple forward passes and splicing outputs, `BoundaryExtractor` and `SpanExtractor` apply each head's threshold directly inside a single forward pass (`_query_thresholds` per task type, `_decode_records` per event/structure group, `_decode_relations`, and `_decode_legacy_structures`), producing output byte-for-byte identical to `eval_metrics.splice_heads`.
+- **In `tools/infer.py` and the Viewer:** Both read `inference_defaults.per_head_thresholds` from `config.json` automatically. In the viewer's Options panel, the active per-head thresholds are shown directly beneath the `Threshold` slider and can be unchecked to revert to a single global threshold.
+
+```bash
+# Uses eb22g's stored per_head_thresholds automatically:
+uv run python tools/infer.py --model whr778/gliner2-eb22g \
+    --input data/casie.test.jsonl --gold-schema \
+    --labels-file tools/train/config/labels/unified-full-v4.yaml --output casie_test.eb22g.jsonl
+
+# Override with custom per-head thresholds and head-span normalization:
+uv run python tools/infer.py --model whr778/gliner2-eb22g \
+    --input document.txt --model-schema --tasks events \
+    --per-head-thresholds '{"entity": 0.9, "event": 0.7, "relation": 0.3}' \
+    --head-spans --include-spans --include-confidence
+```
+
+### Head-span normalization (`--head-spans` / `head_spans=True`)
+
+Training corpora mix **syntactic-head** annotations (`ace2005`, `wikievents`, `cc_news_events_sonnet55_v2`: `"hospital"`, `"attacker"`, `"Taliban"`) and **full noun-phrase extent** annotations (`casie`, `rams`, `docee`: `"the hospital"`, `"an attacker"`, `"The Taliban"`). When feeding extracted arguments or entities into downstream consumers such as the EKF/MHT tracker or strict head-evaluated benchmarks, leading determiners and prepositions create spurious surface mismatches.
+
+Passing `--head-spans` (or `head_spans=True` in Python / checking **"Head spans (strip leading stopwords / articles)"** in the viewer) runs `gliner2/inference/head_spans.py` (`strip_leading_stopwords_from_results`):
+1. **Multilingual function-word stripping:** Strips leading articles, determiners, and prepositions using the curated English function-word list, multilingual articles, and `tools/train/config/stopwords.yaml` across `entities`, `relation_extraction`, `event_extraction` (`triggers` and `arguments`), `coref_clusters`, and `structures`.
+2. **Exact character offset preservation:** Advances `span["start"]` by the exact number of stripped leading characters (`delta`) so `doc_text[span["start"]:span["end"]] == span["text"]` always holds, and deduplicates spans that collapse to the same `(text, start, end)` after stripping.
+3. **EKF quantifier & proper-noun protection:** Never strips numerals, scale/bucket words (`one`..`million`, `bin`, `milyon`, `dozen`, `hundreds`, `few`, `several`), quantifier prefixes before numbers (`"at least 246 people"`, `"more than 100,000"`, `"a dozen people"`, `"nearly 1,400"`), or proper-noun/month words (`"New York"`, `"United States"`, `"May 15"`).
 
 ## Label style (checkpoints trained on `unified-full-v3` and `unified-full-v4`)
 
