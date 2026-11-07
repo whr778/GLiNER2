@@ -991,6 +991,7 @@ _EVAL_TIME_BOUNDARY_KEYS = ("decode_mode", "joint_beam_width", "abstention_thres
                             "record_anchor_proposal_threshold",
                             # The ARGUMENT gate (TODO 22): read at decode, sizes nothing.
                             "record_field_threshold", "record_field_threshold_wins",
+                            "record_field_max_tokens", "record_field_min_pair_logit",
                             "record_merge_coreferent", "record_coref_link_threshold",
                             # PROPOSAL WIDTH is an operating point: it adds and removes no
                             # tensors and is read at decode. It is also the binding

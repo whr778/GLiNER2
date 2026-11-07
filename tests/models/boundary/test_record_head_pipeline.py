@@ -1001,3 +1001,38 @@ def test_decode_required_scalar_does_not_select_absent():
     decoded = decode_group(group, anchor_threshold=0.5, field_threshold=0.2)
     assert decoded[0].fields[1] == [(1, 2)]
     assert decoded[0].field_scores[1][0] > 0
+
+
+def test_decode_group_rejects_multi_sentence_and_reranker_vetoed_field_spans():
+    hidden = 16
+    # Anchor at (5, 6); field 1 has a valid 2-token span (1, 3), a 40-token monster (1, 41),
+    # and a 4-token span (10, 14) whose pair_logit is vetoed (-25.0).
+    cands = make_candidates(
+        [[(5, 6)], [(1, 3), (1, 41), (10, 14)]],
+        hidden,
+        high_logit_field=0,
+    )
+    cands.pair_logits[0, 1, 0] = 2.5    # valid 2-token span
+    cands.pair_logits[0, 1, 1] = 1.0    # 40-token span (exceeds max_field_tokens=24)
+    cands.pair_logits[0, 1, 2] = -25.0  # 4-token span vetoed by reranker (< -10.0)
+
+    spec = RecordSpec(
+        task_index=0,
+        task_name="Attack",
+        task_type="events",
+        mode="natural",
+        fields=(
+            RecordFieldSpec(0, "trigger", 0, FieldCardinality.REQUIRED_ONE, is_anchor=True),
+            RecordFieldSpec(1, "Location", 1, FieldCardinality.ZERO_OR_MORE),
+        ),
+        anchor_query_id=0,
+    )
+    head = RecordHead(hidden, record_dim=16, instance_queries=8)
+    with torch.no_grad():
+        group = head.forward_group(spec, torch.randn(2, hidden), cands, 0)
+        # Give all three candidates high assignment logits
+        group.assign_logits[1][:] = torch.tensor([[-2.0, 3.0, 5.0, 4.0]])
+
+    decoded = decode_group(group, anchor_threshold=0.5, field_threshold=0.5)
+    assert decoded[0].fields[1] == [(1, 3)]
+

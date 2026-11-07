@@ -2262,6 +2262,8 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 temperature=settings.record_temperature,
                 merge_coreferent=settings.record_merge_coreferent,
                 coref_threshold=settings.record_coref_link_threshold,
+                max_field_tokens=getattr(settings, "record_field_max_tokens", 24),
+                min_field_pair_logit=getattr(settings, "record_field_min_pair_logit", -10.0),
             )
             decoded = self._drop_prefix_anchored(decoded, spec, metadata, offset)
             instances = []

@@ -297,6 +297,14 @@ class BoundaryHeadSettings:
     # setting of the S14 class. ON makes it real, so arguments get their own operating
     # point while the anchor/object (instance) gate stays where it is.
     record_field_threshold_wins: bool = False
+    # Maximum token width for decoded record field spans (0 = unlimited). Prevents
+    # multi-sentence proposer spans (whose endpoint states look like valid start/end
+    # boundaries to the endpoint-only record head) from being bound as event arguments.
+    record_field_max_tokens: int = 24
+    # Minimum span-pair logit for decoded record field spans. Rejects spans that the
+    # reranker (inside evidence + length features) has strongly vetoed (e.g. logit -25)
+    # while still keeping modest candidate spans (e.g. logit -8).
+    record_field_min_pair_logit: float = -10.0
     # DECODE: one event per coreferent cluster (COREFERENT_OWNERSHIP_SPEC 3b-i). Same-type selected
     # instances that score a shared argument candidate above the field gate merge, unioning triggers.
     # Eval-time, opt-in; False is bit-identical.
@@ -698,6 +706,12 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         ),
         "record_field_threshold_wins": bool(
             values.get("record_field_threshold_wins", d.record_field_threshold_wins)
+        ),
+        "record_field_max_tokens": int(
+            values.get("record_field_max_tokens", d.record_field_max_tokens)
+        ),
+        "record_field_min_pair_logit": float(
+            values.get("record_field_min_pair_logit", d.record_field_min_pair_logit)
         ),
         "record_merge_coreferent": {True: "args", False: "off"}.get(values.get("record_merge_coreferent", d.record_merge_coreferent),
                                                                  values.get("record_merge_coreferent", d.record_merge_coreferent)),

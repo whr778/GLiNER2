@@ -986,6 +986,8 @@ def decode_group(
     temperature: float = 1.0,
     merge_coreferent: str = "off",
     coref_threshold: float = 0.5,
+    max_field_tokens: int = 24,
+    min_field_pair_logit: float = -10.0,
 ) -> List[DecodedRecord]:
     """Decode one record group into a list of :class:`DecodedRecord`.
 
@@ -1023,6 +1025,33 @@ def decode_group(
             selected_instances, coref_members = _merge_coreferent_instances(
                 group, selected_instances, field_threshold, temperature)
 
+    # Filter out multi-sentence / reranker-vetoed field candidates before exclusive
+    # allocation and per-instance selection. RecordHead scores candidates from endpoint
+    # states alone (which carries no inside-token or span-length penalty), so a 100-token
+    # span starting at "San'a, Yemen" and ending at "Strait of Hormuz" has pair_logit ~ -25
+    # yet receives high endpoint assignment score.
+    anchor_f_idx = (
+        group.field_query_ids.index(group.spec.anchor_query_id)
+        if group.spec.mode == "natural" and group.spec.anchor_query_id in group.field_query_ids
+        else -1
+    )
+    cand_allowed: List[Optional[List[bool]]] = []
+    for f_idx, fspec in enumerate(group.field_specs):
+        if f_idx == anchor_f_idx or group.field_spans[f_idx].shape[0] == 0:
+            cand_allowed.append(None)
+            continue
+        spans_t = group.field_spans[f_idx]
+        widths = spans_t[:, 1] - spans_t[:, 0]
+        ok = torch.ones_like(widths, dtype=torch.bool)
+        if max_field_tokens > 0:
+            ok = ok & (widths <= max_field_tokens)
+        if group.field_cand_logits and f_idx < len(group.field_cand_logits):
+            # Prefix choice tokens are single-token literals embedded before the document
+            # whose pair score is ~0 (-20); only apply min_field_pair_logit to multi-token
+            # spans where the reranker's inside/length terms veto multi-sentence spans.
+            ok = ok & ((widths <= 1) | (group.field_cand_logits[f_idx] >= min_field_pair_logit))
+        cand_allowed.append(None if bool(ok.all()) else ok.cpu().tolist())
+
     # Exclusive fields are a global assignment problem: greedily letting the
     # highest-object instance claim its favorite candidate can force later
     # instances onto unrelated spans. Solve scalar fields jointly and allocate
@@ -1036,6 +1065,10 @@ def decode_group(
             group.assign_logits[f_idx][inst].detach() / temperature
             for inst in selected_instances
         ])
+        allowed = cand_allowed[f_idx]
+        if allowed is not None and logits.shape[-1] > 1:
+            allow_t = torch.tensor(allowed, dtype=torch.bool, device=logits.device)
+            logits[:, 1:] = logits[:, 1:].masked_fill(~allow_t.unsqueeze(0), MASK_LOGIT)
         candidate_count = max(int(logits.shape[-1]) - 1, 0)
         if fspec.cardinality.is_scalar:
             if candidate_count == 0:
@@ -1123,6 +1156,11 @@ def decode_group(
                     rec.fields.setdefault(qid, []).append(span)
                     rec.field_scores.setdefault(qid, []).append(probability)
                     continue
+                allowed = cand_allowed[f_idx]
+                if allowed is not None and logits_row.shape[-1] > 1:
+                    allow_t = torch.tensor(allowed, dtype=torch.bool, device=logits_row.device)
+                    logits_row = logits_row.clone()
+                    logits_row[1:] = logits_row[1:].masked_fill(~allow_t, MASK_LOGIT)
                 probs = torch.softmax(logits_row, dim=-1)
                 probs_list = probs.tolist()
                 chosen = None
@@ -1131,6 +1169,8 @@ def decode_group(
                         if fspec.allows_absent:
                             chosen = 0
                             break
+                        continue
+                    if allowed is not None and not allowed[col - 1]:
                         continue
                     chosen = col
                     break
@@ -1146,10 +1186,13 @@ def decode_group(
                 cand_logits = logits_row[1:]
                 if cand_logits.numel() == 0:
                     continue
+                allowed = cand_allowed[f_idx]
                 probs = torch.sigmoid(cand_logits).tolist()
                 selected: List[Tuple[int, int]] = []
                 selected_scores: List[float] = []
                 for cand_idx in range(cand_logits.shape[0]):
+                    if allowed is not None and not allowed[cand_idx]:
+                        continue
                     if fspec.exclusive:
                         owner = list_owners.get((f_idx, cand_idx))
                         if owner is None or owner[0] != inst:
