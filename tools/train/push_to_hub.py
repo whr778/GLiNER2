@@ -110,6 +110,20 @@ def main() -> None:
             print(f"WARNING: no MODEL_CARD.md in {checkpoint} or {checkpoint.parent}/best; "
                   "Hub page will be empty")
 
+        # Co-locate metric/sweep JSONs and eval_history.jsonl so format_metrics.py and the
+        # viewer's Model Card button can read them directly from the model repo.
+        sidecars = (
+            "val_metrics.json", "test_metrics.json", "eval_metrics.json",
+            "train_results.json", "threshold_sweep.json", "coref_threshold_sweep.json",
+            "coref_readout.json", "eval_history.jsonl",
+        )
+        search_dirs = [checkpoint, checkpoint.parent, checkpoint.parent / "best"]
+        for name in sidecars:
+            src = next((d / name for d in search_dirs if (d / name).is_file()), None)
+            if src is not None:
+                shutil.copyfile(src, Path(tmp_dir) / name)
+                print(f"Including {name} ({src.stat().st_size} bytes) from {src}")
+
         print(f"Uploading to https://huggingface.co/{args.repo_id}")
         # RETRY, because a single transient failure here destroys a whole run. The
         # realsynth re-run (2026-09-06) trained 3h34m, wrote its card and metrics, then

@@ -79,6 +79,25 @@ def test_strict_micro_f1_and_absent_metrics(tmp_path, monkeypatch):
     assert "strict micro F1 0.3333" in logged
     assert "records: 4" in logged
 
+    def fake_companion(**kwargs):
+        if kwargs.get("repo_type") == "model" and kwargs["repo_id"] == "whr778/gliner2-eb22g":
+            if kwargs["filename"] == "config.json":
+                return str(empty / "config.json")
+            from huggingface_hub.errors import EntryNotFoundError
+            raise EntryNotFoundError("not on model repo")
+        if (kwargs.get("repo_type") == "dataset"
+                and kwargs["repo_id"] == "whr778/gliner2-run-logs"
+                and kwargs.get("subfolder") == "eb22g"
+                and kwargs["filename"] == "test_metrics.json"):
+            return str(best / "val_metrics.json")
+        from huggingface_hub.errors import EntryNotFoundError
+        raise EntryNotFoundError("missing")
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_companion)
+    companion_card = format_metrics.render("whr778/gliner2-eb22g")
+    assert "strict micro F1 0.3333" in companion_card
+    assert "threshold: 0.5000" in companion_card
+
 
 def test_structure_card_matches_text_fields(tmp_path):
     metrics = {

@@ -152,6 +152,17 @@ def _scan_hub(repo: str, subfolder: Optional[str], repo_type: str, names: tuple[
     return found, reached
 
 
+def _run_logs_fallback(repo: str) -> tuple[str, str] | None:
+    """Map ``<owner>/gliner2-<exp>`` to ``(<owner>/gliner2-run-logs, <exp>)``."""
+    if not _is_hub_id(repo):
+        return None
+    owner, name = repo.split("/", 1)
+    if name == "gliner2-run-logs" or not name.startswith("gliner2-"):
+        return None
+    exp = name[len("gliner2-"):]
+    return (f"{owner}/gliner2-run-logs", exp) if exp else None
+
+
 def _read_hub(repo: str, subfolder: Optional[str]) -> dict[str, Any]:
     found, reached = _scan_hub(repo, subfolder, "model", JSON_FILES)
     if not found and not reached:
@@ -171,6 +182,24 @@ def _read_hub(repo: str, subfolder: Optional[str]) -> dict[str, Any]:
             if not any(name in found for name in METRIC_FILES):
                 found["eval_history.jsonl"] = rows[-1]
         break
+    # Lambda runners publish metrics/logs to <owner>/gliner2-run-logs/<exp>/ before pushing weights
+    # via push_to_hub.py (which only serializes weights + config.json + README.md). When the model
+    # repo itself lacks metric JSONs, supplement from the companion run-logs dataset folder.
+    if not any(name in found for name in METRIC_FILES) and subfolder is None:
+        companion = _run_logs_fallback(repo)
+        if companion is not None:
+            logs_repo, logs_sub = companion
+            missing = tuple(n for n in JSON_FILES if n not in found)
+            extra, _ = _scan_hub(logs_repo, logs_sub, "dataset", missing)
+            found.update(extra)
+            if "eval_history_all" not in found:
+                got = _hub_file(logs_repo, "eval_history.jsonl", logs_sub, "dataset")
+                if got not in ("no-repo", "local-miss", "absent"):
+                    rows = _all_jsonl(Path(got))
+                    if rows:
+                        found["eval_history_all"] = rows
+                        if not any(name in found for name in METRIC_FILES):
+                            found["eval_history.jsonl"] = rows[-1]
     return found
 
 
