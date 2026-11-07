@@ -199,6 +199,9 @@ def resync_derived_settings(model, settings: BoundaryHeadSettings) -> int:
             continue
         module.settings = fresh
         n += 1
+    decoder = getattr(model, "record_decoder", None)
+    if decoder is not None and hasattr(decoder, "max_field_tokens"):
+        decoder.max_field_tokens = settings.record_field_max_tokens
     return n
 
 
@@ -1700,6 +1703,7 @@ class BoundaryExtractorModel(BaseExtractorModel):
                 link_geom_activation=settings.record_link_geom_activation,
                 coref_distance=settings.coref_link_distance,
                 coref_distance_dim=settings.coref_link_distance_dim,
+                max_field_tokens=settings.record_field_max_tokens,
             )
         # The entity-mention coreference link (entity_coref_link). Built only when on.
         self.mention_link = None

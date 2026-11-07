@@ -1013,7 +1013,7 @@ def test_decode_group_rejects_multi_sentence_and_reranker_vetoed_field_spans():
         high_logit_field=0,
     )
     cands.pair_logits[0, 1, 0] = 2.5    # valid 2-token span
-    cands.pair_logits[0, 1, 1] = 1.0    # 40-token span (exceeds max_field_tokens=24)
+    cands.pair_logits[0, 1, 1] = 1.0    # 40-token span (dropped by forward_group max_field_tokens=24)
     cands.pair_logits[0, 1, 2] = -25.0  # 4-token span vetoed by reranker (< -10.0)
 
     spec = RecordSpec(
@@ -1030,8 +1030,10 @@ def test_decode_group_rejects_multi_sentence_and_reranker_vetoed_field_spans():
     head = RecordHead(hidden, record_dim=16, instance_queries=8)
     with torch.no_grad():
         group = head.forward_group(spec, torch.randn(2, hidden), cands, 0)
-        # Give all three candidates high assignment logits
-        group.assign_logits[1][:] = torch.tensor([[-2.0, 3.0, 5.0, 4.0]])
+        # forward_group already excluded the 40-token span (1, 41), leaving [(1, 3), (10, 14)]
+        assert group.field_spans[1].tolist() == [[1, 3], [10, 14]]
+        # Give both remaining candidates high assignment logits
+        group.assign_logits[1][:] = torch.tensor([[-2.0, 3.0, 4.0]])
 
     decoded = decode_group(group, anchor_threshold=0.5, field_threshold=0.5)
     assert decoded[0].fields[1] == [(1, 3)]

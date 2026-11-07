@@ -453,11 +453,13 @@ class RecordHead(nn.Module):
 
     def __init__(self, hidden_size: int, record_dim: int, instance_queries: int, link: bool = False,
                  coref: bool = False, link_geom_dim: int = 16, link_geom_activation: str = "none",
-                 coref_distance: str = "scalar", coref_distance_dim: int = 16) -> None:
+                 coref_distance: str = "scalar", coref_distance_dim: int = 16,
+                 max_field_tokens: int = 24) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.record_dim = record_dim
         self.instance_queries = instance_queries
+        self.max_field_tokens = max_field_tokens
         self.link_geom_dim, self.link_geom_activation = link_geom_dim, link_geom_activation
         self.coref_distance, self.coref_distance_dim = coref_distance, coref_distance_dim
         # The trigger x argument junction (record_link_mode: junction). Built only when on, so
@@ -839,9 +841,20 @@ class RecordHead(nn.Module):
         valid_rows = candidates.valid_mask[sample_index, safe_field_query_ids].cpu().tolist()
         spans_rows = candidates.indices[sample_index, safe_field_query_ids].cpu().tolist()
         total_cands = candidates.valid_mask.shape[2]
+        anchor_f_idx = (
+            field_query_ids.index(spec.anchor_query_id)
+            if spec.mode == "natural" and spec.anchor_query_id in field_query_ids
+            else -1
+        )
+        max_toks = getattr(self, "max_field_tokens", 0) or 0
         for f_idx, (qid, query_valid) in enumerate(zip(safe_field_query_ids, valid_query_ids)):
+            row_spans = spans_rows[f_idx]
+            cap_width = max_toks > 0 and f_idx != anchor_f_idx
             keep_list = (
-                [c for c, ok in enumerate(valid_rows[f_idx]) if ok]
+                [
+                    c for c, ok in enumerate(valid_rows[f_idx])
+                    if ok and (not cap_width or (row_spans[c][1] - row_spans[c][0]) <= max_toks)
+                ]
                 if query_valid else []
             )
             if len(keep_list) == total_cands:
