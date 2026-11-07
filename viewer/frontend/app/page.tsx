@@ -162,6 +162,7 @@ export default function Home() {
       // Merge and entity-cluster overrides stay off until the user turns them on.
       setOptions((o) => ({
         ...o,
+        per_head_thresholds: null,
         ...(inferenceDefaults ?? {}),
         record_threshold: recordDefaults?.record_threshold ?? null,
         argument_threshold: recordDefaults?.argument_threshold ?? null,

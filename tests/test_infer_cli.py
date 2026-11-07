@@ -301,3 +301,106 @@ class TestSubfolderAndStructures:
         assert sc["relations"] == ["located_in", "part_of"]
         assert sc["structures"]["casualty"]["mode"] == "natural"
         assert sc["structures"]["casualty"]["anchor"] == "dead"
+
+    def test_decode_settings_per_head_thresholds_and_head_spans(self):
+        from types import SimpleNamespace
+        model = SimpleNamespace(config=SimpleNamespace(
+            max_len=4096,
+            inference_defaults={
+                "threshold": 0.9,
+                "chunk_size": 2730,
+                "chunk_overlap": 0,
+                "global_decode": False,
+                "per_head_thresholds": {"entity": 0.9, "relation": 0.3, "event": 0.7},
+            },
+        ))
+        # Default: loads per_head_thresholds from inference_defaults
+        ns = infer._parse_args(["--model", "m", "--input", "x", "--entities", "Person"])
+        d = infer._decode_settings(ns, model)
+        assert d["threshold"] == 0.9
+        assert d["per_head_thresholds"] == {"entity": 0.9, "relation": 0.3, "event": 0.7}
+        assert "head_spans" not in d
+
+        # Explicit --threshold disables stored per_head_thresholds unless --per-head-thresholds is given
+        ns_thr = infer._parse_args(["--model", "m", "--input", "x", "--entities", "Person", "--threshold", "0.5"])
+        d_thr = infer._decode_settings(ns_thr, model)
+        assert d_thr["threshold"] == 0.5
+        assert "per_head_thresholds" not in d_thr
+
+        # --no-per-head-thresholds disables stored per_head_thresholds
+        ns_no = infer._parse_args(["--model", "m", "--input", "x", "--entities", "Person", "--no-per-head-thresholds"])
+        d_no = infer._decode_settings(ns_no, model)
+        assert "per_head_thresholds" not in d_no
+
+        # Explicit --per-head-thresholds and --head-spans
+        ns_custom = infer._parse_args([
+            "--model", "m", "--input", "x", "--entities", "Person",
+            "--per-head-thresholds", '{"entity": 0.8, "event": 0.4}',
+            "--head-spans",
+        ])
+        d_custom = infer._decode_settings(ns_custom, model)
+        assert d_custom["per_head_thresholds"] == {"entity": 0.8, "event": 0.4}
+        assert d_custom["head_spans"] is True
+
+
+class TestHeadSpansPostProcessing:
+    def test_strip_leading_stopwords_preserves_offsets_and_quantifiers(self):
+        from gliner2.inference.head_spans import (
+            strip_leading_stopwords_from_results,
+            strip_leading_stopwords_text,
+        )
+        doc = "In the northern province, the hackers attacked the hospital and killed at least 246 people in New York on May 15."
+        s1, d1 = strip_leading_stopwords_text("the hackers")
+        assert (s1, d1) == ("hackers", 4)
+        s2, d2 = strip_leading_stopwords_text("In the northern province")
+        assert (s2, d2) == ("northern province", 7)
+        # Quantifier and proper-noun guards
+        assert strip_leading_stopwords_text("at least 246 people") == ("at least 246 people", 0)
+        assert strip_leading_stopwords_text("a dozen people") == ("a dozen people", 0)
+        assert strip_leading_stopwords_text("New York") == ("New York", 0)
+        assert strip_leading_stopwords_text("May 15") == ("May 15", 0)
+
+        h_idx = doc.index("the hackers")
+        hosp_idx = doc.index("the hospital")
+        toll_idx = doc.index("at least 246 people")
+        raw = {
+            "entities": {
+                "Person": [{"text": "the hackers", "start": h_idx, "end": h_idx + 11, "confidence": 0.9}],
+                "Organization": [
+                    {"text": "the hospital", "start": hosp_idx, "end": hosp_idx + 12, "confidence": 0.8},
+                    {"text": "hospital", "start": hosp_idx + 4, "end": hosp_idx + 12, "confidence": 0.7},
+                ],
+            },
+            "event_extraction": {
+                "Attack": [{
+                    "triggers": [{"text": "attacked", "start": 38, "end": 46}],
+                    "arguments": [
+                        {"role": "Attacker", "entity": {"text": "the hackers", "start": h_idx, "end": h_idx + 11}},
+                        {"role": "Victim", "entity": {"text": "the hospital", "start": hosp_idx, "end": hosp_idx + 12}},
+                        {"role": "Casualties", "entity": {"text": "at least 246 people", "start": toll_idx, "end": toll_idx + 19}},
+                    ],
+                }],
+            },
+            "relation_extraction": {
+                "targeted": [(
+                    "the hackers",
+                    "the hospital",
+                )],
+            },
+        }
+        cleaned = strip_leading_stopwords_from_results(raw)
+        ent_p = cleaned["entities"]["Person"][0]
+        assert ent_p["text"] == "hackers"
+        assert doc[ent_p["start"]:ent_p["end"]] == "hackers"
+        # Deduplicated after stripping "the hospital" -> "hospital" at identical offsets
+        assert len(cleaned["entities"]["Organization"]) == 1
+        assert cleaned["entities"]["Organization"][0]["text"] == "hospital"
+
+        args = {a["role"]: a["entity"] for a in cleaned["event_extraction"]["Attack"][0]["arguments"]}
+        assert args["Attacker"]["text"] == "hackers"
+        assert doc[args["Attacker"]["start"]:args["Attacker"]["end"]] == "hackers"
+        assert args["Victim"]["text"] == "hospital"
+        assert doc[args["Victim"]["start"]:args["Victim"]["end"]] == "hospital"
+        assert args["Casualties"]["text"] == "at least 246 people"
+        assert cleaned["relation_extraction"]["targeted"] == [("hackers", "hospital")]
+

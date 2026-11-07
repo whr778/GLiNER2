@@ -289,6 +289,33 @@ export default function InputPanel({ text, setText, options, setOptions, queuein
             value={options.threshold}
             onChange={(e) => set("threshold", parseFloat(e.target.value))}
           />
+          {options.per_head_thresholds && Object.keys(options.per_head_thresholds).length > 0 && (
+            <div className="hint" style={{ marginTop: 4 }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  style={{ width: "auto" }}
+                  checked={true}
+                  onChange={() => set("per_head_thresholds", null)}
+                />
+                Per-head thresholds (from config.json):{" "}
+                {Object.entries(options.per_head_thresholds)
+                  .map(([k, v]) => `${k}=${Number(v).toFixed(2)}`)
+                  .join(", ")}
+              </label>
+            </div>
+          )}
+        </div>
+        <div className="field row">
+          <input
+            id="head-spans" type="checkbox"
+            style={{ width: "auto" }}
+            checked={Boolean(options.head_spans)}
+            onChange={(e) => set("head_spans", e.target.checked)}
+          />
+          <label htmlFor="head-spans" style={{ margin: 0 }}>
+            Head spans (strip leading stopwords / articles)
+          </label>
         </div>
         {(["record_threshold", "argument_threshold"] as const).map((key) => {
           const label = key === "record_threshold" ? "Record (instance) gate" : "Argument gate";

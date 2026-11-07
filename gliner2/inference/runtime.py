@@ -33,6 +33,7 @@ from gliner2.inference.schema import (  # noqa: F401 - compatibility exports
 )
 from gliner2.processor import PreprocessedBatch
 from gliner2.inference.chunking import merge_chunk_results, split_text_into_chunks
+from gliner2.inference.head_spans import strip_leading_stopwords_from_results
 from gliner2.processing.word_splitter import word_splitter_from
 from gliner2.inference.overlap import normalize_overlap_policy
 from gliner2.inference.candidate_decoder import finalize_spans
@@ -317,6 +318,8 @@ class ExtractorRuntimeMixin:
         max_len: Optional[int] = None,
         overlap_policy: Optional[str] = None,
         hidden_states: Optional[List[torch.Tensor]] = None,
+        per_head_thresholds: Optional[Dict[str, float]] = None,
+        head_spans: bool = False,
     ) -> List[Dict[str, Any]]:
         """Extract from multiple texts with parallel preprocessing.
 
@@ -333,6 +336,10 @@ class ExtractorRuntimeMixin:
             overlap_policy: Optional span overlap policy override.
             hidden_states: Optional precomputed encoder output, one tensor per
                 text; all texts then collate as one batch. See ``encode_tokens``.
+            per_head_thresholds: Optional per-head thresholds keyed by head name
+                (``entity``, ``relation``, ``classification``, ``structure``, ``event``).
+            head_spans: When True, strip leading stopwords/articles from extracted
+                spans so extent predictions normalize to syntactic heads.
 
         Returns:
             One result dict per text.
@@ -364,6 +371,14 @@ class ExtractorRuntimeMixin:
             overlap_policy = normalize_overlap_policy(overlap_policy)
             for metadata in metadata_list:
                 metadata["_overlap_policy"] = overlap_policy
+        if per_head_thresholds:
+            norm_per_head = {
+                str(k): float(v)
+                for k, v in per_head_thresholds.items()
+                if v is not None
+            }
+            for metadata in metadata_list:
+                metadata["_per_head_thresholds"] = norm_per_head
 
         dataset = list(zip(texts, schema_dicts))
 
@@ -424,11 +439,17 @@ class ExtractorRuntimeMixin:
             if format_results:
                 for i, result in enumerate(batch_results):
                     m = meta[i]
-                    batch_results[i] = self.format_results(
+                    formatted = self.format_results(
                         result, include_confidence, m.get("relation_order", []),
                         m.get("classification_tasks", []),
                         requested_events=m.get("event_order", []),
                     )
+                    if head_spans:
+                        formatted = strip_leading_stopwords_from_results(
+                            formatted,
+                            classification_tasks=m.get("classification_tasks", []),
+                        )
+                    batch_results[i] = formatted
             all_results.extend(batch_results)
             sample_idx += len(batch_results)
 
@@ -462,10 +483,16 @@ class ExtractorRuntimeMixin:
                     requested_relations = meta.get("relation_order", [])
                     classification_tasks = meta.get("classification_tasks", [])
                     requested_events = meta.get("event_order", [])
-                    batch_results[i] = self.format_results(
+                    formatted = self.format_results(
                         result, include_confidence, requested_relations, classification_tasks,
                         requested_events=requested_events,
                     )
+                    if head_spans:
+                        formatted = strip_leading_stopwords_from_results(
+                            formatted,
+                            classification_tasks=classification_tasks,
+                        )
+                    batch_results[i] = formatted
 
             all_results.extend(batch_results)
             sample_idx += len(batch)
@@ -1192,7 +1219,9 @@ class ExtractorRuntimeMixin:
         include_spans: bool,
     ) -> None:
         """Decode precomputed span probabilities without running model layers."""
+        per_head = (metadata or {}).get("_per_head_thresholds") or {}
         if schema_name == "entities":
+            eff_threshold = float(per_head.get("entity", threshold))
             if metadata.get("entity_attribute_groups"):
                 results[schema_name] = self._extract_entities_with_attributes(
                     field_names,
@@ -1202,7 +1231,7 @@ class ExtractorRuntimeMixin:
                     original_text,
                     start_mapping,
                     end_mapping,
-                    threshold,
+                    eff_threshold,
                     metadata,
                     include_confidence,
                     include_spans,
@@ -1216,12 +1245,13 @@ class ExtractorRuntimeMixin:
                     original_text,
                     start_mapping,
                     end_mapping,
-                    threshold,
+                    eff_threshold,
                     metadata,
                     include_confidence,
                     include_spans,
                 )
         elif task_type == "relations":
+            eff_threshold = float(per_head.get("relation", threshold))
             results[schema_name] = self._extract_relations(
                 schema_name,
                 field_names,
@@ -1232,18 +1262,20 @@ class ExtractorRuntimeMixin:
                 original_text,
                 start_mapping,
                 end_mapping,
-                threshold,
+                eff_threshold,
                 metadata,
                 include_confidence,
                 include_spans,
             )
         elif task_type == "events":
+            eff_threshold = float(per_head.get("event", threshold))
             results[schema_name] = self._extract_events(
                 schema_name, field_names, span_scores, pred_count,
                 text_len, text_tokens, original_text, start_mapping, end_mapping,
-                threshold, metadata, include_confidence, include_spans
+                eff_threshold, metadata, include_confidence, include_spans
             )
         else:
+            eff_threshold = float(per_head.get("structure", threshold))
             results[schema_name] = self._extract_structures(
                 schema_name,
                 field_names,
@@ -1254,7 +1286,7 @@ class ExtractorRuntimeMixin:
                 original_text,
                 start_mapping,
                 end_mapping,
-                threshold,
+                eff_threshold,
                 metadata,
                 cls_fields,
                 include_confidence,
@@ -1876,6 +1908,8 @@ class ExtractorRuntimeMixin:
         include_spans: bool = False,
         max_len: Optional[int] = None,
         overlap_policy: Optional[str] = None,
+        per_head_thresholds: Optional[Dict[str, float]] = None,
+        head_spans: bool = False,
     ) -> Dict:
         """Extract from single text."""
         return self.batch_extract(
@@ -1889,6 +1923,8 @@ class ExtractorRuntimeMixin:
             include_spans,
             max_len=max_len,
             overlap_policy=overlap_policy,
+            per_head_thresholds=per_head_thresholds,
+            head_spans=head_spans,
         )[0]
 
     def extract_long(
@@ -1906,6 +1942,8 @@ class ExtractorRuntimeMixin:
         overlap_policy: Optional[str] = None,
         global_decode: bool = False,
         global_decode_config: Any = None,
+        per_head_thresholds: Optional[Dict[str, float]] = None,
+        head_spans: bool = False,
     ) -> Dict:
         """Extract from a long document with overlapping word chunks."""
         return self.batch_extract_long(
@@ -1922,6 +1960,8 @@ class ExtractorRuntimeMixin:
             chunk_overlap=chunk_overlap,
             global_decode=global_decode,
             global_decode_config=global_decode_config,
+            per_head_thresholds=per_head_thresholds,
+            head_spans=head_spans,
         )[0]
 
     def batch_extract_long(
@@ -1939,6 +1979,8 @@ class ExtractorRuntimeMixin:
         overlap_policy: Optional[str] = None,
         global_decode: bool = False,
         global_decode_config: Any = None,
+        per_head_thresholds: Optional[Dict[str, float]] = None,
+        head_spans: bool = False,
     ) -> List[Dict[str, Any]]:
         """Extract from long documents by scanning overlapping word chunks.
 
@@ -1988,26 +2030,29 @@ class ExtractorRuntimeMixin:
             include_spans=True,
             max_len=chunk_size,
             overlap_policy=overlap_policy,
+            per_head_thresholds=per_head_thresholds,
+            head_spans=head_spans,
         )
 
         merged_results: List[Dict[str, Any]] = []
         offset = 0
         for text, schema, chunks, count in zip(texts, schema_list, doc_chunks, doc_chunk_counts):
             results_for_doc = chunk_results[offset : offset + count]
-            merged_results.append(
-                merge_chunk_results(
-                    text,
-                    chunks,
-                    results_for_doc,
-                    include_confidence=include_confidence,
-                    include_spans=include_spans,
-                    global_decode=global_decode,
-                    event_roles=self._schema_event_roles(schema) if global_decode else None,
-                    global_decode_config=global_decode_config,
-                    scalar_entity_labels=self._scalar_entity_labels(schema),
-                    overlap_policy=self._resolved_overlap_policy(overlap_policy),
-                )
+            merged = merge_chunk_results(
+                text,
+                chunks,
+                results_for_doc,
+                include_confidence=include_confidence,
+                include_spans=include_spans,
+                global_decode=global_decode,
+                event_roles=self._schema_event_roles(schema) if global_decode else None,
+                global_decode_config=global_decode_config,
+                scalar_entity_labels=self._scalar_entity_labels(schema),
+                overlap_policy=self._resolved_overlap_policy(overlap_policy),
             )
+            if head_spans:
+                merged = strip_leading_stopwords_from_results(merged)
+            merged_results.append(merged)
             offset += count
 
         return merged_results

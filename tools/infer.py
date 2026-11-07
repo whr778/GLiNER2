@@ -176,10 +176,23 @@ def _decode_settings(args: argparse.Namespace, model) -> Dict[str, Any]:
     stored = getattr(model.config, "inference_defaults", None) or {}
     pick = lambda name, fallback: (getattr(args, name) if getattr(args, name) is not None
                                    else stored.get(name, fallback))
-    return {"threshold": pick("threshold", 0.5),
-            "chunk_size": resolve_model_window(model, pick("chunk_size", 0)),
-            "chunk_overlap": pick("chunk_overlap", 0),
-            "global_decode": bool(pick("global_decode", False))}
+    per_head = None
+    if getattr(args, "per_head_thresholds", None) is not None:
+        raw_ph = args.per_head_thresholds
+        per_head = json.loads(raw_ph) if isinstance(raw_ph, str) else raw_ph
+    elif getattr(args, "threshold", None) is None and not getattr(args, "no_per_head_thresholds", False):
+        per_head = stored.get("per_head_thresholds")
+    out: Dict[str, Any] = {
+        "threshold": pick("threshold", 0.5),
+        "chunk_size": resolve_model_window(model, pick("chunk_size", 0)),
+        "chunk_overlap": pick("chunk_overlap", 0),
+        "global_decode": bool(pick("global_decode", False)),
+    }
+    if per_head:
+        out["per_head_thresholds"] = dict(per_head)
+    if getattr(args, "head_spans", False):
+        out["head_spans"] = True
+    return out
 
 
 def _parse_args(argv: List[str] = None) -> argparse.Namespace:
@@ -226,6 +239,13 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p.add_argument("--include-confidence", action="store_true")
     p.add_argument("--threshold", type=float, default=None,
                    help="Span threshold. Default: the checkpoint's inference_defaults, else 0.5.")
+    p.add_argument("--per-head-thresholds", default=None,
+                   help='Optional JSON mapping head -> threshold, e.g. \'{"entity":0.9,"event":0.7}\'. '
+                        "Default: the checkpoint's inference_defaults.per_head_thresholds when --threshold is omitted.")
+    p.add_argument("--no-per-head-thresholds", action="store_true",
+                   help="Ignore per_head_thresholds from config.json and use a single scalar threshold across all heads.")
+    p.add_argument("--head-spans", action="store_true",
+                   help="Strip leading stopwords/articles from extracted spans so extent predictions normalize to head spans.")
     p.add_argument("--merge-coreferent", choices=["off", "args", "link"], default=None,
                    help="Merge same-type events whose triggers are coreferent mentions of one event. "
                         "`link` needs a checkpoint trained with record_coref_link (eb20+) and raises "
@@ -366,9 +386,12 @@ def main(argv: List[str] = None) -> None:
             out[i] = link_arguments(r, role_types) if args.link_arguments is not None else r
         if args.entity_coref is not None:
             from gliner2.inference.entity_coref import candidate_mentions, resolve
+            from gliner2.inference.head_spans import strip_leading_stopwords_from_results
             for rec, r in zip(recs, out):
                 mentions = candidate_mentions(rec["input"], r.get("entities"))
                 r["coref_clusters"] = [c for c in resolve(model, rec["input"], mentions, args.entity_coref) if len(c) > 1]
+                if getattr(args, "head_spans", False):
+                    r.update(strip_leading_stopwords_from_results(r))
         if args.include_spans:
             from gliner2.inference.argument_coref import attach_argument_clusters
             totals = {"linked": 0, "ambiguous": 0, "none": 0}

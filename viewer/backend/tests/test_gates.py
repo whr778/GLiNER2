@@ -79,3 +79,38 @@ def test_entity_coref_refuses_a_model_without_the_link():
 def test_span_model_is_left_alone():
     model = SimpleNamespace(config=SimpleNamespace(boundary_head=None))
     assert app._apply_gates(model, {"record_field_threshold": 0.05}) == {}
+
+
+def test_extract_forwards_per_head_thresholds_and_head_spans(monkeypatch):
+    import torch
+
+    captured = {}
+
+    class DummyModel:
+        def __init__(self):
+            self.config = SimpleNamespace(boundary_head={}, label_map=None, label_style=None)
+            self._param = torch.zeros(1)
+
+        def parameters(self):
+            return iter([self._param])
+
+        def batch_extract_long(self, texts, schema, **kwargs):
+            captured.update(kwargs)
+            return [{"entities": {"Person": [{"text": "hackers", "start": 4, "end": 11}]}}]
+
+    monkeypatch.setattr(app, "get_model", lambda model_id, device=None: DummyModel())
+    req = app.ExtractRequest(
+        text="The hackers attacked.",
+        schema={"entities": ["Person"]},
+        options=app.Options(
+            threshold=0.9,
+            per_head_thresholds={"entity": 0.9, "event": 0.7, "relation": 0.3},
+            head_spans=True,
+        ),
+    )
+    res = app.extract(req)
+    assert res["result"]["entities"]["Person"][0]["text"] == "hackers"
+    assert captured["threshold"] == 0.9
+    assert captured["per_head_thresholds"] == {"entity": 0.9, "event": 0.7, "relation": 0.3}
+    assert captured["head_spans"] is True
+

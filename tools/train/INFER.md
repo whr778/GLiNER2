@@ -123,6 +123,9 @@ ONCE: pick settings on the validation split first.
 | `--schema-json` | a full schema file; overrides all of the above |
 | `--no-label-map` | send labels exactly as typed |
 | `--threshold`, `--chunk-size`, `--chunk-overlap`, `--global-decode` / `--no-global-decode` | override the checkpoint |
+| `--per-head-thresholds '{"entity":0.9,"event":0.7}'` | per-head thresholds; defaults to `inference_defaults.per_head_thresholds` when `--threshold` is omitted |
+| `--no-per-head-thresholds` | ignore `per_head_thresholds` from `config.json` and use a single scalar threshold across all heads |
+| `--head-spans` | strip leading stopwords/articles from extracted spans so extent predictions normalize to syntactic heads (updating character `start` offsets while preserving numeric quantifier phrases like `"at least 246"`) |
 | `--include-confidence`, `--include-spans` | add scores and character offsets (for event/structure record fields, `confidence` is the role assignment probability that gated the filler and `pair_confidence` is the candidate span-pair score) |
 | `--gold-schema` | each `.jsonl` record gets the schema of its own gold labels, as eval scores it |
 | `--labels-file <unified YAML>` | add `gold_mapped`, and with `--gold-schema` build each schema from the mapped gold (eval's path). Warns if the file's map differs from the checkpoint's `label_map` -- usually the wrong file for that model |

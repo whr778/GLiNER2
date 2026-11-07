@@ -1113,6 +1113,14 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             for spec in record_specs[sample_index].values()
         ]
 
+    _TASK_TO_HEAD = {
+        "entities": "entity",
+        "relations": "relation",
+        "events": "event",
+        "json_structures": "structure",
+        "classifications": "classification",
+    }
+
     @staticmethod
     def _query_thresholds(
         specs_by_sample: List[List[Dict[str, Any]]],
@@ -1130,7 +1138,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         )
         for sample_index, specs in enumerate(specs_by_sample):
             metadata = metadata_list[sample_index]
+            per_head = metadata.get("_per_head_thresholds") or {}
             for query_id, spec in enumerate(specs):
+                head_key = BoundaryExtractor._TASK_TO_HEAD.get(spec["task_type"])
+                base_thr = per_head.get(head_key, default)
                 configured = None
                 if spec["task_type"] == "entities":
                     configured = metadata.get("entity_metadata", {}).get(
@@ -1142,6 +1153,8 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     ).get("threshold")
                 if configured is not None:
                     values[sample_index, query_id] = float(configured)
+                elif base_thr != default:
+                    values[sample_index, query_id] = float(base_thr)
         return values
 
     def _decode_entities(
@@ -1460,6 +1473,9 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 dtype = field_metadata.get("dtype", "list")
                 choices = field_metadata.get("choices")
                 if choices:
+                    struct_thr = (metadata.get("_per_head_thresholds") or {}).get(
+                        "structure", threshold
+                    )
                     instance[field_name] = self._decode_choice_field(
                         batch,
                         sample_index,
@@ -1468,7 +1484,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         choices,
                         dtype,
                         field_metadata.get("threshold"),
-                        threshold,
+                        struct_thr,
                         offset,
                         include_confidence,
                     )
@@ -1769,16 +1785,19 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 pairs.tail_end, pairs.head_prob, pairs.tail_prob,
             ])
         )
+        rel_default_thr = (metadata.get("_per_head_thresholds") or {}).get(
+            "relation", threshold
+        )
         for pair_index, score in enumerate(scores):
             relation_type = relation_aliases.get(
                 pairs.relation_types[pair_index],
                 pairs.relation_types[pair_index],
             )
             relation_threshold = relation_metadata.get(relation_type, {}).get(
-                "threshold", threshold
+                "threshold", rel_default_thr
             )
             if relation_threshold is None:
-                relation_threshold = threshold
+                relation_threshold = rel_default_thr
             if score < relation_threshold:
                 continue
             hs = head_start[pair_index] - offset
@@ -1968,6 +1987,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         record_threshold = resolve_record_threshold(settings, threshold)
         field_threshold = resolve_record_field_threshold(settings, record_threshold)
         metadata = metadata or {}
+        per_head = metadata.get("_per_head_thresholds") or {}
         query_states_i = core["query_states"][sample_index]
         out: Dict[str, Any] = {}
 
@@ -2225,6 +2245,12 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             )
 
         for task_index, spec in record_specs[sample_index].items():
+            spec_head = (
+                "event" if getattr(spec, "task_type", None) == "events" else "structure"
+            )
+            spec_thr = per_head.get(spec_head, threshold)
+            record_threshold = resolve_record_threshold(settings, spec_thr)
+            field_threshold = resolve_record_field_threshold(settings, record_threshold)
             group = self.record_decoder.forward_group(
                 spec, query_states_i, candidates, sample_index
             )

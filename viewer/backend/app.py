@@ -122,6 +122,10 @@ class Options(BaseModel):
     coref_threshold: Optional[float] = None
     # None leaves entity mention clusters out of the result. A number runs the mention link.
     entity_coref_threshold: Optional[float] = None
+    # Per-head operating thresholds from config.json (entity, relation, classification, structure, event).
+    per_head_thresholds: Optional[Dict[str, float]] = None
+    # Strip leading stopwords/articles from extracted spans.
+    head_spans: bool = False
 
 
 class ExtractRequest(BaseModel):
@@ -273,6 +277,8 @@ def _run_inference_job(job) -> None:
             raise RuntimeError("trigger merge link needs a checkpoint trained with record_coref_link")
 
     def predict(texts, schemas):
+        from gliner2.inference.head_spans import strip_leading_stopwords_from_results
+
         prepared = [Schema.from_dict(_declare_records(schema)) for schema in schemas]
         out = model.batch_extract_long(
             texts,
@@ -285,10 +291,14 @@ def _run_inference_job(job) -> None:
             include_confidence=True,
             global_decode=opts.global_decode,
             global_decode_config=GlobalDecodeConfig(beam_width=opts.beam_width),
+            per_head_thresholds=opts.per_head_thresholds,
+            head_spans=opts.head_spans,
         )
         if opts.entity_coref_threshold is not None:
             out = [_attach_entity_coref(model, text, result, opts.entity_coref_threshold)
                    for text, result in zip(texts, out)]
+            if opts.head_spans:
+                out = [strip_leading_stopwords_from_results(r) for r in out]
         return out
 
     with _GATE_LOCK:
@@ -354,12 +364,17 @@ def extract(req: ExtractRequest) -> Dict[str, Any]:
                     include_confidence=True,
                     global_decode=req.options.global_decode,
                     global_decode_config=GlobalDecodeConfig(beam_width=req.options.beam_width),
+                    per_head_thresholds=req.options.per_head_thresholds,
+                    head_spans=req.options.head_spans,
                 )[0]
             finally:
                 _apply_gates(model, restore)
             if req.options.entity_coref_threshold is not None:
                 result = _attach_entity_coref(
                     model, req.text, result, req.options.entity_coref_threshold)
+                if req.options.head_spans:
+                    from gliner2.inference.head_spans import strip_leading_stopwords_from_results
+                    result = strip_leading_stopwords_from_results(result)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001 - surface extraction errors to the client

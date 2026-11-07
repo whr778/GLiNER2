@@ -48,6 +48,10 @@ export type ExtractOptions = {
   coref_threshold?: number | null;
   // null = do not cluster entity mentions. A number is the link-logit cut-off the user set.
   entity_coref_threshold?: number | null;
+  // Per-head thresholds from config.json inference_defaults; null = use scalar threshold across all heads.
+  per_head_thresholds?: Record<string, number> | null;
+  // Strip leading stopwords/articles from extracted spans.
+  head_spans?: boolean;
 };
 
 export type CorefInfo = {
@@ -70,6 +74,8 @@ export const DEFAULT_OPTIONS: ExtractOptions = {
   merge_coreferent: null,
   coref_threshold: null,
   entity_coref_threshold: null,
+  per_head_thresholds: null,
+  head_spans: false,
 };
 
 export type ExtractResponse = {
