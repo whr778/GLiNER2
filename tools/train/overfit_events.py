@@ -244,6 +244,8 @@ def main(argv=None) -> None:
           f"coref_ownership={getattr(bh_settings, 'record_coreferent_ownership', '?')} "
           f"pair_split={getattr(bh_settings, 'pair_split_reduction', '?')} "
           f"keep_all_absent={getattr(bh_settings, 'hard_negative_keep_all_when_absent', '?')} "
+          f"max_field_tokens={getattr(bh_settings, 'record_field_max_tokens', '?')} "
+          f"min_field_pair_logit={getattr(bh_settings, 'record_field_min_pair_logit', '?')} "
           f"remove_events_prob={model.processor.sampling_config.remove_events_prob}", flush=True)
 
     negatives = None
@@ -282,6 +284,8 @@ def main(argv=None) -> None:
                 train_stats["gold_role_p_median"] = round(sp[len(sp) // 2], 6)
                 train_stats["gold_role_p_mean"] = round(sum(sp) / len(sp), 6)
                 train_stats["gold_role_p_ge_0.5"] = round(sum(p >= 0.5 for p in sp) / len(sp), 4)
+            gate_st = R.anchor_gate_stats()
+            train_stats["arg_exceeds_max_tokens_n"] = int(gate_st.get("arg_exceeds_max_tokens_n", 0))
             row["train"] = train_stats
             log.append(row)
             print(f"[overfit-events] {json.dumps(row)}", flush=True)
