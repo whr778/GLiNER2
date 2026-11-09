@@ -398,11 +398,13 @@ class SchemaTransformer:
         sampling_config: SamplingConfig = None,
         token_pooling: str = "first",
         word_splitter: Optional[WordSplitterSpec] = None,
+        strip_bare_space_subword: bool = False,
     ):
         if model_name is None and tokenizer is None:
             raise ValueError("Either model_name or tokenizer must be provided.")
 
         self.token_pooling = token_pooling if token_pooling in ["first", "mean", "max"] else "first"
+        self.strip_bare_space_subword = bool(strip_bare_space_subword)
         self.tokenizer = tokenizer or _load_encoder_tokenizer(model_name)
         self.word_splitter = resolve_word_splitter(word_splitter)
         self.sampling_config = sampling_config or SamplingConfig()
@@ -422,12 +424,21 @@ class SchemaTransformer:
 
         # OPT-6: Cache tokenized forms of special tokens and common punctuation
         self._token_cache = {}
-        for tok in self.SPECIAL_TOKENS + ["(", ")", ",", "|"]:
+        for tok in self.SPECIAL_TOKENS:
             self._token_cache[tok] = self.tokenizer.tokenize(tok)
+        for tok in ("(", ")", ",", "|"):
+            self._token_cache[tok] = self._tokenize_word(tok)
         # Bounded LRU for every other token (words, schema labels). tokenize() is
         # deterministic per string, so this is byte-exact; the cache only removes
         # redundant work. Per-instance, thread-safe (functools.lru_cache).
-        self._tokenize_cached = lru_cache(maxsize=_TOKENIZE_CACHE_SIZE)(self.tokenizer.tokenize)
+        self._tokenize_cached = lru_cache(maxsize=_TOKENIZE_CACHE_SIZE)(self._tokenize_word)
+
+    def _tokenize_word(self, token: str) -> List[str]:
+        """Tokenize one word token, optionally stripping a leading standalone metaspace ('▁'/'Ġ')."""
+        subs = self.tokenizer.tokenize(token)
+        if self.strip_bare_space_subword and len(subs) > 1 and subs[0] in ("▁", "Ġ"):
+            return subs[1:]
+        return subs
 
     # -- pickling ---------------------------------------------------------------------
     # WHY THIS EXISTS. `_tokenize_cached` is a functools.lru_cache wrapper, and those can
@@ -449,7 +460,7 @@ class SchemaTransformer:
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self._tokenize_cached = lru_cache(maxsize=_TOKENIZE_CACHE_SIZE)(self.tokenizer.tokenize)
+        self._tokenize_cached = lru_cache(maxsize=_TOKENIZE_CACHE_SIZE)(self._tokenize_word)
 
     def change_mode(self, is_training: bool):
         """Switch between training and inference mode."""

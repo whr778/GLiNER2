@@ -85,17 +85,20 @@ class SpanExtractorModel(BaseExtractorModel):
         self.max_width = config.max_width
 
         # Initialize processor
+        strip_bare = bool(getattr(config, "strip_bare_space_subword", False))
         if tokenizer is not None:
             self.processor = SchemaTransformer(
                 tokenizer=tokenizer,
                 token_pooling=config.token_pooling,
                 word_splitter=word_splitter,
+                strip_bare_space_subword=strip_bare,
             )
         else:
             self.processor = SchemaTransformer(
                 config.model_name,
                 token_pooling=config.token_pooling,
                 word_splitter=word_splitter,
+                strip_bare_space_subword=strip_bare,
             )
 
         # Load encoder

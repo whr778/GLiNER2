@@ -562,5 +562,45 @@ class TestHeadSpansPostProcessing:
         assert ent["text"] == "hackers"
         assert doc[ent["start"]:ent["end"]] == "hackers"
 
+    def test_strip_bare_space_subword_in_schema_transformer(self):
+        import pickle
+        from gliner2.processor import SchemaTransformer
+        from tests.fixtures.tiny_tokenizer import build_tiny_tokenizer
+
+        tok = build_tiny_tokenizer()
+        orig_tokenize = tok.tokenize
+
+        def mock_sentencepiece_tokenize(word):
+            if word == "2026":
+                return ["▁", "2", "0", "2", "6"]
+            if word == "俄":
+                return ["▁", "俄"]
+            return orig_tokenize(word)
+
+        tok.tokenize = mock_sentencepiece_tokenize
+
+        proc_off = SchemaTransformer(tokenizer=tok, strip_bare_space_subword=False)
+        proc_on = SchemaTransformer(tokenizer=tok, strip_bare_space_subword=True)
+
+        assert proc_off._tokenize_cached("2026") == ["▁", "2", "0", "2", "6"]
+        assert proc_off._tokenize_cached("俄") == ["▁", "俄"]
+        assert proc_on._tokenize_cached("2026") == ["2", "0", "2", "6"]
+        assert proc_on._tokenize_cached("俄") == ["俄"]
+
+        fmt_on = proc_on._format_input_with_mapping(
+            [[proc_on.P_TOKEN, "entities", proc_on.E_TOKEN, "Date"]],
+            ["2026", "俄"],
+        )
+        pooled = [fmt_on["subword_list"][i] for i in fmt_on["text_word_first_positions"]]
+        assert pooled == ["2", "俄"]
+
+        # Verify __getstate__ / __setstate__ preserves strip_bare_space_subword behavior
+        state = proc_on.__getstate__()
+        restored = SchemaTransformer.__new__(SchemaTransformer)
+        restored.__setstate__(state)
+        assert restored.strip_bare_space_subword is True
+        assert restored._tokenize_cached("2026") == ["2", "0", "2", "6"]
+
+
 
 

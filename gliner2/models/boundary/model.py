@@ -1641,17 +1641,26 @@ class BoundaryExtractorModel(BaseExtractorModel):
         self.config = config
 
         from gliner2.processor import SchemaTransformer
+        strip_bare = bool(getattr(config, "strip_bare_space_subword", False))
         if tokenizer is not None:
             self.processor = SchemaTransformer(
                 tokenizer=tokenizer,
                 token_pooling=config.token_pooling,
                 word_splitter=word_splitter,
+                strip_bare_space_subword=strip_bare,
             )
         else:
             self.processor = SchemaTransformer(
                 config.model_name,
                 token_pooling=config.token_pooling,
                 word_splitter=word_splitter,
+                strip_bare_space_subword=strip_bare,
+            )
+        if strip_bare:
+            print(
+                "[tokenizer] strip_bare_space_subword=True "
+                "(standalone leading '▁'/'Ġ' subword stripped before word pooling)",
+                flush=True,
             )
 
         if load_encoder:

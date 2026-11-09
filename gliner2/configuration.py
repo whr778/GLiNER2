@@ -1139,6 +1139,7 @@ class ExtractorConfig(PretrainedConfig):
         architecture: str = None,
         architecture_version: int = 1,
         token_pooling: str = "first",
+        strip_bare_space_subword: bool = False,
         max_len: int = None,
         attn_implementation: str = "sdpa",
         span_head: Mapping[str, Any] = None,
@@ -1177,6 +1178,7 @@ class ExtractorConfig(PretrainedConfig):
         self.config_version = config_version or self.current_config_version
         self.model_name = model_name
         self.token_pooling = token_pooling
+        self.strip_bare_space_subword = bool(strip_bare_space_subword)
         self.max_len = max_len
         self.default_schema = dict(default_schema) if default_schema else None
         self.label_map = dict(label_map) if label_map else None
