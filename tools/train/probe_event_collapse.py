@@ -35,16 +35,24 @@ from gliner2.training.eval_metrics import _schema_from_gold  # noqa: E402
 
 
 def local_checkpoint(ref: str, ignore_patterns=None) -> str:
-    """A local directory as given, or `repo:subfolder` on the Hub downloaded once under $CKPT_CACHE; returns the path."""
-    if ":" in ref and not Path(ref).exists():
-        from huggingface_hub import snapshot_download
-        repo, sub = ref.split(":", 1)
-        cache = os.environ.get("CKPT_CACHE", "/Volumes/Development/tmp/autopsy_ckpts")
-        kwargs = {"allow_patterns": [f"{sub}/*"], "local_dir": f"{cache}/{repo.replace('/', '__')}"}
-        if ignore_patterns is not None:
-            kwargs["ignore_patterns"] = ignore_patterns
-        root = snapshot_download(repo, **kwargs)
-        ref = str(Path(root) / sub)
+    """A local directory as given, or `repo[:subfolder]` on the Hub downloaded once under $CKPT_CACHE; returns the path."""
+    if not Path(ref).exists():
+        if ":" in ref:
+            from huggingface_hub import snapshot_download
+            repo, sub = ref.split(":", 1)
+            cache = os.environ.get("CKPT_CACHE", "/Volumes/Development/tmp/autopsy_ckpts")
+            kwargs = {"allow_patterns": [f"{sub}/*"], "local_dir": f"{cache}/{repo.replace('/', '__')}"}
+            if ignore_patterns is not None:
+                kwargs["ignore_patterns"] = ignore_patterns
+            root = snapshot_download(repo, **kwargs)
+            ref = str(Path(root) / sub)
+        elif "/" in ref and not ref.startswith((".", "/", "~")):
+            from huggingface_hub import snapshot_download
+            cache = os.environ.get("CKPT_CACHE", "/Volumes/Development/tmp/autopsy_ckpts")
+            kwargs = {"local_dir": f"{cache}/{ref.replace('/', '__')}"}
+            if ignore_patterns is not None:
+                kwargs["ignore_patterns"] = list(ignore_patterns) + ["checkpoint-*/*"]
+            ref = str(snapshot_download(ref, **kwargs))
     return ref
 
 
