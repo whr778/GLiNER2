@@ -209,6 +209,7 @@ class RecordGroupOutput:
     instance_spans: List[Optional[Tuple[int, int]]]
     # [Ni, Ni] trigger x trigger coreference logits (record_coref_link, natural mode); None when off.
     coref_logits: Optional[torch.Tensor] = None
+    max_field_tokens: int = 0
 
     @property
     def num_instances(self) -> int:
@@ -944,6 +945,7 @@ class RecordHead(nn.Module):
             instance_seed=instance_seed,
             instance_spans=instance_spans,
             coref_logits=coref_logits,
+            max_field_tokens=int(max_toks),
         )
 
 
@@ -1001,6 +1003,7 @@ def decode_group(
     coref_threshold: float = 0.5,
     max_field_tokens: int = 24,
     min_field_pair_logit: float = -10.0,
+    doc_offset: int = 0,
 ) -> List[DecodedRecord]:
     """Decode one record group into a list of :class:`DecodedRecord`.
 
@@ -1059,10 +1062,10 @@ def decode_group(
         if max_field_tokens > 0:
             ok = ok & (widths <= max_field_tokens)
         if group.field_cand_logits and f_idx < len(group.field_cand_logits):
-            # Prefix choice tokens are single-token literals embedded before the document
-            # whose pair score is ~0 (-20); only apply min_field_pair_logit to multi-token
-            # spans where the reranker's inside/length terms veto multi-sentence spans.
-            ok = ok & ((widths <= 1) | (group.field_cand_logits[f_idx] >= min_field_pair_logit))
+            # Prefix choice tokens are literals embedded before the document (end <= doc_offset)
+            # whose pair score is ~0 (-20); only apply min_field_pair_logit to document spans.
+            is_prefix_choice = spans_t[:, 1] <= doc_offset
+            ok = ok & (is_prefix_choice | (group.field_cand_logits[f_idx] >= min_field_pair_logit))
         cand_allowed.append(None if bool(ok.all()) else ok.cpu().tolist())
 
     # Exclusive fields are a global assignment problem: greedily letting the
@@ -1916,6 +1919,18 @@ _ANCHOR_GATE = {"trained": 0, "anchor_not_proposed": 0, "anchor_not_seeded": 0,
 _ANCHOR_GATE_BY_TASK: Dict[str, int] = {}
 _ANCHOR_GATE_CALLS = 0
 _ANCHOR_FIELD_DROPS = 0
+_ARG_MAX_TOKENS_DROPS = 0
+
+
+def _note_arg_max_tokens_drop(task_type: str = "?") -> None:
+    """Count gold argument values dropped because all alternatives exceed `max_field_tokens`."""
+    global _ARG_MAX_TOKENS_DROPS
+    _ARG_MAX_TOKENS_DROPS += 1
+    key = f"{task_type}/arg_exceeds_max_tokens"
+    _ANCHOR_GATE_BY_TASK[key] = _ANCHOR_GATE_BY_TASK.get(key, 0) + 1
+    n = _ARG_MAX_TOKENS_DROPS
+    if n in (1, 1000, 10000) or (n > 10000 and n % 250000 == 0):
+        logger.info("record_field_max_tokens: %d gold argument values exceeded max_field_tokens (cumulative)", n)
 
 
 def _note_anchor_field_drop() -> None:
@@ -1957,17 +1972,22 @@ def anchor_gate_stats() -> Dict[str, float]:
     out = {f"{k}_n": v for k, v in _ANCHOR_GATE.items()}
     out.update({f"{k}_share": v / total for k, v in _ANCHOR_GATE.items()})
     out["seen"] = _ANCHOR_GATE_CALLS
+    out["arg_exceeds_max_tokens_n"] = _ARG_MAX_TOKENS_DROPS
     out["by_task"] = dict(_ANCHOR_GATE_BY_TASK)
+    for k, v in _ANCHOR_GATE_BY_TASK.items():
+        if k.endswith("/arg_exceeds_max_tokens"):
+            out[k] = v
     return out
 
 
 def reset_anchor_gate() -> None:
     """Zero the gate. Probes call this so one run's numbers are its own."""
-    global _ANCHOR_GATE_CALLS
+    global _ANCHOR_GATE_CALLS, _ARG_MAX_TOKENS_DROPS
     for k in _ANCHOR_GATE:
         _ANCHOR_GATE[k] = 0
     _ANCHOR_GATE_BY_TASK.clear()
     _ANCHOR_GATE_CALLS = 0
+    _ARG_MAX_TOKENS_DROPS = 0
 
 
 _NEGATIVE_INSTANCES = 0
@@ -2207,6 +2227,18 @@ def compute_group_loss(group: RecordGroupOutput, records: Sequence[RecordTarget]
                 _note_anchor_gate("anchor_not_seeded", group.spec.task_type)
                 continue
             _note_anchor_gate("trained", group.spec.task_type)
+            max_toks = getattr(group, "max_field_tokens", 0) or 0
+            if max_toks > 0:
+                for f_idx, fspec in enumerate(group.field_specs):
+                    if f_idx == anchor_f_idx:
+                        continue
+                    target = record.field_for_query(fspec.query_id)
+                    if target is None:
+                        continue
+                    for alternatives in target.values:
+                        if alternatives and not _resolve_value_cols(alternatives, span_indices[f_idx]):
+                            if any((int(s[1]) - int(s[0])) > max_toks for s in alternatives):
+                                _note_arg_max_tokens_drop(group.spec.task_type)
             field_loss = field_loss + sum(_instance_field_loss(group, i, record, span_indices, role_hard_negatives,
                                                                drop_anchor_field)
                                           for i in owners) / len(owners)

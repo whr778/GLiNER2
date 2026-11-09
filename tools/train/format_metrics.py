@@ -182,10 +182,10 @@ def _read_hub(repo: str, subfolder: Optional[str]) -> dict[str, Any]:
             if not any(name in found for name in METRIC_FILES):
                 found["eval_history.jsonl"] = rows[-1]
         break
-    # Lambda runners publish metrics/logs to <owner>/gliner2-run-logs/<exp>/ before pushing weights
-    # via push_to_hub.py (which only serializes weights + config.json + README.md). When the model
-    # repo itself lacks metric JSONs, supplement from the companion run-logs dataset folder.
-    if not any(name in found for name in METRIC_FILES) and subfolder is None:
+    # Lambda runners publish metrics/logs to <owner>/gliner2-run-logs/<exp>/ before pushing weights.
+    # push_to_hub.py now co-locates sidecar JSONs for new pushes; for older repos (or partial uploads)
+    # that lack any metric JSON, supplement missing files from the companion run-logs dataset folder.
+    if not all(name in found for name in METRIC_FILES) and subfolder is None:
         companion = _run_logs_fallback(repo)
         if companion is not None:
             logs_repo, logs_sub = companion

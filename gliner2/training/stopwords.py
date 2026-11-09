@@ -54,21 +54,31 @@ def build_stopwords(
     words: set[str] = set()
     missing: list[str] = []
 
+    _CC100_ISO_FALLBACK = {"fil": "tl", "tgl": "tl", "tl": "tl"}
+    _CC100_YAML_ALIAS = {"ns": "nso", "zh-hans": "zho", "zh-hant": "zho"}
+
     for code in lang_codes:
         found = False
+        raw = str(code).strip()
+        norm = _CC100_YAML_ALIAS.get(raw.lower(), raw)
+        alpha3 = None
         try:
-            alpha2 = langcodes.Language.get(code).language
-            if stopwordsiso.has_lang(alpha2):
-                words.update(stopwordsiso.stopwords(alpha2))
+            lang = langcodes.Language.get(norm.split("_")[0])
+            alpha2 = lang.language
+            alpha3 = lang.to_alpha3()
+            iso_key = _CC100_ISO_FALLBACK.get(alpha2, _CC100_ISO_FALLBACK.get(norm.lower(), alpha2))
+            if stopwordsiso.has_lang(iso_key) and "_" not in raw:
+                words.update(stopwordsiso.stopwords(iso_key))
                 found = True
         except Exception:
             pass
 
-        if code in yaml_data:
-            entry = yaml_data[code]
-            if entry:
-                words.update(str(w) for w in entry)
-            found = True
+        for yk in dict.fromkeys(k for k in (raw, raw.lower(), norm, alpha3) if k):
+            if yk in yaml_data:
+                entry = yaml_data[yk]
+                if entry:
+                    words.update(str(w) for w in entry)
+                found = True
 
         if not found:
             missing.append(code)

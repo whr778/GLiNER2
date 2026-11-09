@@ -837,11 +837,20 @@ class ExtractorRuntimeMixin:
             sample_index = record["sample_index"]
             schema_name = record["schema_name"]
             if record["kind"] == "classification":
+                sample_meta = (
+                    metadata_list[sample_index]
+                    if sample_index < len(metadata_list)
+                    else None
+                )
+                per_head_cls = ((sample_meta or {}).get("_per_head_thresholds") or {}).get(
+                    "classification"
+                )
                 self._decode_classification_probabilities(
                     results[sample_index],
                     schema_name,
                     record["classification_config"],
                     unpack_tensor(record["probabilities"]),
+                    per_head_threshold=per_head_cls,
                 )
                 continue
 
@@ -1029,7 +1038,8 @@ class ExtractorRuntimeMixin:
 
             if task_type == "classifications":
                 self._extract_classification_result(
-                    results, schema_name, schema, embs, schema_tokens
+                    results, schema_name, schema, embs, schema_tokens,
+                    metadata=metadata,
                 )
             else:
                 self._extract_span_result(
@@ -1069,6 +1079,7 @@ class ExtractorRuntimeMixin:
         embs: torch.Tensor,
         schema_tokens: List[str],
         temperature: float = 1.0,
+        metadata: Optional[Dict] = None,
     ):
         """Extract classification result."""
         computed = self._compute_classification_probabilities(
@@ -1077,8 +1088,12 @@ class ExtractorRuntimeMixin:
         if computed is None:
             return
         schema_name, cls_config, probs = computed
+        per_head_cls = ((metadata or {}).get("_per_head_thresholds") or {}).get(
+            "classification"
+        )
         self._decode_classification_probabilities(
-            results, schema_name, cls_config, probs
+            results, schema_name, cls_config, probs,
+            per_head_threshold=per_head_cls,
         )
 
     def _compute_classification_probabilities(
@@ -1120,10 +1135,17 @@ class ExtractorRuntimeMixin:
         schema_name: str,
         cls_config: Dict,
         probs: torch.Tensor,
+        per_head_threshold: Optional[float] = None,
     ) -> None:
         """Decode precomputed probabilities on either CPU or an accelerator."""
         labels = cls_config["labels"]
-        cls_threshold = cls_config.get("cls_threshold", 0.5)
+        raw_cls_thr = cls_config.get("cls_threshold")
+        if raw_cls_thr is not None and (raw_cls_thr != 0.5 or per_head_threshold is None):
+            cls_threshold = float(raw_cls_thr)
+        elif per_head_threshold is not None:
+            cls_threshold = float(per_head_threshold)
+        else:
+            cls_threshold = 0.5
         is_multi = cls_config.get("multi_label", False)
 
         if is_multi:
@@ -2036,7 +2058,7 @@ class ExtractorRuntimeMixin:
             max_len=chunk_size,
             overlap_policy=overlap_policy,
             per_head_thresholds=per_head_thresholds,
-            head_spans=head_spans,
+            head_spans=False,
         )
 
         merged_results: List[Dict[str, Any]] = []

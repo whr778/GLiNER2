@@ -1038,3 +1038,76 @@ def test_decode_group_rejects_multi_sentence_and_reranker_vetoed_field_spans():
     decoded = decode_group(group, anchor_threshold=0.5, field_threshold=0.5)
     assert decoded[0].fields[1] == [(1, 3)]
 
+
+def test_decode_group_doc_offset_exempts_multi_token_prefix_choice_and_filters_1tok_doc_span():
+    hidden = 16
+    # doc_offset=3: span (0, 2) is a 2-token prefix choice with pair_logit=-20.0 (kept);
+    # span (4, 5) is a 1-token document span with pair_logit=-20.0 (filtered out).
+    cands = make_candidates(
+        [[(5, 6)], [(0, 2), (4, 5)]],
+        hidden,
+        high_logit_field=0,
+    )
+    cands.pair_logits[0, 1, 0] = -20.0
+    cands.pair_logits[0, 1, 1] = -20.0
+
+    spec = RecordSpec(
+        task_index=0,
+        task_name="Attack",
+        task_type="events",
+        mode="natural",
+        fields=(
+            RecordFieldSpec(0, "trigger", 0, FieldCardinality.REQUIRED_ONE, is_anchor=True),
+            RecordFieldSpec(1, "Status", 1, FieldCardinality.ZERO_OR_MORE),
+        ),
+        anchor_query_id=0,
+    )
+    head = RecordHead(hidden, record_dim=16, instance_queries=8)
+    with torch.no_grad():
+        group = head.forward_group(spec, torch.randn(2, hidden), cands, 0)
+        group.assign_logits[1][:] = torch.tensor([[-2.0, 3.0, 4.0]])
+
+    decoded = decode_group(group, anchor_threshold=0.5, field_threshold=0.5, doc_offset=3)
+    assert decoded[0].fields[1] == [(0, 2)]
+
+
+def test_compute_group_loss_counts_gold_argument_exceeding_max_field_tokens():
+    from gliner2.models.boundary.records import anchor_gate_stats, reset_anchor_gate
+
+    reset_anchor_gate()
+    hidden = 16
+    # Anchor at (5, 6); field 1 has a 2-token span (1, 3) and a 26-token gold span (1, 27).
+    cands = make_candidates(
+        [[(5, 6)], [(1, 3), (1, 27)]],
+        hidden,
+        high_logit_field=0,
+    )
+    spec = RecordSpec(
+        task_index=0,
+        task_name="Attack",
+        task_type="events",
+        mode="natural",
+        fields=(
+            RecordFieldSpec(0, "trigger", 0, FieldCardinality.REQUIRED_ONE, is_anchor=True),
+            RecordFieldSpec(1, "Location", 1, FieldCardinality.ZERO_OR_MORE),
+        ),
+        anchor_query_id=0,
+    )
+    head = RecordHead(hidden, record_dim=16, instance_queries=8, max_field_tokens=24)
+    group = head.forward_group(spec, torch.randn(2, hidden), cands, 0)
+    assert group.field_spans[1].tolist() == [[1, 3]]
+
+    rec = RecordTarget(
+        task_index=0,
+        instance_id=0,
+        fields=(
+            RecordFieldTarget(query_id=0, values=(((5, 6),),)),
+            RecordFieldTarget(query_id=1, values=(((1, 3),), ((1, 27),))),
+        ),
+    )
+    compute_group_loss(group, [rec])
+    stats = anchor_gate_stats()
+    assert stats["arg_exceeds_max_tokens_n"] == 1
+    assert stats["events/arg_exceeds_max_tokens"] == 1
+
+

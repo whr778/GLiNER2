@@ -379,7 +379,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         converted = _record_instances_to_events(instances, anchor)
                         if converted:
                             sample[name] = converted
-                self._decode_classifications(sample, classification, i)
+                self._decode_classifications(sample, classification, i, metadata_list[i])
                 return sample
 
             record_results = self._decode_records(
@@ -468,7 +468,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             for event_type, instances in event_results.items():
                 sample[event_type] = instances
 
-            self._decode_classifications(sample, classification, i)
+            self._decode_classifications(sample, classification, i, metadata_list[i])
 
             return sample
 
@@ -621,13 +621,24 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
         return records, torch.cat(values).cpu() if values else torch.empty(0)
 
     def _decode_classifications(
-        self, sample: Dict[str, Any], classification, sample_index: int,
+        self,
+        sample: Dict[str, Any],
+        classification,
+        sample_index: int,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Add this sample's classification results in place."""
         records, values = classification
+        per_head_cls = ((metadata or {}).get("_per_head_thresholds") or {}).get(
+            "classification"
+        )
         for task_name, config, start, count in records[sample_index]:
             self._decode_classification_probabilities(
-                sample, task_name, config, values[start:start + count],
+                sample,
+                task_name,
+                config,
+                values[start:start + count],
+                per_head_threshold=per_head_cls,
             )
 
     def _relation_pairs_and_logits(
@@ -2264,6 +2275,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 coref_threshold=settings.record_coref_link_threshold,
                 max_field_tokens=getattr(settings, "record_field_max_tokens", 24),
                 min_field_pair_logit=getattr(settings, "record_field_min_pair_logit", -10.0),
+                doc_offset=offset,
             )
             decoded = self._drop_prefix_anchored(decoded, spec, metadata, offset)
             instances = []

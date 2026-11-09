@@ -392,8 +392,10 @@ def main(argv: List[str] = None) -> None:
             for rec, r in zip(recs, out):
                 mentions = candidate_mentions(rec["input"], r.get("entities"))
                 r["coref_clusters"] = [c for c in resolve(model, rec["input"], mentions, args.entity_coref) if len(c) > 1]
-                if getattr(args, "head_spans", False):
-                    r.update(strip_leading_stopwords_from_results(r))
+                if getattr(args, "head_spans", False) and r.get("coref_clusters"):
+                    r["coref_clusters"] = strip_leading_stopwords_from_results(
+                        {"coref_clusters": r["coref_clusters"]}
+                    )["coref_clusters"]
         if args.include_spans:
             from gliner2.inference.argument_coref import attach_argument_clusters
             totals = {"linked": 0, "ambiguous": 0, "none": 0}

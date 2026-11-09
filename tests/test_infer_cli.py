@@ -429,4 +429,138 @@ class TestHeadSpansPostProcessing:
         assert "Geopolitical_Entity" in mapped["entities"]
         assert len(mapped["entities"]) == 125
 
+    def test_quantifier_particles_trailing_whitespace_and_max_confidence_dedupe(self):
+        from gliner2.inference.head_spans import (
+            strip_leading_stopwords_from_results,
+            strip_leading_stopwords_text,
+        )
+
+        for preserved in (
+            "as many as 40 people",
+            "as few as 3",
+            "El Paso",
+            "La Paz",
+            "de Gaulle",
+            "da Silva",
+            "Al Qaeda",
+        ):
+            assert strip_leading_stopwords_text(preserved) == (preserved, 0)
+
+        assert strip_leading_stopwords_text("el presidente") == ("presidente", 3)
+        assert strip_leading_stopwords_text("la ministra") == ("ministra", 3)
+
+        doc = "Ships near the port  and the Red Sea or Red Sea in El Paso."
+        port_start = doc.index("the port ")
+        port_end = port_start + len("the port ")
+        r1_start = doc.index("the Red Sea")
+        r1_end = r1_start + len("the Red Sea")
+        r2_start = doc.rindex("Red Sea")
+        r2_end = r2_start + len("Red Sea")
+
+        raw = {
+            "entities": {
+                "Location": [
+                    {"text": "the port ", "start": port_start, "end": port_end, "confidence": 0.75},
+                    {"text": "the Red Sea", "start": r1_start, "end": r1_end, "confidence": 0.41},
+                    {"text": "Red Sea", "start": r1_start + 4, "end": r1_end, "confidence": 0.91},
+                ],
+            },
+            "structures_demo": [
+                {"status": "in progress", "confidence": 0.8},
+            ],
+            "event_extraction": {
+                "Attack": [{
+                    "triggers": [{"text": "the strike", "start": 0, "end": 10}],
+                    "arguments": [
+                        {"role": "Place", "entity": {"text": "the Red Sea", "start": r2_start - 4, "end": r2_end, "confidence": 0.35}},
+                        {"role": "Place", "entity": {"text": "Red Sea", "start": r2_start, "end": r2_end, "confidence": 0.88}},
+                    ],
+                }],
+            },
+        }
+        cleaned = strip_leading_stopwords_from_results(raw)
+        locs = cleaned["entities"]["Location"]
+        assert len(locs) == 2
+        assert locs[0]["text"] == "port "
+        assert doc[locs[0]["start"]:locs[0]["end"]] == locs[0]["text"]
+        assert locs[1]["text"] == "Red Sea"
+        assert locs[1]["confidence"] == 0.91
+        assert cleaned["structures_demo"][0]["status"] == "in progress"
+        ev_args = cleaned["event_extraction"]["Attack"][0]["arguments"]
+        assert len(ev_args) == 1
+        assert ev_args[0]["entity"]["confidence"] == 0.88
+
+    def test_entity_wildcard_case_insensitive_dedupe(self):
+        from gliner2.inference.schema import expand_entity_wildcards
+
+        expanded = expand_entity_wildcards(["Person", "*"])
+        person_variants = [x for x in expanded if x.lower() == "person"]
+        assert person_variants == ["Person"]
+        assert len(expanded) == 125
+
+        expanded_dict = expand_entity_wildcards({"Person": "human", "*": ""})
+        dict_variants = [k for k in expanded_dict if k.lower() == "person"]
+        assert dict_variants == ["Person"]
+        assert expanded_dict["Person"] == "human"
+        assert len(expanded_dict) == 125
+
+    def test_classification_per_head_threshold_multi_vs_single_label(self):
+        import torch
+        from gliner2.inference.runtime import ExtractorRuntimeMixin
+
+        res_multi = {}
+        ExtractorRuntimeMixin._decode_classification_probabilities(
+            res_multi,
+            "topics",
+            {"labels": ["politics", "sports", "tech"], "multi_label": True, "cls_threshold": 0.5},
+            torch.tensor([0.92, 0.65, 0.20]),
+            per_head_threshold=0.9,
+        )
+        assert [lbl for lbl, _ in res_multi["topics"]] == ["politics"]
+
+        res_single = {}
+        ExtractorRuntimeMixin._decode_classification_probabilities(
+            res_single,
+            "sentiment",
+            {"labels": ["pos", "neg"], "multi_label": False, "cls_threshold": 0.5},
+            torch.tensor([0.60, 0.40]),
+            per_head_threshold=0.9,
+        )
+        assert res_single["sentiment"][0] == "pos"
+
+    def test_batch_extract_long_strips_head_spans_once_after_merge(self):
+        from gliner2.inference.runtime import ExtractorRuntimeMixin
+
+        calls = []
+
+        class DummyExtractor(ExtractorRuntimeMixin):
+            config = None
+
+            def _resolved_overlap_policy(self, policy):
+                return "allow"
+
+            def batch_extract(self, texts, schemas, **kwargs):
+                calls.append(("batch_extract", kwargs.get("head_spans")))
+                return [
+                    {"entities": {"Person": [{"text": "the hackers", "start": 0, "end": 11, "confidence": 0.9}]}}
+                    for _ in texts
+                ]
+
+        ext = DummyExtractor()
+        doc = "the hackers attacked the system"
+        out = ext.batch_extract_long(
+            [doc],
+            {"entities": ["Person"]},
+            chunk_size=64,
+            chunk_overlap=0,
+            include_spans=True,
+            include_confidence=True,
+            head_spans=True,
+        )
+        assert calls == [("batch_extract", False)]
+        ent = out[0]["entities"]["Person"][0]
+        assert ent["text"] == "hackers"
+        assert doc[ent["start"]:ent["end"]] == "hackers"
+
+
 

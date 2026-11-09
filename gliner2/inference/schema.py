@@ -87,11 +87,12 @@ def expand_entity_wildcards(entities: Any) -> Any:
         for item in entities:
             if isinstance(item, str) and item.strip().lower() in ENTITY_WILDCARD_TOKENS:
                 for default_ent in DEFAULT_OPEN_VOCAB_ENTITIES:
-                    if default_ent not in seen:
-                        seen.add(default_ent)
+                    cf = default_ent.casefold()
+                    if cf not in seen:
+                        seen.add(cf)
                         out.append(default_ent)
             else:
-                key = item if isinstance(item, str) else None
+                key = item.casefold() if isinstance(item, str) else None
                 if key is not None:
                     if key not in seen:
                         seen.add(key)
@@ -102,11 +103,19 @@ def expand_entity_wildcards(entities: Any) -> Any:
     if isinstance(entities, dict):
         if any(isinstance(k, str) and k.strip().lower() in ENTITY_WILDCARD_TOKENS for k in entities):
             out_dict: Dict[str, Any] = OrderedDict()
+            seen_cf: set = set()
+            for k, v in entities.items():
+                if not (isinstance(k, str) and k.strip().lower() in ENTITY_WILDCARD_TOKENS):
+                    if isinstance(k, str):
+                        seen_cf.add(k.casefold())
             for k, v in entities.items():
                 if isinstance(k, str) and k.strip().lower() in ENTITY_WILDCARD_TOKENS:
                     cfg = v if isinstance(v, dict) else ({} if not v else {"description": v})
                     for default_ent in DEFAULT_OPEN_VOCAB_ENTITIES:
-                        out_dict.setdefault(default_ent, dict(cfg))
+                        cf = default_ent.casefold()
+                        if cf not in seen_cf:
+                            seen_cf.add(cf)
+                            out_dict[default_ent] = dict(cfg)
                 else:
                     out_dict[k] = v
             return out_dict

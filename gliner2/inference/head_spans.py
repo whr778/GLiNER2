@@ -63,16 +63,36 @@ _PROTECTED_WORDS: FrozenSet[str] = frozenset({
     "bin", "milyon", "milyar", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz", "on",
     "new", "united", "states", "general", "national", "world", "state",
     "north", "south", "east", "west", "central", "saint", "san", "los", "las",
+    "men", "women", "man", "woman", "people", "us", "uk", "eu", "un",
     "january", "february", "march", "april", "may", "june", "july", "august",
     "september", "october", "november", "december",
 })
 
 _QUANTIFIER_GUARD_RE = re.compile(
     r"^(?:at\s+least|more\s+than|less\s+than|fewer\s+than|up\s+to|"
+    r"as\s+many\s+as|as\s+few\s+as|"
     r"a\s+(?:dozen|hundred|thousand|million|billion|few|couple)|"
     r"about|around|roughly|nearly|almost|approximately|over|under|feared|estimated)\b",
     re.I,
 )
+
+# Nobiliary / organizational particles that attach to proper names when followed by a capitalized token.
+_SURNAME_OR_ORG_PARTICLES: FrozenSet[str] = frozenset({
+    "da", "del", "di", "van", "von", "al",
+})
+
+# Multi-word proper-noun prefixes starting with El / La / De (kept distinct from articles/prepositions).
+_PROPER_PREFIX_RE = re.compile(
+    r"^(?:el\s+(?:paso|salvador|nino|niño|dorado|cajon|monte|centro|segundo|cerrito)|"
+    r"la\s+(?:paz|habana|jolla|verne|crosse|mesa|plata|rioja|coruña|salle)|"
+    r"de\s+(?:gaulle|soto|beers|la|los|las))\b",
+    re.I,
+)
+
+# Core articles/prepositions allowed to strip even when sentence-initial capitalized.
+# Words from the 65-language supplement YAML only strip when lowercase, so capitalized
+# proper names ("Kim", "Ho", "Tan", "Ali", "Dan") are never mistaken for foreign stopwords.
+_CAPITALIZED_ALLOWED_STOPWORDS: FrozenSet[str] = _EN_LEADING_STOPWORDS | _MULTILINGUAL_ARTICLES
 
 _HAS_NUMBER_RE = re.compile(
     r"\b(?:\d[\d.,]*|zero|one|two|three|four|five|six|seven|eight|nine|"
@@ -124,10 +144,12 @@ def strip_leading_stopwords_text(
     if not lstripped:
         return text, 0
     delta = len(text) - len(lstripped)
-    s = lstripped.rstrip()
+    s = lstripped
 
     while True:
         if _QUANTIFIER_GUARD_RE.match(s) and _HAS_NUMBER_RE.search(s):
+            break
+        if _PROPER_PREFIX_RE.match(s):
             break
         m = _LEADING_TOKEN_RE.match(s)
         if not m:
@@ -135,6 +157,16 @@ def strip_leading_stopwords_text(
         first, ws, rest = m.group(1), m.group(2), m.group(3)
         first_clean = first.lower()
         if any(ch.isdigit() for ch in first_clean) or first_clean in _PROTECTED_WORDS:
+            break
+        # Never strip an all-uppercase acronym (e.g. "UN", "EU", "US", "AI") when followed by mixed-case text
+        if len(first) >= 2 and first.isupper() and not rest.isupper():
+            break
+        # Capitalized Latin tokens only strip if they belong to the core article/preposition set,
+        # preventing capitalized proper names ("Kim", "Ho", "Tan", "Ali") from matching supplement stopwords.
+        if first[:1].isupper() and first_clean not in _CAPITALIZED_ALLOWED_STOPWORDS:
+            break
+        next_word = rest.lstrip().split(" ", 1)[0]
+        if first_clean in _SURNAME_OR_ORG_PARTICLES and next_word[:1].isupper():
             break
         if first_clean in sw and rest.strip():
             delta += len(first) + len(ws)
@@ -162,10 +194,21 @@ def _strip_span_item(item: Any, stopwords: FrozenSet[str]) -> Any:
     return item
 
 
+def _item_confidence(item: Any) -> float:
+    if isinstance(item, dict):
+        c = item.get("confidence")
+        if isinstance(c, (int, float)):
+            return float(c)
+        ent = item.get("entity")
+        if isinstance(ent, dict) and isinstance(ent.get("confidence"), (int, float)):
+            return float(ent["confidence"])
+    return 0.0
+
+
 def _dedupe_span_list(items: List[Any]) -> List[Any]:
-    """Deduplicate formatted span items after stopword stripping."""
+    """Deduplicate formatted span items after stopword stripping, keeping max confidence."""
     out: List[Any] = []
-    seen = set()
+    key_to_idx: Dict[Any, int] = {}
     for item in items:
         if isinstance(item, str):
             key = (item.lower(), None, None)
@@ -174,9 +217,13 @@ def _dedupe_span_list(items: List[Any]) -> List[Any]:
         else:
             out.append(item)
             continue
-        if key not in seen:
-            seen.add(key)
+        if key not in key_to_idx:
+            key_to_idx[key] = len(out)
             out.append(item)
+        else:
+            idx = key_to_idx[key]
+            if _item_confidence(item) > _item_confidence(out[idx]):
+                out[idx] = item
     return out
 
 
@@ -242,7 +289,7 @@ def strip_leading_stopwords_from_results(
                         )
                     if isinstance(inst.get("arguments"), list):
                         new_args = []
-                        seen_args = set()
+                        arg_key_to_idx: Dict[Any, int] = {}
                         for arg in inst["arguments"]:
                             if isinstance(arg, dict) and "entity" in arg:
                                 new_arg = dict(arg)
@@ -254,9 +301,13 @@ def strip_leading_stopwords_from_results(
                                     else (str(ent_val).lower(), None, None)
                                 )
                                 dedupe_key = (new_arg.get("role"), ent_key)
-                                if dedupe_key not in seen_args:
-                                    seen_args.add(dedupe_key)
+                                if dedupe_key not in arg_key_to_idx:
+                                    arg_key_to_idx[dedupe_key] = len(new_args)
                                     new_args.append(new_arg)
+                                else:
+                                    idx = arg_key_to_idx[dedupe_key]
+                                    if _item_confidence(new_arg) > _item_confidence(new_args[idx]):
+                                        new_args[idx] = new_arg
                             else:
                                 new_args.append(arg)
                         new_inst["arguments"] = new_args
@@ -269,7 +320,8 @@ def strip_leading_stopwords_from_results(
                 for cluster in value
             ]
         elif isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
-            # Structure instances
+            # Structure instances: only strip span dicts carrying integer start/end offsets so
+            # bare choice strings (e.g. "in progress") are not altered.
             new_structs = []
             for inst in value:
                 new_inst = {}
@@ -277,9 +329,16 @@ def strip_leading_stopwords_from_results(
                     if fname == "confidence":
                         new_inst[fname] = fval
                     elif isinstance(fval, list):
-                        new_inst[fname] = _dedupe_span_list([_strip_span_item(v, sw) for v in fval])
-                    else:
+                        new_inst[fname] = _dedupe_span_list([
+                            _strip_span_item(v, sw)
+                            if isinstance(v, dict) and isinstance(v.get("start"), int)
+                            else v
+                            for v in fval
+                        ])
+                    elif isinstance(fval, dict) and isinstance(fval.get("start"), int):
                         new_inst[fname] = _strip_span_item(fval, sw)
+                    else:
+                        new_inst[fname] = fval
                 new_structs.append(new_inst)
             out[key] = new_structs
         else:

@@ -106,6 +106,10 @@ export default function ResultView({
   // the text, even when several mentions of the same type merge onto one span.
   const [hoverEid, setHoverEid] = useState<string | null>(null);
   const [pinnedEid, setPinnedEid] = useState<string | null>(null);
+  useEffect(() => {
+    setPinnedEid(null);
+    setHoverEid(null);
+  }, [requireBothTriggerAndArgs]);
   // Per-mention eid, assigned exactly as collectMarks() does in lib/spans.ts (a
   // running counter over Object.entries(events) -> mentions), so list rows and
   // rendered spans reference the same id.

@@ -231,6 +231,31 @@ class TestSeededYamlCoverage:
             f"Expected '{sample_word}' in stopwords for {code!r}"
         )
 
+    def test_all_cc100_and_rembert_languages_covered(self):
+        cc100_codes = [
+            "af", "am", "ar", "as", "az", "be", "bg", "bn", "bn_rom", "br", "bs", "ca", "cs", "cy", "da",
+            "de", "el", "en", "eo", "es", "et", "eu", "fa", "ff", "fi", "fr", "fy", "ga", "gd", "gl",
+            "gn", "gu", "ha", "he", "hi", "hi_rom", "hr", "ht", "hu", "hy", "id", "ig", "is", "it", "ja",
+            "jv", "ka", "kk", "km", "kn", "ko", "ku", "ky", "la", "lg", "li", "ln", "lo", "lt", "lv",
+            "mg", "mk", "ml", "mn", "mr", "ms", "my", "my_zaw", "ne", "nl", "no", "ns", "om", "or", "pa",
+            "pl", "ps", "pt", "qu", "rm", "ro", "ru", "sa", "si", "sc", "sd", "sk", "sl", "so", "sq",
+            "sr", "ss", "su", "sv", "sw", "ta", "ta_rom", "te", "te_rom", "th", "tl", "tn", "tr", "ug",
+            "uk", "ur", "ur_rom", "uz", "vi", "wo", "xh", "yi", "yo", "zh-Hans", "zh-Hant", "zu",
+        ]
+        rembert_codes = [
+            "af", "am", "ar", "az", "be", "bg", "bn", "bs", "ca", "ceb", "co", "cs", "cy", "da", "de",
+            "el", "en", "eo", "es", "et", "eu", "fa", "fi", "fil", "fr", "fy", "ga", "gd", "gl", "gu",
+            "ha", "haw", "hi", "hmn", "hr", "ht", "hu", "hy", "id", "ig", "is", "it", "iw", "ja", "jv",
+            "ka", "kk", "km", "kn", "ko", "ku", "ky", "la", "lb", "lo", "lt", "lv", "mg", "mi", "mk",
+            "ml", "mn", "mr", "ms", "mt", "my", "ne", "nl", "no", "ny", "pa", "pl", "ps", "pt", "ro",
+            "ru", "sd", "si", "sk", "sl", "sm", "sn", "so", "sq", "sr", "st", "su", "sv", "sw", "ta",
+            "te", "tg", "th", "tr", "uk", "ur", "uz", "vi", "xh", "yi", "yo", "zh", "zu",
+        ]
+        for code in sorted(set(cc100_codes) | set(rembert_codes)):
+            sw = build_stopwords([code], extra_yaml=self._YAML_PATH)
+            assert len(sw) > 0, f"Language code {code!r} returned empty stopwords"
+            assert "False" not in sw and "True" not in sw, f"Unquoted YAML boolean in {code!r}"
+
 
 # ---------------------------------------------------------------------------
 # _overlap — stopwords parameter threading
