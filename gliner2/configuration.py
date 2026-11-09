@@ -300,7 +300,7 @@ class BoundaryHeadSettings:
     # Maximum token width for decoded record field spans (0 = unlimited). Prevents
     # multi-sentence proposer spans (whose endpoint states look like valid start/end
     # boundaries to the endpoint-only record head) from being bound as event arguments.
-    record_field_max_tokens: int = 24
+    record_field_max_tokens: int = 48
     # Minimum span-pair logit for decoded record field spans. Rejects spans that the
     # reranker (inside evidence + length features) has strongly vetoed (e.g. logit -25)
     # while still keeping modest candidate spans (e.g. logit -8).

@@ -455,7 +455,7 @@ class RecordHead(nn.Module):
     def __init__(self, hidden_size: int, record_dim: int, instance_queries: int, link: bool = False,
                  coref: bool = False, link_geom_dim: int = 16, link_geom_activation: str = "none",
                  coref_distance: str = "scalar", coref_distance_dim: int = 16,
-                 max_field_tokens: int = 24) -> None:
+                 max_field_tokens: int = 48) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.record_dim = record_dim
@@ -1001,7 +1001,7 @@ def decode_group(
     temperature: float = 1.0,
     merge_coreferent: str = "off",
     coref_threshold: float = 0.5,
-    max_field_tokens: int = 24,
+    max_field_tokens: int = 48,
     min_field_pair_logit: float = -10.0,
     doc_offset: int = 0,
 ) -> List[DecodedRecord]:

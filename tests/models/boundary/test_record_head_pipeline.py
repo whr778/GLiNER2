@@ -1005,15 +1005,15 @@ def test_decode_required_scalar_does_not_select_absent():
 
 def test_decode_group_rejects_multi_sentence_and_reranker_vetoed_field_spans():
     hidden = 16
-    # Anchor at (5, 6); field 1 has a valid 2-token span (1, 3), a 40-token monster (1, 41),
+    # Anchor at (5, 6); field 1 has a valid 2-token span (1, 3), a 60-token monster (1, 61),
     # and a 4-token span (10, 14) whose pair_logit is vetoed (-25.0).
     cands = make_candidates(
-        [[(5, 6)], [(1, 3), (1, 41), (10, 14)]],
+        [[(5, 6)], [(1, 3), (1, 61), (10, 14)]],
         hidden,
         high_logit_field=0,
     )
     cands.pair_logits[0, 1, 0] = 2.5    # valid 2-token span
-    cands.pair_logits[0, 1, 1] = 1.0    # 40-token span (dropped by forward_group max_field_tokens=24)
+    cands.pair_logits[0, 1, 1] = 1.0    # 60-token span (dropped by forward_group max_field_tokens=48)
     cands.pair_logits[0, 1, 2] = -25.0  # 4-token span vetoed by reranker (< -10.0)
 
     spec = RecordSpec(
@@ -1030,7 +1030,7 @@ def test_decode_group_rejects_multi_sentence_and_reranker_vetoed_field_spans():
     head = RecordHead(hidden, record_dim=16, instance_queries=8)
     with torch.no_grad():
         group = head.forward_group(spec, torch.randn(2, hidden), cands, 0)
-        # forward_group already excluded the 40-token span (1, 41), leaving [(1, 3), (10, 14)]
+        # forward_group already excluded the 60-token span (1, 61), leaving [(1, 3), (10, 14)]
         assert group.field_spans[1].tolist() == [[1, 3], [10, 14]]
         # Give both remaining candidates high assignment logits
         group.assign_logits[1][:] = torch.tensor([[-2.0, 3.0, 4.0]])
