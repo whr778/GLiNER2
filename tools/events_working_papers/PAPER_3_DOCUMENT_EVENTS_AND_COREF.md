@@ -5,9 +5,10 @@
 ¹ Project author and maintainer  ·  ² AI assistant (Google, Gemini) — diagnosis, architecture, experiments, and drafting  ·  ³ AI assistant (Anthropic, Claude Opus 5) — design, implementation, and drafting
 
 **Paper 3 of the research programme stated in `RESEARCH_PROGRAM.md`.** Drafted 2026-11-05,
-updated 2026-11-06; `eb22g` 5-epoch training, full-validation calibration, and 20,602-record
-blind test complete (`bcfe500c`, published to `whr778/gliner2-eb22g`,
-`whr778/gliner2-eb22g-final`, and `whr778/gliner2-run-logs` `eb22g/`).
+updated 2026-11-10; `eb22g` 5-epoch training, full-validation calibration, 20,602-record
+blind test, and post-`eb22g` candidate-width / head-span / subword-pooling analyses complete
+(`bcfe500c` / `5022650`, published to `whr778/gliner2-eb22g`,
+`whr778/gliner2-eb22g-final`, and `whr778/gliner2-run-logs` `eb22g/` and `overfit-events-eb22g-cap/`).
 
 *Companion to `PAPER_0_FOUNDATION.md` (the GLiNER2 substrate and head-initialisation
 curve), `JOINT_IE_SCALING.md` (Paper 2 — the boundary-head data-scaling curve and
@@ -602,6 +603,103 @@ downstream consumers.
 
 ---
 
+### 6.4 Post-`eb22g` Refinements: Chimeric Boundary Filtering, Head-Span Normalization, and `mmBERT` Subword Pooling (`2026-11-09`)
+
+Interactive stress-testing of `whr778/gliner2-eb22g` on multi-paragraph news articles
+(followed by a full code review in `20261109_CODE_REVIEW.md` and a 400-step A10 A/B in
+`overfit-events-eb22g-cap`) surfaced three further refinements across training, inference,
+and tokenization:
+
+#### 6.4.1 Endpoint Chimera Filtering (`record_field_max_tokens = 48`, `record_field_min_pair_logit = -10.0`)
+
+Because `SparseBoundaryProposer` pairs top-$k$ start tokens with top-$k$ end tokens ($j > i$)
+and `BoundaryHead.candidate_encoder` projects only the concatenated endpoint states
+`[g_start, g_end]` (with no inside-token pooling), `RecordHead`'s bilinear assignment logit
+is linear in the start and end embeddings. On a multi-paragraph Wall Street Journal article
+about Red Sea shipping, the valid start of `"San'a, Yemen"` and the valid end of `"Strait of
+Hormuz"` 99 tokens later were proposed as a candidate pair $(i, j)$. Although
+`SparseBoundaryPairScorer` strongly vetoed this 99-token cross-paragraph span via inside
+evidence and length features (`pair_logit = -21.867`, `pair_prob = 0.0000`), its endpoint-only
+representation received `assign_prob = 0.9211` in `RecordHead`—beating the true 5-token
+`"San'a, Yemen"` span (`assign_prob = 0.7671`) during overlap resolution and polluting the
+`hard_k = 8` negative slots in `_list_field_bce` during training.
+
+To bound candidate token widths without truncating legitimate arguments or structure fields,
+we measured the exact token-width distribution (`WhitespaceTokenSplitter`) across all
+`475,459` gold record spans in the 31 `eb22g` corpora:
+
+| Corpus Group (`eb22g`) | Task Type | Gold Spans | P95 | P99 | P99.5 | P99.9 | Max | `≤ 24` Coverage | `≤ 48` Coverage |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **7 English event corpora** (`casie`, `wikievents`, `rams`, `cc_news*`, `synthetic`) | `events` (EN) | `172,674` | `5` | `8` | `10` | `14` | `50` | `99.986%` | **`99.9994%`** (`172,673`) |
+| **2 Chinese event corpora** (`cmnee_ner_off`, `duee_ner`, 1 tok / CJK char) | `events` (ZH) | `222,679` | `14` | `22` | `28` | `45` | `173` | `99.273%` | **`99.926%`** (`222,515`) |
+| **4 Structure corpora** (`text2json`, `cc_news*`, `synthetic`) | `struct` (Multi) | `80,106` | `10` | `28` | `39` | `58` | `239` | `98.708%` | **`99.752%`** (`79,907`) |
+
+We added `record_field_max_tokens: int = 48` (applied to non-anchor fields in both
+`RecordHead.forward_group` and `decode_group`, paired with an in-run `arg_exceeds_max_tokens`
+supervision gate counter in `compute_group_loss`) and `record_field_min_pair_logit: float = -10.0`
+(applied in `decode_group` to document spans with `end > doc_offset`, exempting schema-prefix
+`choices=` literals).
+
+We evaluated this filter in a controlled 4-arm A/B (`overfit-events-eb22g-cap`, `1x A10 24 GB`,
+instance `e497b688`, commit `5022650`) starting from `whr778/gliner2-eb22g` over 64 records
+× 400 steps on `casie_off` and `cmnee_ner_off`:
+
+| Corpus (64 docs, Step 400) | Arm | `event_trigger` F1 (`@0.5 / @0.3 / @0.1`) | `event_argument` F1 (`@0.5 / @0.3 / @0.1`) | `record_field_loss` | `gold_role_p_median` (`≥ 0.5`) |
+|---|---|---|---|---:|---|
+| **`casie_off`** | Uncapped Control | `0.7814 / 0.7561 / 0.6826` | `0.5772 / 0.6050 / 0.5949` | `0.1814` | `0.8706` (`73.3%`) |
+| **`casie_off`** | **Capped Treatment** | **`0.7872 / 0.7702 / 0.7132`** | **`0.5850 / 0.6216 / 0.6279`** *(+0.033 `@0.1`)* | **`0.1580`** | **`0.9060` (`78.3%`)** |
+| **`cmnee_ner_off`** | Uncapped Control | `0.9406 / 0.9231 / 0.8584` | `0.8234 / 0.8124 / 0.7395` | `0.2560` | `0.9943` (`89.9%`) |
+| **`cmnee_ner_off`** | **Capped Treatment** | `0.9353 / 0.9179 / 0.8297` | **`0.8320 / 0.8329 / 0.7564`** *(step 350 `@0.3`: **`0.8621`**)* | **`0.2163`** | **`0.9958` (`88.9%`)** |
+
+Removing multi-sentence chimeras from `forward_group`'s `hard_k = 8` negative pool lowered
+`record_field_loss` on both corpora (`0.1814 -> 0.1580` on CASIE; `0.2560 -> 0.2163` on
+CMNEE), raised CASIE median gold role assignment probability from `0.8706 -> 0.9060`, and
+improved `event_argument` strict micro-F1 at every threshold on both corpora.
+
+#### 6.4.2 Single-Pass `per_head_thresholds` and Multilingual `head_spans` Normalization
+
+1. **Single-pass `per_head_thresholds`:** `BoundaryExtractor` (`_query_thresholds`,
+   `_decode_records`, `_decode_relations`, `_decode_legacy_structures`,
+   `_decode_classifications`) and `SpanExtractor` (`_decode_span_probabilities`) now apply
+   `per_head_thresholds` (`entity`, `relation`, `classification`, `structure`, `event`)
+   directly inside a single forward pass, matching the multi-pass `splice_heads` evaluation
+   bit-for-bit at 1× inference cost.
+2. **Extent-to-head normalization (`head_spans=True`, `gliner2/inference/head_spans.py`):**
+   As shown in Table 4, `eb22g`'s blind-test `event_argument` fair (Ortmann) micro-F1 is
+   **`0.5901`** vs **`0.4637`** strict (`+0.1264`), driven by cross-corpus annotation
+   divergence between syntactic heads (ACE 2005 / WikiEvents: `"attacker"`, `"hospital"`)
+   and full noun-phrase extents (CASIE / RAMS: `"an attacker"`, `"the hospital"`). Setting
+   `head_spans=True` (`--head-spans` in `tools/infer.py` and the viewer) strips leading
+   articles, determiners, and prepositions across all **116 CC-100** and **103 RemBERT**
+   languages (`tools/train/config/stopwords.yaml` + `stopwordsiso`) while advancing character
+   `start` offsets (`doc[start:end] == span["text"]`), retaining max confidence on
+   deduplication, and protecting EKF casualty quantifiers (`"at least 246"`,
+   `"as many as 40"`, `"a dozen"`) and multi-word proper names (`"New York"`, `"El Paso"`,
+   `"La Paz"`, `"de Gaulle"`, `"Al Qaeda"`).
+
+#### 6.4.3 `mmBERT` (`Gemma 2` BPE) Bare `'▁'` Subword-Pooling Discovery and `eb23a.yaml`
+
+Inspecting `jhu-clsp/mmBERT-base`'s tokenizer (`Gemma 2` BPE, `256,000` vocab, `580,604`
+merges) revealed that its pre-tokenizer is `Metaspace(replacement="▁", add_prefix_space=True)`
+and its BPE merge table forbids merging `'▁'` with digits (`0`–`9`). Because
+`SchemaTransformer` calls `tokenizer.tokenize(word)` per word token:
+- **100% of numbers in all languages** (`"2026"` → `['▁', '2', '0', '2', '6']`, `"246"` →
+  `['▁', '2', '4', '6']`) and **19.0% of Chinese character tokens** (`5,602 / 29,551` tokens
+  in 100 CMNEE documents, e.g. `"俄"` → `['▁', '俄']`) emit a standalone bare `'▁'` as
+  `sub_tokens[0]`.
+- Under `token_pooling="first"`, all of those words pool the bare `'▁'` position (`fp`)
+  rather than their actual digit or character token (`fp + 1`). At layer 22 of `eb22g`,
+  different words pooled at their bare `'▁'` positions exhibit a mean pairwise cosine
+  similarity of **`0.6514`**, compared to **`0.3715`** at their actual character/digit
+  positions (`fp + 1`).
+- For the next from-scratch base (`tools/train/config/base/eb23a.yaml`, generated by
+  `tools/train/make_eb23a_config.py`), we added `model.strip_bare_space_subword: true`
+  (`False` by default so `eb22g` remains bit-identical), which strips `subs[0]` whenever
+  `len(subs) > 1 and subs[0] in ("▁", "Ġ")`, eliminating 100% of bare `'▁'` pooling on
+  numbers and CJK characters and shortening CJK subword sequences by ~19%.
+
+---
+
 ## 7. Downstream Connection: Providing the Event Substrate for EKF/MHT
 
 In `RESEARCH_PROGRAM.md` and `EKF_MHT_DESIGN.md`, the cross-document temporal tracker (Paper 1)
@@ -617,15 +715,17 @@ because:
    long English news articles.
 
 With `eb22g` uniting trigger-anchored record instances, relational junction scoring,
-coreferent trigger/argument clustering, and balanced positive-negative proposal and role
-supervision, the event extraction front-end now meets the structural contract required to
-resume the EKF/MHT multi-event tracking experiments once Epoch 5 completes.
+coreferent trigger/argument clustering, balanced positive-negative proposal and role
+supervision, candidate width/pair-logit filtering (`record_field_max_tokens: 48`,
+`record_field_min_pair_logit: -10.0`), and quantifier-preserving `head_spans` normalization,
+the event extraction front-end now meets the structural contract required for the EKF/MHT
+multi-event tracking pipeline (`PIPELINES.md` §5.3).
 
 ---
 
 ## 8. Reproducibility & Code Map
 
-| Mechanism | Primary Implementation | Config Flag (`base/eb22g.yaml`) |
+| Mechanism | Primary Implementation | Config Flag (`base/eb22g.yaml` / `base/eb23a.yaml`) |
 |---|---|---|
 | Trigger-seeded event records | `gliner2/models/boundary/records.py` (`forward_group`, `compute_group_loss`, `decode_group`) | `enable_records: true`, `event_records: true`, `candidate_pool: per_query` |
 | Relational junction layer & column loss | `gliner2/models/boundary/records.py` (`_assign_logits`, `_column_loss`) | `record_link_mode: junction`, `record_link_column_weight: 0.3` |
@@ -636,6 +736,9 @@ resume the EKF/MHT multi-event tracking experiments once Epoch 5 completes.
 | Split positive/hard-negative role BCE & withhold unresolved | `gliner2/models/boundary/records.py` (`_list_field_bce`, `_unresolved_overlap_cols`), `matching.py` | `record_role_hard_negatives: 8`, `record_drop_anchor_field_loss: true` |
 | Split positive/negative pair loss & absent-query cap | `gliner2/models/boundary/losses.py` (`candidate_pair_loss`), `model.py` | `pair_split_reduction: true`, `hard_negative_keep_all_when_absent: false` |
 | Assignment-probability decode gate | `gliner2/inference/engine.py` (`_format_record_extractions`) | default in record formatting |
+| Chimeric candidate width & pair-logit filter | `gliner2/models/boundary/records.py` (`forward_group`, `decode_group`, `_note_arg_max_tokens_drop`) | `record_field_max_tokens: 48`, `record_field_min_pair_logit: -10.0` |
+| Single-pass `per_head_thresholds` & `head_spans` | `gliner2/inference/runtime.py`, `gliner2/models/boundary/engine.py`, `gliner2/inference/head_spans.py` | `inference_defaults.per_head_thresholds`, `head_spans=True` (`--head-spans`) |
+| Bare `'▁'` subword-pooling strip (`eb23a`) | `gliner2/processor.py` (`SchemaTransformer._tokenize_word`), `gliner2/configuration.py` | `model.strip_bare_space_subword: true` (`base/eb23a.yaml`) |
 | Cluster & offset-gold evaluation metrics | `gliner2/training/eval_metrics.py` (`_gold_event_trigger_set`, `_gold_event_argument_set`, `event_cluster*`) | default in `compute_metrics` |
 
 ---
