@@ -1191,6 +1191,8 @@ def _build_model(model_cfg: Dict):
             if key == "boundary_head":
                 continue                      # needs more than setattr; see below
             setattr(model.config, key, value)
+            if key == "strip_bare_space_subword" and hasattr(model, "processor"):
+                model.processor.strip_bare_space_subword = bool(value)
         if "boundary_head" in model_cfg:
             _apply_boundary_head_overrides(model, model_cfg["boundary_head"])
         return model

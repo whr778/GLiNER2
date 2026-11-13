@@ -53,3 +53,14 @@ def test_in_engine_entity_coref_attaches_clusters_without_reencoding():
     res_on = model.batch_extract([text], [schema], threshold=0.0, include_spans=True)[0]
     assert "coref_clusters" in res_on
     assert isinstance(res_on["coref_clusters"], list)
+
+    # Also works via batch_extract_long with include_spans=False (the compute_metrics path)
+    res_long = model.batch_extract_long(
+        [text], [schema], threshold=0.0, include_spans=False, chunk_size=64, chunk_overlap=0
+    )[0]
+    assert "coref_clusters" in res_long
+    assert isinstance(res_long["coref_clusters"], list)
+    for c in res_long["coref_clusters"]:
+        assert isinstance(c, list)
+        for m in c:
+            assert isinstance(m, dict) and "start" in m and "end" in m

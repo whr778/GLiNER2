@@ -34,6 +34,9 @@ case "$PRESET" in
   eb22g-cap) ARMS="control=--head-override record_field_max_tokens=0 record_field_min_pair_logit=-99999.0,treatment="
              CORPORA="casie_off cmnee_ner_off"; SCRIPT=tools/train/overfit_events.py; DEFAULT_BATCH=4
              CKPT=${CKPT:-whr778/gliner2-eb22g} ;;
+  eb23a)     ARMS="control=--strip-bare-space-subword 0 --head-override record_field_max_tokens=0 record_field_min_pair_logit=-99999.0 entity_coref_threshold=null record_argument_coref_boost=0.0,treatment="
+             CORPORA="casie_off cmnee_ner_off"; SCRIPT=tools/train/overfit_events.py; DEFAULT_BATCH=4
+             CKPT=${CKPT:-whr778/gliner2-eb22g} ;;
   *) echo "[overfit] *** FATAL: unknown PRESET $PRESET ***"; exit 1 ;;
 esac
 CKPT=${CKPT:-whr778/gliner2-eb22c-collapse-trace:checkpoint-30000}

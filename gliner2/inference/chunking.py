@@ -172,6 +172,20 @@ def _merge_result_dicts(
             )
         elif key == "relation_extraction":
             merged[key] = _merge_relation_maps(values)
+        elif key == "coref_clusters":
+            clusters_out: List[Any] = []
+            seen_clusters: set = set()
+            for v in values:
+                if not isinstance(v, list):
+                    continue
+                for cluster in v:
+                    if not isinstance(cluster, list):
+                        continue
+                    ck = _canonical_key(cluster)
+                    if ck not in seen_clusters:
+                        seen_clusters.add(ck)
+                        clusters_out.append(cluster)
+            merged[key] = clusters_out
         else:
             merged[key] = _merge_values(values, overlap_policy)
 
@@ -362,8 +376,12 @@ def _strip_span_metadata(value: Any, include_confidence: bool, include_spans: bo
             return value["text"]
 
         return {
-            key: _strip_span_metadata(item, include_confidence, include_spans)
+            key: (
+                item if key == "coref_clusters"
+                else _strip_span_metadata(item, include_confidence, include_spans)
+            )
             for key, item in value.items()
+            if not str(key).startswith("_")
         }
 
     return value

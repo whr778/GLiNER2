@@ -324,6 +324,11 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             overlap_policy = self._resolved_overlap_policy(
                 metadata_list[i].get("_overlap_policy")
             )
+            need_coref_spans = (
+                getattr(self.boundary_settings, "entity_coref_threshold", None) is not None
+                and getattr(self, "mention_link", None) is not None
+            )
+            decode_spans = include_spans or need_coref_spans
             specs = core["ext_specs"][i] if has_queries else []
             layout = _layout_from_ext_specs(specs)
             offset = core["word_offsets"][i]
@@ -346,7 +351,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 # edges, so running the record head over the SAME groups would double-emit.
                 sample.update(self._decode_joint(
                     batch, i, core, candidates, threshold, offset, start_map, end_map,
-                    text, text_len, include_confidence, include_spans,
+                    text, text_len, include_confidence, decode_spans,
                     layout, specs,
                 ))
                 # EVENT groups are the exception, and `event_owners` was always computed for
@@ -364,7 +369,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                     owned = {spec.task_name: spec for spec in event_owners.values()}
                     record_results = self._decode_records(
                         batch, i, core, candidates, offset, start_map, end_map,
-                        text, text_len, include_confidence, include_spans,
+                        text, text_len, include_confidence, decode_spans,
                         threshold=threshold,
                         metadata=metadata_list[i],
                         overlap_policy=overlap_policy,
@@ -388,7 +393,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
 
             record_results = self._decode_records(
                 batch, i, core, candidates, offset, start_map, end_map,
-                text, text_len, include_confidence, include_spans,
+                text, text_len, include_confidence, decode_spans,
                 threshold=threshold,
                 metadata=metadata_list[i],
                 overlap_policy=overlap_policy,
@@ -433,13 +438,13 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 text_len,
                 threshold,
                 include_confidence,
-                include_spans,
+                decode_spans,
             )
             sample.update(legacy_results)
 
             relation_results = self._decode_relations(
                 i, core, candidates, metadata_list[i], threshold, offset,
-                start_map, end_map, text, text_len, include_confidence, include_spans,
+                start_map, end_map, text, text_len, include_confidence, decode_spans,
             )
             sample.update(relation_results)
 
@@ -457,7 +462,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 text,
                 text_len,
                 include_confidence,
-                include_spans,
+                decode_spans,
             )
 
             if entity_results:
@@ -466,7 +471,7 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             event_results = self._decode_events(
                 specs, i, grouped_candidates, null_probs, overlap_policy,
                 offset, start_map, end_map, text, text_len,
-                include_confidence, include_spans,
+                include_confidence, decode_spans,
                 skip_group_indices=set(event_owners),
             )
             for event_type, instances in event_results.items():
@@ -2407,7 +2412,9 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             if len(c) > 1
         ]
         sample["coref_clusters"] = clusters
-        if not include_spans or not event_block or not clusters:
+        if not event_block or not clusters:
+            if not include_spans:
+                self._strip_temporary_spans(sample, include_confidence)
             return
 
         copy_mode = getattr(settings, "record_argument_coref_copy", "all")
@@ -2549,6 +2556,18 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             min_member_score=min_score,
             role_scores=role_scores if role_scores else None,
         )
+        if not include_spans:
+            self._strip_temporary_spans(sample, include_confidence)
+
+    @staticmethod
+    def _strip_temporary_spans(sample: Dict[str, Any], include_confidence: bool) -> None:
+        """Strip temporary ``start``/``end`` offsets added for in-engine coref when ``include_spans=False``."""
+        from gliner2.inference.chunking import _strip_span_metadata
+
+        for k in list(sample.keys()):
+            if k == "coref_clusters":
+                continue
+            sample[k] = _strip_span_metadata(sample[k], include_confidence=include_confidence, include_spans=False)
 
 
 __all__ = ["BoundaryExtractor"]

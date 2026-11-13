@@ -168,6 +168,8 @@ def main(argv=None) -> None:
                          "anchor row kept, and format gate reading min(pair, assignment)")
     ap.add_argument("--remove-events-prob", type=float,
                     help="override processor.sampling_config.remove_events_prob")
+    ap.add_argument("--strip-bare-space-subword", type=int, choices=[0, 1],
+                    help="override model.strip_bare_space_subword (0=False, 1=True)")
     ap.add_argument("--head-override", nargs="+", default=[], metavar="KEY=VALUE",
                     help="override boundary_head settings, e.g. boundary_marginal_loss=bce (one arm of an A/B)")
     ap.add_argument("--out")
@@ -176,6 +178,8 @@ def main(argv=None) -> None:
         return summarize(args.summarize)
 
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
+    if args.strip_bare_space_subword is not None:
+        cfg["model"]["strip_bare_space_subword"] = bool(args.strip_bare_space_subword)
     for kv in args.head_override:
         k, v = kv.split("=", 1)
         cfg["model"]["boundary_head"][k] = yaml.safe_load(v)
@@ -224,6 +228,11 @@ def main(argv=None) -> None:
         model = T._build_model(cfg["model"])
     else:
         model = AutoExtractor.from_pretrained(args.checkpoint, map_location="cpu")
+        if "strip_bare_space_subword" in cfg["model"]:
+            strip_bare = bool(cfg["model"]["strip_bare_space_subword"])
+            model.config.strip_bare_space_subword = strip_bare
+            if hasattr(model, "processor"):
+                model.processor.strip_bare_space_subword = strip_bare
         T._apply_boundary_head_overrides(model, head)
     if args.device == "cuda" and bool(tr.get("gradient_checkpointing", False)) and hasattr(model, "encoder"):
         model.encoder.gradient_checkpointing_enable()
@@ -246,6 +255,11 @@ def main(argv=None) -> None:
           f"keep_all_absent={getattr(bh_settings, 'hard_negative_keep_all_when_absent', '?')} "
           f"max_field_tokens={getattr(bh_settings, 'record_field_max_tokens', '?')} "
           f"min_field_pair_logit={getattr(bh_settings, 'record_field_min_pair_logit', '?')} "
+          f"strip_bare_space={getattr(model.processor, 'strip_bare_space_subword', False)} "
+          f"entity_coref_thr={getattr(bh_settings, 'entity_coref_threshold', None)} "
+          f"arg_coref_match={getattr(bh_settings, 'record_argument_coref_match', '?')} "
+          f"arg_coref_copy={getattr(bh_settings, 'record_argument_coref_copy', '?')} "
+          f"arg_coref_boost={getattr(bh_settings, 'record_argument_coref_boost', '?')} "
           f"remove_events_prob={model.processor.sampling_config.remove_events_prob}", flush=True)
 
     negatives = None
@@ -267,6 +281,10 @@ def main(argv=None) -> None:
     opt = torch.optim.AdamW([{"params": enc, "lr": enc_lr}, {"params": rest, "lr": task_lr}])
     use_bf16 = args.device == "cuda" and bool(tr.get("bf16", False))
 
+    # Re-seed after _auto_negative_pools so cached and uncached runs start from the exact same RNG state.
+    torch.manual_seed(42)
+    random.seed(42)
+    R.reset_anchor_gate()
     log, rng, t0, losses = [], random.Random(0), time.time(), {"record_field_loss": [], "pair_loss": [], "loss": []}
     model.train()
     model.processor.change_mode(is_training=True)
