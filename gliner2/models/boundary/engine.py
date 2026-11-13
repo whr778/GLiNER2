@@ -380,6 +380,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                         if converted:
                             sample[name] = converted
                 self._decode_classifications(sample, classification, i, metadata_list[i])
+                self._attach_in_engine_entity_coref(
+                    sample, i, core, candidates, batch, offset, start_map, end_map,
+                    text, text_len, threshold, metadata_list[i], include_confidence, include_spans,
+                )
                 return sample
 
             record_results = self._decode_records(
@@ -469,6 +473,10 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
                 sample[event_type] = instances
 
             self._decode_classifications(sample, classification, i, metadata_list[i])
+            self._attach_in_engine_entity_coref(
+                sample, i, core, candidates, batch, offset, start_map, end_map,
+                text, text_len, threshold, metadata_list[i], include_confidence, include_spans,
+            )
 
             return sample
 
@@ -2351,6 +2359,196 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             / self.boundary_settings.pair_temperature
         )
         return float(probabilities.max())
+
+    def _attach_in_engine_entity_coref(
+        self,
+        sample: Dict[str, Any],
+        sample_index: int,
+        core: Dict[str, Any],
+        candidates,
+        batch,
+        offset: int,
+        start_map,
+        end_map,
+        text: str,
+        text_len: int,
+        threshold: float,
+        metadata: Optional[Dict[str, Any]],
+        include_confidence: bool,
+        include_spans: bool,
+    ) -> None:
+        """Cluster candidate mentions from ``core["text_states"]`` and attach to event arguments."""
+        settings = self.boundary_settings
+        coref_thr = getattr(settings, "entity_coref_threshold", None)
+        if coref_thr is None or getattr(self, "mention_link", None) is None:
+            return
+        from gliner2.inference.argument_coref import attach_argument_clusters
+        from gliner2.inference.entity_coref import candidate_mentions, resolve_from_states
+
+        metadata = metadata or {}
+        per_head = metadata.get("_per_head_thresholds") or {}
+        event_names = set(metadata.get("event_order", ()))
+        event_block: Dict[str, List[Dict[str, Any]]] = {}
+        for k, v in sample.items():
+            if k == "entities" or not isinstance(v, list):
+                continue
+            if k in event_names or (
+                v and isinstance(v[0], dict) and "triggers" in v[0] and "arguments" in v[0]
+            ):
+                event_block[k] = v
+
+        mentions = candidate_mentions(text, sample.get("entities"), event_block)
+        doc_states = core["text_states"][sample_index, offset : offset + text_len]
+        clusters = [
+            c
+            for c in resolve_from_states(
+                self.mention_link, doc_states, start_map, end_map, mentions, float(coref_thr)
+            )
+            if len(c) > 1
+        ]
+        sample["coref_clusters"] = clusters
+        if not include_spans or not event_block or not clusters:
+            return
+
+        copy_mode = getattr(settings, "record_argument_coref_copy", "all")
+        match_mode = getattr(settings, "record_argument_coref_match", "strict")
+        min_score = float(getattr(settings, "record_argument_coref_min_score", 0.0) or 0.0)
+        boost = float(getattr(settings, "record_argument_coref_boost", 0.0) or 0.0)
+        max_toks = int(getattr(settings, "record_field_max_tokens", 48) or 0)
+
+        role_scores: Dict[Tuple[str, Tuple[int, int], str, Tuple[int, int]], float] = {}
+        role_cands: Dict[Tuple[str, Tuple[int, int], str], Dict[Tuple[int, int], float]] = {}
+        record_specs = getattr(batch, "record_specs", ())
+        if (
+            (copy_mode == "gated" or boost > 0.0)
+            and candidates is not None
+            and sample_index < len(record_specs)
+            and record_specs[sample_index]
+        ):
+            query_states_i = core["query_states"][sample_index]
+            spec_thr = per_head.get("event", threshold)
+            rec_thr = resolve_record_threshold(settings, spec_thr)
+            fld_thr = resolve_record_field_threshold(settings, rec_thr)
+            for _, spec in record_specs[sample_index].items():
+                if getattr(spec, "task_type", None) != "events":
+                    continue
+                group = self.record_decoder.forward_group(
+                    spec, query_states_i, candidates, sample_index
+                )
+                obj_probs = torch.sigmoid(
+                    group.object_logits / settings.record_temperature
+                ).cpu().tolist()
+                f_spans = [sp.cpu().tolist() for sp in group.field_spans]
+                for inst_idx, obj_p in enumerate(obj_probs):
+                    if obj_p < rec_thr:
+                        continue
+                    trig_sp = group.instance_spans[inst_idx]
+                    if trig_sp is None:
+                        continue
+                    t_ts, t_te = trig_sp[0] - offset, trig_sp[1] - offset
+                    if not (0 <= t_ts < t_te <= text_len):
+                        continue
+                    t_cs, t_ce = token_boundaries_to_character_offsets(
+                        t_ts, t_te, start_map, end_map
+                    )
+                    for f_idx, fspec in enumerate(group.field_specs):
+                        if fspec.cardinality.is_scalar:
+                            continue
+                        c_logits = group.assign_logits[f_idx][inst_idx, 1:].detach().cpu()
+                        if c_logits.numel() == 0:
+                            continue
+                        c_probs = torch.sigmoid(
+                            c_logits / settings.record_temperature
+                        ).tolist()
+                        for c_i, (ts_raw, te_raw) in enumerate(f_spans[f_idx]):
+                            ts, te = ts_raw - offset, te_raw - offset
+                            if not (0 <= ts < te <= text_len):
+                                continue
+                            if max_toks > 0 and (te - ts) > max_toks:
+                                continue
+                            cs, ce = token_boundaries_to_character_offsets(
+                                ts, te, start_map, end_map
+                            )
+                            key = (spec.task_name, (t_cs, t_ce), fspec.name, (cs, ce))
+                            p_val = c_probs[c_i]
+                            if p_val > role_scores.get(key, 0.0):
+                                role_scores[key] = p_val
+                            cmap = role_cands.setdefault(
+                                (spec.task_name, (t_cs, t_ce), fspec.name), {}
+                            )
+                            if p_val > cmap.get((cs, ce), 0.0):
+                                cmap[(cs, ce)] = p_val
+
+            # Lever 2A: Cluster co-evidence rescue when >=2 coreferent mentions in the
+            # candidate pool support the same (event, trigger, role) below field_threshold.
+            if boost > 0.0:
+                support_floor = max(min_score, fld_thr * 0.5)
+                for etype, ev_list in event_block.items():
+                    for ev in ev_list:
+                        if not isinstance(ev, dict):
+                            continue
+                        trigs = ev.get("triggers") or []
+                        t_sp = (
+                            (trigs[0]["start"], trigs[0]["end"])
+                            if trigs
+                            and isinstance(trigs[0], dict)
+                            and isinstance(trigs[0].get("start"), int)
+                            and isinstance(trigs[0].get("end"), int)
+                            else None
+                        )
+                        if t_sp is None:
+                            continue
+                        args = ev.setdefault("arguments", [])
+                        present = {
+                            (a.get("role"), (a["entity"]["start"], a["entity"]["end"]))
+                            for a in args
+                            if isinstance(a, dict)
+                            and isinstance(a.get("entity"), dict)
+                            and isinstance(a["entity"].get("start"), int)
+                        }
+                        for (et, ts, role), cmap in role_cands.items():
+                            if et != etype or ts != t_sp:
+                                continue
+                            for ci, cluster in enumerate(clusters):
+                                scored = [
+                                    (m, cmap[(m["start"], m["end"])])
+                                    for m in cluster
+                                    if (m["start"], m["end"]) in cmap
+                                ]
+                                if len(scored) < 2:
+                                    continue
+                                scored.sort(key=lambda x: x[1], reverse=True)
+                                best_m, best_p = scored[0]
+                                _, sec_p = scored[1]
+                                if (
+                                    best_p < fld_thr
+                                    and sec_p >= support_floor
+                                    and (best_p + boost * sec_p) >= fld_thr
+                                ):
+                                    bsp = (best_m["start"], best_m["end"])
+                                    if (role, bsp) not in present:
+                                        ent_dict: Dict[str, Any] = {
+                                            "text": best_m["text"],
+                                            "start": bsp[0],
+                                            "end": bsp[1],
+                                        }
+                                        if include_confidence:
+                                            ent_dict["confidence"] = best_p
+                                        args.append({
+                                            "role": role,
+                                            "entity": ent_dict,
+                                            "coref_cluster": ci,
+                                        })
+                                        present.add((role, bsp))
+
+        wrapper = {"event_extraction": event_block, "coref_clusters": clusters}
+        attach_argument_clusters(
+            wrapper,
+            match_mode=match_mode,
+            copy_mode=copy_mode,
+            min_member_score=min_score,
+            role_scores=role_scores if role_scores else None,
+        )
 
 
 __all__ = ["BoundaryExtractor"]

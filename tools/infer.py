@@ -260,13 +260,22 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                         "with none get a derived entity under derived_entities (typed from the optional "
                         "role_types JSON). Needs --include-spans. See gliner2/inference/argument_links.py.")
     p.add_argument("--entity-coref", type=float, default=None, metavar="LINK_THRESHOLD",
-                   help="Cluster predicted entity mentions + pronouns with the trained entity coref link "
-                        "(gliner2/inference/entity_coref.py) into output['coref_clusters'], multi-mention "
+                   help="Cluster predicted entity mentions + event arguments + pronouns with the trained entity "
+                        "coref link (gliner2/inference/entity_coref.py) into output['coref_clusters'], multi-mention "
                         "clusters only. The value is the link-logit cut-off picked on val "
                         "(tools/train/coref_threshold.py; 0.2 for gliner2-corefC-treatment). Needs --include-spans "
-                        "and a checkpoint with the link. With spans, an argument whose span equals a "
+                        "and a checkpoint with the link. With spans, an argument whose span matches a "
                         "mention in exactly one of those clusters gets coref_cluster, and the cluster's "
-                        "other mentions are added as arguments of the same role. No clusters adds nothing.")
+                        "other mentions are added according to --argument-coref-copy.")
+    p.add_argument("--argument-coref-match", choices=["strict", "relaxed"], default="strict",
+                   help="How event arguments join coref_clusters: 'strict' (exact [start, end) match) or "
+                        "'relaxed' (exact first, then unambiguous character overlap).")
+    p.add_argument("--argument-coref-copy", choices=["all", "canonical", "gated", "none"], default="all",
+                   help="Which cluster mentions are copied onto a linked event argument's role: "
+                        "'all' (every mention in the cluster), 'canonical' (longest non-pronoun mention when the "
+                        "argument is a pronoun), 'gated' (only mentions >= --argument-coref-min-score), or 'none'.")
+    p.add_argument("--argument-coref-min-score", type=float, default=0.0,
+                   help="Minimum RecordHead assignment probability for --argument-coref-copy gated.")
     p.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], default="auto",
                    help="auto (default) picks cuda, else mps, else cpu. On Apple silicon prefer "
                         "cpu for a long file: MPS keeps memory for every new input length and never returns it "
@@ -390,7 +399,7 @@ def main(argv: List[str] = None) -> None:
             from gliner2.inference.entity_coref import candidate_mentions, resolve
             from gliner2.inference.head_spans import strip_leading_stopwords_from_results
             for rec, r in zip(recs, out):
-                mentions = candidate_mentions(rec["input"], r.get("entities"))
+                mentions = candidate_mentions(rec["input"], r.get("entities"), r.get("event_extraction"))
                 r["coref_clusters"] = [c for c in resolve(model, rec["input"], mentions, args.entity_coref) if len(c) > 1]
                 if getattr(args, "head_spans", False) and r.get("coref_clusters"):
                     r["coref_clusters"] = strip_leading_stopwords_from_results(
@@ -398,9 +407,14 @@ def main(argv: List[str] = None) -> None:
                     )["coref_clusters"]
         if args.include_spans:
             from gliner2.inference.argument_coref import attach_argument_clusters
+            match_mode = getattr(args, "argument_coref_match", "strict")
+            copy_mode = getattr(args, "argument_coref_copy", "all")
+            min_score = float(getattr(args, "argument_coref_min_score", 0.0) or 0.0)
             totals = {"linked": 0, "ambiguous": 0, "none": 0}
             for r in out:
-                for key, value in attach_argument_clusters(r).items():
+                for key, value in attach_argument_clusters(
+                    r, match_mode=match_mode, copy_mode=copy_mode, min_member_score=min_score
+                ).items():
                     totals[key] += value
             print(f"[infer] argument clusters linked={totals['linked']} "
                   f"ambiguous={totals['ambiguous']} none={totals['none']}", flush=True)

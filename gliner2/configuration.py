@@ -119,10 +119,16 @@ class BoundaryHeadSettings:
     record_coref_link_threshold: float = 0.5      # decode: merge same-type instances at sigmoid(s) >= this
     # THE ENTITY-MENTION COREFERENCE LINK (COREF_DATA_SOURCES.md): a mention x mention score over the mean word
     # states of gold `coref_clusters` mentions, trained on all positives + each mention's k hardest negatives, its
-    # OWN mean, weighted. No decode reads it yet.
+    # OWN mean, weighted. When `entity_coref_threshold` is set at decode, BoundaryEngine clusters candidate mentions
+    # directly from `core["text_states"]` and connects predicted event arguments to their clusters.
     entity_coref_link: bool = False
     entity_coref_link_weight: float = 0.0
     entity_coref_link_negatives: int = 4
+    entity_coref_threshold: Optional[float] = None
+    record_argument_coref_match: str = "strict"       # "strict" | "relaxed"
+    record_argument_coref_copy: str = "all"           # "all" | "canonical" | "gated" | "none"
+    record_argument_coref_min_score: float = 0.0      # minimum RecordHead prob when copy="gated"
+    record_argument_coref_boost: float = 0.0          # Lever 2A: cluster co-evidence boost on role candidates
     # THE TRIGGER x ARGUMENT JUNCTION (JUNCTION_LAYER_SPEC.md). "additive" (default, historical): the
     # assignment is P (trigger x candidate) + R (role x candidate, the SAME for every trigger) -- measured
     # role fit with no join (junction AUC 0.56-0.61, pair term below chance in-row). "junction" adds a
@@ -501,6 +507,27 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         "entity_coref_link": bool(values.get("entity_coref_link", d.entity_coref_link)),
         "entity_coref_link_weight": float(values.get("entity_coref_link_weight", d.entity_coref_link_weight)),
         "entity_coref_link_negatives": int(values.get("entity_coref_link_negatives", d.entity_coref_link_negatives)),
+        "entity_coref_threshold": (
+            float(values["entity_coref_threshold"])
+            if values.get("entity_coref_threshold") is not None
+            else d.entity_coref_threshold
+        ),
+        "record_argument_coref_match": _one_of(
+            values.get("record_argument_coref_match", d.record_argument_coref_match),
+            ("strict", "relaxed"),
+            "record_argument_coref_match",
+        ),
+        "record_argument_coref_copy": _one_of(
+            values.get("record_argument_coref_copy", d.record_argument_coref_copy),
+            ("all", "canonical", "gated", "none"),
+            "record_argument_coref_copy",
+        ),
+        "record_argument_coref_min_score": float(
+            values.get("record_argument_coref_min_score", d.record_argument_coref_min_score)
+        ),
+        "record_argument_coref_boost": float(
+            values.get("record_argument_coref_boost", d.record_argument_coref_boost)
+        ),
         "record_link_mode": str(values.get("record_link_mode", d.record_link_mode)),
         "record_link_column_weight": float(values.get("record_link_column_weight", d.record_link_column_weight)),
         "record_link_column_negatives": int(values.get("record_link_column_negatives", d.record_link_column_negatives)),
@@ -838,6 +865,8 @@ def validate_boundary_head(values: Mapping[str, Any]) -> dict:
         raise ValueError(f"boundary_head.record_merge_coreferent must be off/args/link, got {result['record_merge_coreferent']!r}")
     if result["entity_coref_link_weight"] > 0 and not result["entity_coref_link"]:
         raise ValueError("boundary_head.entity_coref_link_weight needs entity_coref_link: true")
+    if result["record_argument_coref_min_score"] < 0 or result["record_argument_coref_boost"] < 0:
+        raise ValueError("boundary_head.record_argument_coref_min_score and record_argument_coref_boost must be >= 0")
     if result["record_coref_link_weight"] > 0 and not result["record_coref_link"]:
         raise ValueError("boundary_head.record_coref_link_weight needs record_coref_link: true")
     if result["record_merge_coreferent"] == "link" and not result["record_coref_link"]:

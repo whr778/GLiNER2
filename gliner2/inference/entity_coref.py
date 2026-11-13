@@ -23,13 +23,55 @@ PRONOUNS = {"he", "she", "they", "him", "her", "them", "his", "their", "hers", "
             "themselves", "itself"}
 
 
-def candidate_mentions(text: str, entities: dict[str, list]) -> list[dict]:
-    """Predicted entity spans plus pronouns (lowercase or Capitalized only), non-overlapping, by offset;
-    an entity span wins over a pronoun inside it."""
-    spans = sorted({(sp["start"], sp["end"]) for v in (entities or {}).values() for sp in v
-                    if isinstance(sp, dict) and "start" in sp}, key=lambda s: (s[0], -s[1]))
-    taken: list[tuple] = []
+def _iter_event_argument_spans(events: dict[str, list] | None) -> list[tuple[int, int]]:
+    if not isinstance(events, dict):
+        return []
+    found: set[tuple[int, int]] = set()
+    for mentions in events.values():
+        if not isinstance(mentions, list):
+            continue
+        for ev in mentions:
+            if not isinstance(ev, dict):
+                continue
+            for arg in ev.get("arguments") or ():
+                if not isinstance(arg, dict):
+                    continue
+                ent = arg.get("entity")
+                if (
+                    isinstance(ent, dict)
+                    and isinstance(ent.get("start"), int)
+                    and not isinstance(ent.get("start"), bool)
+                    and isinstance(ent.get("end"), int)
+                    and not isinstance(ent.get("end"), bool)
+                    and ent["start"] < ent["end"]
+                ):
+                    found.add((ent["start"], ent["end"]))
+    return sorted(found, key=lambda s: (s[0], -s[1]))
+
+
+def candidate_mentions(
+    text: str,
+    entities: dict[str, list] | list[dict[str, list]] | None = None,
+    events: dict[str, list] | None = None,
+) -> list[dict]:
+    """Predicted entity spans, then non-overlapping event argument spans, then pronouns, by offset.
+
+    An entity span wins over an overlapping event argument span, and both win over a pronoun inside them.
+    """
+    if isinstance(entities, list):
+        entities = entities[0] if entities and isinstance(entities[0], dict) else {}
+    spans = sorted(
+        {(sp["start"], sp["end"]) for v in (entities or {}).values() if isinstance(v, list)
+         for sp in v if isinstance(sp, dict) and isinstance(sp.get("start"), int)
+         and not isinstance(sp.get("start"), bool) and isinstance(sp.get("end"), int)
+         and not isinstance(sp.get("end"), bool) and sp["start"] < sp["end"]},
+        key=lambda s: (s[0], -s[1]),
+    )
+    taken: list[tuple[int, int]] = []
     for s, e in spans:
+        if not any(a < e and s < b for a, b in taken):
+            taken.append((s, e))
+    for s, e in _iter_event_argument_spans(events):
         if not any(a < e and s < b for a, b in taken):
             taken.append((s, e))
     forms = PRONOUNS | {p.capitalize() for p in PRONOUNS}
@@ -69,6 +111,35 @@ def resolve(model, text: str, mentions: Sequence[dict], threshold: float) -> lis
     label = {m: m for m in range(len(mentions))}
     for row, lab in zip(idx, best_antecedent(logits, threshold)):
         label[row] = idx[lab]
+    groups: dict[int, list[dict]] = {}
+    for m in range(len(mentions)):
+        groups.setdefault(label[m], []).append(dict(mentions[m]))
+    return list(groups.values())
+
+
+@torch.no_grad()
+def resolve_from_states(
+    mention_link,
+    doc_text_states: torch.Tensor,
+    starts: Sequence[int],
+    ends: Sequence[int],
+    mentions: Sequence[dict],
+    threshold: float,
+) -> list[list[dict]]:
+    """Cluster ``mentions`` directly from already-encoded document word states ``[W, H]``.
+
+    Reuses the forward pass's ``core["text_states"][b, offset : offset + n_words]`` so
+    in-engine entity coreference runs without re-tokenizing or re-encoding the document.
+    """
+    n_words = min(int(doc_text_states.shape[0]), len(starts), len(ends))
+    placed = coref.word_mentions([[m] for m in mentions], starts, ends, n_words) if n_words > 0 else []
+    label = {m: m for m in range(len(mentions))}
+    if len(placed) >= 2 and mention_link is not None:
+        states, mid = mention_states(doc_text_states[:n_words], placed)
+        logits = mention_link(states, mid).float().cpu()
+        idx = [c for _, _, c in placed]
+        for row, lab in zip(idx, best_antecedent(logits, threshold)):
+            label[row] = idx[lab]
     groups: dict[int, list[dict]] = {}
     for m in range(len(mentions)):
         groups.setdefault(label[m], []).append(dict(mentions[m]))

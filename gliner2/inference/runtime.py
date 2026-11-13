@@ -114,6 +114,8 @@ def format_results(
     requested_events = requested_events or []
 
     for key, value in results.items():
+        if str(key).startswith("_"):
+            continue
         is_classification = key in classification_tasks
         is_event = False
         is_relation = False

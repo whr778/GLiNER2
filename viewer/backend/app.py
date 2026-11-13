@@ -226,12 +226,18 @@ def _attach_entity_coref(model, text: str, result: Dict[str, Any], threshold: fl
         )
     from gliner2.inference.entity_coref import candidate_mentions, resolve
 
-    mentions = candidate_mentions(text, result.get("entities"))
+    mentions = candidate_mentions(text, result.get("entities"), result.get("event_extraction"))
     result["coref_clusters"] = [
         c for c in resolve(model, text, mentions, threshold) if len(c) > 1
     ]
     from gliner2.inference.argument_coref import attach_argument_clusters
-    attach_argument_clusters(result)
+    settings = getattr(model, "boundary_settings", None)
+    match_mode = getattr(settings, "record_argument_coref_match", "strict")
+    copy_mode = getattr(settings, "record_argument_coref_copy", "all")
+    min_score = float(getattr(settings, "record_argument_coref_min_score", 0.0) or 0.0)
+    attach_argument_clusters(
+        result, match_mode=match_mode, copy_mode=copy_mode, min_member_score=min_score
+    )
     return result
 
 
