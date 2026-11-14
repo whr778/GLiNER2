@@ -1459,7 +1459,7 @@ datasets:
     tasks: structure extraction (casualty_report)
     license: mixed -- inherits casualty_ml
     source_url: local (tools/train/build_casualty_multilingual.py --base-config tools/train/config/base/eb22g.yaml --out data/casualty_ml_eb22g)
-    hf_jsonl: null
+    hf_jsonl: whr778/casualty_ml_eb22g
     language: [en, tr, zh]
     description: "61,872 language-balanced real-news casualty_report records (20,624 per language EN/TR/ZH; 53,472 / 4,200 / 4,200, 1,400 per language in val and test). Excluded 1,515 EN and 326 TR rows present in eb22g val/test and pinned 7,538 eb22g-train-seen rows to train so val and test are 100% blind to eb22g and train has 0 overlap with eb22g val/test."
   replay_eb22g_gate4:
@@ -1477,6 +1477,6 @@ datasets:
     tasks: mixed (replay)
     license: mixed -- inherits eb22g's 27 source corpora
     source_url: local (tools/train/build_137k_replay.py --config tools/train/config/base/eb22g.yaml --new-records 77099 --replay-frac 0.30 --exclude-corpora data/casualty_ml_eb22g data/casualty_events --out data/replay_eb22g_casualty)
-    hf_jsonl: null
+    hf_jsonl: whr778/replay_eb22g_casualty
     language: [en, zh, tr]
     description: "33,045 eb22g TRAIN records across 27 deduplicated pool corpora (30.0% of the 110,144-record casualty-ml-eb22g train mixture), filtered to 0 overlap with eb22g val/test, casualty_ml_eb22g val/test, and casualty_events val/test."
