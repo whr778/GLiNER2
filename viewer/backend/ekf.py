@@ -308,6 +308,7 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
         # pipeline's own keying rather than re-deriving it here, which is how it drifted.
         associate = params.get("associate") or "none"
         cas_schema = rp.build_casualty_schema(with_location=associate == "record")
+        cas_mapped_pair = rp.map_schema_for_model(cas_model, cas_schema)
         modes = [params.get("normalizer") or "hybrid"]
         cls_schema = (rp.build_normalizer_schema(gate_model)
                       if modes[0] in ("classify", "hybrid") else None)
@@ -315,6 +316,8 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
         per_mode: Dict[str, List[Dict]] = {m: [] for m in modes}
         articles: List[Dict[str, Any]] = []
         window = params.get("window") or "article"
+        ev_threshold = float(params.get("event_threshold", 0.3))
+        ev_year = int(params.get("event_year", 0) or 0)
         for i, row in enumerate(feed):
             entry = {"t_hours": row["t_hours"], "text": row["text"], **gates[i],
                      "events": events[i], "observations": []}
@@ -325,38 +328,43 @@ def _run(job: Job, params: Dict[str, Any]) -> None:
                     # took `dead` observations 25 -> 106, so a viewer without it cannot
                     # reproduce any published number.
                     chunk = int(params.get("chunk_size", 200))
-                    records = (cas_model.extract_long(
-                        row["text"], cas_schema,
-                        threshold=float(params.get("event_threshold", 0.3)),
+                    records = rp.extract_casualty_records(
+                        cas_model, row["text"], cas_schema,
+                        long=True, threshold=ev_threshold,
                         chunk_size=chunk,
                         chunk_overlap=int(params.get("chunk_overlap", 50)),
-                    ).get("casualty_report") or [])
+                        mapped_pair=cas_mapped_pair,
+                    )
                     entry["envelopes"] = [{"text": f"<extract_long chunks of {chunk} words>"}]
                     for rec in records:
                         key = (rp.record_key(events[i], rec) if associate == "record"
                                else rp.association_key(events[i], associate, {}))
                         rp._emit(rec, row["text"], row, entry, modes, per_mode,
                                  gate_model, cls_schema, event_key=key,
-                                 event_year=int(params.get("event_year", 0) or 0))
+                                 events_block=events[i], event_year=ev_year)
                 else:
                     if window == "lead":
-                        envelopes = [{"text": row["text"][: int(params.get("lead_chars", 1100))]}]
+                        envelopes = [{"text": row["text"][: int(params.get("lead_chars", 1100))], "start": 0}]
                     else:
                         envelopes = (rp.casualty_windows(row["text"], events[i],
                                                          int(params.get("envelope_margin", 60)))
                                      if window == "event" and events[i] else [])
                     entry["envelopes"] = envelopes
-                    for env in (envelopes or [{"text": row["text"]}]):
+                    for env in (envelopes or [{"text": row["text"], "start": 0}]):
                         read_text = env["text"]
-                        records = (cas_model.extract(read_text, cas_schema,
-                                                     include_confidence=True)
-                                   .get("casualty_report") or [])
+                        env_offset = int(env.get("start", 0))
+                        records = rp.extract_casualty_records(
+                            cas_model, read_text, cas_schema,
+                            long=False, threshold=ev_threshold,
+                            mapped_pair=cas_mapped_pair,
+                        )
                         for rec in (records or [{}]):
                             key = (rp.record_key(events[i], rec) if associate == "record"
                                    else rp.association_key(events[i], associate, env))
                             rp._emit(rec, read_text, row, entry, modes, per_mode,
                                      gate_model, cls_schema, event_key=key,
-                                     event_year=int(params.get("event_year", 0) or 0))
+                                     events_block=events[i], event_year=ev_year,
+                                     text_offset=env_offset)
             articles.append(entry)
             job.done = i + 1
 

@@ -587,6 +587,24 @@ class ExtractorRuntimeMixin:
                         schema_dict["field_dtypes"] = built_dict["field_dtypes"]
                     field_metadata = built._field_metadata
                     field_orders = built._field_orders
+                elif schema_dict.get("json_structures"):
+                    dtypes_by_struct = schema_dict.get("field_dtypes") or {}
+                    for struct_entry in schema_dict["json_structures"]:
+                        if not isinstance(struct_entry, dict):
+                            continue
+                        for sname, sfields in struct_entry.items():
+                            if not isinstance(sfields, dict):
+                                continue
+                            field_orders[sname] = list(sfields.keys())
+                            sdtypes = dtypes_by_struct.get(sname) or {}
+                            for fname, fval in sfields.items():
+                                choices = fval.get("choices") if isinstance(fval, dict) else None
+                                field_metadata[f"{sname}.{fname}"] = {
+                                    "dtype": sdtypes.get(fname, "list"),
+                                    "threshold": None,
+                                    "choices": choices,
+                                    "validators": [],
+                                }
                 # `{"relations": ["works_for"]}` -- the plain-list form the from_dict
                 # docstring documents -- used to raise IndexError deep in
                 # `_extract_embeddings_fast`, because the bare names carry no head/tail

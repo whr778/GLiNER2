@@ -49,17 +49,53 @@ def load(paths):
     return rows
 
 
-def base_seen_keys():
-    """Document keys the 137k base trained on, by the splitter's own key rule."""
+def base_seen_keys(base_config: Path | None = None) -> tuple[set[str], set[str]]:
+    """Return ``(seen_train_keys, seen_eval_keys)`` for the warm-start base."""
     from _split import normalize_group_key
-    seen = set()
-    for p in BASE_TRAINED_ON:
-        path = Path(p)
-        if not path.is_file():
-            raise SystemExit(f"missing base corpus: {p}")
-        for line in path.open(encoding="utf-8"):
-            seen.add(normalize_group_key(json.loads(line).get("input") or ""))
-    return seen
+    if base_config is None:
+        seen = set()
+        for p in BASE_TRAINED_ON:
+            path = Path(p)
+            if not path.is_file():
+                raise SystemExit(f"missing base corpus: {p}")
+            for line in path.open(encoding="utf-8"):
+                seen.add(normalize_group_key(json.loads(line).get("input") or ""))
+        return seen, set()
+
+    import yaml
+    cfg = yaml.safe_load(base_config.read_text(encoding="utf-8"))
+    data = cfg.get("data") or {}
+    train_only = {Path(str(x)).name for x in (data.get("train_only") or [])}
+    train_paths: list[Path] = []
+    eval_paths: list[Path] = []
+    for co in data.get("corpora") or []:
+        train_paths.append(Path(f"{co}.train.jsonl"))
+        if Path(co).name not in train_only:
+            eval_paths.extend([Path(f"{co}.val.jsonl"), Path(f"{co}.test.jsonl")])
+    for splits in (data.get("event_files") or {}).values():
+        if "train" in splits:
+            train_paths.append(Path(splits["train"]))
+        for sp in ("val", "test"):
+            if sp in splits:
+                eval_paths.append(Path(splits[sp]))
+
+    def _read_keys(paths: list[Path]) -> set[str]:
+        out: set[str] = set()
+        visited: set[Path] = set()
+        for p in paths:
+            if not p.is_file():
+                continue
+            rp = p.resolve()
+            if rp in visited:
+                continue
+            visited.add(rp)
+            with p.open(encoding="utf-8") as fh:
+                for line in fh:
+                    if line.strip():
+                        out.add(normalize_group_key(json.loads(line).get("input") or ""))
+        return out
+
+    return _read_keys(train_paths), _read_keys(eval_paths)
 
 
 def check_anchors(splits):
@@ -97,16 +133,35 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--eval-per-language", type=int, default=1400,
                         help="val AND test size per language; equal by construction")
+    parser.add_argument("--base-config", type=Path, default=None,
+                        help="base training config (e.g. eb22g.yaml): excludes base val/test "
+                             "from train and pins base train rows out of val/test")
     args = parser.parse_args()
 
-    pools = {lang: load(paths) for lang, paths in SOURCES.items()}
-    for lang, rows in pools.items():
-        print(f"  {lang}: {len(rows)} available")
-
     from _split import dumps_record, normalize_group_key
+    seen, base_eval = base_seen_keys(args.base_config)
+
+    pools = {}
+    for lang, paths in SOURCES.items():
+        raw_rows = load(paths)
+        clean_rows = []
+        seen_lang = set()
+        dropped_eval = 0
+        for r in raw_rows:
+            k = normalize_group_key(r.get("input") or "")
+            if k in base_eval:
+                dropped_eval += 1
+                continue
+            if k in seen_lang:
+                continue
+            seen_lang.add(k)
+            clean_rows.append(r)
+        pools[lang] = clean_rows
+        extra = f" (dropped {dropped_eval} in base val/test)" if dropped_eval else ""
+        print(f"  {lang}: {len(clean_rows)} clean available{extra}")
+
     n = args.per_language or min(len(r) for r in pools.values())
     rng = random.Random(args.seed)
-    seen = base_seen_keys()
 
     # val/test are sized EQUALLY per language and drawn only from rows the base never
     # trained on. Both constraints matter and they pull against each other: pinning
@@ -124,10 +179,14 @@ def main():
         if len(safe) < 2 * eval_each:
             raise SystemExit(f"{lang}: only {len(safe)} base-unseen rows, need "
                              f"{2 * eval_each} for a balanced val+test")
+        eval_keys = {normalize_group_key(r.get("input") or "") for r in safe[:2 * eval_each]}
         splits["val"] += safe[:eval_each]
         splits["test"] += safe[eval_each:2 * eval_each]
-        splits["train"] += safe[2 * eval_each:] + [r for r in chosen if r not in safe[:2 * eval_each]
-                                                   and normalize_group_key(r.get("input") or "") in seen]
+        splits["train"] += safe[2 * eval_each:] + [
+            r for r in chosen
+            if normalize_group_key(r.get("input") or "") not in eval_keys
+            and normalize_group_key(r.get("input") or "") in seen
+        ]
         note = f"   ({pinned} base-seen -> train)" if pinned else ""
         print(f"  {lang}: {len(chosen)} chosen, {len(safe)} base-unseen{note}")
 

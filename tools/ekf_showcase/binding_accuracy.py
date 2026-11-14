@@ -30,6 +30,7 @@ import json
 from pathlib import Path
 
 from gliner2 import AutoExtractor, Schema
+from gliner2.inference.label_map import apply_label_map
 
 REPO = Path(__file__).resolve().parents[2]
 TRACKED = REPO / "datasets/helene2024/_cache/tracked_rollup.json"
@@ -66,41 +67,83 @@ def windows(limit: int = 60):
     return out[:limit]
 
 
+def _has_threshold_coupled_decode(model) -> bool:
+    """True when decode depends on ``threshold`` beyond per-span confidence filtering."""
+    bs = getattr(model, "boundary_settings", None)
+    if bs is None:
+        return False
+    if float(getattr(bs, "record_argument_coref_boost", 0.0) or 0.0) > 0.0:
+        return True
+    if (
+        getattr(bs, "entity_coref_threshold", None) is not None
+        and getattr(bs, "record_argument_coref_copy", "none") != "none"
+    ):
+        return True
+    if getattr(bs, "record_merge_coreferent", "off") != "off":
+        return True
+    return False
+
+
+def _extract_raw_by_etype(model, texts: list[str], th: float, batch_size: int = 8) -> dict[str, list[dict]]:
+    lmap = getattr(model.config, "label_map", None)
+    lstyle = getattr(model.config, "label_style", None)
+    schema = Schema().events(
+        {etype: {"roles": list(ROLES), "role_descriptions": ROLES} for etype in EVENT_TYPES},
+        trigger_threshold=th, argument_threshold=th)
+    if lmap or lstyle:
+        schema, _ = apply_label_map(schema.build(), lmap, lstyle)
+    return {"_all": model.batch_extract(
+        texts, schema, batch_size=batch_size, threshold=th,
+        include_spans=True, include_confidence=True,
+    )}
+
+
+def _dead_spans_at_threshold(raw_by_etype: dict[str, list[dict]], n_texts: int, th: float) -> list[list[tuple[int, int, str]]]:
+    per_text: list[set[tuple[int, int, str]]] = [set() for _ in range(n_texts)]
+    for results in raw_by_etype.values():
+        for idx, res in enumerate(results):
+            for ev_list in (res.get("event_extraction") or {}).values():
+                for ev in ev_list:
+                    t_confs = [
+                        float(t["confidence"])
+                        for t in (ev.get("triggers") or [])
+                        if isinstance(t, dict) and "confidence" in t
+                    ]
+                    ev_conf = max(t_confs) if t_confs else float(ev.get("confidence", 1.0))
+                    if ev_conf < th:
+                        continue
+                    for a in ev.get("arguments") or []:
+                        if str(a.get("role", "")).casefold() != "dead":
+                            continue
+                        e = a.get("entity")
+                        if isinstance(e, dict) and "start" in e and float(e.get("confidence", 1.0)) >= th:
+                            per_text[idx].add((e["start"], e["end"], e["text"]))
+    return [sorted(s) for s in per_text]
+
+
+def dead_spans_batch(model, texts: list[str], th: float) -> list[list[tuple[int, int, str]]]:
+    """Every `dead` argument the model binds per text, as [(start, end, text)]."""
+    if not texts:
+        return []
+    raw = _extract_raw_by_etype(model, texts, th)
+    return _dead_spans_at_threshold(raw, len(texts), th)
+
+
 def dead_spans(model, text: str, th: float):
     """Every `dead` argument the model binds, as (start, end, text)."""
-    found = []
-    for etype in EVENT_TYPES:
-        schema = Schema().events(
-            {etype: {"roles": list(ROLES), "role_descriptions": ROLES}},
-            trigger_threshold=th, argument_threshold=th)
-        res = model.extract(text, schema, threshold=th, include_spans=True)
-        for ev in (res.get("event_extraction") or {}).get(etype, []):
-            for a in ev.get("arguments") or []:
-                if a.get("role") != "dead":
-                    continue
-                e = a.get("entity")
-                if isinstance(e, dict) and "start" in e:
-                    found.append((e["start"], e["end"], e["text"]))
-    # One span found under three event types is ONE candidate, not three. Without this
-    # the span counts are inflated ~5x by the EVENT_TYPES loop and `spans` reads as a
-    # candidate-list length it is not.
-    return sorted({(a, b, t) for a, b, t in found})
+    return dead_spans_batch(model, [text], th)[0]
 
 
-def score(model, wins, th):
-    """Window-level and span-level accuracy.
-
-    Two precisions, because they answer different questions and diverge badly as the
-    threshold drops. `w-prec` is per WINDOW -- of windows where the model committed to a
-    toll, how often was one of its `dead` spans right. That number inflates as the model
-    emits more candidates per window, and degenerates to `yield` once it fires everywhere:
-    a model tagging every numeral `dead` scores 100%. `s-prec` is per SPAN -- of every
-    `dead` span emitted, how many hit. That is what a router picking ONE value faces.
-    """
+def score(model, wins, th, raw_by_etype=None):
+    """Window-level and span-level accuracy."""
     fired = hit = n_spans = span_hit = 0
     misses = []
-    for text, gs, ge, gold in wins:
-        spans = dead_spans(model, text, th)
+    all_spans = (
+        _dead_spans_at_threshold(raw_by_etype, len(wins), th)
+        if raw_by_etype is not None
+        else dead_spans_batch(model, [w[0] for w in wins], th)
+    )
+    for (text, gs, ge, gold), spans in zip(wins, all_spans):
         n_spans += len(spans)
         span_hit += sum(1 for s, e, _ in spans if s < ge and e > gs)
         if not spans:
@@ -132,8 +175,13 @@ def main() -> None:
         print(f"=== {name}")
         print(f"{'thresh':>7}{'fired':>8}{'hit':>7}{'w-prec':>9}{'yield':>9}"
               f"{'spans':>8}{'s-prec':>10}")
+        coupled = _has_threshold_coupled_decode(model)
+        win_texts = [w[0] for w in wins]
+        min_th = min(args.thresholds)
+        raw_by_etype = None if coupled else _extract_raw_by_etype(model, win_texts, min_th)
         for th in args.thresholds:
-            fired, hit, misses, n_spans, span_hit = score(model, wins, th)
+            th_raw = _extract_raw_by_etype(model, win_texts, th) if coupled else raw_by_etype
+            fired, hit, misses, n_spans, span_hit = score(model, wins, th, raw_by_etype=th_raw)
             prec = f"{hit / fired:.1%}" if fired else "--"
             print(f"{th:>7.3f}{fired:>8}{hit:>7}{prec:>9}{hit / len(wins):>9.1%}"
                   f"{n_spans:>8}{(f'{span_hit / n_spans:.1%}' if n_spans else '--'):>10}")

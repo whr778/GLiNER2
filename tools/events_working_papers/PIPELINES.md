@@ -345,12 +345,12 @@ Not yet, and MHT is probably not what is missing. In order:
    the most damage per instance.
 3. **Non-casualty number rejection** — smaller and easier: speeds, durations, rainfall.
    Pure extraction typing; no tracker can help.
-3. **Multi-source feeds** — the one thing that would make a filter benchmark meaningful, and
+4. **Multi-source feeds** — the one thing that would make a filter benchmark meaningful, and
    the one regime where MHT's deferred assignment genuinely earns its keep, because
    *sources disagreeing about the same event* is real association ambiguity in a way that
    one wire service's copy is not.
 
-MHT becomes the right move at step 3, not before — with two amendments. Its prize is 18.8%
+MHT becomes the right move at step 4, not before — with two amendments. Its prize is 18.8%
 rather than 9%, and the cheapest piece of it has since been built and lost (§4.1). The
 "starved" clause in the earlier version of this sentence was also stale: the audit above
 shows the pipeline over-extracts rather than starves.
@@ -548,18 +548,19 @@ that exact limitation and the three training starvations behind it were resolved
 Auditing `datasets/` and `tools/train/config/{casualty,gate}/` against `eb22g` surfaced four
 concrete mismatches that must be fixed before training the `eb22g` EKF models:
 
-1. **Anchor mismatch between `data/casualty_ml` and `run_pipeline.py` (`build_casualty_schema`):**
-   - `data/casualty_ml.{train,val,test}.jsonl` (62,703 real EN/TR/ZH news records) stamps
-     `record_metadata: {"casualty_report": {"mode": "natural", "anchor": "location"}}`.
-   - Meanwhile, `tools/ekf_showcase/run_pipeline.py:345` (`build_casualty_schema`) constructs
-     the inference schema with **`anchor="dead"`**! On the boundary record head in `natural`
-     mode, the anchor field (`role_index 0`) seeds the record instances: training with
-     `anchor: "location"` and decoding with `anchor: "dead"` (or decoding an injured-only
-     report with `anchor: "dead"`) mismatches the trained anchor.
-   - **Fix:** Standardize the anchor between training and `build_casualty_schema` (either
-     `anchor: "location"` for place-keyed `casualty_report` structures, or event-trigger-anchored
-     `casualty_events` where the event trigger is always the anchor and `location`, `dead`,
-     `injured`, `missing`, `displaced`, `rescued` are argument roles).
+1. **Anchor, re-measured 2026-11-14. The earlier "every row is `location`" claim was the first line of the file.**
+   - `data/casualty_ml` train (54,303 rows): anchor `dead` 40,304 (74.2%), `injured` 8,319,
+     `location` 5,388, `missing` 292. Val (4,200) and test (4,200) have the same shape.
+     `location` is the fallback in `annotate_casualty.pick_anchor`, used when the row names
+     a place and no count. 49,825 / 54,303 train rows also carry a `location` field; that
+     field is not the anchor.
+   - `build_casualty_schema` defaults to `anchor="dead"`, which matches the death-toll
+     query and 74.2% of train. Switching the default to `location` would decode against
+     an anchor 90% of the training rows did not use. `model_arm.build_schema` stays the
+     legacy plain schema (no mode, no anchor): that is the span-model eval arm.
+   - What remains real: training picks the anchor per row, and inference uses one schema.
+     Injured-only and place-only rows train a different seed than the death-toll decode.
+     Flipping the default does not close that.
 2. **Label-map version mismatch (`labels/unified.yaml` vs `labels/unified-full-v4.yaml`):**
    - Existing configs (`casualty-full-multilingual.yaml`, `casualty-events-boundary.yaml`,
      `gate3-mmbert.yaml`) reference `labels/unified.yaml` (or no `labels_file`) and warm-start
@@ -588,9 +589,9 @@ With `eb22g` (`bcfe500c`, `whr778/gliner2-eb22g`) complete and verified on its 2
 
 | Step | Component / Config | Base Checkpoint | Training Data & Recipe | Pre-Registered Acceptance Gate |
 |---|---|---|---|---|
-| **1** | **Zero-Shot `eb22g` Front-End Readout** (no training, ~$0) | `whr778/gliner2-eb22g` (`best`) | Run `frontend_gates.py` + `binding_accuracy.py` on the Helene/Katrina multi-event passages and DocEE 27-label set | Does `eb22g` pass **Gate 2** (separating Helene and Katrina into two distinct event instances in one passage) and bind the right toll? |
-| **2** | **Stage 0 Relevance & Normalizer Gate (`gate4-eb22g.yaml`)** | `whr778/gliner2-eb22g` | `data/gate3` (token-balanced `en`/`tr`/`zh` `relevance` + `toll_kind`) + `qualifier`/`source` normalizer tasks + 30% `eb22g` replay; `labels/unified-full-v4.yaml`; 4 epochs | Val-calibrated threshold (`sweep_thresholds`): EN/TR/ZH admission >= `gate3-mmbert` (`97%` TR, `98%` ZH), 0 regression on Helene/Aegean/Türkiye-EN |
-| **3** | **Stage 2 Multilingual Casualty Extractor (`casualty-ml-eb22g.yaml`)** | `whr778/gliner2-eb22g` | `data/casualty_ml` (62,703 real EN/TR/ZH news records, anchor aligned with `build_casualty_schema`) + `data/casualty_events` + **30% exact `eb22g` replay**; `pair_split_reduction: true`, `record_link_mode: junction`; 4 epochs | (1) `casualty_ml` blind-test `structure` strict micro-F1 > `0.6078` across all 3 languages; (2) `eb22g` replay heads hold within `±0.02`; (3) Helene binding precision >= `67–100%` and Turkish digit-in-location < `5.8%` |
+| **1** | **Zero-Shot `eb22g` Front-End Readout** (no training, ~$0) — **read 2026-11-14** | `whr778/gliner2-eb22g` (`best`) | `frontend_gates.py` + `binding_accuracy.py` on the 60 Helene windows, label map applied | Gate 1 **passes** (52/60 = 86.7% at 0.10; 30/60 = 50.0% at 0.30). Gate 2 **fails** on the registered range: Katrina is local only at 0.01. Binding yield 21/60 (35.0%) at 0.10. Catalog row has the table |
+| **2** | **Stage 0 Relevance Gate (`gate4-eb22g.yaml`)** | `whr778/gliner2-eb22g` | `data/gate3_eb22g` (`20,556 / 811 / 797` `relevance` + `toll_kind`, 0 base-seen in val/test, 0 overlap with `eb22g` val/test) + 30% `eb22g` replay (`data/replay_eb22g_gate4`, `8,809` train rows); `labels/unified-full-v4.yaml`; no inline `labels:` block; 4 epochs | Val-calibrated threshold (`sweep_thresholds`): EN/TR/ZH admission >= `gate3-mmbert` (`97%` TR, `98%` ZH), 0 regression on Helene/Aegean/Türkiye-EN |
+| **3** | **Stage 2 Multilingual Casualty Extractor (`casualty-ml-eb22g.yaml`)** | `whr778/gliner2-eb22g` | `data/casualty_ml_eb22g` (`53,472 / 4,200 / 4,200`, `20,624` per language EN/TR/ZH, 0 base-seen in val/test, 0 overlap with `eb22g` val/test; inference anchor stays `dead`, matching 74.2% of train) + `data/casualty_events` (`23,627 / 2,666 / 2,852`) + **30% exact `eb22g` replay** (`data/replay_eb22g_casualty`, `33,045` train rows); structural head inherited from the checkpoint (`pair_split_reduction: true`, `record_link_mode: junction`); 4 epochs | (1) `casualty_ml_eb22g` blind-test `structure` strict micro-F1 > `0.6078` across all 3 languages; (2) `eb22g` replay heads hold within `±0.02` on `eb22g`'s uncontaminated val; (3) Helene binding precision >= `67–100%` and Turkish digit-in-location < `5.8%` |
 | **4** | **End-to-End Re-Extraction & Re-Baseline of `datasets/`** | `gate4-eb22g` + `casualty-ml-eb22g` | Re-run `run_pipeline.py` (`--window long --associate record --scope-filter --scope-method decode`) on `helene2024`, `turkey2023` (`en`/`tr`/`zh`), and `aegean2020`, then score `venezuela_2026` once | Pooled RMSE in deaths <= current `hmm_gate` baselines (`20.7` Helene, `10,695.5` Türkiye, `15.7` Aegean) and beats `est_last_value` on all feeds |
 
 ### 5.4 Are We Ready for MHT? — The Exact Prerequisite Gate

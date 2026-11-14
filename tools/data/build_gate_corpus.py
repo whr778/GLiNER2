@@ -281,7 +281,45 @@ def main() -> None:
                          "sum to 1.0. Without this the shares are whatever the pools "
                          "contain, which has now regressed two models in opposite "
                          "directions -- see enforce_shares().")
+    ap.add_argument("--base-config", type=Path, default=None,
+                    help="base training config (e.g. eb22g.yaml): excludes base val/test "
+                         "and routes base-train-seen rows exclusively to train")
     args = ap.parse_args()
+
+    base_train_keys: set[str] = set()
+    base_eval_keys: set[str] = set()
+    if args.base_config is not None:
+        import yaml
+        cfg = yaml.safe_load(args.base_config.read_text(encoding="utf-8"))
+        data = cfg.get("data") or {}
+        train_only = {Path(str(x)).name for x in (data.get("train_only") or [])}
+        t_paths: list[Path] = []
+        e_paths: list[Path] = []
+        for co in data.get("corpora") or []:
+            t_paths.append(Path(f"{co}.train.jsonl"))
+            if Path(co).name not in train_only:
+                e_paths.extend([Path(f"{co}.val.jsonl"), Path(f"{co}.test.jsonl")])
+        for splits in (data.get("event_files") or {}).values():
+            if "train" in splits:
+                t_paths.append(Path(splits["train"]))
+            for sp in ("val", "test"):
+                if sp in splits:
+                    e_paths.append(Path(splits[sp]))
+        for bucket, plist in ((base_train_keys, t_paths), (base_eval_keys, e_paths)):
+            visited: set[Path] = set()
+            for p in plist:
+                if not p.is_file():
+                    continue
+                rp = p.resolve()
+                if rp in visited:
+                    continue
+                visited.add(rp)
+                with p.open(encoding="utf-8") as fh:
+                    for line in fh:
+                        if line.strip():
+                            inp = json.loads(line).get("input") or ""
+                            bucket.add(normalize_group_key(inp))
+                            bucket.add(normalize_group_key(inp.strip()[:MAX_CHARS]))
 
     rows = []
     for path in args.annotated:
@@ -291,13 +329,20 @@ def main() -> None:
         rows += pool
 
     rows += load_duee()
+    if base_eval_keys:
+        before = len(rows)
+        rows = [r for r in rows if normalize_group_key(r["text"]) not in base_eval_keys]
+        print(f"[gate2] excluded {before - len(rows)} rows present in base val/test")
     n_pos = sum(r["positive"] for r in rows)
     seen = {normalize_group_key(r["text"])[:300] for r in rows}
     filler_cap = int(n_pos * FILLER_FRAC / (1 - FILLER_FRAC))
-    rows += load_filler([Path("data/docee.train.jsonl"),
-                         Path("data/cc_news_parts/cc_news_10k_raw.jsonl"),
-                         Path("data/cc_news_parts/cc_news_10k_b_raw.jsonl")],
-                        seen, filler_cap, args.seed)
+    filler = load_filler([Path("data/docee.train.jsonl"),
+                          Path("data/cc_news_parts/cc_news_10k_raw.jsonl"),
+                          Path("data/cc_news_parts/cc_news_10k_b_raw.jsonl")],
+                         seen, filler_cap, args.seed)
+    if base_eval_keys:
+        filler = [r for r in filler if normalize_group_key(r["text"]) not in base_eval_keys]
+    rows += filler
 
     final = balance(rows, args.seed)
     if args.source_share:
@@ -317,13 +362,29 @@ def main() -> None:
 
     # Grouped on the normalized LEAD, the same key the near-dup dedup uses, so a
     # syndicated retelling cannot land on the far side of the split from its twin.
+    # Lead groups containing ANY base-train-seen document are pinned whole to train so
+    # syndicated near-duplicates of base-seen text cannot leak into val/test either.
+    from _split import dumps_record
+    pinned_leads = {
+        normalize_group_key(r["text"])[:300]
+        for r in final
+        if normalize_group_key(r["text"]) in base_train_keys
+    }
     order_rng = random.Random(args.seed)
+    pinned_n = 0
     with SplitWriter(Path(args.out_prefix), seed=args.seed) as writer:
         for row in final:
             kind = KIND_FROM_SOURCE.get(row["kind"], row["kind"])
-            writer.write(_row(row["text"], POSITIVE if row["positive"] else NEGATIVE,
-                              kind, order_rng),
-                         group=normalize_group_key(row["text"])[:300])
+            rec = _row(row["text"], POSITIVE if row["positive"] else NEGATIVE, kind, order_rng)
+            lead = normalize_group_key(row["text"])[:300]
+            if lead in pinned_leads:
+                writer._files["train"].write(dumps_record(rec) + "\n")
+                writer._counts["train"] += 1
+                pinned_n += 1
+            else:
+                writer.write(rec, group=lead)
+    if pinned_n:
+        print(f"[gate2] pinned {pinned_n} base-seen rows to train (0 in val/test)")
     print(f"[gate2] {writer.summary()}")
 
 

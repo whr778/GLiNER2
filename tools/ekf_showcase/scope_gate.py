@@ -204,29 +204,17 @@ def scope_agreement(observations: list, states: dict, ratio: float, warmup: int,
     Returns counts keyed ``"<extracted>/<inferred>"`` plus an ``agreement`` rate over the
     observations where both express an opinion.
     """
-    gated, moved, dropped = gate(observations, ratio, warmup, states, reference)
-    inferred = {}
-    for o in moved:
-        inferred[id(o.get("_orig", o))] = "national"
-    for o in dropped:
-        inferred[id(o.get("_orig", o))] = "drop"
+    tagged = [dict(o, _sa_id=idx) for idx, o in enumerate(observations)]
+    _, moved, dropped = gate(tagged, ratio, warmup, states, reference)
+    moved_ids = {m["_sa_id"] for m in moved if "_sa_id" in m}
+    dropped_ids = {d["_sa_id"] for d in dropped if "_sa_id" in d}
     counts: dict[str, int] = {}
     agree = total = 0
-    for o in observations:
+    for idx, o in enumerate(observations):
         if str(o.get("event_key")) not in states:
             continue
         ex = str(o.get("scope") or "unclear").lower()
-        # `gate` copies rejects, so match on value+time rather than identity.
-        inf = "place"
-        for m in moved:
-            if m["t_hours"] == o["t_hours"] and m["value"] == o["value"]:
-                inf = "national"
-                break
-        else:
-            for dd in dropped:
-                if dd["t_hours"] == o["t_hours"] and dd["value"] == o["value"]:
-                    inf = "drop"
-                    break
+        inf = "national" if idx in moved_ids else ("drop" if idx in dropped_ids else "place")
         counts[f"{ex}/{inf}"] = counts.get(f"{ex}/{inf}", 0) + 1
         if ex != "unclear":
             total += 1

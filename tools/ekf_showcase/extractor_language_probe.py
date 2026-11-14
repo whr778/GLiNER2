@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from gliner2 import AutoExtractor  # noqa: E402
-from run_pipeline import build_casualty_schema  # noqa: E402
+from run_pipeline import build_casualty_schema, extract_casualty_records, map_schema_for_model  # noqa: E402
 
 TURKISH = Path("data/turkish_gate/gate_ann_tr_heldout.jsonl")
 ENGLISH = Path("datasets/helene2024/_cache/feed.jsonl")
@@ -55,9 +55,14 @@ def fisher_two_sided(a: int, b: int, c: int, d: int) -> float:
 def measure(model, schema, texts: list[str], tag: str) -> tuple[int, int, int, int]:
     """Return (digit_locations, total_locations, smeared_records, total_records)."""
     n_loc = loc_digit = n_rec = smeared = 0
+    mapped_pair = map_schema_for_model(model, schema)
     for text in texts:
-        found = model.extract_long(text, schema, threshold=0.3, chunk_size=200,
-                                   chunk_overlap=50).get("casualty_report") or []
+        found = extract_casualty_records(
+            model, text, schema,
+            long=True, threshold=0.3, chunk_size=200, chunk_overlap=50,
+            include_confidence=False, include_spans=False,
+            mapped_pair=mapped_pair,
+        )
         for rec in found:
             n_rec += 1
             location = str(rec.get("location") or "").strip()

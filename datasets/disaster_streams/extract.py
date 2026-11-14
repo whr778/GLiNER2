@@ -181,12 +181,28 @@ def value_qualifier(text: str):
     return word_number(text), qual
 
 
-def qualifier_near(text: str, span: str, left: int = 45, right: int = 8) -> str:
+def qualifier_near(
+    text: str,
+    span: str,
+    left: int = 45,
+    right: int = 8,
+    *,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+) -> str:
     """Detect the hedge local to a model-bound number. The model located the digits; the
     qualifier sits right beside them, usually outside the extracted span -- and usually
     PRECEDES it ('at least 40', 'about 300'). A wide right window catches a trailing 'feared'
     but hurts end-to-end (a sparse decay filter needs feared readings as usable anchors, not
     down-weighted), so keep the right margin small. Falls back to the span if not located."""
+    if start is not None and end is not None and 0 <= start <= end <= len(text):
+        m = re.search(r"\d[\d,]*", span)
+        if m:
+            lo = start + m.start()
+            hi = start + m.end()
+        else:
+            lo, hi = start, end
+        return _detect_qualifier(text[max(0, lo - left): min(len(text), hi + right)])
     m = re.search(r"\d[\d,]*", span)
     key = m.group(0) if m else span
     i = text.find(key)

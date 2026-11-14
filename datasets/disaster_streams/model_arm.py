@@ -28,6 +28,13 @@ ROLES = ("dead", "injured", "missing")
 
 
 def build_schema():
+    """Single-snippet casualty schema for the span-model eval arm.
+
+    ``dead`` is declared first, so ``Schema.structure`` defaults to
+    ``mode='natural', anchor='dead'`` (ignored by span models), without
+    ``location`` or ``exclusive=True``. Multi-instance boundary runs use
+    ``tools/ekf_showcase/run_pipeline.build_casualty_schema``.
+    """
     from gliner2 import Schema
     return (Schema()
             .structure("casualty_report")

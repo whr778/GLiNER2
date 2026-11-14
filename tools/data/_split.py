@@ -91,13 +91,11 @@ def normalize_group_key(s: str) -> str:
     """Return the document key two rows must share to land in the same split.
 
     The SAME rule the contamination checks use (``tools/data/check_leakage.py``,
-    ``gliner2.training.split_hygiene``). Grouping on the raw string instead left
-    texts differing only in case or whitespace with different group keys but the
-    same document key -- they scattered across splits and were then flagged as
-    contamination. Measured: events_biotech still leaked 123 documents
-    train->val after grouping was added, purely from this mismatch.
+    ``gliner2.training.split_hygiene``), after ``clean_text`` so invisible characters
+    stripped on write by ``dumps_record`` (e.g. U+00AD soft hyphen) cannot cause a
+    pre-write key miss that becomes a post-write duplicate.
     """
-    normalized = unicodedata.normalize("NFKC", str(s)).casefold()
+    normalized = clean_text(str(s)).casefold()
     return _WHITESPACE.sub(" ", normalized).strip()
 
 

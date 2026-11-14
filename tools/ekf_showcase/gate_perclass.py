@@ -40,7 +40,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_pipeline import build_gate_schema                     # noqa: E402
+from run_pipeline import build_gate_schema, map_schema_for_model, unmap_extraction  # noqa: E402
 
 # Cap the classes that are plentiful; take ALL of the ones that are not. The uncapped
 # classes are the open EKF failures -- "in 1999 ... deaths of over 17,000" (historical)
@@ -83,10 +83,12 @@ def score(model_id, rows, device):
     """
     from gliner2 import AutoExtractor
     model = AutoExtractor.from_pretrained(model_id, map_location=device)
-    schema = build_gate_schema(model)
+    schema, app_rel = map_schema_for_model(model, build_gate_schema(model))
     start = time.time()
     for row in rows:
-        relevance = model.extract(row["text"], schema, include_confidence=True).get("relevance")
+        relevance = unmap_extraction(
+            model.extract(row["text"], schema, include_confidence=True), app_rel
+        ).get("relevance")
         label = relevance.get("label") if isinstance(relevance, dict) else relevance
         confidence = float(relevance.get("confidence", 1.0)) if isinstance(relevance, dict) else 1.0
         row[model_id] = confidence if label == "mass_casualty" else 1.0 - confidence

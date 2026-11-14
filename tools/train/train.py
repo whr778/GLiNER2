@@ -506,10 +506,28 @@ def _transform_structures(structures: List, meta: Dict, fn):
     new_meta = {}
     for name, block in (meta or {}).items():
         new_block = dict(block) if isinstance(block, dict) else block
-        if isinstance(new_block, dict) and isinstance(new_block.get("anchor"), str):
-            new_block["anchor"] = fn(new_block["anchor"])
+        if isinstance(new_block, dict):
+            if isinstance(new_block.get("anchor"), str):
+                new_block["anchor"] = fn(new_block["anchor"])
+            if isinstance(new_block.get("fields"), dict):
+                new_block["fields"] = {fn(fk): fv for fk, fv in new_block["fields"].items()}
         new_meta.setdefault(fn(name), new_block)
     return out, new_meta
+
+
+def _transform_struct_nested_dict(mapping: Dict, fn) -> Dict:
+    out: Dict = {}
+    for name, body in (mapping or {}).items():
+        new_name = fn(name)
+        if isinstance(body, dict):
+            sub = out.setdefault(new_name, {})
+            for field, val in body.items():
+                new_field = fn(field)
+                if new_field not in sub:
+                    sub[new_field] = val
+        elif new_name not in out:
+            out[new_name] = body
+    return out
 
 
 def _transform_classifications(cls_list: List, fn) -> List:
@@ -656,6 +674,10 @@ def _transform_container(container: Dict, fns: Dict) -> Dict:
             container["json_structures"], container.get("record_metadata") or {}, st)
         if meta:
             out["record_metadata"] = meta
+        if isinstance(container.get("json_descriptions"), dict):
+            out["json_descriptions"] = _transform_struct_nested_dict(container["json_descriptions"], st)
+        if isinstance(container.get("field_dtypes"), dict):
+            out["field_dtypes"] = _transform_struct_nested_dict(container["field_dtypes"], st)
     return out
 
 

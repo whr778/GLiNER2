@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_pipeline import build_gate_schema                     # noqa: E402
+from run_pipeline import build_gate_schema, map_schema_for_model, unmap_extraction  # noqa: E402
 
 DIS = re.compile(r"\b(deprem|sel\b|yangın|patlama|çöktü|göçük|tsunami|heyelan)", re.I)
 TOLL = re.compile(r"\b(öldü|ölü|can kaybı|hayatını kaybet|yaralı|yaraland)", re.I)
@@ -58,10 +58,10 @@ def sample(n_neg, n_pos, seed, max_chars):
 def run(model_id, texts, threshold, device):
     from gliner2 import AutoExtractor
     model = AutoExtractor.from_pretrained(model_id, map_location=device)
-    schema = build_gate_schema(model)
+    schema, app_rel = map_schema_for_model(model, build_gate_schema(model))
     admitted, labels, t0 = 0, [], time.time()
     for t in texts:
-        r = model.extract(t, schema, include_confidence=True)
+        r = unmap_extraction(model.extract(t, schema, include_confidence=True), app_rel)
         rel = r.get("relevance")
         lab = rel.get("label") if isinstance(rel, dict) else rel
         conf = float(rel.get("confidence", 1.0)) if isinstance(rel, dict) else 1.0

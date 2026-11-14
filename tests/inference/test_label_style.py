@@ -76,6 +76,40 @@ class TestApplyLabelMap:
         assert out["events"] == {"conflict.attack": ["Place_Of_Employment", "victim"]}
         assert out["structures"] == self.SCHEMA["structures"]
 
+    def test_built_schema_json_structures_record_metadata_and_descriptions_styled(self):
+        from gliner2 import Schema
+
+        built = (
+            Schema()
+            .structure("casualty_report", mode="natural", anchor="dead")
+            .field("location", dtype="str", description="place")
+            .field("dead", dtype="str", exclusive=True, description="count")
+            .events({"hurricane": {"roles": ["dead"], "exclusive_roles": ["dead"]}})
+            .classification("relevance", {"mass_casualty": "toll", "other": "not toll"})
+            .entities({"Casualties and Losses": "losses"})
+            .build()
+        )
+        out, applied = apply_label_map(built, None, STYLE)
+        assert "Casualty_Report" in out["json_structures"][0]
+        assert list(out["json_structures"][0]["Casualty_Report"]) == ["Location", "Dead"]
+        assert out["json_descriptions"] == {"Casualty_Report": {"Location": "place", "Dead": "count"}}
+        assert out["field_dtypes"] == {"Casualty_Report": {"Location": "str", "Dead": "str"}}
+        assert out["record_metadata"]["Casualty_Report"] == {
+            "mode": "natural",
+            "anchor": "Dead",
+            "fields": {"Dead": {"exclusive": True}},
+        }
+        assert out["record_metadata"]["Hurricane"] == {
+            "mode": "natural",
+            "anchor": "trigger",
+            "fields": {"Dead": {"exclusive": True}},
+        }
+        assert out["classifications"][0]["labels"] == ["Mass_Casualty", "Other"]
+        assert list(out["classifications"][0]["label_descriptions"]) == ["Mass_Casualty", "Other"]
+        assert list(out["entities"]) == ["Casualties_And_Losses"]
+        assert list(out["entity_descriptions"]) == ["Casualties_And_Losses"]
+        assert applied["structures"]["casualty_report"] == "Casualty_Report"
+
 
 class TestTraining:
     def test_labels_file_style_travels_and_styles_every_category(self, tmp_path):
@@ -86,6 +120,27 @@ class TestTraining:
         fns = T._category_fns(cfg)
         assert set(fns) == set(T.LABEL_CATEGORIES)
         assert fns["entities"]("LOC") == "Location" and fns["relations"]("part of") == "Part_Of"
+
+        rec = {
+            "input": "10 died in Florida.",
+            "output": {
+                "json_structures": [{"casualty_report": {"dead": ["10"], "location": ["Florida"]}}],
+                "json_descriptions": {"casualty_report": {"dead": "count"}},
+                "field_dtypes": {"casualty_report": {"dead": "str"}},
+                "record_metadata": {
+                    "casualty_report": {
+                        "mode": "natural",
+                        "anchor": "dead",
+                        "fields": {"dead": {"exclusive": True}},
+                    }
+                },
+            },
+        }
+        tr = T.transform_record(rec, fns)["output"]
+        assert tr["record_metadata"]["Casualty_Report"]["anchor"] == "Dead"
+        assert tr["record_metadata"]["Casualty_Report"]["fields"] == {"Dead": {"exclusive": True}}
+        assert tr["json_descriptions"] == {"Casualty_Report": {"Dead": "count"}}
+        assert tr["field_dtypes"] == {"Casualty_Report": {"Dead": "str"}}
 
     def test_no_style_keeps_map_only(self, tmp_path):
         f = tmp_path / "v.yaml"

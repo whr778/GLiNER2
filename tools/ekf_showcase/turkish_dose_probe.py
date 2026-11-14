@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gliner2 import AutoExtractor  # noqa: E402
-from run_pipeline import build_casualty_schema  # noqa: E402
+from run_pipeline import build_casualty_schema, extract_casualty_records, map_schema_for_model  # noqa: E402
 
 HAS_DIGIT = re.compile(r"\d")
 
@@ -34,11 +34,16 @@ def main() -> int:
 
     for model_id in sys.argv[2:]:
         model = AutoExtractor.from_pretrained(model_id, map_location="cpu")
+        mapped_pair = map_schema_for_model(model, schema)
         n_rec = n_loc = loc_digit = smeared = 0
         for doc in docs:
-            found = model.extract_long(doc["input"], schema, threshold=0.3,
-                                       chunk_size=200, chunk_overlap=50)
-            for rec in found.get("casualty_report") or []:
+            recs = extract_casualty_records(
+                model, doc["input"], schema,
+                long=True, threshold=0.3, chunk_size=200, chunk_overlap=50,
+                include_confidence=False, include_spans=False,
+                mapped_pair=mapped_pair,
+            )
+            for rec in recs:
                 n_rec += 1
                 location = str(rec.get("location") or "").strip()
                 if location:

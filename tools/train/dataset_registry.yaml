@@ -1444,3 +1444,39 @@ datasets:
     source_url: local (tools/train/build_137k_replay.py --config base/eb21.yaml --new-records 2421 --replay-frac 0.30 --seed 42)
     hf_jsonl: whr778/replay_eb21_coref30
     description: "1,037 TRAIN records drawn proportionally from eb21's 23 train corpora (239,038 records), each tagged with its source `_corpus` so negatives and partial_annotation resolve per source. val/test are empty on purpose: replay is train-only."
+  gate3_eb22g:
+    name: gate3 decontaminated against eb22g splits
+    provenance: mixed (adjudicated news)
+    tasks: Classification (relevance, toll_kind)
+    license: mixed -- inherits gate3
+    source_url: local (tools/data/build_gate_corpus.py --annotated data/gate_ann.jsonl data/turkish_gate/gate_ann_turkish.jsonl data/chinese_gate/gate_ann_chinese.jsonl --base-config tools/train/config/base/eb22g.yaml --out-prefix data/gate3_eb22g)
+    hf_jsonl: null
+    language: [en, tr, zh]
+    description: "22,164 balanced relevance + toll_kind records (20,556 / 811 / 797) partitioned against eb22g: 150 base val/test overlaps excluded before balancing, and 14,046 base-train-seen rows pinned whole by lead group to train so 0 base-seen rows enter val or test."
+  casualty_ml_eb22g:
+    name: casualty_ml decontaminated against eb22g splits
+    provenance: mixed (adjudicated news)
+    tasks: structure extraction (casualty_report)
+    license: mixed -- inherits casualty_ml
+    source_url: local (tools/train/build_casualty_multilingual.py --base-config tools/train/config/base/eb22g.yaml --out data/casualty_ml_eb22g)
+    hf_jsonl: null
+    language: [en, tr, zh]
+    description: "61,872 language-balanced real-news casualty_report records (20,624 per language EN/TR/ZH; 53,472 / 4,200 / 4,200, 1,400 per language in val and test). Excluded 1,515 EN and 326 TR rows present in eb22g val/test and pinned 7,538 eb22g-train-seen rows to train so val and test are 100% blind to eb22g and train has 0 overlap with eb22g val/test."
+  replay_eb22g_gate4:
+    name: eb22g exact replay, 30% of gate4-eb22g mixture
+    provenance: mixed (replay)
+    tasks: mixed (replay)
+    license: mixed -- inherits eb22g's 27 source corpora
+    source_url: local (tools/train/build_137k_replay.py --config tools/train/config/base/eb22g.yaml --new-records 20556 --replay-frac 0.30 --exclude-corpora data/gate3_eb22g --out data/replay_eb22g_gate4)
+    hf_jsonl: null
+    language: [en, zh, tr]
+    description: "8,809 eb22g TRAIN records across 27 deduplicated pool corpora (30.0% of the 29,365-record gate4-eb22g train mixture), filtered to 0 overlap with both eb22g val/test and gate3_eb22g val/test."
+  replay_eb22g_casualty:
+    name: eb22g exact replay, 30% of casualty-ml-eb22g mixture
+    provenance: mixed (replay)
+    tasks: mixed (replay)
+    license: mixed -- inherits eb22g's 27 source corpora
+    source_url: local (tools/train/build_137k_replay.py --config tools/train/config/base/eb22g.yaml --new-records 77099 --replay-frac 0.30 --exclude-corpora data/casualty_ml_eb22g data/casualty_events --out data/replay_eb22g_casualty)
+    hf_jsonl: null
+    language: [en, zh, tr]
+    description: "33,045 eb22g TRAIN records across 27 deduplicated pool corpora (30.0% of the 110,144-record casualty-ml-eb22g train mixture), filtered to 0 overlap with eb22g val/test, casualty_ml_eb22g val/test, and casualty_events val/test."

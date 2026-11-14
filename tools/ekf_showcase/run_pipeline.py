@@ -126,6 +126,92 @@ from scope_gate import (  # noqa: E402
     apply_extracted_scope, gate as scope_gate, scope_agreement,
     viterbi_gate, hmm_gate,
 )
+from gliner2.inference.label_map import apply_label_map  # noqa: E402
+
+
+def map_schema_for_model(model, schema):
+    """Apply ``model.config``'s ``label_map`` / ``label_style`` to ``schema``.
+
+    Returns ``(mapped_schema, applied)``; when the model carries neither, returns
+    ``(schema, {})`` untouched so non-styled checkpoints keep their exact path.
+    """
+    cfg = getattr(model, "config", None)
+    lmap = getattr(cfg, "label_map", None)
+    lstyle = getattr(cfg, "label_style", None)
+    if not lmap and not lstyle:
+        return schema, {}
+    built = schema.build() if hasattr(schema, "build") else schema
+    return apply_label_map(built, lmap, lstyle)
+
+
+def unmap_extraction(result: Dict[str, Any], applied: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
+    """Invert ``apply_label_map``'s rewrites on an extraction result dict."""
+    if not applied or not isinstance(result, dict):
+        return result
+    out = dict(result)
+    rev_cls = {v: k for k, v in (applied.get("classifications") or {}).items()}
+    if rev_cls:
+        for k, val in list(out.items()):
+            if isinstance(val, dict) and isinstance(val.get("label"), str) and val["label"] in rev_cls:
+                out[k] = {**val, "label": rev_cls[val["label"]]}
+            elif isinstance(val, str) and val in rev_cls:
+                out[k] = rev_cls[val]
+            elif isinstance(val, list) and val and all(isinstance(x, str) for x in val):
+                if any(x in rev_cls for x in val):
+                    out[k] = [rev_cls.get(x, x) for x in val]
+
+    rev_ent = {v: k for k, v in (applied.get("entities") or {}).items()}
+    if rev_ent and "entities" in out:
+        ents = out["entities"]
+        if isinstance(ents, dict):
+            out["entities"] = {rev_ent.get(ek, ek): ev for ek, ev in ents.items()}
+        elif isinstance(ents, list):
+            out["entities"] = [
+                {rev_ent.get(ek, ek): ev for ek, ev in d.items()} if isinstance(d, dict) else d
+                for d in ents
+            ]
+
+    rev_st = {v: k for k, v in (applied.get("structures") or {}).items()}
+    if rev_st:
+        for k in list(out.keys()):
+            val = out[k]
+            is_mapped_struct = k in rev_st or (
+                isinstance(val, list)
+                and any(isinstance(inst, dict) and any(fk in rev_st for fk in inst) for inst in val)
+            )
+            if is_mapped_struct:
+                canon_k = rev_st.get(k, k)
+                del out[k]
+                if isinstance(val, list):
+                    val = [
+                        {rev_st.get(fk, fk): fv for fk, fv in inst.items()} if isinstance(inst, dict) else inst
+                        for inst in val
+                    ]
+                out[canon_k] = val
+
+    rev_ev = {v: k for k, v in (applied.get("events") or {}).items()}
+    if rev_ev and isinstance(out.get("event_extraction"), dict):
+        ev_out = {}
+        for etype, ev_list in out["event_extraction"].items():
+            canon_t = rev_ev.get(etype, etype)
+            if isinstance(ev_list, list):
+                new_list = []
+                for inst in ev_list:
+                    if isinstance(inst, dict) and isinstance(inst.get("arguments"), list):
+                        args = [
+                            {**a, "role": rev_ev.get(a["role"], a["role"])}
+                            if isinstance(a, dict) and isinstance(a.get("role"), str)
+                            else a
+                            for a in inst["arguments"]
+                        ]
+                        new_list.append({**inst, "arguments": args})
+                    else:
+                        new_list.append(inst)
+                ev_out[canon_t] = new_list
+            else:
+                ev_out[canon_t] = ev_list
+        out["event_extraction"] = ev_out
+    return out
 
 
 DISASTER_TYPE_LABELS = {
@@ -164,14 +250,14 @@ def gate(model, texts: List[str], threshold: float,
          with_type: bool = True) -> List[Dict[str, Any]]:
     """Stage 0. Unsupported languages are rejected BEFORE the model sees them.
 
-    The gate reads English and Chinese, which is what it was trained on. Asked for a
-    verdict on Turkish it returns one anyway -- admitting 22% of clean articles at
-    threshold 0.5, with AUC 0.4733 separating reports from non-reports. That is noise
-    presented as a decision. `language_gate` makes the boundary explicit, and the
-    articles it drops are counted rather than silently mixed into the kept set.
+    The gate reads English, Chinese and Turkish (`language_gate.SUPPORTED`).
+    `language_gate` makes the boundary explicit, and the articles it drops are
+    counted rather than silently mixed into the kept set.
     """
-    schema = build_gate_schema(model)
-    type_schema = build_type_schema(model) if with_type else None
+    schema, app_rel = map_schema_for_model(model, build_gate_schema(model))
+    type_schema, app_type = (
+        map_schema_for_model(model, build_type_schema(model)) if with_type else (None, {})
+    )
     out = []
     for text in texts:
         supported, language, language_confidence = is_supported(text)
@@ -182,14 +268,16 @@ def gate(model, texts: List[str], threshold: float,
                 "language": language, "language_confidence": language_confidence,
             })
             continue
-        r = model.extract(text, schema, include_confidence=True)
+        r = unmap_extraction(model.extract(text, schema, include_confidence=True), app_rel)
         rel = r.get("relevance")
         label = rel.get("label") if isinstance(rel, dict) else rel
         conf = float(rel.get("confidence", 1.0)) if isinstance(rel, dict) else 1.0
         # A second encoder pass, deliberately. Sharing one made disaster_type free and
         # the relevance decision wrong on boundary models.
-        dis = (model.extract(text, type_schema, include_confidence=True).get("disaster_type")
-               if type_schema else None)
+        dis = (
+            unmap_extraction(model.extract(text, type_schema, include_confidence=True), app_type).get("disaster_type")
+            if type_schema else None
+        )
         out.append({
             "relevant": bool(label == "mass_casualty" and conf >= threshold),
             "relevance": label, "relevance_confidence": conf,
@@ -252,12 +340,15 @@ def build_docee_schema(model):
 
 def extract_stage1(model, texts: List[str], threshold: float) -> List[Dict[str, Any]]:
     """Per article: the DocEE event type plus its casualty/location/cause spans."""
-    schema = build_docee_schema(model)
+    schema, app_s1 = map_schema_for_model(model, build_docee_schema(model))
     out = []
     for text in texts:
         try:
-            r = model.extract(text, schema, threshold=threshold,
-                              include_confidence=True, include_spans=True)
+            r = unmap_extraction(
+                model.extract(text, schema, threshold=threshold,
+                              include_confidence=True, include_spans=True),
+                app_s1,
+            )
             ev = r.get(DOCEE_TASK)
             ents = r.get("entities") or {}
             if isinstance(ents, list):
@@ -344,8 +435,27 @@ def event_envelopes(text: str, block: Dict[str, Any], margin: int = 40) -> List[
 # --------------------------------------------------------------------------- #
 def build_casualty_schema(with_location: bool = False, record_mode: str = "natural",
                           anchor: str = "dead", with_scope: bool = False):
-    """Identical to datasets/disaster_streams/model_arm.py, so numbers from this demo
-    are comparable with the measured EKF results.
+    """Stage-2 casualty schema. The default anchor stays ``dead``.
+
+    Measured 2026-11-14 on every row of ``data/casualty_ml``
+    (``output.record_metadata.casualty_report.anchor``):
+
+        split   n      dead    injured  location  missing
+        train   54303  40304   8319     5388      292
+        val     4200   3176    629      375       20
+        test    4200   3128    641      409       22
+
+    That is ``pick_anchor`` in ``tools/data/annotate_casualty.py``: the first of
+    ``(dead, injured, missing, location)`` the row actually carries. ``location``
+    is the fallback for a place with no count (5,388 of 54,303 train rows), not
+    the corpus anchor. One inference schema cannot match every training row.
+    ``dead`` matches 40,304 / 54,303 train rows (74.2%), which is the death-toll
+    query this pipeline scores. ``anchor="location"`` is a different query, and
+    it is valid only together with ``with_location=True``: the schema builder
+    raises if the anchor is not a declared field.
+
+    ``datasets/disaster_streams/model_arm.py`` is a different function. It builds
+    the legacy plain schema (no mode, no anchor) for the span-model eval arm.
 
     ``with_location`` adds a location FIELD to the record. That makes attribution the
     model's job rather than a proximity heuristic's: the number and the place it belongs
@@ -398,20 +508,59 @@ def build_casualty_schema(with_location: bool = False, record_mode: str = "natur
     # same true positives -- it stops the model copying one figure onto every instance
     # in a multi-incident document rather than finding anything new. Decode-time only;
     # no retraining required to turn this on or off.
-    return (s
-            .field("dead", dtype="str", exclusive=True,
-                   description="number of people killed or confirmed dead, not injured/missing/displaced")
-            .field("injured", dtype="str", exclusive=True,
-                   description="number of people injured or hurt, not killed/missing/displaced/homeless")
-            .field("missing", dtype="str", exclusive=True,
-                   description="number of people missing or unaccounted for, not killed/injured/displaced")
-            .field("source", dtype="str", description="who reported these figures"))
+    out = (s
+           .field("dead", dtype="str", exclusive=True,
+                  description="number of people killed or confirmed dead, not injured/missing/displaced")
+           .field("injured", dtype="str", exclusive=True,
+                  description="number of people injured or hurt, not killed/missing/displaced/homeless")
+           .field("missing", dtype="str", exclusive=True,
+                  description="number of people missing or unaccounted for, not killed/injured/displaced")
+           .field("source", dtype="str", description="who reported these figures"))
+    if not record_mode:
+        out._auto_finish()
+        out.schema._record_metadata.pop("casualty_report", None)
+    return out
+
+
+def extract_casualty_records(
+    model,
+    text: str,
+    cas_schema,
+    *,
+    long: bool = False,
+    threshold: float = 0.3,
+    chunk_size: int = 200,
+    chunk_overlap: int = 0,
+    include_confidence: bool = True,
+    include_spans: bool = True,
+    mapped_pair=None,
+) -> List[Dict[str, Any]]:
+    """Run Stage-2 casualty extraction with model label-map/style support."""
+    mapped, app = mapped_pair if mapped_pair is not None else map_schema_for_model(model, cas_schema)
+    if long:
+        raw = model.extract_long(
+            text, mapped, threshold=threshold,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            include_confidence=include_confidence, include_spans=include_spans,
+        )
+    else:
+        raw = model.extract(
+            text, mapped, threshold=threshold,
+            include_confidence=include_confidence, include_spans=include_spans,
+        )
+    return unmap_extraction(raw, app).get("casualty_report") or []
 
 
 def _cell(v):
     if isinstance(v, dict):
         return v.get("text", ""), float(v.get("confidence", 1.0))
     return (v or ""), 1.0
+
+
+def _cell_offsets(v) -> tuple[Optional[int], Optional[int]]:
+    if isinstance(v, dict) and "start" in v and "end" in v:
+        return int(v["start"]), int(v["end"])
+    return None, None
 
 
 SCOPE_CLASSES = ("place", "national", "sub-place", "unclear")
@@ -446,24 +595,36 @@ def normalize_scope(cell) -> str:
 
 def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
           event_key: str = "all", events_block: Optional[Dict] = None,
-          event_year: int = 0, rejected: Optional[List] = None) -> None:
+          event_year: int = 0, rejected: Optional[List] = None,
+          text_offset: int = 0) -> None:
     """Turn one casualty_report reading into observations, one per role per mode.
 
     ``event_year`` enables the temporal check: a figure whose nearest date predates the
-    event is a historical comparison, not a report of it.
+    event is a historical comparison, not a report of it. ``text_offset`` shifts envelope
+    offsets back into article coordinates so ``out_of_window`` compares against
+    article-level dates on ``row['text']``.
     """
     rejected = rejected if rejected is not None else []
+    full_text = row.get("text", read_text)
     for role in ROLES:
-        span, conf = _cell(rec.get(role))
+        raw_cell = rec.get(role)
+        span, conf = _cell(raw_cell)
         if not span:
             continue
-        stale = (out_of_window(read_text, span, events_block, event_year)
+        s_off, e_off = _cell_offsets(raw_cell)
+        art_start = (s_off + text_offset) if s_off is not None else None
+        art_end = (e_off + text_offset) if e_off is not None else None
+        stale = (out_of_window(full_text, span, events_block, event_year,
+                               start=art_start, end=art_end)
                  if event_year else None)
         if stale is not None:
             rejected.append({"value": span, "year": stale})
             continue
         for mode in modes:
-            value, qual, src = normalize(read_text, span, mode, cls_model, cls_schema)
+            value, qual, src = normalize(
+                read_text, span, mode, cls_model, cls_schema,
+                start=s_off, end=e_off,
+            )
             if value is None:
                 # No number in the span at all. Emitting 0 here is what turned 30 of 114
                 # Helene observations into fabricated reports of no deaths; a missing
@@ -483,12 +644,22 @@ def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
 # Stage 3 - normalization
 # --------------------------------------------------------------------------- #
 def build_normalizer_schema(model):
-    return (model.create_schema()
-            .classification("qualifier", QUALIFIERS)
-            .classification("source", SOURCES))
+    sc = (model.create_schema()
+          .classification("qualifier", QUALIFIERS)
+          .classification("source", SOURCES))
+    sc._ekf_mapped = map_schema_for_model(model, sc)
+    return sc
 
 
-def role_window(text: str, span: str, left: int = 120, right: int = 60) -> str:
+def role_window(
+    text: str,
+    span: str,
+    left: int = 120,
+    right: int = 60,
+    *,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+) -> str:
     """Text around the model-bound number.
 
     Qualifier and source are attributes of an INDIVIDUAL reading, not of the article:
@@ -499,6 +670,11 @@ def role_window(text: str, span: str, left: int = 120, right: int = 60) -> str:
     score ~0.49 on a 3-way task. So the classifier sees the neighbourhood of the number
     it is describing, the same premise as ``qualifier_near``'s character window.
     """
+    if start is not None and end is not None and 0 <= start <= end <= len(text):
+        m = surface.re.search(r"\d[\d,]*", span)
+        lo = (start + m.start()) if m else start
+        hi = (start + m.end()) if m else end
+        return text[max(0, lo - left): min(len(text), hi + right)]
     m = surface.re.search(r"\d[\d,]*", span)
     key = m.group(0) if m else span
     i = text.find(key)
@@ -507,20 +683,33 @@ def role_window(text: str, span: str, left: int = 120, right: int = 60) -> str:
     return text[max(0, i - left): i + len(key) + right]
 
 
-def normalize(text: str, span: str, mode: str, cls_model=None, cls_schema=None):
+def normalize(
+    text: str,
+    span: str,
+    mode: str,
+    cls_model=None,
+    cls_schema=None,
+    *,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+):
     """span -> (value, qualifier, source).
 
     ``value`` always comes from the digits in the model-bound span: no classifier can
     emit an open-vocabulary number. Only qualifier/source vary by mode.
     """
     value, _ = surface.value_qualifier(span)
-    heur_qual = surface.qualifier_near(text, span)
+    heur_qual = surface.qualifier_near(text, span, start=start, end=end)
     heur_src = surface._detect_source(text)
     if mode == "heuristic" or cls_model is None:
         return value, heur_qual, heur_src
 
-    window = role_window(text, span)
-    r = cls_model.extract(window, cls_schema, include_confidence=True)
+    window = role_window(text, span, start=start, end=end)
+    mapped_pair = getattr(cls_schema, "_ekf_mapped", None)
+    if mapped_pair is None:
+        mapped_pair = map_schema_for_model(cls_model, cls_schema)
+    mapped_cls, app_cls = mapped_pair
+    r = unmap_extraction(cls_model.extract(window, mapped_cls, include_confidence=True), app_cls)
     q, s = r.get("qualifier"), r.get("source")
     q = q.get("label") if isinstance(q, dict) else q
     s = s.get("label") if isinstance(s, dict) else s
@@ -547,8 +736,18 @@ _GENERIC_PLACE = {
 _BARE_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
-def out_of_window(text: str, span: str, events: Dict[str, Any], event_year: int,
-                  slack: int = 1, mode: str = "nearest", radius: int = 220) -> Optional[int]:
+def out_of_window(
+    text: str,
+    span: str,
+    events: Dict[str, Any],
+    event_year: int,
+    slack: int = 1,
+    mode: str = "nearest",
+    radius: int = 220,
+    *,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+) -> Optional[int]:
     """The year of the nearest date to `span`, when that year predates the event.
 
     Returns None when the figure is temporally plausible, so the caller keeps it. A
@@ -575,10 +774,13 @@ def out_of_window(text: str, span: str, events: Dict[str, Any], event_year: int,
                  for m in _BARE_YEAR_RE.finditer(text)]
     if not dates:
         return None
-    i = text.find(span)
-    if i < 0:
-        return None
-    mid = i + len(span) / 2
+    if start is not None and end is not None and 0 <= start <= end <= len(text):
+        mid = (start + end) / 2
+    else:
+        i = text.find(span)
+        if i < 0:
+            return None
+        mid = i + len(span) / 2
     if mode == "any":
         # ANY out-of-window year within `radius`, not just the nearest one.
         #
@@ -1039,7 +1241,7 @@ def main() -> None:
         from collections import Counter
         by_language = Counter(g["language"] for g in unsupported)
         print(f"           {len(unsupported)}/{len(feed)} dropped, language not supported "
-              f"(gate reads en/zh): {dict(by_language)}")
+              f"(gate reads en/zh/tr): {dict(by_language)}")
     print(f"           kept {len(kept)}/{len(feed)} articles as mass-casualty")
 
     events: List[Dict[str, Any]] = [{} for _ in feed]
@@ -1060,6 +1262,7 @@ def main() -> None:
     cas_schema = build_casualty_schema(with_location=args.associate == "record",
                                        record_mode=args.record_mode or None,
                                        with_scope=args.with_scope)
+    cas_mapped_pair = map_schema_for_model(cas_model, cas_schema)
 
     modes = ["heuristic", "classify", "hybrid"] if args.normalizer == "both" else [args.normalizer]
     cls_schema = (build_normalizer_schema(gate_model)
@@ -1081,10 +1284,12 @@ def main() -> None:
                 # default 384 -- the framing curve's band, not a guess.
                 _win = args.chunk_size or max(
                     64, int(int(getattr(cas_model.config, "max_len", 4096)) / 1.5))
-                records = (cas_model.extract_long(
-                    row["text"], cas_schema, threshold=args.event_threshold,
+                records = extract_casualty_records(
+                    cas_model, row["text"], cas_schema,
+                    long=True, threshold=args.event_threshold,
                     chunk_size=_win, chunk_overlap=args.chunk_overlap,
-                ).get("casualty_report") or [])
+                    mapped_pair=cas_mapped_pair,
+                )
                 entry["envelopes"] = [{"text": f"<extract_long chunks of {_win} words>"}]
                 for rec in records:
                     key = (record_key(events[i], rec) if args.associate == "record"
@@ -1103,7 +1308,7 @@ def main() -> None:
                 # location-bearing record schema binds BOTH countries 16/16, while the
                 # same model on the full 6.2k article gets Syria 0/16. News puts the
                 # current toll up top and the historical comparison at the bottom.
-                envelopes = [{"text": row["text"][: args.lead_chars]}]
+                envelopes = [{"text": row["text"][: args.lead_chars], "start": 0}]
             else:
                 envelopes = (casualty_windows(row["text"], events[i], args.envelope_margin)
                              if args.window == "event" and events[i] else [])
@@ -1111,22 +1316,28 @@ def main() -> None:
             # EVERY envelope is read, not just the first. A multi-event article carries
             # one casualty span per incident, and reading only the first would discard
             # the rest -- which is precisely the case the envelope exists to handle.
-            reads = envelopes or [{"text": row["text"]}]
+            reads = envelopes or [{"text": row["text"], "start": 0}]
             for env in reads:
                 read_text = env["text"]
+                env_offset = int(env.get("start", 0))
                 # EVERY casualty_report instance, not just [0]. A multi-event-trained
                 # model emits one record per incident, and reading only the first would
                 # make it look identical to the single-instance model it replaces --
                 # the same defect class as envelopes[0] above.
-                records = (cas_model.extract(read_text, cas_schema, include_confidence=True)
-                           .get("casualty_report") or [])
+                records = extract_casualty_records(
+                    cas_model, read_text, cas_schema,
+                    long=False, threshold=args.event_threshold,
+                    mapped_pair=cas_mapped_pair,
+                )
                 # Per ENVELOPE, not per document: the envelope is the incident, and
                 # keying at document level pooled every event an article mentioned.
                 for rec in (records or [{}]):
                     key = (record_key(events[i], rec) if args.associate == "record"
                            else association_key(events[i], args.associate, env))
                     _emit(rec, read_text, row, entry, modes, per_mode,
-                          gate_model, cls_schema, event_key=key)
+                          gate_model, cls_schema, event_key=key,
+                          events_block=events[i], event_year=args.event_year,
+                          rejected=stale_hits, text_offset=env_offset)
         articles.append(entry)
         if (i + 1) % 20 == 0:
             print(f"           {i + 1}/{len(feed)} articles")

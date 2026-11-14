@@ -44,6 +44,7 @@ import re
 from pathlib import Path
 
 from gliner2 import AutoExtractor, Schema
+from gliner2.inference.label_map import apply_label_map
 
 REPO = Path(__file__).resolve().parents[2]
 TRACKED = REPO / "datasets/helene2024/_cache/tracked_rollup.json"
@@ -69,31 +70,118 @@ ROLES = {"dead": "number of people killed", "location": "where the deaths occurr
          "event_name": "the name of the storm or disaster"}
 
 
-def schema(etype: str, th: float) -> Schema:
-    return Schema().events(
+def schema(etype: str, th: float, model=None):
+    sc = Schema().events(
         {etype: {"roles": list(ROLES), "role_descriptions": dict(ROLES)}},
         trigger_threshold=th, argument_threshold=th)
+    if model is not None:
+        lmap = getattr(model.config, "label_map", None)
+        lstyle = getattr(model.config, "label_style", None)
+        if lmap or lstyle:
+            mapped, _ = apply_label_map(sc.build(), lmap, lstyle)
+            return mapped
+    return sc
+
+
+def _event_min_conf(ev: dict) -> float:
+    t_confs = [
+        float(t["confidence"])
+        for t in (ev.get("triggers") or [])
+        if isinstance(t, dict) and "confidence" in t
+    ]
+    return max(t_confs) if t_confs else float(ev.get("confidence", 1.0))
+
+
+def _filter_event_by_threshold(ev: dict, th: float) -> dict | None:
+    if _event_min_conf(ev) < th:
+        return None
+    trigs = [
+        t for t in (ev.get("triggers") or [])
+        if isinstance(t, dict) and float(t.get("confidence", 1.0)) >= th
+    ]
+    if not trigs:
+        return None
+    args = [
+        a for a in (ev.get("arguments") or [])
+        if isinstance(a, dict)
+        and isinstance(a.get("entity"), dict)
+        and float(a["entity"].get("confidence", 1.0)) >= th
+    ]
+    return {"triggers": trigs, "arguments": args}
+
+
+def _has_threshold_coupled_decode(model) -> bool:
+    """True when decode depends on ``threshold`` beyond per-span confidence filtering."""
+    bs = getattr(model, "boundary_settings", None)
+    if bs is None:
+        return False
+    if float(getattr(bs, "record_argument_coref_boost", 0.0) or 0.0) > 0.0:
+        return True
+    if (
+        getattr(bs, "entity_coref_threshold", None) is not None
+        and getattr(bs, "record_argument_coref_copy", "none") != "none"
+    ):
+        return True
+    if getattr(bs, "record_merge_coreferent", "off") != "off":
+        return True
+    return False
+
+
+def _extract_combined(model, texts: list[str], th: float, batch_size: int = 8) -> list[dict]:
+    sc = Schema().events(
+        {
+            etype: {"roles": list(ROLES), "role_descriptions": dict(ROLES)}
+            for etype in EVENT_TYPES
+        },
+        trigger_threshold=th,
+        argument_threshold=th,
+    )
+    lmap = getattr(model.config, "label_map", None)
+    lstyle = getattr(model.config, "label_style", None)
+    if lmap or lstyle:
+        sc, _ = apply_label_map(sc.build(), lmap, lstyle)
+    return model.batch_extract(
+        texts, sc, batch_size=batch_size, threshold=th,
+        include_spans=True, include_confidence=True,
+    )
+
+
+def blocks_from_extracted(texts: list[str], raw_results: list[dict], th: float) -> list[list[dict]]:
+    per_text = [[] for _ in texts]
+    for idx, (text, res) in enumerate(zip(texts, raw_results)):
+        for mapped_etype, ev_list in (res.get("event_extraction") or {}).items():
+            for raw_ev in ev_list:
+                ev = _filter_event_by_threshold(raw_ev, th)
+                if ev is None:
+                    continue
+                pts = []
+                for t in ev.get("triggers") or []:
+                    if isinstance(t, dict) and "start" in t:
+                        pts += [t["start"], t["end"]]
+                for a in ev.get("arguments") or []:
+                    e = a.get("entity") if isinstance(a, dict) else None
+                    if isinstance(e, dict) and "start" in e:
+                        pts += [e["start"], e["end"]]
+                if pts:
+                    per_text[idx].append({
+                        "type": mapped_etype, "lo": min(pts), "hi": max(pts),
+                        "n_args": len(ev.get("arguments") or []),
+                        "text": text[min(pts):max(pts)],
+                    })
+    return per_text
+
+
+def blocks_batch(model, texts: list[str], th: float) -> list[list[dict]]:
+    """Every event's min(start)..max(end) over its own trigger + argument spans for a list of texts."""
+    if not texts:
+        return []
+    raw_results = _extract_combined(model, texts, th)
+    return blocks_from_extracted(texts, raw_results, th)
 
 
 def blocks(model, text: str, th: float):
     """Every event's min(start)..max(end) over its own trigger + argument spans."""
-    out = []
-    for etype in EVENT_TYPES:
-        res = model.extract(text, schema(etype, th), threshold=th, include_spans=True)
-        for ev in (res.get("event_extraction") or {}).get(etype, []):
-            pts = []
-            for t in ev.get("triggers") or []:
-                if isinstance(t, dict) and "start" in t:
-                    pts += [t["start"], t["end"]]
-            for a in ev.get("arguments") or []:
-                e = a.get("entity") if isinstance(a, dict) else None
-                if isinstance(e, dict) and "start" in e:
-                    pts += [e["start"], e["end"]]
-            if pts:
-                out.append({"type": etype, "lo": min(pts), "hi": max(pts),
-                            "n_args": len(ev.get("arguments") or []),
-                            "text": text[min(pts):max(pts)]})
-    return out
+    return blocks_batch(model, [text], th)[0]
 
 
 def helene_windows(limit: int = 60):
@@ -127,9 +215,14 @@ def main() -> None:
 
     print("GATE 1 -- usable events-form on real wire copy (want >= 50%)")
     print(f"{'thresh':>7}{'windows w/ trigger+arg':>25}{'share':>9}")
+    coupled = _has_threshold_coupled_decode(model)
+    min_th = min(REGISTERED + EXTENDED)
+    raw_wins = None if coupled else _extract_combined(model, wins, min_th)
     best, best_ext = (0.0, 0.0), (0.0, 0.0)
     for th in REGISTERED + EXTENDED:
-        hits = sum(1 for w in wins if any(b["n_args"] for b in blocks(model, w, th)))
+        th_wins = _extract_combined(model, wins, th) if coupled else raw_wins
+        all_bs = blocks_from_extracted(wins, th_wins, th)
+        hits = sum(1 for bs in all_bs if any(b["n_args"] for b in bs))
         share = hits / max(len(wins), 1)
         if th in REGISTERED and share > best[1]:
             best = (th, share)
@@ -148,10 +241,15 @@ def main() -> None:
     print("GATE 2 -- the span block is LOCAL (Katrina block must hold '1,400', not 'Helene')")
     print(f"{'thresh':>7}  case      block                                    verdict")
     g2 = g2_ext = False
+    g2_texts = [KATRINA, HELENE]
+    raw_g2 = None if coupled else _extract_combined(model, g2_texts, min_th)
     for th in REGISTERED + EXTENDED:
-        for name, text, must, forbid in (("KATRINA", KATRINA, "1,400", "Helene"),
-                                         ("HELENE ", HELENE, "246", "Katrina")):
-            bs = blocks(model, text, th)
+        th_g2 = _extract_combined(model, g2_texts, th) if coupled else raw_g2
+        bs_pair = blocks_from_extracted(g2_texts, th_g2, th)
+        for (name, text, must, forbid), bs in zip(
+            (("KATRINA", KATRINA, "1,400", "Helene"), ("HELENE ", HELENE, "246", "Katrina")),
+            bs_pair,
+        ):
             hit = next((b for b in bs if must in b["text"]), None)
             if hit is None:
                 v = "no block contains the figure"

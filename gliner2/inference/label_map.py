@@ -86,6 +86,61 @@ def _structures(structures: Mapping[str, Any], fn) -> Dict[str, Any]:
     return out
 
 
+def _json_structures(json_structures: list, fn) -> list:
+    """Map built ``json_structures`` entries (``[{struct_name: {field: spec}}]``)."""
+    out = []
+    for entry in json_structures:
+        if not isinstance(entry, Mapping):
+            out.append(entry)
+            continue
+        renamed = {}
+        for name, body in entry.items():
+            new_name = fn(name)
+            if isinstance(body, Mapping):
+                fields = renamed.setdefault(new_name, type(body)())
+                for field, val in body.items():
+                    new_field = fn(field)
+                    if new_field not in fields:
+                        fields[new_field] = copy.deepcopy(val)
+            elif new_name not in renamed:
+                renamed[new_name] = copy.deepcopy(body)
+        out.append(renamed)
+    return out
+
+
+def _nested_struct_field_map(mapping: Mapping[str, Any], fn) -> Dict[str, Any]:
+    """Map ``{struct_name: {field_name: value}}`` (used by ``json_descriptions`` and ``field_dtypes``)."""
+    out: Dict[str, Any] = {}
+    for name, body in mapping.items():
+        new_name = fn(name)
+        if isinstance(body, Mapping):
+            sub = out.setdefault(new_name, {})
+            for field, val in body.items():
+                new_field = fn(field)
+                if new_field not in sub:
+                    sub[new_field] = copy.deepcopy(val)
+        elif new_name not in out:
+            out[new_name] = copy.deepcopy(body)
+    return out
+
+
+def _record_metadata(meta: Mapping[str, Any], fn) -> Dict[str, Any]:
+    """Map ``record_metadata`` structure names, ``anchor``, and per-field ``fields`` keys."""
+    out: Dict[str, Any] = {}
+    for name, block in meta.items():
+        new_name = fn(name)
+        if isinstance(block, Mapping):
+            new_block = copy.deepcopy(dict(block))
+            if isinstance(new_block.get("anchor"), str):
+                new_block["anchor"] = fn(new_block["anchor"])
+            if isinstance(new_block.get("fields"), Mapping):
+                new_block["fields"] = {fn(fk): fv for fk, fv in new_block["fields"].items()}
+            out.setdefault(new_name, new_block)
+        else:
+            out.setdefault(new_name, copy.deepcopy(block))
+    return out
+
+
 def apply_label_map(schema: Mapping[str, Any], label_map: Optional[Mapping[str, Any]],
                     label_style: Optional[Mapping[str, Any]] = None
                     ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, str]]]:
@@ -113,16 +168,57 @@ def apply_label_map(schema: Mapping[str, Any], label_map: Optional[Mapping[str, 
         return record
 
     if out.get("entities") is not None:
-        out["entities"] = _labels(out["entities"], tracked("entities"))
+        ent = tracked("entities")
+        out["entities"] = _labels(out["entities"], ent)
+        if isinstance(out.get("entity_descriptions"), Mapping):
+            out["entity_descriptions"] = _labels(dict(out["entity_descriptions"]), ent)
     if out.get("relations") is not None:
-        out["relations"] = _labels(out["relations"], tracked("relations"))
+        rel = tracked("relations")
+        out["relations"] = _labels(out["relations"], rel)
+        if isinstance(out.get("relation_descriptions"), Mapping):
+            out["relation_descriptions"] = _labels(dict(out["relation_descriptions"]), rel)
+    orig_event_names = set(schema.get("events") or {})
     if out.get("events") is not None:
         ev = tracked("events")
         out["events"] = {ev(t): _event(spec, ev) for t, spec in out["events"].items()}
+        if isinstance(out.get("record_metadata"), Mapping) and orig_event_names:
+            ev_meta = {k: v for k, v in out["record_metadata"].items() if k in orig_event_names}
+            if ev_meta:
+                mapped_ev_meta = {}
+                for k, block in ev_meta.items():
+                    nb = copy.deepcopy(dict(block)) if isinstance(block, Mapping) else copy.deepcopy(block)
+                    if isinstance(nb, dict) and isinstance(nb.get("fields"), Mapping):
+                        nb["fields"] = {ev(fk): fv for fk, fv in nb["fields"].items()}
+                    mapped_ev_meta[ev(k)] = nb
+                rest = {k: v for k, v in out["record_metadata"].items() if k not in orig_event_names}
+                out["record_metadata"] = {**rest, **mapped_ev_meta}
     if out.get("classifications") is not None:
         cls = tracked("classifications")
-        out["classifications"] = [dict(c, labels=_labels(c["labels"], cls)) if "labels" in c else c
-                                  for c in out["classifications"]]
-    if style and isinstance(out.get("structures"), dict):
-        out["structures"] = _structures(out["structures"], tracked("structures"))
+        mapped_cls = []
+        for c in out["classifications"]:
+            if not isinstance(c, Mapping):
+                mapped_cls.append(c)
+                continue
+            nc = dict(c)
+            if "labels" in nc:
+                nc["labels"] = _labels(nc["labels"], cls)
+            if isinstance(nc.get("label_descriptions"), Mapping):
+                nc["label_descriptions"] = _labels(dict(nc["label_descriptions"]), cls)
+            mapped_cls.append(nc)
+        out["classifications"] = mapped_cls
+    if style:
+        st = tracked("structures")
+        if isinstance(out.get("structures"), dict):
+            out["structures"] = _structures(out["structures"], st)
+        if isinstance(out.get("json_structures"), list):
+            out["json_structures"] = _json_structures(out["json_structures"], st)
+        if isinstance(out.get("json_descriptions"), Mapping):
+            out["json_descriptions"] = _nested_struct_field_map(out["json_descriptions"], st)
+        if isinstance(out.get("field_dtypes"), Mapping):
+            out["field_dtypes"] = _nested_struct_field_map(out["field_dtypes"], st)
+        if isinstance(out.get("record_metadata"), Mapping):
+            mapped_event_names = set(out.get("events") or {})
+            struct_meta = {k: v for k, v in out["record_metadata"].items() if k not in mapped_event_names}
+            keep_meta = {k: v for k, v in out["record_metadata"].items() if k in mapped_event_names}
+            out["record_metadata"] = {**keep_meta, **_record_metadata(struct_meta, st)}
     return out, applied
