@@ -69,6 +69,24 @@ def test_eb22g_finetune_configs_use_the_v4_label_file_and_name_replay():
         assert replay in cfg["data"]["corpora"]
 
 
+def test_eb23a_casualty_config_uses_the_same_slices_without_copying_the_head():
+    path = ROOT / "tools/train/config/casualty/casualty-ml-eb23a.yaml"
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert cfg["model"]["pretrained"] == "whr778/gliner2-eb23a"
+    assert "boundary_head" not in cfg["model"]
+    assert "strip_bare_space_subword" not in cfg["model"]
+    assert "labels" not in cfg
+    assert cfg["labels_file"] == "labels/unified-full-v4.yaml"
+    assert cfg["data"]["corpora"] == [
+        "data/casualty_ml_eb22g",
+        "data/casualty_events",
+        "data/replay_eb22g_casualty",
+    ]
+    assert cfg["training"]["schema_dropout"]["remove_events_prob"] == 0.0
+    assert cfg["training"]["relation_gold_pairs"] == "nearest"
+    assert cfg["eval"]["global_decode"] is True
+
+
 def test_pipeline_title_snake_round_trip_and_offset_windows():
     rp = _pipeline()
     text = (
