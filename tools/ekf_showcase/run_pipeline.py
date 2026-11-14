@@ -122,6 +122,7 @@ GATE_LABELS_V2 = {
 
 
 from language_gate import is_supported  # noqa: E402
+from event_container import container_gate, span_boundary_defect  # noqa: E402
 from scope_gate import (  # noqa: E402
     apply_extracted_scope, gate as scope_gate, scope_agreement,
     viterbi_gate, hmm_gate,
@@ -596,7 +597,8 @@ def normalize_scope(cell) -> str:
 def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
           event_key: str = "all", events_block: Optional[Dict] = None,
           event_year: int = 0, rejected: Optional[List] = None,
-          text_offset: int = 0) -> None:
+          text_offset: int = 0, article_id: Optional[int] = None,
+          malformed: Optional[List] = None) -> None:
     """Turn one casualty_report reading into observations, one per role per mode.
 
     ``event_year`` enables the temporal check: a figure whose nearest date predates the
@@ -614,6 +616,11 @@ def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
         s_off, e_off = _cell_offsets(raw_cell)
         art_start = (s_off + text_offset) if s_off is not None else None
         art_end = (e_off + text_offset) if e_off is not None else None
+        defect = span_boundary_defect(full_text, span, art_start, art_end)
+        if defect is not None:
+            if malformed is not None:
+                malformed.append({"value": span, "reason": defect})
+            continue
         stale = (out_of_window(full_text, span, events_block, event_year,
                                start=art_start, end=art_end)
                  if event_year else None)
@@ -634,6 +641,8 @@ def _emit(rec, read_text, row, entry, modes, per_mode, cls_model, cls_schema,
                  "qualifier": qual, "source": src, "confidence": conf,
                  "span": span, "mode": mode, "event_key": event_key,
                  "scope": normalize_scope(rec.get("scope"))}
+            if article_id is not None:
+                o["_article_id"] = article_id
             per_mode[mode].append(o)
             # Keep EVERY mode on the article: retaining only the first made
             # `--normalizer both` unscoreable, which is the whole point of it.
@@ -1154,14 +1163,12 @@ def main() -> None:
                          "national -> aggregate and sub-place -> dropped, and defers "
                          "`unclear` to --scope-ratio. Needs re-extraction; the field is "
                          "unsupervised so far, so measure agreement before trusting it.")
-    ap.add_argument("--scope-method", choices=("decode", "ratio", "off"), default="decode",
+    ap.add_argument("--scope-method", choices=("container", "decode", "ratio", "off"), default="decode",
                     dest="scope_method",
-                    help="how to decide own/aggregate/reject. `decode` is the global "
-                         "Viterbi over the whole stream and is the default: it beats "
-                         "`ratio` on every event measured (Helene -29.4%%, Turkiye -7.6%%, "
-                         "Aegean -78.8%% pooled RMSE in deaths). `ratio` is the greedy "
-                         "per-observation gate, kept as the control every one of those "
-                         "numbers was measured against.")
+                    help="how to decide own/aggregate/reject. `container` resolves "
+                         "unlocated (`unknown`) event totals and child conservation per "
+                         "role via EventContainer. `decode` is the legacy global Viterbi; "
+                         "`ratio` is the greedy per-observation gate.")
     ap.add_argument("--decode-sigma", type=float, default=0.3, dest="decode_sigma")
     ap.add_argument("--decode-reject-cost", type=float, default=4.0,
                     dest="decode_reject_cost")
@@ -1270,6 +1277,7 @@ def main() -> None:
 
     per_mode: Dict[str, List[Dict]] = {m: [] for m in modes}
     stale_hits: List[Dict] = []
+    malformed_hits: List[Dict] = []
     articles: List[Dict[str, Any]] = []
     for i, row in enumerate(feed):
         entry = {"t_hours": row["t_hours"], "text": row["text"], **gates[i],
@@ -1297,7 +1305,7 @@ def main() -> None:
                     _emit(rec, row["text"], row, entry, modes, per_mode,
                           gate_model, cls_schema, event_key=key,
                           events_block=events[i], event_year=args.event_year,
-                          rejected=stale_hits)
+                          rejected=stale_hits, article_id=i, malformed=malformed_hits)
                 articles.append(entry)
                 if (i + 1) % 20 == 0:
                     print(f"           {i + 1}/{len(feed)} articles")
@@ -1337,7 +1345,8 @@ def main() -> None:
                     _emit(rec, read_text, row, entry, modes, per_mode,
                           gate_model, cls_schema, event_key=key,
                           events_block=events[i], event_year=args.event_year,
-                          rejected=stale_hits, text_offset=env_offset)
+                          rejected=stale_hits, text_offset=env_offset,
+                          article_id=i, malformed=malformed_hits)
         articles.append(entry)
         if (i + 1) % 20 == 0:
             print(f"           {i + 1}/{len(feed)} articles")
@@ -1413,6 +1422,21 @@ def main() -> None:
                 if not states:
                     print(f"   [scope-{args.scope_method}] no hierarchy.parts in the "
                           f"rollup; skipped")
+                elif args.scope_method == "container":
+                    agg_key = (rollup.get("hierarchy") or {}).get("aggregate", "__aggregate__")
+                    gated, moved, dropped = container_gate(
+                        per_mode[m], states, aggregate_key=agg_key,
+                        sigma=args.decode_sigma, reject_cost=args.decode_reject_cost,
+                    )
+                    per_mode[m] = [o for lst in gated.values() for o in lst]
+                    print(f"   [scope-container sigma={args.decode_sigma} "
+                          f"reject={args.decode_reject_cost}] {m}: "
+                          f"reconciled/promoted {len(moved)}, "
+                          f"rejected/deduped {len(dropped)}")
+                    for o in dropped[:6]:
+                        print(f"           reject {o.get('_from','?'):<20}"
+                              f"role={o.get('role','?'):<8}"
+                              f"value={float(o['value']):>8.0f}")
                 elif args.scope_method == "decode":
                     # The GLOBAL decode. A greedy rule commits per observation, and one
                     # large figure admitted early poisons a stream's running scale for
@@ -1474,6 +1498,13 @@ def main() -> None:
                         o.pop("_idx", None)
         scoped = True
 
+    for m in modes:
+        for o in per_mode[m]:
+            o.pop("_article_id", None)
+    for entry in articles:
+        for o in entry["observations"]:
+            o.pop("_article_id", None)
+
     grid = [t0 + k * args.grid_step for k in range(int((t1 - t0) / args.grid_step) + 1)]
 
     result: Dict[str, Any] = {
@@ -1506,6 +1537,9 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n[done] {out}")
+    if malformed_hits:
+        print(f"   [span-boundary] rejected {len(malformed_hits)} partial/date span(s): "
+              f"{[(h['value'][:14], h['reason']) for h in malformed_hits[:6]]}")
     if args.event_year:
         print(f"   [temporal] rejected {len(stale_hits)} figure(s) dated before "
               f"{args.event_year}: {[(h['value'][:14], h['year']) for h in stale_hits[:6]]}")

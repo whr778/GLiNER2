@@ -75,7 +75,11 @@ _UNITS = {
 }
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
          "seventy": 70, "eighty": 80, "ninety": 90}
-_SCALES = {"hundred": 100, "thousand": 1000, "million": 1_000_000}
+_SCALES = {"hundred": 100, "thousand": 1000, "million": 1_000_000, "billion": 1_000_000_000}
+_EN_SCALE_NUM = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*\b(thousand|million|billion)\b", re.I
+)
+_BARE_DECIMAL_RE = re.compile(r"^\D*\d+\.\d{1,2}(?!\d)")
 
 # Turkish writes EVERY number >= 1000 as digits around a scale WORD -- "3 bin 549" is
 # 3,549, not 3 -- so `\d[\d,]*` reads the leading group and stops. Measured on the
@@ -173,6 +177,14 @@ def value_qualifier(text: str):
         tr = turkish_number(text)
         if tr is not None:
             return tr, qual
+    # English digit + scale word ("1.41 million" -> 1,410,000, not "1").
+    m_en = _EN_SCALE_NUM.search(text)
+    if m_en:
+        num = float(m_en.group(1).replace(",", ""))
+        return int(round(num * _SCALES[m_en.group(2).lower()])), qual
+    # Reject bare non-thousands decimals ("1.2-meter" is a measurement, not 1 person).
+    if _BARE_DECIMAL_RE.search(text):
+        return None, qual
     m = re.search(r"\d[\d,]*(?:\.\d{3})*", text)
     if m:
         got = _plain_int(m.group(0))
