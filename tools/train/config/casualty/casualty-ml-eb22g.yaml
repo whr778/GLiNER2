@@ -21,6 +21,13 @@
 # Selection metric is structure strict micro-F1 (> 0.6078 pre-registered bar).
 # Inference anchor stays dead (74.2% of casualty_ml train; location is the
 # fallback when a row reports a place with no count).
+#
+# The boundary head is NOT copied here. whr778/gliner2-eb22g's config.json already
+# has it (pair_split_reduction, record_link_mode junction, enable_rotary_endpoints
+# false, coref_link_distance mlp, event_records, max_gold_per_query 768), and
+# from_pretrained builds those modules before a yaml override could apply.
+# What must be restated are the training and eval keys whose defaults disagree
+# with the run that produced that checkpoint.
 model:
   pretrained: whr778/gliner2-eb22g
   architecture: boundary
@@ -49,6 +56,14 @@ training:
   num_workers: 2
   validate_data: false
   allow_invalid_samples: true
+  # eb22g's policies. The collator defaults are raise / every head-tail pair /
+  # remove_events_prob 0.2, which would abort on a gold overflow, relabel replay
+  # relations, and drop a fifth of the event types this mix exists to add.
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  schema_dropout:
+    remove_events_prob: 0.0
   sliding_window: true
   max_len: 4096
   window_stride: 3072
@@ -57,6 +72,14 @@ training:
   early_stopping: false
   seed: 42
 eval:
+  # eb22g scored with global decode and a swept threshold. Omitting these writes
+  # threshold 0.5 and global_decode false into the new checkpoint's
+  # inference_defaults, replacing the decode the warm start was trained under.
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
   metric_sweep: true
 labels_file: labels/unified-full-v4.yaml
 
