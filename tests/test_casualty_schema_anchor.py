@@ -84,7 +84,43 @@ def test_eb23a_casualty_config_uses_the_same_slices_without_copying_the_head():
     ]
     assert cfg["training"]["schema_dropout"]["remove_events_prob"] == 0.0
     assert cfg["training"]["relation_gold_pairs"] == "nearest"
+    assert cfg["training"]["error_policy"] == "skip"
+    assert cfg["training"]["on_capacity_exceeded"] == "truncate_with_warning"
     assert cfg["eval"]["global_decode"] is True
+    assert cfg["eval"]["threshold"] == 0.3
+
+
+def test_gate4_configs_keep_short_text_and_inherit_the_head():
+    """Gate text stays short. The head comes from the checkpoint, both bases."""
+    shared = {
+        "error_policy": "skip",
+        "on_capacity_exceeded": "truncate_with_warning",
+        "relation_gold_pairs": "nearest",
+    }
+    expected = {
+        ROOT / "tools/train/config/gate/gate4-eb22g.yaml": "whr778/gliner2-eb22g",
+        ROOT / "tools/train/config/gate/gate4-eb23a.yaml": "whr778/gliner2-eb23a",
+    }
+    for path, pretrained in expected.items():
+        cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert cfg["model"]["pretrained"] == pretrained
+        assert "boundary_head" not in cfg["model"]
+        assert "strip_bare_space_subword" not in cfg["model"]
+        assert "labels" not in cfg
+        assert cfg["labels_file"] == "labels/unified-full-v4.yaml"
+        assert cfg["data"]["corpora"] == [
+            "data/gate3_eb22g",
+            "data/replay_eb22g_gate4",
+        ]
+        assert cfg["training"]["sliding_window"] is False
+        assert cfg["training"]["max_len"] == 2048
+        assert cfg["training"]["metric_for_best"] == "eval_classification_strict_micro_f1"
+        assert cfg["training"]["schema_dropout"]["remove_events_prob"] == 0.0
+        for key, value in shared.items():
+            assert cfg["training"][key] == value
+        assert cfg["eval"]["global_decode"] is True
+        assert cfg["eval"]["threshold"] == 0.3
+        assert cfg["eval"]["eval_by_language"] is True
 
 
 def test_pipeline_title_snake_round_trip_and_offset_windows():

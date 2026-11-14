@@ -1,0 +1,86 @@
+# Stage-0 relevance gate, warm-started from eb23a.
+#
+# Same slices as gate4-eb22g.yaml. eb23a.yaml's data section is identical to
+# eb22g.yaml, so the decontamination against those splits still holds:
+# 0 base-trained documents in val/test, 0 base val/test documents in train.
+#
+#   uv run python tools/data/build_gate_corpus.py \
+#     --annotated data/gate_ann.jsonl data/turkish_gate/gate_ann_turkish.jsonl data/chinese_gate/gate_ann_chinese.jsonl \
+#     --base-config tools/train/config/base/eb22g.yaml \
+#     --out-prefix data/gate3_eb22g
+#   uv run python tools/train/build_137k_replay.py \
+#     --config tools/train/config/base/eb22g.yaml \
+#     --new-records 20556 \
+#     --replay-frac 0.30 \
+#     --exclude-corpora data/gate3_eb22g \
+#     --out data/replay_eb22g_gate4
+#
+# Split sizes: gate3_eb22g 20,556 / 811 / 797 + replay_eb22g_gate4 8,809 (30.0%).
+# Selection metric is classification strict micro-F1. The pre-registered bar is
+# val-calibrated EN/TR/ZH admission at least gate3-mmbert (97% TR, 98% ZH), with
+# no regression on Helene, Aegean, and Türkiye-EN.
+#
+# The boundary head is NOT copied here. from_pretrained builds it from
+# whr778/gliner2-eb23a, including the eb23a-only settings: strip_bare_space_subword,
+# record_field_max_tokens 48, record_field_min_pair_logit -10, and the
+# argument-coref settings. Restated below are the training and eval keys whose
+# defaults disagree with that run. sliding_window stays off: gate text is short.
+model:
+  pretrained: whr778/gliner2-eb23a
+  architecture: boundary
+
+training:
+  checkpoint_restart: null
+  output_dir: ./out/gate4-eb23a
+  experiment_name: gate4_eb23a
+  data_parallel: false
+  num_epochs: 4
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_classification_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  allow_invalid_samples: true
+  # Same policies as eb23a. The collator defaults are raise / every head-tail
+  # pair / remove_events_prob 0.2, which would abort on a gold overflow,
+  # relabel replay relations, and drop a fifth of the event types in the replay.
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  schema_dropout:
+    remove_events_prob: 0.0
+  sliding_window: false
+  max_len: 2048
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+  seed: 42
+eval:
+  # eb23a scored with global decode and a swept threshold. Omitting these writes
+  # threshold 0.5 and global_decode false into the new checkpoint's
+  # inference_defaults.
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
+  metric_sweep: true
+labels_file: labels/unified-full-v4.yaml
+
+data:
+  corpora:
+    - data/gate3_eb22g
+    - data/replay_eb22g_gate4
+  event_files: {}

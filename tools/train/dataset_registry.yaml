@@ -1450,7 +1450,7 @@ datasets:
     tasks: Classification (relevance, toll_kind)
     license: mixed -- inherits gate3
     source_url: local (tools/data/build_gate_corpus.py --annotated data/gate_ann.jsonl data/turkish_gate/gate_ann_turkish.jsonl data/chinese_gate/gate_ann_chinese.jsonl --base-config tools/train/config/base/eb22g.yaml --out-prefix data/gate3_eb22g)
-    hf_jsonl: null
+    hf_jsonl: whr778/gate3_eb22g
     language: [en, tr, zh]
     description: "22,164 balanced relevance + toll_kind records (20,556 / 811 / 797) partitioned against eb22g: 150 base val/test overlaps excluded before balancing, and 14,046 base-train-seen rows pinned whole by lead group to train so 0 base-seen rows enter val or test."
   casualty_ml_eb22g:
@@ -1468,7 +1468,7 @@ datasets:
     tasks: mixed (replay)
     license: mixed -- inherits eb22g's 27 source corpora
     source_url: local (tools/train/build_137k_replay.py --config tools/train/config/base/eb22g.yaml --new-records 20556 --replay-frac 0.30 --exclude-corpora data/gate3_eb22g --out data/replay_eb22g_gate4)
-    hf_jsonl: null
+    hf_jsonl: whr778/replay_eb22g_gate4
     language: [en, zh, tr]
     description: "8,809 eb22g TRAIN records across 27 deduplicated pool corpora (30.0% of the 29,365-record gate4-eb22g train mixture), filtered to 0 overlap with both eb22g val/test and gate3_eb22g val/test."
   replay_eb22g_casualty:

@@ -17,6 +17,10 @@
 # Split sizes: gate3_eb22g 20,556 / 811 / 797 + replay_eb22g_gate4 8,809 (30.0%).
 # Val and test contain only base-unseen rows; preservation on eb22g's val is a
 # separate companion eval (0 train overlap with eb22g val/test).
+#
+# The boundary head is NOT copied here. from_pretrained builds it from
+# whr778/gliner2-eb22g. Restated below are the training and eval keys whose
+# defaults disagree with that run. sliding_window stays off: gate text is short.
 model:
   pretrained: whr778/gliner2-eb22g
   architecture: boundary
@@ -44,6 +48,15 @@ training:
   logging_steps: 20
   num_workers: 2
   validate_data: false
+  allow_invalid_samples: true
+  # Same policies as eb22g. The collator defaults are raise / every head-tail
+  # pair / remove_events_prob 0.2, which would abort on a gold overflow,
+  # relabel replay relations, and drop a fifth of the event types in the replay.
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  schema_dropout:
+    remove_events_prob: 0.0
   sliding_window: false
   max_len: 2048
   gradient_checkpointing: true
@@ -51,6 +64,14 @@ training:
   early_stopping: false
   seed: 42
 eval:
+  # eb22g scored with global decode and a swept threshold. Omitting these writes
+  # threshold 0.5 and global_decode false into the new checkpoint's
+  # inference_defaults.
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
   metric_sweep: true
 labels_file: labels/unified-full-v4.yaml
 
