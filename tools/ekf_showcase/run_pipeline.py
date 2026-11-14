@@ -1352,13 +1352,13 @@ def main() -> None:
         for m in modes:
             apply_rollup(per_mode[m], rollup)
             merge_prefix_keys(per_mode[m])
-            kept, rejected, unresolved = scope_filter(per_mode[m], rollup)
-            per_mode[m] = kept
+            scope_kept, rejected, unresolved = scope_filter(per_mode[m], rollup)
+            per_mode[m] = scope_kept
             # and out of the per-article lists, which are what gets persisted
             for entry in articles:
                 entry["observations"] = [o for o in entry["observations"]
                                          if "_out_of_scope" not in o]
-            print(f"   [scope] {m}: kept {len(kept)}, rejected {len(rejected)} out of scope, "
+            print(f"   [scope] {m}: kept {len(scope_kept)}, rejected {len(rejected)} out of scope, "
                   f"{len(unresolved)} unresolved (kept)")
             if rejected:
                 from collections import Counter
@@ -1408,8 +1408,8 @@ def main() -> None:
                 # UNGATED stream. Measured: ratio and decode returned byte-identical
                 # observations on all three feeds while the log reported 12 rejections.
                 # Tag the originals here, apply the verdicts back by tag below.
-                for n, o in enumerate(per_mode[m]):
-                    o["_idx"] = n
+                for idx_n, o in enumerate(per_mode[m]):
+                    o["_idx"] = idx_n
                 if not states:
                     print(f"   [scope-{args.scope_method}] no hierarchy.parts in the "
                           f"rollup; skipped")
