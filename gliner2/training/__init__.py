@@ -24,22 +24,23 @@ from gliner2.training.data import (
     create_relation_example,
     create_structure_example,
 )
-from gliner2.training.eta import estimate_eta
-from gliner2.training.guide_scores import GuideScores
-from gliner2.training.stopwords import build_stopwords
-from gliner2.training.metrics import (
-    compute_metrics,
-    evaluate_checkpoint,
-    make_compute_metrics,
-    make_sweeping_compute_metrics,
-    sweep_thresholds,
-    sweep_global_decode,
-)
 
 _LAZY = {
+    "estimate_eta": ("gliner2.training.eta", "estimate_eta"),
+    "GuideScores": ("gliner2.training.guide_scores", "GuideScores"),
+    "build_stopwords": ("gliner2.training.stopwords", "build_stopwords"),
+    "compute_metrics": ("gliner2.training.metrics", "compute_metrics"),
+    "evaluate_checkpoint": ("gliner2.training.metrics", "evaluate_checkpoint"),
+    "make_compute_metrics": ("gliner2.training.metrics", "make_compute_metrics"),
+    "make_sweeping_compute_metrics": ("gliner2.training.metrics", "make_sweeping_compute_metrics"),
+    "sweep_thresholds": ("gliner2.training.metrics", "sweep_thresholds"),
+    "sweep_global_decode": ("gliner2.training.metrics", "sweep_global_decode"),
+    "ManagedTrainingPlan": ("gliner2.training.managed", "ManagedTrainingPlan"),
+    "ManagedTraining": ("gliner2.training.managed", "ManagedTraining"),
+    "TrainingSession": ("gliner2.training.session", "TrainingSession"),
     "ExtractorTrainer": ("gliner2.training.trainer", "ExtractorTrainer"),
     "GLiNER2Trainer": ("gliner2.training.trainer", "GLiNER2Trainer"),
-    "TrainingConfig": ("gliner2.training.trainer", "TrainingConfig"),
+    "TrainingConfig": ("gliner2.training.config", "TrainingConfig"),
     "TrainingMetrics": ("gliner2.training.trainer", "TrainingMetrics"),
     "ExtractorDataset": ("gliner2.training.trainer", "ExtractorDataset"),
     "ExtractorCollator": ("gliner2.training.trainer", "ExtractorCollator"),
@@ -47,6 +48,9 @@ _LAZY = {
 }
 
 __all__ = [
+    "ManagedTrainingPlan",
+    "ManagedTraining",
+    "TrainingSession",
     "ChoiceField",
     "Classification",
     "DataFormat",

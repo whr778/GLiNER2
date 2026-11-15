@@ -8,7 +8,7 @@ boundary architecture produces them natively.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Dict, List, Optional
 
 import torch
@@ -267,7 +267,18 @@ class ExtractorOutput:
 
 
 # DistributedDataParallel(static_graph=True) finds the forward's output tensors with torch.utils._pytree.tree_flatten,
-# which treats an UNREGISTERED dataclass as one opaque leaf: DDP's backward sink never enters the graph and the
-# static-graph deferred all-reduce never fires, so 2-GPU ranks train on their own gradients and drift, silently
-# (ddp_sync_probe on 2x H100, 2026-10-20: 25 of 33 module groups; tools/lambda/ddp_trace.py reproduces it on 2 CPU ranks).
-torch.utils._pytree.register_dataclass(ExtractorOutput)
+# which treats an UNREGISTERED dataclass as one opaque leaf: DDP's backward sink never enters the autograd graph and
+# the static-graph deferred all-reduce never fires, so multi-GPU ranks train on their own gradients and drift apart
+# silently (ddp_sync_probe on 2x H100, 2026-10-20: 25 of 33 module groups). Registered, the output's tensors are
+# visible to DDP. register_dataclass arrived after torch 2.6; earlier torch uses register_pytree_node.
+if hasattr(torch.utils._pytree, "register_dataclass"):
+    torch.utils._pytree.register_dataclass(ExtractorOutput)
+else:
+    def _flatten_output(output):
+        names = [item.name for item in fields(output)]
+        return [getattr(output, name) for name in names], names
+
+    def _unflatten_output(values, names):
+        return ExtractorOutput(**dict(zip(names, values)))
+
+    torch.utils._pytree.register_pytree_node(ExtractorOutput, _flatten_output, _unflatten_output)
