@@ -1,0 +1,97 @@
+# CMNEE LoRA on frozen eb23a.
+#
+# The base already trained these 9,281 documents as cmnee_ner_off. This run
+# asks whether a small adapter can move argument extraction on the held-out
+# splits. Train/val/test inputs are disjoint (9,281 / 1,606 / 2,724, measured
+# 2026-11-15). Val and test are the string-form cmnee splits the evaluator
+# matches; train stays the offset-anchored file.
+#
+# The control is eb23a scored on these same two files. eb23a's mixed-val
+# event_argument F1 is a different test set and is not the comparison.
+# Single-run floor is ±0.02 strict micro-F1.
+#
+# from_pretrained reads whr778/gliner2-eb23a at the repo root. That root is
+# the best checkpoint (epoch 5, step 82,930, the same weights as
+# checkpoint-epoch-5). The boundary head is not copied here.
+#
+# use_lora puts every trainable tensor on task_lr. encoder_lr is unused.
+# Default LoRA targets leave boundary_head and record_decoder frozen, so
+# the targets below name them. relation_scorer and classifier stay frozen:
+# CMNEE has no relation gold, and its entities are partial.
+model:
+  pretrained: whr778/gliner2-eb23a
+  architecture: boundary
+
+training:
+  checkpoint_restart: null
+  output_dir: ./out/cmnee-lora-eb23a
+  experiment_name: cmnee_lora_eb23a
+  data_parallel: false
+  num_epochs: 2
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  save_epoch_checkpoint: true
+  logging_steps: 20
+  num_workers: 2
+  validate_data: false
+  allow_invalid_samples: true
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  negative_pools: auto
+  negative_labels_per_dim:
+    entities: 20
+    events: 20
+  negative_label_seed: 42
+  negative_gold_full_roles: true
+  schema_dropout:
+    remove_events_prob: 0.0
+  sliding_window: true
+  max_len: 4096
+  window_stride: 3072
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+  seed: 42
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32.0
+  lora_dropout: 0.0
+  lora_target_modules:
+    - encoder
+    - boundary_head
+    - record_decoder
+  save_adapter_only: true
+eval:
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
+  metric_sweep: true
+labels_file: labels/unified-full-v4.yaml
+
+data:
+  corpora:
+    - data/cmnee_ner_off
+  train_only:
+    - cmnee_ner_off
+  partial_annotation:
+    cmnee_ner_off:
+      - entities
+  event_files:
+    cmnee:
+      val: data/cmnee.val.jsonl
+      test: data/cmnee.test.jsonl
