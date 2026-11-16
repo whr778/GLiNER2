@@ -354,6 +354,31 @@ uv run tools/infer.py --model out/eb20/best \
   `args` mode (merge on shared arguments) is kept for the record only: it traced NEGATIVE, 0 of 6
   merges right.
 
+## LoRA adapters
+
+`--model` accepts an adapter directory or Hub repo the same way it accepts a full
+checkpoint. The directory has `adapter_config.json` and `adapter_model.safetensors` and
+no `model.safetensors`. `AutoExtractor.from_pretrained` reads `base_model_name_or_path`
+from the adapter file, loads that base, then applies the adapter. The extractor
+`config.json` beside the adapter supplies `label_map` and `inference_defaults`. Without
+that file the base's own config is used, and a directory that also contains
+`model.safetensors` loads as a full checkpoint.
+
+Traced 2026-11-16 on a tiny boundary adapter saved by `save_adapter_checkpoint`: the
+loaded object is a `PeftModel`, `label_map` and `inference_defaults` came from the
+extractor `config.json`, `apply_boundary_overrides` wrote through to the base, and
+`batch_extract_long` ran. `infer.py` needs no separate adapter flag.
+
+```bash
+uv run python tools/infer.py --model ./out/cmnee-lora-eb23a/best \
+    --input data/cmnee.test.jsonl --gold-schema --output cmnee_test.preds.jsonl
+```
+
+The same call with a Hub id (`--model whr778/gliner2-cmnee-lora-eb23a`) works once that
+repo has been published. Decode settings, the label map, and `--gold-schema` behave as
+they do for a full checkpoint. How the adapter is trained and saved is in `TRAINING.md`
+§4.
+
 ## Cautions (measured)
 
 - **Don't send the whole event menu.** On one 743-character CASIE article, the full shipped menu (320 event types) fired **225 types and 773 instances**. The same article with a one-type menu gave 0. Eval only ever offers each document its own gold types, so no reported score covers the full-menu case. Use `--tasks` and `--events` to send the types you mean.
@@ -364,4 +389,5 @@ uv run tools/infer.py --model out/eb20/best \
   does not apply padding exactly: measured 2026-10-05, 3 of 5 CASIE docs decoded differently alone
   than when batched with longer docs, while CPU and stock SDPA on MPS were identical either way. Until
   that is resolved, produce a blind-test file on CPU or with `--batch-size 1` on MPS.
-- **Use `AutoExtractor`, not `GLiNER2`, in your own code.** `GLiNER2` is the span class, and a boundary checkpoint fails to load with `'ExtractorConfig' object has no attribute 'max_width'`. `infer.py` had this defect until 2026-10-05.
+- **Use `AutoExtractor`, not `GLiNER2`, in your own code.** `GLiNER2` is the span class, and a boundary checkpoint fails to load with `'ExtractorConfig' object has no attribute 'max_width'`. `infer.py` had this defect until 2026-10-05. The same call loads a LoRA adapter directory; see "LoRA adapters" above.
+- **An adapter directory with no extractor `config.json` loads the base's labels and decode settings.** `save_adapter_checkpoint` writes that file. A directory saved without it still loads the weights, and `label_map` and `inference_defaults` are the base's.

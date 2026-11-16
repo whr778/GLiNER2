@@ -651,6 +651,54 @@ afterwards returned a digit when asked for a `location`. Mix 5–10% of the orig
 distribution back in — `build_warmstart_mix.py` samples replay across **both** old task
 families, because taking only events preserves one head and starves the other.
 
+### LoRA on a frozen checkpoint
+
+`training.use_lora: true` freezes the loaded checkpoint and trains adapters. Every trainable
+tensor uses `task_lr`. `encoder_lr` is stored and unused. The log says which one is live:
+
+```
+Optimizer: LoRA params only = 144, LR=0.0005
+LoRA setup complete: 636,864 trainable / 318,634,585 total (0.20%)
+```
+
+That second line is the CMNEE adapter on `whr778/gliner2-eb23a` (`lora_r: 16`,
+`lora_alpha: 32`, dropout 0), logged 2026-11-16. The worked config is
+`tools/train/config/ab/cmnee-lora-eb23a.yaml`.
+
+```bash
+uv run python tools/train/train.py --config tools/train/config/ab/cmnee-lora-eb23a.yaml
+```
+
+The default `lora_target_modules` is `encoder`, `span_rep`, `classifier`, `count_embed`,
+`count_pred`. On a boundary model that adapts the encoder linears and `classifier`, and
+leaves `boundary_head` and `record_decoder` frozen. Name those modules. Aliases:
+`extractive_head` is `boundary_head` on a boundary model, `record_head` is
+`record_decoder`, `relation_head` is `relation_scorer`, `classification_head` is
+`classifier`, `all_task_heads` is every task module the architecture built.
+`encoder.query`, `encoder.key`, `encoder.value`, and `encoder.dense` narrow the encoder.
+
+`save_adapter_only: true` (the default) writes `adapter_config.json`,
+`adapter_model.safetensors`, and the extractor `config.json` (`label_map`,
+`inference_defaults`). It does not write the base weights.
+`base_model_name_or_path` in the adapter file is the checkpoint the run loaded.
+`AutoExtractor.from_pretrained` on that directory loads the base, then the adapter. A
+directory that also contains `model.safetensors` is a full checkpoint and loads as one.
+The same directory is what `tools/infer.py --model` takes; see `INFER.md`.
+
+The progress-bar `loss` is not the `[losses] total_loss`. The bar sums the full
+micro-batch loss (span, classification, record, relation, coreference) across the
+accumulation window and divides by `logging_steps`. With accumulation 4 and
+`logging_steps: 20` it is about four times the mean micro-batch loss. `[losses]
+total_loss` is the span part of the last micro-batch only. `record_field_loss` on that
+line is the argument term. The from-scratch "starts near 500" note in §11 does not
+apply to an adapter on a trained base.
+
+Score the adapter against the base on the same val and test files. eb23a's mixed-val
+event_argument F1 is a different set. The first CMNEE adapter (2026-11-15) trained and
+then failed to publish: `from_pretrained` joined a missing `config.json` and treated
+that path as a Hub repo id. Current checkouts write the extractor `config.json` beside
+the adapter and load a directory that has `adapter_config.json` and no full weights.
+
 ### The current bases (2026-10 to 2026-11) and the runbook fixes that bit a run
 
 The 137k joint configs above are the recipe's origin; the bases trained since are in
@@ -1112,6 +1160,11 @@ it in every box runner ahead of the training call.
 `MODEL_CARD.md` is generated at the end of training with the datasets actually used, their
 licences, and an effective-licence determination from `dataset_registry.yaml`.
 
+An adapter directory is a different layout. `push_to_hub.py` sees a `PeftModel` and
+uploads `adapter_config.json`, `adapter_model.safetensors`, and the extractor
+`config.json`, then checks that `adapter_config.json` is on the Hub. Load it with the
+same `AutoExtractor.from_pretrained` call (§4, LoRA).
+
 Sanity-check with `AutoExtractor`, not `GLiNER2`, for boundary checkpoints.
 
 ---
@@ -1188,9 +1241,10 @@ model.extract_entities("Marie Curie discovered radium in Paris.", ["scientist", 
 
 - **Smoke-test 50 records first** before a multi-day run: `--max-records 50`, `num_epochs=1`,
   `batch_size=2`, and confirm the loss falls.
-- **Watch the loss curve.** Healthy mmBERT-small starts ~500 (batch 1), drops below 100 in
-  ~50 steps, drifts to 40–60 over an epoch. Collapsing to ~0 means labels are not reaching
-  the loss head — stop and inspect.
+- **Watch the loss curve.** Healthy from-scratch mmBERT-small starts ~500 (batch 1), drops
+  below 100 in ~50 steps, drifts to 40–60 over an epoch. Collapsing to ~0 means labels
+  are not reaching the loss head — stop and inspect. A LoRA run on a trained base does
+  not start there; read the bar loss and `[losses] total_loss` as §4 describes them.
 - **Resume** by pointing `model.pretrained` at `./out/<run>/checkpoint-epoch-<N>` (or
   `best`/`final`). The trainer starts a fresh optimizer and scheduler; that is intentional.
 - **Run scripts from files, not heredocs.** `python - <<PY` breaks DataLoader workers under
@@ -1207,6 +1261,7 @@ model.extract_entities("Marie Curie discovered radium in Paris.", ["scientist", 
 | bf16 loss goes non-finite ~step 50, and training is ~11× slow | FA2 never hooked; transformers resolved outside the pinned range | `uv sync --extra local`, then check `m.encoder.config._attn_implementation` (§2) and set `GLINER2_STRICT_ATTN=1` |
 | `KeyError: 'kernels-community/flash-attn2'` on the first extract, off CUDA | The checkpoint config stores `attn_implementation: flash_attention_2`; transformers accepts it there, normalizes it to the hub repo id, and only the forward discovers no kernel is registered | Fixed in `8af9c5f`: off CUDA both spellings degrade to sdpa at load. On an older checkout, pass a config with `attn_implementation: sdpa` |
 | `config.max_width` error loading a checkpoint | Loaded a boundary checkpoint with `GLiNER2` | Use `AutoExtractor.from_pretrained` |
+| `Repo id must be in the form ... 'out/.../best/config.json'` after a LoRA run | The adapter directory had no `config.json`, and `from_pretrained` treated the missing path as a Hub id. The sweep and the push both die there | Current checkouts write the extractor `config.json` beside the adapter and load a directory that has `adapter_config.json` and no `model.safetensors` |
 | A treatment arm scores identically to its control | A `boundary_head` override was dropped | Confirm the value on `model.boundary_head.settings`, not just `model.config` |
 | CUDA `Error 802: system not yet initialized`, but `nvidia-smi` is healthy | Host-side fault (no NVSwitch, `GPU Fabric GUID: N/A`) | Not fixable in-guest. Terminate and relaunch, ideally another region |
 | Blind-test scores look too good | train/test share documents | `check_leakage.py --config <cfg>`; regenerate the corpora it names |

@@ -19,6 +19,13 @@ Examples:
   uv run python tools/infer.py --model whr778/gliner2-eb18-balanced \
       --input data/casie.test.jsonl --gold-schema --output preds.jsonl
 
+  uv run python tools/infer.py --model ./out/cmnee-lora-eb23a/best \
+      --input data/cmnee.test.jsonl --gold-schema --output cmnee_test.preds.jsonl
+
+A directory (or Hub repo) with adapter_config.json and no model.safetensors is a LoRA
+adapter. AutoExtractor loads the base named in that file, then the adapter. The
+extractor config.json beside the adapter supplies label_map and inference_defaults.
+
 Like the viewer: --model-schema starts from the schema the checkpoint ships (config.json
 default_schema), every decode setting not passed falls back to the checkpoint's
 inference_defaults, and the checkpoint's label_map is applied to the schema. See
@@ -199,7 +206,10 @@ def _decode_settings(args: argparse.Namespace, model) -> Dict[str, Any]:
 
 def _parse_args(argv: List[str] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="GLiNER2 inference with optional global event decoding.")
-    p.add_argument("--model", required=True, help="HF repo id (optionally repo@subfolder or repo:subfolder) or local checkpoint path.")
+    p.add_argument("--model", required=True,
+                   help="HF repo id (optionally repo@subfolder or repo:subfolder), a local "
+                        "checkpoint path, or a LoRA adapter directory (adapter_config.json and "
+                        "no model.safetensors).")
     p.add_argument("--input", required=True,
                    help="Literal text, a .txt file, or a .jsonl with an 'input' field per line.")
     p.add_argument("--entities", help="Comma-separated entity types.")
