@@ -85,6 +85,9 @@ def main() -> None:
 
     print(f"Loading checkpoint from {checkpoint}")
     model = AutoExtractor.from_pretrained(str(checkpoint), map_location="cpu")
+    from peft import PeftModel
+
+    adapter = isinstance(model, PeftModel)
 
     api = HfApi(token=fresh_token())
     print(f"Ensuring repo '{args.repo_id}' exists (private={args.private})")
@@ -92,7 +95,15 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         print(f"Serializing model to {tmp_dir}")
-        model.save_pretrained(tmp_dir)
+        if adapter:
+            # A PeftModel save writes the adapter tensors only. The extractor
+            # config.json has to be uploaded beside them or the Hub copy
+            # cannot be loaded.
+            from gliner2.training.lora import save_adapter_checkpoint
+
+            save_adapter_checkpoint(model, tmp_dir)
+        else:
+            model.save_pretrained(tmp_dir)
 
         # save_pretrained writes only weights/config/tokenizer, so without this the
         # card train.py generated stays on disk and the Hub page renders EMPTY. The
@@ -139,6 +150,8 @@ def main() -> None:
         )
         required = [f for f in expected
                     if f.endswith((".safetensors", ".bin")) or f == "config.json"]
+        if adapter and "adapter_config.json" not in required:
+            required.append("adapter_config.json")
 
         def _missing() -> list:
             """Files the Hub does NOT have. Empty list == the push really landed."""

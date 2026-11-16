@@ -154,7 +154,14 @@ def checkpoint_file(
         if subfolder:
             parts.append(str(subfolder))
         parts.append(filename)
-        return os.path.join(*parts)
+        out = os.path.join(*parts)
+        # A missing local file must not be returned. Transformers treats a
+        # path that is not a directory as a Hub repo id, so handing it
+        # config.json that was never written raised HFValidationError on
+        # 'out/cmnee-lora-eb23a/best/config.json'.
+        if not os.path.isfile(out):
+            raise FileNotFoundError(out)
+        return out
     return hf_hub_download(
         repo_id=str(repo_or_dir),
         filename=filename,

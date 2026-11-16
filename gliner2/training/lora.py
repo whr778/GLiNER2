@@ -56,6 +56,34 @@ def _deprecation(name: str, replacement: str) -> None:
     )
 
 
+def save_adapter_checkpoint(model: "PeftModel", directory: Union[str, Path]) -> None:
+    """Write the PEFT adapter and the extractor config into ``directory``.
+
+    ``PeftModel.save_pretrained`` writes ``adapter_config.json`` and
+    ``adapter_model.safetensors`` only. The post-train sweep and the Hub
+    push both load that directory with ``AutoExtractor.from_pretrained``,
+    which needs the extractor ``config.json`` (label map, inference
+    defaults) beside the adapter. The base weights stay on the repo named
+    by ``base_model_name_or_path``; this function does not write them.
+    """
+    from gliner2.models.base import rewrite_config_as_utf8
+
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    if not isinstance(model, PeftModel):
+        raise TypeError(
+            f"save_adapter_checkpoint expected a PeftModel, got {type(model).__name__}"
+        )
+    model.save_pretrained(str(directory))
+    base = model.get_base_model()
+    architecture = getattr(base, "architecture", None)
+    if architecture:
+        base.config.architecture = architecture
+    base.config.architectures = [type(base).__name__]
+    base.config.save_pretrained(str(directory))
+    rewrite_config_as_utf8(directory)
+
+
 def _cast_lora_dtype(model: nn.Module) -> None:
     """Cast LoRA A/B weights to match their base-layer dtype (PR #4 fix)."""
     for mod in model.modules():

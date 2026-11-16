@@ -2791,22 +2791,14 @@ class ExtractorTrainer:
         save_start = time.time()
 
         if self.config.use_lora and self.config.save_adapter_only:
-            # PEFT-native format only: ``self.model`` is a ``PeftModel``, so
-            # ``save_pretrained`` writes ``adapter_config.json`` (with
-            # ``peft_type: "LORA"``) + ``adapter_model.safetensors``, which is
-            # what ``PeftModel.from_pretrained`` and every downstream PEFT
-            # consumer expect. The pre-migration code also invoked
-            # ``gliner2.training.lora.save_lora_adapter`` here to emit the
-            # legacy ``adapter_weights.safetensors`` + gliner2 ``LoRAAdapterConfig``
-            # alongside the PEFT files, but ``LoRAAdapterConfig.save`` writes
-            # to the same ``adapter_config.json`` path and **clobbers** the
-            # PEFT config (strips ``peft_type``), so any PEFT reader then blew
-            # up with ``KeyError: 'peft_type'`` at ``PeftConfig._get_peft_type``.
-            # Legacy callers that still need the gliner2-native directory
-            # shape can invoke ``save_lora_adapter`` directly on a
-            # checkpoint dir after training — the shim is preserved with
-            # ``PendingDeprecationWarning`` in ``gliner2/training/lora.py``.
-            self.model.save_pretrained(str(checkpoint_dir))
+            # Adapter files plus the extractor config.json. PEFT's own
+            # save_pretrained does not write that config, and the sweep
+            # then asked the Hub to load the missing path as a repo id.
+            # Do not also call save_lora_adapter: it overwrites
+            # adapter_config.json and strips peft_type.
+            from gliner2.training.lora import save_adapter_checkpoint
+
+            save_adapter_checkpoint(self.model, checkpoint_dir)
             checkpoint_type = "adapter"
             trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         else:

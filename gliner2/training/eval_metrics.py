@@ -1537,12 +1537,24 @@ def apply_boundary_overrides(model, boundary_overrides: Dict[str, Any] = None) -
     # This is what makes decode_mode ("greedy" | "joint") an eval-time switch over ONE
     # trained model, which is the only way the two arms are the same model.
     from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
+    # A PeftModel keeps the extractor underneath. Assigning boundary_settings
+    # on the wrapper stores a new attribute there, and the decode path reads
+    # self.boundary_settings on the extractor, so the override would print
+    # and change nothing.
+    target = model
+    get_base = getattr(model, "get_base_model", None)
+    if callable(get_base):
+        base = get_base()
+        if base is not None:
+            target = base
     merged = dict(getattr(model.config, "boundary_head", None) or {})
     merged.update(boundary_overrides)
     model.config.boundary_head = merged
+    if target is not model and target.config is not model.config:
+        target.config.boundary_head = merged
     settings = BoundaryHeadSettings(**validate_boundary_head(merged))
-    model.boundary_settings = settings
-    head = getattr(model, "boundary_head", None)
+    target.boundary_settings = settings
+    head = getattr(target, "boundary_head", None)
     if head is not None:
         head.settings = settings
     # Settings DERIVED at construction do not follow the assignments above. The
@@ -1550,7 +1562,7 @@ def apply_boundary_overrides(model, boundary_overrides: Dict[str, Any] = None) -
     # forward, so without this a candidate_budget / start_top_k override validates,
     # prints, and changes nothing.
     from gliner2.models.boundary.model import resync_derived_settings
-    n_resynced = resync_derived_settings(model, settings)
+    n_resynced = resync_derived_settings(target, settings)
     print(f"[eval] boundary_head overrides applied: {boundary_overrides}"
           f"  (resynced {n_resynced} proposer(s))")
 
