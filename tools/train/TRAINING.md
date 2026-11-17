@@ -678,8 +678,17 @@ leaves `boundary_head` and `record_decoder` frozen. Name those modules. Aliases:
 `encoder.query`, `encoder.key`, `encoder.value`, and `encoder.dense` narrow the encoder.
 
 `save_adapter_only: true` (the default) writes `adapter_config.json`,
-`adapter_model.safetensors`, and the extractor `config.json` (`label_map`,
+`adapter_model.safetensors`, and the extractor `config.json` (`default_schema`, `label_map`,
 `inference_defaults`). It does not write the base weights.
+`training.default_schema_mode` controls what `default_schema` is saved into `config.json`:
+- `dataset` (default): only the target dataset's menu (excludes `replay_*` / `data.replay_corpora`
+  and drops `partial_annotation` dimensions that have zero gold in `val`).
+- `train`: literal union over every record in `train_data`.
+- `union_base`: unions the loaded base model's `default_schema` with `train_data`.
+
+`eval.model_schema` (`auto` default, or `true` / `false`) scores the blind test (and `eval.py --model-schema`)
+offering `config.json` `default_schema` on every record, including empty-gold records, and
+renders the **`Blind test (--model-schema)`** table on `MODEL_CARD.md`.
 `base_model_name_or_path` in the adapter file is the checkpoint the run loaded.
 `AutoExtractor.from_pretrained` on that directory loads the base, then the adapter. A
 directory that also contains `model.safetensors` is a full checkpoint and loads as one.

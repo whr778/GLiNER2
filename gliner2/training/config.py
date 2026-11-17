@@ -96,6 +96,12 @@ class TrainingConfig:
         Default: All modules for maximum adaptation.
     save_adapter_only : bool
         When use_lora=True, save only adapter weights (not full model).
+    default_schema_mode : str
+        How ``config.json`` ``default_schema`` is built during training:
+        ``"dataset"`` (target dataset schema excluding replay corpora and ungraded
+        partial-annotation dimensions), ``"train"`` (union over all training records),
+        or ``"union_base"`` (union of the loaded base model's ``default_schema`` with
+        the training records).
     """
     output_dir: str = "./output"
     experiment_name: str = "gliner2"
@@ -300,6 +306,7 @@ class TrainingConfig:
     lora_use_dora: bool = False
     lora_target_modules: List[str] = field(default_factory=lambda: ["encoder", "span_rep", "classifier", "count_embed", "count_pred"])
     save_adapter_only: bool = True  # Only applies when use_lora=True
+    default_schema_mode: str = "dataset"
 
     def __post_init__(self):
         self._precision_explicit = self.fp16 is not None or self.bf16 is not None
@@ -350,6 +357,11 @@ class TrainingConfig:
         if self.float32_matmul_precision not in ("highest", "high", "medium"):
             raise ValueError(
                 "float32_matmul_precision must be 'highest', 'high', or 'medium'"
+            )
+        if self.default_schema_mode not in ("dataset", "train", "union_base"):
+            raise ValueError(
+                "default_schema_mode must be 'dataset', 'train', or 'union_base', "
+                f"got {self.default_schema_mode!r}"
             )
         
         # Validate LoRA configuration

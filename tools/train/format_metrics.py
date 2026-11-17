@@ -30,7 +30,7 @@ CATEGORIES = (
 METRIC_FILES = ("val_metrics.json", "test_metrics.json", "eval_metrics.json")
 JSON_FILES = METRIC_FILES + ("train_results.json", "config.json")
 PROVENANCE_KEYS = (
-    "split", "records", "threshold", "full_menu", "menu_negatives",
+    "split", "records", "threshold", "full_menu", "menu_negatives", "model_schema",
     "commit", "config", "checkpoint", "per_head_thresholds",
 )
 
@@ -337,6 +337,14 @@ def _section(name: str, metrics: dict) -> list[str]:
         if nested:
             lines.append("  coref_merge_off")
             lines.extend(nested)
+    ms = metrics.get("model_schema")
+    if isinstance(ms, dict):
+        nested = _micro_lines(ms, "", "    ")
+        if nested:
+            counts = ms.get("schema_counts")
+            header = f"  model_schema ({_fmt(counts)})" if isinstance(counts, dict) and counts else "  model_schema"
+            lines.append(header)
+            lines.extend(nested)
     by_menu = metrics.get("by_menu")
     if isinstance(by_menu, dict):
         for menu, block in by_menu.items():
@@ -455,6 +463,18 @@ def _section_view(name: str, metrics: dict) -> dict[str, Any]:
         if rows:
             coref = rows
     menus = []
+    model_schema_view = None
+    ms = metrics.get("model_schema")
+    if isinstance(ms, dict):
+        ms_rows = _display_rows(_micro_rows(ms, ""))
+        if ms_rows:
+            model_schema_view = {
+                "schema_counts": ms.get("schema_counts"),
+                "threshold": ms.get("threshold"),
+                "per_head_thresholds": ms.get("per_head_thresholds"),
+                "rows": ms_rows,
+            }
+            menus.append({"menu": "--model-schema", "rows": ms_rows})
     by_menu = metrics.get("by_menu")
     if isinstance(by_menu, dict):
         for menu, block in by_menu.items():
@@ -473,6 +493,7 @@ def _section_view(name: str, metrics: dict) -> dict[str, Any]:
         "fields": fields,
         "rows": _display_rows(_micro_rows(metrics, "")),
         "full_menu": _display_rows(_micro_rows(metrics, "fullmenu_")),
+        "model_schema": model_schema_view,
         "notes": notes,
         "per_head": per_head_view,
         "coref_merge_off": coref,
@@ -611,6 +632,14 @@ def _section_table(name: str, metrics: dict) -> list[str]:
         if off_rows:
             lines.extend(["", "**Coref Merge Off**", ""])
             lines.extend(_rows_to_md_table(off_rows))
+    ms = metrics.get("model_schema")
+    if isinstance(ms, dict):
+        ms_rows = _micro_rows(ms, "")
+        if ms_rows:
+            counts = ms.get("schema_counts")
+            suffix = f" (`{_fmt(counts)}`)" if isinstance(counts, dict) and counts else ""
+            lines.extend(["", f"**Model Schema `--model-schema`**{suffix}", ""])
+            lines.extend(_rows_to_md_table(ms_rows))
     by_menu = metrics.get("by_menu")
     if isinstance(by_menu, dict):
         for menu, block in by_menu.items():

@@ -94,7 +94,7 @@ import yaml
 
 from gliner2.configuration import unreachable_config_keys
 from gliner2 import AutoExtractor
-from gliner2.inference.schema import derive_schema
+from gliner2.inference.schema import derive_schema, merge_schemas
 from gliner2.training import estimate_eta, evaluate_checkpoint, make_compute_metrics, sweep_thresholds
 from gliner2.training.metrics import DEFAULT_THRESHOLD_GRID, _selection_score, make_sweeping_compute_metrics
 from gliner2.training.eval_metrics import compute_metrics_per_head, per_head_report, pick_per_head_thresholds
@@ -1568,6 +1568,7 @@ def _parse_eval_settings(cfg: Dict, config_path: str, corpus_data, overrides: Di
         "chunk_overlap": chunk_overlap,
         "global_decode": global_decode,
         "global_decode_config": global_decode_config,
+        "model_schema": overrides.get("model_schema", eval_cfg.get("model_schema", "auto")),
     }
 
 
@@ -1590,7 +1591,8 @@ def training_splits(cfg: Dict, config_path: str) -> Tuple[List[Dict], List[Dict]
 
 
 def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
-                     checkpoint, config_path, per_head_thresholds=None) -> dict:
+                     checkpoint, config_path, per_head_thresholds=None,
+                     model_schema: bool = False) -> dict:
     """The operating point behind a metrics file, so two numbers can be compared.
 
     ONE helper for BOTH writers on purpose. A `<split>_metrics.json` used to carry 314
@@ -1605,6 +1607,7 @@ def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
         "threshold": threshold,
         "full_menu": bool(full_menu),
         "menu_negatives": int(menu_negatives) if full_menu else 0,
+        "model_schema": bool(model_schema),
         "split": split,
         "records": records,
         "checkpoint": str(checkpoint),
@@ -1669,6 +1672,58 @@ def _run_blind_test(best, split_data, batch_size, threshold, by_language, gd_kwa
     metrics = evaluate_checkpoint(best, split_data, batch_size=batch_size, threshold=threshold, **gd_kwargs) or {}
     _print_blind_test(metrics)
     return metrics
+
+
+def _model_schema_pass(
+    best: Path,
+    records,
+    ev: Dict,
+    per_head: Dict[str, float],
+    gd_kwargs: Dict,
+    *,
+    threshold_overridden: bool = False,
+    split_label: str = "blind test",
+) -> Optional[Dict]:
+    """Score ``records`` offering ``model.config.default_schema`` on every document."""
+    from gliner2.training.eval_metrics import (
+        load_with_overrides,
+        prepare_model_schema,
+        score_model_schema,
+        should_score_model_schema,
+    )
+    from gliner2.training.metrics import _print_micro_report
+    from gliner2.training.trainer import ExtractorDataset
+
+    setting = ev.get("model_schema", "auto")
+    if setting is False or setting is None:
+        return None
+    model = load_with_overrides(best, gd_kwargs.get("boundary_overrides"))
+    if not should_score_model_schema(setting, model.config):
+        return None
+    if records and isinstance(records[0], str):
+        records = _read_records(records)
+    stored = getattr(model.config, "inference_defaults", None) or {}
+    thr = ev["threshold"] if threshold_overridden else stored.get("threshold", ev["threshold"])
+    ph = None
+    if not threshold_overridden and ev.get("threshold_per_head", True) and "boundary_overrides" not in gd_kwargs:
+        ph = per_head or stored.get("per_head_thresholds") or None
+    gd = {k: gd_kwargs[k] for k in ("chunk_size", "chunk_overlap", "global_decode", "global_decode_config") if k in gd_kwargs}
+    schema = prepare_model_schema(model.config)
+    summary = ", ".join(f"{k}={len(v)}" for k, v in schema.items() if v)
+    print(f"\n[{split_label}] scoring under --model-schema ({summary}; threshold={thr}, per_head={ph})")
+    ms = score_model_schema(
+        model,
+        ExtractorDataset(records, shuffle=False, validate=False),
+        batch_size=ev["batch_size"],
+        threshold=thr,
+        per_head_thresholds=ph,
+        stopwords=ev["stopwords"],
+        report=False,
+        **gd,
+    )
+    if ms:
+        _print_micro_report(ms, label="model-schema")
+    return ms or None
 
 
 def _eval_split_records(cfg: Dict, config_path: str, split: str) -> List[Dict]:
@@ -1782,6 +1837,14 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
         else:
             metrics["per_head"] = _per_head_pass(Path(best), split_data, ev, per_head, gd_kwargs)
     if metrics:
+        ms = _model_schema_pass(
+            Path(best), split_data, ev, per_head, gd_kwargs,
+            threshold_overridden=("threshold" in (overrides or {})),
+            split_label="eval",
+        )
+        if ms:
+            metrics["model_schema"] = ms
+    if metrics:
         # RECORD THE OPERATING POINT. A <split>_metrics.json used to carry 314 numbers and
         # nothing about the threshold or menu behind them, so establishing that a published
         # baseline was read at 0.3 under --full-menu meant grepping the runner script that
@@ -1794,6 +1857,8 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
             records=len(split_data),
             checkpoint=best,
             config_path=config_path,
+            per_head_thresholds=per_head or None,
+            model_schema=bool(metrics.get("model_schema")),
         )
         fname = f"{split}_metrics.json"
         out_dir = Path(cfg["training"]["output_dir"])
@@ -1931,6 +1996,51 @@ def _enforce_split_hygiene(train_data, eval_data, test_data, policy, is_main,
     return train, val, test
 
 
+def _is_replay_file(path: str, declared_replay: Set[str]) -> bool:
+    stem = Path(path).name.rsplit(".", 2)[0]
+    return stem in declared_replay or stem.startswith("replay_") or stem == "replay"
+
+
+def resolve_default_schema(
+    mode: str,
+    *,
+    train_recs: List[Dict],
+    target_train_recs: Optional[List[Dict]] = None,
+    eval_recs: Optional[List[Dict]] = None,
+    partial_annotation: Optional[Dict[str, List[str]]] = None,
+    base_schema: Optional[Dict] = None,
+) -> Optional[Dict]:
+    """Build ``config.json`` ``default_schema`` under ``dataset`` | ``train`` | ``union_base``."""
+    if mode == "train":
+        return derive_schema(train_recs) or None
+    if mode == "union_base":
+        return merge_schemas(base_schema, derive_schema(train_recs)) or None
+    if mode != "dataset":
+        raise ValueError(f"Unknown default_schema_mode: {mode!r}")
+
+    recs = target_train_recs if target_train_recs is not None else train_recs
+    schema = (
+        merge_schemas(derive_schema(recs), derive_schema(eval_recs))
+        if eval_recs else derive_schema(recs)
+    )
+    if partial_annotation and eval_recs:
+        eval_schema = derive_schema(eval_recs)
+        eval_present = set(eval_schema) | set(eval_schema.get("open_vocab") or ())
+        partial_dims = {
+            dim for dims in partial_annotation.values() for dim in (dims or [])
+        }
+        for dim in sorted(partial_dims):
+            if dim not in eval_present:
+                schema.pop(dim, None)
+                if "open_vocab" in schema:
+                    ov = [d for d in schema["open_vocab"] if d != dim]
+                    if ov:
+                        schema["open_vocab"] = ov
+                    else:
+                        schema.pop("open_vocab", None)
+    return schema or None
+
+
 def main(config_path: str) -> None:
     # Under torchrun (DDP) only rank 0 estimates ETA and writes results/blind-test;
     # all ranks run trainer.train(). LOCAL_RANK is unset (-> -1) for single-process.
@@ -1957,6 +2067,7 @@ def main(config_path: str) -> None:
 
     print(f"[seed] model init seeded with {_seed_model_init(cfg)} before the build", flush=True)
     model = _build_model(cfg["model"])
+    base_default_schema = copy.deepcopy(getattr(model.config, "default_schema", None))
 
     # Popped before TrainingConfig: it is a data-pipeline gate, not a trainer field.
     split_hygiene = str((cfg.get("training") or {}).pop("split_hygiene", "drop"))
@@ -2009,12 +2120,16 @@ def main(config_path: str) -> None:
         print(f"[data] train_only (excluded from val and test): {sorted(train_only)}")
     check_coref_calibration(cfg, config_path)
     check_menus(cfg, config_path)
-    train_data = _dedupe_paths(
+    train_files = _dedupe_paths(
         _split_files(corpora, "train", train_only) + _event_split(event_files, "train"), "train")
+    train_data = list(train_files)
     eval_data = _dedupe_paths(
         _split_files(corpora, "val", train_only) + _event_split(event_files, "val"), "val")
     test_data = _dedupe_paths(
         _split_files(corpora, "test", train_only) + _event_split(event_files, "test"), "test")
+
+    declared_replay = {Path(c).name for c in (data.get("replay_corpora") or [])}
+    non_replay_train_files = [p for p in train_files if not _is_replay_file(p, declared_replay)]
 
     # Optional per-category label transforms, applied identically to train/val/test.
     labels_cfg = load_labels_cfg(cfg, config_path)
@@ -2052,19 +2167,37 @@ def main(config_path: str) -> None:
         train_data, eval_data, test_data, split_hygiene, is_main, streaming=streaming,
     )
 
-    # Co-locate the training schema on the model so it ships in config.json (best/
-    # final checkpoints + HF Hub) and every consumer -- the extractor, the viewer --
-    # gets the ontology this model was trained on. Open-vocabulary default, not a
-    # limit. Skipped for streaming (no bounded record set to union over).
+    # Co-locate the schema on the model so it ships in config.json (best/final
+    # checkpoints + HF Hub) and every consumer -- the extractor, the viewer --
+    # gets the intended ontology (`default_schema_mode`: dataset | train | union_base).
+    # Skipped for streaming (no bounded record set to union over).
     if is_main and not streaming and train_data:
         recs = train_data if isinstance(train_data[0], dict) else _read_records(train_data)
-        model.config.default_schema = derive_schema(recs) or None
+        eval_recs = (
+            (eval_data if isinstance(eval_data[0], dict) else _read_records(eval_data))
+            if eval_data else None
+        )
+        target_recs = None
+        if config.default_schema_mode == "dataset" and 0 < len(non_replay_train_files) < len(train_files):
+            target_recs = (
+                read_transformed(non_replay_train_files, fns, passthrough)
+                if fns else _read_records(non_replay_train_files)
+            )
+        model.config.default_schema = resolve_default_schema(
+            config.default_schema_mode,
+            train_recs=recs,
+            target_train_recs=target_recs,
+            eval_recs=eval_recs,
+            partial_annotation=config.partial_annotation,
+            base_schema=base_default_schema,
+        )
         sch = model.config.default_schema or {}
         ov = sch.get("open_vocab") or []
-        print(f"[schema] co-located training schema on the model -> config.json: "
+        print(f"[schema] mode={config.default_schema_mode} co-located schema -> config.json: "
               f"{len(sch.get('entities') or [])} entity types, "
               f"{len(sch.get('events') or {})} event types, "
               f"{len(sch.get('relations') or [])} relations, "
+              f"{len(sch.get('structures') or {})} structures, "
               f"{len(sch.get('classifications') or [])} classification tasks"
               + (f"; open-vocab: {', '.join(ov)}" if ov else ""))
 
@@ -2220,12 +2353,20 @@ def main(config_path: str) -> None:
     per_head = _read_per_head_picks(best)
     if test_metrics and per_head and ev["threshold_per_head"]:
         test_metrics["per_head"] = _per_head_pass(best, test_data, dict(ev, threshold=eval_thr), per_head, gd_kwargs)
+    if test_metrics:
+        ms_test = _model_schema_pass(
+            best, test_data, dict(ev, threshold=eval_thr), per_head, gd_kwargs,
+            threshold_overridden=False, split_label="blind test",
+        )
+        if ms_test:
+            test_metrics["model_schema"] = ms_test
 
     if test_metrics:
         # The runners publish THIS file, so it is the one an A/B verdict is read from.
         test_metrics["eval_provenance"] = _eval_provenance(
             threshold=eval_thr, full_menu=False, menu_negatives=0, split="test",
             records=len(test_data), checkpoint=best, config_path=config_path, per_head_thresholds=per_head or None,
+            model_schema=bool(test_metrics.get("model_schema")),
         )
         metrics_path = Path(config.output_dir) / "test_metrics.json"
         metrics_path.write_text(json.dumps(test_metrics, indent=2, ensure_ascii=False))

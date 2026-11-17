@@ -147,10 +147,14 @@ def derive_schema(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     ignores ``open_vocab``. Used to co-locate the schema a model was trained on
     into its config, and by the viewer to derive corpus presets.
     """
+    from collections import Counter
+
     entities: set = set()
     events: Dict[str, set] = {}
     relations: set = set()
     classifications: Dict[str, set] = {}
+    struct_fields: Dict[str, List[str]] = {}
+    struct_meta: Dict[str, Counter] = {}
     for rec in records:
         out = (rec or {}).get("output") or {}
         ents = out.get("entities") or {}
@@ -190,6 +194,21 @@ def derive_schema(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         for c in out.get("classifications") or []:
             if isinstance(c, dict) and c.get("task") and c.get("labels"):
                 classifications.setdefault(c["task"], set()).update(c["labels"])
+        rmeta = out.get("record_metadata") if isinstance(out.get("record_metadata"), dict) else {}
+        for inst in out.get("json_structures") or []:
+            if not isinstance(inst, dict):
+                continue
+            for sname, body in inst.items():
+                if not isinstance(sname, str) or not isinstance(body, dict):
+                    continue
+                known = struct_fields.setdefault(sname, [])
+                for fname in body:
+                    if isinstance(fname, str) and fname not in known:
+                        known.append(fname)
+                declared = rmeta.get(sname)
+                if isinstance(declared, dict):
+                    key = (declared.get("mode"), declared.get("anchor"), declared.get("occurrence_policy"))
+                    struct_meta.setdefault(sname, Counter())[key] += 1
 
     schema: Dict[str, Any] = {}
     open_vocab: list = []
@@ -216,12 +235,124 @@ def derive_schema(records: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         schema["classifications"] = [{"task": t, "labels": multi[t]} for t in sorted(multi)]
     if any(len(labels) > _OPEN_VOCAB_LIMIT for labels in classifications.values()):
         open_vocab.append("classifications")
+    if len(struct_fields) > _OPEN_VOCAB_LIMIT:
+        open_vocab.append("structures")
+    elif struct_fields:
+        structures: Dict[str, Any] = {}
+        for sname in sorted(struct_fields):
+            fields = struct_fields[sname]
+            if not fields:
+                continue
+            spec: Dict[str, Any] = {"fields": [{"name": f, "dtype": "str"} for f in fields]}
+            counts = struct_meta.get(sname)
+            if counts:
+                mode, anchor, occ = counts.most_common(1)[0][0]
+                if mode:
+                    spec["mode"] = mode
+                if anchor and anchor in fields:
+                    spec["anchor"] = anchor
+                if occ:
+                    spec["occurrence_policy"] = occ
+            structures[sname] = spec
+        if structures:
+            schema["structures"] = structures
     # Task types seen in training but too open-vocabulary to pin to a label set:
     # recorded (not dropped) so consumers advertise the capability and scaffold the
     # field. Concrete dims above stay runnable; Schema.from_dict ignores this key.
     if open_vocab:
         schema["open_vocab"] = open_vocab
     return schema
+
+
+def merge_schemas(
+    base_schema: Optional[Dict[str, Any]],
+    added_schema: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Union two ``default_schema`` dicts, respecting ``open_vocab`` and ``_OPEN_VOCAB_LIMIT``."""
+    base = dict(base_schema or {})
+    added = dict(added_schema or {})
+    if not base:
+        return dict(added)
+    if not added:
+        return dict(base)
+
+    out: Dict[str, Any] = {}
+    open_vocab: List[str] = []
+    ov_in = set(base.get("open_vocab") or ()) | set(added.get("open_vocab") or ())
+
+    def _merge_list_dim(dim: str) -> None:
+        if dim in ov_in:
+            open_vocab.append(dim)
+            return
+        items = sorted(set(base.get(dim) or ()) | set(added.get(dim) or ()))
+        if len(items) > _OPEN_VOCAB_LIMIT:
+            open_vocab.append(dim)
+        elif items:
+            out[dim] = items
+
+    _merge_list_dim("entities")
+
+    if "events" in ov_in:
+        open_vocab.append("events")
+    else:
+        ev_map: Dict[str, set] = {}
+        for src in (base.get("events") or {}, added.get("events") or {}):
+            if isinstance(src, dict):
+                for etype, roles in src.items():
+                    ev_map.setdefault(etype, set()).update(roles or ())
+        if len(ev_map) > _OPEN_VOCAB_LIMIT:
+            open_vocab.append("events")
+        elif ev_map:
+            out["events"] = {t: sorted(ev_map[t]) for t in sorted(ev_map)}
+
+    _merge_list_dim("relations")
+
+    cls_map: Dict[str, set] = {}
+    for src in (base.get("classifications") or [], added.get("classifications") or []):
+        for entry in src:
+            if isinstance(entry, dict) and entry.get("task") and entry.get("labels"):
+                cls_map.setdefault(entry["task"], set()).update(entry["labels"])
+    cls_ov = "classifications" in ov_in or any(len(v) > _OPEN_VOCAB_LIMIT for v in cls_map.values())
+    multi = {t: sorted(v) for t, v in cls_map.items() if 2 <= len(v) <= _OPEN_VOCAB_LIMIT}
+    if multi:
+        out["classifications"] = [{"task": t, "labels": multi[t]} for t in sorted(multi)]
+    if cls_ov:
+        open_vocab.append("classifications")
+
+    if "structures" in ov_in:
+        open_vocab.append("structures")
+    else:
+        st_out: Dict[str, Any] = {}
+        b_st = base.get("structures") if isinstance(base.get("structures"), dict) else {}
+        a_st = added.get("structures") if isinstance(added.get("structures"), dict) else {}
+        for sname in sorted(set(b_st) | set(a_st)):
+            fields: List[Dict[str, Any]] = []
+            seen: set = set()
+            merged_spec: Dict[str, Any] = {}
+            for spec in (b_st.get(sname), a_st.get(sname)):
+                if not isinstance(spec, dict):
+                    continue
+                for f in spec.get("fields") or []:
+                    fn = f.get("name") if isinstance(f, dict) else f
+                    if isinstance(fn, str) and fn not in seen:
+                        seen.add(fn)
+                        fields.append(dict(f) if isinstance(f, dict) else {"name": fn, "dtype": "str"})
+                for k in ("mode", "anchor", "occurrence_policy"):
+                    if spec.get(k):
+                        merged_spec[k] = spec[k]
+            if fields:
+                merged_spec["fields"] = fields
+                if merged_spec.get("anchor") and merged_spec["anchor"] not in seen:
+                    merged_spec.pop("anchor", None)
+                st_out[sname] = merged_spec
+        if len(st_out) > _OPEN_VOCAB_LIMIT:
+            open_vocab.append("structures")
+        elif st_out:
+            out["structures"] = st_out
+
+    if open_vocab:
+        out["open_vocab"] = open_vocab
+    return out
 
 
 def _configs_to_builder(

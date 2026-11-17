@@ -420,17 +420,36 @@ def _oneie_table(metrics: Dict[str, Any], title: str) -> str:
                      "events carried no trigger, so they contribute no Arg-C pair at all."]
     return "\n".join(rows) + "\n"
 
-def _metrics_table(metrics: Dict[str, Any], title: str) -> str:
+def _model_schema_note(ms: Dict[str, Any]) -> str:
+    counts = ms.get("schema_counts") or {}
+    dims = ", ".join(f"{k}={v}" for k, v in counts.items()) if counts else "default_schema"
+    thr = ms.get("threshold")
+    ph = ms.get("per_head_thresholds")
+    op = f", threshold **{thr}**" if thr is not None else ""
+    if isinstance(ph, dict) and ph:
+        op += " (per-head: " + ", ".join(f"{h} {v}" for h, v in ph.items()) + ")"
+    return (
+        "> **Menu (`--model-schema`):** every record in the split — including empty-gold "
+        f"records — is offered the checkpoint's shipped `config.json` `default_schema` ({dims}{op}), "
+        "matching production and pipeline inference where gold labels do not exist. "
+        "`event_type` precision here measures real false-positive rejection."
+    )
+
+
+def _metrics_table(metrics: Dict[str, Any], title: str, menu_note: Optional[str] = None) -> str:
     present = [c for c in CATEGORIES if f"eval_{c}_strict_micro_f1" in metrics]
     if not present:
         return ""
+    default_note = (
+        "> **Menu:** these are scored against a menu built from each document's own gold, "
+        "so the model is never asked to reject a label that is not there. For "
+        "`event_type`, which has no span to get wrong, that pins precision at 1.0000 and "
+        "makes `F1 = 2R/(1+R)` exactly — read it as **recall**. `eval.py --model-schema` "
+        "scores against the checkpoint's shipped `default_schema`."
+    )
     rows = [f"### {title}", "",
             "Micro precision / recall / F1, strict → relaxed.", "",
-            "> **Menu:** these are scored against a menu built from each document's own gold, "
-            "so the model is never asked to reject a label that is not there. For "
-            "`event_type`, which has no span to get wrong, that pins precision at 1.0000 and "
-            "makes `F1 = 2R/(1+R)` exactly — read it as **recall**. `eval.py --full-menu` "
-            "scores against the model's own taxonomy and emits `eval_fullmenu_*` beside these.",
+            menu_note or default_note,
             "",
             "| Category | Precision | Recall | F1 | Support |",
             "|---|--:|--:|--:|--:|"]
@@ -443,6 +462,14 @@ def _metrics_table(metrics: Dict[str, Any], title: str) -> str:
             return f"{s:.3f} → {r:.3f}" if r is not None else f"{s:.3f}"
         sup = metrics.get(f"eval_{c}_strict_support", "—")
         rows.append(f"| {c} | {cell('precision')} | {cell('recall')} | {cell('f1')} | {sup} |")
+
+    fair_parts = []
+    for fc in ("event_trigger", "event_argument"):
+        fv = metrics.get(f"eval_{fc}_fair_micro_f1")
+        if isinstance(fv, (int, float)):
+            fair_parts.append(f"`{fc}` **{fv:.4f}**")
+    if fair_parts:
+        rows += ["", "> **Fair (Ortmann) micro-F1:** " + ", ".join(fair_parts) + "."]
 
     # The record head has its own cutoffs, swept separately, so a structure number is
     # read at a DIFFERENT operating point from every other row. Say so on the card --
@@ -507,6 +534,16 @@ def _training_section(config, cfg, results, generated_at) -> str:
         f"| Selected checkpoint | {selected_checkpoint_text(results, config)} |",
         f"| Seed | {getattr(config, 'seed', '—')} |",
     ]
+    schema_mode = getattr(config, "default_schema_mode", None)
+    if schema_mode:
+        rows.append(f"| Default schema mode | `{schema_mode}` |")
+    if getattr(config, "use_lora", False):
+        targets = ", ".join(getattr(config, "lora_target_modules", None) or [])
+        rows.append(
+            f"| LoRA | `r={getattr(config, 'lora_r', '—')}`, "
+            f"`alpha={getattr(config, 'lora_alpha', '—')}`, "
+            f"`targets=[{targets}]` |"
+        )
     if arch:
         rows.append(f"| Architecture | {', '.join(arch)} |")
     return "\n".join(rows)
@@ -629,22 +666,48 @@ def build_model_card(
                       "operating point sits beside it under `per_head` in `test_metrics.json`.", ""]
 
     blind = _metrics_table(test_metrics or {}, "Blind test (held-out test splits)")
+    ms_test_dict = (test_metrics or {}).get("model_schema")
+    blind_ms = (
+        _metrics_table(ms_test_dict, "Blind test (--model-schema)", menu_note=_model_schema_note(ms_test_dict))
+        if isinstance(ms_test_dict, dict) and ms_test_dict else ""
+    )
+    blind_ms_oneie = (
+        _oneie_table(ms_test_dict, "OneIE criteria (blind test, --model-schema)")
+        if isinstance(ms_test_dict, dict) and ms_test_dict else ""
+    )
     val = _metrics_table(eval_metrics or {}, "Best checkpoint (validation)")
+    ms_val_dict = (eval_metrics or {}).get("model_schema")
+    val_ms = (
+        _metrics_table(ms_val_dict, "Best checkpoint (validation, --model-schema)", menu_note=_model_schema_note(ms_val_dict))
+        if isinstance(ms_val_dict, dict) and ms_val_dict else ""
+    )
+    val_ms_oneie = (
+        _oneie_table(ms_val_dict, "OneIE criteria (validation, --model-schema)")
+        if isinstance(ms_val_dict, dict) and ms_val_dict else ""
+    )
     # `oneie_metrics` lets a card carry OneIE numbers from a LATER re-score of the same
     # checkpoint (the training-time test predates the metric); `oneie_source` names it.
     blind_oneie = (_oneie_table(oneie_metrics, f"OneIE criteria (blind test, {oneie_source})")
                    if oneie_metrics else
                    _oneie_table(test_metrics or {}, "OneIE criteria (blind test)"))
     val_oneie = _oneie_table(eval_metrics or {}, "OneIE criteria (validation)")
+    if blind_ms:
+        parts += [blind_ms, ""]
+    if blind_ms_oneie:
+        parts += [blind_ms_oneie, ""]
     if blind:
         parts += [blind, ""]
     if blind_oneie:
         parts += [blind_oneie, ""]
+    if val_ms:
+        parts += [val_ms, ""]
+    if val_ms_oneie:
+        parts += [val_ms_oneie, ""]
     if val:
         parts += [val, ""]
     if val_oneie:
         parts += [val_oneie, ""]
-    if not blind and not val:
+    if not blind and not blind_ms and not val and not val_ms:
         parts += ["_No evaluation metrics were produced for this run._", ""]
 
     parts += [

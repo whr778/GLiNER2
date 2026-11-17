@@ -285,3 +285,85 @@ def test_arg_c_above_relaxed_is_explained_only_when_case_merging_shrank_its_supp
     assert "case merge" in line and "266 vs relaxed 269" in line and "VIOLATED" not in line
     assert "VIOLATED" in _oneie_table(dict(m, eval_argc_external_support=269), "t")
     assert "VIOLATED" in _oneie_table(dict(m, eval_argc_external_micro_f1=0.0100), "t")
+
+
+def test_model_card_and_format_metrics_render_model_schema_blind_test():
+    import format_metrics
+
+    test_metrics = {
+        "eval_event_type_strict_micro_precision": 1.0,
+        "eval_event_type_strict_micro_recall": 0.90,
+        "eval_event_type_strict_micro_f1": 0.9474,
+        "eval_event_type_relaxed_micro_precision": 1.0,
+        "eval_event_type_relaxed_micro_recall": 0.90,
+        "eval_event_type_relaxed_micro_f1": 0.9474,
+        "eval_event_type_strict_support": 100,
+        "eval_event_argument_strict_micro_precision": 0.45,
+        "eval_event_argument_strict_micro_recall": 0.52,
+        "eval_event_argument_strict_micro_f1": 0.4825,
+        "eval_event_argument_relaxed_micro_precision": 0.62,
+        "eval_event_argument_relaxed_micro_recall": 0.66,
+        "eval_event_argument_relaxed_micro_f1": 0.6394,
+        "eval_event_argument_fair_micro_f1": 0.6361,
+        "eval_event_argument_strict_support": 500,
+        "model_schema": {
+            "schema_counts": {"events": 8},
+            "threshold": 0.5,
+            "per_head_thresholds": {"event": 0.5},
+            "eval_event_type_strict_micro_precision": 0.84,
+            "eval_event_type_strict_micro_recall": 0.89,
+            "eval_event_type_strict_micro_f1": 0.8643,
+            "eval_event_type_relaxed_micro_precision": 0.84,
+            "eval_event_type_relaxed_micro_recall": 0.89,
+            "eval_event_type_relaxed_micro_f1": 0.8643,
+            "eval_event_type_strict_support": 100,
+            "eval_event_argument_strict_micro_precision": 0.42,
+            "eval_event_argument_strict_micro_recall": 0.50,
+            "eval_event_argument_strict_micro_f1": 0.4565,
+            "eval_event_argument_relaxed_micro_precision": 0.59,
+            "eval_event_argument_relaxed_micro_recall": 0.64,
+            "eval_event_argument_relaxed_micro_f1": 0.6140,
+            "eval_event_argument_fair_micro_f1": 0.6100,
+            "eval_event_argument_strict_support": 500,
+            "eval_argc_external_micro_precision": 0.51,
+            "eval_argc_external_micro_recall": 0.55,
+            "eval_argc_external_micro_f1": 0.5292,
+        },
+    }
+    cfg_obj = type(
+        "C", (),
+        {
+            "experiment_name": "cmnee_lora_eb23a",
+            "default_schema_mode": "dataset",
+            "use_lora": True,
+            "lora_r": 16,
+            "lora_alpha": 32.0,
+            "lora_target_modules": ["encoder", "boundary_head", "record_decoder"],
+        },
+    )()
+    card = build_model_card(
+        model_name="cmnee_lora_eb23a",
+        base_model="jhu-clsp/mmBERT-base",
+        cfg={"model": {}},
+        config=cfg_obj,
+        dataset_keys=["cmnee"],
+        results={},
+        eval_metrics=None,
+        test_metrics=test_metrics,
+        generated_at="2026-11-17",
+        threshold=0.5,
+        threshold_calibrated=True,
+        per_head_thresholds={"event": 0.5},
+    )
+    assert "### Blind test (--model-schema)" in card
+    assert "### OneIE criteria (blind test, --model-schema)" in card
+    assert "### Blind test (held-out test splits)" in card
+    assert "events=8, threshold **0.5**" in card
+    assert "| Default schema mode | `dataset` |" in card
+    assert "0.840 → 0.840" in card  # --model-schema event_type precision (not pinned at 1.000)
+
+    text_card = format_metrics.format_card("cmnee", {"test_metrics.json": test_metrics})
+    assert "model_schema (events=8)" in text_card
+    structured = format_metrics.structure_card("cmnee", {"test_metrics.json": test_metrics})
+    assert structured["sections"][0]["model_schema"]["schema_counts"] == {"events": 8}
+    assert any(m["menu"] == "--model-schema" for m in structured["sections"][0]["by_menu"])

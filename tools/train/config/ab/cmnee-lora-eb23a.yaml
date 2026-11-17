@@ -74,6 +74,7 @@ training:
     - boundary_head
     - record_decoder
   save_adapter_only: true
+  default_schema_mode: dataset
 eval:
   batch_size: 2
   threshold: 0.3
@@ -81,6 +82,7 @@ eval:
   global_decode: true
   eval_by_language: true
   metric_sweep: true
+  model_schema: true
 labels_file: labels/unified-full-v4.yaml
 
 data:

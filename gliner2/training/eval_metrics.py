@@ -254,11 +254,93 @@ def menu_sizes(menus: List[Dict]) -> Dict[str, Tuple[int, float, int]]:
     """(min, median, max) labels offered per dimension -- the in-run proof of what a mode offered."""
     import statistics
     out = {}
-    for dim in ("entities", "events", "relations"):
+    for dim in ("entities", "events", "relations", "classifications", "structures"):
         n = [len(m.get(dim) or ()) for m in menus]
         if any(n):
             out[dim] = (min(n), statistics.median(n), max(n))
     return out
+
+
+def _declare_structure_records(input_schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure every structure has ``mode``/``anchor`` when omitted, matching ``tools/infer.py``."""
+    structures = input_schema.get("structures")
+    if not isinstance(structures, dict):
+        return input_schema
+    out = dict(input_schema)
+    out["structures"] = {}
+    for name, spec in structures.items():
+        if isinstance(spec, list):
+            first = next((f if isinstance(f, str) else f.get("name") for f in spec if f), None)
+            fields = [{"name": f} if isinstance(f, str) else f for f in spec]
+            d: Dict[str, Any] = {"fields": fields, "mode": "natural"}
+            if first:
+                d["anchor"] = first
+            out["structures"][name] = d
+            continue
+        if not isinstance(spec, dict) or spec.get("mode"):
+            out["structures"][name] = spec
+            continue
+        fields = spec.get("fields") or []
+        first = next(
+            ((f if isinstance(f, str) else f.get("name")) for f in fields
+             if (isinstance(f, str) and f) or (isinstance(f, dict) and f.get("name"))),
+            None,
+        )
+        spec = dict(spec, mode="natural")
+        if first and not spec.get("anchor"):
+            spec["anchor"] = first
+        out["structures"][name] = spec
+    return out
+
+
+def prepare_model_schema(config) -> Dict[str, Any]:
+    """Runnable ``--model-schema`` dict from ``config.default_schema`` (minus ``open_vocab``)."""
+    from gliner2.inference.label_map import apply_label_map
+
+    shipped = copy.deepcopy(getattr(config, "default_schema", None) or {})
+    shipped.pop("open_vocab", None)
+    if not shipped:
+        return {}
+    schema = _declare_structure_records(shipped)
+    label_map = getattr(config, "label_map", None)
+    label_style = getattr(config, "label_style", None)
+    if label_map or label_style:
+        schema, _ = apply_label_map(schema, label_map, label_style)
+    return schema
+
+
+def model_schema_summary(schema: Dict[str, Any]) -> Dict[str, int]:
+    """Non-zero concrete label/task counts per dimension in a prepared model schema."""
+    counts = {}
+    for dim in ("entities", "events", "relations", "structures", "classifications"):
+        n = len(schema.get(dim) or ())
+        if n:
+            counts[dim] = n
+    return counts
+
+
+def should_score_model_schema(setting: Any, config, max_auto_labels: int = 128) -> bool:
+    """Whether ``--model-schema`` evaluation should run under ``setting`` (``'auto'`` | bool)."""
+    if setting is False or setting is None:
+        return False
+    raw = getattr(config, "default_schema", None) or {}
+    schema = prepare_model_schema(config)
+    if not schema:
+        return False
+    if setting is True:
+        return True
+    if setting != "auto":
+        raise ValueError(f"eval.model_schema must be 'auto', true, or false; got {setting!r}")
+    if raw.get("open_vocab"):
+        return False
+    total = (
+        len(schema.get("entities") or ())
+        + len(schema.get("events") or ())
+        + len(schema.get("relations") or ())
+        + len(schema.get("structures") or ())
+        + sum(len((c or {}).get("labels") or ()) for c in (schema.get("classifications") or []))
+    )
+    return 1 <= total <= max_auto_labels
 
 
 def compute_metrics(
@@ -275,6 +357,7 @@ def compute_metrics(
     global_decode_config=None,
     report: bool = True,
     menus: Optional[List[Dict]] = None,
+    per_head_thresholds: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """Score ``eval_dataset`` and return a flat metrics dict.
 
@@ -304,14 +387,56 @@ def compute_metrics(
         records with usable gold structure.
     """
     golds, preds = _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negatives,
-                            chunk_size, chunk_overlap, global_decode, global_decode_config, menus)
+                            chunk_size, chunk_overlap, global_decode, global_decode_config, menus,
+                            per_head_thresholds=per_head_thresholds)
     if not golds:
         return {}
     return score_predictions(golds, preds, stopwords=stopwords, report=report)
 
 
+def score_model_schema(
+    model,
+    eval_dataset,
+    *,
+    batch_size: int = 8,
+    threshold: float = 0.5,
+    per_head_thresholds: Optional[Dict[str, float]] = None,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
+    report: bool = False,
+) -> Dict[str, Any]:
+    """Score ``eval_dataset`` offering ``model.config.default_schema`` on every record."""
+    schema = prepare_model_schema(model.config)
+    if not schema:
+        return {}
+    menus = [schema] * len(eval_dataset)
+    metrics = compute_metrics(
+        model,
+        eval_dataset,
+        batch_size=batch_size,
+        threshold=threshold,
+        stopwords=stopwords,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        global_decode=global_decode,
+        global_decode_config=global_decode_config,
+        report=report,
+        menus=menus,
+        per_head_thresholds=per_head_thresholds,
+    ) or {}
+    if metrics:
+        metrics["schema_counts"] = model_schema_summary(schema)
+        metrics["threshold"] = threshold
+        if per_head_thresholds:
+            metrics["per_head_thresholds"] = dict(per_head_thresholds)
+    return metrics
+
+
 def _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negatives, chunk_size, chunk_overlap,
-             global_decode, global_decode_config, menus) -> Tuple[List[Dict], List[Dict]]:
+             global_decode, global_decode_config, menus, per_head_thresholds=None) -> Tuple[List[Dict], List[Dict]]:
     """The decode half of :func:`compute_metrics`: ``(golds, preds)`` for the records with a usable gold
     structure, decoded at ONE threshold. The record filter does not depend on the threshold, so two calls
     at different thresholds return golds in the same order (what :func:`compute_metrics_per_head` splices)."""
@@ -344,15 +469,17 @@ def _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negativ
     if menus is not None:
         print(f"[menu] offered per document (min, median, max): {menu_sizes(schemas)} over {len(schemas)} documents")
 
+    ph_kw = {"per_head_thresholds": dict(per_head_thresholds)} if per_head_thresholds else {}
     if chunk_size is not None:
         preds = model.batch_extract_long(
             texts, schemas, batch_size=batch_size, threshold=threshold,
             chunk_size=chunk_size, chunk_overlap=chunk_overlap,
             global_decode=global_decode, global_decode_config=global_decode_config,
+            **ph_kw,
         )
     else:
         preds = model.batch_extract(
-            texts, schemas, batch_size=batch_size, threshold=threshold,
+            texts, schemas, batch_size=batch_size, threshold=threshold, **ph_kw,
         )
     return golds, preds
 

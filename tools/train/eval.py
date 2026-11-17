@@ -53,6 +53,9 @@ def main() -> None:
                         "construction for event_type; this is the honest pass.")
     p.add_argument("--menu", help="Also score under this menu, beside the gold keys (MENU_SPEC.md): "
                                   "widened:K | corpus_full | app:<name or menu file>. Results under by_menu.")
+    p.add_argument("--model-schema", action=argparse.BooleanOptionalAction, default=None, dest="model_schema",
+                   help="Also score offering the checkpoint's exact config.json default_schema on every "
+                        "record (including empty-gold records), emitting metrics['model_schema'].")
     p.add_argument("--batch-size", type=int, dest="batch_size",
                    help="Override eval.batch_size. Scores MUST NOT change with this -- if "
                         "they do, padding is leaking into the result. It exists because "
@@ -117,6 +120,8 @@ def main() -> None:
 
     if args.menu:
         overrides["menu"] = args.menu
+    if args.model_schema is not None:
+        overrides["model_schema"] = args.model_schema
     evaluate_config(args.config, split=args.split, checkpoint=args.checkpoint, overrides=overrides)
 
 

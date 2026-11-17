@@ -375,9 +375,12 @@ uv run python tools/infer.py --model ./out/cmnee-lora-eb23a/best \
 ```
 
 The same call with a Hub id (`--model whr778/gliner2-cmnee-lora-eb23a`) works once that
-repo has been published. Decode settings, the label map, and `--gold-schema` behave as
-they do for a full checkpoint. How the adapter is trained and saved is in `TRAINING.md`
-§4.
+repo has been published. Decode settings, the label map, and `--gold-schema` / `--model-schema`
+behave as they do for a full checkpoint. `eval.py --model-schema` scores the split offering
+the checkpoint's `default_schema` on every record and writes `metrics["model_schema"]` for
+the model card (`training.default_schema_mode: dataset | train | union_base` controls whether
+that shipped schema is the target dataset menu or unioned with the base model; see
+`TRAINING.md` §4).
 
 ## Cautions (measured)
 

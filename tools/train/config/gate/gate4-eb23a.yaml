@@ -67,6 +67,7 @@ training:
   pin_memory: true
   early_stopping: false
   seed: 42
+  default_schema_mode: dataset
 eval:
   # eb23a scored with global decode and a swept threshold. Omitting these writes
   # threshold 0.5 and global_decode false into the new checkpoint's
@@ -77,10 +78,13 @@ eval:
   global_decode: true
   eval_by_language: true
   metric_sweep: true
+  model_schema: true
 labels_file: labels/unified-full-v4.yaml
 
 data:
   corpora:
     - data/gate3_eb22g
     - data/replay_eb22g_gate4
+  train_only:
+    - replay_eb22g_gate4
   event_files: {}

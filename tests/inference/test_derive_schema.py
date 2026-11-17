@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gliner2.inference.schema import Schema, _OPEN_VOCAB_LIMIT, derive_schema
+from gliner2.inference.schema import Schema, _OPEN_VOCAB_LIMIT, derive_schema, merge_schemas
 
 
 def _record():
@@ -83,3 +83,60 @@ def test_derive_schema_handles_list_entities_dict_args_absent_events_and_head_ta
         "events": {"Attack": ["Attacker", "Target"], "Databreach": ["Compromised-Data"]},
         "relations": ["works_for"],
     }
+
+
+def test_derive_schema_collects_structures_and_majority_anchor():
+    recs = [
+        {
+            "output": {
+                "json_structures": [{"casualty_report": {"location": "Austin"}}],
+                "record_metadata": {"casualty_report": {"mode": "natural", "anchor": "location"}},
+            }
+        },
+        {
+            "output": {
+                "json_structures": [{"casualty_report": {"dead": "4", "location": "Austin"}}],
+                "record_metadata": {"casualty_report": {"mode": "natural", "anchor": "dead"}},
+            }
+        },
+        {
+            "output": {
+                "json_structures": [{"casualty_report": {"dead": "9", "injured": "12"}}],
+                "record_metadata": {"casualty_report": {"mode": "natural", "anchor": "dead"}},
+            }
+        },
+    ]
+    s = derive_schema(recs)
+    assert s["structures"]["casualty_report"] == {
+        "fields": [
+            {"name": "location", "dtype": "str"},
+            {"name": "dead", "dtype": "str"},
+            {"name": "injured", "dtype": "str"},
+        ],
+        "mode": "natural",
+        "anchor": "dead",
+    }
+    Schema.from_dict(s)
+
+
+def test_merge_schemas_unions_base_and_dataset_preserving_open_vocab():
+    base = {
+        "events": {"Attack": ["Attacker"], "Hire": ["Employee"]},
+        "relations": ["works_at"],
+        "classifications": [{"task": "topic", "labels": ["news", "tech"]}],
+        "open_vocab": ["entities"],
+    }
+    added = {
+        "entities": ["Person", "Weapon"],
+        "events": {"Attack": ["Target"], "Deploy": ["Subject"]},
+    }
+    merged = merge_schemas(base, added)
+    assert "entities" not in merged
+    assert merged["open_vocab"] == ["entities"]
+    assert merged["events"] == {
+        "Attack": ["Attacker", "Target"],
+        "Deploy": ["Subject"],
+        "Hire": ["Employee"],
+    }
+    assert merged["relations"] == ["works_at"]
+    Schema.from_dict(merged)
