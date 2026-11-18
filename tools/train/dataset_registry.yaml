@@ -18,6 +18,14 @@
 # description (one-sentence qualitative summary for the model card).
 
 base_models:
+  whr778/gliner2-eb23a:
+    name: gliner2-eb23a
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: https://huggingface.co/whr778/gliner2-eb23a
+  whr778/gliner2-eb22g:
+    name: gliner2-eb22g
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: https://huggingface.co/whr778/gliner2-eb22g
   whr778/gliner2-eb21:
     name: gliner2-eb21
     license: derived from jhu-clsp/mmBERT-base
@@ -632,11 +640,18 @@ datasets:
     description: "Mendeley event-trigger detection reframed as entity detection: the event type is an entity label whose spans are the triggers."
   ace2005:
     name: ACE 2005
-    tasks: NER + relations + events
+    tasks: NER + relations + events + coreference
     license: LDC (LDC2006T06)
     source_url: https://catalog.ldc.upenn.edu/LDC2006T06
     language: [en]
-    description: "LDC-licensed NER + relations + events; not redistributable — convert from your own licensed copy."
+    description: "LDC-licensed English NER (7 types), relations (6 types), events (33 subtypes), and gold entity coreference clusters; not redistributable — convert from your own licensed copy."
+  ace2005_off:
+    name: ACE 2005 (offset-anchored)
+    tasks: NER + relations + events + coreference
+    license: LDC (LDC2006T06)
+    source_url: https://catalog.ldc.upenn.edu/LDC2006T06
+    language: [en]
+    description: "ACE 2005 with offset-anchored event trigger/argument spans and gold entity coreference clusters."
   masakhaner:
     name: MasakhaNER 2.0
     tasks: NER (20 African languages, 4 types)

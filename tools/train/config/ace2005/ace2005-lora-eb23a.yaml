@@ -1,0 +1,105 @@
+# ACE 2005 (LDC2006T06) joint NER + relations + events + coref LoRA on frozen eb23a.
+#
+# ACE 2005 was held out of eb23a completely (0 training/val/test overlap).
+# Convert at work from your licensed LDC copy before launching:
+#
+#   uv run python tools/data/convert_ace2005.py \
+#     --input /path/to/ace_2005_td_v7/data/English \
+#     --out data/ace2005.jsonl --offsets
+#   uv run python tools/data/dedupe_splits.py data/ace2005
+#   uv run python tools/data/check_leakage.py --config tools/train/config/ace2005/ace2005-lora-eb23a.yaml
+#
+# Score the zero-shot eb23a control arm on the identical splits BEFORE comparing:
+#
+#   uv run python tools/train/eval.py \
+#     --checkpoint whr778/gliner2-eb23a \
+#     --config tools/train/config/ace2005/ace2005-lora-eb23a.yaml \
+#     --split val --model-schema
+#
+# Taxonomy under labels/unified-full-v4.yaml:
+#   - Entities (7): Person, Organization, GPE, Location, Facility, VEH, WEA (7/7 in eb23a)
+#   - Relations (6): ART, Gen_Aff, ORG_Aff, Part_Whole, Per_Soc, Phys (new to eb23a)
+#   - Events (33 subtypes, 35 roles): 26/33 subtypes and 26/35 roles already in eb23a
+#   - Coreference: top-level coref_clusters trains mention_link and expands gold
+#     event arguments across coreferent entity mentions (NAM/NOM/PRO).
+#
+# ACE English adj/ is ~599 documents (~479 train / ~60 val / ~60 test at 80/10/10,
+# ~30 steps/epoch at effective batch 16). LoRA targets every active head including
+# relation_scorer and mention_link so the 6 held-out ACE relation types and English
+# pronoun/nominal coreference adapt without overfitting 307M base parameters.
+# Single-run noise floor: ±0.02 strict micro-F1 (±0.041 on relations).
+model:
+  pretrained: whr778/gliner2-eb23a
+  architecture: boundary
+
+training:
+  checkpoint_restart: null
+  output_dir: ./out/ace2005-lora-eb23a
+  experiment_name: ace2005_lora_eb23a
+  data_parallel: false
+  num_epochs: 6
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 5.0e-4
+  warmup_ratio: 0.05
+  scheduler_type: cosine_restarts
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  eval_strategy: epoch
+  metric_for_best: eval_overall_strict_head_min_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 3
+  save_epoch_checkpoint: true
+  logging_steps: 10
+  num_workers: 2
+  validate_data: false
+  allow_invalid_samples: true
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  negative_pools: auto
+  negative_labels_per_dim:
+    entities: 20
+    events: 20
+  negative_label_seed: 42
+  negative_gold_full_roles: true
+  schema_dropout:
+    remove_events_prob: 0.0
+  sliding_window: true
+  max_len: 4096
+  window_stride: 3072
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+  seed: 42
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32.0
+  lora_dropout: 0.0
+  lora_target_modules:
+    - encoder
+    - boundary_head
+    - record_decoder
+    - relation_scorer
+    - mention_link
+  save_adapter_only: true
+  default_schema_mode: dataset
+
+eval:
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
+  metric_sweep: true
+  model_schema: true
+
+labels_file: labels/unified-full-v4.yaml
+
+data:
+  corpora:
+    - data/ace2005
+  event_files: {}

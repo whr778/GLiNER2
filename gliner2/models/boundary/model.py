@@ -1587,12 +1587,14 @@ class BoundaryExtractorModel(BaseExtractorModel):
             extras += ("record_decoder",)
         if getattr(self, "enable_relations", False):
             extras += ("relation_scorer",)
+        if getattr(self, "mention_link", None) is not None:
+            extras += ("mention_link",)
         return base + extras
 
     def _head_touch(self, device) -> torch.Tensor:
         """Exactly-zero term touching every enabled optional head."""
         total = torch.zeros((), device=device)
-        for name in ("record_decoder", "relation_scorer", "relation_pair_generator"):
+        for name in ("record_decoder", "relation_scorer", "relation_pair_generator", "mention_link"):
             module = getattr(self, name, None)
             if module is not None:
                 for parameter in getattr(module, "parameters", lambda: ())():

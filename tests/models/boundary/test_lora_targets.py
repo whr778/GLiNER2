@@ -41,3 +41,15 @@ def test_encoder_alias_still_resolves_encoder_only():
     resolved = _resolve_targets(model, ["encoder"])
     assert resolved
     assert all(name.startswith("encoder.") for name in resolved)
+
+
+def test_mention_link_target_resolves_when_enabled():
+    model = build_tiny_boundary_model()
+    assert "mention_link" not in _task_module_names(model)
+    model.enable_mention_link()
+    assert "mention_link" in _task_module_names(model)
+    resolved = _resolve_targets(model, ["mention_link"])
+    assert resolved
+    assert all(name.startswith("mention_link.") for name in resolved)
+    all_heads = _resolve_targets(model, ["all_task_heads"])
+    assert any(name.startswith("mention_link.") for name in all_heads)
