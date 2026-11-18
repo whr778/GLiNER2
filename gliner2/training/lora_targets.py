@@ -8,7 +8,12 @@ from __future__ import annotations
 import torch.nn as nn
 from peft.tuners.tuners_utils import BaseTunerLayer
 
-ENCODER_PATTERNS = ("query", "key", "value", "dense")
+ENCODER_PATTERNS = (
+    "query", "key", "value", "dense",
+    "Wqkv", "Wo", "Wi",
+    "q_proj", "k_proj", "v_proj", "o_proj",
+    "gate_proj", "up_proj", "down_proj", "out_proj",
+)
 # Legacy fallback for models that predate ``task_module_names()``.
 TASK_MODULES = ("span_rep", "classifier", "count_embed", "count_pred")
 

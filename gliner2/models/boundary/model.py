@@ -2314,7 +2314,14 @@ class BoundaryExtractorModel(BaseExtractorModel):
         if pair_mask.shape != logits.shape:
             pair_mask = pair_mask[:logits.shape[0]] if pair_mask.numel() >= logits.numel() else torch.ones_like(logits, dtype=torch.bool)
         loss = F.binary_cross_entropy_with_logits(logits, labels, reduction="none")
-        loss = (loss * pair_mask.to(loss.dtype)).sum() / pair_mask.sum().clamp_min(1)
+        if self.boundary_settings.pair_split_reduction:
+            pos = pair_mask & (labels > 0.5)
+            neg = pair_mask & ~pos
+            pos_term = loss[pos].mean() if pos.any() else logits.sum() * 0.0
+            neg_term = loss[neg].mean() if neg.any() else logits.sum() * 0.0
+            loss = pos_term + neg_term
+        else:
+            loss = (loss * pair_mask.to(loss.dtype)).sum() / pair_mask.sum().clamp_min(1)
         if gold_kept is not None:
             # after the loss succeeded, so a run that logs this line really trained on the appended pairs
             note_relation_gold(gold_kept, gold_appended, int(gold_mask.sum()))

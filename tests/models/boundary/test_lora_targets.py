@@ -53,3 +53,53 @@ def test_mention_link_target_resolves_when_enabled():
     assert all(name.startswith("mention_link.") for name in resolved)
     all_heads = _resolve_targets(model, ["all_task_heads"])
     assert any(name.startswith("mention_link.") for name in all_heads)
+
+
+def test_modernbert_and_llama_style_encoder_linear_names_resolve():
+    import torch.nn as nn
+
+    class FakeModernBertLayer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.Wqkv = nn.Linear(16, 48)
+            self.Wo = nn.Linear(16, 16)
+            self.Wi = nn.Linear(16, 32)
+            self.q_proj = nn.Linear(16, 16)
+            self.up_proj = nn.Linear(16, 32)
+
+    class FakeExtractor(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.encoder = FakeModernBertLayer()
+            self.boundary_head = nn.Linear(16, 16)
+
+    resolved = _resolve_targets(FakeExtractor(), ["encoder"])
+    assert set(resolved) == {
+        "encoder.Wqkv", "encoder.Wo", "encoder.Wi",
+        "encoder.q_proj", "encoder.up_proj",
+    }
+
+
+def test_lora_optimizer_splits_encoder_lr_and_task_lr(tmp_path):
+    from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
+
+    model = build_tiny_boundary_model()
+    cfg = TrainingConfig(
+        output_dir=str(tmp_path),
+        use_lora=True,
+        lora_r=4,
+        lora_alpha=8.0,
+        lora_target_modules=["encoder", "boundary_head", "relation_scorer"],
+        encoder_lr=1.0e-4,
+        task_lr=3.0e-4,
+        encoder_lr_backbone_only=True,
+        bf16=False,
+        fp16=False,
+    )
+    trainer = GLiNER2Trainer(model, cfg)
+    opt = trainer._create_optimizer()
+    assert len(opt.param_groups) == 2
+    assert opt.param_groups[0]["lr"] == 1.0e-4
+    assert opt.param_groups[1]["lr"] == 3.0e-4
+    assert len(opt.param_groups[0]["params"]) > 0
+    assert len(opt.param_groups[1]["params"]) > 0

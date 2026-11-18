@@ -1,0 +1,87 @@
+# ACE 2005 (LDC2006T06, EN + AR + ZH) full fine-tune warm-started from eb23a.
+#
+# Full-rank counterpart to ace2005-lora-eb23a.yaml: unfreezes SparseRelationScorer,
+# MentionLink, RecordHead, BoundaryHead (at task_lr 2.0e-4) and mmBERT-base
+# (at encoder_lr 2.0e-5) so the 6 held-out ACE relation types and 8 Time_* event
+# roles adapt at full rank rather than rank-16 LoRA.
+#
+# Score the zero-shot eb23a control arm on the identical splits BEFORE comparing:
+#
+#   uv run python tools/train/eval.py \
+#     --checkpoint whr778/gliner2-eb23a \
+#     --config tools/train/config/ace2005/ace2005-eb23a.yaml \
+#     --split val --model-schema
+#
+# Single-run noise floor: ±0.02 strict micro-F1 (±0.041 on relations).
+model:
+  pretrained: whr778/gliner2-eb23a
+  architecture: boundary
+  boundary_head:
+    relation_keep_gold_pairs: true
+    relation_argument_proposal_threshold: 0.05
+    relation_loss_weight: 2.0
+
+training:
+  checkpoint_restart: null
+  output_dir: ./out/ace2005-eb23a
+  experiment_name: ace2005_eb23a
+  data_parallel: false
+  num_epochs: 6
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 2.0e-4
+  encoder_lr_backbone_only: true
+  warmup_ratio: 0.10
+  scheduler_type: cosine
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  gold_injection_start: 0.25
+  gold_injection_end: 0.25
+  eval_strategy: epoch
+  metric_for_best: eval_overall_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  save_epoch_checkpoint: true
+  logging_steps: 10
+  num_workers: 2
+  validate_data: false
+  allow_invalid_samples: true
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  negative_pools: auto
+  negative_labels_per_dim:
+    entities: 20
+    events: 20
+  negative_label_seed: 42
+  negative_gold_full_roles: true
+  schema_dropout: false
+  sliding_window: true
+  max_len: 4096
+  window_stride: 3072
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+  seed: 42
+  default_schema_mode: dataset
+
+eval:
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
+  metric_sweep: true
+  model_schema: true
+
+labels_file: labels/unified-full-v4.yaml
+
+data:
+  corpora:
+    - data/ace2005_eng
+    - data/ace2005_ara
+    - data/ace2005_zho
+  event_files: {}

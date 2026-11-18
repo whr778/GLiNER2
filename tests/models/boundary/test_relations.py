@@ -274,3 +274,77 @@ def test_relation_description_survives_schema_roundtrip():
     assert metadata[0]["relation_descriptions"] == built[
         "relation_descriptions"
     ]
+
+
+def test_apply_boundary_head_overrides_syncs_relation_pair_generator():
+    import sys
+    from pathlib import Path
+
+    train_dir = str(Path(__file__).resolve().parents[3] / "tools" / "train")
+    if train_dir not in sys.path:
+        sys.path.insert(0, train_dir)
+    import train as T
+    from tests.fixtures.tiny_boundary_checkpoint import build_tiny_boundary_model
+
+    model = build_tiny_boundary_model()
+    T._apply_boundary_head_overrides(model, {
+        "relation_keep_gold_pairs": True,
+        "relation_argument_proposal_threshold": 0.05,
+        "relation_pair_cap": 48,
+    })
+    assert model.boundary_settings.relation_keep_gold_pairs is True
+    assert model.relation_pair_generator.settings.argument_threshold == 0.05
+    assert model.relation_pair_generator.settings.pair_cap == 48
+
+
+def test_relation_loss_respects_pair_split_reduction():
+    import dataclasses
+    import types
+    import torch
+    from gliner2.models.outputs import CandidateTensorBatch
+    from tests.fixtures.tiny_boundary_checkpoint import build_tiny_boundary_model
+
+    model = build_tiny_boundary_model()
+    H = model.hidden_size
+    text_states = torch.zeros(1, 6, H)
+    rel_dim = 2 * H if model.boundary_settings.directional_relation_states else H
+    core = {
+        "text_states": text_states,
+        "rel_specs": [[{
+            "spec": types.SimpleNamespace(
+                relation_type="ORG_Aff", head_query_ids=(0,), tail_query_ids=(1,), allow_self=False
+            ),
+            "query_state": torch.zeros(rel_dim),
+        }]],
+    }
+    # 1 head candidate x 8 tail candidates = 8 pairs (1 gold positive, 7 negatives).
+    indices = torch.tensor([
+        [[[0, 1]] + [[0, 1]] * 7,
+         [[2, 3], [2, 4], [2, 5], [3, 4], [3, 5], [4, 5], [1, 2], [1, 3]]],
+    ])
+    valid_mask = torch.zeros(1, 2, 8, dtype=torch.bool)
+    valid_mask[0, 0, 0] = True
+    valid_mask[0, 1, :] = True
+    cands = CandidateTensorBatch(
+        indices=indices,
+        valid_mask=valid_mask,
+        query_mask=torch.ones(1, 2, dtype=torch.bool),
+        proposal_logits=torch.ones(1, 2, 8),
+        pair_logits=torch.full((1, 2, 8), 2.0),
+    )
+    gold_pairs = torch.tensor([[[[0, 1, 2, 3]]]])
+    gold_mask = torch.tensor([[[True]]])
+    head_member = torch.tensor([[[True, False]]])
+    tail_member = torch.tensor([[[False, True]]])
+    rel_valid = torch.tensor([[True]])
+    allow_self = torch.tensor([[False]])
+    targets = types.SimpleNamespace(
+        edge_targets=(gold_pairs, gold_mask, head_member, tail_member, rel_valid, allow_self)
+    )
+
+    model.boundary_settings = dataclasses.replace(model.boundary_settings, pair_split_reduction=False)
+    pooled_loss = float(model._relation_loss(None, core, cands, targets))
+    model.boundary_settings = dataclasses.replace(model.boundary_settings, pair_split_reduction=True)
+    split_loss = float(model._relation_loss(None, core, cands, targets))
+    # Under split reduction, pos_mean + neg_mean is ~2x a zero-logit BCE (~1.386), not 1x (~0.693).
+    assert split_loss > 1.5 * pooled_loss

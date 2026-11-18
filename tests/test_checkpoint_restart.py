@@ -186,3 +186,71 @@ def test_nameless_state_in_the_same_order_still_restores():
     opt2 = AdamW(net2.parameters(), lr=1e-3)
     T._restore_training_state(_named_stub(net2, opt2), state)
     assert len(opt2.state) == len(list(net2.parameters()))
+
+
+def test_resume_reset_scheduler_honors_new_lrs_starts_at_zero_and_survives_mid_tail_resume(tmp_path):
+    from gliner2.training.trainer import get_scheduler
+
+    m1 = _Net(late=False)
+    opt1 = AdamW([{"params": list(m1.a.parameters()), "lr": 2e-5},
+                  {"params": list(m1.b.parameters()), "lr": 5e-4}])
+    sch1 = get_scheduler(opt1, "cosine", num_training_steps=20, num_warmup_steps=2, num_cycles=1.0)
+    for _ in range(20):
+        for p in m1.parameters():
+            p.grad = torch.ones_like(p) * 0.1
+        opt1.step()
+        sch1.step()
+    assert opt1.param_groups[0]["lr"] == pytest.approx(0.0, abs=1e-12)
+    expected_moment = opt1.state[m1.a.weight]["exp_avg"].clone()
+
+    saver = _named_stub(m1, opt1)
+    saver.scheduler = sch1
+    saver.epoch = 4
+    saver.global_step = 20
+    saver.best_metric = 0.2359
+    ckpt_ep5 = tmp_path / "checkpoint-epoch-5"
+    ckpt_ep5.mkdir()
+    T._save_training_state(saver, ckpt_ep5)
+    state_ep5 = torch.load(ckpt_ep5 / "training_state.pt", map_location="cpu", weights_only=False)
+
+    # Resume with lower tail LRs (2e-6 / 5e-5) for max_steps=50 (30 remaining, warmup=6).
+    m2 = _Net(late=False)
+    opt2 = AdamW([{"params": list(m2.a.parameters()), "lr": 2e-6},
+                  {"params": list(m2.b.parameters()), "lr": 5e-5}])
+    r2 = _named_stub(m2, opt2)
+    r2.is_main_process = True
+    r2.config = types.SimpleNamespace(
+        resume_reset_scheduler=True, warmup_steps=0, warmup_ratio=0.2,
+        scheduler_type="cosine", num_cycles=1.0,
+    )
+    start_ep = T._restore_training_state(r2, state_ep5, max_steps=50)
+    assert start_ep == 5
+    assert r2.best_metric == pytest.approx(0.2359)
+    assert torch.allclose(opt2.state[m2.a.weight]["exp_avg"], expected_moment)
+    assert r2.scheduler.base_lrs == [pytest.approx(2e-6), pytest.approx(5e-5)]
+    # Literal start at 0.0 -> linear ramp to peak at step 6 -> cosine decay to ~0 at step 30.
+    assert opt2.param_groups[0]["lr"] == pytest.approx(0.0, abs=1e-12)
+    for s in range(10):
+        opt2.step()
+        r2.scheduler.step()
+        if s == 5:
+            assert opt2.param_groups[0]["lr"] == pytest.approx(2e-6)
+            assert opt2.param_groups[1]["lr"] == pytest.approx(5e-5)
+    lr_at_tail_10 = opt2.param_groups[0]["lr"]
+
+    # Save mid-tail at global_step=30 and verify re-resume keeps the exact mid-tail LR.
+    r2.epoch = 5
+    r2.global_step = 30
+    ckpt_ep6 = tmp_path / "checkpoint-epoch-6"
+    ckpt_ep6.mkdir()
+    T._save_training_state(r2, ckpt_ep6)
+    state_ep6 = torch.load(ckpt_ep6 / "training_state.pt", map_location="cpu", weights_only=False)
+
+    m3 = _Net(late=False)
+    opt3 = AdamW([{"params": list(m3.a.parameters()), "lr": 2e-6},
+                  {"params": list(m3.b.parameters()), "lr": 5e-5}])
+    r3 = _named_stub(m3, opt3)
+    r3.is_main_process = True
+    r3.config = r2.config
+    T._restore_training_state(r3, state_ep6, max_steps=50)
+    assert opt3.param_groups[0]["lr"] == pytest.approx(lr_at_tail_10)

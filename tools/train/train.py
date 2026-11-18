@@ -1106,6 +1106,15 @@ def _apply_boundary_head_overrides(model, overrides: Dict) -> None:
         decoder.enable_coref_link()
     if settings.entity_coref_link:
         model.enable_mention_link()
+    rel_gen = getattr(model, "relation_pair_generator", None)
+    if rel_gen is not None:
+        from gliner2.models.boundary.relations import RelationProposalSettings
+        rel_gen.settings = RelationProposalSettings(
+            heads_per_relation=settings.relation_heads_per_type,
+            tails_per_relation=settings.relation_tails_per_type,
+            pair_cap=settings.relation_pair_cap,
+            argument_threshold=settings.relation_argument_proposal_threshold,
+        )
 
 
 def _auto_negative_pools(cfg: dict, config_path, output_dir: str) -> str:

@@ -506,7 +506,7 @@ class TrainingMetrics:
 # Scheduler Factory
 # =============================================================================
 
-def get_scheduler(optimizer, scheduler_type, num_training_steps, num_warmup_steps, num_cycles=0.5):
+def get_scheduler(optimizer, scheduler_type, num_training_steps, num_warmup_steps, num_cycles=0.5, last_epoch=-1):
     """Create learning rate scheduler."""
     def lr_lambda_linear(step):
         if step < num_warmup_steps:
@@ -540,7 +540,7 @@ def get_scheduler(optimizer, scheduler_type, num_training_steps, num_warmup_step
     if scheduler_type not in schedulers:
         raise ValueError(f"Unknown scheduler: {scheduler_type}")
 
-    return LambdaLR(optimizer, schedulers[scheduler_type])
+    return LambdaLR(optimizer, schedulers[scheduler_type], last_epoch=last_epoch)
 
 
 # =============================================================================
@@ -912,6 +912,7 @@ class ExtractorTrainer:
             "best_epoch": self.best_epoch,
             "best_step": self.best_step,
             "patience_counter": self.patience_counter,
+            "tail_origin_step": getattr(self, "_tail_origin_step", None),
             "optimizer": self.optimizer.state_dict(),
             "param_names": self._optimizer_param_names(),
             "scheduler": self.scheduler.state_dict() if self.scheduler is not None else None,
@@ -956,6 +957,8 @@ class ExtractorTrainer:
         if len(current) != len(saved["param_groups"]):
             raise RuntimeError(f"optimizer has {len(current)} parameter groups, training_state.pt {len(saved['param_groups'])}")
         remapped, new_groups, k, fresh = {}, [], 0, []
+        cfg = getattr(self, "config", None)
+        reset_lrs = bool(getattr(cfg, "resume_reset_scheduler", False))
         for names, g, sg in zip(current, groups, saved["param_groups"]):
             ids = []
             for n, p in zip(names, g["params"]):
@@ -969,14 +972,18 @@ class ExtractorTrainer:
                     fresh.append(n)
                 ids.append(k)
                 k += 1
-            new_groups.append(dict(sg, params=ids))
+            grp = dict(sg, params=ids)
+            if reset_lrs:
+                grp["lr"] = g["lr"]
+                grp["initial_lr"] = g["lr"]
+            new_groups.append(grp)
         dropped = set(index) - {n for names in current for n in names}
         if fresh or dropped:
             logger.warning("optimizer restore by name: %d parameters start fresh (%s), %d saved ones unused (%s)",
                            len(fresh), fresh[:3], len(dropped), sorted(dropped)[:3])
         self.optimizer.load_state_dict({"state": remapped, "param_groups": new_groups})
 
-    def _restore_training_state(self, state: dict) -> int:
+    def _restore_training_state(self, state: dict, max_steps: Optional[int] = None) -> int:
         """Restore optimizer/scheduler/counters/RNG; return the epoch to resume at."""
         self._load_optimizer_state(state)
         # Optimizer tensors were loaded on CPU; move them to the training device.
@@ -984,9 +991,33 @@ class ExtractorTrainer:
             for k, v in opt_state.items():
                 if isinstance(v, torch.Tensor):
                     opt_state[k] = v.to(self.device)
-        if self.scheduler is not None and state.get("scheduler") is not None:
-            self.scheduler.load_state_dict(state["scheduler"])
         self.global_step = int(state.get("global_step", 0))
+        cfg = getattr(self, "config", None)
+        if getattr(cfg, "resume_reset_scheduler", False) and max_steps is not None:
+            saved_origin = state.get("tail_origin_step")
+            origin = int(saved_origin) if saved_origin is not None else self.global_step
+            self._tail_origin_step = origin
+            remaining = max(max_steps - origin, 1)
+            tail_warmup = cfg.warmup_steps or int(remaining * cfg.warmup_ratio)
+            elapsed_tail = max(self.global_step - origin, 0)
+            for grp in self.optimizer.param_groups:
+                grp["lr"] = grp["initial_lr"]
+            self.scheduler = get_scheduler(
+                self.optimizer, cfg.scheduler_type, remaining, tail_warmup,
+                cfg.num_cycles, last_epoch=elapsed_tail - 1 if elapsed_tail > 0 else -1,
+            )
+            if getattr(self, "is_main_process", True):
+                fn = self.scheduler.lr_lambdas[0]
+                pts = {f"{int(f*100)}%": round(fn(min(int(f * remaining), max(remaining - 1, 0))), 3)
+                       for f in (0.0, 0.25, 0.5, 0.75, 1.0)}
+                logger.info(
+                    "[lr-resume] resume_reset_scheduler=True origin_step=%d current_step=%d "
+                    "remaining=%d warmup=%d base_lrs=%s -> multiplier %s",
+                    origin, self.global_step, remaining, tail_warmup,
+                    [g["initial_lr"] for g in self.optimizer.param_groups], pts,
+                )
+        elif self.scheduler is not None and state.get("scheduler") is not None:
+            self.scheduler.load_state_dict(state["scheduler"])
         self.best_metric = state.get("best_metric", self.best_metric)
         self.best_epoch = state.get("best_epoch", self.best_epoch)
         self.best_step = state.get("best_step", self.best_step)
@@ -1802,14 +1833,33 @@ class ExtractorTrainer:
         else:
             optimizer_kwargs["foreach"] = True
         if self.config.use_lora:
-            lora_params = [p for p in self.model.parameters() if p.requires_grad]
-            if not lora_params:
+            enc_lora, task_lora = [], []
+            for name, param in self.model.named_parameters():
+                if not param.requires_grad:
+                    continue
+                clean = (
+                    name.removeprefix("module.")
+                    .removeprefix("base_model.model.")
+                    .removeprefix("base_model.")
+                )
+                is_backbone = (
+                    clean.startswith("encoder.")
+                    if self.config.encoder_lr_backbone_only
+                    else "encoder" in clean
+                )
+                (enc_lora if is_backbone else task_lora).append(param)
+            if not enc_lora and not task_lora:
                 raise ValueError("No LoRA parameters found. Check LoRA configuration.")
-            logger.info("Optimizer: LoRA params only = %d, LR=%s", len(lora_params), self.config.task_lr)
-            return AdamW(
-                [{"params": lora_params, "lr": self.config.task_lr, "weight_decay": self.config.weight_decay}],
-                **optimizer_kwargs,
+            logger.info(
+                "[optim-lora] encoder_lr %.1e: %d tensors | task_lr %.1e: %d tensors",
+                self.config.encoder_lr, len(enc_lora), self.config.task_lr, len(task_lora),
             )
+            groups = []
+            if enc_lora:
+                groups.append({"params": enc_lora, "lr": self.config.encoder_lr, "weight_decay": self.config.weight_decay})
+            if task_lora:
+                groups.append({"params": task_lora, "lr": self.config.task_lr, "weight_decay": self.config.weight_decay})
+            return AdamW(groups, **optimizer_kwargs)
         # Normal training: separate LRs for encoder and task-specific layers.
         encoder_params = []
         task_params = []
@@ -2174,7 +2224,23 @@ class ExtractorTrainer:
 
         start_epoch = 0
         if resume_state is not None:
-            start_epoch = self._restore_training_state(resume_state)
+            start_epoch = self._restore_training_state(resume_state, max_steps=max_steps)
+            if (
+                self.is_main_process
+                and self.config.save_best
+                and resume_dir is not None
+                and not (self.output_dir / "best").exists()
+            ):
+                best_seed_dir = self.output_dir / "best"
+                shutil.copytree(
+                    resume_dir,
+                    best_seed_dir,
+                    ignore=shutil.ignore_patterns("training_state.pt"),
+                )
+                logger.info(
+                    "Seeded missing best/ from %s (best_metric=%.4f) so best/ remains populated if unimproved",
+                    resume_dir, self.best_metric,
+                )
             logger.info("Resumed at epoch %d, global step %d (best_metric=%.4f)",
                         start_epoch, self.global_step, self.best_metric)
 

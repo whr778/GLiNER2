@@ -212,6 +212,11 @@ class TrainingConfig:
     # Restored feature knobs (pre-boundary; consumed by tools/train/train.py).
     # checkpoint_restart: resume selection ('last' | 'highest' | None).
     checkpoint_restart: Optional[str] = None
+    # When True on a checkpoint_restart, keep restored weights, AdamW moments,
+    # global_step, and best_metric, but run a fresh tail LR schedule from 0.0
+    # using the current config's encoder_lr / task_lr over the remaining steps
+    # instead of restoring training_state.pt's exhausted base_lrs and schedule.
+    resume_reset_scheduler: bool = False
     # sliding_window/window_stride: window long training docs (word-level) so a
     # short-context encoder (e.g. DeBERTa-v3 512-cap) doesn't overflow; each window
     # carries its own gold. False -> single pass with max_len truncation.
