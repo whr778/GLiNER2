@@ -2265,7 +2265,37 @@ def main(config_path: str) -> None:
     )
     if is_main and not streaming:
         # ETA counts records up front; a streaming source has no length.
-        estimate_eta(model, train_data, config)
+        from gliner2.training.eta import _count_records as _eta_count
+        in_loop_decodes = (
+            (len(sweep_grid) if metric_sweep_cfg else 1) if eval_data else 0
+        )
+        n_val = _eta_count(eval_data)
+        n_test = _eta_count(test_data)
+        post_passes = 0.0
+        if eval_data and threshold_sweep_cfg:
+            t_grid = DEFAULT_THRESHOLD_GRID if threshold_sweep_cfg is True else list(threshold_sweep_cfg)
+            post_passes += float(len(t_grid))
+        if test_data and n_val > 0 and n_test > 0:
+            test_equiv = n_test / n_val
+            blind_mult = 2.0 if eval_by_language else 1.0
+            if threshold_sweep_cfg and ev["threshold_per_head"]:
+                blind_mult += 2.0
+            if ev.get("model_schema") not in (False, None):
+                blind_mult += 1.0
+            post_passes += blind_mult * test_equiv
+        estimate_eta(
+            model,
+            train_data,
+            config,
+            trainer=trainer,
+            eval_data=eval_data,
+            eval_batch_size=eval_bs,
+            eval_decode_passes=in_loop_decodes,
+            post_eval_passes=post_passes,
+            global_decode=global_decode,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
     if is_main:
         _log_composition(train_data, eval_data, test_data, streaming)
 
