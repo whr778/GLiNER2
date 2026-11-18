@@ -1576,6 +1576,23 @@ def build_dense_record_cost(
     )
 
 
+def _member_mean(nll: torch.Tensor, membership: torch.Tensor) -> torch.Tensor:
+    """Average per-candidate BCE over each field's real candidates only.
+
+    ``nll`` ends in ``[..., F, C]``; ``membership`` is ``[..., F, C]`` and is
+    broadcast from the left by the caller. Averaging over the padded pool
+    width instead would scale the list term by ``n_real / n_padded``.
+    """
+    width = nll.shape[-1]
+    if membership.shape[-1] > width:
+        membership = membership[..., :width]
+    elif membership.shape[-1] < width:
+        pad = membership.new_zeros(*membership.shape[:-1], width - membership.shape[-1])
+        membership = torch.cat([membership, pad], dim=-1)
+    keep = membership.to(nll.dtype)
+    return (nll * keep).sum(-1) / keep.sum(-1).clamp_min(1)
+
+
 def compute_dense_group_loss(
     group: DenseRecordGroupOutput,
     records: Sequence[RecordTarget],
@@ -1632,22 +1649,14 @@ def compute_dense_group_loss(
     scalar_nll = -torch.logsumexp(
         logp[:, None].masked_fill(~target[None], MASK_LOGIT), -1
     )
-    # Mean over each field's REAL candidates only. A plain `.mean(-1)` averaged over
-    # the padded pool width, scaling the list-field loss by n_real / n_padded
-    # (fastino-ai/GLiNER2#180); the sparse path means over real candidates.
-    membership = group.field_membership.to(device=device, dtype=group.object_logits.dtype)
-    if membership.shape[-1] > n_cands_logits:
-        membership = membership[..., :n_cands_logits]
-    elif membership.shape[-1] < n_cands_logits:
-        membership = torch.cat(
-            [membership, membership.new_zeros(*membership.shape[:-1],
-                                              n_cands_logits - membership.shape[-1])], -1)
-    list_bce = F.binary_cross_entropy_with_logits(
-        group.assign_logits[:, None, :, 1:].expand(-1, count, -1, -1),
-        gold[None].expand(ni, -1, -1, -1).to(group.object_logits.dtype),
-        reduction="none",
+    list_nll = _member_mean(
+        F.binary_cross_entropy_with_logits(
+            group.assign_logits[:, None, :, 1:].expand(-1, count, -1, -1),
+            gold[None].expand(ni, -1, -1, -1).to(group.object_logits.dtype),
+            reduction="none",
+        ),
+        group.field_membership.to(device),
     )
-    list_nll = (list_bce * membership).sum(-1) / membership.sum(-1).clamp_min(1)
     # A field whose gold spans missed the pool is not an empty annotation. Zero its
     # term and keep it in the mean, the same divisor the per-query path uses.
     field_terms = torch.where(scalar[None, None], scalar_nll, list_nll)
@@ -1737,19 +1746,6 @@ def compute_dense_batch_loss(
         -1,
     )
     candidates = output.assign_logits[..., 1:]
-    membership = output.field_membership.to(device=device, dtype=candidates.dtype)
-    if membership.shape[-1] > n_cands_logits:
-        membership = membership[..., :n_cands_logits]
-    elif membership.shape[-1] < n_cands_logits:
-        membership = torch.cat(
-            [
-                membership,
-                membership.new_zeros(
-                    *membership.shape[:-1], n_cands_logits - membership.shape[-1]
-                ),
-            ],
-            -1,
-        )
     list_bce = F.binary_cross_entropy_with_logits(
         candidates.unsqueeze(3).expand(
             *candidates.shape[:3],
@@ -1766,8 +1762,9 @@ def compute_dense_batch_loss(
         ).to(candidates.dtype),
         reduction="none",
     )
-    membership_exp = membership[:, :, None, None, :, :]
-    list_nll = (list_bce * membership_exp).sum(-1) / membership_exp.sum(-1).clamp_min(1)
+    list_nll = _member_mean(
+        list_bce, output.field_membership.to(device)[:, :, None, None]
+    )
     field_terms = torch.where(
         output.scalar_fields[:, :, None, None, :],
         scalar_nll,
