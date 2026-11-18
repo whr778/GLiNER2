@@ -498,3 +498,123 @@ def test_multilingual_chinese_cjk_wrap_and_arabic_nfkc_offsets(tmp_path):
         for m in cl:
             assert rec_ar["input"][m["start"]:m["end"]] == m["text"]
 
+
+def test_arabic_decomposed_hamza_harakat_offsets_and_alignment_diagnostics(tmp_path):
+    """Decomposed Arabic hamza + combining marks must compose before offset mapping
+    so dumps_record never shifts event/coref spans, and both alignment diagnostics
+    must distinguish whole-word spans, clitic SUBTOKEN spans, and OFFSET_MISMATCH."""
+    import html
+    import json
+    import re
+    import pytest
+    from _split import dumps_record
+    from convert_ace2005 import _verify_record_offsets, alignment_summary
+    from measure_surface_alignment import Aligner, scan
+    from gliner2.processing.word_splitter import WhitespaceTokenSplitter
+
+    sgm = (
+        "<DOC><BODY><TEXT>\n"
+        "قال ا\u0654حمد وا\u200f\u0655براهيم في محك\u064e\u0651مة القاهرة إن المسلحين "
+        "هاجموا القاعدة لبغداد واعتقلتها الشرطة ثم اعتقلت آخر.\n"
+        "</TEXT></BODY></DOC>\n"
+    )
+    tagless = html.unescape(re.sub(r"<[^>]+>", "", sgm))
+
+    def span(sub):
+        i = tagless.index(sub)
+        return i, i + len(sub) - 1
+
+    s_ah, e_ah = span("ا\u0654حمد")
+    s_ib, e_ib = span("ا\u200f\u0655براهيم")
+    s_ms, e_ms = span("المسلحين")
+    s_hj, e_hj = span("هاجموا")
+    s_bg, e_bg = span("بغداد")  # inside 'لبغداد'
+    i_wa = tagless.index("واعتقلتها")
+    s_at, e_at = i_wa + 1, i_wa + 1 + len("اعتقلت") - 1  # inside 'واعتقلتها', while 'اعتقلت' also appears standalone later
+    s_ha, e_ha = i_wa + len("واعتقلت"), i_wa + len("واعتقلت") + len("ها") - 1
+    s_sh, e_sh = span("الشرطة")
+
+    apf = f"""<?xml version="1.0"?>
+<source_file><document DOCID="AR_DECOMP">
+  <entity ID="E1" TYPE="PER"><entity_mention ID="E1-1" TYPE="NAM"><extent><charseq START="{s_ah}" END="{e_ah}">ا\u0654حمد</charseq></extent><head><charseq START="{s_ah}" END="{e_ah}">ا\u0654حمد</charseq></head></entity_mention></entity>
+  <entity ID="E2" TYPE="PER"><entity_mention ID="E2-1" TYPE="NAM"><extent><charseq START="{s_ib}" END="{e_ib}">ا\u200f\u0655براهيم</charseq></extent><head><charseq START="{s_ib}" END="{e_ib}">ا\u200f\u0655براهيم</charseq></head></entity_mention></entity>
+  <entity ID="E3" TYPE="PER"><entity_mention ID="E3-1" TYPE="NOM"><extent><charseq START="{s_ms}" END="{e_ms}">المسلحين</charseq></extent><head><charseq START="{s_ms}" END="{e_ms}">المسلحين</charseq></head></entity_mention></entity>
+  <entity ID="E4" TYPE="GPE"><entity_mention ID="E4-1" TYPE="NAM"><extent><charseq START="{s_bg}" END="{e_bg}">بغداد</charseq></extent><head><charseq START="{s_bg}" END="{e_bg}">بغداد</charseq></head></entity_mention></entity>
+  <entity ID="E5" TYPE="PER"><entity_mention ID="E5-1" TYPE="PRO"><extent><charseq START="{s_ha}" END="{e_ha}">ها</charseq></extent><head><charseq START="{s_ha}" END="{e_ha}">ها</charseq></head></entity_mention></entity>
+  <entity ID="E6" TYPE="ORG"><entity_mention ID="E6-1" TYPE="NOM"><extent><charseq START="{s_sh}" END="{e_sh}">الشرطة</charseq></extent><head><charseq START="{s_sh}" END="{e_sh}">الشرطة</charseq></head></entity_mention></entity>
+  <relation ID="R1" TYPE="PHYS"><relation_mention ID="R1-1"><relation_mention_argument REFID="E3-1" ROLE="Arg-1"/><relation_mention_argument REFID="E4-1" ROLE="Arg-2"/></relation_mention></relation>
+  <relation ID="R2" TYPE="ORG-AFF"><relation_mention ID="R2-1"><relation_mention_argument REFID="E1-1" ROLE="Arg-1"/><relation_mention_argument REFID="E6-1" ROLE="Arg-2"/></relation_mention></relation>
+  <event ID="EV1" TYPE="Conflict" SUBTYPE="Attack">
+    <event_mention ID="EV1-1">
+      <anchor><charseq START="{s_hj}" END="{e_hj}">هاجموا</charseq></anchor>
+      <event_mention_argument REFID="E3-1" ROLE="Attacker"><extent><charseq START="{s_ms}" END="{e_ms}">المسلحين</charseq></extent></event_mention_argument>
+      <event_mention_argument REFID="E4-1" ROLE="Place"><extent><charseq START="{s_bg}" END="{e_bg}">بغداد</charseq></extent></event_mention_argument>
+    </event_mention>
+  </event>
+  <event ID="EV2" TYPE="Justice" SUBTYPE="Arrest-Jail">
+    <event_mention ID="EV2-1">
+      <anchor><charseq START="{s_at}" END="{e_at}">اعتقلت</charseq></anchor>
+      <event_mention_argument REFID="E6-1" ROLE="Agent"><extent><charseq START="{s_sh}" END="{e_sh}">الشرطة</charseq></extent></event_mention_argument>
+      <event_mention_argument REFID="E5-1" ROLE="Person"><extent><charseq START="{s_ha}" END="{e_ha}">ها</charseq></extent></event_mention_argument>
+    </event_mention>
+  </event>
+</document></source_file>"""
+
+    (tmp_path / "doc.sgm").write_text(sgm, encoding="utf-8")
+    apf_path = tmp_path / "doc.apf.xml"
+    apf_path.write_text(apf, encoding="utf-8")
+
+    raw = parse_apf(apf_path, offsets=True)
+    dumped = json.loads(dumps_record(raw))
+    assert dumped["input"] == raw["input"]
+    for ev in dumped["output"]["events"]:
+        for t in ev["triggers"]:
+            assert dumped["input"][t["start"]:t["end"]] == t["text"]
+        for a in ev["arguments"]:
+            ent = a["entity"]
+            assert dumped["input"][ent["start"]:ent["end"]] == ent["text"]
+    for cl in dumped["coref_clusters"]:
+        for m in cl:
+            assert dumped["input"][m["start"]:m["end"]] == m["text"]
+
+    # Gate check: _verify_record_offsets must fail if any offset drifts.
+    broken = json.loads(json.dumps(dumped))
+    broken["output"]["events"][0]["triggers"][0]["start"] += 1
+    with pytest.raises(ValueError, match="trigger span"):
+        _verify_record_offsets(broken)
+
+    # Converter summary reports exact per-dimension and per-mention-type rates.
+    summary = alignment_summary([dumped])
+    assert "entities=3/6 (50.0%) [NAM=1/3 NOM=2/2 PRO=0/1]" in summary
+    assert "relations=1/2 (50.0%)" in summary
+    assert "triggers=1/2 (50.0%)" in summary
+    assert "events_anchored=1/2 (50.0%)" in summary
+    assert "args_span=2/4 (50.0%) args_anchored=1/4 (25.0%)" in summary
+    assert "'إبراهيم' in 'وإبراهيم'" in summary
+    assert "'اعتقلت' in 'واعتقلتها'" in summary
+
+    # measure_surface_alignment must catch the offset-anchored 'اعتقلت' inside 'واعتقلتها'
+    # EVEN THOUGH 'اعتقلت' also appears standalone later in the sentence, and flag OFFSET_MISMATCH.
+    class _StubProc:
+        word_splitter = WhitespaceTokenSplitter()
+
+        def _tokenize_text(self, s):
+            return [t for t, _, _ in self.word_splitter(s, lower=True)]
+
+        def _find_sublist(self, sub, lst):
+            n = len(sub)
+            hits = [(i, i + n - 1) for i in range(len(lst) - n + 1) if lst[i:i + n] == sub]
+            return hits or [(-1, -1)]
+
+    jpath = tmp_path / "scan.jsonl"
+    jpath.write_text(
+        dumps_record(raw) + "\n" + json.dumps(broken, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    total, counts, per_label, per_dim, per_dim_bad, _ = scan(jpath, Aligner(_StubProc()))
+    assert total == 24
+    assert counts["OFFSET_MISMATCH"] == 1
+    assert per_label["SUBTOKEN"]["events:Justice.Arrest-Jail.trigger"] == 2
+    assert per_dim_bad == {"entities": 6, "events": 7}
+
+

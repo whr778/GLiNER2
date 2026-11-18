@@ -79,12 +79,17 @@ import argparse
 import html
 import re
 import sys
+import unicodedata
 import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_DATA_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _DATA_DIR.parents[1]
+for _p in (str(_DATA_DIR), str(_REPO_ROOT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 from _mention_filter import MentionFilter, load_mention_filter  # noqa: E402
 from _split import clean_text, dumps_record  # noqa: E402
 from _stratify import (  # noqa: E402
@@ -93,6 +98,7 @@ from _stratify import (  # noqa: E402
     parse_ratios,
     stratified_split,
 )
+from gliner2.processing.word_splitter import WhitespaceTokenSplitter  # noqa: E402
 
 
 SGM_TOKEN_RE = re.compile(r"<[^>]+>|&(?:#\d+|#x[0-9a-fA-F]+|\w+);|.", re.DOTALL)
@@ -146,6 +152,24 @@ def _extract_sgml_with_map(sgm_text: str) -> Tuple[str, Dict[int, Tuple[int, int
                 stream.append((ch, ldc_idx))
             ldc_idx += 1
 
+    # Group starter + combining marks before running clean_text so canonical
+    # composition/reordering (e.g. Arabic Alef + hamza above -> 'أ') produces
+    # the exact same string and offsets that whole-string dumps_record writes.
+    tokens: List[Tuple[str, Any, Any]] = []
+    for ch, pos in stream:
+        norm = clean_text(ch)
+        if not norm:
+            continue
+        if norm.isspace():
+            tokens.append(("space", ch, pos))
+            continue
+        if unicodedata.combining(norm[0]) > 0 and tokens and tokens[-1][0] == "cluster":
+            tokens[-1][1].append(norm)
+            if pos is not None:
+                tokens[-1][2].append(pos)
+        else:
+            tokens.append(("cluster", [norm], [pos] if pos is not None else []))
+
     out_parts: List[str] = []
     out_len = 0
     ldc_map: Dict[int, Tuple[int, int]] = {}
@@ -153,16 +177,17 @@ def _extract_sgml_with_map(sgm_text: str) -> Tuple[str, Dict[int, Tuple[int, int
     pending_newline_only = True
     last_emitted = ""
 
-    for ch, pos in stream:
-        norm = clean_text(ch)
-        if not norm:
-            continue
-        if norm.isspace():
+    for kind, raw_part, positions in tokens:
+        if kind == "space":
+            ch, pos = raw_part, positions
             if out_len > 0:
                 if ch not in ("\r", "\n"):
                     pending_newline_only = False
                 if pending_space is _NO_SPACE or pos is not None:
                     pending_space = pos
+            continue
+        norm = clean_text("".join(raw_part))
+        if not norm:
             continue
         if pending_space is not _NO_SPACE:
             if not (pending_newline_only and _is_cjk(last_emitted) and _is_cjk(norm[0])):
@@ -174,11 +199,14 @@ def _extract_sgml_with_map(sgm_text: str) -> Tuple[str, Dict[int, Tuple[int, int
             pending_newline_only = True
         out_parts.append(norm)
         last_emitted = norm
-        if pos is not None:
+        for pos in positions:
             ldc_map[pos] = (out_len, out_len + len(norm))
         out_len += len(norm)
 
-    return "".join(out_parts), ldc_map
+    result = "".join(out_parts)
+    if clean_text(result) != result:
+        raise ValueError("SGML stream normalization drifted from whole-string clean_text")
+    return result, ldc_map
 
 
 def _strip_sgml(sgm_text: str) -> str:
@@ -512,7 +540,27 @@ def parse_apf(
     record: Dict[str, Any] = {"input": text, "output": output}
     if clusters_out:
         record["coref_clusters"] = clusters_out
+    _verify_record_offsets(record)
     return record
+
+
+def _verify_record_offsets(record: Dict[str, Any]) -> None:
+    """Verify input is clean_text-idempotent and every offset span matches verbatim."""
+    text = record["input"]
+    if clean_text(text) != text:
+        raise ValueError("record input is not clean_text-idempotent; dumps_record would shift offsets")
+    for ev in record["output"].get("events") or []:
+        for trig in ev.get("triggers") or []:
+            if isinstance(trig, dict) and text[trig["start"]:trig["end"]] != trig["text"]:
+                raise ValueError(f"trigger span {trig!r} covers {text[trig['start']:trig['end']]!r}")
+        for arg in ev.get("arguments") or []:
+            ent = arg.get("entity")
+            if isinstance(ent, dict) and text[ent["start"]:ent["end"]] != ent["text"]:
+                raise ValueError(f"argument span {ent!r} covers {text[ent['start']:ent['end']]!r}")
+    for cluster in record.get("coref_clusters") or []:
+        for m in cluster:
+            if text[m["start"]:m["end"]] != m["text"]:
+                raise ValueError(f"coref span {m!r} covers {text[m['start']:m['end']]!r}")
 
 
 def iter_apf_files(root: Path):
@@ -535,6 +583,115 @@ def _stats(records: List[Dict[str, Any]]) -> str:
         f"docs={len(records)} entity_types_sum={n_ent} "
         f"relations={n_rel} events={n_evt} coref_clusters={n_clu}"
     )
+
+
+def alignment_summary(records: List[Dict[str, Any]], splitter=None) -> str:
+    """Measure exact word-boundary alignment across entities, relations, events, and coref."""
+    if splitter is None:
+        splitter = WhitespaceTokenSplitter()
+    c: Counter = Counter()
+    mtype_tot: Counter = Counter()
+    mtype_ok: Counter = Counter()
+    trig_examples: List[str] = []
+    ent_examples: List[str] = []
+
+    for rec in records:
+        text = rec["input"]
+        out = rec["output"]
+        w_spans = list(splitter(text, lower=True))
+        words = [t for t, _, _ in w_spans]
+        starts = {s for _, s, _ in w_spans}
+        ends = {e for _, _, e in w_spans}
+        mtypes = out.get("mention_types") or {}
+
+        def _sub_ok(surface: str) -> bool:
+            sub = [t for t, _, _ in splitter(surface, lower=True)]
+            n = len(sub)
+            return bool(n) and any(words[i:i + n] == sub for i in range(len(words) - n + 1))
+
+        def _item_ok(item: Any) -> bool:
+            if isinstance(item, dict):
+                return item["start"] in starts and item["end"] in ends
+            return _sub_ok(str(item))
+
+        def _enclosing(item: Any) -> str:
+            if isinstance(item, dict):
+                s0, e0, surf = item["start"], item["end"], item["text"]
+            else:
+                surf = str(item)
+                s0 = text.find(surf)
+                e0 = s0 + len(surf) if s0 >= 0 else -1
+            if s0 < 0:
+                return f"{surf!r} (absent)"
+            enc = [text[ws:we] for _, ws, we in w_spans if ws < e0 and we > s0]
+            return f"{surf!r} in {' '.join(enc)!r}"
+
+        for surfaces in (out.get("entities") or {}).values():
+            for surf in surfaces:
+                c["ent_tot"] += 1
+                mt = mtypes.get(surf, "UNK")
+                mtype_tot[mt] += 1
+                if _sub_ok(surf):
+                    c["ent_ok"] += 1
+                    mtype_ok[mt] += 1
+                elif len(ent_examples) < 3:
+                    ent_examples.append(_enclosing(surf))
+
+        for rel in out.get("relations") or []:
+            body = next(iter(rel.values()))
+            c["rel_tot"] += 1
+            if _sub_ok(body["head"]) and _sub_ok(body["tail"]):
+                c["rel_ok"] += 1
+
+        for ev in out.get("events") or []:
+            c["evt_tot"] += 1
+            trig_aligned = False
+            for trig in ev.get("triggers") or []:
+                c["trig_tot"] += 1
+                if _item_ok(trig):
+                    c["trig_ok"] += 1
+                    trig_aligned = True
+                elif len(trig_examples) < 3:
+                    trig_examples.append(_enclosing(trig))
+            if trig_aligned:
+                c["evt_anchor_ok"] += 1
+            for arg in ev.get("arguments") or []:
+                ent = arg["entity"]
+                c["arg_tot"] += 1
+                if _item_ok(ent):
+                    c["arg_ok"] += 1
+                    if trig_aligned:
+                        c["arg_live"] += 1
+
+        for cl in rec.get("coref_clusters") or []:
+            for m in cl:
+                c["coref_tot"] += 1
+                if m["start"] in starts and m["end"] in ends:
+                    c["coref_ok"] += 1
+
+    def _fmt(ok_k: str, tot_k: str) -> str:
+        tot = c[tot_k]
+        ok = c[ok_k]
+        pct = (100.0 * ok / tot) if tot else 100.0
+        return f"{ok}/{tot} ({pct:.1f}%)"
+
+    mt_parts = " ".join(
+        f"{mt}={mtype_ok[mt]}/{mtype_tot[mt]}" for mt in sorted(mtype_tot)
+    )
+    lines = [
+        f"[align] word_splitter={type(splitter).__name__}: "
+        f"entities={_fmt('ent_ok', 'ent_tot')}" + (f" [{mt_parts}]" if mt_parts else "")
+        + f" | relations={_fmt('rel_ok', 'rel_tot')}"
+        f" | triggers={_fmt('trig_ok', 'trig_tot')}"
+        f" | events_anchored={_fmt('evt_anchor_ok', 'evt_tot')}"
+        f" | args_span={_fmt('arg_ok', 'arg_tot')} args_anchored={_fmt('arg_live', 'arg_tot')}"
+        f" | coref={_fmt('coref_ok', 'coref_tot')}"
+    ]
+    if trig_examples:
+        lines.append("  unaligned_triggers: " + "; ".join(trig_examples))
+    if ent_examples:
+        lines.append("  unaligned_entities: " + "; ".join(ent_examples))
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -631,6 +788,8 @@ def main() -> int:
             f"dropped_relations={stats['filtered_relations']} "
             f"dropped_event_args={stats['filtered_event_args']}"
         )
+    if records:
+        print(alignment_summary(records))
 
     if args.no_stratify:
         args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -49,7 +49,14 @@ import re
 import sys
 from pathlib import Path
 
-CATEGORIES = ("EXTENDABLE", "SUBTOKEN", "RUNON", "TOKENIZATION", "ABSTRACTIVE")
+CATEGORIES = (
+    "OFFSET_MISMATCH",
+    "EXTENDABLE",
+    "SUBTOKEN",
+    "RUNON",
+    "TOKENIZATION",
+    "ABSTRACTIVE",
+)
 
 # A real truncation adds a character or two -- 'ood services' -> 'food services',
 # 'New Delh' -> 'New Delhi'. When expanding to the enclosing word boundary adds far
@@ -59,17 +66,20 @@ CATEGORIES = ("EXTENDABLE", "SUBTOKEN", "RUNON", "TOKENIZATION", "ABSTRACTIVE")
 MAX_EXPANSION_CHARS = 4
 
 
-def iter_surfaces(output):
-    """Yield ``(dimension, label, surface)`` for every gold span a corpus declares.
+def iter_gold_items(output):
+    """Yield ``(dimension, label, surface, span_or_none)`` for every gold span.
 
-    Covers the three carriers that hold literal surfaces: `entities`, event arguments,
-    and `json_structures` field values. Relations are skipped -- they name entities that
-    the entity pass already counts, so including them would double-count the same string.
+    When a trigger or argument carries ``{"text", "start", "end"}``, ``span`` is
+    ``(start, end)`` so alignment checks ``SchemaTransformer._resolve_span``'s
+    exact word-edge rule rather than an unanchored substring search.
     """
     for label, vals in (output.get("entities") or {}).items():
         for v in vals or []:
-            if isinstance(v, str):
-                yield "entities", label, v
+            if isinstance(v, dict) and isinstance(v.get("text"), str) and v["text"]:
+                span = (v["start"], v["end"]) if {"start", "end"} <= v.keys() else None
+                yield "entities", label, v["text"], span
+            elif isinstance(v, str) and v:
+                yield "entities", label, v, None
     for ev in output.get("events") or []:
         if not isinstance(ev, dict):
             continue
@@ -78,17 +88,25 @@ def iter_surfaces(output):
             if not isinstance(etype, str) or not etype:
                 continue
             for trig in ev.get("triggers") or []:
-                s = trig.get("text") if isinstance(trig, dict) else trig
+                if isinstance(trig, dict):
+                    s = trig.get("text")
+                    span = (trig["start"], trig["end"]) if {"start", "end"} <= trig.keys() else None
+                else:
+                    s, span = trig, None
                 if isinstance(s, str) and s:
-                    yield "events", f"{etype}.trigger", s
+                    yield "events", f"{etype}.trigger", s, span
             for arg in ev.get("arguments") or []:
                 if not isinstance(arg, dict):
                     continue
                 role = arg.get("role")
                 ent = arg.get("entity")
-                s = ent.get("text") if isinstance(ent, dict) else ent
+                if isinstance(ent, dict):
+                    s = ent.get("text")
+                    span = (ent["start"], ent["end"]) if {"start", "end"} <= ent.keys() else None
+                else:
+                    s, span = ent, None
                 if isinstance(role, str) and role and isinstance(s, str) and s:
-                    yield "events", f"{etype}.{role}", s
+                    yield "events", f"{etype}.{role}", s, span
             continue
         for etype, body in ev.items():
             if not isinstance(body, dict):
@@ -97,7 +115,7 @@ def iter_surfaces(output):
                 vals = vals if isinstance(vals, list) else [vals]
                 for v in vals:
                     if isinstance(v, str) and v:
-                        yield "events", f"{etype}.{role}", v
+                        yield "events", f"{etype}.{role}", v, None
     for item in output.get("json_structures") or []:
         if not isinstance(item, dict):
             continue
@@ -108,7 +126,13 @@ def iter_surfaces(output):
                 vals = v if isinstance(v, list) else [v]
                 for x in vals:
                     if isinstance(x, str) and x:
-                        yield "json_structures", f"{parent}.{field}", x
+                        yield "json_structures", f"{parent}.{field}", x, None
+
+
+def iter_surfaces(output):
+    """Yield ``(dimension, label, surface)`` for every gold span a corpus declares."""
+    for dim, label, surface, _span in iter_gold_items(output):
+        yield dim, label, surface
 
 
 class Aligner:
@@ -117,6 +141,9 @@ class Aligner:
     def __init__(self, processor):
         self.p = processor
 
+    def word_spans(self, text):
+        return list(self.p.word_splitter(text, lower=True))
+
     def tokens(self, text):
         return [t for t, _, _ in self.p.word_splitter(text, lower=True)]
 
@@ -124,33 +151,44 @@ class Aligner:
         pos = self.p._find_sublist(self.p._tokenize_text(surface), text_tokens)
         return bool(pos) and tuple(pos[0]) != (-1, -1)
 
-    def classify(self, surface, text, text_tokens):
+    def span_aligns(self, surface, span, text, starts, ends):
+        s, e = span
+        return 0 <= s < e <= len(text) and text[s:e] == surface and s in starts and e in ends
+
+    def _classify_range(self, i, j, surface, text, w_spans, text_tokens):
+        overlapping = [(ws, we) for _, ws, we in w_spans if ws < j and we > i]
+        if not overlapping:
+            return "TOKENIZATION", ""
+        a, b = overlapping[0][0], overlapping[-1][1]
+        if a == i and b == j:
+            return "TOKENIZATION", ""
+        expansion = text[a:b]
+        if len(expansion) - len(surface) > MAX_EXPANSION_CHARS:
+            return "RUNON", expansion
+        if self.aligns(expansion, text_tokens):
+            if " " in surface or len(surface) > 12:
+                return "EXTENDABLE", expansion
+            return "SUBTOKEN", expansion
+        return "SUBTOKEN", expansion
+
+    def classify(self, surface, text, text_tokens, span=None, w_spans=None):
         """Return ``(category, expansion)``; expansion is '' when there is none."""
+        if w_spans is None:
+            w_spans = self.word_spans(text)
+        if span is not None:
+            s, e = span
+            actual = text[max(0, s):max(0, e)] if 0 <= s < len(text) else ""
+            if s < 0 or e > len(text) or e <= s or text[s:e] != surface:
+                return "OFFSET_MISMATCH", actual
+            return self._classify_range(s, e, surface, text, w_spans, text_tokens)
+
         tl, vl = text.lower(), surface.lower()
         fallback = None
         for m in re.finditer(re.escape(vl), tl):
-            i, j = m.start(), m.end()
-            left_cut = i > 0 and tl[i - 1].isalnum()
-            right_cut = j < len(tl) and tl[j].isalnum()
-            if not left_cut and not right_cut:
-                return "TOKENIZATION", ""
-            a, b = i, j
-            while a > 0 and tl[a - 1].isalnum():
-                a -= 1
-            while b < len(tl) and tl[b].isalnum():
-                b += 1
-            expansion = text[a:b]
-            if len(expansion) - len(surface) > MAX_EXPANSION_CHARS:
-                fallback = fallback or ("RUNON", expansion)
-                continue
-            if self.aligns(expansion, text_tokens):
-                # A multi-word or long surface is a TRUNCATED span being completed; a
-                # short single token inside a longer word is a different referent.
-                if " " in surface or len(surface) > 12:
-                    return "EXTENDABLE", expansion
-                fallback = fallback or ("SUBTOKEN", expansion)
-            else:
-                fallback = fallback or ("SUBTOKEN", expansion)
+            cat, exp = self._classify_range(m.start(), m.end(), surface, text, w_spans, text_tokens)
+            if cat in ("TOKENIZATION", "EXTENDABLE"):
+                return cat, exp
+            fallback = fallback or (cat, exp)
         return fallback or ("ABSTRACTIVE", "")
 
 
@@ -158,6 +196,7 @@ def scan(path, aligner, max_records=0, examples_per=4):
     counts = collections.Counter()
     per_label = collections.defaultdict(collections.Counter)
     per_dim = collections.Counter()
+    per_dim_bad = collections.Counter()
     examples = collections.defaultdict(list)
     total = 0
     with open(path, encoding="utf-8") as fh:
@@ -171,18 +210,29 @@ def scan(path, aligner, max_records=0, examples_per=4):
             if not text:
                 continue
             output = rec.get("output") or rec.get("schema") or {}
-            text_tokens = aligner.tokens(text)
-            for dim, label, surface in iter_surfaces(output):
+            w_spans = aligner.word_spans(text)
+            text_tokens = [t for t, _, _ in w_spans]
+            starts = {s for _, s, _ in w_spans}
+            ends = {e for _, _, e in w_spans}
+            for dim, label, surface, span in iter_gold_items(output):
                 total += 1
                 per_dim[dim] += 1
-                if aligner.aligns(surface, text_tokens):
+                ok = (
+                    aligner.span_aligns(surface, span, text, starts, ends)
+                    if span is not None
+                    else aligner.aligns(surface, text_tokens)
+                )
+                if ok:
                     continue
-                cat, expansion = aligner.classify(surface, text, text_tokens)
+                per_dim_bad[dim] += 1
+                cat, expansion = aligner.classify(
+                    surface, text, text_tokens, span=span, w_spans=w_spans
+                )
                 counts[cat] += 1
                 per_label[cat][f"{dim}:{label}"] += 1
                 if len(examples[cat]) < examples_per:
                     examples[cat].append((label, surface[:70], expansion[:70]))
-    return total, counts, per_label, per_dim, examples
+    return total, counts, per_label, per_dim, per_dim_bad, examples
 
 
 def resolve_files(args):
@@ -229,7 +279,9 @@ def main() -> int:
     grand_labels = collections.defaultdict(collections.Counter)
     worst = []
     for path in files:
-        total, counts, per_label, per_dim, examples = scan(path, aligner, args.max_records)
+        total, counts, per_label, per_dim, per_dim_bad, examples = scan(
+            path, aligner, args.max_records
+        )
         if not total:
             continue
         bad = sum(counts.values())
@@ -239,7 +291,10 @@ def main() -> int:
         for cat, c in per_label.items():
             grand_labels[cat].update(c)
         worst.append((pct, Path(path).name, total, bad))
-        dims = " ".join(f"{d}={n:,}" for d, n in per_dim.most_common())
+        dims = " ".join(
+            f"{d}={per_dim_bad[d]:,}/{n:,} ({100.0 * per_dim_bad[d] / n:.1f}%)"
+            for d, n in per_dim.most_common()
+        )
         print(f"{Path(path).name:34} surfaces={total:>8,} unaligned={bad:>6,} "
               f"({pct:5.2f}%)  [{dims}]")
         if bad:

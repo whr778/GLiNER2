@@ -82,9 +82,8 @@ _INVISIBLES = str.maketrans({
 
 def clean_text(s: str) -> str:
     """NFKC-normalize, strip stray line separators, and drop invisible formatting."""
-    return (unicodedata.normalize("NFKC", s)
-            .translate(_LINE_SEPARATORS)
-            .translate(_INVISIBLES))
+    stripped = s.translate(_LINE_SEPARATORS).translate(_INVISIBLES)
+    return unicodedata.normalize("NFKC", stripped).translate(_LINE_SEPARATORS).translate(_INVISIBLES)
 
 
 def normalize_group_key(s: str) -> str:
