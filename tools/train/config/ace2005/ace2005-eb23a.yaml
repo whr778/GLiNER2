@@ -2,8 +2,15 @@
 #
 # Full-rank counterpart to ace2005-lora-eb23a.yaml: unfreezes SparseRelationScorer,
 # MentionLink, RecordHead, BoundaryHead (at task_lr 2.0e-4) and mmBERT-base
-# (at encoder_lr 2.0e-5) so the 6 held-out ACE relation types and 8 Time_* event
-# roles adapt at full rank rather than rank-16 LoRA.
+# (at encoder_lr 2.0e-5). Rank-16 LoRA failed to adapt eb23a (0 Arabic base docs)
+# to unseen Arabic events + 6 unseen ACE relation types (Arabic event_argument
+# 0.0000, trigger 0.0040-0.0092 @0.3), whereas full-rank reached 1.000/1.000 on
+# ENG and 0.857/1.000/0.667/0.500 (entity/relation/trigger/arg) on ARA in the
+# 12-step controlled trace.
+#
+# Negative doses are scaled to ACE's 7-entity / 33-event ontology (entities: 4,
+# events: 6) rather than eb23a's 320-event base dose (20), and gold_injection
+# anneals 0.75 -> 0.25 so cold-start Arabic triggers enter RecordHead early.
 #
 # Score the zero-shot eb23a control arm on the identical splits BEFORE comparing:
 #
@@ -37,7 +44,7 @@ training:
   bf16: true
   fp16: false
   max_grad_norm: 1.0
-  gold_injection_start: 0.25
+  gold_injection_start: 0.75
   gold_injection_end: 0.25
   eval_strategy: epoch
   metric_for_best: eval_overall_strict_micro_f1
@@ -54,8 +61,8 @@ training:
   relation_gold_pairs: nearest
   negative_pools: auto
   negative_labels_per_dim:
-    entities: 20
-    events: 20
+    entities: 4
+    events: 6
   negative_label_seed: 42
   negative_gold_full_roles: true
   schema_dropout: false

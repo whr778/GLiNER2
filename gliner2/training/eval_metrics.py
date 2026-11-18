@@ -1909,6 +1909,35 @@ def splice_heads(gold: Dict, pred_by_threshold: Dict[float, Dict], thresholds: D
     return out
 
 
+def _splice_dataset_predictions(
+    model,
+    eval_dataset,
+    thresholds: Dict[str, float],
+    default: float,
+    batch_size: int = 8,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
+) -> Tuple[List[Dict], List[Dict], List[int]]:
+    """Return ``(golds, spliced_preds, kept_dataset_indices)`` across distinct head thresholds."""
+    kept_indices: List[int] = []
+    for i in range(len(eval_dataset)):
+        text, output = eval_dataset[i]
+        if isinstance(text, str) and isinstance(output, dict) and _schema_from_gold(output):
+            kept_indices.append(i)
+    values = sorted(set(thresholds.values()) | {default})
+    runs = {t: _predict(model, eval_dataset, batch_size, t, None, 0, chunk_size, chunk_overlap,
+                        global_decode, global_decode_config, None) for t in values}
+    golds = runs[default][0]
+    if not golds:
+        return [], [], []
+    assert len(kept_indices) == len(golds), "kept dataset indices drifted from _predict filter"
+    assert all(len(preds) == len(golds) for _, preds in runs.values()), "per-head decodes disagree on the record set"
+    merged = [splice_heads(gold, {t: runs[t][1][i] for t in values}, thresholds, default) for i, gold in enumerate(golds)]
+    return golds, merged, kept_indices
+
+
 def compute_metrics_per_head(
     model,
     eval_dataset,
@@ -1929,14 +1958,13 @@ def compute_metrics_per_head(
     scores the spliced predictions ONCE, so the overall keys pool the per-head operating points.
     The thresholds are stamped in as ``per_head_thresholds``.
     """
-    values = sorted(set(thresholds.values()) | {default})
-    runs = {t: _predict(model, eval_dataset, batch_size, t, None, 0, chunk_size, chunk_overlap,
-                        global_decode, global_decode_config, None) for t in values}
-    golds = runs[default][0]
+    golds, merged, _ = _splice_dataset_predictions(
+        model, eval_dataset, thresholds, default,
+        batch_size=batch_size, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+        global_decode=global_decode, global_decode_config=global_decode_config,
+    )
     if not golds:
         return {}
-    assert all(len(preds) == len(golds) for _, preds in runs.values()), "per-head decodes disagree on the record set"
-    merged = [splice_heads(gold, {t: runs[t][1][i] for t in values}, thresholds, default) for i, gold in enumerate(golds)]
     metrics = score_predictions(golds, merged, stopwords=stopwords, report=report)
     metrics["per_head_thresholds"] = dict(thresholds)
     return metrics

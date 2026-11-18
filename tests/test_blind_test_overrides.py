@@ -144,3 +144,56 @@ def test_score_model_schema_includes_empty_gold_records_and_auto_gates_open_voca
     # 1 TP on doc 0 + 1 FP on empty doc 1 -> event_type precision = 0.5, recall = 1.0
     assert ms["eval_event_type_strict_micro_precision"] == 0.5
     assert ms["eval_event_type_strict_micro_recall"] == 1.0
+
+
+def test_per_head_pass_slices_by_language_without_extra_decodes_and_ace_full_config(monkeypatch):
+    import yaml
+    from gliner2.configuration import unreachable_config_keys
+
+    cfg = yaml.safe_load(
+        (Path(__file__).resolve().parent.parent / "tools/train/config/ace2005/ace2005-eb23a.yaml").read_text(encoding="utf-8")
+    )
+    assert unreachable_config_keys(cfg) == []
+    assert cfg["training"]["gold_injection_start"] == 0.75
+    assert cfg["training"]["gold_injection_end"] == 0.25
+    assert cfg["training"]["negative_labels_per_dim"] == {"entities": 4, "events": 6}
+
+    decode_thresholds = []
+
+    class FakeModel:
+        def batch_extract(self, texts, schemas, threshold=0.5, **kw):
+            decode_thresholds.append(threshold)
+            preds = []
+            for txt in texts:
+                if "ara" in txt:
+                    # Arabic event only fires at threshold <= 0.3, entity at <= 0.9
+                    ev = {"Die": [{"triggers": ["قتل"], "arguments": [{"role": "Place", "entity": "بغداد"}]}]} if threshold <= 0.3 else {"Die": []}
+                    preds.append({"entities": {"Person": ["مسلحون"]}, "event_extraction": ev})
+                else:
+                    ev = {"Attack": [{"triggers": ["killed"], "arguments": [{"role": "Place", "entity": "Baghdad"}]}]} if threshold <= 0.3 else {"Attack": []}
+                    preds.append({"entities": {"Person": ["Gunmen"]}, "event_extraction": ev})
+            return preds
+
+    monkeypatch.setattr(T.AutoExtractor, "from_pretrained", lambda *a, **k: FakeModel())
+
+    recs = []
+    for i in range(30):
+        recs.append({"_lang": "eng", "input": f"eng {i}", "output": {"entities": {"Person": ["Gunmen"]}, "events": [{"event_type": "Attack", "triggers": ["killed"], "arguments": [{"role": "Place", "entity": "Baghdad"}]}]}})
+    recs.append({"_lang": "eng", "input": "empty schema doc", "output": {}})
+    for i in range(30):
+        recs.append({"_lang": "ara", "input": f"ara {i}", "output": {"entities": {"Person": ["مسلحون"]}, "events": [{"event_type": "Die", "triggers": ["قتل"], "arguments": [{"role": "Place", "entity": "بغداد"}]}]}})
+    recs.append({"_lang": "kor", "input": "kor tiny", "output": {"entities": {"Person": ["Gunmen"]}}})
+
+    out = T._per_head_pass(
+        Path("ckpt"),
+        recs,
+        {"threshold": 0.9, "batch_size": 16, "stopwords": frozenset(), "by_language": True},
+        {"entity": 0.9, "event": 0.3},
+        {"global_decode": False},
+    )
+    # Decoded once per distinct threshold (0.3 and 0.9), NOT repeated per language.
+    assert decode_thresholds == [0.3, 0.9]
+    assert out["by_language"]["ara"]["eval_event_argument_strict_micro_f1"] == 1.0
+    assert out["by_language"]["eng"]["eval_event_argument_strict_micro_f1"] == 1.0
+    assert out["by_language_folded"] == {"kor": 1}
+

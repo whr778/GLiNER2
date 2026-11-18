@@ -928,8 +928,11 @@ def _detect_lang(text: str) -> str:
 
 def _annotate_languages(records: List[Dict]) -> List[Dict]:
     """Stamp each record dict with '_lang' (ISO 639-2) in-place; returns the list."""
+    need = [rec for rec in records if "_lang" not in rec]
+    if not need:
+        return records
     print("[lang] Detecting language for each sample (this may take a moment)...")
-    for rec in records:
+    for rec in need:
         text = rec.get("input") or rec.get("text") or ""
         rec["_lang"] = _detect_lang(text.strip()) if text.strip() else "und"
     return records
@@ -1649,24 +1652,47 @@ def _read_per_head_picks(best: Path) -> Dict[str, float]:
 
 
 def _per_head_pass(best: Path, records, ev: Dict, picks: Dict[str, float], gd_kwargs: Dict) -> Dict:
-    """The blind test once more at ONE threshold per decode head -- combined over all languages only,
-    not per language -- to sit BESIDE the global-threshold keys under ``test_metrics["per_head"]``.
-    Both operating points were picked on val; the test is still scored, not swept."""
+    """Score the blind test at ONE val-picked threshold per decode head (combined, plus per-language
+    slicing when ``ev["by_language"]`` is True) without extra decodes, stored under ``test_metrics["per_head"]``."""
+    from gliner2.training.eval_metrics import _splice_dataset_predictions, score_predictions
     from gliner2.training.metrics import _print_micro_report
     from gliner2.training.trainer import ExtractorDataset
     if set(picks.values()) == {ev["threshold"]}:
-        # every head sits at the global threshold: the pass would repeat the combined blind test byte for byte
         print(f"\n[blind test] per-head thresholds {picks} all equal the global {ev['threshold']}; not decoding again")
         return {"thresholds": dict(picks), "identical_to_global": True}
     if records and isinstance(records[0], str):
         records = _read_records(records)
     gd = {k: gd_kwargs[k] for k in ("chunk_size", "chunk_overlap", "global_decode", "global_decode_config") if k in gd_kwargs}
-    print(f"\n[blind test] scoring again at per-head thresholds {picks} (default {ev['threshold']}; combined, all languages)")
-    metrics = compute_metrics_per_head(
-        AutoExtractor.from_pretrained(str(best)), ExtractorDataset(records, shuffle=False, validate=False),
-        picks, ev["threshold"], batch_size=ev["batch_size"], stopwords=ev["stopwords"], report=False, **gd) or {}
+    scope = "per-language + combined" if ev.get("by_language") else "combined, all languages"
+    print(f"\n[blind test] scoring again at per-head thresholds {picks} (default {ev['threshold']}; {scope})")
+    golds, merged, kept_idx = _splice_dataset_predictions(
+        AutoExtractor.from_pretrained(str(best)),
+        ExtractorDataset(records, shuffle=False, validate=False),
+        picks, ev["threshold"], batch_size=ev["batch_size"], **gd,
+    )
+    if not golds:
+        return {"thresholds": dict(picks), "metrics": {}}
+    metrics = score_predictions(golds, merged, stopwords=ev["stopwords"], report=False)
+    metrics["per_head_thresholds"] = dict(picks)
+    out: Dict[str, Any] = {"thresholds": dict(picks), "metrics": metrics}
+    if ev.get("by_language"):
+        by_lang, tiny = language_groups(records)
+        per_lang: Dict[str, Dict] = {}
+        for lang in sorted(by_lang):
+            pairs = [
+                (g, p) for g, p, idx in zip(golds, merged, kept_idx)
+                if records[idx].get("_lang") == lang
+            ]
+            if not pairs:
+                continue
+            lg_golds, lg_preds = zip(*pairs)
+            lg_m = score_predictions(list(lg_golds), list(lg_preds), stopwords=ev["stopwords"], report=False)
+            lg_m["per_head_thresholds"] = dict(picks)
+            per_lang[lang] = lg_m
+            _print_micro_report(lg_m, label=f"per-head:{lang}")
+        out.update(by_language_block(per_lang, tiny))
     _print_micro_report(metrics, label="per-head")
-    return {"thresholds": dict(picks), "metrics": metrics}
+    return out
 
 
 def _run_blind_test(best, split_data, batch_size, threshold, by_language, gd_kwargs) -> Dict:
