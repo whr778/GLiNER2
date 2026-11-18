@@ -422,3 +422,79 @@ def test_merge_event_mentions_clusters_coreferent_triggers_and_args(tmp_path):
         ("Target", "plant"),
     ]
 
+
+def test_multilingual_chinese_cjk_wrap_and_arabic_nfkc_offsets(tmp_path):
+    import html
+    import json
+    import re
+    from _split import dumps_record
+
+    def span(buf, sub):
+        i = buf.index(sub)
+        return i, i + len(sub) - 1
+
+    # Chinese: fullwidth '２００５年' + hard SGML newline wrap inside '中国\n电信'
+    zho_sgm = "<DOC>\n<BODY>\n<TEXT>\n２００５年张伟在北京会见了中国\n电信代表。随后他访问了上海。\n</TEXT>\n</BODY>\n</DOC>\n"
+    tz = html.unescape(re.sub(r"<[^>]+>", "", zho_sgm))
+    s_zw, e_zw = span(tz, "张伟")
+    s_ta, e_ta = span(tz, "他")
+    s_ct, e_ct = span(tz, "中国\n电信")
+    s_mt, e_mt = span(tz, "会见")
+    zho_apf = f"""<?xml version="1.0"?>
+<source_file><document DOCID="ZH">
+  <entity ID="E1" TYPE="PER" SUBTYPE="Individual">
+    <entity_mention ID="E1-1" TYPE="NAM"><extent><charseq START="{s_zw}" END="{e_zw}">张伟</charseq></extent><head><charseq START="{s_zw}" END="{e_zw}">张伟</charseq></head></entity_mention>
+    <entity_mention ID="E1-2" TYPE="PRO"><extent><charseq START="{s_ta}" END="{e_ta}">他</charseq></extent><head><charseq START="{s_ta}" END="{e_ta}">他</charseq></head></entity_mention>
+  </entity>
+  <entity ID="E2" TYPE="ORG" SUBTYPE="Commercial">
+    <entity_mention ID="E2-1" TYPE="NAM"><extent><charseq START="{s_ct}" END="{e_ct}">中国
+电信</charseq></extent><head><charseq START="{s_ct}" END="{e_ct}">中国
+电信</charseq></head></entity_mention>
+  </entity>
+  <event ID="EV1" TYPE="Contact" SUBTYPE="Meet">
+    <event_mention ID="EV1-1">
+      <anchor><charseq START="{s_mt}" END="{e_mt}">会见</charseq></anchor>
+      <event_mention_argument REFID="E2-1" ROLE="Entity"><extent><charseq START="{s_ct}" END="{e_ct}">中国
+电信</charseq></extent></event_mention_argument>
+    </event_mention>
+  </event>
+</document></source_file>"""
+
+    zh_dir = tmp_path / "zho"
+    zh_dir.mkdir()
+    (zh_dir / "doc.sgm").write_text(zho_sgm, encoding="utf-8")
+    zh_apf_p = zh_dir / "doc.apf.xml"
+    zh_apf_p.write_text(zho_apf, encoding="utf-8")
+    rec_zh = json.loads(dumps_record(parse_apf(zh_apf_p, offsets=True)))
+    assert "中国电信" in rec_zh["input"] and "中国 电信" not in rec_zh["input"]
+    assert rec_zh["output"]["entities"]["ORG"] == ["中国电信"]
+    for cl in rec_zh["coref_clusters"]:
+        for m in cl:
+            assert rec_zh["input"][m["start"]:m["end"]] == m["text"]
+    arg_ent = rec_zh["output"]["events"][0]["arguments"][0]["entity"]
+    assert arg_ent["text"] == "中国电信"
+    assert rec_zh["input"][arg_ent["start"]:arg_ent["end"]] == "中国电信"
+
+    # Arabic: invisible RLM (\u200f) stripped + LAM-ALEF ligature (\ufefb -> 2 chars)
+    ara_sgm = "<DOC>\n<BODY>\n<TEXT>\nالتقى أحمد\u200f بمسؤولي \ufefbجئ في القاهرة.\n</TEXT>\n</BODY>\n</DOC>\n"
+    ta = html.unescape(re.sub(r"<[^>]+>", "", ara_sgm))
+    s_ah, e_ah = span(ta, "أحمد")
+    s_lj, e_lj = span(ta, "\ufefbجئ")
+    s_ca, e_ca = span(ta, "القاهرة")
+    ara_apf = f"""<?xml version="1.0"?>
+<source_file><document DOCID="AR">
+  <entity ID="E1" TYPE="PER" SUBTYPE="Individual"><entity_mention ID="E1-1" TYPE="NAM"><extent><charseq START="{s_ah}" END="{e_ah}">أحمد</charseq></extent><head><charseq START="{s_ah}" END="{e_ah}">أحمد</charseq></head></entity_mention></entity>
+  <entity ID="E2" TYPE="PER" SUBTYPE="Individual"><entity_mention ID="E2-1" TYPE="NOM"><extent><charseq START="{s_lj}" END="{e_lj}">\ufefbجئ</charseq></extent><head><charseq START="{s_lj}" END="{e_lj}">\ufefbجئ</charseq></head></entity_mention></entity>
+  <entity ID="E3" TYPE="GPE" SUBTYPE="Population-Center"><entity_mention ID="E3-1" TYPE="NAM"><extent><charseq START="{s_ca}" END="{e_ca}">القاهرة</charseq></extent><head><charseq START="{s_ca}" END="{e_ca}">القاهرة</charseq></head></entity_mention></entity>
+</document></source_file>"""
+
+    ar_dir = tmp_path / "ara"
+    ar_dir.mkdir()
+    (ar_dir / "doc.sgm").write_text(ara_sgm, encoding="utf-8")
+    ar_apf_p = ar_dir / "doc.apf.xml"
+    ar_apf_p.write_text(ara_apf, encoding="utf-8")
+    rec_ar = json.loads(dumps_record(parse_apf(ar_apf_p, offsets=True)))
+    for cl in rec_ar["coref_clusters"]:
+        for m in cl:
+            assert rec_ar["input"][m["start"]:m["end"]] == m["text"]
+

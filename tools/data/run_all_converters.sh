@@ -235,14 +235,18 @@ run_optional rams_dev   "data/RAMS_1.0c/data/dev.jsonlines"      uv run python t
 run_optional rams_test  "data/RAMS_1.0c/data/test.jsonlines"     uv run python tools/data/convert_rams.py \
                             --input data/RAMS_1.0c/data/test.jsonlines  --out data/rams.test.jsonl
 
-# ACE 2005 — LDC2006T06 (manual licensed copy; skipped when absent).
-# Override source path at work via: ACE2005_DIR=/path/to/ace_2005_td_v7/data/English tools/data/run_all_converters.sh
-ACE2005_DIR="${ACE2005_DIR:-data/ace_2005_td_v7/data/English}"
-run_optional ace2005 "$ACE2005_DIR" \
-    uv run python tools/data/convert_ace2005.py --offsets \
-        --input "$ACE2005_DIR" --out data/ace2005.jsonl
-run_optional ace2005_dedupe data/ace2005.train.jsonl \
-    uv run python tools/data/dedupe_splits.py data/ace2005
+# ACE 2005 — LDC2006T06 (English, Arabic, Chinese; manual licensed copy, skipped when absent).
+# Override root at work via: ACE2005_ROOT=/path/to/ace_2005_td_v7/data tools/data/run_all_converters.sh
+ACE2005_ROOT="${ACE2005_ROOT:-data/ace_2005_td_v7/data}"
+for ace_pair in English:eng Arabic:ara Chinese:zho; do
+  ace_dir="${ace_pair%%:*}"
+  ace_code="${ace_pair##*:}"
+  run_optional "ace2005_${ace_code}" "$ACE2005_ROOT/$ace_dir" \
+      uv run python tools/data/convert_ace2005.py --offsets \
+          --input "$ACE2005_ROOT/$ace_dir" --out "data/ace2005_${ace_code}.jsonl"
+  run_optional "ace2005_${ace_code}_dedupe" "data/ace2005_${ace_code}.train.jsonl" \
+      uv run python tools/data/dedupe_splits.py "data/ace2005_${ace_code}"
+done
 
 # Labels, not text. The Chinese converters emit the SOURCE's labels: convert_duee.py
 # passes DuEE's own `label` through, and convert_docfee.py emits Chinese entity keys and a

@@ -643,8 +643,29 @@ datasets:
     tasks: NER + relations + events + coreference
     license: LDC (LDC2006T06)
     source_url: https://catalog.ldc.upenn.edu/LDC2006T06
+    language: [en, ar, zh]
+    description: "LDC-licensed NER (7 types), relations (6 types), events (33 subtypes), and gold entity coreference clusters; not redistributable — convert from your own licensed copy."
+  ace2005_eng:
+    name: ACE 2005 (English)
+    tasks: NER + relations + events + coreference
+    license: LDC (LDC2006T06)
+    source_url: https://catalog.ldc.upenn.edu/LDC2006T06
     language: [en]
-    description: "LDC-licensed English NER (7 types), relations (6 types), events (33 subtypes), and gold entity coreference clusters; not redistributable — convert from your own licensed copy."
+    description: "LDC-licensed English NER (7 types), relations (6 types), events (33 subtypes), and gold entity coreference clusters."
+  ace2005_ara:
+    name: ACE 2005 (Arabic)
+    tasks: NER + relations + events + coreference
+    license: LDC (LDC2006T06)
+    source_url: https://catalog.ldc.upenn.edu/LDC2006T06
+    language: [ar]
+    description: "LDC-licensed Arabic NER (7 types), relations (6 types), events (33 subtypes), and gold entity coreference clusters."
+  ace2005_zho:
+    name: ACE 2005 (Chinese)
+    tasks: NER + relations + events + coreference
+    license: LDC (LDC2006T06)
+    source_url: https://catalog.ldc.upenn.edu/LDC2006T06
+    language: [zh]
+    description: "LDC-licensed Chinese NER (7 types), relations (6 types), events (33 subtypes), and gold entity coreference clusters."
   ace2005_off:
     name: ACE 2005 (offset-anchored)
     tasks: NER + relations + events + coreference

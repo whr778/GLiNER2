@@ -1,8 +1,8 @@
-"""Convert ACE 2005 English annotations to GLiNER2 JSONL.
+"""Convert ACE 2005 (English, Arabic, Chinese) annotations to GLiNER2 JSONL.
 
 Co-trains entities, relations, events, and entity coreference from a single ACE
-document. ACE 2005 (LDC2006T06) is the canonical joint information-extraction
-benchmark: 7 entity types (45 subtypes), 6 relation types (18 subtypes),
+document. ACE 2005 (LDC2006T06) ships English, Arabic, and Chinese under the
+same ontology: 7 entity types (45 subtypes), 6 relation types (18 subtypes),
 33 ``Type.Subtype`` event subtypes, and document-level entity & event coreference
 clusters.
 
@@ -55,15 +55,21 @@ arguments, and ``coref_clusters``.
 
 Usage::
 
-    # Standard ACE05 + coref + offset-anchored event spans (recommended for eb23a):
+    # Convert all three ACE 2005 languages (English, Arabic, Chinese):
     uv run python tools/data/convert_ace2005.py \\
         --input /path/to/ace_2005_td_v7/data/English \\
-        --out data/ace2005.jsonl --offsets
+        --out data/ace2005_eng.jsonl --offsets
+    uv run python tools/data/convert_ace2005.py \\
+        --input /path/to/ace_2005_td_v7/data/Arabic \\
+        --out data/ace2005_ara.jsonl --offsets
+    uv run python tools/data/convert_ace2005.py \\
+        --input /path/to/ace_2005_td_v7/data/Chinese \\
+        --out data/ace2005_zho.jsonl --offsets
 
     # Drop pronominal mentions (cascading to relations, event args, and clusters):
     uv run python tools/data/convert_ace2005.py \\
         --input /path/to/ace_2005_td_v7/data/English \\
-        --out data/ace2005.jsonl --offsets \\
+        --out data/ace2005_eng.jsonl --offsets \\
         --filter-config tools/data/config/mention_filter_nam_nom.yaml
 """
 
@@ -92,8 +98,19 @@ from _stratify import (  # noqa: E402
 SGM_TOKEN_RE = re.compile(r"<[^>]+>|&(?:#\d+|#x[0-9a-fA-F]+|\w+);|.", re.DOTALL)
 BODY_RE = re.compile(r"<BODY\b[^>]*>(.*?)</BODY>", re.DOTALL | re.IGNORECASE)
 TEXT_RE = re.compile(r"<TEXT\b[^>]*>(.*?)</TEXT>", re.DOTALL | re.IGNORECASE)
+CJK_WRAP_RE = re.compile(r"(?<=[\u3400-\u9fff\uf900-\ufaff])[\r\n]+(?=[\u3400-\u9fff\uf900-\ufaff])")
 WS_RE = re.compile(r"\s+")
 _NO_SPACE = object()
+
+
+def _is_cjk(ch: str) -> bool:
+    return bool(ch) and ("\u3400" <= ch[-1] <= "\u9fff" or "\uf900" <= ch[-1] <= "\ufaff")
+
+
+def _normalize_surface(raw: str) -> str:
+    cleaned = clean_text(raw)
+    cleaned = CJK_WRAP_RE.sub("", cleaned)
+    return WS_RE.sub(" ", cleaned).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +150,8 @@ def _extract_sgml_with_map(sgm_text: str) -> Tuple[str, Dict[int, Tuple[int, int
     out_len = 0
     ldc_map: Dict[int, Tuple[int, int]] = {}
     pending_space: Any = _NO_SPACE
+    pending_newline_only = True
+    last_emitted = ""
 
     for ch, pos in stream:
         norm = clean_text(ch)
@@ -140,16 +159,21 @@ def _extract_sgml_with_map(sgm_text: str) -> Tuple[str, Dict[int, Tuple[int, int
             continue
         if norm.isspace():
             if out_len > 0:
+                if ch not in ("\r", "\n"):
+                    pending_newline_only = False
                 if pending_space is _NO_SPACE or pos is not None:
                     pending_space = pos
             continue
         if pending_space is not _NO_SPACE:
-            out_parts.append(" ")
-            if isinstance(pending_space, int):
-                ldc_map[pending_space] = (out_len, out_len + 1)
-            out_len += 1
+            if not (pending_newline_only and _is_cjk(last_emitted) and _is_cjk(norm[0])):
+                out_parts.append(" ")
+                if isinstance(pending_space, int):
+                    ldc_map[pending_space] = (out_len, out_len + 1)
+                out_len += 1
             pending_space = _NO_SPACE
+            pending_newline_only = True
         out_parts.append(norm)
+        last_emitted = norm
         if pos is not None:
             ldc_map[pos] = (out_len, out_len + len(norm))
         out_len += len(norm)
@@ -176,7 +200,7 @@ def _resolve_charseq(
     cs = sub.find("charseq")
     if cs is None or cs.text is None:
         return None, None
-    surface = clean_text(WS_RE.sub(" ", cs.text).strip())
+    surface = _normalize_surface(cs.text)
     if not surface:
         return None, None
 

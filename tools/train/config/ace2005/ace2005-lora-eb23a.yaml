@@ -1,12 +1,15 @@
-# ACE 2005 (LDC2006T06) joint NER + relations + events + coref LoRA on frozen eb23a.
+# ACE 2005 (LDC2006T06, EN + AR + ZH) joint NER + relations + events + coref LoRA on frozen eb23a.
 #
 # ACE 2005 was held out of eb23a completely (0 training/val/test overlap).
-# Convert at work from your licensed LDC copy before launching:
+# Convert all three languages at work from your licensed LDC copy before launching
+# (or set ACE2005_ROOT=/path/to/ace_2005_td_v7/data in tools/data/run_all_converters.sh):
 #
-#   uv run python tools/data/convert_ace2005.py \
-#     --input /path/to/ace_2005_td_v7/data/English \
-#     --out data/ace2005.jsonl --offsets
-#   uv run python tools/data/dedupe_splits.py data/ace2005
+#   for pair in English:eng Arabic:ara Chinese:zho; do
+#     uv run python tools/data/convert_ace2005.py \
+#       --input "/path/to/ace_2005_td_v7/data/${pair%%:*}" \
+#       --out "data/ace2005_${pair##*:}.jsonl" --offsets
+#     uv run python tools/data/dedupe_splits.py "data/ace2005_${pair##*:}"
+#   done
 #   uv run python tools/data/check_leakage.py --config tools/train/config/ace2005/ace2005-lora-eb23a.yaml
 #
 # Score the zero-shot eb23a control arm on the identical splits BEFORE comparing:
@@ -100,6 +103,10 @@ eval:
 labels_file: labels/unified-full-v4.yaml
 
 data:
+  # Comment out ace2005_ara / ace2005_zho for an English-only run; eval_by_language
+  # reports per-language (en / ar / zh) breakdowns automatically when all three are present.
   corpora:
-    - data/ace2005
+    - data/ace2005_eng
+    - data/ace2005_ara
+    - data/ace2005_zho
   event_files: {}
