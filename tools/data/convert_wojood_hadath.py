@@ -19,6 +19,8 @@ and test. Held-out copy wins, test over val over train, matching
 
 License: CC-BY-4.0, plus the authors' limit to non-malicious, peaceful, and
 non-military use. Cite Aljabari, Duaibes, Jarrar, and Khalilia (ArabicNLP 2024).
+The converted splits are mirrored privately at ``whr778/wojood_hadath`` and
+restored by ``tools/data/restore_from_hf.py``.
 
 Usage::
 

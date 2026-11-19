@@ -165,6 +165,15 @@ run_step docfee           uv run python tools/data/convert_docfee.py --out data/
 run_step duee             uv run python tools/data/convert_duee.py --out data/duee.jsonl
 run_step mendeley_ed      uv run python tools/data/convert_mendeley_ed.py --out data/mendeley_ed.jsonl
 
+# Wojood Hadath — Arabic named-event arguments. The Dropbox release is a manual
+# download (the public form embeds the link). Point WOJOOD_HADATH_ROOT at the
+# unpacked WojoodHadath directory. The converted splits are mirrored at
+# whr778/wojood_hadath and come back through restore_from_hf.py.
+WOJOOD_HADATH_ROOT="${WOJOOD_HADATH_ROOT:-data/WojoodHadath}"
+run_optional wojood_hadath "$WOJOOD_HADATH_ROOT/train/train.json" \
+    uv run python tools/data/convert_wojood_hadath.py \
+        --input "$WOJOOD_HADATH_ROOT" --out data/wojood_hadath.jsonl
+
 # CMNEE — Chinese military event extraction. Manual Google Drive download.
 run_optional cmnee_train data/cmnee/CMNEE/train.json \
     uv run python tools/data/convert_cmnee.py \
