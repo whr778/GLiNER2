@@ -18,6 +18,10 @@
 # description (one-sentence qualitative summary for the model card).
 
 base_models:
+  whr778/gliner2-eb24a:
+    name: gliner2-eb24a
+    license: derived from jhu-clsp/mmBERT-base
+    source_url: https://huggingface.co/whr778/gliner2-eb24a
   whr778/gliner2-eb23a:
     name: gliner2-eb23a
     license: derived from jhu-clsp/mmBERT-base
