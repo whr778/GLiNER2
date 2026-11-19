@@ -1932,6 +1932,50 @@ def splice_heads(gold: Dict, pred_by_threshold: Dict[float, Dict], thresholds: D
     return out
 
 
+def sweep_event_argument_threshold(
+    model,
+    eval_dataset,
+    event_threshold: float,
+    base_per_head: Dict[str, float],
+    thresholds: Iterable[float] = DEFAULT_THRESHOLD_GRID,
+    *,
+    batch_size: int = 8,
+    stopwords: frozenset = _DEFAULT_STOPWORDS,
+    chunk_size: int = None,
+    chunk_overlap: int = 128,
+    global_decode: bool = False,
+    global_decode_config=None,
+    menus: Optional[List[Dict]] = None,
+    coupled_metrics: Optional[Dict[str, Any]] = None,
+) -> Tuple[float, Dict[float, Dict[str, Any]]]:
+    """Sweep ``per_head_thresholds['event_argument']`` holding event triggers at ``event_threshold``.
+
+    Moves off ``event_threshold`` only when another grid point scores strictly higher
+    ``eval_event_argument_strict_micro_f1``; ties keep ``event_threshold``.
+    """
+    grid = list(thresholds)
+    if event_threshold not in grid:
+        grid.append(event_threshold)
+    results: Dict[float, Dict[str, Any]] = {}
+    for t in grid:
+        if t == event_threshold and coupled_metrics is not None:
+            results[t] = coupled_metrics
+            continue
+        ph = dict(base_per_head)
+        ph["event"] = float(event_threshold)
+        ph["event_argument"] = float(t)
+        results[t] = compute_metrics(
+            model, eval_dataset, batch_size=batch_size, threshold=event_threshold,
+            stopwords=stopwords, chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            global_decode=global_decode, global_decode_config=global_decode_config,
+            menus=menus, per_head_thresholds=ph, report=False,
+        ) or {}
+    scores = {t: _selection_score(m, categories=("event_argument",)) for t, m in results.items()}
+    best = max(scores, key=scores.get)
+    chosen = best if scores[best] > scores[event_threshold] else event_threshold
+    return chosen, results
+
+
 def _splice_dataset_predictions(
     model,
     eval_dataset,
@@ -1949,6 +1993,18 @@ def _splice_dataset_predictions(
         text, output = _eval_item(eval_dataset, i)
         if isinstance(text, str) and isinstance(output, dict) and _schema_from_gold(output):
             kept_indices.append(i)
+    if "event_argument" in thresholds and thresholds["event_argument"] != thresholds.get("event", default):
+        # Decoupled trigger/argument thresholds cannot be spliced from top-level event_extraction
+        # dicts; decode once natively with per_head_thresholds applied inside the engine.
+        golds, merged = _predict(
+            model, eval_dataset, batch_size, default, None, 0,
+            chunk_size, chunk_overlap, global_decode, global_decode_config, None,
+            per_head_thresholds=thresholds,
+        )
+        if not golds:
+            return [], [], []
+        assert len(kept_indices) == len(golds), "kept dataset indices drifted from _predict filter"
+        return golds, merged, kept_indices
     values = sorted(set(thresholds.values()) | {default})
     runs = {t: _predict(model, eval_dataset, batch_size, t, None, 0, chunk_size, chunk_overlap,
                         global_decode, global_decode_config, None) for t in values}

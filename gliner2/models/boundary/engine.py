@@ -1164,8 +1164,11 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             metadata = metadata_list[sample_index]
             per_head = metadata.get("_per_head_thresholds") or {}
             for query_id, spec in enumerate(specs):
-                head_key = BoundaryExtractor._TASK_TO_HEAD.get(spec["task_type"])
-                base_thr = per_head.get(head_key, default)
+                if spec["task_type"] == "events" and spec.get("field_index", 0) > 0:
+                    base_thr = per_head.get("event_argument", per_head.get("event", default))
+                else:
+                    head_key = BoundaryExtractor._TASK_TO_HEAD.get(spec["task_type"])
+                    base_thr = per_head.get(head_key, default)
                 configured = None
                 if spec["task_type"] == "entities":
                     configured = metadata.get("entity_metadata", {}).get(
@@ -2274,7 +2277,12 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             )
             spec_thr = per_head.get(spec_head, threshold)
             record_threshold = resolve_record_threshold(settings, spec_thr)
-            field_threshold = resolve_record_field_threshold(settings, record_threshold)
+            field_base = (
+                float(per_head["event_argument"])
+                if spec_head == "event" and "event_argument" in per_head
+                else record_threshold
+            )
+            field_threshold = resolve_record_field_threshold(settings, field_base)
             group = self.record_decoder.forward_group(
                 spec, query_states_i, candidates, sample_index
             )
@@ -2435,7 +2443,12 @@ class BoundaryExtractor(ExtractorRuntimeMixin, BoundaryExtractorModel):
             query_states_i = core["query_states"][sample_index]
             spec_thr = per_head.get("event", threshold)
             rec_thr = resolve_record_threshold(settings, spec_thr)
-            fld_thr = resolve_record_field_threshold(settings, rec_thr)
+            fld_base = (
+                float(per_head["event_argument"])
+                if "event_argument" in per_head
+                else rec_thr
+            )
+            fld_thr = resolve_record_field_threshold(settings, fld_base)
             for _, spec in record_specs[sample_index].items():
                 if getattr(spec, "task_type", None) != "events":
                     continue

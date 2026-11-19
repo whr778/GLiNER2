@@ -2429,16 +2429,46 @@ def main(config_path: str) -> None:
               f"this only recalibrates the decision cutoff, it does not retrain the model.")
         per_head = pick_per_head_thresholds(sweep_all, eval_thr)
         head_report = per_head_report(sweep_all, per_head, eval_thr)
+        arg_sweep_all = None
+        if ev["threshold_per_head"] and "event" in per_head and any(
+            m.get("eval_event_argument_strict_support") for m in sweep_all.values()
+        ):
+            from gliner2.training.eval_metrics import sweep_event_argument_threshold
+            ev_t = per_head["event"]
+            reuse = sweep_all.get(ev_t) if per_head.get("entity", ev_t) == ev_t else None
+            arg_thr, arg_sweep_all = sweep_event_argument_threshold(
+                sweep_model, sweep_ds, ev_t, per_head, thresholds=thresholds,
+                batch_size=eval_bs, stopwords=eval_stopwords,
+                chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+                global_decode=global_decode, global_decode_config=global_decode_config,
+                menus=sweep_menus, coupled_metrics=reuse,
+            )
+            arg_scores = {
+                t: _selection_score(m, categories=("event_argument",))
+                for t, m in arg_sweep_all.items()
+            }
+            head_report["event_argument"] = {
+                "threshold": arg_thr,
+                "f1_at_own": round(arg_scores[arg_thr], 4),
+                "f1_at_event": round(arg_scores[ev_t], 4),
+                "f1_at_global": round(_selection_score(sweep_all[eval_thr], categories=("event_argument",)), 4),
+                "flat": len(set(arg_scores.values())) == 1,
+            }
+            if arg_thr != ev_t:
+                per_head["event_argument"] = arg_thr
         for head, row in head_report.items():
+            ref = f"vs {row['f1_at_event']:.4f} at event={per_head['event']}" if "f1_at_event" in row else f"vs {row['f1_at_global']:.4f} at the global {eval_thr}"
             print(f"[threshold sweep] per-head {head}: {row['threshold']} (strict micro-F1 {row['f1_at_own']:.4f}"
-                  f" vs {row['f1_at_global']:.4f} at the global {eval_thr}{'; flat across the grid' if row['flat'] else ''})")
+                  f" {ref}{'; flat across the grid' if row['flat'] else ''})")
         sweep_path = best / "threshold_sweep.json"
-        sweep_path.write_text(json.dumps(
-            {"chosen_threshold": eval_thr, "calibration_menu": cal_menu,
-             "per_head_thresholds": per_head, "per_head_report": head_report,
-             "by_threshold": {str(t): m for t, m in sweep_all.items()}},
-            indent=2, ensure_ascii=False,
-        ))
+        sweep_payload = {
+            "chosen_threshold": eval_thr, "calibration_menu": cal_menu,
+            "per_head_thresholds": per_head, "per_head_report": head_report,
+            "by_threshold": {str(t): m for t, m in sweep_all.items()},
+        }
+        if arg_sweep_all is not None:
+            sweep_payload["event_argument_by_threshold"] = {str(t): m for t, m in arg_sweep_all.items()}
+        sweep_path.write_text(json.dumps(sweep_payload, indent=2, ensure_ascii=False))
         print(f"[threshold sweep] Wrote {sweep_path}")
         _ship_thresholds(best, eval_thr, per_head, calibration_menu=cal_menu if cal_menu != "gold" else None)
         del sweep_model

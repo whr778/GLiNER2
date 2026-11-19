@@ -339,7 +339,8 @@ class ExtractorRuntimeMixin:
             hidden_states: Optional precomputed encoder output, one tensor per
                 text; all texts then collate as one batch. See ``encode_tokens``.
             per_head_thresholds: Optional per-head thresholds keyed by head name
-                (``entity``, ``relation``, ``classification``, ``structure``, ``event``).
+                (``entity``, ``relation``, ``classification``, ``structure``, ``event``,
+                and optional ``event_argument`` to decouple role assignment from event triggers).
             head_spans: When True, strip leading stopwords/articles from extracted
                 spans so extent predictions normalize to syntactic heads.
 
@@ -1678,7 +1679,8 @@ class ExtractorRuntimeMixin:
             trigger_threshold = threshold
         argument_threshold = event_meta.get("argument_threshold")
         if argument_threshold is None:
-            argument_threshold = threshold
+            per_head = (metadata or {}).get("_per_head_thresholds") or {}
+            argument_threshold = float(per_head.get("event_argument", threshold))
 
         roles_ordered = metadata.get("event_role_orders", {}).get(event_type)
         if roles_ordered is None:

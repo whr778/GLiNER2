@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from gliner2.training.eval_metrics import (
-    compute_metrics, compute_metrics_per_head, per_head_report, pick_per_head_thresholds, splice_heads,
+    compute_metrics, compute_metrics_per_head, per_head_report, pick_per_head_thresholds,
+    splice_heads, sweep_event_argument_threshold,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "train"))
@@ -189,3 +190,84 @@ class TestTrainingSplits:
         out = P.sample_per_corpus(recs, 2)
         assert [r["_corpus"] for r in out] == ["x", "x", "y", "y"]
         assert P.sample_per_corpus(recs, None) is recs
+
+
+class TestEventArgumentThreshold:
+    """Decoupled per_head_thresholds['event_argument'] sweeps and decodes independently of event triggers."""
+
+    EVENT_TEXT = "Rebels shelled the port."
+    EVENT_GOLD = {
+        "events": [{
+            "event_type": "Conflict.Attack",
+            "triggers": ["shelled"],
+            "arguments": [{"role": "Attacker", "entity": "Rebels"}],
+        }]
+    }
+
+    class _ArgAwareModel:
+        def __init__(self, hit_arg_thresholds):
+            self.hit_arg_thresholds = set(hit_arg_thresholds)
+            self.calls = []
+
+        def batch_extract(self, texts, schemas, batch_size=8, threshold=0.5, per_head_thresholds=None):
+            ph = dict(per_head_thresholds or {})
+            self.calls.append((threshold, ph))
+            arg_t = ph.get("event_argument", ph.get("event", threshold))
+            args = [{"role": "Attacker", "entity": "Rebels"}] if arg_t in self.hit_arg_thresholds else []
+            return [{"event_extraction": {"Conflict.Attack": [{"triggers": ["shelled"], "arguments": args}]}} for _ in texts]
+
+    def test_sweep_moves_off_event_threshold_on_strict_gain_and_reuses_coupled(self):
+        model = self._ArgAwareModel({0.3})
+        coupled = compute_metrics(
+            model, _DS([(self.EVENT_TEXT, self.EVENT_GOLD)]),
+            threshold=0.9, per_head_thresholds={"event": 0.9}, report=False,
+        )
+        model.calls.clear()
+        chosen, by_t = sweep_event_argument_threshold(
+            model, _DS([(self.EVENT_TEXT, self.EVENT_GOLD)]),
+            event_threshold=0.9, base_per_head={"entity": 0.9, "event": 0.9},
+            thresholds=[0.3, 0.7, 0.9], coupled_metrics=coupled,
+        )
+        assert chosen == 0.3
+        assert by_t[0.3]["eval_event_argument_strict_micro_f1"] == 1.0
+        assert by_t[0.9]["eval_event_argument_strict_micro_f1"] == 0.0
+        # 0.9 reused coupled_metrics instead of re-decoding
+        assert [ph["event_argument"] for _, ph in model.calls] == [0.3, 0.7]
+
+    def test_sweep_keeps_event_threshold_on_tie(self):
+        model = self._ArgAwareModel({0.3, 0.9})
+        chosen, _ = sweep_event_argument_threshold(
+            model, _DS([(self.EVENT_TEXT, self.EVENT_GOLD)]),
+            event_threshold=0.9, base_per_head={"event": 0.9},
+            thresholds=[0.3, 0.9],
+        )
+        assert chosen == 0.9
+
+    def test_compute_metrics_per_head_uses_single_pass_when_event_argument_decoupled(self):
+        model = self._ArgAwareModel({0.3})
+        m = compute_metrics_per_head(
+            model, _DS([(self.EVENT_TEXT, self.EVENT_GOLD)]),
+            {"event": 0.9, "event_argument": 0.3}, default=0.9, report=False,
+        )
+        assert len(model.calls) == 1
+        assert model.calls[0][1] == {"event": 0.9, "event_argument": 0.3}
+        assert m["eval_event_argument_strict_micro_f1"] == 1.0
+        assert m["per_head_thresholds"] == {"event": 0.9, "event_argument": 0.3}
+
+    def test_boundary_query_thresholds_routes_event_roles_to_event_argument(self):
+        import torch
+        from gliner2.models.boundary.engine import BoundaryExtractor
+
+        specs = [[
+            {"task_type": "events", "field_index": 0, "field_name": "trigger", "task_name": "Attack"},
+            {"task_type": "events", "field_index": 1, "field_name": "Attacker", "task_name": "Attack"},
+        ]]
+        meta = [{"_per_head_thresholds": {"event": 0.9, "event_argument": 0.3}}]
+        q_thr = BoundaryExtractor._query_thresholds(specs, meta, default=0.5, device=torch.device("cpu"))
+        assert q_thr[0, 0].item() == pytest.approx(0.9)
+        assert q_thr[0, 1].item() == pytest.approx(0.3)
+
+        meta_fallback = [{"_per_head_thresholds": {"event": 0.9}}]
+        q_fb = BoundaryExtractor._query_thresholds(specs, meta_fallback, default=0.5, device=torch.device("cpu"))
+        assert q_fb[0, 0].item() == pytest.approx(0.9)
+        assert q_fb[0, 1].item() == pytest.approx(0.9)
