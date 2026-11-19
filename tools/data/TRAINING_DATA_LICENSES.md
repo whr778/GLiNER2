@@ -32,6 +32,9 @@ All corpora listed in `TRAINING_DATA.md` can be used for **internal / non-commer
 - `biored` (`BioRED`) — `NLM / NCBI` ([NCBI BioRED](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/))
 - Purely synthetic corpora generated in-repo: `casualty_ft`, `casualty_multi`, `synthetic_haiku45_5k`, `synthetic_haiku45_5k_coerced`, `synthetic_sonnet5_1k`, `synthetic_events_capped`, `lg_onecall`, `lg_twostage` — `generated here`
 
+### CC-BY-4.0 with an extra use restriction
+- `wojood_hadath` (`Wojood Hadath`) — CC-BY-4.0 plus the authors' additional limit to non-malicious, peaceful, and non-military use ([Aljabari et al., ArabicNLP 2024](https://www.jarrar.info/publications/ADJK24.pdf); [download](https://sina.birzeit.edu/relations/)). Cite that paper when the corpus is used. The registry license string is `peaceful-use (CC-BY-4.0, non-military)` so a model card does not treat the file as unrestricted CC-BY.
+
 ### Share-Alike & Non-Commercial Open Licenses (Research Permitted)
 - `stockmark_jpn` (`stockmark-jpn`) — `cc-by-sa-3.0` ([`stockmark/ner-wikipedia-dataset`](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset))
 - `klue_ner` (`KLUE-NER`) — `cc-by-sa-4.0` ([KLUE GitHub](https://github.com/KLUE-benchmark/KLUE))

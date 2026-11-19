@@ -621,6 +621,14 @@ datasets:
     source_url: https://www.luge.ai/#/luge/dataDetail?id=6
     language: [zh]
     description: "Sentence-level Chinese event extraction (65 event types, 121 roles) via the no-login HuggingFace mirror; train + val only, no test."
+  wojood_hadath:
+    name: Wojood Hadath
+    provenance: human
+    tasks: Event argument extraction (Arabic, named-event trigger + 3 roles)
+    license: peaceful-use (CC-BY-4.0, non-military)
+    source_url: https://sina.birzeit.edu/relations/
+    language: [ar]
+    description: "Arabic named-event mentions with hasAgent, hasLocation, and hasDate (Aljabari et al., ArabicNLP 2024). Official train/val/test, sentence-level, no source offsets. CC-BY-4.0 plus the authors' limit to non-malicious, peaceful, and non-military use. Cite that paper when the corpus is used."
   mendeley_ed:
     name: Event Detection Dataset (Mendeley)
     provenance: human
