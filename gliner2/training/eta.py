@@ -222,7 +222,9 @@ def _time_eval_seconds(
     # 1) Time eval loss forward (1 pass per in-loop eval).
     loss_per_rec = 0.0
     if n_evals > 0:
-        eval_ds = ExtractorDataset(chunked_eval, max_samples=-1, shuffle=False, validate=False)
+        eval_ds = ExtractorDataset(
+            chunked_eval, max_samples=-1, shuffle=False, validate=False, expand_argument_coref=False
+        )
         eval_coll = _build_collator(base_model, config, processor, is_training=False)
         eval_loader = DataLoader(eval_ds, batch_size=ebs, collate_fn=eval_coll, shuffle=False)
         live_model.eval()

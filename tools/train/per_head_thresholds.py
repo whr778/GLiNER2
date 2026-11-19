@@ -85,7 +85,9 @@ def main(argv=None) -> None:
     val_all, test_all = T.training_splits(cfg, args.config)   # the splits training scores, not the raw files
     val = sample_per_corpus(val_all, args.per_corpus)
     print(f"[per-head] val: {len(val)} records from {len({r['_corpus'] for r in val})} corpora | grid {args.grid} | {gd}", flush=True)
-    global_t, _, by_t = sweep_thresholds(model, ExtractorDataset(val, shuffle=False, validate=False), thresholds=args.grid, **kw)
+    global_t, _, by_t = sweep_thresholds(
+        model, ExtractorDataset(val, shuffle=False, validate=False, expand_argument_coref=False), thresholds=args.grid, **kw
+    )
     picks = pick_per_head_thresholds(by_t, global_t)
     for item in args.picks:
         head, _, t = item.partition("=")
@@ -103,7 +105,7 @@ def main(argv=None) -> None:
               "val_by_threshold": {str(t): m for t, m in by_t.items()}}
     if args.test:
         test = sample_per_corpus(test_all, args.per_corpus)
-        ds = ExtractorDataset(test, shuffle=False, validate=False)
+        ds = ExtractorDataset(test, shuffle=False, validate=False, expand_argument_coref=False)
         print(f"[per-head] test: {len(test)} records; scoring at global {global_t} and per-head {picks}", flush=True)
         single = {t: compute_metrics(model, ds, threshold=t, report=False, **kw) for t in sorted({global_t, *picks.values()})}
         merged = compute_metrics_per_head(model, ds, picks, global_t, report=False, **kw)

@@ -123,8 +123,12 @@ def event_scores(model, records, threshold: float) -> dict:
     """Strict micro F1 for event_type / trigger / argument on the records' own gold menu (the in-run evaluator)."""
     model.eval()
     with torch.no_grad():
-        m = compute_metrics(model, ExtractorDataset(records, shuffle=False, validate=False), batch_size=2,
-                            threshold=threshold, report=False, chunk_size=4096, chunk_overlap=0, global_decode=True) or {}
+        m = compute_metrics(
+            model,
+            ExtractorDataset(records, shuffle=False, validate=False, expand_argument_coref=False),
+            batch_size=2,
+            threshold=threshold, report=False, chunk_size=4096, chunk_overlap=0, global_decode=True,
+        ) or {}
     model.train()
     return {h: round(float(m.get(f"eval_event_{h}_strict_micro_f1", float("nan"))), 4)
             for h in ("type", "trigger", "argument")}
@@ -271,7 +275,10 @@ def main(argv=None) -> None:
         negatives = NegativeLabels.load(pools, tr["negative_labels_per_dim"],
                                         seed=int(tr.get("negative_label_seed", 42)), partial=cfg["data"].get("partial_annotation"),
                                         gold_full_roles=bool(tr.get("negative_gold_full_roles", False)))
-    ds = ExtractorDataset(data=records, max_samples=-1, shuffle=False, seed=42, validate=False, negatives=negatives)
+    ds = ExtractorDataset(
+        data=records, max_samples=-1, shuffle=False, seed=42, validate=False,
+        negatives=negatives, expand_argument_coref=bool(tr.get("expand_argument_coref", True)),
+    )
     coll = ExtractorCollator(model.processor, is_training=True, max_len=tr.get("max_len"), architecture="boundary",
                              max_gold_per_query=int(head.get("max_gold_per_query", 32)),
                              on_capacity_exceeded="truncate_with_warning", error_policy=tr.get("error_policy", "skip"),

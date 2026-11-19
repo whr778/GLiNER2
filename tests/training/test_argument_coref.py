@@ -279,3 +279,83 @@ def test_argument_coref_recall_counts_an_emitted_mention_and_is_not_a_head():
         m1["eval_entity_strict_micro_f1"], m1["eval_event_argument_strict_micro_f1"])
     block = inspect.getsource(eval_metrics.score_predictions).split("primitive_heads = (", 1)[1].split("\n    )", 1)[0]
     assert "event_argument" in block and "argument_coref" not in block
+
+
+def test_sliding_window_and_wired_gate_honour_expand_argument_coref_false(tmp_path):
+    """Regression for ACE 2005 collapse: sliding_window=True previously hardcoded
+    expand_argument_coref=is_train, ignoring TrainingConfig(expand_argument_coref=False)."""
+    import pytest
+
+    from gliner2.processing import coref
+    from gliner2.training.config import TrainingConfig
+    from gliner2.training.trainer import GLiNER2Trainer
+    from tests.fixtures.tiny_tokenizer import build_tiny_tokenizer
+
+    model = _build_tiny_records_model()
+    for sw in (False, True):
+        cfg = TrainingConfig(
+            output_dir=str(tmp_path / f"sw_{sw}"),
+            sliding_window=sw,
+            max_len=128,
+            window_stride=96,
+            expand_argument_coref=False,
+            validate_data=False,
+        )
+        trainer = GLiNER2Trainer(model, cfg)
+        trainer.processor.tokenizer = build_tiny_tokenizer()
+        ds_train = trainer._prepare_data([_record()], is_train=True)
+        assert ds_train.expand_argument_coref is False
+        _, schema = ds_train[0]
+        assert schema["events"][0]["arguments"] == [{"role": "Person", "entity": "Paul"}]
+        assert "_argument_coref_added" not in schema
+        # MentionLink still receives gold coref_clusters via coref.attach/take.
+        _, clusters = coref.take([ds_train[0]])
+        assert clusters[0] == _record()["coref_clusters"]
+
+        ds_train.expand_argument_coref = True
+        with pytest.raises(SystemExit, match="expand_argument_coref"):
+            trainer._wired(ds_train, is_train=True)
+
+
+def test_compute_metrics_and_splice_never_expand_coref_into_eval_gold():
+    """Standalone ExtractorDataset(records) defaults to expand_argument_coref=True;
+    compute_metrics / score_model_schema / _splice_dataset_predictions must still
+    grade against unexpanded local gold while preserving _argument_coref_opportunities."""
+    from types import SimpleNamespace
+
+    from gliner2.training.eval_metrics import (
+        _splice_dataset_predictions,
+        compute_metrics,
+        score_model_schema,
+    )
+
+    class _ExactLocalStub:
+        config = SimpleNamespace(
+            default_schema={"events": {"Leave": ["Person"]}},
+            label_map=None,
+            label_style=None,
+        )
+
+        def batch_extract(self, texts, schemas, **kwargs):
+            return [_leave([{"role": "Person", "entity": "Paul"}]) for _ in texts]
+
+    bare_ds = ExtractorDataset([_record()], shuffle=False, validate=False)
+    assert bare_ds.expand_argument_coref is True
+
+    m = compute_metrics(_ExactLocalStub(), bare_ds, threshold=0.5, report=False)
+    assert bare_ds.expand_argument_coref is True
+    assert m["eval_event_argument_strict_support"] == 1
+    assert m["eval_event_argument_strict_micro_f1"] == 1.0
+    assert m["eval_argument_coref_opportunities"] == 1
+    assert m["eval_argument_coref_emitted"] == 0
+
+    ms = score_model_schema(_ExactLocalStub(), bare_ds, threshold=0.5, report=False)
+    assert ms["eval_event_argument_strict_support"] == 1
+    assert ms["eval_event_argument_strict_micro_f1"] == 1.0
+
+    golds, _, kept = _splice_dataset_predictions(
+        _ExactLocalStub(), bare_ds, {"event": 0.3}, 0.5
+    )
+    assert kept == [0]
+    assert golds[0]["events"][0]["arguments"] == [{"role": "Person", "entity": "Paul"}]
+

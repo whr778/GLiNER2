@@ -858,8 +858,14 @@ def score_under_menu(model, cfg: Dict, config_path: str, mode: str, split: str, 
     from gliner2.training.trainer import ExtractorDataset
     records, menus, report = menu_split(cfg, config_path, mode, split)
     print(f"[menu] {mode} on {split}: scoring {report['scored']} records; refused {report['refused'] or 'none'}")
-    metrics = compute_metrics(model, ExtractorDataset(records, shuffle=False, validate=False), batch_size=batch_size,
-                              threshold=threshold, menus=menus, **gd_kwargs) or {}
+    metrics = compute_metrics(
+        model,
+        ExtractorDataset(records, shuffle=False, validate=False, expand_argument_coref=False),
+        batch_size=batch_size,
+        threshold=threshold,
+        menus=menus,
+        **gd_kwargs,
+    ) or {}
     metrics["menu_report"] = report
     return metrics
 
@@ -1490,14 +1496,14 @@ def _blind_test_by_language(
     for lang in sorted(by_lang):
         subset = by_lang[lang]
         print(f"\n[blind test] Processing language: {lang}  ({len(subset)} samples)")
-        ds = ExtractorDataset(subset, shuffle=False, validate=False)
+        ds = ExtractorDataset(subset, shuffle=False, validate=False, expand_argument_coref=False)
         lang_metrics = compute_metrics(model, ds, batch_size=eval_bs, threshold=eval_thr, **gd) or {}
         add_full_menu(lang_metrics, model, ds, full_menu, menu_negatives, batch_size=eval_bs, threshold=eval_thr, **gd)
         per_lang[lang] = lang_metrics
         _print_blind_test(lang_metrics)
 
     print(f"\n[blind test] All languages combined ({len(test_data)} samples)")
-    ds_all = ExtractorDataset(test_data, shuffle=False, validate=False)
+    ds_all = ExtractorDataset(test_data, shuffle=False, validate=False, expand_argument_coref=False)
     all_metrics = compute_metrics(model, ds_all, batch_size=eval_bs, threshold=eval_thr, **gd) or {}
     add_full_menu(all_metrics, model, ds_all, full_menu, menu_negatives, batch_size=eval_bs, threshold=eval_thr, **gd)
     _print_blind_test(all_metrics)
@@ -1667,7 +1673,7 @@ def _per_head_pass(best: Path, records, ev: Dict, picks: Dict[str, float], gd_kw
     print(f"\n[blind test] scoring again at per-head thresholds {picks} (default {ev['threshold']}; {scope})")
     golds, merged, kept_idx = _splice_dataset_predictions(
         AutoExtractor.from_pretrained(str(best)),
-        ExtractorDataset(records, shuffle=False, validate=False),
+        ExtractorDataset(records, shuffle=False, validate=False, expand_argument_coref=False),
         picks, ev["threshold"], batch_size=ev["batch_size"], **gd,
     )
     if not golds:
@@ -1748,7 +1754,7 @@ def _model_schema_pass(
     print(f"\n[{split_label}] scoring under --model-schema ({summary}; threshold={thr}, per_head={ph})")
     ms = score_model_schema(
         model,
-        ExtractorDataset(records, shuffle=False, validate=False),
+        ExtractorDataset(records, shuffle=False, validate=False, expand_argument_coref=False),
         batch_size=ev["batch_size"],
         threshold=thr,
         per_head_thresholds=ph,
@@ -2369,7 +2375,7 @@ def main(config_path: str) -> None:
             # MENU_SPEC.md: pick the threshold under the menu production will send, not the gold menu.
             eval_records, sweep_menus, report = menu_split(cfg, config_path, cal_menu, "val")
             print(f"[threshold sweep] calibrating under menu {cal_menu}: {report}")
-        sweep_ds = ExtractorDataset(eval_records, shuffle=False, validate=False)
+        sweep_ds = ExtractorDataset(eval_records, shuffle=False, validate=False, expand_argument_coref=False)
         eval_thr, sweep_best_metrics, sweep_all = sweep_thresholds(
             sweep_model, sweep_ds, thresholds=thresholds, batch_size=eval_bs, stopwords=eval_stopwords,
             chunk_size=chunk_size, chunk_overlap=chunk_overlap,

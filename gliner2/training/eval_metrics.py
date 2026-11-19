@@ -435,6 +435,23 @@ def score_model_schema(
     return metrics
 
 
+def _eval_item(eval_dataset, index: int):
+    """Read item ``index`` for evaluation with ``expand_argument_coref`` forced off.
+
+    ``ExtractorDataset`` defaults to ``expand_argument_coref=True`` for training; letting
+    evaluation read expanded outputs injects every cluster mention and pronoun across the
+    document into the gold answer key, turning local predictions into false negatives.
+    """
+    if hasattr(eval_dataset, "expand_argument_coref") and eval_dataset.expand_argument_coref:
+        prev = eval_dataset.expand_argument_coref
+        eval_dataset.expand_argument_coref = False
+        try:
+            return eval_dataset[index]
+        finally:
+            eval_dataset.expand_argument_coref = prev
+    return eval_dataset[index]
+
+
 def _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negatives, chunk_size, chunk_overlap,
              global_decode, global_decode_config, menus, per_head_thresholds=None) -> Tuple[List[Dict], List[Dict]]:
     """The decode half of :func:`compute_metrics`: ``(golds, preds)`` for the records with a usable gold
@@ -445,7 +462,7 @@ def _predict(model, eval_dataset, batch_size, threshold, full_menu, menu_negativ
     schemas: List[Dict] = []
 
     for i in range(len(eval_dataset)):
-        text, output = eval_dataset[i]
+        text, output = _eval_item(eval_dataset, i)
         if not isinstance(text, str) or not isinstance(output, dict):
             continue
         schema = menus[i] if menus is not None else _schema_from_gold(output)
@@ -1731,7 +1748,7 @@ def evaluate_checkpoint(
     from gliner2.training.trainer import ExtractorDataset
 
     model = load_with_overrides(checkpoint_dir, boundary_overrides, map_location)
-    dataset = ExtractorDataset(test_data, shuffle=False, validate=False)
+    dataset = ExtractorDataset(test_data, shuffle=False, validate=False, expand_argument_coref=False)
     kw = dict(batch_size=batch_size, threshold=threshold, stopwords=stopwords,
               chunk_size=chunk_size, chunk_overlap=chunk_overlap,
               global_decode=global_decode, global_decode_config=global_decode_config)
@@ -1923,7 +1940,7 @@ def _splice_dataset_predictions(
     """Return ``(golds, spliced_preds, kept_dataset_indices)`` across distinct head thresholds."""
     kept_indices: List[int] = []
     for i in range(len(eval_dataset)):
-        text, output = eval_dataset[i]
+        text, output = _eval_item(eval_dataset, i)
         if isinstance(text, str) and isinstance(output, dict) and _schema_from_gold(output):
             kept_indices.append(i)
     values = sorted(set(thresholds.values()) | {default})

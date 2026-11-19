@@ -1635,7 +1635,17 @@ class ExtractorTrainer:
         guards: nothing downstream can tell "no negatives configured" from "configured and
         dropped on the floor".
         """
-        if not is_train or dataset is None:
+        if dataset is None:
+            return dataset
+        want_expand = is_train and bool(getattr(self.config, "expand_argument_coref", True))
+        if getattr(dataset, "expand_argument_coref", None) != want_expand:
+            raise SystemExit(
+                f"[argument-coref] dataset.expand_argument_coref={getattr(dataset, 'expand_argument_coref', None)!r} "
+                f"disagrees with expected {want_expand!r} (is_train={is_train}, "
+                f"config.expand_argument_coref={getattr(self.config, 'expand_argument_coref', True)!r}). "
+                "Refusing to start."
+            )
+        if not is_train:
             return dataset
         wanted = bool(self.config.negative_pools and self.config.negative_labels_per_dim)
         if wanted and getattr(dataset, "negatives", None) is None:
@@ -1644,12 +1654,15 @@ class ExtractorTrainer:
                 "training dataset carries NO injector -- the run would train without them. "
                 "Refusing to start."
             )
-        stats = getattr(dataset, "coref_attach_stats", None)
-        if stats and self.is_main_process:
+        stats = getattr(dataset, "coref_attach_stats", None) or {}
+        if self.is_main_process:
             logger.info(
-                "[argument-coref] attached clusters to %d event records "
+                "[argument-coref] expand_argument_coref=%s | attached clusters to %d event records "
                 "(%d coref-only records left in the mix, %d ambiguous texts)",
-                stats["attached"], stats["coref_only"], stats["ambiguous"],
+                dataset.expand_argument_coref,
+                stats.get("attached", 0),
+                stats.get("coref_only", 0),
+                stats.get("ambiguous", 0),
             )
         return dataset
 
@@ -1749,7 +1762,7 @@ class ExtractorTrainer:
             # at all -- silently, because `label negatives ON` is logged by the LOADER and
             # says nothing about whether the dataset ever received the injector.
             negatives=negatives,
-            expand_argument_coref=is_train,
+            expand_argument_coref=is_train and bool(getattr(self.config, "expand_argument_coref", True)),
         )
         if is_train and dataset is not None:
             dataset.coref_attach_stats = coref_attach_stats
