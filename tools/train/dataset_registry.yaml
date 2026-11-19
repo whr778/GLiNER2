@@ -256,6 +256,7 @@ datasets:
     license: other
     hf_id: tner/bc5cdr
     source_url: https://huggingface.co/datasets/tner/bc5cdr
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "BioCreative V chemical-disease NER; 2 types (Chemical, Disease)."
   stockmark_jpn:
@@ -264,6 +265,7 @@ datasets:
     license: cc-by-sa-3.0
     hf_id: stockmark/ner-wikipedia-dataset
     source_url: https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [ja]
     description: "Japanese Wikipedia NER; 8 entity types covering person, corporation, location, and product."
   finer_ord:
@@ -280,6 +282,7 @@ datasets:
     tasks: NER (Korean, 6 types)
     license: cc-by-sa-4.0
     source_url: https://github.com/KLUE-benchmark/KLUE
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [ko]
     description: "Korean NER; 6 entity types (PS, LC, OG, DT, TI, QT) converted from char-level BIO tags."
   # --- Relation extraction ---
@@ -478,6 +481,7 @@ datasets:
     tasks: NER (event types as entity labels)
     license: see source
     source_url: https://github.com/THU-KEG/MAVEN-dataset
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "MAVEN trigger detection reframed as entity detection: each of the 168 event types is an entity label whose spans are the triggers."
   casie:
@@ -721,6 +725,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "Anatomical Entity Mention corpus (single Anatomy type). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   bc2gm:
@@ -738,6 +743,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "BioNLP 2009 shared task (GENIA) protein mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   bionlp11epi:
@@ -746,6 +752,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "BioNLP 2011 Epigenetics and Post-translational Modifications; protein mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   bionlp11id:
@@ -754,6 +761,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "BioNLP 2011 Infectious Diseases; genes/proteins, chemicals, organisms, regulons. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   bionlp13cg:
@@ -762,6 +770,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "BioNLP 2013 Cancer Genetics; 16 entity types (cell, gene/protein, cancer, organ, etc.). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   bionlp13ge:
@@ -770,6 +779,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "BioNLP 2013 GENIA Event; gene/protein mentions. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   bionlp13pc:
@@ -778,6 +788,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "BioNLP 2013 Pathway Curation; genes/proteins, chemicals, complexes. MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   craft:
@@ -795,6 +806,7 @@ datasets:
     license: see source
     hf_id: null
     source_url: https://github.com/cambridgeltl/MTL-Bioinformatics-2016
+    hf_jsonl: whr778/gliner2-corpora-archive
     language: [en]
     description: "Ex-PTM protein mentions (post-translational modification). MTL-Bioinformatics-2016 (Crichton et al. 2017)."
   jnlpba:
@@ -1042,7 +1054,7 @@ datasets:
     tasks: structured extraction (json_structures, multi-instance)
     license: see source
     hf_id: null
-    hf_jsonl: null
+    hf_jsonl: whr778/casualty_loc_split_card
     source_url: local (casualty_loc_split, stamped by tools/data/stamp_field_cardinality.py)
     language: [en]
     description: "TREATMENT ARM ONLY -- do not train a shipping model on this without reading the A/B first. Byte-identical to casualty_loc_split except that each record's record_metadata carries fields: {f: {cardinality}}, derived from the corpus's OWN train-split usage: a field is scalar iff it never holds more than one filler. 27,832 of 29,321 records stamped, 60,123 scalar declarations and 0 list; the anchor is deliberately NOT declared, because its REQUIRED_ONE is structural rather than observed and a declaration would demote it. Cardinality selects the record head's LOSS -- scalar gets a softmax over candidates plus an explicit ABSENT, list gets independent BCE -- so this arm tests a regime change, not a bug fix. Motivation, measured across all of data/: 99.8% of structure-field occurrences hold exactly one filler and only 1.9% of distinct fields ever hold more than one, so the current default trains almost every structure field as multi-label against its own data. No hf_jsonl: the arm is built locally by the stamper and rsynced to the box, so it is reproducible from casualty_loc_split rather than stored twice."

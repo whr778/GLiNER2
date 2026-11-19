@@ -68,8 +68,20 @@ def wanted_from_config(config_path):
     return sorted(set(files))
 
 
+def _belongs_to_corpus(key: str, filename: str) -> bool:
+    """True when ``filename`` in a shared archive repo belongs to corpus ``key``."""
+    base = Path(filename).name
+    return base == f"{key}.jsonl" or base.startswith(f"{key}.")
+
+
+def _has_local_corpus(key: str, data_dir: Path = DATA) -> bool:
+    """True when ``data_dir`` holds any local jsonl split for ``key``."""
+    return (data_dir / f"{key}.jsonl").is_file() or any(data_dir.glob(f"{key}.*.jsonl"))
+
+
 def plan(registry):
     """Return [(repo, path_in_repo, local_path)] for everything the registry can restore."""
+    from collections import Counter
     from huggingface_hub import HfApi
     api = HfApi(token=os.environ.get("HF_TOKEN"))
     # PROVE THE TOKEN FIRST. The Hub answers a private repo the token cannot see with "not
@@ -83,8 +95,15 @@ def plan(registry):
                          f"that can read the private mirrors; nothing was planned.")
     print(f"HF account: {who}")
     jobs, unrecoverable = [], []
+    repo_cache = {}
+
+    def cached_files(repo):
+        if repo not in repo_cache:
+            repo_cache[repo] = repo_files(api, repo)
+        return repo_cache[repo]
+
     for directory, repo in (registry.get("jsonl_dirs") or {}).items():
-        names = repo_files(api, repo)
+        names = cached_files(repo)
         if names is None:
             unrecoverable.append(f"{directory}/ (repo {repo} not found -- absent, or private and invisible to this token)")
             continue
@@ -99,21 +118,34 @@ def plan(registry):
     # Only SLICES are skipped. A base split shares its basename across repos while
     # mapping to a DIFFERENT local path (data/x.val.jsonl vs data/scaling_joint/x.val.jsonl),
     # so suppressing those would silently drop files a config needs.
+    datasets_reg = registry.get("datasets") or {}
+    repo_counts = Counter(
+        (entry or {}).get("hf_jsonl")
+        for entry in datasets_reg.values()
+        if (entry or {}).get("hf_jsonl")
+    )
     shadowed = []
-    for key, entry in (registry.get("datasets") or {}).items():
+    for key, entry in datasets_reg.items():
         repo = (entry or {}).get("hf_jsonl")
         if not repo:
             unrecoverable.append(key)
             continue
-        names = repo_files(api, repo)
+        names = cached_files(repo)
         if names is None:
             unrecoverable.append(f"{key} (repo {repo} not found -- absent, or private and invisible to this token)")
             continue
+        shared_archive = repo_counts[repo] > 1
+        matched = 0
         for name in names:
+            if shared_archive and not _belongs_to_corpus(key, name):
+                continue
             if SLICE.search(name):
                 shadowed.append(f"{repo}::{name}")
                 continue
             jobs.append((repo, name, DATA / name))
+            matched += 1
+        if shared_archive and matched == 0:
+            unrecoverable.append(f"{key} (no matching {key}.*.jsonl in shared repo {repo})")
     if shadowed:
         print(f"NOTE: {len(shadowed)} duplicate copies in parent repos ignored; the "
               f"directory mirror is authoritative. e.g. {shadowed[:2]}")
@@ -183,9 +215,23 @@ def main():
             print(f"  [{i}/{len(todo)}] {local}")
 
     if args.all and unrecoverable:
-        print(f"\nUNRECOVERABLE -- no hf_jsonl, these die with the disk ({len(unrecoverable)}):")
+        datasets_reg = registry.get("datasets") or {}
+        on_disk = []
+        not_mirrored = []
         for key in unrecoverable:
-            print(f"   {key}")
+            if " (" in key or _has_local_corpus(key):
+                on_disk.append(key)
+            else:
+                lic = ((datasets_reg.get(key) or {}).get("license") or "").strip()
+                not_mirrored.append(f"{key} ({lic})" if lic else key)
+        if on_disk:
+            print(f"\nUNRECOVERABLE -- no hf_jsonl, these die with the disk ({len(on_disk)}):")
+            for key in on_disk:
+                print(f"   {key}")
+        if not_mirrored:
+            print(f"\nNOT MIRRORED ON HF (licensed / streamed / not on disk; {len(not_mirrored)}):")
+            for key in not_mirrored:
+                print(f"   {key}")
 
 
 if __name__ == "__main__":

@@ -79,3 +79,55 @@ def test_eb22d_h100_config_wants_base_cmnee_val():
     wanted = restore.wanted_from_config(cfg)
     assert "data/cmnee.val.jsonl" in wanted
     assert "data/scaling_joint/cmnee.val.jsonl" in wanted
+
+
+def test_belongs_to_corpus_scopes_prefix_strictly():
+    assert restore._belongs_to_corpus("anatem", "anatem.train.jsonl")
+    assert restore._belongs_to_corpus("anatem", "anatem.jsonl")
+    assert not restore._belongs_to_corpus("anatem", "anatem_v2.train.jsonl")
+    assert not restore._belongs_to_corpus("anatem", "mix_natural.train.jsonl")
+
+
+def test_plan_scopes_shared_archive_repo_and_avoids_stale_collisions(monkeypatch):
+    """Shared archive repos must only emit files matching each entry's key."""
+    import huggingface_hub
+
+    list_calls = []
+    fake_repos = {
+        "whr778/gliner2-corpora-archive": [
+            "anatem.train.jsonl",
+            "anatem.val.jsonl",
+            "professorbob_re.train.jsonl",
+            "mix_natural.train.jsonl",  # stale archive copy -- must NOT be emitted
+        ],
+        "whr778/mix_natural": ["mix_natural.train.jsonl"],
+    }
+
+    class FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def whoami(self):
+            return {"name": "tester"}
+
+        def list_repo_files(self, repo, repo_type="dataset"):
+            list_calls.append(repo)
+            return fake_repos[repo]
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
+    registry = {
+        "datasets": {
+            "anatem": {"hf_jsonl": "whr778/gliner2-corpora-archive"},
+            "professorbob_re": {"hf_jsonl": "whr778/gliner2-corpora-archive"},
+            "mix_natural": {"hf_jsonl": "whr778/mix_natural"},
+        }
+    }
+    _, jobs, unrec = restore.plan(registry)
+    assert unrec == []
+    assert list_calls.count("whr778/gliner2-corpora-archive") == 1
+    assert sorted((repo, name) for repo, name, _ in jobs) == [
+        ("whr778/gliner2-corpora-archive", "anatem.train.jsonl"),
+        ("whr778/gliner2-corpora-archive", "anatem.val.jsonl"),
+        ("whr778/gliner2-corpora-archive", "professorbob_re.train.jsonl"),
+        ("whr778/mix_natural", "mix_natural.train.jsonl"),
+    ]
