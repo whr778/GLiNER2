@@ -167,8 +167,14 @@ def _maybe_chunk(records: List[dict], processor, config) -> tuple[List[dict], fl
     from gliner2.training.chunking import chunk_records
 
     stride = getattr(config, "window_stride", None) or max(1, (max_len * 3) // 4)
+    use_coref = getattr(config, "coref_clusters", "enable") == "enable"
     chunked = chunk_records(
-        records, processor.tokenizer, window_size=max_len, stride=stride, show_progress=False,
+        records,
+        processor.tokenizer,
+        window_size=max_len,
+        stride=stride,
+        show_progress=False,
+        use_coref_clusters=use_coref,
     )
     if not chunked:
         return records, 1.0
@@ -342,13 +348,15 @@ def estimate_eta(
         from gliner2.training.trainer import ExtractorDataset
 
         negatives = _resolve_negatives(trainer, config)
+        use_coref = getattr(config, "coref_clusters", "enable") == "enable"
         sample_ds = ExtractorDataset(
             chunked_sample,
             max_samples=-1,
             shuffle=False,
             validate=False,
             negatives=negatives,
-            expand_argument_coref=bool(getattr(config, "expand_argument_coref", True)),
+            expand_argument_coref=use_coref and bool(getattr(config, "expand_argument_coref", True)),
+            use_coref_clusters=use_coref,
         )
         if len(sample_ds) == 0:
             print("[ETA] Empty warmup dataset; skipping estimate.")

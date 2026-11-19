@@ -2115,6 +2115,11 @@ def main(config_path: str) -> None:
     abstention = (cfg.get("training") or {}).pop("abstention_phase", None)
 
     config = TrainingConfig(**cfg["training"])
+    config._explicit_boundary_head_keys = frozenset(((cfg.get("model") or {}).get("boundary_head") or {}).keys())
+    if getattr(config, "coref_clusters", "enable") == "ignore":
+        from gliner2.training.trainer import apply_coref_clusters_mode
+        applied_coref = apply_coref_clusters_mode(model, config)
+        print(f"[coref] coref_clusters=ignore -> disabled training coref_clusters + decode overrides {applied_coref}", flush=True)
 
     # `partial_annotation` is declared under `data:` but is consumed by the TRAINER, via
     # the negatives injector. Until 2026-09-22 nothing carried it across that gap, so the

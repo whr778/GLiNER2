@@ -222,6 +222,7 @@ class ExtractorDataset(Dataset):
             rivals_per_record: int = 3,
             negatives=None,
             expand_argument_coref: bool = True,
+            use_coref_clusters: bool = True,
     ):
         """
         Initialize dataset from various input formats.
@@ -252,7 +253,8 @@ class ExtractorDataset(Dataset):
         self.guide_scores = guide_scores
         self.rivals_per_record = rivals_per_record
         self.negatives = negatives
-        self.expand_argument_coref = expand_argument_coref
+        self.use_coref_clusters = bool(use_coref_clusters)
+        self.expand_argument_coref = bool(expand_argument_coref) and self.use_coref_clusters
         self.data = DataLoader_Factory.load(
             data=data,
             max_samples=max_samples,
@@ -260,6 +262,17 @@ class ExtractorDataset(Dataset):
             seed=seed,
             validate=validate,
         )
+        if not self.use_coref_clusters and self.data:
+            from gliner2.training.chunking import _record_has_content
+            self.data = [
+                r for r in self.data
+                if not (
+                    isinstance(r, dict)
+                    and r.get("coref_clusters")
+                    and isinstance(r.get("output"), dict)
+                    and not _record_has_content(r["output"])
+                )
+            ]
         self.coref_attach_stats = {"attached": 0, "ambiguous": 0, "coref_only": 0}
         self.lengths = self._load_or_compute_lengths(data)
 
@@ -342,10 +355,12 @@ class ExtractorDataset(Dataset):
             # staying deterministic in (seed, epoch, index), which is what DDP ranks and
             # dataloader workers need to agree.
             schema = self.negatives.inject(schema, idx, record.get("_corpus"))
-        from gliner2.processing.argument_coref import expand_argument_coreferents
-        if self.expand_argument_coref:
-            schema = expand_argument_coreferents(schema, record.get("coref_clusters"), text)
-        return text, coref.attach(schema, record.get("coref_clusters"))
+        if self.use_coref_clusters:
+            from gliner2.processing.argument_coref import expand_argument_coreferents
+            if self.expand_argument_coref:
+                schema = expand_argument_coreferents(schema, record.get("coref_clusters"), text)
+            return text, coref.attach(schema, record.get("coref_clusters"))
+        return text, schema
 
     # Factory methods for explicit creation
     @classmethod
@@ -547,6 +562,48 @@ def get_scheduler(optimizer, scheduler_type, num_training_steps, num_warmup_step
 # Main Trainer
 # =============================================================================
 
+def apply_coref_clusters_mode(model: nn.Module, config: TrainingConfig) -> Dict[str, Any]:
+    """When ``config.coref_clusters == "ignore"``, disable MentionLink loss and inherited
+    in-engine entity-coref decode (unless explicitly overridden on ``model.boundary_head``)
+    on both the live boundary settings and ``model.config.boundary_head`` so saved
+    checkpoints decode identically."""
+    if getattr(config, "coref_clusters", "enable") != "ignore":
+        return {}
+    unwrap = model.module if hasattr(model, "module") else model
+    explicit = getattr(config, "_explicit_boundary_head_keys", frozenset()) or frozenset()
+    defaults = {
+        "entity_coref_link_weight": 0.0,
+        "entity_coref_threshold": None,
+        "record_argument_coref_copy": "none",
+        "record_argument_coref_boost": 0.0,
+    }
+    overrides = {k: v for k, v in defaults.items() if k not in explicit}
+    applied: Dict[str, Any] = {}
+    if hasattr(unwrap, "boundary_settings") and hasattr(unwrap, "config"):
+        current = getattr(unwrap.config, "boundary_head", None)
+        if isinstance(current, dict):
+            from gliner2.configuration import BoundaryHeadSettings, validate_boundary_head
+            merged = dict(current)
+            for k, v in overrides.items():
+                if merged.get(k) != v:
+                    applied[k] = v
+                merged[k] = v
+            unwrap.config.boundary_head = merged
+            settings = BoundaryHeadSettings(**validate_boundary_head(merged))
+            unwrap.boundary_settings = settings
+            if getattr(unwrap, "boundary_head", None) is not None:
+                unwrap.boundary_head.settings = settings
+    bs = getattr(unwrap, "boundary_settings", None)
+    if (
+        bs is not None
+        and float(getattr(bs, "entity_coref_link_weight", 0.0) or 0.0) == 0.0
+        and getattr(unwrap, "mention_link", None) is not None
+    ):
+        for p in unwrap.mention_link.parameters():
+            p.requires_grad_(False)
+    return applied
+
+
 class ExtractorTrainer:
     """
     World-class trainer for GLiNER2 with flexible multi-format data input.
@@ -655,6 +712,12 @@ class ExtractorTrainer:
             logger.info("schema_dropout: %s -- set %d removal probabilities (%s)", setting, len(changed),
                         ", ".join(f"{k}={v}" for k, v in sorted(changed.items())) or "none changed")
         self._log_span_residual_init()
+        coref_applied = apply_coref_clusters_mode(self.model, config)
+        if coref_applied:
+            logger.info(
+                "[argument-coref] coref_clusters=ignore applied boundary_head overrides: %s",
+                coref_applied,
+            )
 
         self.global_step = 0
         self.epoch = 0
@@ -1637,11 +1700,20 @@ class ExtractorTrainer:
         """
         if dataset is None:
             return dataset
-        want_expand = is_train and bool(getattr(self.config, "expand_argument_coref", True))
+        mode = getattr(self.config, "coref_clusters", "enable")
+        want_coref = mode == "enable"
+        want_expand = is_train and want_coref and bool(getattr(self.config, "expand_argument_coref", True))
+        if getattr(dataset, "use_coref_clusters", None) != want_coref:
+            raise SystemExit(
+                f"[argument-coref] dataset.use_coref_clusters={getattr(dataset, 'use_coref_clusters', None)!r} "
+                f"disagrees with expected {want_coref!r} (config.coref_clusters={mode!r}). "
+                "Refusing to start."
+            )
         if getattr(dataset, "expand_argument_coref", None) != want_expand:
             raise SystemExit(
                 f"[argument-coref] dataset.expand_argument_coref={getattr(dataset, 'expand_argument_coref', None)!r} "
                 f"disagrees with expected {want_expand!r} (is_train={is_train}, "
+                f"coref_clusters={mode!r}, "
                 f"config.expand_argument_coref={getattr(self.config, 'expand_argument_coref', True)!r}). "
                 "Refusing to start."
             )
@@ -1656,10 +1728,18 @@ class ExtractorTrainer:
             )
         stats = getattr(dataset, "coref_attach_stats", None) or {}
         if self.is_main_process:
+            unwrap = self.model.module if hasattr(self.model, "module") else self.model
+            bs = getattr(unwrap, "boundary_settings", None)
+            elink_w = getattr(bs, "entity_coref_link_weight", None) if bs is not None else None
+            ecoref_thr = getattr(bs, "entity_coref_threshold", None) if bs is not None else None
             logger.info(
-                "[argument-coref] expand_argument_coref=%s | attached clusters to %d event records "
-                "(%d coref-only records left in the mix, %d ambiguous texts)",
+                "[argument-coref] coref_clusters=%s | expand_argument_coref=%s | "
+                "entity_coref_link_weight=%s | entity_coref_threshold=%s | "
+                "attached clusters to %d event records (%d coref-only records left in the mix, %d ambiguous texts)",
+                mode,
                 dataset.expand_argument_coref,
+                elink_w,
+                ecoref_thr,
                 stats.get("attached", 0),
                 stats.get("coref_only", 0),
                 stats.get("ambiguous", 0),
@@ -1678,6 +1758,8 @@ class ExtractorTrainer:
 
         guide_scores = self._guide_scores() if is_train else None
         negatives = self._negative_labels() if is_train else None
+        use_coref = getattr(self.config, "coref_clusters", "enable") == "enable"
+        expand_coref = is_train and use_coref and bool(getattr(self.config, "expand_argument_coref", True))
 
         if not self.config.sliding_window:
             dataset = ExtractorDataset(
@@ -1689,9 +1771,10 @@ class ExtractorTrainer:
                 guide_scores=guide_scores,
                 rivals_per_record=self.config.rivals_per_record,
                 negatives=negatives,
-                expand_argument_coref=is_train and bool(getattr(self.config, "expand_argument_coref", True)),
+                expand_argument_coref=expand_coref,
+                use_coref_clusters=use_coref,
             )
-            if is_train and dataset is not None:
+            if is_train and use_coref and dataset is not None:
                 from gliner2.processing.argument_coref import attach_coref_copies
                 dataset.coref_attach_stats = attach_coref_copies(dataset.data)
             return self._wired(dataset, is_train)
@@ -1728,7 +1811,7 @@ class ExtractorTrainer:
         split = "train" if is_train else "eval"
         n_in = len(records)
         from gliner2.processing.argument_coref import attach_coref_copies
-        coref_attach_stats = attach_coref_copies(records) if is_train else {
+        coref_attach_stats = attach_coref_copies(records) if (is_train and use_coref) else {
             "attached": 0, "ambiguous": 0, "coref_only": 0}
         records = chunk_records(
             records,
@@ -1737,6 +1820,7 @@ class ExtractorTrainer:
             stride=stride,
             desc=f"chunking {split}",
             show_progress=self.is_main_process,
+            use_coref_clusters=use_coref,
         )
         if self.is_main_process:
             logger.info(
@@ -1762,7 +1846,8 @@ class ExtractorTrainer:
             # at all -- silently, because `label negatives ON` is logged by the LOADER and
             # says nothing about whether the dataset ever received the injector.
             negatives=negatives,
-            expand_argument_coref=is_train and bool(getattr(self.config, "expand_argument_coref", True)),
+            expand_argument_coref=expand_coref,
+            use_coref_clusters=use_coref,
         )
         if is_train and dataset is not None:
             dataset.coref_attach_stats = coref_attach_stats

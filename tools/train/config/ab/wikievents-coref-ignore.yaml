@@ -1,0 +1,81 @@
+# WikiEvents coref_clusters A/B -- TREATMENT arm (`coref_clusters: ignore`).
+#
+# Paired against `ab/wikievents-coref-enable.yaml`. Identical in every setting except
+# `training.coref_clusters: ignore` (plus output_dir / experiment_name).
+#
+# Single-run noise floor: ±0.02 strict micro-F1.
+model:
+  pretrained: whr778/gliner2-eb23a
+  architecture: boundary
+
+training:
+  checkpoint_restart: null
+  output_dir: ./out/wikievents-coref-ignore
+  experiment_name: wikievents_coref_ignore
+  data_parallel: false
+  num_epochs: 10
+  batch_size: 4
+  gradient_accumulation_steps: 2
+  encoder_lr: 2.0e-5
+  task_lr: 2.0e-4
+  encoder_lr_backbone_only: true
+  warmup_ratio: 0.10
+  scheduler_type: cosine
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  gold_injection_start: 0.75
+  gold_injection_end: 0.25
+  eval_strategy: epoch
+  metric_for_best: eval_overall_strict_head_macro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  save_epoch_checkpoint: true
+  logging_steps: 10
+  num_workers: 2
+  validate_data: false
+  allow_invalid_samples: true
+  ignore_missing_entities: true
+  suppress_orphaned_queries: true
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  negative_pools: auto
+  negative_labels_per_dim:
+    entities: 4
+    events: 6
+  negative_label_seed: 42
+  negative_gold_full_roles: true
+  expand_argument_coref: false
+  coref_clusters: ignore
+  schema_dropout: false
+  sliding_window: true
+  max_len: 4096
+  window_stride: 3072
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+  seed: 42
+  default_schema_mode: dataset
+
+eval:
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
+  metric_sweep: true
+  model_schema: true
+
+labels_file: labels/unified-full-v4.yaml
+
+data:
+  corpora:
+    - data/wikievents_off
+  train_only:
+    - wikievents_off
+  event_files:
+    wikievents:
+      val: data/wikievents.dev.jsonl
+      test: data/wikievents.test.jsonl

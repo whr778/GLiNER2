@@ -1,0 +1,81 @@
+# ACE 2005 (LDC2006T06, EN + AR + ZH) coref_clusters A/B -- CONTROL arm (`coref_clusters: enable`).
+#
+# Paired against `ace2005/ace2005-coref-ignore.yaml`. Identical to `ace2005-eb23a.yaml`
+# (`expand_argument_coref: false`), differing from the `ignore` arm ONLY in
+# `training.coref_clusters: enable` vs `ignore` (plus output_dir / experiment_name).
+#
+# Single-run noise floor: ±0.02 strict micro-F1 (±0.041 on relations).
+model:
+  pretrained: whr778/gliner2-eb23a
+  architecture: boundary
+  boundary_head:
+    relation_keep_gold_pairs: true
+    relation_argument_proposal_threshold: 0.05
+    relation_loss_weight: 2.0
+
+training:
+  checkpoint_restart: null
+  output_dir: ./out/ace2005-coref-enable
+  experiment_name: ace2005_coref_enable
+  data_parallel: false
+  num_epochs: 6
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 2.0e-4
+  encoder_lr_backbone_only: true
+  warmup_ratio: 0.10
+  scheduler_type: cosine
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  gold_injection_start: 0.75
+  gold_injection_end: 0.25
+  eval_strategy: epoch
+  metric_for_best: eval_overall_strict_head_macro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  save_epoch_checkpoint: true
+  logging_steps: 10
+  num_workers: 2
+  validate_data: false
+  allow_invalid_samples: true
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  relation_gold_pairs: nearest
+  negative_pools: auto
+  negative_labels_per_dim:
+    entities: 4
+    events: 6
+  negative_label_seed: 42
+  negative_gold_full_roles: true
+  expand_argument_coref: false
+  coref_clusters: enable
+  schema_dropout: false
+  sliding_window: true
+  max_len: 4096
+  window_stride: 3072
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+  seed: 42
+  default_schema_mode: dataset
+
+eval:
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
+  metric_sweep: true
+  model_schema: true
+
+labels_file: labels/unified-full-v4.yaml
+
+data:
+  corpora:
+    - data/ace2005_eng
+    - data/ace2005_ara
+    - data/ace2005_zho
+  event_files: {}

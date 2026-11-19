@@ -359,3 +359,71 @@ def test_compute_metrics_and_splice_never_expand_coref_into_eval_gold():
     assert kept == [0]
     assert golds[0]["events"][0]["arguments"] == [{"role": "Person", "entity": "Paul"}]
 
+
+def test_coref_clusters_ignore_disables_training_and_decode_coref(tmp_path):
+    """training.coref_clusters='ignore' drops coref-only records/chunks, strips
+    _coref_clusters, zeroes entity_coref_link_weight, and clears inherited
+    entity_coref_threshold / copy / boost on both live settings and saved config."""
+    import pytest
+
+    from gliner2.processing import coref
+    from gliner2.training.config import TrainingConfig
+    from gliner2.training.trainer import GLiNER2Trainer
+    from tests.fixtures.tiny_tokenizer import build_tiny_tokenizer
+
+    with pytest.raises(ValueError, match="coref_clusters"):
+        TrainingConfig(coref_clusters="bogus", bf16=False, fp16=False)
+
+    coref_only = {
+        "input": TEXT,
+        "output": {},
+        "coref_clusters": _record()["coref_clusters"],
+    }
+    mix = [_record(), coref_only]
+
+    for sw in (False, True):
+        model = _build_tiny_records_model()
+        model.config.boundary_head = {
+            **dict(getattr(model.config, "boundary_head", None) or {}),
+            "entity_coref_link": True,
+            "entity_coref_link_weight": 0.3,
+            "entity_coref_threshold": 0.5,
+            "record_argument_coref_copy": "canonical",
+            "record_argument_coref_boost": 0.25,
+        }
+        model.enable_mention_link()
+        cfg = TrainingConfig(
+            output_dir=str(tmp_path / f"ig_{sw}"),
+            bf16=False,
+            fp16=False,
+            sliding_window=sw,
+            max_len=128,
+            window_stride=96,
+            coref_clusters="ignore",
+            expand_argument_coref=True,
+            validate_data=False,
+        )
+        trainer = GLiNER2Trainer(model, cfg)
+        trainer.processor.tokenizer = build_tiny_tokenizer()
+
+        assert model.boundary_settings.entity_coref_link_weight == 0.0
+        assert model.boundary_settings.entity_coref_threshold is None
+        assert model.boundary_settings.record_argument_coref_copy == "none"
+        assert model.boundary_settings.record_argument_coref_boost == 0.0
+        assert model.config.boundary_head["entity_coref_threshold"] is None
+        assert not any(p.requires_grad for p in model.mention_link.parameters())
+
+        ds_train = trainer._prepare_data([dict(r) for r in mix], is_train=True)
+        assert len(ds_train) == 1  # coref-only record dropped
+        assert ds_train.use_coref_clusters is False
+        assert ds_train.expand_argument_coref is False
+        _, schema = ds_train[0]
+        assert schema["events"][0]["arguments"] == [{"role": "Person", "entity": "Paul"}]
+        _, clusters = coref.take([ds_train[0]])
+        assert clusters == [None]
+
+        ds_train.use_coref_clusters = True
+        with pytest.raises(SystemExit, match="use_coref_clusters"):
+            trainer._wired(ds_train, is_train=True)
+
+

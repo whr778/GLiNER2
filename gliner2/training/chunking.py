@@ -284,6 +284,7 @@ def chunk_records(
     stride: int,
     desc: Optional[str] = "chunking",
     show_progress: bool = True,
+    use_coref_clusters: bool = True,
 ) -> List[Dict[str, Any]]:
     """Expand ``records`` into overlapping subword-window chunks.
 
@@ -307,29 +308,47 @@ def chunk_records(
         unit="rec",
     )
     for record in iterator:
+        output = record.get("output")
+        if not use_coref_clusters and isinstance(output, dict) and not _record_has_content(output) and record.get("coref_clusters"):
+            continue
         text = record.get("input")
         if text is None:
             text = record.get("text")
         if not isinstance(text, str) or not text:
-            expanded.append(record)
+            expanded.append(
+                {k: v for k, v in record.items() if k != "coref_clusters"}
+                if not use_coref_clusters and "coref_clusters" in record
+                else record
+            )
             n_passthrough += 1
             continue
         chunks = chunk_text_by_subwords(text, tokenizer, window_size, stride)
         if len(chunks) == 1 and chunks[0][2] == text:
-            expanded.append(record)
+            expanded.append(
+                {k: v for k, v in record.items() if k != "coref_clusters"}
+                if not use_coref_clusters and "coref_clusters" in record
+                else record
+            )
             n_passthrough += 1
             continue
-        output = record.get("output")
         if output is None:
             # Inference-shape records carry their schema under "schema";
             # pass them through unchunked (training never sees them).
-            expanded.append(record)
+            expanded.append(
+                {k: v for k, v in record.items() if k != "coref_clusters"}
+                if not use_coref_clusters and "coref_clusters" in record
+                else record
+            )
             n_passthrough += 1
             continue
         n_chunked += 1
         for c_start, c_end, chunk_text in chunks:
             new_out = _filter_record_output(output, chunk_text, c_start, c_end)
-            clusters = _chunk_clusters(record.get("coref_clusters"), c_start, c_end)
+            clusters = (
+                _chunk_clusters(record.get("coref_clusters"), c_start, c_end)
+                if use_coref_clusters
+                else []
+            )
             if not _record_has_content(new_out) and sum(map(len, clusters)) < 2:
                 continue
             chunk = {"input": chunk_text, "output": new_out}

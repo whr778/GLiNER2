@@ -290,6 +290,11 @@ class TrainingConfig:
     relation_gold_pairs: str = "all"
     # Expand gold event arguments with coreferent mentions from coref_clusters (argument_coref.py).
     expand_argument_coref: bool = True
+    # "enable": attach/train MentionLink on coref_clusters and keep decode entity_coref settings;
+    # "ignore": strip coref_clusters from training (dropping coref-only records/chunks, disabling
+    # MentionLink loss and expand_argument_coref) and disable inherited in-engine entity-coref decode
+    # (entity_coref_threshold=None, copy="none", boost=0.0) unless explicitly overridden on boundary_head.
+    coref_clusters: str = "enable"
     group_by_length: bool = True
     length_group_window_batches: int = 50
     # "charclass" (default) approximates tokens from character classes and works for
@@ -321,6 +326,10 @@ class TrainingConfig:
             self.bf16 = False
         if self.fp16 and self.bf16:
             raise ValueError("Cannot use both fp16 and bf16")
+        if self.coref_clusters not in ("enable", "ignore"):
+            raise ValueError(
+                f"coref_clusters must be 'enable' or 'ignore', got {self.coref_clusters!r}"
+            )
         if not 0.0 <= self.gold_injection_start <= 1.0:
             raise ValueError("gold_injection_start must be in [0, 1]")
         if not 0.0 <= self.gold_injection_end <= 1.0:

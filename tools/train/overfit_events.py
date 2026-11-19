@@ -275,9 +275,12 @@ def main(argv=None) -> None:
         negatives = NegativeLabels.load(pools, tr["negative_labels_per_dim"],
                                         seed=int(tr.get("negative_label_seed", 42)), partial=cfg["data"].get("partial_annotation"),
                                         gold_full_roles=bool(tr.get("negative_gold_full_roles", False)))
+    use_coref = str(tr.get("coref_clusters", "enable")) == "enable"
     ds = ExtractorDataset(
         data=records, max_samples=-1, shuffle=False, seed=42, validate=False,
-        negatives=negatives, expand_argument_coref=bool(tr.get("expand_argument_coref", True)),
+        negatives=negatives,
+        expand_argument_coref=use_coref and bool(tr.get("expand_argument_coref", True)),
+        use_coref_clusters=use_coref,
     )
     coll = ExtractorCollator(model.processor, is_training=True, max_len=tr.get("max_len"), architecture="boundary",
                              max_gold_per_query=int(head.get("max_gold_per_query", 32)),
