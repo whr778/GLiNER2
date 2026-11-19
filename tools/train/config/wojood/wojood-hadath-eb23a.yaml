@@ -1,0 +1,96 @@
+# Wojood Hadath full fine-tune, warm-started from eb23a.
+#
+# Same full-rank schedule as ace2005-eb23a.yaml: mmBERT-base at encoder_lr
+# 2.0e-5, the task heads at task_lr 2.0e-4, 6 epochs, effective batch 16,
+# gold_injection 0.75 -> 0.25. Hadath is one Arabic event type (`Event`) and
+# three roles (`hasAgent`, `hasLocation`, `hasDate`). There is no entity gold
+# and no relation gold, so the ACE relation-loss overrides are not copied:
+# they would supervise nothing.
+#
+# `events: 6` is declared so the injector is wired, matching the ACE config.
+# Measured on the 1,096 train records before launch: it adds 0 absent labels.
+# The corpus has only `Event`, and that type is gold on every kept sentence.
+# `negative_gold_full_roles` is the negative that does fire: those 1,096
+# records list 1,933 unargued roles. `title_snake` rewrites the roles to
+# `Has_Agent`, `Has_Date`, and `Has_Location` before training.
+#
+# 1,814 of 2,477 arguments (73.23%) sit inside the trigger span. That is the
+# concrete place to look if argument strict micro-F1 stays low.
+#
+# Selection is `eval_event_argument_strict_micro_f1`. ACE selected on overall
+# because that mix has entity and relation gold. This corpus does not, so
+# overall would be moved by heads this data cannot score.
+#
+# Score the zero-shot eb23a control on these same splits before comparing:
+#
+#   uv run python tools/train/eval.py \
+#     --checkpoint whr778/gliner2-eb23a \
+#     --config tools/train/config/wojood/wojood-hadath-eb23a.yaml \
+#     --split val --model-schema
+#
+# Single-run noise floor: ±0.02 strict micro-F1.
+model:
+  pretrained: whr778/gliner2-eb23a
+  architecture: boundary
+
+training:
+  checkpoint_restart: null
+  output_dir: ./out/wojood-hadath-eb23a
+  experiment_name: wojood_hadath_eb23a
+  data_parallel: false
+  num_epochs: 6
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  encoder_lr: 2.0e-5
+  task_lr: 2.0e-4
+  encoder_lr_backbone_only: true
+  warmup_ratio: 0.10
+  scheduler_type: cosine
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  gold_injection_start: 0.75
+  gold_injection_end: 0.25
+  eval_strategy: epoch
+  metric_for_best: eval_event_argument_strict_micro_f1
+  greater_is_better: true
+  save_best: true
+  save_total_limit: 2
+  save_epoch_checkpoint: true
+  logging_steps: 10
+  num_workers: 2
+  validate_data: false
+  allow_invalid_samples: true
+  error_policy: skip
+  on_capacity_exceeded: truncate_with_warning
+  negative_pools: auto
+  negative_labels_per_dim:
+    entities: 4
+    events: 6
+  negative_label_seed: 42
+  negative_gold_full_roles: true
+  schema_dropout: false
+  sliding_window: true
+  max_len: 4096
+  window_stride: 3072
+  gradient_checkpointing: true
+  pin_memory: true
+  early_stopping: false
+  seed: 42
+  default_schema_mode: dataset
+
+eval:
+  batch_size: 2
+  threshold: 0.3
+  threshold_sweep: true
+  global_decode: true
+  eval_by_language: true
+  metric_sweep: true
+  model_schema: true
+
+labels_file: labels/unified-full-v4.yaml
+
+data:
+  corpora:
+    - data/wojood_hadath
+  event_files: {}
