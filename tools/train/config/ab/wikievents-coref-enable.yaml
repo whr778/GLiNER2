@@ -6,9 +6,9 @@
 #
 # The ONLY difference between the arms is `training.coref_clusters`:
 #   - `enable` (this arm): keeps `MentionLink` (`entity_coref_loss`, weight 0.3)
-#     training on `wikievents_off`'s gold `coref_clusters` and keeps inherited
-#     in-engine entity-coref decode (`entity_coref_threshold=0.5`, `copy=canonical`,
-#     `boost=0.25`).
+#     training on `wikievents_off`'s gold `coref_clusters` and keeps non-destructive
+#     in-engine entity-coref decode (`entity_coref_threshold=0.5`, `copy=none`,
+#     `boost=0.0`).
 #   - `ignore`: strips `coref_clusters` from training (0 `MentionLink` pairs, drops
 #     coref-only windows) and disables inherited entity-coref decode
 #     (`entity_coref_threshold=None`, `copy=none`, `boost=0.0`).
@@ -17,6 +17,9 @@
 model:
   pretrained: whr778/gliner2-eb23a
   architecture: boundary
+  boundary_head:
+    record_argument_coref_copy: none
+    record_argument_coref_boost: 0.0
 
 training:
   checkpoint_restart: null
@@ -73,6 +76,7 @@ eval:
   batch_size: 2
   threshold: 0.3
   threshold_sweep: true
+  calibration_menu: model_schema
   global_decode: true
   eval_by_language: true
   metric_sweep: true

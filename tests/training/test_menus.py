@@ -26,7 +26,8 @@ POOL = {"entities": ["Person", "Location", "Date"], "events": {"Conflict.Attack"
 def test_parse_menu():
     assert E.parse_menu("gold") == ("gold", None) and E.parse_menu("widened:20") == ("widened", "20")
     assert E.parse_menu("app:news55") == ("app", "news55") and E.parse_menu("corpus_full") == ("corpus_full", None)
-    for bad in ("widened", "app:", "full", "union"):
+    assert E.parse_menu("model_schema") == ("model_schema", None)
+    for bad in ("widened", "app:", "full", "union", "model_schema:x", "gold:x", "corpus_full:x"):
         with pytest.raises(ValueError):
             E.parse_menu(bad)
 
@@ -92,6 +93,12 @@ def test_corpus_pools_keep_roleless_types_and_skip_partial_dimensions(tmp_path):
 def test_check_menus_refuses_an_unknown_mode():
     with pytest.raises(ValueError):
         T.check_menus({"eval": {"menu": "union"}}, "x.yaml")
+
+
+def test_check_menus_accepts_calibration_model_schema_and_refuses_eval_menu_model_schema():
+    T.check_menus({"eval": {"calibration_menu": "model_schema"}}, "x.yaml")
+    with pytest.raises(SystemExit, match="eval.model_schema: true"):
+        T.check_menus({"eval": {"menu": "model_schema"}}, "x.yaml")
 
 
 def test_infer_reads_an_application_menu_file(tmp_path):

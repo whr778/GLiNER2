@@ -12,6 +12,8 @@ model:
     relation_keep_gold_pairs: true
     relation_argument_proposal_threshold: 0.05
     relation_loss_weight: 2.0
+    record_argument_coref_copy: none
+    record_argument_coref_boost: 0.0
 
 training:
   checkpoint_restart: null
@@ -66,6 +68,7 @@ eval:
   batch_size: 2
   threshold: 0.3
   threshold_sweep: true
+  calibration_menu: model_schema
   global_decode: true
   eval_by_language: true
   metric_sweep: true

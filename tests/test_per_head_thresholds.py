@@ -126,6 +126,17 @@ class TestShipping:
         cfg = json.loads((tmp_path / "config.json").read_text())
         assert cfg["inference_defaults"] == {"threshold": 0.5, "chunk_size": 4096, "per_head_thresholds": {"entity": 0.1, "relation": 0.5}}
 
+    def test_ship_thresholds_records_non_default_calibration_menu(self, tmp_path):
+        import train as T
+        (tmp_path / "config.json").write_text(json.dumps({"inference_defaults": {"threshold": 0.3}}))
+        T._ship_thresholds(tmp_path, 0.7, {"entity": 0.9, "event": 0.7}, calibration_menu="model_schema")
+        cfg = json.loads((tmp_path / "config.json").read_text())
+        assert cfg["inference_defaults"] == {
+            "threshold": 0.7,
+            "per_head_thresholds": {"entity": 0.9, "event": 0.7},
+            "calibration_menu": "model_schema",
+        }
+
     def test_per_head_pass_skips_the_decode_when_every_pick_is_the_global(self, tmp_path):
         import train as T
         ev = {"threshold": 0.3, "batch_size": 2, "stopwords": frozenset()}

@@ -171,10 +171,16 @@ MENU_CAP = 64
 
 
 def parse_menu(mode: str) -> Tuple[str, Optional[str]]:
-    """``gold`` | ``widened:K`` | ``corpus_full`` | ``app:<name>`` -> (kind, argument)."""
+    """``gold`` | ``widened:K`` | ``corpus_full`` | ``model_schema`` | ``app:<name>`` -> (kind, argument)."""
     kind, _, arg = (mode or "gold").partition(":")
-    if kind not in ("gold", "widened", "corpus_full", "app") or (kind in ("widened", "app") and not arg):
-        raise ValueError(f"menu {mode!r}: expected gold | widened:K | corpus_full | app:<name>")
+    if (
+        kind not in ("gold", "widened", "corpus_full", "model_schema", "app")
+        or (kind in ("widened", "app") and not arg)
+        or (kind in ("gold", "corpus_full", "model_schema") and arg)
+    ):
+        raise ValueError(
+            f"menu {mode!r}: expected gold | widened:K | corpus_full | model_schema | app:<name>"
+        )
     return kind, arg or None
 
 

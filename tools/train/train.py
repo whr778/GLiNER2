@@ -880,6 +880,11 @@ def check_menus(cfg: Dict, config_path: str) -> None:
         if not mode:
             continue
         kind, arg = parse_menu(mode)
+        if kind == "model_schema" and key == "menu":
+            raise SystemExit(
+                "[menu] eval.menu=model_schema is not supported; use eval.model_schema: true "
+                "(and eval.calibration_menu: model_schema for threshold calibration)."
+            )
         if kind == "app":
             app = load_app_menu(arg, cfg, config_path)
             for c in app["exhaustive_for"]:
@@ -894,15 +899,22 @@ def calibrate_coref(best: Path, cfg: Dict, config_path: str, batch_size: int, de
     set) and write the choice into ``best/config.json`` (``gliner2.training.coref_calibration``)."""
     from gliner2 import AutoExtractor
     from gliner2.training import coref_calibration as CC
+    from gliner2.training.eval_metrics import prepare_model_schema
     files, records, cfiles, control = coref_calibration_data(cfg, config_path)
+    model = AutoExtractor.from_pretrained(str(best))
     menu, menus = (cfg.get("eval") or {}).get("calibration_menu") or "gold", None
     if menu.startswith("app:"):
         # MENU_SPEC.md: calibrate under the application's menu, on the corpora it is exhaustive for.
         records, menus, report = menu_split(cfg, config_path, menu, "val")
         files = [f"{menu} ({report['scored']} records)"]
+    elif menu == "model_schema":
+        schema = prepare_model_schema(model.config)
+        if not schema:
+            raise SystemExit("[coref sweep] eval.calibration_menu=model_schema requires non-empty default_schema")
+        menus = [schema] * len(records)
     print(f"\n[coref sweep] {best} over {len(records)} records from {files}, control {len(control)} from "
           f"{cfiles}, grid {CC.COREF_THRESHOLD_GRID}, calibration menu {menu}")
-    rows = CC.sweep(AutoExtractor.from_pretrained(str(best)), records, decode, batch_size=batch_size,
+    rows = CC.sweep(model, records, decode, batch_size=batch_size,
                     control=control or None, menus=menus)
     CC.write(best, rows, *CC.choose(rows), source=files, control=cfiles)
 
@@ -1610,7 +1622,7 @@ def training_splits(cfg: Dict, config_path: str) -> Tuple[List[Dict], List[Dict]
 
 def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
                      checkpoint, config_path, per_head_thresholds=None,
-                     model_schema: bool = False) -> dict:
+                     model_schema: bool = False, calibration_menu: str = "gold") -> dict:
     """The operating point behind a metrics file, so two numbers can be compared.
 
     ONE helper for BOTH writers on purpose. A `<split>_metrics.json` used to carry 314
@@ -1626,6 +1638,7 @@ def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
         "full_menu": bool(full_menu),
         "menu_negatives": int(menu_negatives) if full_menu else 0,
         "model_schema": bool(model_schema),
+        "calibration_menu": calibration_menu or "gold",
         "split": split,
         "records": records,
         "checkpoint": str(checkpoint),
@@ -1634,7 +1647,12 @@ def _eval_provenance(*, threshold, full_menu, menu_negatives, split, records,
     }
 
 
-def _ship_thresholds(best: Path, threshold: float, per_head: Dict[str, float]) -> None:
+def _ship_thresholds(
+    best: Path,
+    threshold: float,
+    per_head: Dict[str, float],
+    calibration_menu: Optional[str] = None,
+) -> None:
     """Record the swept operating point in ``best/config.json`` ``inference_defaults``: the global
     threshold the model card quotes, and the per-head picks. Until this, ``inference_defaults`` kept
     the config's PRE-sweep threshold (eb18/eb19 shipped 0.3 while their cards quoted the swept value).
@@ -1644,6 +1662,8 @@ def _ship_thresholds(best: Path, threshold: float, per_head: Dict[str, float]) -
     defaults = dict(cfg.get("inference_defaults") or {})
     defaults["threshold"] = threshold
     defaults["per_head_thresholds"] = dict(per_head)
+    if calibration_menu:
+        defaults["calibration_menu"] = calibration_menu
     cfg["inference_defaults"] = defaults
     path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[threshold sweep] shipped inference_defaults {defaults} -> {path}")
@@ -1839,6 +1859,10 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
     bh.update({k: v for k, v in (overrides or {}).items()
                if k in _EVAL_TIME_BOUNDARY_KEYS})
     bh = {k: v for k, v in bh.items() if k in _EVAL_TIME_BOUNDARY_KEYS}
+    ckpt_cfg_path = best / "config.json"
+    if ckpt_cfg_path.is_file():
+        ckpt_bh = json.loads(ckpt_cfg_path.read_text(encoding="utf-8")).get("boundary_head") or {}
+        bh = {k: v for k, v in bh.items() if ckpt_bh.get(k) != v}
     conflicting = sorted(k for k in bh if k in _STRUCTURAL_BOUNDARY_KEYS)
     if conflicting:
         raise SystemExit(f"[eval] boundary_head keys {conflicting} are structural; "
@@ -1900,6 +1924,7 @@ def evaluate_config(config_path: str, split: str = "test", checkpoint: str = Non
             config_path=config_path,
             per_head_thresholds=per_head or None,
             model_schema=bool(metrics.get("model_schema")),
+            calibration_menu=(cfg.get("eval") or {}).get("calibration_menu") or "gold",
         )
         fname = f"{split}_metrics.json"
         out_dir = Path(cfg["training"]["output_dir"])
@@ -2365,6 +2390,7 @@ def main(config_path: str) -> None:
         print(f"\n[blind test] No 'best' checkpoint at {best}; skipping.")
         return
 
+    cal_menu = (cfg.get("eval") or {}).get("calibration_menu") or "gold"
     if threshold_sweep_cfg and not eval_data:
         print("\n[threshold sweep] No val data; skipping, keeping threshold="
               f"{eval_thr}.")
@@ -2375,12 +2401,24 @@ def main(config_path: str) -> None:
         sweep_model = AutoExtractor.from_pretrained(str(best))
         eval_records = _read_records(eval_data) if eval_data and isinstance(eval_data[0], str) else eval_data
         sweep_menus = None
-        cal_menu = (cfg.get("eval") or {}).get("calibration_menu") or "gold"
-        if cal_menu != "gold":
+        if cal_menu != "gold" and cal_menu != "model_schema":
             # MENU_SPEC.md: pick the threshold under the menu production will send, not the gold menu.
             eval_records, sweep_menus, report = menu_split(cfg, config_path, cal_menu, "val")
             print(f"[threshold sweep] calibrating under menu {cal_menu}: {report}")
         sweep_ds = ExtractorDataset(eval_records, shuffle=False, validate=False, expand_argument_coref=False)
+        if cal_menu == "model_schema":
+            from gliner2.training.eval_metrics import model_schema_summary, prepare_model_schema
+            schema = prepare_model_schema(sweep_model.config)
+            if not schema:
+                raise SystemExit(
+                    "[threshold sweep] eval.calibration_menu=model_schema requires a non-empty "
+                    "checkpoint default_schema (e.g. training.default_schema_mode: dataset)."
+                )
+            sweep_menus = [schema] * len(sweep_ds)
+            print(
+                f"[threshold sweep] calibrating under menu model_schema: "
+                f"{model_schema_summary(schema)} over {len(sweep_ds)} val records"
+            )
         eval_thr, sweep_best_metrics, sweep_all = sweep_thresholds(
             sweep_model, sweep_ds, thresholds=thresholds, batch_size=eval_bs, stopwords=eval_stopwords,
             chunk_size=chunk_size, chunk_overlap=chunk_overlap,
@@ -2396,12 +2434,13 @@ def main(config_path: str) -> None:
                   f" vs {row['f1_at_global']:.4f} at the global {eval_thr}{'; flat across the grid' if row['flat'] else ''})")
         sweep_path = best / "threshold_sweep.json"
         sweep_path.write_text(json.dumps(
-            {"chosen_threshold": eval_thr, "per_head_thresholds": per_head, "per_head_report": head_report,
+            {"chosen_threshold": eval_thr, "calibration_menu": cal_menu,
+             "per_head_thresholds": per_head, "per_head_report": head_report,
              "by_threshold": {str(t): m for t, m in sweep_all.items()}},
             indent=2, ensure_ascii=False,
         ))
         print(f"[threshold sweep] Wrote {sweep_path}")
-        _ship_thresholds(best, eval_thr, per_head)
+        _ship_thresholds(best, eval_thr, per_head, calibration_menu=cal_menu if cal_menu != "gold" else None)
         del sweep_model
 
     gd_kwargs = dict(
@@ -2443,6 +2482,7 @@ def main(config_path: str) -> None:
             threshold=eval_thr, full_menu=False, menu_negatives=0, split="test",
             records=len(test_data), checkpoint=best, config_path=config_path, per_head_thresholds=per_head or None,
             model_schema=bool(test_metrics.get("model_schema")),
+            calibration_menu=cal_menu,
         )
         metrics_path = Path(config.output_dir) / "test_metrics.json"
         metrics_path.write_text(json.dumps(test_metrics, indent=2, ensure_ascii=False))

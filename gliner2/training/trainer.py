@@ -1728,7 +1728,8 @@ class ExtractorTrainer:
             )
         stats = getattr(dataset, "coref_attach_stats", None) or {}
         if self.is_main_process:
-            unwrap = self.model.module if hasattr(self.model, "module") else self.model
+            model = getattr(self, "model", None)
+            unwrap = model.module if hasattr(model, "module") else model
             bs = getattr(unwrap, "boundary_settings", None)
             elink_w = getattr(bs, "entity_coref_link_weight", None) if bs is not None else None
             ecoref_thr = getattr(bs, "entity_coref_threshold", None) if bs is not None else None

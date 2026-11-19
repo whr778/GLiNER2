@@ -83,6 +83,7 @@ eval:
   batch_size: 2
   threshold: 0.3
   threshold_sweep: true
+  calibration_menu: model_schema
   global_decode: true
   eval_by_language: true
   metric_sweep: true
