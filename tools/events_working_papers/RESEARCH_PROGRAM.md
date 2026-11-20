@@ -364,6 +364,7 @@ The working papers are the primary record; this map is a summary of them.
 | `COREFERENT_LINK_SPEC.md` | learned `TriggerLink` and `EntityCorefLink` coreference scorers and validation-calibrated cluster merging |
 | `EB22C_SCORE_LEVEL_AUTOPSY.md` | score-level swing autopsy, gradient-conflict measurement, and coref MLP distance discovery |
 | `EVENT_ARGUMENT_DIAGNOSIS.md` | why mention-path event arguments fail — type pooling collapses 64.2% of multi-instance events |
+| `ARGUMENT_INSIDE_TRIGGER.md` | when a gold argument sits inside its trigger, and why that share is an annotation choice a training mix has to measure |
 | `PHASE_B_PLAN.md` | the beam **in the loss** — the only untested version of the thesis, with pre-registered bars and a throughput probe that gates the spend |
 | `EKF_MHT_DESIGN.md` | Paper 1 — the filter, the real-event defeat, and the association half rebuilt as a global decode (§7.7) |
 | `EKF_MHT_BUILD_RECORD.md` | Paper 1's build record — attachment points, generator spec, blind-test protocol |
