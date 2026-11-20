@@ -6,16 +6,24 @@ case where the two spans are equal. An argument contained in any one of the
 event's triggers counts as inside. String gold has no span, so it is counted
 as unmeasured and left out of the rate.
 
+An office ACE record keeps those spans on ``event_facts`` and a string summary
+in ``output.events``. A record that still has the office side lists is passed
+through ``adapt_ace2005_office`` before the count. A record that is already
+GLiNER2-shaped is counted as written.
+
     uv run python tools/data/measure_argument_inside_trigger.py data/wojood_hadath.train.jsonl
     uv run python tools/data/measure_argument_inside_trigger.py data/wojood_hadath
 """
 from __future__ import annotations
 
 import argparse
-import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from adapt_ace2005_office import adapt_record, load_records  # noqa: E402
 
 Span = Tuple[int, int]
 
@@ -33,6 +41,14 @@ def span_of(value) -> Optional[Span]:
 def contained(argument: Span, trigger: Span) -> bool:
     """True when ``argument`` lies inside ``trigger``, edges included."""
     return trigger[0] <= argument[0] and argument[1] <= trigger[1]
+
+
+def _is_office_ace(record: dict) -> bool:
+    """True when the record still carries the office side lists."""
+    output = record.get("output") if isinstance(record.get("output"), dict) else {}
+    return any(
+        output.get(key) for key in ("entity_facts", "relation_facts", "event_facts", "clusters")
+    ) or bool(record.get("clusters"))
 
 
 def measure_record(record: dict) -> Tuple[Counter, Dict[str, Counter]]:
@@ -64,22 +80,28 @@ def measure_record(record: dict) -> Tuple[Counter, Dict[str, Counter]]:
     return totals, by_role
 
 
-def measure_paths(paths: Iterable[Path]) -> Tuple[Counter, Dict[str, Counter], int]:
-    """Totals, per-role counts, and record count over ``paths``."""
+def measure_paths(paths: Iterable[Path]) -> Tuple[Counter, Dict[str, Counter], int, List[str]]:
+    """Totals, per-role counts, record count, and office-adaptation lines over ``paths``."""
     totals: Counter = Counter()
     by_role: Dict[str, Counter] = {}
     records = 0
+    notes: List[str] = []
     for path in paths:
-        with path.open(encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                records += 1
-                part, roles = measure_record(json.loads(line))
-                totals.update(part)
-                for role, counts in roles.items():
-                    by_role.setdefault(role, Counter()).update(counts)
-    return totals, by_role, records
+        seen = 0
+        adapted = 0
+        for record in load_records(path):
+            seen += 1
+            if _is_office_ace(record):
+                record = adapt_record(record)
+                adapted += 1
+            part, roles = measure_record(record)
+            totals.update(part)
+            for role, counts in roles.items():
+                by_role.setdefault(role, Counter()).update(counts)
+        records += seen
+        if adapted:
+            notes.append(f"[office_ace] {path}: records={seen} adapted={adapted}")
+    return totals, by_role, records, notes
 
 
 def resolve_paths(names: List[str]) -> List[Path]:
@@ -109,8 +131,8 @@ def _rate(counts: Counter) -> str:
 
 def report(paths: List[Path]) -> str:
     """The text report for ``paths``."""
-    totals, by_role, records = measure_paths(paths)
-    lines = [f"{len(paths)} file(s), {records} records", f"  {_rate(totals)}"]
+    totals, by_role, records, notes = measure_paths(paths)
+    lines = notes + [f"{len(paths)} file(s), {records} records", f"  {_rate(totals)}"]
     placed = [
         role for role in by_role
         if by_role[role]["inside"] + by_role[role]["outside"]

@@ -16,7 +16,7 @@ The inside share is `inside / (inside + outside)`. It is a share of placed gold 
 
 The test is character offsets on the gold, and it is this test:
 
-```23:35:tools/data/measure_argument_inside_trigger.py
+```31:43:tools/data/measure_argument_inside_trigger.py
 def span_of(value) -> Optional[Span]:
     """``(start, end)`` when ``value`` is an offset dict with a non-empty span."""
     if not isinstance(value, dict):
@@ -36,7 +36,9 @@ A span counts only when `entity` (and the trigger) is a dict with integer `start
 
 ## 2. How to count it
 
-The command takes a JSONL path as-is. A stem with no extension expands to `{stem}.jsonl` and `{stem}.*.jsonl`.
+The command takes a JSONL path as-is, and a JSON object or list the way `adapt_ace2005_office.py` reads one. A stem with no extension expands to `{stem}.jsonl` and `{stem}.*.jsonl`.
+
+An office ACE record keeps a string summary in `output.events` and the spans on `output.event_facts`. The command passes a record that still has `entity_facts`, `relation_facts`, `event_facts`, or `clusters` through `adapt_ace2005_office.adapt_record`, then counts the spans that adapter writes. A record that is already GLiNER2-shaped is counted as written. When any record in a file was adapted, the report starts with `[office_ace] {path}: records=N adapted=N`.
 
 ```bash
 uv run python tools/data/measure_argument_inside_trigger.py data/wojood_hadath.train.jsonl
@@ -92,6 +94,8 @@ String gold is a legal GLiNER2 shape, and it is unmeasured by this command. `wik
 
 An edit that drops `start` and `end` produces the same report, including a file a coworker saved without the offsets. The command then prints all unmeasured and an inside share of 0/0. That report means the spans are absent. It does not mean the arguments sit outside the trigger.
 
+An office ACE file is the other case. The summary in `output.events` is strings, and the spans live on `output.event_facts`. The command adapts that record first, so those spans are measured. A file whose offsets were deleted has no side list to adapt, and it stays unmeasured.
+
 On an ACE conversion, `coref_clusters` still carry `{"text", "start", "end"}` when `--offsets` was left off. Event triggers and argument entities are strings in that file. This command does not read the clusters, so the file still comes back all unmeasured. The rebuild in `tools/data/run_all_converters.sh` passes `--offsets`.
 
 ## 7. What a guideline has to decide
@@ -112,4 +116,4 @@ On an ACE conversion, `coref_clusters` still carry `{"text", "start", "end"}` wh
 
 ## 8. Where else this is written
 
-The definition and the command live in `tools/data/measure_argument_inside_trigger.py`. The Hadath placement rule is in `tools/data/convert_wojood_hadath.py`. The 1,814/2,477 (73.23%) count is in `tools/train/config/wojood/wojood-hadath-eb23a.yaml` and in the 2026-11-20 catalog row for the command. The cross-corpus train table, the equal-span and partial-overlap splits, and the guideline consequences are in this paper.
+The definition and the command live in `tools/data/measure_argument_inside_trigger.py`. Office ACE side lists are adapted by `tools/data/adapt_ace2005_office.py` before that count. The Hadath placement rule is in `tools/data/convert_wojood_hadath.py`. The 1,814/2,477 (73.23%) count is in `tools/train/config/wojood/wojood-hadath-eb23a.yaml` and in the 2026-11-20 catalog row for the command. The cross-corpus train table, the equal-span and partial-overlap splits, and the guideline consequences are in this paper.
