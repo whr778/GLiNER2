@@ -12,6 +12,11 @@ The numbers equal the blind test's only when the predictions were made the same 
 ``infer.py --gold-schema``, the checkpoint's own decode settings, on CPU or ``--batch-size 1``
 on MPS. The blind test also drops test documents shared with train/val; this file cannot see
 those splits, so that drop is the one thing it does not reproduce.
+
+Gold that still carries the office ACE side lists is adapted before the score, the same
+way ``infer.py`` adapts a record before it writes ``gold``. ``gold_coref`` supplies the
+argument-coref opportunity count the blind test reads off ``_coref_clusters``. It is a
+side count and does not enter ``event_argument`` strict micro-F1.
 """
 from __future__ import annotations
 
@@ -58,20 +63,59 @@ def load_menu(path: str, labels_file: str = None) -> Dict[str, Any]:
     return menu
 
 
+def _office():
+    """The office ACE adapter."""
+    import sys
+    data_dir = str(Path(__file__).resolve().parents[1] / "data")
+    if data_dir not in sys.path:
+        sys.path.insert(0, data_dir)
+    from adapt_ace2005_office import adapt_record, is_office_record
+    return adapt_record, is_office_record
+
+
+def _gold_record(row: Dict[str, Any], gold: Dict[str, Any]) -> Tuple[Dict[str, Any], Any, bool]:
+    """``(gold, clusters, adapted)``. Office side lists become GLiNER2 spans first."""
+    adapt_record, is_office_record = _office()
+    record = {"input": row.get("input") or "", "output": gold if isinstance(gold, dict) else {}}
+    if row.get("clusters"):
+        record["clusters"] = row["clusters"]
+    if not is_office_record(record):
+        return gold if isinstance(gold, dict) else {}, row.get("gold_coref"), False
+    adapted = adapt_record(record)
+    return adapted["output"], adapted.get("coref_clusters") or row.get("gold_coref"), True
+
+
+def _with_coref_opportunities(gold: Dict[str, Any], clusters, text: str) -> Dict[str, Any]:
+    """Attach the mentions the blind test counts, without adding them to the scored gold."""
+    if not clusters or not isinstance(gold, dict):
+        return gold
+    from gliner2.processing.argument_coref import added_argument_mentions
+    mentions = added_argument_mentions(gold, clusters, text or "")
+    if not mentions:
+        return gold
+    out = dict(gold)
+    out["_argument_coref_opportunities"] = [list(mention) for mention in mentions]
+    return out
+
+
 def prepare(rows: List[Dict[str, Any]], key: str, menu: Dict[str, Any] = None
             ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """Records ``{input, output: gold, pred}`` the blind test would score, and what was dropped.
 
     Under an application ``menu`` the gold is projected onto the menu, and a document with no gold is
-    KEPT: it was asked the whole menu, so anything fired on it is a measured false positive."""
-    seen, out, dropped = set(), [], {"no_gold": 0, "duplicate": 0}
+    KEPT: it was asked the whole menu, so anything fired on it is a measured false positive.
+    ``dropped['adapted']`` is how many rows still carried office ACE side lists."""
+    seen, out, dropped = set(), [], {"no_gold": 0, "duplicate": 0, "adapted": 0}
     for r in rows:
-        gold = r.get(key) or {}
+        gold, clusters, adapted = _gold_record(r, r.get(key) or {})
+        if adapted:
+            dropped["adapted"] += 1
         if menu is not None:
             gold = project_gold(gold, menu["schema"])
         elif not _schema_from_gold(gold):
             dropped["no_gold"] += 1
             continue
+        gold = _with_coref_opportunities(gold, clusters, r.get("input") or "")
         rec = {"input": r["input"], "output": gold}
         k = _record_key(rec)
         if k in seen:
@@ -197,6 +241,8 @@ def main(argv=None) -> None:
     records, dropped = prepare(rows, key, menu)
     print(f"[score] {args.predictions}: {len(rows)} lines, scored {len(records)} against `{key}` under menu "
           f"{args.menu} (dropped {dropped['no_gold']} with no gold, {dropped['duplicate']} exact duplicates)")
+    if dropped["adapted"]:
+        print(f"[office_ace] {args.predictions}: records={len(rows)} adapted={dropped['adapted']}")
     stray = off_menu(records, menu)
     if stray:
         print(f"[score] WARNING: {stray} records predict labels outside the menu they are scored under -- the "

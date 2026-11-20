@@ -12,6 +12,64 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import infer  # noqa: E402
 
 
+def _office_record():
+    text = "Dallas hired Smith. Dallas lost."
+    return {
+        "input": text,
+        "output": {
+            "entities": {"GPE": ["Dallas"]},
+            "events": [{
+                "event_type": "Personnel.End-Position",
+                "triggers": ["lost"],
+                "arguments": [{"role": "Entity", "entity": "Dallas"}],
+            }],
+            "event_facts": [{
+                "event_type": "Personnel.End-Position",
+                "triggers": [{"start": 27, "end": 31, "text": "lost"}],
+                "arguments": [{"role": "Entity", "start": 20, "end": 26, "text": "Dallas"}],
+            }],
+            "clusters": [{"cluster_id": "e1", "mentions": [[0, 6], [20, 26]]}],
+        },
+    }
+
+
+class TestOfficeAce:
+    def test_jsonl_adapts_fact_spans_and_leaves_a_gliner_record(self, tmp_path, capsys):
+        path = tmp_path / "ace.jsonl"
+        plain = {"input": "met", "output": {"events": [{"event_type": "Attack", "triggers": ["met"], "arguments": []}]}}
+        path.write_text(
+            json.dumps(_office_record(), ensure_ascii=False) + "\n" + json.dumps(plain) + "\n",
+            encoding="utf-8",
+        )
+        records = infer._read_records(str(path))
+        event = records[0]["output"]["events"][0]
+        assert event["triggers"][0] == {"text": "lost", "start": 27, "end": 31}
+        assert event["arguments"][0]["entity"] == {"text": "Dallas", "start": 20, "end": 26}
+        assert records[0]["coref_clusters"][0][1]["start"] == 20
+        assert "event_facts" not in records[0]["output"]
+        assert records[1] == plain
+        assert "adapted=1" in capsys.readouterr().out
+
+    def test_json_object_is_read(self, tmp_path):
+        path = tmp_path / "ace.json"
+        path.write_text(json.dumps(_office_record(), ensure_ascii=False), encoding="utf-8")
+        records = infer._read_records(str(path))
+        assert records[0]["output"]["events"][0]["arguments"][0]["entity"]["start"] == 20
+
+    def test_written_gold_is_the_adapted_record(self, tmp_path, monkeypatch):
+        src = tmp_path / "ace.jsonl"
+        src.write_text(json.dumps(_office_record(), ensure_ascii=False) + "\n", encoding="utf-8")
+        stub = _StubModel()
+        import gliner2
+        monkeypatch.setattr(gliner2.AutoExtractor, "from_pretrained", staticmethod(lambda *a, **k: stub))
+        out = tmp_path / "preds.jsonl"
+        infer.main(["--model", "m", "--input", str(src), "--output", str(out), "--gold-schema"])
+        row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+        assert row["gold"]["events"][0]["arguments"][0]["entity"]["start"] == 20
+        assert row["gold_coref"][0][0]["text"] == "Dallas"
+        assert "event_facts" not in row["gold"]
+
+
 class TestReadTexts:
     def test_literal_string(self):
         assert infer._read_texts("hello world") == ["hello world"]

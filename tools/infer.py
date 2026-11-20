@@ -26,6 +26,11 @@ A directory (or Hub repo) with adapter_config.json and no model.safetensors is a
 adapter. AutoExtractor loads the base named in that file, then the adapter. The
 extractor config.json beside the adapter supplies label_map and inference_defaults.
 
+An office ACE ``.jsonl`` or ``.json`` file keeps spans on ``event_facts`` and a
+string summary in ``output.events``. A record that still has those side lists is
+adapted with ``adapt_ace2005_office`` before the schema is built and before gold
+is written. A record that is already GLiNER2-shaped is left as written.
+
 Like the viewer: --model-schema starts from the schema the checkpoint ships (config.json
 default_schema), every decode setting not passed falls back to the checkpoint's
 inference_defaults, and the checkpoint's label_map is applied to the schema. See
@@ -53,13 +58,37 @@ def prediction_row(rec: Dict[str, Any], pred: Dict[str, Any], gold_mapped: Any =
     return row
 
 
+def _office():
+    """The office ACE adapter. Imported lazily so a plain text run does not load it."""
+    import sys
+    data_dir = str(Path(__file__).resolve().parent / "data")
+    if data_dir not in sys.path:
+        sys.path.insert(0, data_dir)
+    from adapt_ace2005_office import adapt_record, is_office_record, load_records
+    return adapt_record, is_office_record, load_records
+
+
 def _read_records(inp: str) -> List[Dict[str, Any]]:
-    """A literal string, a ``.txt`` file (one document), or a ``.jsonl`` file (one record per
-    line; its ``input`` is the text and its ``output``, if any, the gold)."""
+    """A literal string, a ``.txt`` file (one document), or a ``.jsonl`` / ``.json`` file.
+
+    JSONL is one record per line. JSON is one object or a list, the same way
+    ``adapt_ace2005_office`` reads it. A record that still has the office side
+    lists is adapted before it is returned. A GLiNER2 record is returned as written.
+    """
     path = Path(inp)
+    if path.is_file() and path.suffix in {".jsonl", ".json"}:
+        adapt_record, is_office_record, load_records = _office()
+        records: List[Dict[str, Any]] = []
+        adapted = 0
+        for record in load_records(path):
+            if is_office_record(record):
+                record = adapt_record(record)
+                adapted += 1
+            records.append(record)
+        if adapted:
+            print(f"[office_ace] {path}: records={len(records)} adapted={adapted}")
+        return records
     if path.is_file():
-        if path.suffix == ".jsonl":
-            return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
         return [{"input": path.read_text(encoding="utf-8")}]
     return [{"input": inp}]
 

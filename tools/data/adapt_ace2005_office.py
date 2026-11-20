@@ -209,6 +209,16 @@ def _clusters(text: str, output: Dict[str, Any], record: Dict[str, Any], stats: 
     return clusters or None
 
 
+def is_office_record(record: Dict[str, Any]) -> bool:
+    """True when the record still carries the office side lists."""
+    if not isinstance(record, dict):
+        return False
+    output = record.get("output") if isinstance(record.get("output"), dict) else {}
+    return any(
+        output.get(key) for key in ("entity_facts", "relation_facts", "event_facts", "clusters")
+    ) or bool(record.get("clusters"))
+
+
 def adapt_record(record: Dict[str, Any], stats: Optional[Counter] = None) -> Dict[str, Any]:
     """One office record to one GLiNER2 record. ``stats`` counts the facts read."""
     stats = stats if stats is not None else Counter()

@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from adapt_ace2005_office import adapt_record, load_records  # noqa: E402
+from adapt_ace2005_office import adapt_record, is_office_record, load_records  # noqa: E402
 
 Span = Tuple[int, int]
 
@@ -41,14 +41,6 @@ def span_of(value) -> Optional[Span]:
 def contained(argument: Span, trigger: Span) -> bool:
     """True when ``argument`` lies inside ``trigger``, edges included."""
     return trigger[0] <= argument[0] and argument[1] <= trigger[1]
-
-
-def _is_office_ace(record: dict) -> bool:
-    """True when the record still carries the office side lists."""
-    output = record.get("output") if isinstance(record.get("output"), dict) else {}
-    return any(
-        output.get(key) for key in ("entity_facts", "relation_facts", "event_facts", "clusters")
-    ) or bool(record.get("clusters"))
 
 
 def measure_record(record: dict) -> Tuple[Counter, Dict[str, Counter]]:
@@ -91,7 +83,7 @@ def measure_paths(paths: Iterable[Path]) -> Tuple[Counter, Dict[str, Counter], i
         adapted = 0
         for record in load_records(path):
             seen += 1
-            if _is_office_ace(record):
+            if is_office_record(record):
                 record = adapt_record(record)
                 adapted += 1
             part, roles = measure_record(record)

@@ -44,7 +44,7 @@ def test_prepare_drops_no_gold_and_exact_duplicates():
     rows = [{"input": "a", "output": PRED, "gold": GOLD}, {"input": "a", "output": PRED, "gold": GOLD},
             {"input": "b", "output": {}, "gold": {}}]
     records, dropped = S.prepare(rows, "gold")
-    assert len(records) == 1 and dropped == {"no_gold": 1, "duplicate": 1}
+    assert len(records) == 1 and dropped == {"no_gold": 1, "duplicate": 1, "adapted": 0}
 
 
 def test_off_menu_counts_predictions_outside_the_gold_menu():
@@ -92,6 +92,44 @@ def test_span_and_confidence_output_scores_like_plain_output():
 
 def _m(text, start):
     return {"text": text, "start": start, "end": start + len(text)}
+
+
+def test_office_gold_is_adapted_before_scoring():
+    text = "Dallas hired Smith. Dallas lost."
+    gold = {
+        "events": [{
+            "event_type": "Personnel.End-Position",
+            "triggers": ["lost"],
+            "arguments": [{"role": "Entity", "entity": "Dallas"}],
+        }],
+        "event_facts": [{
+            "event_type": "Personnel.End-Position",
+            "triggers": [{"start": 27, "end": 31, "text": "lost"}],
+            "arguments": [{"role": "Entity", "start": 20, "end": 26, "text": "Dallas"}],
+        }],
+        "clusters": [{"cluster_id": "e1", "mentions": [[0, 6], [20, 26]]}],
+    }
+    records, dropped = S.prepare([{"input": text, "output": {}, "gold": gold}], "gold")
+    entity = records[0]["output"]["events"][0]["arguments"][0]["entity"]
+    assert entity == {"text": "Dallas", "start": 20, "end": 26}
+    assert "event_facts" not in records[0]["output"]
+    assert dropped["adapted"] == 1
+
+
+def test_gold_coref_adds_the_opportunity_count_without_changing_the_argument():
+    text = "Dallas lost. It fell."
+    gold = {"events": [{
+        "event_type": "Personnel.End-Position",
+        "triggers": ["lost"],
+        "arguments": [{"role": "Entity", "entity": "Dallas"}],
+    }]}
+    clusters = [[{"text": "Dallas", "start": 0, "end": 6}, {"text": "It", "start": 13, "end": 15}]]
+    records, dropped = S.prepare(
+        [{"input": text, "output": {}, "gold": gold, "gold_coref": clusters}], "gold")
+    assert records[0]["output"]["events"][0]["arguments"] == gold["events"][0]["arguments"]
+    assert records[0]["output"]["_argument_coref_opportunities"] == [
+        ["Personnel.End-Position", "Entity", "It"]]
+    assert dropped["adapted"] == 0
 
 
 def test_coref_scores_exact_span_pairs_and_pronouns():

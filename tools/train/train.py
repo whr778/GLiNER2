@@ -733,8 +733,12 @@ def bind_data_flags(cfg: Dict) -> None:
 
 def _is_office_ace(record: Dict) -> bool:
     """True when the record still carries the office side lists."""
-    output = record.get("output") if isinstance(record.get("output"), dict) else {}
-    return any(output.get(key) for key in ("entity_facts", "relation_facts", "event_facts", "clusters")) or bool(record.get("clusters"))
+    import sys as _sys
+    data_dir = str(Path(__file__).resolve().parents[1] / "data")
+    if data_dir not in _sys.path:
+        _sys.path.insert(0, data_dir)
+    from adapt_ace2005_office import is_office_record
+    return is_office_record(record)
 
 
 def read_transformed(paths: List[str], fns: Dict, passthrough: Set[str]) -> List[Dict]:
