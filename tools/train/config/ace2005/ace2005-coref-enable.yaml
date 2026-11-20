@@ -77,6 +77,10 @@ eval:
 labels_file: labels/unified-full-v4.yaml
 
 data:
+  # Office ACE keeps offsets in entity_facts, relation_facts, event_facts, and
+  # clusters. Load those into the GLiNER2 record. A file already in this repo's
+  # shape is left as it is.
+  office_ace: true
   corpora:
     - data/ace2005_eng
     - data/ace2005_ara

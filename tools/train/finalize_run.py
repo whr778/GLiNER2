@@ -33,6 +33,7 @@ from train import (  # noqa: E402
     _run_blind_test,
     _split_files,
     _write_model_card,
+    bind_data_flags,
 )
 
 
@@ -44,6 +45,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    bind_data_flags(cfg)
     config = TrainingConfig(**cfg["training"])
     best = Path(config.output_dir) / "best"
     if not best.is_dir():

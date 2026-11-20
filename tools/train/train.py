@@ -44,7 +44,10 @@ The config has four sections:
 * ``data``     - ``corpora`` base paths (``<name>.{train,val,test}.jsonl``) and
   an ``event_files`` map of ``{name: {train,val,test}}``. Event splits are
   included only if the file exists on disk, so a config runs with any subset
-  present. See ``tools/train/config/`` for examples.
+  present. ``office_ace: true`` reads the office ACE side lists
+  (``entity_facts``, ``relation_facts``, ``event_facts``, ``clusters``) into
+  the GLiNER2 record as each split is loaded. A record already in the GLiNER2
+  shape is left as it is. See ``tools/train/config/`` for examples.
 * ``labels``   - optional per-category label transforms, applied identically to
   train, val, and test. Each category (``entities``, ``relations``, ``events``,
   ``classifications``, ``structures``) has its own ``rollup`` / ``separator`` /
@@ -719,6 +722,21 @@ def labels_passthrough(cfg: Dict) -> Set[str]:
     return names
 
 
+_OFFICE_ACE = False
+
+
+def bind_data_flags(cfg: Dict) -> None:
+    """Remember ``data.office_ace`` for every later ``_read_records`` in this process."""
+    global _OFFICE_ACE
+    _OFFICE_ACE = bool((cfg.get("data") or {}).get("office_ace"))
+
+
+def _is_office_ace(record: Dict) -> bool:
+    """True when the record still carries the office side lists."""
+    output = record.get("output") if isinstance(record.get("output"), dict) else {}
+    return any(output.get(key) for key in ("entity_facts", "relation_facts", "event_facts", "clusters")) or bool(record.get("clusters"))
+
+
 def read_transformed(paths: List[str], fns: Dict, passthrough: Set[str]) -> List[Dict]:
     """Read records, applying the label map except to corpora in `passthrough`, each tagged with its
     `_corpus` -- the provenance the negatives injector needs (partial dimensions, the record's own
@@ -738,6 +756,7 @@ def coref_calibration_data(cfg: Dict, config_path: str) -> Tuple[List[str], List
     split of each corpus in ``eval.coref_calibration`` (coreferent gold; may be train_only) and of each
     in ``eval.coref_control`` (one trigger per event, where a merge can only cost), labels transformed
     exactly as training transforms them."""
+    bind_data_flags(cfg)
     ev = cfg.get("eval") or {}
     fns = _category_fns(load_labels_cfg(cfg, config_path))
     passthrough = labels_passthrough(cfg)
@@ -776,6 +795,7 @@ def corpus_pools(cfg: Dict, config_path: str) -> Dict[str, Dict]:
     corpus's TRAIN split annotates, after the labels transform. Event types WITHOUT roles are kept (MAVEN's
     168 are trigger-only), and a dimension declared in ``data.partial_annotation`` is left out: an absent
     label from a partial dimension may be an unannotated truth."""
+    bind_data_flags(cfg)
     d = cfg.get("data") or {}
     fns, passthrough = _category_fns(load_labels_cfg(cfg, config_path)), labels_passthrough(cfg)
     partial = d.get("partial_annotation") or {}
@@ -825,6 +845,7 @@ def menu_split(cfg: Dict, config_path: str, mode: str, split: str):
     sonnet55 is, so they are not in the config's val/test -- and projects their gold onto the menu.
     ``widened:K`` / ``corpus_full`` read the config's split (train_only excluded, exact duplicates dropped)
     and widen each document from its corpus pool."""
+    bind_data_flags(cfg)
     from gliner2.training.eval_metrics import build_menus, parse_menu
     from gliner2.training.split_hygiene import _record_key
     d = cfg.get("data") or {}
@@ -926,13 +947,39 @@ def merge_shipped(best: Path) -> bool:
 
 
 def _read_records(paths: List[str]) -> List[Dict]:
+    """Read JSONL records. With ``data.office_ace``, office ACE side lists become GLiNER2 spans first."""
+    from collections import Counter
+
+    adapt = None
+    if _OFFICE_ACE:
+        import sys as _sys
+        data_dir = str(Path(__file__).resolve().parents[1] / "data")
+        if data_dir not in _sys.path:
+            _sys.path.insert(0, data_dir)
+        from adapt_ace2005_office import adapt_record
+        adapt = adapt_record
     records: List[Dict] = []
     for p in paths:
+        stats: Counter = Counter()
+        adapted = 0
+        seen = 0
         with open(p, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if line:
-                    records.append(json.loads(line))
+                if not line:
+                    continue
+                rec = json.loads(line)
+                seen += 1
+                if adapt is not None and isinstance(rec, dict) and _is_office_ace(rec):
+                    rec = adapt(rec, stats)
+                    adapted += 1
+                records.append(rec)
+        if _OFFICE_ACE:
+            print(
+                f"[office_ace] {p}: records={seen} adapted={adapted} "
+                f"event_facts={stats['event_facts']} clusters={stats['clusters_in']} "
+                f"coref_mentions={stats['coref_mentions']}"
+            )
     return records
 
 
@@ -1607,6 +1654,7 @@ def training_splits(cfg: Dict, config_path: str) -> Tuple[List[Dict], List[Dict]
     with ``train_only`` excluded (matched by bare name), the ``event_files`` splits, duplicate files dropped, the
     label map applied, every record tagged with its ``_corpus``, then the cross-split hygiene against TRAIN.
     For tools that pick or score on a trained config's own splits; reading train is what the hygiene needs."""
+    bind_data_flags(cfg)
     data = cfg.get("data") or {}
     corpora, event_files = data.get("corpora") or [], data.get("event_files") or {}
     train_only = set(data.get("train_only") or ())
@@ -1795,6 +1843,7 @@ def _eval_split_records(cfg: Dict, config_path: str, split: str) -> List[Dict]:
     so ``evaluate_config`` scores the exact same 19,286 val / 20,602 test records
     that in-run evaluation and ``training_splits`` score.
     """
+    bind_data_flags(cfg)
     data = cfg.get("data") or {}
     corpora, event_files = data.get("corpora") or [], data.get("event_files") or {}
     train_only = set(data.get("train_only") or ())
@@ -2113,6 +2162,7 @@ def main(config_path: str) -> None:
     is_main = int(os.environ.get("LOCAL_RANK", -1)) <= 0
 
     cfg = yaml.safe_load(Path(config_path).read_text())
+    bind_data_flags(cfg)
 
     # Refuse a config whose keys this architecture cannot read, BEFORE any GPU spend.
     # These keys round-trip and read back with the value you set while changing nothing,
