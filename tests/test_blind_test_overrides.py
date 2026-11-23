@@ -156,7 +156,7 @@ def test_per_head_pass_slices_by_language_without_extra_decodes_and_ace_full_con
     assert unreachable_config_keys(cfg) == []
     assert cfg["training"]["gold_injection_start"] == 0.75
     assert cfg["training"]["gold_injection_end"] == 0.25
-    assert cfg["training"]["negative_labels_per_dim"] == {"entities": 4, "events": 6}
+    assert cfg["training"]["negative_labels_per_dim"] == {"entities": 7, "events": 33}
 
     decode_thresholds = []
 

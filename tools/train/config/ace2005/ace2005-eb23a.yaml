@@ -8,8 +8,8 @@
 # ENG and 0.857/1.000/0.667/0.500 (entity/relation/trigger/arg) on ARA in the
 # 12-step controlled trace.
 #
-# Negative doses are scaled to ACE's 7-entity / 33-event ontology (entities: 4,
-# events: 6) rather than eb23a's 320-event base dose (20), and gold_injection
+# Negative doses cover ACE's full 7-entity / 33-event ontology (entities: 7,
+# events: 33; relations omitted per the 2026-10-19 relneg A/B), and gold_injection
 # anneals 0.75 -> 0.25 so cold-start Arabic triggers enter RecordHead early.
 #
 # `expand_argument_coref: false` keeps event role supervision on the annotated
@@ -74,8 +74,8 @@ training:
   relation_gold_pairs: nearest
   negative_pools: auto
   negative_labels_per_dim:
-    entities: 4
-    events: 6
+    entities: 7
+    events: 33
   negative_label_seed: 42
   negative_gold_full_roles: true
   expand_argument_coref: false

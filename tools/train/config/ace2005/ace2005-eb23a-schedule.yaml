@@ -63,8 +63,8 @@ training:
   relation_gold_pairs: nearest
   negative_pools: auto
   negative_labels_per_dim:
-    entities: 4
-    events: 6
+    entities: 7
+    events: 33
   negative_label_seed: 42
   negative_gold_full_roles: true
   expand_argument_coref: false
