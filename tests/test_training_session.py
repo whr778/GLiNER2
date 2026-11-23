@@ -20,6 +20,14 @@ def config(tmp_path, **kwargs):
     return TrainingConfig(**(options | kwargs))
 
 
+def assert_post_backward_close(actual, expected, device):
+    """Exact on CPU/CUDA; allow Metal atomic scatter-add 1-ULP jitter on MPS."""
+    if device.type == "mps":
+        torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-7)
+    else:
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
 def stochastic_model(seed=13):
     model = build_tiny_span_model(seed=seed)
     for module in model.modules():
@@ -49,7 +57,7 @@ def test_step_restore_continues_same_optimizer_and_exports_native_weights(tmp_pa
     resumed.forward_backward(ROWS)
     assert resumed.optim_step() == 2
     for name, value in resumed.model.state_dict().items():
-        torch.testing.assert_close(value, expected[name], rtol=0, atol=0)
+        assert_post_backward_close(value, expected[name], resumed.trainer.device)
     held_out = resumed.forward(ROWS)
     resumed.export_weights(tmp_path / "export")
     loaded = AutoExtractor.from_pretrained(str(tmp_path / "export"))
@@ -75,7 +83,7 @@ def test_restore_preserves_pending_accumulation_and_rejects_empty_step(tmp_path)
     b.forward_backward(ROWS)
     b.optim_step()
     for name, value in b.model.state_dict().items():
-        torch.testing.assert_close(value, expected[name], rtol=0, atol=0)
+        assert_post_backward_close(value, expected[name], b.trainer.device)
 
 
 def test_session_rejects_oversized_batch_and_mismatched_restore(tmp_path):
@@ -118,10 +126,11 @@ def test_family_state_continuation_and_native_export(tmp_path, builder, use_lora
     b.forward_backward(ROWS)
     b.optim_step()
     for name, value in b.model.state_dict().items():
-        torch.testing.assert_close(value, expected[name], rtol=0, atol=0)
+        assert_post_backward_close(value, expected[name], b.trainer.device)
+    before_export = {k: v.clone() for k, v in b.model.state_dict().items()}
     b.export_weights(tmp_path / "export")
     for name, value in b.model.state_dict().items():
-        torch.testing.assert_close(value, expected[name], rtol=0, atol=0)
+        torch.testing.assert_close(value, before_export[name], rtol=0, atol=0)
     loaded = AutoExtractor.from_pretrained(str(tmp_path / "export")).to("cpu")
     loaded.eval()
     b.model.eval()
@@ -305,3 +314,20 @@ def test_fp16_is_rejected_before_device_allocation(tmp_path, checkpointing):
     cfg = config(tmp_path, fp16=True, gradient_checkpointing=checkpointing)
     with pytest.raises(ValueError, match="fp16 sessions are not qualified"):
         TrainingSession(build_tiny_span_model(), cfg, max_steps=2)
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS")
+def test_mps_rng_state_round_trips(tmp_path):
+    cfg = config(tmp_path / "a")
+    a = TrainingSession(stochastic_model(), cfg, max_steps=2)
+    assert a.trainer.device.type == "mps"
+    a.save_state(tmp_path / "state")
+    checkpoint = torch.load(tmp_path / "state" / "training-state.pt", map_location="cpu", weights_only=True)
+    assert checkpoint["mps_rng"] is not None
+    expected_draw = torch.rand(8, device="mps")
+    b = TrainingSession(stochastic_model(seed=99), replace(cfg, output_dir=str(tmp_path / "b")), max_steps=2)
+    _ = torch.rand(16, device="mps")
+    b.load_state(tmp_path / "state")
+    assert torch.equal(torch.mps.get_rng_state(), checkpoint["mps_rng"])
+    actual_draw = torch.rand(8, device="mps")
+    torch.testing.assert_close(actual_draw, expected_draw, rtol=0, atol=0)

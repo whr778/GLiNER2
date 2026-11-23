@@ -189,6 +189,7 @@ class TrainingSession:
             "python_rng": random.getstate(), "torch_rng": torch.get_rng_state(),
             "numpy_rng": (numpy_state[0], numpy_state[1].tolist(), *numpy_state[2:]),
             "cuda_rng": torch.cuda.get_rng_state_all() if self.trainer.device.type == "cuda" else [],
+            "mps_rng": torch.mps.get_rng_state() if self.trainer.device.type == "mps" else None,
             "device_type": self.trainer.device.type,
             "engine_type": f"{type(self.trainer).__module__}.{type(self.trainer).__qualname__}",
             "engine_state": (self.trainer.session_state_dict()
@@ -235,6 +236,8 @@ class TrainingSession:
             torch.set_rng_state(payload["torch_rng"])
             if payload["cuda_rng"]:
                 torch.cuda.set_rng_state_all(payload["cuda_rng"])
+            if payload.get("mps_rng") is not None:
+                torch.mps.set_rng_state(payload["mps_rng"])
         except BaseException:
             self._broken = True
             raise

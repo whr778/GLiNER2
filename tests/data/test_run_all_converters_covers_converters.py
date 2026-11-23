@@ -66,6 +66,7 @@ EXCLUDED_PREFIXES = {
     "split_": "re-splits an existing corpus",
     "events_to_": "derives a corpus from an existing one",
     "roles_to_": "derives a corpus from an existing one",
+    "adapt_": "on-demand format adapter for externally modified inputs (e.g. office ACE); not a base converter",
 }
 
 WRITE_PATH = re.compile(r"SplitWriter|from _split|import _split|dumps_record")

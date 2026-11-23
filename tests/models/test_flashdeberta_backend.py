@@ -137,6 +137,9 @@ def test_from_pretrained_threads_flashdeberta_option(
         lambda path, hub_kwargs: {},
     )
 
+    (tmp_path / "encoder_config").mkdir()
+    (tmp_path / "encoder_config" / "config.json").write_text("{}", encoding="utf-8")
+
     model_class.from_pretrained(
         str(tmp_path),
         config=config,

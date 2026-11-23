@@ -8,7 +8,7 @@ from gliner2 import AutoExtractor
 from gliner2.training import ManagedTraining, ManagedTrainingPlan, TrainingSession
 from tests.fixtures.tiny_boundary_checkpoint import build_tiny_boundary_model
 from tests.fixtures.tiny_span_checkpoint import build_tiny_span_model
-from tests.test_training_session import ROWS, config, stochastic_model
+from tests.test_training_session import ROWS, assert_post_backward_close, config, stochastic_model
 
 
 @pytest.mark.parametrize("builder", [build_tiny_span_model, build_tiny_boundary_model])
@@ -31,7 +31,7 @@ def test_managed_direct_equivalence_and_partial_epoch_batches(tmp_path, builder,
         if plan.is_update(index):
             direct.optim_step()
     for key, value in direct.model.state_dict().items():
-        torch.testing.assert_close(value, expected[key], rtol=0, atol=0)
+        assert_post_backward_close(value, expected[key], direct.trainer.device)
     managed.close()
 
 
@@ -49,7 +49,7 @@ def test_managed_resume_preserves_cursor_rng_pending_gradients_and_validation(tm
     actual_result = b.run()
     assert actual_result["eval_metrics_history"] == expected_result["eval_metrics_history"]
     for key, value in b.session.model.state_dict().items():
-        torch.testing.assert_close(value, expected[key], rtol=0, atol=0)
+        assert_post_backward_close(value, expected[key], b.session.trainer.device)
     b.export_weights(tmp_path / "best")
     loaded = AutoExtractor.from_pretrained(str(tmp_path / "best")).to("cpu")
     assert loaded.extract_entities("john works at google", ["person"], threshold=0.0) is not None
