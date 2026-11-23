@@ -29,6 +29,10 @@
 #      eval_overall_strict_head_min_f1 so an early 0.0000 relation epoch cannot tie-break
 #      metric_sweep to threshold=0.1 or freeze best/ at Epoch 1.
 #   4. gold_injection_start/end: 0.25 matches where eb23a Epoch 5 finished.
+# Note (2026-11-18): rank-16 LoRA failed to adapt eb23a (0 Arabic base docs) to
+# unseen Arabic events (Arabic event_argument 0.0000); use ace2005-eb23a.yaml for
+# full-rank fine-tuning. Event-safety fixes from ace2005-eb23a.yaml are synced
+# below so this config cannot silently run with expand_argument_coref: true.
 # Single-run noise floor: ±0.02 strict micro-F1 (±0.041 on relations).
 model:
   pretrained: whr778/gliner2-eb23a
@@ -37,6 +41,10 @@ model:
     relation_keep_gold_pairs: true
     relation_argument_proposal_threshold: 0.05
     relation_loss_weight: 2.0
+    record_coref_link_weight: 0.0
+    record_argument_coref_copy: none
+    record_argument_coref_boost: 0.0
+    report_task_losses: true
 
 training:
   checkpoint_restart: null
@@ -54,10 +62,10 @@ training:
   bf16: true
   fp16: false
   max_grad_norm: 1.0
-  gold_injection_start: 0.25
+  gold_injection_start: 0.75
   gold_injection_end: 0.25
   eval_strategy: epoch
-  metric_for_best: eval_overall_strict_micro_f1
+  metric_for_best: eval_overall_strict_head_macro_f1
   greater_is_better: true
   save_best: true
   save_total_limit: 3
@@ -66,15 +74,18 @@ training:
   num_workers: 2
   validate_data: false
   allow_invalid_samples: true
+  ignore_missing_entities: true
+  suppress_orphaned_queries: true
   error_policy: skip
   on_capacity_exceeded: truncate_with_warning
   relation_gold_pairs: nearest
   negative_pools: auto
   negative_labels_per_dim:
-    entities: 20
-    events: 20
+    entities: 4
+    events: 6
   negative_label_seed: 42
   negative_gold_full_roles: true
+  expand_argument_coref: false
   schema_dropout: false
   sliding_window: true
   max_len: 4096
@@ -100,6 +111,7 @@ eval:
   batch_size: 2
   threshold: 0.3
   threshold_sweep: true
+  calibration_menu: model_schema
   global_decode: true
   eval_by_language: true
   metric_sweep: true

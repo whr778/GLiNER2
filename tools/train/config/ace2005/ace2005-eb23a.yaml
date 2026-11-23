@@ -34,8 +34,10 @@ model:
     relation_keep_gold_pairs: true
     relation_argument_proposal_threshold: 0.05
     relation_loss_weight: 2.0
+    record_coref_link_weight: 0.0
     record_argument_coref_copy: none
     record_argument_coref_boost: 0.0
+    report_task_losses: true
 
 training:
   checkpoint_restart: null
@@ -65,6 +67,8 @@ training:
   num_workers: 2
   validate_data: false
   allow_invalid_samples: true
+  ignore_missing_entities: true
+  suppress_orphaned_queries: true
   error_policy: skip
   on_capacity_exceeded: truncate_with_warning
   relation_gold_pairs: nearest
