@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -23,6 +24,28 @@ from gliner2.training import eval_metrics as M
 
 _split = WhitespaceTokenSplitter()
 _ROLE_TYPES = load_role_types(str(Path(__file__).resolve().parents[2] / "tools/train/config/labels/role_types.json"))
+
+
+def _office():
+    """The office ACE adapter, matching tools/infer.py and tools/train/score_predictions.py."""
+    data_dir = str(Path(__file__).resolve().parents[2] / "tools" / "data")
+    if data_dir not in sys.path:
+        sys.path.insert(0, data_dir)
+    from adapt_ace2005_office import adapt_record, is_office_record
+    return adapt_record, is_office_record
+
+
+def _adapt_gold(row: Dict[str, Any], gold: Any, clusters_key: str = "gold_coref") -> Tuple[Dict[str, Any], Any]:
+    """Return ``(gold_dict, clusters)``, adapting office ACE side lists when still present."""
+    gold_dict = gold if isinstance(gold, dict) else {}
+    record = {"input": row.get("input") or "", "output": gold_dict}
+    if row.get("clusters"):
+        record["clusters"] = row["clusters"]
+    adapt_record, is_office_record = _office()
+    if not is_office_record(record):
+        return gold_dict, row.get(clusters_key)
+    adapted = adapt_record(record)
+    return adapted["output"], adapted.get("coref_clusters") or row.get(clusters_key)
 
 
 def read_rows(path: str) -> List[Dict[str, Any]]:
@@ -44,11 +67,21 @@ def rows_of(path: str) -> List[Dict[str, Any]]:
 def summary(path: str) -> Dict[str, Any]:
     """Per record: has gold, strict F1 per head -- what the pager shows and sorts by."""
     rows = rows_of(path)
+    records = []
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict):
+            raise ValueError(f"row {i} is not a JSON object")
+        text = r.get("input") or ""
+        g, g_coref = _adapt_gold(r, r.get(gold_key(r)))
+        pred = r.get("output") if isinstance(r.get("output"), dict) else {}
+        records.append({
+            "i": i,
+            "chars": len(text),
+            "has_gold": bool(g or g_coref),
+            "f1": _f1(g, pred, g_coref),
+        })
     return {"path": path, "count": len(rows), "gold_key": gold_key(rows[0]) if rows else None,
-            "data_file": bool(rows) and is_data_row(rows[0]),
-            "records": [{"i": i, "chars": len(r["input"]), "has_gold": bool(r.get(gold_key(r)) or r.get("gold_coref")),
-                         "f1": _f1(r.get(gold_key(r)) or {}, r.get("output") or {}, r.get("gold_coref"))}
-                        for i, r in enumerate(rows)]}
+            "data_file": bool(rows) and is_data_row(rows[0]), "records": records}
 
 
 def record(path: str, i: int) -> Dict[str, Any]:
@@ -57,6 +90,13 @@ def record(path: str, i: int) -> Dict[str, Any]:
 
 
 _verdicts: Dict[Tuple[str, float, int], Dict[str, Any] | None] = {}
+
+
+def _has_extraction_spans(output: Any) -> bool:
+    """True when non-coref extraction outputs carry span offsets (coref_clusters always carries spans)."""
+    if isinstance(output, dict):
+        output = {k: v for k, v in output.items() if k != "coref_clusters"}
+    return '"start"' in json.dumps(output)
 
 
 def _infer_output(path: str, mtime: float, size: int) -> Dict[str, Any] | None:
@@ -70,7 +110,7 @@ def _infer_output(path: str, mtime: float, size: int) -> Dict[str, Any] | None:
         except (UnicodeDecodeError, json.JSONDecodeError):
             first = {}
         _verdicts[key] = ({"path": path, "mtime": mtime, "size": size, "gold_mapped": "gold_mapped" in first,
-                           "spans": '"start"' in json.dumps(first.get("output"))}
+                           "spans": _has_extraction_spans(first.get("output"))}
                           if isinstance(first, dict) and {"input", "output", "gold"} <= first.keys() else None)
     return _verdicts[key]
 
@@ -107,11 +147,22 @@ def locate(text: str, surface: str) -> List[Tuple[int, int]]:
             if [t for t, _, _ in words[i:i + n]] == sub]
 
 
+def _is_int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _has_span(m: Any) -> bool:
+    return isinstance(m, dict) and _is_int(m.get("start")) and _is_int(m.get("end"))
+
+
 def _surface(x: Any) -> str:
-    return (x.get("text") if isinstance(x, dict) else x or "").strip()
+    val = x.get("text") if isinstance(x, dict) else x
+    return val.strip() if isinstance(val, str) else ""
 
 
 def _spans(text: str, surface: str, missed: List[str]) -> List[Dict[str, Any]]:
+    if not surface:
+        return []
     found = locate(text, surface)
     if not found:
         missed.append(surface)
@@ -119,14 +170,16 @@ def _spans(text: str, surface: str, missed: List[str]) -> List[Dict[str, Any]]:
 
 
 def gold_entities(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[str, list]:
-    return {label: [sp for s in surfaces if isinstance(s, str) and s.strip()
-                    for sp in _spans(text, s.strip(), missed)]
-            for label, surfaces in (gold.get("entities") or {}).items()}
+    ents = gold.get("entities")
+    if not isinstance(ents, dict):
+        return {}
+    return {label: [sp for s in (surfaces or []) for sp in _placed(text, s, missed)]
+            for label, surfaces in ents.items()}
 
 
 def _placed(text: str, item: Any, missed: List[str]) -> List[Dict[str, Any]]:
-    if isinstance(item, dict) and {"text", "start", "end"} <= item.keys():
-        return [{"text": str(item["text"]), "start": int(item["start"]), "end": int(item["end"])}]
+    if _has_span(item) and "text" in item:
+        return [{"text": str(item["text"]), "start": item["start"], "end": item["end"]}]
     s = _surface(item)
     return _spans(text, s, missed) if s else []
 
@@ -134,10 +187,17 @@ def _placed(text: str, item: Any, missed: List[str]) -> List[Dict[str, Any]]:
 def gold_events(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[str, list]:
     out: Dict[str, list] = {}
     for ev in gold.get("events") or []:
+        if not isinstance(ev, dict) or not isinstance(ev.get("event_type"), str):
+            continue
+        etype = ev["event_type"].strip()
+        if not etype:
+            continue
         triggers = [sp for t in ev.get("triggers") or [] for sp in _placed(text, t, missed)]
-        args = [{"role": a["role"], "entity": sp} for a in ev.get("arguments") or []
+        args = [{"role": a["role"], "entity": sp}
+                for a in ev.get("arguments") or []
+                if isinstance(a, dict) and isinstance(a.get("role"), str)
                 for sp in _placed(text, a.get("entity"), missed)]
-        out.setdefault(ev["event_type"].strip(), []).append(
+        out.setdefault(etype, []).append(
             {"triggers": triggers, "arguments": args,
              "trigger_key": sorted(_surface(t) for t in ev.get("triggers") or [] if _surface(t))})
     return out
@@ -145,48 +205,76 @@ def gold_events(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[str,
 
 def gold_relations(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[str, list]:
     out: Dict[str, list] = {}
-    for rel in gold.get("relations") or []:
+    rels = gold.get("relations") or []
+    if not isinstance(rels, list):
+        return out
+    for rel in rels:
+        if not isinstance(rel, dict):
+            continue
         for name, f in rel.items():
-            for h in _spans(text, _surface(f.get("head")), missed):
-                for t in _spans(text, _surface(f.get("tail")), missed):
+            if not isinstance(f, dict):
+                continue
+            for h in _placed(text, f.get("head"), missed):
+                for t in _placed(text, f.get("tail"), missed):
                     out.setdefault(name, []).append({"head": h, "tail": t})
     return out
 
 
 def _mark_entities(block: Dict[str, list], other: set) -> None:
+    if not isinstance(block, dict):
+        return
     for label, spans in block.items():
-        for sp in spans:
+        for sp in spans or []:
             if isinstance(sp, dict):
                 sp["match"] = (label, _surface(sp)) in other
 
 
 def _mark_events(block: Dict[str, list], triggers: set, args: set) -> None:
+    if not isinstance(block, dict):
+        return
     for etype, mentions in block.items():
-        for m in mentions:
+        for m in mentions or []:
+            if not isinstance(m, dict):
+                continue
             key = tuple(m.pop("trigger_key", None) or sorted(_surface(t) for t in m.get("triggers") or [] if _surface(t)))
             for t in m.get("triggers") or []:
                 if isinstance(t, dict):
                     t["match"] = (etype, _surface(t)) in triggers
             for a in m.get("arguments") or []:
-                if isinstance(a.get("entity"), dict):
+                if isinstance(a, dict) and isinstance(a.get("role"), str) and isinstance(a.get("entity"), dict):
                     a["entity"]["match"] = (etype, a["role"].strip(), _surface(a["entity"]), key) in args
 
 
 def _mark_relations(block: Dict[str, list], other: set) -> None:
+    if not isinstance(block, dict):
+        return
     for name, items in block.items():
-        for r in items:
-            if isinstance(r, dict) and isinstance(r.get("head"), dict):
-                hit = (name, _surface(r["head"]), _surface(r.get("tail"))) in other
-                r["head"]["match"] = hit
-                if isinstance(r.get("tail"), dict):
-                    r["tail"]["match"] = hit
+        for r in items or []:
+            if isinstance(r, dict):
+                h, t = r.get("head"), r.get("tail")
+            elif isinstance(r, (list, tuple)) and len(r) >= 2:
+                h, t = r[0], r[1]
+            else:
+                continue
+            if isinstance(h, dict):
+                hit = (name, _surface(h), _surface(t)) in other
+                h["match"] = hit
+                if isinstance(t, dict):
+                    t["match"] = hit
 
 
 def coref_view(clusters: Any) -> List[List[Dict[str, Any]]]:
     """Multi-mention clusters only (a singleton is the absence of a link, and would paint every
     candidate), each mention a fresh dict so ``match`` can be set on it."""
-    return [[{"text": m["text"], "start": m["start"], "end": m["end"]} for m in c]
-            for c in clusters or [] if len(c) > 1]
+    out = []
+    for c in clusters or []:
+        if not isinstance(c, list):
+            continue
+        mentions = [{"text": str(m.get("text", "")), "start": m["start"], "end": m["end"]}
+                    for m in c if _has_span(m)]
+        if len(mentions) > 1:
+            out.append(mentions)
+    return out
 
 
 def _mark_coref(block: List[List[Dict[str, Any]]], other: List[List[Dict[str, Any]]]) -> None:
@@ -203,8 +291,15 @@ def _mark_coref(block: List[List[Dict[str, Any]]], other: List[List[Dict[str, An
 
 def coref_pairs(clusters: Any) -> set:
     """Unordered mention-span pairs inside multi-mention clusters."""
-    return {tuple(sorted(((a["start"], a["end"]), (b["start"], b["end"]))))
-            for c in clusters or [] for i, a in enumerate(c) for b in c[i + 1:]}
+    pairs = set()
+    for c in clusters or []:
+        if not isinstance(c, list):
+            continue
+        spans = [(m["start"], m["end"]) for m in c if _has_span(m)]
+        for i, a in enumerate(spans):
+            for b in spans[i + 1:]:
+                pairs.add(tuple(sorted((a, b))))
+    return pairs
 
 
 def _classifications(gold: Dict[str, Any], pred: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -226,7 +321,9 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     given its ``why`` (diffs.py), every argument linked to its entity by span (argument_links.py)."""
     if is_data_row(row):
         return data_view(row)
-    text, pred, gold = row["input"], row.get("output") or {}, row.get(gold_key(row)) or {}
+    text = row.get("input") or ""
+    pred = row.get("output") if isinstance(row.get("output"), dict) else {}
+    gold, gold_coref = _adapt_gold(row, row.get(gold_key(row)))
     missed: List[str] = []
     g = {"entities": gold_entities(text, gold, missed),
          "event_extraction": gold_events(text, gold, missed),
@@ -240,9 +337,9 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     # Score coref BEFORE writing the view onto pred: a missing key must stay missing.
     # An empty list is a decode that found no multi-mention cluster and is scored.
     decoded = "coref_clusters" in pred
-    f1 = _f1(gold, pred, row.get("gold_coref"))
-    if decoded or row.get("gold_coref"):
-        g["coref_clusters"] = coref_view(row.get("gold_coref"))
+    f1 = _f1(gold, pred, gold_coref)
+    if decoded or gold_coref:
+        g["coref_clusters"] = coref_view(gold_coref)
         if decoded:
             pred["coref_clusters"] = coref_view(pred.get("coref_clusters"))
             _mark_coref(pred["coref_clusters"], g["coref_clusters"])
@@ -254,19 +351,20 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     view["diffs"] = diffs.annotate(view) if gold else []
     link_arguments(pred, _ROLE_TYPES)
     link_arguments(g, _ROLE_TYPES)
-    attach_argument_clusters(pred)
-    attach_argument_clusters(g)
+    attach_argument_clusters(pred, copy_mode="none")
+    attach_argument_clusters(g, copy_mode="none")
     return view
 
 
 def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
     """A train/val/test row's stored annotations, placed as training places them and drawn as the
     record's own layer: no prediction, so no gold rim, F1 or differences."""
-    text, ann, missed = row["input"], row.get("output") or {}, []
+    text, missed = row.get("input") or "", []
+    ann, clusters = _adapt_gold(row, row.get("output"), clusters_key="coref_clusters")
     shown = {"entities": gold_entities(text, ann, missed),
              "event_extraction": gold_events(text, ann, missed),
              "relation_extraction": gold_relations(text, ann, missed),
-             "coref_clusters": coref_view(row.get("coref_clusters"))}
+             "coref_clusters": coref_view(clusters)}
     for mentions in shown["event_extraction"].values():
         for m in mentions:
             m.pop("trigger_key", None)

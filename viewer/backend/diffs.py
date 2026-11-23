@@ -22,25 +22,37 @@ from typing import Any, Dict, List, Optional
 LAYER_KEYS = {"entities": "entities", "events": "event_extraction", "relations": "relation_extraction"}
 
 
+def _has_span(sp: Any) -> bool:
+    return (
+        isinstance(sp, dict)
+        and isinstance(sp.get("start"), int) and not isinstance(sp.get("start"), bool)
+        and isinstance(sp.get("end"), int) and not isinstance(sp.get("end"), bool)
+    )
+
+
 def _items(side: Dict[str, Any], is_gold: bool) -> List[Dict[str, Any]]:
     """Flatten one side into scored items, each pointing at the span dicts it annotates."""
     pre, out = ("g-" if is_gold else ""), []
     for label, spans in (side.get("entities") or {}).items():
         for sp in spans or []:
-            if isinstance(sp, dict) and "start" in sp:
+            if _has_span(sp):
                 out.append({"layer": "entities", "kind": "entity", "label": label, "span": sp, "spans": [sp]})
     n = 0
     for etype, mentions in (side.get("event_extraction") or {}).items():
         for mi, m in enumerate(mentions or []):
+            if not isinstance(m, dict):
+                continue
             eid, idx = f"{pre}evt-{n}", mi + 1
             n += 1
-            trig = [t for t in m.get("triggers") or [] if isinstance(t, dict) and "start" in t]
+            trig = [t for t in m.get("triggers") or [] if _has_span(t)]
             for t in trig:
                 out.append({"layer": "events", "kind": "trigger", "label": etype, "span": t, "spans": [t],
                             "eid": eid, "idx": idx})
             for a in m.get("arguments") or []:
+                if not isinstance(a, dict) or not isinstance(a.get("role"), str):
+                    continue
                 e = a.get("entity")
-                if isinstance(e, dict) and "start" in e:
+                if _has_span(e):
                     out.append({"layer": "events", "kind": "argument", "label": etype, "role": a["role"],
                                 "span": e, "spans": [e], "eid": eid, "idx": idx,
                                 "trig": sorted({t.get("text", "") for t in trig})})
@@ -49,8 +61,13 @@ def _items(side: Dict[str, Any], is_gold: bool) -> List[Dict[str, Any]]:
         for r in insts or []:
             eid = f"{pre}rel-{n}"
             n += 1
-            h, t = (r if isinstance(r, list) else [r.get("head"), r.get("tail")])[:2]
-            if isinstance(h, dict) and isinstance(t, dict) and "start" in h and "start" in t:
+            if isinstance(r, (list, tuple)) and len(r) >= 2:
+                h, t = r[0], r[1]
+            elif isinstance(r, dict):
+                h, t = r.get("head"), r.get("tail")
+            else:
+                continue
+            if _has_span(h) and _has_span(t):
                 out.append({"layer": "relations", "kind": "relation", "label": name, "span": h, "tail": t,
                             "spans": [h, t], "eid": eid})
     return out

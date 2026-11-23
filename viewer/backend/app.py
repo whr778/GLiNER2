@@ -634,7 +634,10 @@ def predictions(path: str) -> Dict[str, Any]:
 
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail=f"no such file: {path}")
-    return gold.summary(path)
+    try:
+        return gold.summary(path)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"invalid predictions file: {exc}")
 
 
 @app.get("/predictions/files")
@@ -651,7 +654,14 @@ def prediction_record(path: str, i: int) -> Dict[str, Any]:
     """One record of an infer.py output file: prediction and gold, every span flagged ``match``."""
     import gold
 
-    return gold.record(path, i)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=f"no such file: {path}")
+    try:
+        return gold.record(path, i)
+    except IndexError:
+        raise HTTPException(status_code=404, detail=f"record index {i} out of range")
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"invalid predictions file: {exc}")
 
 
 @app.get("/ekf-feeds")

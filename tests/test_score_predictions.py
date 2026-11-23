@@ -145,3 +145,21 @@ def test_coref_scores_exact_span_pairs_and_pronouns():
     assert c["pronoun"]["precision"] == 0.5 and c["pronoun"]["recall"] == 1.0
     # gold multi mentions Ann, She, Bob@8 are candidates (entities + pronoun); Bob@23 is not predicted
     assert c["candidate_recall"] == 0.75
+
+
+def test_coref_scores_counts_event_argument_spans_as_candidates():
+    text = "Rebels bombed the bridge. They fled."
+    gold = [[_m("Rebels", 0), _m("They", 26)]]
+    row = {
+        "input": text,
+        "gold_coref": gold,
+        "output": {
+            "entities": {},
+            "event_extraction": {"Attack": [{
+                "triggers": [_m("bombed", 7)],
+                "arguments": [{"role": "Attacker", "entity": _m("Rebels", 0)}],
+            }]},
+            "coref_clusters": [],
+        },
+    }
+    assert S.coref_scores([row])["candidate_recall"] == 1.0

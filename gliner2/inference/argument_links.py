@@ -24,6 +24,14 @@ def load_role_types(path: str) -> Dict[str, Dict[str, List[str]]]:
         return json.load(f)["role_types"]
 
 
+def _has_span(sp: Any) -> bool:
+    return (
+        isinstance(sp, dict)
+        and isinstance(sp.get("start"), int) and not isinstance(sp.get("start"), bool)
+        and isinstance(sp.get("end"), int) and not isinstance(sp.get("end"), bool)
+    )
+
+
 def _key(sp: Dict[str, Any]) -> Span:
     return sp["start"], sp["end"]
 
@@ -31,13 +39,13 @@ def _key(sp: Dict[str, Any]) -> Span:
 def link_arguments(pred: Dict[str, Any], role_types: Optional[Dict[str, Dict[str, List[str]]]] = None
                    ) -> Dict[str, Any]:
     """Add ``id`` to entity spans, ``entity_id`` to arguments, and ``derived_entities``, in place.
-    Needs span output (``include_spans``)."""
+    Needs span output (``include_spans``); non-span items are left untouched."""
     role_types = role_types or {}
-    ents = [sp for spans in (pred.get("entities") or {}).values() for sp in spans or []]
+    ents = [sp for spans in (pred.get("entities") or {}).values()
+            for sp in spans or [] if _has_span(sp)]
     args = [(etype, a) for etype, ms in (pred.get("event_extraction") or {}).items()
             for m in ms or [] for a in m.get("arguments") or []
-            if isinstance(a, dict) and isinstance(a.get("entity"), dict)
-            and "start" in a["entity"] and "end" in a["entity"]]
+            if isinstance(a, dict) and _has_span(a.get("entity"))]
     spans = sorted({_key(sp) for sp in ents} | {_key(a["entity"]) for _, a in args})
     ids = {s: f"e{i + 1}" for i, s in enumerate(spans)}
     for sp in ents:

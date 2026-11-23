@@ -56,3 +56,17 @@ def test_scorer_sets_unchanged():
     before = (M._pred_entity_set(p), M._pred_event_argument_set(p))
     link_arguments(p)
     assert (M._pred_entity_set(p), M._pred_event_argument_set(p)) == before
+
+
+def test_spanless_and_confidence_only_entities_are_skipped_without_crashing():
+    bare = {"entities": {"Person": ["Banco"]},
+            "event_extraction": {"Attack": [{"triggers": ["shot"],
+                                             "arguments": [{"role": "Attacker", "entity": "Banco"}]}]}}
+    conf_only = {"entities": {"Person": [{"text": "Banco", "confidence": 0.9}]},
+                 "event_extraction": {"Attack": [{"triggers": [{"text": "shot", "confidence": 0.9}],
+                                                  "arguments": [{"role": "Attacker",
+                                                                 "entity": {"text": "Banco", "confidence": 0.8}}]}]}}
+    assert link_arguments(bare)["derived_entities"] == []
+    assert bare["entities"]["Person"] == ["Banco"]
+    assert link_arguments(conf_only)["derived_entities"] == []
+    assert "id" not in conf_only["entities"]["Person"][0]

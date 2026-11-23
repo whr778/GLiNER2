@@ -660,5 +660,39 @@ class TestHeadSpansPostProcessing:
         assert restored._tokenize_cached("2026") == ["2", "0", "2", "6"]
 
 
+class TestArgumentCorefSettings:
+    def test_inherits_checkpoint_boundary_settings_when_cli_flags_omitted(self):
+        ns = infer._parse_args(["--model", "m", "--input", "hi", "--entities", "a"])
+        assert ns.argument_coref_match is None
+        assert ns.argument_coref_copy is None
+        assert ns.argument_coref_min_score is None
+        assert infer._coref_overrides(ns) == {}
+        ace_model = SimpleNamespace(boundary_settings=SimpleNamespace(
+            record_argument_coref_match="relaxed",
+            record_argument_coref_copy="none",
+            record_argument_coref_min_score=0.25,
+        ))
+        assert infer._argument_coref_settings(ns, ace_model) == ("relaxed", "none", 0.25)
+
+    def test_explicit_cli_flags_override_checkpoint_settings(self):
+        ns = infer._parse_args([
+            "--model", "m", "--input", "hi", "--entities", "a",
+            "--argument-coref-match", "strict",
+            "--argument-coref-copy", "canonical",
+            "--argument-coref-min-score", "0.4",
+        ])
+        assert infer._coref_overrides(ns) == {
+            "record_argument_coref_match": "strict",
+            "record_argument_coref_copy": "canonical",
+            "record_argument_coref_min_score": 0.4,
+        }
+        ace_model = SimpleNamespace(boundary_settings=SimpleNamespace(
+            record_argument_coref_match="relaxed",
+            record_argument_coref_copy="none",
+            record_argument_coref_min_score=0.25,
+        ))
+        assert infer._argument_coref_settings(ns, ace_model) == ("strict", "canonical", 0.4)
+
+
 
 

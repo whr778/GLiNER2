@@ -198,3 +198,76 @@ def test_offset_gold_events_keep_exact_spans_and_score_strict_matches():
     assert g_ev["arguments"][0]["entity"]["match"] is True
     assert v["f1"]["event_trigger"] == 1.0
     assert v["f1"]["event_argument"] == 1.0
+
+
+def test_spanless_predictions_open_without_500_and_coref_does_not_fake_spans(tmp_path):
+    """infer.py without --include-spans writes string entities (or confidence-only dicts) while
+    in-engine coref still writes span-bearing coref_clusters; viewer must open cleanly and report spans=False."""
+    text = "Rebels bombed the bridge. They fled."
+    bare_row = {
+        "input": text,
+        "output": {
+            "entities": {"PER.Group": ["Rebels"]},
+            "event_extraction": {"Conflict.Attack": [{
+                "triggers": ["bombed"],
+                "arguments": [{"role": "Attacker", "entity": "Rebels"}],
+            }]},
+            "coref_clusters": [[_m("Rebels", 0), _m("They", 26)]],
+        },
+        "gold": {
+            "entities": {"PER.Group": ["Rebels"]},
+            "events": [{"event_type": "Conflict.Attack", "triggers": ["bombed"],
+                        "arguments": [{"role": "Attacker", "entity": "Rebels"}]}],
+        },
+        "gold_coref": [[_m("Rebels", 0), _m("They", 26)]],
+    }
+    conf_row = json.loads(json.dumps(bare_row))
+    conf_row["output"]["entities"]["PER.Group"] = [{"text": "Rebels", "confidence": 0.9}]
+
+    p_bare = tmp_path / "ace_bare.jsonl"
+    p_bare.write_text(json.dumps(bare_row) + "\n", encoding="utf-8")
+    p_conf = tmp_path / "ace_conf.jsonl"
+    p_conf.write_text(json.dumps(conf_row) + "\n", encoding="utf-8")
+
+    listed = {f["name"]: f["spans"] for f in gold.list_files(str(tmp_path))}
+    assert listed == {"ace_bare.jsonl": False, "ace_conf.jsonl": False}
+
+    for path in (p_bare, p_conf):
+        s = gold.summary(str(path))
+        assert s["records"][0]["f1"]["entity"] == 1.0
+        assert s["records"][0]["f1"]["coref"] == 1.0
+        rec = gold.record(str(path), 0)
+        assert rec["f1"]["event_argument"] == 1.0
+        assert rec["pred"]["derived_entities"] == []
+
+
+def test_record_view_tags_coref_cluster_without_fabricating_args_and_adapts_office_ace():
+    text = "Rebels bombed the bridge. They fled."
+    row = {
+        "input": text,
+        "output": {
+            "entities": {"PER.Group": [_m("Rebels", 0)]},
+            "relation_extraction": {"Phys.Located": [[_m("Rebels", 0), _m("the bridge", 14)]]},
+            "event_extraction": {"Conflict.Attack": [{
+                "triggers": [_m("bombed", 7)],
+                "arguments": [{"role": "Attacker", "entity": _m("Rebels", 0)}],
+            }]},
+            "coref_clusters": [[_m("Rebels", 0), _m("They", 26)]],
+        },
+        "gold": {
+            "entities": {"PER.Group": ["Rebels"]},
+            "relations": [{"Phys.Located": {"head": "Rebels", "tail": "the bridge"}}],
+            "events": [{"event_type": "Conflict.Attack", "triggers": ["bombed"],
+                        "arguments": [{"role": "Attacker", "entity": "Rebels"}]}],
+            "event_facts": [{"event_type": "Conflict.Attack",
+                             "triggers": [{"start": 7, "end": 13, "text": "bombed"}],
+                             "arguments": [{"role": "Attacker", "start": 0, "end": 6, "text": "Rebels"}]}],
+            "clusters": [{"cluster_id": "e1", "mentions": [[0, 6], [26, 30]]}],
+        },
+    }
+    v = gold.record_view(json.loads(json.dumps(row)))
+    args = v["pred"]["event_extraction"]["Conflict.Attack"][0]["arguments"]
+    assert [(a["entity"]["text"], a["coref_cluster"]) for a in args] == [("Rebels", 0)]
+    assert v["pred"]["relation_extraction"]["Phys.Located"][0][0]["match"] is True
+    assert v["f1"]["coref"] == 1.0
+    assert [[m["text"] for m in c] for c in v["gold"]["coref_clusters"]] == [["Rebels", "They"]]

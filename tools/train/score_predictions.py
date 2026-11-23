@@ -187,7 +187,8 @@ def coref_scores(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         if gold is None:
             continue
         docs += 1
-        pred = r["output"].get("coref_clusters") or []
+        out = r.get("output") or {}
+        pred = out.get("coref_clusters") or []
         text = {(m["start"], m["end"]): m["text"].casefold() for c in gold + pred for m in c}
         gp, pp = _pairs(gold), _pairs(pred)
         pron = {q for q in gp | pp if text[q[0]] in PRONOUNS or text[q[1]] in PRONOUNS}
@@ -195,7 +196,8 @@ def coref_scores(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             tp[k] += len(gp & pp & keep)
             npred[k] += len(pp & keep)
             ngold[k] += len(gp & keep)
-        cands = {(m["start"], m["end"]) for m in candidate_mentions(r["input"], r["output"].get("entities") or {})}
+        cands = {(m["start"], m["end"])
+                 for m in candidate_mentions(r["input"], out.get("entities") or {}, out.get("event_extraction"))}
         multi = [(m["start"], m["end"]) for c in gold if len(c) > 1 for m in c]
         covered += sum(m in cands for m in multi)
         linked += len(multi)

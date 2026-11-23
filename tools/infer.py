@@ -306,15 +306,18 @@ def _parse_args(argv: List[str] = None) -> argparse.Namespace:
                         "and a checkpoint with the link. With spans, an argument whose span matches a "
                         "mention in exactly one of those clusters gets coref_cluster, and the cluster's "
                         "other mentions are added according to --argument-coref-copy.")
-    p.add_argument("--argument-coref-match", choices=["strict", "relaxed"], default="strict",
+    p.add_argument("--argument-coref-match", choices=["strict", "relaxed"], default=None,
                    help="How event arguments join coref_clusters: 'strict' (exact [start, end) match) or "
-                        "'relaxed' (exact first, then unambiguous character overlap).")
-    p.add_argument("--argument-coref-copy", choices=["all", "canonical", "gated", "none"], default="all",
+                        "'relaxed' (exact first, then unambiguous character overlap). "
+                        "Default: the checkpoint's record_argument_coref_match, else 'strict'.")
+    p.add_argument("--argument-coref-copy", choices=["all", "canonical", "gated", "none"], default=None,
                    help="Which cluster mentions are copied onto a linked event argument's role: "
                         "'all' (every mention in the cluster), 'canonical' (longest non-pronoun mention when the "
-                        "argument is a pronoun), 'gated' (only mentions >= --argument-coref-min-score), or 'none'.")
-    p.add_argument("--argument-coref-min-score", type=float, default=0.0,
-                   help="Minimum RecordHead assignment probability for --argument-coref-copy gated.")
+                        "argument is a pronoun), 'gated' (only mentions >= --argument-coref-min-score), or 'none'. "
+                        "Default: the checkpoint's record_argument_coref_copy, else 'all'.")
+    p.add_argument("--argument-coref-min-score", type=float, default=None,
+                   help="Minimum RecordHead assignment probability for --argument-coref-copy gated. "
+                        "Default: the checkpoint's record_argument_coref_min_score, else 0.0.")
     p.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], default="auto",
                    help="auto (default) picks cuda, else mps, else cpu. On Apple silicon prefer "
                         "cpu for a long file: MPS keeps memory for every new input length and never returns it "
@@ -330,7 +333,28 @@ def _coref_overrides(args: argparse.Namespace) -> Dict[str, Any]:
         out["record_merge_coreferent"] = args.merge_coreferent
     if args.coref_threshold is not None:
         out["record_coref_link_threshold"] = args.coref_threshold
+    if getattr(args, "argument_coref_match", None) is not None:
+        out["record_argument_coref_match"] = args.argument_coref_match
+    if getattr(args, "argument_coref_copy", None) is not None:
+        out["record_argument_coref_copy"] = args.argument_coref_copy
+    if getattr(args, "argument_coref_min_score", None) is not None:
+        out["record_argument_coref_min_score"] = args.argument_coref_min_score
     return out
+
+
+def _argument_coref_settings(args: argparse.Namespace, model) -> tuple[str, str, float]:
+    """Resolve (match_mode, copy_mode, min_score): CLI flag > checkpoint boundary_settings > fallback."""
+    settings = getattr(model, "boundary_settings", None)
+    match_mode = getattr(args, "argument_coref_match", None)
+    if match_mode is None:
+        match_mode = getattr(settings, "record_argument_coref_match", "strict")
+    copy_mode = getattr(args, "argument_coref_copy", None)
+    if copy_mode is None:
+        copy_mode = getattr(settings, "record_argument_coref_copy", "all")
+    min_score = getattr(args, "argument_coref_min_score", None)
+    if min_score is None:
+        min_score = getattr(settings, "record_argument_coref_min_score", 0.0)
+    return str(match_mode), str(copy_mode), float(min_score or 0.0)
 
 
 
@@ -446,17 +470,15 @@ def main(argv: List[str] = None) -> None:
                     )["coref_clusters"]
         if args.include_spans:
             from gliner2.inference.argument_coref import attach_argument_clusters
-            match_mode = getattr(args, "argument_coref_match", "strict")
-            copy_mode = getattr(args, "argument_coref_copy", "all")
-            min_score = float(getattr(args, "argument_coref_min_score", 0.0) or 0.0)
+            match_mode, copy_mode, min_score = _argument_coref_settings(args, model)
             totals = {"linked": 0, "ambiguous": 0, "none": 0}
             for r in out:
                 for key, value in attach_argument_clusters(
                     r, match_mode=match_mode, copy_mode=copy_mode, min_member_score=min_score
                 ).items():
                     totals[key] += value
-            print(f"[infer] argument clusters linked={totals['linked']} "
-                  f"ambiguous={totals['ambiguous']} none={totals['none']}", flush=True)
+            print(f"[infer] argument clusters (match={match_mode} copy={copy_mode} min_score={min_score}) "
+                  f"linked={totals['linked']} ambiguous={totals['ambiguous']} none={totals['none']}", flush=True)
         return out
 
     if not args.output:
