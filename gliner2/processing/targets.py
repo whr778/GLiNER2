@@ -79,11 +79,14 @@ class RecordFieldTarget:
     ``values`` is a tuple of *distinct gold values*; each value is itself a tuple
     of alternative half-open ``(start, end)`` spans (occurrence alternatives).
     Scalar fields hold at most one value; list fields may hold several. An empty
-    ``values`` tuple means the field is absent for this instance.
+    ``values`` tuple means the field is absent for this instance, unless
+    ``has_unaligned`` is True (annotated gold values existed but failed word
+    alignment, so the field must not be trained as absent).
     """
 
     query_id: int
     values: Tuple[Tuple[Tuple[int, int], ...], ...] = ()
+    has_unaligned: bool = False
 
 
 @dataclass(frozen=True)

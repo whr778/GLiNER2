@@ -32,7 +32,14 @@ import yaml  # noqa: E402
 
 def load_records(cfg, config, per_corpus, seed, split="train"):
     """({corpus: sampled records}, {corpus: total records}) from one split; val excludes train_only."""
+    T.bind_data_flags(cfg)
     data = cfg["data"]
+    office_ace = bool(data.get("office_ace"))
+    if office_ace:
+        data_dir = str(ROOT / "tools/data")
+        if data_dir not in sys.path:
+            sys.path.insert(0, data_dir)
+        from adapt_ace2005_office import adapt_record, is_office_record
     files = T._dedupe_paths(T._split_files(data.get("corpora") or [], split, set(data.get("train_only") or ()))
                             + T._event_split(data.get("event_files") or {}, split), split)
     fns = T._category_fns(T.load_labels_cfg(cfg, config_path=config))
@@ -44,7 +51,12 @@ def load_records(cfg, config, per_corpus, seed, split="train"):
         lines = [l for l in p.open(encoding="utf-8") if l.strip()]
         name = str(p.relative_to("data")).split(".")[0] if p.is_relative_to("data") else p.name.split(".")[0]   # by PATH: casie and scaling_joint/casie are two files
         totals[name] = len(lines)
-        recs = [T.transform_record(json.loads(l), fns) for l in random.Random(seed).sample(lines, min(per_corpus, len(lines)))]
+        recs = []
+        for l in random.Random(seed).sample(lines, min(per_corpus, len(lines))):
+            r = json.loads(l)
+            if office_ace and is_office_record(r):
+                r = adapt_record(r)
+            recs.append(T.transform_record(r, fns))
         for r in recs:
             r["_corpus"] = name
         sampled[name] = recs

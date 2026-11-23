@@ -29,7 +29,7 @@ from gliner2 import AutoExtractor  # noqa: E402
 from gliner2.training import sweep_thresholds  # noqa: E402
 from gliner2.training.trainer import ExtractorDataset  # noqa: E402
 from gliner2.training.metrics import _selection_score  # noqa: E402
-from train import _read_records, _split_files  # noqa: E402
+from train import _read_records, _split_files, bind_data_flags  # noqa: E402
 
 GRID = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 
@@ -37,6 +37,7 @@ GRID = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 def load_records(config_path: str, split: str, stride: int) -> list:
     """Read the config's corpora for one split, optionally strided."""
     cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+    bind_data_flags(cfg)
     files = _split_files(cfg["data"].get("corpora") or [], split)
     records = _read_records(files)
     return records[::stride] if stride > 1 else records

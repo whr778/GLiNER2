@@ -165,6 +165,15 @@ def _prf(tp: int, npred: int, ngold: int) -> Dict[str, float]:
     return {"precision": round(p, 4), "recall": round(r, 4), "f1": round(2 * p * r / max(p + r, 1e-9), 4)}
 
 
+def _row_gold_coref(row: Dict[str, Any]):
+    """Gold coref clusters for one predictions row, adapting office ``clusters`` when needed."""
+    if "gold_coref" in row:
+        return row["gold_coref"]
+    gold = row.get("gold") if isinstance(row.get("gold"), dict) else {}
+    _, clusters, adapted = _gold_record(row, gold)
+    return clusters if adapted and clusters else None
+
+
 def coref_scores(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """End-to-end entity coref (``infer.py --entity-coref`` on rows carrying ``gold_coref``): mention-pair
     P/R/F1 with EXACT spans -- a predicted pair is a hit only when both spans are gold mentions of one gold
@@ -174,10 +183,11 @@ def coref_scores(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     tp, npred, ngold = {"all": 0, "pronoun": 0}, {"all": 0, "pronoun": 0}, {"all": 0, "pronoun": 0}
     covered = linked = docs = 0
     for r in rows:
-        if "gold_coref" not in r:
+        gold = _row_gold_coref(r)
+        if gold is None:
             continue
         docs += 1
-        gold, pred = r["gold_coref"], r["output"].get("coref_clusters") or []
+        pred = r["output"].get("coref_clusters") or []
         text = {(m["start"], m["end"]): m["text"].casefold() for c in gold + pred for m in c}
         gp, pp = _pairs(gold), _pairs(pred)
         pron = {q for q in gp | pp if text[q[0]] in PRONOUNS or text[q[1]] in PRONOUNS}
@@ -248,7 +258,7 @@ def main(argv=None) -> None:
         print(f"[score] WARNING: {stray} records predict labels outside the menu they are scored under -- the "
               f"predictions were made with a different menu, so this is NOT the {args.menu} number")
     metrics = score(records, args.by_language)
-    if any("gold_coref" in r for r in rows):
+    if any(_row_gold_coref(r) is not None for r in rows):
         metrics["coref"] = coref_scores(rows)
         c = metrics["coref"]
         print(f"[score] entity coref, {c['docs']} docs, mention-pair (exact span) "

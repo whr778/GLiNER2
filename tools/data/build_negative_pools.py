@@ -97,7 +97,16 @@ def _corpus_train_paths(cfg: dict) -> dict:
     return out
 
 
-def scan(path: Path, fns: dict, limit: int, transform=None) -> dict:
+def _office_helpers():
+    """Load the office ACE adapter helpers by path."""
+    path = Path(__file__).resolve().parent / "adapt_ace2005_office.py"
+    spec = importlib.util.spec_from_file_location("_gliner2_office_ace_helpers", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.adapt_record, mod.is_office_record
+
+
+def scan(path: Path, fns: dict, limit: int, transform=None, *, office_ace: bool = False) -> dict:
     """Label sets per dimension, plus which dimensions this corpus annotates at all."""
     entities: set = set()
     events: dict = {}
@@ -105,6 +114,7 @@ def scan(path: Path, fns: dict, limit: int, transform=None) -> dict:
     structures: dict = {}
     seen = Counter()
     n = 0
+    adapt_record, is_office_record = _office_helpers() if office_ace else (None, None)
     with path.open(encoding="utf-8") as f:
         for line in f:
             if limit and n >= limit:
@@ -113,6 +123,8 @@ def scan(path: Path, fns: dict, limit: int, transform=None) -> dict:
                 continue
             n += 1
             rec = json.loads(line)
+            if office_ace and is_office_record(rec):
+                rec = adapt_record(rec)
             if fns:
                 rec = transform(rec, fns)
             out = rec.get("output") or {}
@@ -175,13 +187,14 @@ def build_pools(cfg: dict, config_path: Path, limit: int = 0, log=print) -> dict
     if unknown:
         raise SystemExit(f"[pools] partial_annotation names corpora not in this config: {unknown}")
 
+    office_ace = bool((cfg.get("data") or {}).get("office_ace"))
     pools: dict = {}
     for name, path in sorted(known.items()):
         p = Path(path)
         if not p.is_file():
             log(f"[pools] {name}: train file ABSENT at {path}")
             continue
-        info = scan(p, fns, limit, transform_record)
+        info = scan(p, fns, limit, transform_record, office_ace=office_ace)
         # PARTIAL wins over the inferred value, and only in the safe direction: it can turn
         # annotation OFF, never on.
         for dim in sorted(partial.get(name, ())):

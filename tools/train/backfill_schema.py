@@ -30,6 +30,7 @@ from train import (  # noqa: E402  (path set above)
     _event_split,
     _read_records,
     _split_files,
+    bind_data_flags,
     transform_record,
 )
 
@@ -40,6 +41,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 def _derive_for_yaml(cfg: dict) -> dict | None:
     """Reproduce train.py's co-located schema for one parsed yaml config."""
+    bind_data_flags(cfg)
     data = cfg.get("data") or {}
     if data.get("hf_streaming"):
         return None  # streaming runs co-locate no schema (no bounded record set)

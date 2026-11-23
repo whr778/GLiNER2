@@ -2268,6 +2268,10 @@ def main(config_path: str) -> None:
             print(f"[labels] passthrough (labels NOT mapped): {sorted(passthrough)}")
         print(f"[labels] transforms: {', '.join(sorted(fns))}; "
               f"transformed {len(train_data)}/{len(eval_data)}/{len(test_data)} train/val/test records")
+    elif _OFFICE_ACE:
+        train_data = _read_records(train_data)
+        eval_data = _read_records(eval_data)
+        test_data = _read_records(test_data)
 
     # Streaming source (data.hf_streaming): the train set streams lazily from HF
     # (never written to disk, never fully resident), val/test are bounded in-memory

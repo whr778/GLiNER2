@@ -134,3 +134,263 @@ def test_span_text_that_misses_the_slice_raises():
     office["output"]["event_facts"][0]["arguments"][0]["text"] = "Smith"
     with pytest.raises(ValueError, match="covers"):
         adapt.adapt_record(office, Counter())
+
+
+def test_multi_trigger_event_fact_splits_by_trigger_id_and_scores_arguments():
+    from gliner2.training.chunking import _filter_events
+    from gliner2.training.eval_metrics import score_predictions
+
+    text = "Alpha bombed Baghdad on Monday. Later, Alpha struck Basra on Tuesday."
+    office = {
+        "input": text,
+        "output": {
+            "event_facts": [{
+                "event_type": "Conflict.Attack",
+                "event_id": "E1",
+                "triggers": [
+                    {"trigger_id": "E1-1", "start": 6, "end": 12, "text": "bombed"},
+                    {"trigger_id": "E1-2", "start": 45, "end": 51, "text": "struck"},
+                ],
+                "arguments": [
+                    {"role": "Attacker", "start": 0, "end": 5, "text": "Alpha", "trigger_id": "E1-1"},
+                    {"role": "Place", "start": 13, "end": 20, "text": "Baghdad", "trigger_id": "E1-1"},
+                    {"role": "Attacker", "start": 39, "end": 44, "text": "Alpha", "trigger_id": "E1-2"},
+                    {"role": "Place", "start": 52, "end": 57, "text": "Basra", "trigger_id": "E1-2"},
+                ],
+            }]
+        },
+    }
+    adapted = adapt.adapt_record(office, Counter())
+    events = adapted["output"]["events"]
+    assert len(events) == 2
+    assert [e["triggers"][0]["text"] for e in events] == ["bombed", "struck"]
+    assert [a["entity"]["text"] for a in events[0]["arguments"]] == ["Alpha", "Baghdad"]
+    assert [a["entity"]["text"] for a in events[1]["arguments"]] == ["Alpha", "Basra"]
+
+    pred = {
+        "event_extraction": {
+            "Conflict.Attack": [
+                {"triggers": ["bombed"], "arguments": [{"role": "Attacker", "entity": "Alpha"}, {"role": "Place", "entity": "Baghdad"}]},
+                {"triggers": ["struck"], "arguments": [{"role": "Attacker", "entity": "Alpha"}, {"role": "Place", "entity": "Basra"}]},
+            ]
+        }
+    }
+    metrics = score_predictions([adapted["output"]], [pred], report=False)
+    assert metrics["eval_event_argument_strict_micro_f1"] == 1.0
+    assert metrics["eval_event_argument_strict_micro_recall"] == 1.0
+
+    # First-sentence chunk keeps E1-1 even though E1-2 lies outside the window.
+    kept = _filter_events(events, text[:32], 0, 32)
+    assert len(kept) == 1
+    assert kept[0]["triggers"][0]["text"] == "bombed"
+
+
+def test_unaligned_event_argument_is_unresolved_not_absent():
+    import torch
+    from gliner2.models.boundary.records import (
+        _annotated_field_mask,
+        _field_target_cols,
+        _gold_spans_unresolved,
+    )
+    from gliner2.processing.boundary_preprocessing import unaligned_event_span_counts
+    from gliner2.processor import SchemaTransformer
+    from gliner2.training.trainer import ExtractorCollator
+
+    class _Tok:
+        def __init__(self):
+            self.vocab = {"[P]": 1, "[E]": 2, "[C]": 3, "[L]": 4, "[SEP_STRUCT]": 5, "[SEP_TEXT]": 6,
+                          "[CLS]": 101, "[SEP]": 102, "[PAD]": 0, "[UNK]": 100}
+            self.pad_token_id = 0
+            self.cls_token_id = 101
+            self.sep_token_id = 102
+            self.unk_token_id = 100
+            self._next = 200
+
+        def add_special_tokens(self, d):
+            for tok in d.get("additional_special_tokens", []):
+                if tok not in self.vocab:
+                    self.vocab[tok] = self._next
+                    self._next += 1
+            return 0
+
+        def convert_tokens_to_ids(self, toks):
+            if isinstance(toks, str):
+                return self.vocab.get(toks, 100)
+            return [self.vocab.get(t, 100) for t in toks]
+
+        def tokenize(self, text):
+            return text.split() or [text]
+
+        def encode(self, text, add_special_tokens=False):
+            return [self.vocab.setdefault(t, self._next + i) for i, t in enumerate(self.tokenize(text))]
+
+    unaligned_event_span_counts().clear()
+    # Event 1 has an unaligned Arabic clitic argument ("القوات" inside "بالقوات") and no Place;
+    # Event 2 supplies Place so the event schema includes both Target and Place roles.
+    text = "هاجمت القوات بالقوات. قصفت بغداد"
+    office = {
+        "input": text,
+        "output": {
+            "event_facts": [{
+                "event_type": "Conflict.Attack",
+                "event_id": "E2",
+                "triggers": [
+                    {"trigger_id": "E2-1", "start": 0, "end": 5, "text": "هاجمت"},
+                    {"trigger_id": "E2-2", "start": 22, "end": 26, "text": "قصفت"},
+                ],
+                "arguments": [
+                    {"role": "Target", "start": 14, "end": 20, "text": "القوات", "trigger_id": "E2-1"},
+                    {"role": "Place", "start": 27, "end": 32, "text": "بغداد", "trigger_id": "E2-2"},
+                ],
+            }]
+        },
+    }
+    adapted = adapt.adapt_record(office, Counter())
+    coll = ExtractorCollator(SchemaTransformer(tokenizer=_Tok()), is_training=True, architecture="boundary", event_records=True)
+    batch = coll([(adapted["input"], adapted["output"])])
+    spec = next(iter(batch.record_specs[0].values()))
+    rec0 = batch.targets.records[0][0]
+    by_name = {f.name: f for f in spec.fields}
+
+    target_fspec = by_name["Target"]
+    place_fspec = by_name["Place"]
+    target_t = rec0.field_for_query(target_fspec.query_id)
+    place_t = rec0.field_for_query(place_fspec.query_id)
+    assert target_t.values == () and target_t.has_unaligned is True
+    assert place_t.values == () and place_t.has_unaligned is False
+
+    t_cols, _ = _field_target_cols(target_fspec, rec0, {})
+    p_cols, _ = _field_target_cols(place_fspec, rec0, {})
+    assert _gold_spans_unresolved(rec0, target_fspec, t_cols) is True
+    assert _gold_spans_unresolved(rec0, place_fspec, p_cols) is False
+    mask = _annotated_field_mask([rec0], spec.fields, torch.device("cpu"))
+    assert bool(mask[0, spec.fields.index(target_fspec)]) is True
+    assert bool(mask[0, spec.fields.index(place_fspec)]) is False
+    assert unaligned_event_span_counts()["Target"] == 1
+
+
+def test_clean_and_rebase_preserves_offsets_across_dumps_record(tmp_path, monkeypatch):
+    text = "Alpha\u00ad\u200f \ufb01red at Bagh\u00addad."
+    office = {
+        "input": text,
+        "output": {
+            "event_facts": [{
+                "event_type": "Conflict.Attack",
+                "event_id": "E3",
+                "triggers": [{"trigger_id": "E3-1", "start": text.index("\ufb01red"), "end": text.index("\ufb01red") + 4, "text": "\ufb01red"}],
+                "arguments": [{"role": "Place", "start": text.index("Bagh"), "end": text.index("dad") + 3, "text": "Bagh\u00addad", "trigger_id": "E3-1"}],
+            }],
+            "clusters": [{"cluster_id": "C1", "mentions": [[text.index("Bagh"), text.index("dad") + 3]]}],
+        },
+    }
+    inp = tmp_path / "office.json"
+    out = tmp_path / "out.jsonl"
+    inp.write_text(json.dumps(office, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["adapt_ace2005_office.py", "--input", str(inp), "--out", str(out)])
+    adapt.main()
+    loaded = json.loads(out.read_text(encoding="utf-8").strip())
+    cleaned = loaded["input"]
+    trig = loaded["output"]["events"][0]["triggers"][0]
+    arg = loaded["output"]["events"][0]["arguments"][0]["entity"]
+    cm = loaded["coref_clusters"][0][0]
+    assert cleaned[trig["start"]:trig["end"]] == trig["text"] == "fired"
+    assert cleaned[arg["start"]:arg["end"]] == arg["text"] == "Baghdad"
+    assert cleaned[cm["start"]:cm["end"]] == cm["text"] == "Baghdad"
+
+
+def test_build_negative_pools_adapts_office_records(tmp_path):
+    spec = importlib.util.spec_from_file_location(
+        "build_negative_pools",
+        Path(__file__).resolve().parents[1] / "tools" / "data" / "build_negative_pools.py",
+    )
+    bnp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bnp)
+
+    train_file = tmp_path / "ace_office.train.jsonl"
+    rec = {
+        "input": "Dallas lost.",
+        "output": {
+            "entity_facts": [{"start": 0, "end": 6, "text": "Dallas", "entity_type": "GPE"}],
+            "event_facts": [{
+                "event_type": "Conflict.Attack",
+                "triggers": [{"trigger_id": "t1", "start": 7, "end": 11, "text": "lost"}],
+                "arguments": [{"role": "Attacker", "start": 0, "end": 6, "text": "Dallas", "trigger_id": "t1"}],
+            }],
+        },
+    }
+    train_file.write_text(json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8")
+    cfg = {"data": {"office_ace": True, "corpora": [str(tmp_path / "ace_office")]}}
+    pools = bnp.build_pools(cfg, tmp_path / "cfg.yaml")
+    info = pools["ace_office"]
+    assert info["annotates"]["entities"] is True
+    assert info["annotates"]["events"] is True
+    assert info["entities"] == ["GPE"]
+    assert info["events"] == {"Conflict.Attack": ["Attacker"]}
+
+
+def test_adapt_edge_cases_null_offsets_empty_records_and_authoritative_entities():
+    # Null offsets fall back to string text without crashing.
+    null_rec = {
+        "input": "Dallas lost.",
+        "output": {
+            "event_facts": [{
+                "event_type": "Loss",
+                "triggers": [{"trigger_id": "t1", "start": None, "end": None, "text": "lost"}],
+                "arguments": [{"role": "Agent", "start": None, "end": None, "text": "Dallas", "trigger_id": "t1"}],
+            }]
+        },
+    }
+    adapted_null = adapt.adapt_record(null_rec, Counter())
+    assert adapted_null["output"]["events"] == [
+        {"event_type": "Loss", "triggers": ["lost"], "arguments": [{"role": "Agent", "entity": "Dallas"}]}
+    ]
+
+    # Empty side-list keys are still detected as office records and stripped cleanly.
+    empty_rec = {
+        "input": "Nothing happened.",
+        "output": {"entity_facts": [], "relation_facts": [], "event_facts": [], "clusters": []},
+    }
+    assert adapt.is_office_record(empty_rec) is True
+    assert adapt.adapt_record(empty_rec, Counter()) == {"input": "Nothing happened.", "output": {}}
+
+    # Clusters-only record adapts without raising ValueError.
+    clusters_only = {
+        "input": "Nothing happened.",
+        "output": {"clusters": [{"cluster_id": "c1", "mentions": [[0, 7]]}]},
+    }
+    adapted_c = adapt.adapt_record(clusters_only, Counter())
+    assert adapted_c["output"] == {}
+    assert adapted_c["coref_clusters"] == [[{"text": "Nothing", "start": 0, "end": 7}]]
+
+    # Non-empty entity_facts is authoritative and does not merge stale output.entities keys.
+    ent_rec = {
+        "input": TEXT,
+        "output": {
+            "entities": {"STALE_TYPE": ["Dallas"]},
+            "entity_facts": [{"start": 0, "end": 6, "text": "Dallas", "entity_type": "GPE"}],
+        },
+    }
+    assert adapt.adapt_record(ent_rec, Counter())["output"]["entities"] == {"GPE": ["Dallas"]}
+
+
+def test_score_predictions_coref_scores_adapts_office_clusters():
+    import score_predictions as sp
+
+    row = {
+        "input": TEXT,
+        "output": {
+            "entities": {"GPE": [{"text": "Dallas", "start": 0, "end": 6}, {"text": "Dallas", "start": 20, "end": 26}]},
+            "coref_clusters": [[{"text": "Dallas", "start": 0, "end": 6}, {"text": "Dallas", "start": 20, "end": 26}]],
+        },
+        "gold": {
+            "entity_facts": [
+                {"start": 0, "end": 6, "text": "Dallas", "entity_type": "GPE"},
+                {"start": 20, "end": 26, "text": "Dallas", "entity_type": "GPE"},
+            ],
+            "clusters": [{"cluster_id": "c1", "mentions": [[0, 6], [20, 26]]}],
+        },
+    }
+    scores = sp.coref_scores([row])
+    assert scores["docs"] == 1
+    assert scores["all"]["f1"] == 1.0
+    assert scores["candidate_recall"] == 1.0

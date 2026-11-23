@@ -61,6 +61,15 @@ def suppressed_query_counts() -> "Counter[str]":
     return _SUPPRESSED_QUERIES
 
 
+# Unaligned event trigger/role gold spans, by "trigger" or role name.
+_UNALIGNED_EVENT_SPANS: "Counter[str]" = Counter()
+
+
+def unaligned_event_span_counts() -> "Counter[str]":
+    """Event triggers and argument roles whose gold spans failed alignment, and how often."""
+    return _UNALIGNED_EVENT_SPANS
+
+
 def _orphaned_entity_fields(fields, labels) -> set:
     """Field indices whose gold is non-empty but NONE of it aligns.
 
@@ -244,11 +253,21 @@ def _apply_occurrence_policy(
     return spans
 
 
+def _count_missing_spans(value: Any) -> int:
+    """Count ``(-1, -1)`` unaligned-span markers nested inside ``value``."""
+    if isinstance(value, tuple) and len(value) == 2 and value == (-1, -1):
+        return 1
+    if isinstance(value, (list, tuple)):
+        return sum(_count_missing_spans(sub) for sub in value)
+    return 0
+
+
 def _build_record_field_target(
     fspec: RecordFieldSpec,
     instance: Sequence[Any],
     text_length: int,
     policy: str,
+    task_type: str = "",
 ) -> RecordFieldTarget:
     raw = instance[fspec.role_index] if fspec.role_index < len(instance) else None
     spans = _apply_occurrence_policy(
@@ -267,7 +286,14 @@ def _build_record_field_target(
         values = tuple(grouped)
     else:
         values = tuple((sp,) for sp in spans)
-    return RecordFieldTarget(query_id=fspec.query_id, values=values)
+    missing = _count_missing_spans(raw) if task_type == "events" else 0
+    if missing:
+        _UNALIGNED_EVENT_SPANS[fspec.name] += missing
+    return RecordFieldTarget(
+        query_id=fspec.query_id,
+        values=values,
+        has_unaligned=bool(missing),
+    )
 
 
 def _build_sample_records(
@@ -286,7 +312,7 @@ def _build_sample_records(
         for inst_idx, instance in enumerate(instances):
             fields_t = [
                 _build_record_field_target(
-                    fspec, instance, text_length, spec.occurrence_policy
+                    fspec, instance, text_length, spec.occurrence_policy, spec.task_type
                 )
                 for fspec in spec.fields
             ]

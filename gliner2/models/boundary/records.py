@@ -1382,14 +1382,14 @@ def _list_field_bce(logits_row: torch.Tensor, positive_cols, hard_k: int = 0,
 
 
 def _gold_spans_unresolved(record: RecordTarget, fspec, cols) -> bool:
-    """Gold values exist, and none of their spans are candidates of this field.
+    """Gold values exist (aligned or unaligned), and none are candidates of this field.
 
-    An empty ``values`` tuple is a real absence and stays supervised. A miss is
-    not an absence: an all-negative target pushes the hardest candidates down
-    and there is no positive column for the gold span.
+    An empty ``values`` tuple with ``has_unaligned=False`` is a real absence and stays
+    supervised. A candidate miss or word-alignment miss is not an absence: an
+    all-negative target pushes the hardest candidates down with no positive column.
     """
     target = record.field_for_query(fspec.query_id)
-    return target is not None and bool(target.values) and not cols
+    return target is not None and (bool(target.values) or target.has_unaligned) and not cols
 
 
 def _annotated_field_mask(records: Sequence[RecordTarget], field_specs, device) -> torch.Tensor:
@@ -1398,7 +1398,7 @@ def _annotated_field_mask(records: Sequence[RecordTarget], field_specs, device) 
     for gold_index, record in enumerate(records):
         for field_index, field_spec in enumerate(field_specs):
             target = record.field_for_query(field_spec.query_id)
-            if target is not None and target.values:
+            if target is not None and (target.values or target.has_unaligned):
                 mask[gold_index, field_index] = True
     return mask
 
