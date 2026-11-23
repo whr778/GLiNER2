@@ -1,6 +1,6 @@
 import type { ExtractionResult, Span } from "./types";
 
-export type Layer = "entities" | "events" | "relations" | "coref";
+export type Layer = "entities" | "events" | "relations" | "structures" | "coref";
 
 export type Mark = {
   start: number;
@@ -25,7 +25,7 @@ function asSpan(x: any): Span | null {
 
 // Reserved top-level keys with a known shape. coref_clusters is entity-mention clusters,
 // not a structure and not event arguments.
-export const KNOWN_KEYS = new Set(["entities", "event_extraction", "relation_extraction", "coref_clusters"]);
+export const KNOWN_KEYS = new Set(["entities", "event_extraction", "relation_extraction", "coref_clusters", "derived_entities"]);
 
 export function availableLayers(result: ExtractionResult): Layer[] {
   const layers: Layer[] = [];
@@ -156,6 +156,24 @@ export function collectMarks(result: ExtractionResult, layer: Layer, gold = fals
         if (hs) marks.push({ start: hs.start!, end: hs.end!, label: rname, kind: "head", confidence: hs.confidence, eid, colorKey: rname, ...g(hs) });
         if (ts) marks.push({ start: ts.start!, end: ts.end!, label: rname, kind: "tail", confidence: ts.confidence, eid, colorKey: rname, ...g(ts) });
       }
+    }
+  } else if (layer === "structures") {
+    let counter = 0;
+    for (const [sname, insts] of Object.entries(result.structures || {})) {
+      (insts as any[])?.forEach((inst, mi) => {
+        const eid = `${pre}str-${counter++}`;
+        for (const [field, items] of Object.entries(inst || {})) {
+          for (const it of Array.isArray(items) ? items : [items]) {
+            const sp = asSpan(it);
+            if (sp) {
+              marks.push({
+                start: sp.start!, end: sp.end!, label: `${sname} · ${field}`, kind: "field",
+                confidence: sp.confidence, eid, colorKey: field, idx: mi + 1, ...g(sp),
+              });
+            }
+          }
+        }
+      });
     }
   }
   return marks;

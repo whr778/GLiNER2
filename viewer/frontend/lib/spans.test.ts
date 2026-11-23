@@ -1,7 +1,7 @@
 // Run: node --test lib/   (Node >= 23 runs TypeScript directly)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSegments, codeUnitOffsets, collectMarks, eventTriggerLabel, viewLayers } from "./spans.ts";
+import { buildSegments, codeUnitOffsets, collectMarks, eventTriggerLabel, splitOtherKeys, viewLayers } from "./spans.ts";
 
 const marked = (text: string, result: any, layer: any) =>
   buildSegments(text, collectMarks(result, layer)).filter((s) => s.mark).map((s) => s.text);
@@ -66,4 +66,19 @@ test("gold marks carry gold + match, and gold event ids never collide with predi
   assert.equal(seg[0].mark!.roles.length, 2);
   assert.equal(seg[0].mark!.primary.gold, false);
   assert.equal(seg[1].mark!.primary.gold, true);
+});
+
+test("structure marks share an instance eid, skip spanless items, and derived_entities is not a structure", () => {
+  const span = (text: string, start: number, match?: boolean) => ({ text, start, end: start + text.length, match });
+  const pred = { structures: { casualty_report: [{ dead: [span("6", 11, true)], injured: [span("32", 22, false)] }] } };
+  const gold = { structures: { casualty_report: [{ dead: [span("6", 11, true)], missing: [{ text: "9", match: false }] }] } };
+  const p = collectMarks(pred, "structures");
+  const g = collectMarks(gold, "structures", true);
+  assert.deepEqual(p.map((m) => [m.label, m.eid, m.match]), [
+    ["casualty_report · dead", "str-0", true],
+    ["casualty_report · injured", "str-0", false],
+  ]);
+  assert.deepEqual(g.map((m) => [m.label, m.eid, m.match]), [["casualty_report · dead", "g-str-0", true]]);
+  const other = splitOtherKeys({ derived_entities: [{ id: "e1", text: "x" }], casualty_report: [{ dead: "6" }] });
+  assert.deepEqual(Object.keys(other.structures), ["casualty_report"]);
 });

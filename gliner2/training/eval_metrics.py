@@ -86,6 +86,7 @@ _DEFAULT_STOPWORDS: frozenset = frozenset({
 # the fixed task keys. Anything not in this set is treated as a structure.
 _NON_STRUCTURE_KEYS: frozenset = frozenset({
     "entities", "relations", "events", "classifications",
+    "event_extraction", "relation_extraction", "coref_clusters", "derived_entities",
     "entity_descriptions", "text", "json_structures", "record_metadata",
 })
 

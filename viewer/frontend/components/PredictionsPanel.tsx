@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AnnotatedText from "./AnnotatedText";
 import PredictionsHelp from "./PredictionsHelp";
+import { fmtConf, labelColor } from "@/lib/colors";
 import { collectMarks, type Layer } from "@/lib/spans";
 import {
   getPredictionRecord, listPredictionFiles, openPredictions,
@@ -15,9 +16,50 @@ function sideText(d: DiffSide | null): string {
   return `"${d.text}"${d.tail ? ` -> "${d.tail}"` : ""}  (${lab})` + (d.trig ? `  under ${d.trig.join(", ") || "-"}` : "");
 }
 
-const LAYERS: Layer[] = ["entities", "events", "relations", "coref"];
-const LAYER_KEY: Record<Layer, string> = { entities: "entities", events: "event_extraction", relations: "relation_extraction", coref: "coref_clusters" };
-const HEADS = ["entity", "event_trigger", "event_argument", "relation"];
+type StructVal = { text: string; confidence?: number; match?: boolean };
+
+function uniqueFieldValues(insts: Record<string, StructVal[]>[], field: string): { idx: number; item: StructVal }[] {
+  const out: { idx: number; item: StructVal }[] = [];
+  insts.forEach((inst, i) => {
+    const seen = new Set<string>();
+    for (const item of inst[field] || []) {
+      const key = `${item.text}\0${item.match ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ idx: i + 1, item });
+    }
+  });
+  return out;
+}
+
+function fmtStructCell(entries: { idx: number; item: StructVal }[], multiInst: boolean): string {
+  if (!entries.length) return "-";
+  return entries.map(({ idx, item }) => {
+    const pre = multiInst ? `#${idx}: ` : "";
+    const conf = item.confidence != null ? ` (${fmtConf(item.confidence)})` : "";
+    return `${pre}${item.text}${conf}`;
+  }).join(" · ");
+}
+
+function structFieldStatus(pred: { item: StructVal }[], gold: { item: StructVal }[]): string {
+  if (!pred.length || !gold.length) return "differs";
+  const allPred = pred.every((e) => e.item.match);
+  const allGold = gold.every((e) => e.item.match);
+  if (allPred && allGold) return "match";
+  if (pred.some((e) => e.item.match) || gold.some((e) => e.item.match)) return "partial";
+  return "differs";
+}
+
+const LAYERS: Layer[] = ["entities", "events", "relations", "structures", "coref"];
+const LAYER_KEY: Record<Layer, string> = {
+  entities: "entities",
+  events: "event_extraction",
+  relations: "relation_extraction",
+  structures: "structures",
+  coref: "coref_clusters",
+};
+const BASE_HEADS = ["entity", "event_trigger", "event_argument", "relation"];
+const HEADS = [...BASE_HEADS, "structure", "classification"];
 const STRICT = new Set(HEADS);
 const CLUSTER = ["event_cluster", "event_cluster_argument"];
 
@@ -94,8 +136,10 @@ export default function PredictionsPanel({ openPath, reloadKey = "" }: { openPat
   }, [summary, order]);
   const index = sequence[pos];
   const scoreHeads = useMemo(() => {
-    const heads = [...HEADS];
-    if (summary?.records.some((r) => "coref" in (r.f1 || {}))) heads.push("coref");
+    const heads = [...BASE_HEADS];
+    for (const extra of ["structure", "classification", "coref"]) {
+      if (summary?.records.some((r) => extra in (r.f1 || {}))) heads.push(extra);
+    }
     return heads;
   }, [summary]);
 
@@ -163,7 +207,7 @@ export default function PredictionsPanel({ openPath, reloadKey = "" }: { openPat
           <div className="error" style={{ marginTop: 8 }}>
             This file&apos;s predictions carry no span offsets (infer.py ran without{" "}
             <span className="mono">--include-spans</span>), so no prediction can be drawn and every gold span
-            shows as missed. The F1 numbers and classifications are still right. Re-run infer.py with{" "}
+            shows as missed. The F1 numbers, classifications and structures are still right. Re-run infer.py with{" "}
             <span className="mono">--include-spans</span> to see predictions in the text.
           </div>
         )}
@@ -200,7 +244,11 @@ export default function PredictionsPanel({ openPath, reloadKey = "" }: { openPat
             <div className="toggle">
               {LAYERS.filter((l) => hasLayer(rec.pred, l) || hasLayer(rec.gold, l)).map((l) => (
                 <button key={l} className={l === layer ? "active" : ""} onClick={() => setLayer(l)}>
-                  {l === "entities" ? "Entities" : l === "events" ? "Events" : l === "relations" ? "Relations" : "Coref"}
+                  {l === "entities" ? "Entities"
+                    : l === "events" ? "Events"
+                    : l === "relations" ? "Relations"
+                    : l === "structures" ? "Structures"
+                    : "Coref"}
                 </button>
               ))}
             </div>
@@ -275,20 +323,84 @@ export default function PredictionsPanel({ openPath, reloadKey = "" }: { openPat
         <div className="card">
           <h2>Classifications</h2>
           <table>
-            <thead><tr><th>task</th><th>predicted</th><th>gold</th><th></th></tr></thead>
+            <thead>
+              <tr>
+                <th>task</th>
+                {!rec.data_row && <th>predicted</th>}
+                <th>gold</th>
+                {!rec.data_row && <th></th>}
+              </tr>
+            </thead>
             <tbody>
               {rec.classifications.map((c) => (
                 <tr key={c.task}>
                   <td className="mono">{c.task}</td>
-                  <td>{Array.isArray(c.pred) ? c.pred.map((x: any) => x?.label ?? x).join(", ") : String(c.pred ?? "-")}</td>
+                  {!rec.data_row && (
+                    <td>{Array.isArray(c.pred) ? c.pred.map((x: any) => x?.label ?? x).join(", ") : String(c.pred ?? "-")}</td>
+                  )}
                   <td>{c.gold.join(", ")}</td>
-                  <td>{c.match ? "match" : "differs"}</td>
+                  {!rec.data_row && <td>{c.match ? "match" : "differs"}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {rec && (hasLayer(rec.pred, "structures") || hasLayer(rec.gold, "structures")) && (() => {
+        const predMap = (rec.pred.structures || {}) as Record<string, Record<string, StructVal[]>[]>;
+        const goldMap = (rec.gold.structures || {}) as Record<string, Record<string, StructVal[]>[]>;
+        const names = Array.from(new Set([...Object.keys(predMap), ...Object.keys(goldMap)]))
+          .filter((n) => (predMap[n]?.length || 0) > 0 || (goldMap[n]?.length || 0) > 0)
+          .sort();
+        return (
+          <div className="card">
+            <h2>Structures</h2>
+            {names.map((name) => {
+              const pInsts = predMap[name] || [];
+              const gInsts = goldMap[name] || [];
+              const fields = Array.from(new Set([
+                ...pInsts.flatMap((inst) => Object.keys(inst)),
+                ...gInsts.flatMap((inst) => Object.keys(inst)),
+              ])).sort();
+              return (
+                <div className="field" key={name}>
+                  <div style={{ color: labelColor(name), fontWeight: 650, marginBottom: 4 }}>
+                    {name}{" "}
+                    <span className="hint">
+                      {rec.has_gold ? `(${pInsts.length} pred · ${gInsts.length} gold)` : `(${pInsts.length})`}
+                    </span>
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>field</th>
+                        <th>{rec.data_row ? "value" : "predicted"}</th>
+                        {rec.has_gold && <th>gold</th>}
+                        {rec.has_gold && <th></th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fields.map((field) => {
+                        const pVals = uniqueFieldValues(pInsts, field);
+                        const gVals = uniqueFieldValues(gInsts, field);
+                        return (
+                          <tr key={field}>
+                            <td className="mono">{field}</td>
+                            <td>{fmtStructCell(pVals, pInsts.length > 1)}</td>
+                            {rec.has_gold && <td>{fmtStructCell(gVals, gInsts.length > 1)}</td>}
+                            {rec.has_gold && <td>{structFieldStatus(pVals, gVals)}</td>}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
       {help && <PredictionsHelp onClose={() => setHelp(false)} />}
     </div>
   );

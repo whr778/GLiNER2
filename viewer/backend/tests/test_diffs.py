@@ -62,3 +62,27 @@ def test_same_text_same_role_under_another_trigger_reads_attachment():
         {"triggers": [{"text": "knocked", "start": 13, "end": 20}],
          "arguments": [{"role": "Price", "entity": {"text": "four bitcoins", "start": 75, "end": 88}}]}]}
     assert ("attachment", "four bitcoins", "four bitcoins") in reasons(view(row), "events")
+
+
+def test_structure_diffs_name_field_type_span_and_eids():
+    text = "The quake left 6 dead and around 32 injured."
+    row = {
+        "input": text,
+        "output": {
+            "casualty_report": [{
+                "injured": {"text": "6", "start": 15, "end": 16},
+                "dead": {"text": "around 32", "start": 26, "end": 35},
+            }],
+        },
+        "gold": {
+            "json_structures": [{"casualty_report": {"dead": "6", "injured": "32"}}],
+        },
+    }
+    v = view(row)
+    assert reasons(v, "structures") == [
+        ("field", "6", "6"),
+        ("span+field", "32", "around 32"),
+    ]
+    d = next(d for d in v["diffs"] if d["reason"] == "field")
+    assert (d["gold"]["eid"], d["pred"]["eid"]) == ("g-str-0", "str-0")
+    assert (d["gold"]["role"], d["pred"]["role"]) == ("dead", "injured")

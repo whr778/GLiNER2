@@ -227,7 +227,7 @@ export type PredictionRecord = {
 // One reason a gold or predicted item does not match (backend diffs.py), grouped over occurrences.
 export type DiffSide = { label: string; text: string; start: number; end: number; eid?: string | null;
   role?: string; trig?: string[]; idx?: number; tail?: string };
-export type PredictionDiff = { reason: string; layer: "entities" | "events" | "relations"; why: string;
+export type PredictionDiff = { reason: string; layer: "entities" | "events" | "relations" | "structures"; why: string;
   gold: DiffSide | null; pred: DiffSide | null; count: number };
 
 // A tools/infer.py --output file: per-record strict F1 for the pager.

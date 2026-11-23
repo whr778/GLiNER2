@@ -271,3 +271,57 @@ def test_record_view_tags_coref_cluster_without_fabricating_args_and_adapts_offi
     assert v["pred"]["relation_extraction"]["Phys.Located"][0][0]["match"] is True
     assert v["f1"]["coref"] == 1.0
     assert [[m["text"] for m in c] for c in v["gold"]["coref_clusters"]] == [["Rebels", "They"]]
+
+
+def test_structures_score_place_strip_instance_confidence_and_handle_unlocated_and_spanless():
+    text = "The quake left 6 dead and around 32 injured."
+    row = {
+        "input": text,
+        "output": {
+            "casualty_report": [{
+                "dead": {"text": "6", "confidence": 0.99, "start": 15, "end": 16},
+                "injured": [{"text": "32", "confidence": 0.95, "start": 33, "end": 35}],
+                "confidence": 0.97,
+            }],
+            "sentiment": {"label": "negative", "confidence": 0.9},
+            "derived_entities": [{"id": "e1", "text": "quake", "start": 4, "end": 9, "types": ["Event"]}],
+        },
+        "gold": {
+            "json_structures": [{"casualty_report": {"dead": "6", "injured": "32", "missing": "9"}}],
+            "classifications": [{"task": "sentiment", "true_label": "negative"}],
+        },
+    }
+    v = gold.record_view(json.loads(json.dumps(row)))
+    # 2 TP, 0 FP, 1 FN -> strict micro F1 = 4/5 = 0.8; derived_entities & sentiment are not structures.
+    assert set(v["pred"]["structures"]) == {"casualty_report"}
+    assert "confidence" not in v["pred"]["structures"]["casualty_report"][0]
+    assert v["pred"]["structures"]["casualty_report"][0]["dead"][0]["match"] is True
+    assert v["pred"]["structures"]["casualty_report"][0]["injured"][0]["match"] is True
+    # Unlocated gold "9" stays spanless in gold.structures so the table shows it, and appears in unlocated.
+    assert v["gold"]["structures"]["casualty_report"][0]["missing"] == [{"text": "9", "match": False}]
+    assert v["unlocated"] == ["9"]
+    assert v["f1"]["structure"] == 0.8
+    assert v["f1"]["classification"] == 1.0
+
+    # Spanless structure prediction still scores and populates structures without crashing.
+    bare = json.loads(json.dumps(row))
+    bare["output"]["casualty_report"] = [{"dead": "6", "injured": "32"}]
+    vb = gold.record_view(bare)
+    assert vb["f1"]["structure"] == 0.8
+    assert vb["pred"]["structures"]["casualty_report"][0]["dead"] == [{"text": "6", "match": True}]
+
+
+def test_data_row_places_structures_and_classifications(tmp_path):
+    row = {
+        "input": "Quake left 6 dead and 32 injured.",
+        "output": {
+            "json_structures": [{"casualty_report": {"dead": "6", "injured": "32"}}],
+            "classifications": [{"task": "severity", "true_label": "high"}],
+        },
+    }
+    p = tmp_path / "struct.val.jsonl"
+    p.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    r = gold.record(str(p), 0)
+    assert r["data_row"] and not r["has_gold"] and r["diffs"] == []
+    assert r["pred"]["structures"]["casualty_report"][0]["dead"] == [{"text": "6", "start": 11, "end": 12}]
+    assert r["classifications"] == [{"task": "severity", "gold": ["high"], "pred": None, "match": False}]

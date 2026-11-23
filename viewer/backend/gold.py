@@ -220,6 +220,102 @@ def gold_relations(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[s
     return out
 
 
+def gold_structures(text: str, gold: Dict[str, Any], missed: List[str]) -> Dict[str, list]:
+    """Place gold ``json_structures`` fields in text; keep unlocated values spanless so the table still shows them."""
+    out: Dict[str, list] = {}
+    for inst in gold.get("json_structures") or []:
+        if not isinstance(inst, dict):
+            continue
+        for name, body in inst.items():
+            if not isinstance(name, str) or not isinstance(body, dict):
+                continue
+            fields: Dict[str, List[Dict[str, Any]]] = {}
+            for field, value in body.items():
+                if not isinstance(field, str):
+                    continue
+                items = value if isinstance(value, list) else [value]
+                spans: List[Dict[str, Any]] = []
+                for item in items:
+                    s = _surface(item)
+                    if not s:
+                        continue
+                    placed = _placed(text, item, missed)
+                    spans.extend(placed if placed else [{"text": s}])
+                if spans:
+                    fields[field] = spans
+            if fields:
+                out.setdefault(name, []).append(fields)
+    return out
+
+
+def _pred_struct_item(v: Any) -> Dict[str, Any] | None:
+    if isinstance(v, dict):
+        s = _surface(v)
+        if not s:
+            return None
+        item: Dict[str, Any] = {"text": s}
+        if _has_span(v):
+            item["start"] = v["start"]
+            item["end"] = v["end"]
+        conf = v.get("confidence")
+        if isinstance(conf, (int, float)) and not isinstance(conf, bool):
+            item["confidence"] = conf
+        return item
+    if isinstance(v, str) and v.strip():
+        return {"text": v.strip()}
+    return None
+
+
+def pred_structures(pred: Dict[str, Any], gold: Dict[str, Any]) -> Dict[str, list]:
+    """Normalize top-level predicted structures to ``{name: [{field: [item, ...]}]}``."""
+    cls_tasks = {
+        c["task"] for c in (gold.get("classifications") or [])
+        if isinstance(c, dict) and isinstance(c.get("task"), str)
+    }
+    out: Dict[str, list] = {}
+    for name, instances in pred.items():
+        if not isinstance(name, str) or name in M._NON_STRUCTURE_KEYS or name in cls_tasks:
+            continue
+        if isinstance(instances, dict):
+            if set(instances) <= {"label", "confidence"}:
+                continue
+            instances = [instances]
+        if not isinstance(instances, list):
+            continue
+        norm_insts = []
+        for body in instances:
+            if not isinstance(body, dict) or set(body) <= {"label", "confidence"}:
+                continue
+            fields: Dict[str, List[Dict[str, Any]]] = {}
+            for field, value in body.items():
+                if not isinstance(field, str):
+                    continue
+                if field == "confidence" and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    continue
+                vals = value if isinstance(value, list) else [value]
+                items = [it for v in vals if (it := _pred_struct_item(v)) is not None]
+                if items:
+                    fields[field] = items
+            if fields:
+                norm_insts.append(fields)
+        if norm_insts:
+            out[name] = norm_insts
+    return out
+
+
+def _mark_structures(block: Dict[str, list], other: set) -> None:
+    if not isinstance(block, dict):
+        return
+    for name, instances in block.items():
+        for inst in instances or []:
+            if not isinstance(inst, dict):
+                continue
+            for field, items in inst.items():
+                for it in items or []:
+                    if isinstance(it, dict):
+                        it["match"] = (name, field, _surface(it)) in other
+
+
 def _mark_entities(block: Dict[str, list], other: set) -> None:
     if not isinstance(block, dict):
         return
@@ -306,6 +402,8 @@ def _classifications(gold: Dict[str, Any], pred: Dict[str, Any]) -> List[Dict[st
     hits = M._pred_classification_pairs(pred, gold)
     rows = []
     for c in gold.get("classifications") or []:
+        if not isinstance(c, dict) or not isinstance(c.get("task"), str):
+            continue
         p = pred.get(c["task"])
         p = p.get("label") if isinstance(p, dict) else p
         gl = c.get("true_label")
@@ -327,17 +425,23 @@ def record_view(row: Dict[str, Any]) -> Dict[str, Any]:
     missed: List[str] = []
     g = {"entities": gold_entities(text, gold, missed),
          "event_extraction": gold_events(text, gold, missed),
-         "relation_extraction": gold_relations(text, gold, missed)}
+         "relation_extraction": gold_relations(text, gold, missed),
+         "structures": gold_structures(text, gold, missed)}
+    p_structs = pred_structures(pred, gold)
     _mark_entities(pred.get("entities") or {}, M._gold_entity_set(gold))
     _mark_entities(g["entities"], M._pred_entity_set(pred))
     _mark_events(pred.get("event_extraction") or {}, M._gold_event_trigger_set(gold), M._gold_event_argument_set(gold))
     _mark_events(g["event_extraction"], M._pred_event_trigger_set(pred), M._pred_event_argument_set(pred))
     _mark_relations(pred.get("relation_extraction") or {}, M._gold_relation_set(gold))
     _mark_relations(g["relation_extraction"], M._pred_relation_set(pred))
-    # Score coref BEFORE writing the view onto pred: a missing key must stay missing.
+    _mark_structures(p_structs, M._gold_structure_set(gold))
+    _mark_structures(g["structures"], M._pred_structure_set(pred))
+    # Score coref and structures BEFORE writing the view onto pred: a missing key must stay missing.
     # An empty list is a decode that found no multi-mention cluster and is scored.
     decoded = "coref_clusters" in pred
     f1 = _f1(gold, pred, gold_coref)
+    if p_structs or g["structures"]:
+        pred["structures"] = p_structs
     if decoded or gold_coref:
         g["coref_clusters"] = coref_view(gold_coref)
         if decoded:
@@ -364,6 +468,7 @@ def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
     shown = {"entities": gold_entities(text, ann, missed),
              "event_extraction": gold_events(text, ann, missed),
              "relation_extraction": gold_relations(text, ann, missed),
+             "structures": gold_structures(text, ann, missed),
              "coref_clusters": coref_view(clusters)}
     for mentions in shown["event_extraction"].values():
         for m in mentions:
@@ -371,7 +476,7 @@ def data_view(row: Dict[str, Any]) -> Dict[str, Any]:
     link_arguments(shown, _ROLE_TYPES)
     attach_argument_clusters(shown)
     return {"text": text, "pred": shown, "gold": {}, "has_gold": False, "data_row": True,
-            "classifications": [], "unlocated": sorted(set(missed)), "f1": {}, "diffs": []}
+            "classifications": _classifications(ann, {}), "unlocated": sorted(set(missed)), "f1": {}, "diffs": []}
 
 
 def _trigger_texts(triggers: Any) -> List[str]:
@@ -431,7 +536,9 @@ def _f1(gold: Dict[str, Any], pred: Dict[str, Any], gold_coref: Any = None) -> D
     pairs = {"entity": (M._gold_entity_set(gold), M._pred_entity_set(pred)),
              "event_trigger": (M._gold_event_trigger_set(gold), M._pred_event_trigger_set(pred)),
              "event_argument": (M._gold_event_argument_set(gold), M._pred_event_argument_set(pred)),
-             "relation": (M._gold_relation_set(gold), M._pred_relation_set(pred))} if gold else {}
+             "relation": (M._gold_relation_set(gold), M._pred_relation_set(pred)),
+             "structure": (M._gold_structure_set(gold), M._pred_structure_set(pred)),
+             "classification": (M._gold_classification_pairs(gold), M._pred_classification_pairs(pred, gold))} if gold else {}
     if "coref_clusters" in pred and (gold_coref or pred.get("coref_clusters")):
         pairs["coref"] = (coref_pairs(gold_coref), coref_pairs(pred.get("coref_clusters")))
     out = {}

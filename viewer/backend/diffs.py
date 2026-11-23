@@ -19,7 +19,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-LAYER_KEYS = {"entities": "entities", "events": "event_extraction", "relations": "relation_extraction"}
+LAYER_KEYS = {"entities": "entities", "events": "event_extraction",
+              "relations": "relation_extraction", "structures": "structures"}
 
 
 def _has_span(sp: Any) -> bool:
@@ -70,6 +71,18 @@ def _items(side: Dict[str, Any], is_gold: bool) -> List[Dict[str, Any]]:
             if _has_span(h) and _has_span(t):
                 out.append({"layer": "relations", "kind": "relation", "label": name, "span": h, "tail": t,
                             "spans": [h, t], "eid": eid})
+    n = 0
+    for name, insts in (side.get("structures") or {}).items():
+        for mi, inst in enumerate(insts or []):
+            if not isinstance(inst, dict):
+                continue
+            eid, idx = f"{pre}str-{n}", mi + 1
+            n += 1
+            for field, items in inst.items():
+                for it in items or []:
+                    if _has_span(it):
+                        out.append({"layer": "structures", "kind": "field", "label": name,
+                                    "role": field, "span": it, "spans": [it], "eid": eid, "idx": idx})
     return out
 
 
@@ -107,6 +120,12 @@ def _reason(g: Dict[str, Any], p: Dict[str, Any]) -> Optional[str]:
         if not exact:
             return "span"
         return "attachment" if g["trig"] != p["trig"] else "surface"
+    if g["kind"] == "field":
+        if g["label"] != p["label"]:
+            return "type" if exact else "span+type"
+        if g["role"] != p["role"]:
+            return "field" if exact else "span+field"
+        return "surface" if exact else "span"
     if g["label"] != p["label"]:
         return word if exact else f"span+{word}"
     return "surface" if exact else "span"
@@ -121,6 +140,8 @@ def _desc(it: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         d.update(role=it["role"], trig=it["trig"])
     if it["kind"] == "trigger":
         d.update(idx=it["idx"])
+    if it["kind"] == "field":
+        d.update(role=it["role"], idx=it["idx"])
     if it["kind"] == "relation":
         d.update(tail=it["tail"].get("text", ""))
     return d
@@ -168,6 +189,6 @@ def annotate(view: Dict[str, Any]) -> List[Dict[str, Any]]:
             grouped[key] = {"reason": r, "layer": (g or p)["layer"], "why": why, "gold": gd, "pred": pd, "count": 1}
         else:
             row["count"] += 1
-    order = {"entities": 0, "events": 1, "relations": 2}
+    order = {"entities": 0, "events": 1, "relations": 2, "structures": 3}
     return sorted(grouped.values(), key=lambda x: (order[x["layer"]], x["reason"] in ("missed", "spurious"),
                                                    (x["gold"] or x["pred"])["start"]))

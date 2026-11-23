@@ -63,6 +63,7 @@ export default function PredictionsHelp({ onClose }: { onClose: () => void }) {
               ["span", "same label, different extent: one side has an extra or missing word"],
               ["label / type", "same extent, different entity label or relation name / event type"],
               ["role", "event argument: same text and event type, different role"],
+              ["field", "structure: same text and structure type, different field"],
               ["attachment", "event argument: same text, type and role, but under a different trigger (mention); the strict argument key includes the mention's triggers"],
               ["direction", "relation: same name, head and tail swapped"],
               ["surface", "same extent and label, but the gold string differs from the text (case, spacing)"],
@@ -75,7 +76,7 @@ export default function PredictionsHelp({ onClose }: { onClose: () => void }) {
         <ul className="hint">
           <li>Exactly as the strict scorer (<span className="mono">eval_metrics</span>), so the rims agree with the strict F1:
             entity = (label, text); trigger = (event type, text); argument = (event type, role, text, the mention&apos;s
-            triggers); relation = (name, head, tail). Case-sensitive.</li>
+            triggers); relation = (name, head, tail); structure = (name, field, value). Case-sensitive.</li>
           <li>Gold stores text, not positions. It is placed the way training places it: every occurrence of the word run.</li>
           <li>Gold training cannot place (e.g. <span className="mono">Houston</span> inside
             <span className="mono"> Houston-area</span>, one word to the splitter) is listed under the text: the model was never taught it.</li>
@@ -87,7 +88,7 @@ export default function PredictionsHelp({ onClose }: { onClose: () => void }) {
             <span className="mono"> Location</span> is a miss (dashed). Real for the scorer, but not a model error.</li>
           <li><b>Coref:</b> entity-mention clusters. Mention-pair F1 is scored only when the prediction contains <span className="mono">coref_clusters</span>; gold clusters with no such key are shown and not scored.</li>
           <li><b>No spans:</b> predictions have no positions, so none can be drawn and every gold span reads as missed.
-            The F1 numbers and classifications are still right.</li>
+            The F1 numbers, classifications and structures are still right.</li>
         </ul>
 
         <h3>Controls</h3>

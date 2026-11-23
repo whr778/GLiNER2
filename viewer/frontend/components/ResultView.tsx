@@ -366,7 +366,9 @@ export default function ResultView({
                 <div className="block" key={i} style={tagStyle(name)}>
                   <table>
                     <tbody>
-                      {Object.entries(inst).map(([field, val]) => (
+                      {Object.entries(inst)
+                        .filter(([field, val]) => !(field === "confidence" && typeof val === "number"))
+                        .map(([field, val]) => (
                         <tr key={field}>
                           <td style={{ width: 160 }}><span className="role">{field}</span></td>
                           <td>
