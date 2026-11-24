@@ -46,9 +46,11 @@ benchmarks — keep their canonical splits (noted per corpus below).
 
 ## Where the data lives
 
-`data/` and `datasets/` are **both gitignored**, so nothing below is in the repository.
+`data/` and `datasets/` are **both gitignored**, so the JSONL below is not in the repository.
 Every corpus is mirrored to a **private** Hub dataset repo; the table gives the local
-path and the mirror for each.
+path and the mirror for each. The census of each dataset is in [`docs/`](docs/) and is
+tracked. The inventory's last column links a census when that row is one dataset file.
+[Datasets by language](#datasets-by-language) lists every census.
 
 Only a `hf_jsonl` entry in [`dataset_registry.yaml`](../train/dataset_registry.yaml) makes
 the trainer fetch a corpus automatically — `_fetch_if_missing` looks the corpus up by
@@ -74,134 +76,447 @@ Push with [`push_corpus_hf.py`](push_corpus_hf.py) for split files and
 `HfApi().repo_info(repo, repo_type="dataset", files_metadata=True)` and check both
 `private=True` and the real file count — the uploader's own summary is not proof.
 
-| local | splits | private Hub mirror | fetched by trainer? |
-|---|---|---|---|
-| `data/anatem.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/bc2gm.*.jsonl` | test/train/val | [`whr778/bc2gm`](https://huggingface.co/datasets/whr778/bc2gm) | registry `hf_jsonl` |
-| `data/bc4chemd.*.jsonl` | test/train/val | [`whr778/bc4chemd`](https://huggingface.co/datasets/whr778/bc4chemd) | registry `hf_jsonl` |
-| `data/bc5cdr.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/bio_ner_relations.*.jsonl` | single/test/train/val | [`whr778/bio_ner_relations`](https://huggingface.co/datasets/whr778/bio_ner_relations) | registry `hf_jsonl` |
-| `data/biomed_ner.*.jsonl` | single/test/train/val | [`whr778/biomed_ner`](https://huggingface.co/datasets/whr778/biomed_ner) | registry `hf_jsonl` |
-| `data/bionlp09.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/bionlp11epi.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/bionlp11id.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/bionlp13cg.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/bionlp13ge.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/bionlp13pc.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/biored.*.jsonl` | test/train/val | [`whr778/biored`](https://huggingface.co/datasets/whr778/biored) | registry `hf_jsonl` |
-| `data/casie.*.jsonl` | test/train/val | [`whr778/casie`](https://huggingface.co/datasets/whr778/casie) | registry `hf_jsonl` |
-| `data/casualty_anchorless.*.jsonl` | train | [`whr778/casualty_anchorless`](https://huggingface.co/datasets/whr778/casualty_anchorless) | registry `hf_jsonl` |
-| `data/casualty_docee.*.jsonl` | test/train/val | [`whr778/casualty_docee`](https://huggingface.co/datasets/whr778/casualty_docee) | registry `hf_jsonl` |
-| `data/casualty_events.*.jsonl` | test/train/val | [`whr778/casualty_events`](https://huggingface.co/datasets/whr778/casualty_events) | registry `hf_jsonl` |
-| `data/casualty_ft.*.jsonl` | test/train/val | [`whr778/casualty_ft`](https://huggingface.co/datasets/whr778/casualty_ft) | registry `hf_jsonl` |
-| `data/casualty_loc_muted.*.jsonl` | test/train/val | [`whr778/casualty_loc_muted`](https://huggingface.co/datasets/whr778/casualty_loc_muted) | registry `hf_jsonl` |
-| `data/casualty_loc_probe_focal_last.*.jsonl` | test | [`whr778/casualty_loc_probe_focal_last`](https://huggingface.co/datasets/whr778/casualty_loc_probe_focal_last) | registry `hf_jsonl` |
-| `data/casualty_loc_split.*.jsonl` | test/train/val | [`whr778/casualty_loc_split`](https://huggingface.co/datasets/whr778/casualty_loc_split) | registry `hf_jsonl` |
-| `data/casualty_multi.*.jsonl` | test/train/val | [`whr778/casualty_multi`](https://huggingface.co/datasets/whr778/casualty_multi) | registry `hf_jsonl` |
-| `data/casualty_multi_loc.*.jsonl` | train | [`whr778/casualty_multi_loc`](https://huggingface.co/datasets/whr778/casualty_multi_loc) | registry `hf_jsonl` |
-| `data/casualty_ml.*.jsonl` | test/train/val | [`whr778/casualty_ml`](https://huggingface.co/datasets/whr778/casualty_ml) | registry `hf_jsonl` |
-| `data/cas_ann_en.jsonl` | (unsplit) | [`whr778/cas_ann_en`](https://huggingface.co/datasets/whr778/cas_ann_en) | direct upload |
-| `data/cas_ann_ccnews.jsonl` | (unsplit) | none; an input to [`whr778/casualty_ml`](https://huggingface.co/datasets/whr778/casualty_ml) | no separate registry entry |
-| `data/casualty_natural.*.jsonl` | train | [`whr778/casualty_natural`](https://huggingface.co/datasets/whr778/casualty_natural) | registry `hf_jsonl` |
-| `data/cc_news_haiku45.*.jsonl` | test/train/val | [`whr778/cc_news_haiku45`](https://huggingface.co/datasets/whr778/cc_news_haiku45) | registry `hf_jsonl` |
-| `data/chfinann.*.jsonl` | test/train/val | [`whr778/chfinann`](https://huggingface.co/datasets/whr778/chfinann) | registry `hf_jsonl` |
-| `data/cmnee.*.jsonl` | test/train/val | [`whr778/cmnee`](https://huggingface.co/datasets/whr778/cmnee) | registry `hf_jsonl` |
-| `data/craft.*.jsonl` | test/train/val | [`whr778/craft`](https://huggingface.co/datasets/whr778/craft) | registry `hf_jsonl` |
-| `data/docee.*.jsonl` | test/train/val | [`whr778/docee`](https://huggingface.co/datasets/whr778/docee) | registry `hf_jsonl` |
-| `data/docfee.*.jsonl` | test/train/val | [`whr778/docfee`](https://huggingface.co/datasets/whr778/docfee) | registry `hf_jsonl` |
-| `data/docred.*.jsonl` | test/train/val | [`whr778/docred`](https://huggingface.co/datasets/whr778/docred) | registry `hf_jsonl` |
-| `data/duee.*.jsonl` | train/val | [`whr778/duee`](https://huggingface.co/datasets/whr778/duee) | registry `hf_jsonl` |
-| `data/events_biotech.*.jsonl` | single/test/train/val | [`whr778/events_biotech`](https://huggingface.co/datasets/whr778/events_biotech) | registry `hf_jsonl` |
-| `data/ex_ptm.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/finer_ord.*.jsonl` | test/train/val | [`whr778/finer_ord`](https://huggingface.co/datasets/whr778/finer_ord) | registry `hf_jsonl` |
-| `data/gate2.*.jsonl` | test/train/val | [`whr778/gate2-casualty-relevance`](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) | registry `hf_jsonl` |
-| `data/gate_ann.*.jsonl` | single | [`whr778/gate2-casualty-relevance`](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) | raw adjudication |
-| `data/gliclass_logic.*.jsonl` | single/test/train/val | [`whr778/gliclass_logic`](https://huggingface.co/datasets/whr778/gliclass_logic) | registry `hf_jsonl` |
-| `data/gliclass_rac.*.jsonl` | test/train/val | [`whr778/gliclass_rac`](https://huggingface.co/datasets/whr778/gliclass_rac) | registry `hf_jsonl` |
-| `data/gliner_multilingual.*.jsonl` | single/test/train/val | [`whr778/gliner_multilingual`](https://huggingface.co/datasets/whr778/gliner_multilingual) | registry `hf_jsonl` |
-| `data/guide_scores.mix_natural.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.mix_natural.dedup.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.mix_natural.shard0.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.mix_natural.shard1.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.mix_natural.shard2.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.mix_natural.shard3.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.rams_baseword.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.rams_baseword.dedup.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.rams_baseword.shard0.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.rams_baseword.shard1.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.rams_baseword.shard2.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/guide_scores.rams_baseword.shard3.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute |
-| `data/jnlpba.*.jsonl` | test/train/val | [`whr778/jnlpba`](https://huggingface.co/datasets/whr778/jnlpba) | registry `hf_jsonl` |
-| `data/kaznerd.*.jsonl` | test/train/val | [`whr778/kaznerd`](https://huggingface.co/datasets/whr778/kaznerd) | registry `hf_jsonl` |
-| `data/klue_ner.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/klue_re.*.jsonl` | test/train/val | [`whr778/klue_re`](https://huggingface.co/datasets/whr778/klue_re) | registry `hf_jsonl` |
-| `data/knowledgator_gliner.*.jsonl` | single/test/train/val | [`whr778/knowledgator_gliner`](https://huggingface.co/datasets/whr778/knowledgator_gliner) | registry `hf_jsonl` |
-| `data/linnaeus.*.jsonl` | test/train/val | [`whr778/linnaeus`](https://huggingface.co/datasets/whr778/linnaeus) | registry `hf_jsonl` |
-| `data/masakhaner.*.jsonl` | test/train/val | [`whr778/masakhaner`](https://huggingface.co/datasets/whr778/masakhaner) | registry `hf_jsonl` |
-| `data/masakhaner_bam.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_bbj.*.jsonl` | test/train/val | [`whr778/masakhaner_bbj`](https://huggingface.co/datasets/whr778/masakhaner_bbj) | registry `hf_jsonl` |
-| `data/masakhaner_ewe.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_fon.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_hau.*.jsonl` | test/train/val | [`whr778/masakhaner_hau`](https://huggingface.co/datasets/whr778/masakhaner_hau) | registry `hf_jsonl` |
-| `data/masakhaner_ibo.*.jsonl` | test/train/val | [`whr778/masakhaner_ibo`](https://huggingface.co/datasets/whr778/masakhaner_ibo) | registry `hf_jsonl` |
-| `data/masakhaner_kin.*.jsonl` | test/train/val | [`whr778/masakhaner_kin`](https://huggingface.co/datasets/whr778/masakhaner_kin) | registry `hf_jsonl` |
-| `data/masakhaner_lug.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_luo.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_mos.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_nya.*.jsonl` | test/train/val | [`whr778/masakhaner_nya`](https://huggingface.co/datasets/whr778/masakhaner_nya) | registry `hf_jsonl` |
-| `data/masakhaner_pcm.*.jsonl` | test/train/val | [`whr778/masakhaner_pcm`](https://huggingface.co/datasets/whr778/masakhaner_pcm) | registry `hf_jsonl` |
-| `data/masakhaner_sna.*.jsonl` | test/train/val | [`whr778/masakhaner_sna`](https://huggingface.co/datasets/whr778/masakhaner_sna) | registry `hf_jsonl` |
-| `data/masakhaner_swa.*.jsonl` | test/train/val | [`whr778/masakhaner_swa`](https://huggingface.co/datasets/whr778/masakhaner_swa) | registry `hf_jsonl` |
-| `data/masakhaner_tsn.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_twi.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_wol.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhaner_xho.*.jsonl` | test/train/val | [`whr778/masakhaner_xho`](https://huggingface.co/datasets/whr778/masakhaner_xho) | registry `hf_jsonl` |
-| `data/masakhaner_yor.*.jsonl` | test/train/val | [`whr778/masakhaner_yor`](https://huggingface.co/datasets/whr778/masakhaner_yor) | registry `hf_jsonl` |
-| `data/masakhaner_zul.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews.*.jsonl` | test/train/val | [`whr778/masakhanews`](https://huggingface.co/datasets/whr778/masakhanews) | registry `hf_jsonl` |
-| `data/masakhanews_amh.*.jsonl` | test/train/val | [`whr778/masakhanews_amh`](https://huggingface.co/datasets/whr778/masakhanews_amh) | registry `hf_jsonl` |
-| `data/masakhanews_eng.*.jsonl` | test/train/val | [`whr778/masakhanews_eng`](https://huggingface.co/datasets/whr778/masakhanews_eng) | registry `hf_jsonl` |
-| `data/masakhanews_fra.*.jsonl` | test/train/val | [`whr778/masakhanews_fra`](https://huggingface.co/datasets/whr778/masakhanews_fra) | registry `hf_jsonl` |
-| `data/masakhanews_hau.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_ibo.*.jsonl` | test/train/val | [`whr778/masakhanews_ibo`](https://huggingface.co/datasets/whr778/masakhanews_ibo) | registry `hf_jsonl` |
-| `data/masakhanews_lin.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_lug.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_orm.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_pcm.*.jsonl` | test/train/val | [`whr778/masakhanews_pcm`](https://huggingface.co/datasets/whr778/masakhanews_pcm) | registry `hf_jsonl` |
-| `data/masakhanews_run.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_sna.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_som.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_swa.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_tir.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_xho.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/masakhanews_yor.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/maven.*.jsonl` | test/train/val | [`whr778/maven`](https://huggingface.co/datasets/whr778/maven) | registry `hf_jsonl` |
-| `data/maven_ner.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/mendeley_ed.*.jsonl` | test/train/val | [`whr778/mendeley_ed`](https://huggingface.co/datasets/whr778/mendeley_ed) | registry `hf_jsonl` |
-| `data/mendeley_ner.*.jsonl` | test/train/val | [`whr778/mendeley_ner`](https://huggingface.co/datasets/whr778/mendeley_ner) | registry `hf_jsonl` |
-| `data/mix_anchorless.*.jsonl` | test/train/val | [`whr778/mix_anchorless`](https://huggingface.co/datasets/whr778/mix_anchorless) | registry `hf_jsonl` |
-| `data/mix_natural.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/ncbi_disease.*.jsonl` | test/train/val | [`whr778/ncbi_disease`](https://huggingface.co/datasets/whr778/ncbi_disease) | registry `hf_jsonl` |
-| `data/nuner_full.*.jsonl` | single/test/train/val | [`whr778/nuner_full`](https://huggingface.co/datasets/whr778/nuner_full) | registry `hf_jsonl` |
-| `data/paraloq_json.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/pile_ner_def.*.jsonl` | single/test/train/val | [`whr778/pile_ner_def`](https://huggingface.co/datasets/whr778/pile_ner_def) | registry `hf_jsonl` |
-| `data/professorbob_re.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/pubmed_abstracts_ner.*.jsonl` | test/train/val | [`whr778/pubmed_abstracts_ner`](https://huggingface.co/datasets/whr778/pubmed_abstracts_ner) | registry `hf_jsonl` |
-| `data/rams.*.jsonl` | dev/test/train/val | [`whr778/rams`](https://huggingface.co/datasets/whr778/rams) | registry `hf_jsonl` |
-| `data/redocred.*.jsonl` | test/train/val | [`whr778/redocred`](https://huggingface.co/datasets/whr778/redocred) | registry `hf_jsonl` |
-| `data/replay_137k30.*.jsonl` | test/train/val | [`whr778/replay_137k30`](https://huggingface.co/datasets/whr778/replay_137k30) | registry `hf_jsonl` |
-| `data/replay_pile30.*.jsonl` | test/train/val | [`whr778/replay_pile30`](https://huggingface.co/datasets/whr778/replay_pile30) | registry `hf_jsonl` |
-| `data/scientific_text.*.jsonl` | single/test/train/val | [`whr778/scientific_text`](https://huggingface.co/datasets/whr778/scientific_text) | registry `hf_jsonl` |
-| `data/scierc.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/sentence_rex.*.jsonl` | single/test/train/val | [`whr778/sentence_rex`](https://huggingface.co/datasets/whr778/sentence_rex) | registry `hf_jsonl` |
-| `data/stockmark_jpn.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only |
-| `data/synthetic_haiku45_5k.*.jsonl` | test/train/val | [`whr778/synthetic_haiku45_5k`](https://huggingface.co/datasets/whr778/synthetic_haiku45_5k) | registry `hf_jsonl` |
-| `data/synthetic_haiku45_5k_coerced.*.jsonl` | test/train/val | [`whr778/synthetic_haiku45_5k-coerced`](https://huggingface.co/datasets/whr778/synthetic_haiku45_5k-coerced) | registry `hf_jsonl` |
-| `data/synthetic_sonnet5_1k.*.jsonl` | test/train/val | [`whr778/synthetic_sonnet5_1k`](https://huggingface.co/datasets/whr778/synthetic_sonnet5_1k) | registry `hf_jsonl` |
-| `data/text2json.*.jsonl` | test/train/val | [`whr778/text2json`](https://huggingface.co/datasets/whr778/text2json) | registry `hf_jsonl` |
-| `data/warmstart_mix.*.jsonl` | train/val | [`whr778/warmstart_mix`](https://huggingface.co/datasets/whr778/warmstart_mix) | registry `hf_jsonl` |
-| `data/wikievents.*.jsonl` | dev/test/train | [`whr778/wikievents`](https://huggingface.co/datasets/whr778/wikievents) | registry `hf_jsonl` |
+| local | splits | private Hub mirror | fetched by trainer? | census |
+|---|---|---|---|---|
+| `data/anatem.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/anatem.md) |
+| `data/bc2gm.*.jsonl` | test/train/val | [`whr778/bc2gm`](https://huggingface.co/datasets/whr778/bc2gm) | registry `hf_jsonl` | [census](docs/bc2gm.md) |
+| `data/bc4chemd.*.jsonl` | test/train/val | [`whr778/bc4chemd`](https://huggingface.co/datasets/whr778/bc4chemd) | registry `hf_jsonl` | [census](docs/bc4chemd.md) |
+| `data/bc5cdr.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/bc5cdr.md) |
+| `data/bio_ner_relations.*.jsonl` | single/test/train/val | [`whr778/bio_ner_relations`](https://huggingface.co/datasets/whr778/bio_ner_relations) | registry `hf_jsonl` | [census](docs/bio_ner_relations.md) |
+| `data/biomed_ner.*.jsonl` | single/test/train/val | [`whr778/biomed_ner`](https://huggingface.co/datasets/whr778/biomed_ner) | registry `hf_jsonl` | [census](docs/biomed_ner.md) |
+| `data/bionlp09.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/bionlp09.md) |
+| `data/bionlp11epi.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/bionlp11epi.md) |
+| `data/bionlp11id.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/bionlp11id.md) |
+| `data/bionlp13cg.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/bionlp13cg.md) |
+| `data/bionlp13ge.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/bionlp13ge.md) |
+| `data/bionlp13pc.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/bionlp13pc.md) |
+| `data/biored.*.jsonl` | test/train/val | [`whr778/biored`](https://huggingface.co/datasets/whr778/biored) | registry `hf_jsonl` | [census](docs/biored.md) |
+| `data/casie.*.jsonl` | test/train/val | [`whr778/casie`](https://huggingface.co/datasets/whr778/casie) | registry `hf_jsonl` | [census](docs/casie.md) |
+| `data/casualty_anchorless.*.jsonl` | train | [`whr778/casualty_anchorless`](https://huggingface.co/datasets/whr778/casualty_anchorless) | registry `hf_jsonl` | [census](docs/casualty_anchorless.md) |
+| `data/casualty_docee.*.jsonl` | test/train/val | [`whr778/casualty_docee`](https://huggingface.co/datasets/whr778/casualty_docee) | registry `hf_jsonl` | [census](docs/casualty_docee.md) |
+| `data/casualty_events.*.jsonl` | test/train/val | [`whr778/casualty_events`](https://huggingface.co/datasets/whr778/casualty_events) | registry `hf_jsonl` | [census](docs/casualty_events.md) |
+| `data/casualty_ft.*.jsonl` | test/train/val | [`whr778/casualty_ft`](https://huggingface.co/datasets/whr778/casualty_ft) | registry `hf_jsonl` | [census](docs/casualty_ft.md) |
+| `data/casualty_loc_muted.*.jsonl` | test/train/val | [`whr778/casualty_loc_muted`](https://huggingface.co/datasets/whr778/casualty_loc_muted) | registry `hf_jsonl` | [census](docs/casualty_loc_muted.md) |
+| `data/casualty_loc_probe_focal_last.*.jsonl` | test | [`whr778/casualty_loc_probe_focal_last`](https://huggingface.co/datasets/whr778/casualty_loc_probe_focal_last) | registry `hf_jsonl` | [census](docs/casualty_loc_probe_focal_last.md) |
+| `data/casualty_loc_split.*.jsonl` | test/train/val | [`whr778/casualty_loc_split`](https://huggingface.co/datasets/whr778/casualty_loc_split) | registry `hf_jsonl` | [census](docs/casualty_loc_split.md) |
+| `data/casualty_multi.*.jsonl` | test/train/val | [`whr778/casualty_multi`](https://huggingface.co/datasets/whr778/casualty_multi) | registry `hf_jsonl` | [census](docs/casualty_multi.md) |
+| `data/casualty_multi_loc.*.jsonl` | train | [`whr778/casualty_multi_loc`](https://huggingface.co/datasets/whr778/casualty_multi_loc) | registry `hf_jsonl` | [census](docs/casualty_multi_loc.md) |
+| `data/casualty_ml.*.jsonl` | test/train/val | [`whr778/casualty_ml`](https://huggingface.co/datasets/whr778/casualty_ml) | registry `hf_jsonl` | [census](docs/casualty_ml.md) |
+| `data/cas_ann_en.jsonl` | (unsplit) | [`whr778/cas_ann_en`](https://huggingface.co/datasets/whr778/cas_ann_en) | direct upload | [census](docs/cas_ann_en.md) |
+| `data/cas_ann_ccnews.jsonl` | (unsplit) | none; an input to [`whr778/casualty_ml`](https://huggingface.co/datasets/whr778/casualty_ml) | no separate registry entry | [census](docs/cas_ann_ccnews.md) |
+| `data/casualty_natural.*.jsonl` | train | [`whr778/casualty_natural`](https://huggingface.co/datasets/whr778/casualty_natural) | registry `hf_jsonl` | [census](docs/casualty_natural.md) |
+| `data/cc_news_haiku45.*.jsonl` | test/train/val | [`whr778/cc_news_haiku45`](https://huggingface.co/datasets/whr778/cc_news_haiku45) | registry `hf_jsonl` | [census](docs/cc_news_haiku45.md) |
+| `data/chfinann.*.jsonl` | test/train/val | [`whr778/chfinann`](https://huggingface.co/datasets/whr778/chfinann) | registry `hf_jsonl` | [census](docs/chfinann.md) |
+| `data/cmnee.*.jsonl` | test/train/val | [`whr778/cmnee`](https://huggingface.co/datasets/whr778/cmnee) | registry `hf_jsonl` | [census](docs/cmnee.md) |
+| `data/craft.*.jsonl` | test/train/val | [`whr778/craft`](https://huggingface.co/datasets/whr778/craft) | registry `hf_jsonl` | [census](docs/craft.md) |
+| `data/docee.*.jsonl` | test/train/val | [`whr778/docee`](https://huggingface.co/datasets/whr778/docee) | registry `hf_jsonl` | [census](docs/docee.md) |
+| `data/docfee.*.jsonl` | test/train/val | [`whr778/docfee`](https://huggingface.co/datasets/whr778/docfee) | registry `hf_jsonl` | [census](docs/docfee.md) |
+| `data/docred.*.jsonl` | test/train/val | [`whr778/docred`](https://huggingface.co/datasets/whr778/docred) | registry `hf_jsonl` | [census](docs/docred.md) |
+| `data/duee.*.jsonl` | train/val | [`whr778/duee`](https://huggingface.co/datasets/whr778/duee) | registry `hf_jsonl` | [census](docs/duee.md) |
+| `data/events_biotech.*.jsonl` | single/test/train/val | [`whr778/events_biotech`](https://huggingface.co/datasets/whr778/events_biotech) | registry `hf_jsonl` | [census](docs/events_biotech.md) |
+| `data/ex_ptm.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/ex_ptm.md) |
+| `data/finer_ord.*.jsonl` | test/train/val | [`whr778/finer_ord`](https://huggingface.co/datasets/whr778/finer_ord) | registry `hf_jsonl` | [census](docs/finer_ord.md) |
+| `data/gate2.*.jsonl` | test/train/val | [`whr778/gate2-casualty-relevance`](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) | registry `hf_jsonl` | [census](docs/gate2.md) |
+| `data/gate_ann.*.jsonl` | single | [`whr778/gate2-casualty-relevance`](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) | raw adjudication | [census](docs/gate_ann.md) |
+| `data/gliclass_logic.*.jsonl` | single/test/train/val | [`whr778/gliclass_logic`](https://huggingface.co/datasets/whr778/gliclass_logic) | registry `hf_jsonl` | [census](docs/gliclass_logic.md) |
+| `data/gliclass_rac.*.jsonl` | test/train/val | [`whr778/gliclass_rac`](https://huggingface.co/datasets/whr778/gliclass_rac) | registry `hf_jsonl` | [census](docs/gliclass_rac.md) |
+| `data/gliner_multilingual.*.jsonl` | single/test/train/val | [`whr778/gliner_multilingual`](https://huggingface.co/datasets/whr778/gliner_multilingual) | registry `hf_jsonl` | [census](docs/gliner_multilingual.md) |
+| `data/guide_scores.mix_natural.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.mix_natural.md) |
+| `data/guide_scores.mix_natural.dedup.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.mix_natural.dedup.md) |
+| `data/guide_scores.mix_natural.shard0.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.mix_natural.shard0.md) |
+| `data/guide_scores.mix_natural.shard1.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.mix_natural.shard1.md) |
+| `data/guide_scores.mix_natural.shard2.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.mix_natural.shard2.md) |
+| `data/guide_scores.mix_natural.shard3.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.mix_natural.shard3.md) |
+| `data/guide_scores.rams_baseword.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.rams_baseword.md) |
+| `data/guide_scores.rams_baseword.dedup.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.rams_baseword.dedup.md) |
+| `data/guide_scores.rams_baseword.shard0.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.rams_baseword.shard0.md) |
+| `data/guide_scores.rams_baseword.shard1.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.rams_baseword.shard1.md) |
+| `data/guide_scores.rams_baseword.shard2.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.rams_baseword.shard2.md) |
+| `data/guide_scores.rams_baseword.shard3.*.jsonl` | single | [`whr778/gliner2-guide-scores`](https://huggingface.co/datasets/whr778/gliner2-guide-scores) | precompute | [census](docs/guide_scores.rams_baseword.shard3.md) |
+| `data/jnlpba.*.jsonl` | test/train/val | [`whr778/jnlpba`](https://huggingface.co/datasets/whr778/jnlpba) | registry `hf_jsonl` | [census](docs/jnlpba.md) |
+| `data/kaznerd.*.jsonl` | test/train/val | [`whr778/kaznerd`](https://huggingface.co/datasets/whr778/kaznerd) | registry `hf_jsonl` | [census](docs/kaznerd.md) |
+| `data/klue_ner.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/klue_ner.md) |
+| `data/klue_re.*.jsonl` | test/train/val | [`whr778/klue_re`](https://huggingface.co/datasets/whr778/klue_re) | registry `hf_jsonl` | [census](docs/klue_re.md) |
+| `data/knowledgator_gliner.*.jsonl` | single/test/train/val | [`whr778/knowledgator_gliner`](https://huggingface.co/datasets/whr778/knowledgator_gliner) | registry `hf_jsonl` | [census](docs/knowledgator_gliner.md) |
+| `data/linnaeus.*.jsonl` | test/train/val | [`whr778/linnaeus`](https://huggingface.co/datasets/whr778/linnaeus) | registry `hf_jsonl` | [census](docs/linnaeus.md) |
+| `data/masakhaner.*.jsonl` | test/train/val | [`whr778/masakhaner`](https://huggingface.co/datasets/whr778/masakhaner) | registry `hf_jsonl` | [census](docs/masakhaner.md) |
+| `data/masakhaner_bam.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_bam.md) |
+| `data/masakhaner_bbj.*.jsonl` | test/train/val | [`whr778/masakhaner_bbj`](https://huggingface.co/datasets/whr778/masakhaner_bbj) | registry `hf_jsonl` | [census](docs/masakhaner_bbj.md) |
+| `data/masakhaner_ewe.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_ewe.md) |
+| `data/masakhaner_fon.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_fon.md) |
+| `data/masakhaner_hau.*.jsonl` | test/train/val | [`whr778/masakhaner_hau`](https://huggingface.co/datasets/whr778/masakhaner_hau) | registry `hf_jsonl` | [census](docs/masakhaner_hau.md) |
+| `data/masakhaner_ibo.*.jsonl` | test/train/val | [`whr778/masakhaner_ibo`](https://huggingface.co/datasets/whr778/masakhaner_ibo) | registry `hf_jsonl` | [census](docs/masakhaner_ibo.md) |
+| `data/masakhaner_kin.*.jsonl` | test/train/val | [`whr778/masakhaner_kin`](https://huggingface.co/datasets/whr778/masakhaner_kin) | registry `hf_jsonl` | [census](docs/masakhaner_kin.md) |
+| `data/masakhaner_lug.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_lug.md) |
+| `data/masakhaner_luo.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_luo.md) |
+| `data/masakhaner_mos.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_mos.md) |
+| `data/masakhaner_nya.*.jsonl` | test/train/val | [`whr778/masakhaner_nya`](https://huggingface.co/datasets/whr778/masakhaner_nya) | registry `hf_jsonl` | [census](docs/masakhaner_nya.md) |
+| `data/masakhaner_pcm.*.jsonl` | test/train/val | [`whr778/masakhaner_pcm`](https://huggingface.co/datasets/whr778/masakhaner_pcm) | registry `hf_jsonl` | [census](docs/masakhaner_pcm.md) |
+| `data/masakhaner_sna.*.jsonl` | test/train/val | [`whr778/masakhaner_sna`](https://huggingface.co/datasets/whr778/masakhaner_sna) | registry `hf_jsonl` | [census](docs/masakhaner_sna.md) |
+| `data/masakhaner_swa.*.jsonl` | test/train/val | [`whr778/masakhaner_swa`](https://huggingface.co/datasets/whr778/masakhaner_swa) | registry `hf_jsonl` | [census](docs/masakhaner_swa.md) |
+| `data/masakhaner_tsn.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_tsn.md) |
+| `data/masakhaner_twi.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_twi.md) |
+| `data/masakhaner_wol.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_wol.md) |
+| `data/masakhaner_xho.*.jsonl` | test/train/val | [`whr778/masakhaner_xho`](https://huggingface.co/datasets/whr778/masakhaner_xho) | registry `hf_jsonl` | [census](docs/masakhaner_xho.md) |
+| `data/masakhaner_yor.*.jsonl` | test/train/val | [`whr778/masakhaner_yor`](https://huggingface.co/datasets/whr778/masakhaner_yor) | registry `hf_jsonl` | [census](docs/masakhaner_yor.md) |
+| `data/masakhaner_zul.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhaner_zul.md) |
+| `data/masakhanews.*.jsonl` | test/train/val | [`whr778/masakhanews`](https://huggingface.co/datasets/whr778/masakhanews) | registry `hf_jsonl` | [census](docs/masakhanews.md) |
+| `data/masakhanews_amh.*.jsonl` | test/train/val | [`whr778/masakhanews_amh`](https://huggingface.co/datasets/whr778/masakhanews_amh) | registry `hf_jsonl` | [census](docs/masakhanews_amh.md) |
+| `data/masakhanews_eng.*.jsonl` | test/train/val | [`whr778/masakhanews_eng`](https://huggingface.co/datasets/whr778/masakhanews_eng) | registry `hf_jsonl` | [census](docs/masakhanews_eng.md) |
+| `data/masakhanews_fra.*.jsonl` | test/train/val | [`whr778/masakhanews_fra`](https://huggingface.co/datasets/whr778/masakhanews_fra) | registry `hf_jsonl` | [census](docs/masakhanews_fra.md) |
+| `data/masakhanews_hau.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_hau.md) |
+| `data/masakhanews_ibo.*.jsonl` | test/train/val | [`whr778/masakhanews_ibo`](https://huggingface.co/datasets/whr778/masakhanews_ibo) | registry `hf_jsonl` | [census](docs/masakhanews_ibo.md) |
+| `data/masakhanews_lin.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_lin.md) |
+| `data/masakhanews_lug.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_lug.md) |
+| `data/masakhanews_orm.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_orm.md) |
+| `data/masakhanews_pcm.*.jsonl` | test/train/val | [`whr778/masakhanews_pcm`](https://huggingface.co/datasets/whr778/masakhanews_pcm) | registry `hf_jsonl` | [census](docs/masakhanews_pcm.md) |
+| `data/masakhanews_run.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_run.md) |
+| `data/masakhanews_sna.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_sna.md) |
+| `data/masakhanews_som.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_som.md) |
+| `data/masakhanews_swa.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_swa.md) |
+| `data/masakhanews_tir.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_tir.md) |
+| `data/masakhanews_xho.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_xho.md) |
+| `data/masakhanews_yor.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/masakhanews_yor.md) |
+| `data/maven.*.jsonl` | test/train/val | [`whr778/maven`](https://huggingface.co/datasets/whr778/maven) | registry `hf_jsonl` | [census](docs/maven.md) |
+| `data/maven_ner.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/maven_ner.md) |
+| `data/mendeley_ed.*.jsonl` | test/train/val | [`whr778/mendeley_ed`](https://huggingface.co/datasets/whr778/mendeley_ed) | registry `hf_jsonl` | [census](docs/mendeley_ed.md) |
+| `data/mendeley_ner.*.jsonl` | test/train/val | [`whr778/mendeley_ner`](https://huggingface.co/datasets/whr778/mendeley_ner) | registry `hf_jsonl` | [census](docs/mendeley_ner.md) |
+| `data/mix_anchorless.*.jsonl` | test/train/val | [`whr778/mix_anchorless`](https://huggingface.co/datasets/whr778/mix_anchorless) | registry `hf_jsonl` | [census](docs/mix_anchorless.md) |
+| `data/mix_natural.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/mix_natural.md) |
+| `data/ncbi_disease.*.jsonl` | test/train/val | [`whr778/ncbi_disease`](https://huggingface.co/datasets/whr778/ncbi_disease) | registry `hf_jsonl` | [census](docs/ncbi_disease.md) |
+| `data/nuner_full.*.jsonl` | single/test/train/val | [`whr778/nuner_full`](https://huggingface.co/datasets/whr778/nuner_full) | registry `hf_jsonl` | [census](docs/nuner_full.md) |
+| `data/paraloq_json.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/paraloq_json.md) |
+| `data/pile_ner_def.*.jsonl` | single/test/train/val | [`whr778/pile_ner_def`](https://huggingface.co/datasets/whr778/pile_ner_def) | registry `hf_jsonl` | [census](docs/pile_ner_def.md) |
+| `data/professorbob_re.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/professorbob_re.md) |
+| `data/pubmed_abstracts_ner.*.jsonl` | test/train/val | [`whr778/pubmed_abstracts_ner`](https://huggingface.co/datasets/whr778/pubmed_abstracts_ner) | registry `hf_jsonl` | [census](docs/pubmed_abstracts_ner.md) |
+| `data/rams.*.jsonl` | dev/test/train/val | [`whr778/rams`](https://huggingface.co/datasets/whr778/rams) | registry `hf_jsonl` | [census](docs/rams.md) |
+| `data/redocred.*.jsonl` | test/train/val | [`whr778/redocred`](https://huggingface.co/datasets/whr778/redocred) | registry `hf_jsonl` | [census](docs/redocred.md) |
+| `data/replay_137k30.*.jsonl` | test/train/val | [`whr778/replay_137k30`](https://huggingface.co/datasets/whr778/replay_137k30) | registry `hf_jsonl` | [census](docs/replay_137k30.md) |
+| `data/replay_pile30.*.jsonl` | test/train/val | [`whr778/replay_pile30`](https://huggingface.co/datasets/whr778/replay_pile30) | registry `hf_jsonl` | [census](docs/replay_pile30.md) |
+| `data/scientific_text.*.jsonl` | single/test/train/val | [`whr778/scientific_text`](https://huggingface.co/datasets/whr778/scientific_text) | registry `hf_jsonl` | [census](docs/scientific_text.md) |
+| `data/scierc.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/scierc.md) |
+| `data/sentence_rex.*.jsonl` | single/test/train/val | [`whr778/sentence_rex`](https://huggingface.co/datasets/whr778/sentence_rex) | registry `hf_jsonl` | [census](docs/sentence_rex.md) |
+| `data/stockmark_jpn.*.jsonl` | test/train/val | [`whr778/gliner2-corpora-archive`](https://huggingface.co/datasets/whr778/gliner2-corpora-archive) | archive only | [census](docs/stockmark_jpn.md) |
+| `data/synthetic_haiku45_5k.*.jsonl` | test/train/val | [`whr778/synthetic_haiku45_5k`](https://huggingface.co/datasets/whr778/synthetic_haiku45_5k) | registry `hf_jsonl` | [census](docs/synthetic_haiku45_5k.md) |
+| `data/synthetic_haiku45_5k_coerced.*.jsonl` | test/train/val | [`whr778/synthetic_haiku45_5k-coerced`](https://huggingface.co/datasets/whr778/synthetic_haiku45_5k-coerced) | registry `hf_jsonl` | [census](docs/synthetic_haiku45_5k_coerced.md) |
+| `data/synthetic_sonnet5_1k.*.jsonl` | test/train/val | [`whr778/synthetic_sonnet5_1k`](https://huggingface.co/datasets/whr778/synthetic_sonnet5_1k) | registry `hf_jsonl` | [census](docs/synthetic_sonnet5_1k.md) |
+| `data/text2json.*.jsonl` | test/train/val | [`whr778/text2json`](https://huggingface.co/datasets/whr778/text2json) | registry `hf_jsonl` | [census](docs/text2json.md) |
+| `data/warmstart_mix.*.jsonl` | train/val | [`whr778/warmstart_mix`](https://huggingface.co/datasets/whr778/warmstart_mix) | registry `hf_jsonl` | [census](docs/warmstart_mix.md) |
+| `data/wikievents.*.jsonl` | dev/test/train | [`whr778/wikievents`](https://huggingface.co/datasets/whr778/wikievents) | registry `hf_jsonl` | [census](docs/wikievents.md) |
 
+## Datasets by language
+
+One language per record, from the census (`lumi`, ISO 639-2), the same detector `eval_by_language` uses. A dataset is listed under a language when that language is at least 5% of its records. The count is records in that language, and the share is of that dataset. A language under 5% stays in the dataset's own census. `und` means the detector did not decide.
+
+### ara — Arabic
+
+| dataset | records | share |
+|---|--:|--:|
+| [wojood_hadath](docs/wojood_hadath.md) | 1,766 | 100.00% |
+
+### deu — German
+
+| dataset | records | share |
+|---|--:|--:|
+| [gliner_multilingual](docs/gliner_multilingual.md) | 17,954 | 9.47% |
+
+### eng — English
+
+| dataset | records | share |
+|---|--:|--:|
+| [nuner_full](docs/nuner_full.md) | 1,576,178 | 96.00% |
+| [gliclass_rac](docs/gliclass_rac.md) | 539,121 | 98.15% |
+| [docred](docs/docred.md) | 104,804 | 99.89% |
+| [scientific_text](docs/scientific_text.md) | 99,781 | 99.78% |
+| [pile_ner_def](docs/pile_ner_def.md) | 87,947 | 92.63% |
+| [sentence_rex](docs/sentence_rex.md) | 83,284 | 97.15% |
+| [mix_natural](docs/mix_natural.md) | 68,996 | 80.23% |
+| [mix_anchorless](docs/mix_anchorless.md) | 68,702 | 80.26% |
+| [warmstart_mix](docs/warmstart_mix.md) | 68,702 | 80.26% |
+| [pubmed_abstracts_ner](docs/pubmed_abstracts_ner.md) | 34,607 | 99.92% |
+| [casualty_ft](docs/casualty_ft.md) | 31,539 | 100.00% |
+| [casualty_multi](docs/casualty_multi.md) | 31,350 | 100.00% |
+| [casualty_anchorless](docs/casualty_anchorless.md) | 29,324 | 100.00% |
+| [casualty_multi_loc](docs/casualty_multi_loc.md) | 29,324 | 100.00% |
+| [casualty_natural](docs/casualty_natural.md) | 29,324 | 100.00% |
+| [casualty_loc_split](docs/casualty_loc_split.md) | 29,321 | 100.00% |
+| [casualty_loc_split_card](docs/casualty_loc_split_card.md) | 29,321 | 100.00% |
+| [casualty_loc_muted](docs/casualty_loc_muted.md) | 29,290 | 100.00% |
+| [casualty_events](docs/casualty_events.md) | 29,145 | 100.00% |
+| [docee](docs/docee.md) | 27,287 | 99.93% |
+| [knowledgator_gliner](docs/knowledgator_gliner.md) | 23,559 | 99.18% |
+| [tr_dose31263](docs/tr_dose31263.md) | 22,564 | 36.09% |
+| [gliner_multilingual](docs/gliner_multilingual.md) | 21,469 | 11.32% |
+| [casualty_ml](docs/casualty_ml.md) | 20,908 | 33.34% |
+| [casualty_ml_eb22g](docs/casualty_ml_eb22g.md) | 20,631 | 33.34% |
+| [cc_news_haiku45](docs/cc_news_haiku45.md) | 19,835 | 99.39% |
+| [tr_dose15000](docs/tr_dose15000.md) | 19,424 | 46.62% |
+| [jnlpba](docs/jnlpba.md) | 19,192 | 97.12% |
+| [cc_news_haiku45_coref_llm](docs/cc_news_haiku45_coref_llm.md) | 19,065 | 99.44% |
+| [replay_eb22g_casualty](docs/replay_eb22g_casualty.md) | 18,506 | 56.00% |
+| [casualty_docee](docs/casualty_docee.md) | 17,708 | 100.00% |
+| [gate_ann](docs/gate_ann.md) | 17,626 | 99.98% |
+| [professorbob_re](docs/professorbob_re.md) | 17,203 | 98.92% |
+| [tr_dose5000](docs/tr_dose5000.md) | 17,203 | 62.67% |
+| [tr_dose0](docs/tr_dose0.md) | 16,139 | 79.35% |
+| [loc_control](docs/loc_control.md) | 16,049 | 85.35% |
+| [craft](docs/craft.md) | 15,854 | 95.02% |
+| [en_cas_candidates](docs/en_cas_candidates.md) | 14,948 | 99.98% |
+| [gate3](docs/gate3.md) | 14,511 | 65.47% |
+| [gate3_eb22g](docs/gate3_eb22g.md) | 14,511 | 65.47% |
+| [replay_eb21_rolesym](docs/replay_eb21_rolesym.md) | 14,511 | 49.57% |
+| [gate2_tr](docs/gate2_tr.md) | 14,329 | 74.80% |
+| [bc4chemd](docs/bc4chemd.md) | 14,059 | 96.97% |
+| [gate2](docs/gate2.md) | 14,039 | 95.86% |
+| [cas_ann_ccnews](docs/cas_ann_ccnews.md) | 12,488 | 99.98% |
+| [bc2gm](docs/bc2gm.md) | 9,957 | 97.09% |
+| [cas_ann_en](docs/cas_ann_en.md) | 9,645 | 99.97% |
+| [biomed_ner](docs/biomed_ner.md) | 9,586 | 99.13% |
+| [replay_137k30](docs/replay_137k30.md) | 9,423 | 51.87% |
+| [rams](docs/rams.md) | 9,122 | 99.98% |
+| [gliclass_logic](docs/gliclass_logic.md) | 8,777 | 88.90% |
+| [replay_pile30](docs/replay_pile30.md) | 8,651 | 92.42% |
+| [cc_news_events_haiku45](docs/cc_news_events_haiku45.md) | 8,256 | 99.95% |
+| [cc_news_events_haiku45_coref_llm](docs/cc_news_events_haiku45_coref_llm.md) | 8,072 | 99.95% |
+| [replay_eb21_coref34free](docs/replay_eb21_coref34free.md) | 7,714 | 50.97% |
+| [bionlp11epi](docs/bionlp11epi.md) | 7,681 | 97.55% |
+| [text2json](docs/text2json.md) | 7,399 | 75.97% |
+| [bionlp09](docs/bionlp09.md) | 7,195 | 96.90% |
+| [replay_eb21_coref34](docs/replay_eb21_coref34.md) | 7,129 | 50.96% |
+| [anatem](docs/anatem.md) | 6,748 | 97.18% |
+| [rams_merged](docs/rams_merged.md) | 6,320 | 99.97% |
+| [cc_news_events_sonnet55_v2](docs/cc_news_events_sonnet55_v2.md) | 5,594 | 99.95% |
+| [bionlp13cg](docs/bionlp13cg.md) | 5,588 | 97.54% |
+| [events_biotech](docs/events_biotech.md) | 5,506 | 99.78% |
+| [cc_news_events_sonnet55_v2_coref_llm](docs/cc_news_events_sonnet55_v2_coref_llm.md) | 5,477 | 99.95% |
+| [synthetic_haiku45_5k_coerced](docs/synthetic_haiku45_5k_coerced.md) | 5,000 | 100.00% |
+| [synthetic_haiku45_5k](docs/synthetic_haiku45_5k.md) | 4,997 | 100.00% |
+| [bio_ner_relations](docs/bio_ner_relations.md) | 4,947 | 95.19% |
+| [replay_eb22g_gate4](docs/replay_eb22g_gate4.md) | 4,924 | 55.90% |
+| [bionlp13ge](docs/bionlp13ge.md) | 4,867 | 95.28% |
+| [synthetic_events_capped](docs/synthetic_events_capped.md) | 4,727 | 100.00% |
+| [bionlp13pc](docs/bionlp13pc.md) | 4,594 | 96.68% |
+| [gap_coref](docs/gap_coref.md) | 4,454 | 100.00% |
+| [redocred](docs/redocred.md) | 4,049 | 99.93% |
+| [ncbi_disease](docs/ncbi_disease.md) | 3,796 | 96.15% |
+| [bionlp11id](docs/bionlp11id.md) | 3,758 | 98.25% |
+| [bc5cdr](docs/bc5cdr.md) | 3,722 | 95.07% |
+| [maven](docs/maven.md) | 3,623 | 100.00% |
+| [linnaeus](docs/linnaeus.md) | 2,981 | 96.32% |
+| [maven_ner](docs/maven_ner.md) | 2,913 | 100.00% |
+| [casualty_loc_probe_focal_last](docs/casualty_loc_probe_focal_last.md) | 2,873 | 100.00% |
+| [ex_ptm](docs/ex_ptm.md) | 2,233 | 97.26% |
+| [synthetic_sonnet5_1k](docs/synthetic_sonnet5_1k.md) | 1,882 | 100.00% |
+| [mendeley_ed](docs/mendeley_ed.md) | 1,722 | 99.42% |
+| [mendeley_ner](docs/mendeley_ner.md) | 1,722 | 99.42% |
+| [finer_ord](docs/finer_ord.md) | 1,590 | 96.25% |
+| [zh_multitask](docs/zh_multitask.md) | 1,487 | 17.03% |
+| [cc_news_long](docs/cc_news_long.md) | 1,381 | 97.12% |
+| [casie](docs/casie.md) | 1,000 | 100.00% |
+| [casie_off](docs/casie_off.md) | 1,000 | 100.00% |
+| [casie_typed](docs/casie_typed.md) | 1,000 | 100.00% |
+| [cc_news_long.pool](docs/cc_news_long.pool.md) | 736 | 96.34% |
+| [tr_dose](docs/tr_dose.md) | 667 | 29.91% |
+| [replay_eb21_coref30](docs/replay_eb21_coref30.md) | 527 | 50.82% |
+| [lg_twostage](docs/lg_twostage.md) | 500 | 100.00% |
+| [lg_twostage_text](docs/lg_twostage_text.md) | 500 | 100.00% |
+| [lg_onecall](docs/lg_onecall.md) | 499 | 100.00% |
+| [paraloq_json](docs/paraloq_json.md) | 458 | 94.82% |
+| [biored](docs/biored.md) | 400 | 100.00% |
+| [short_form_probe](docs/short_form_probe.md) | 389 | 97.25% |
+| [scierc](docs/scierc.md) | 349 | 100.00% |
+| [wikievents_coref_llm](docs/wikievents_coref_llm.md) | 250 | 100.00% |
+| [wikievents](docs/wikievents.md) | 239 | 100.00% |
+| [wikievents_off](docs/wikievents_off.md) | 199 | 100.00% |
+| [gum_coref](docs/gum_coref.md) | 191 | 100.00% |
+| [litbank_coref](docs/litbank_coref.md) | 90 | 100.00% |
+
+### fra — French
+
+| dataset | records | share |
+|---|--:|--:|
+| [gliner_multilingual](docs/gliner_multilingual.md) | 22,408 | 11.81% |
+
+### ita — Italian
+
+| dataset | records | share |
+|---|--:|--:|
+| [gliner_multilingual](docs/gliner_multilingual.md) | 22,404 | 11.81% |
+
+### jpn — Japanese
+
+| dataset | records | share |
+|---|--:|--:|
+| [stockmark_jpn](docs/stockmark_jpn.md) | 4,846 | 99.73% |
+
+### kaz — Kazakh
+
+| dataset | records | share |
+|---|--:|--:|
+| [kaznerd](docs/kaznerd.md) | 57,004 | 96.00% |
+
+### kor — Korean
+
+| dataset | records | share |
+|---|--:|--:|
+| [klue_re](docs/klue_re.md) | 28,801 | 99.99% |
+| [klue_ner](docs/klue_ner.md) | 20,999 | 99.99% |
+
+### nld — Dutch
+
+| dataset | records | share |
+|---|--:|--:|
+| [gliner_multilingual](docs/gliner_multilingual.md) | 18,912 | 9.97% |
+
+### pol — Polish
+
+| dataset | records | share |
+|---|--:|--:|
+| [gliner_multilingual](docs/gliner_multilingual.md) | 21,397 | 11.28% |
+
+### por — Portuguese
+
+| dataset | records | share |
+|---|--:|--:|
+| [gliner_multilingual](docs/gliner_multilingual.md) | 21,474 | 11.32% |
+
+### spa — Spanish
+
+| dataset | records | share |
+|---|--:|--:|
+| [gliner_multilingual](docs/gliner_multilingual.md) | 22,850 | 12.05% |
+
+### tur — Turkish
+
+| dataset | records | share |
+|---|--:|--:|
+| [turkish_pool_general](docs/turkish_pool_general.md) | 253,682 | 99.99% |
+| [turkish_pool_general_holdout](docs/turkish_pool_general_holdout.md) | 56,018 | 99.97% |
+| [tr_dose31263](docs/tr_dose31263.md) | 31,273 | 50.03% |
+| [turkish_event](docs/turkish_event.md) | 30,132 | 99.99% |
+| [ev_ann_tr](docs/ev_ann_tr.md) | 29,077 | 99.99% |
+| [casualty_ml](docs/casualty_ml.md) | 20,901 | 33.33% |
+| [casualty_ml_eb22g](docs/casualty_ml_eb22g.md) | 20,624 | 33.33% |
+| [tr_dose15000](docs/tr_dose15000.md) | 16,565 | 39.76% |
+| [tr_dose5000](docs/tr_dose5000.md) | 6,564 | 23.91% |
+| [turkish_news_candidates](docs/turkish_news_candidates.md) | 5,712 | 100.00% |
+| [gate_ann_tr_rest](docs/gate_ann_tr_rest.md) | 4,649 | 100.00% |
+| [gate3](docs/gate3.md) | 4,278 | 19.30% |
+| [gate3_eb22g](docs/gate3_eb22g.md) | 4,278 | 19.30% |
+| [gate2_tr](docs/gate2_tr.md) | 4,220 | 22.03% |
+| [replay_eb21_rolesym](docs/replay_eb21_rolesym.md) | 3,046 | 10.40% |
+| [replay_eb22g_casualty](docs/replay_eb22g_casualty.md) | 2,991 | 9.05% |
+| [tr_dose0](docs/tr_dose0.md) | 1,564 | 7.69% |
+| [tr_dose](docs/tr_dose.md) | 1,563 | 70.09% |
+| [replay_eb21_coref34free](docs/replay_eb21_coref34free.md) | 1,527 | 10.09% |
+| [replay_eb21_coref34](docs/replay_eb21_coref34.md) | 1,412 | 10.09% |
+| [turkish_eval_candidates](docs/turkish_eval_candidates.md) | 1,134 | 100.00% |
+| [gate_ann_tr_pilot](docs/gate_ann_tr_pilot.md) | 989 | 100.00% |
+| [replay_eb22g_gate4](docs/replay_eb22g_gate4.md) | 798 | 9.06% |
+| [ev_ann_tr_pilot2](docs/ev_ann_tr_pilot2.md) | 575 | 100.00% |
+| [ev_ann_tr_pilot](docs/ev_ann_tr_pilot.md) | 480 | 100.00% |
+| [replay_eb21_coref30](docs/replay_eb21_coref30.md) | 104 | 10.03% |
+
+### zho — Chinese
+
+| dataset | records | share |
+|---|--:|--:|
+| [docee_zh](docs/docee_zh.md) | 33,654 | 99.25% |
+| [chfinann](docs/chfinann.md) | 32,040 | 100.00% |
+| [casualty_ml](docs/casualty_ml.md) | 20,879 | 33.30% |
+| [casualty_ml_eb22g](docs/casualty_ml_eb22g.md) | 20,602 | 33.30% |
+| [docfee](docs/docfee.md) | 19,007 | 100.00% |
+| [mix_anchorless](docs/mix_anchorless.md) | 14,333 | 16.74% |
+| [warmstart_mix](docs/warmstart_mix.md) | 14,333 | 16.74% |
+| [mix_natural](docs/mix_natural.md) | 14,324 | 16.66% |
+| [cmnee](docs/cmnee.md) | 13,610 | 99.99% |
+| [cmnee_roles_ner](docs/cmnee_roles_ner.md) | 13,610 | 99.99% |
+| [cmnee_typed](docs/cmnee_typed.md) | 13,610 | 99.99% |
+| [cmnee_ner](docs/cmnee_ner.md) | 13,605 | 99.99% |
+| [duee](docs/duee.md) | 11,443 | 87.65% |
+| [duee_typed](docs/duee_typed.md) | 11,443 | 87.65% |
+| [duee_ner](docs/duee_ner.md) | 11,178 | 87.76% |
+| [replay_eb21_rolesym](docs/replay_eb21_rolesym.md) | 11,161 | 38.12% |
+| [replay_eb22g_casualty](docs/replay_eb22g_casualty.md) | 10,969 | 33.19% |
+| [cmnee_ner_off](docs/cmnee_ner_off.md) | 9,281 | 100.00% |
+| [replay_137k30](docs/replay_137k30.md) | 8,172 | 44.98% |
+| [tr_dose31263](docs/tr_dose31263.md) | 8,170 | 13.07% |
+| [zh_multitask](docs/zh_multitask.md) | 7,149 | 81.89% |
+| [zh_multitask_noreplay](docs/zh_multitask_noreplay.md) | 5,854 | 99.69% |
+| [replay_eb21_coref34free](docs/replay_eb21_coref34free.md) | 5,581 | 36.88% |
+| [tr_dose15000](docs/tr_dose15000.md) | 5,326 | 12.78% |
+| [replay_eb21_coref34](docs/replay_eb21_coref34.md) | 5,153 | 36.83% |
+| [tr_dose5000](docs/tr_dose5000.md) | 3,441 | 12.54% |
+| [gate3](docs/gate3.md) | 3,368 | 15.20% |
+| [gate3_eb22g](docs/gate3_eb22g.md) | 3,368 | 15.20% |
+| [replay_eb22g_gate4](docs/replay_eb22g_gate4.md) | 2,926 | 33.22% |
+| [loc_control](docs/loc_control.md) | 2,588 | 13.76% |
+| [tr_dose0](docs/tr_dose0.md) | 2,469 | 12.14% |
+| [replay_eb21_coref30](docs/replay_eb21_coref30.md) | 381 | 36.74% |
+
+### MasakhaNER and MasakhaNEWS
+
+Each `masakhaner_<code>` and `masakhanews_<code>` file is one Masakha split. The code in the filename is the language of that split. The detector leaves many of these files `und`, and a share it does assign is often a different language, so these files are not filed under the detected code. The combined `masakhaner` and `masakhanews` files mix every split.
+
+| language | dataset | records | detected share of this code | und share |
+|---|---|--:|--:|--:|
+| amh — Amharic | [masakhanews_amh](docs/masakhanews_amh.md) | 1,735 | 100.00% | 0.00% |
+| bam — Bambara | [masakhaner_bam](docs/masakhaner_bam.md) | 3,033 | 0.00% | 58.46% |
+| bbj — Ghomala | [masakhaner_bbj](docs/masakhaner_bbj.md) | 2,558 | 0.00% | 49.14% |
+| eng — English | [masakhanews_eng](docs/masakhanews_eng.md) | 4,728 | 100.00% | 0.00% |
+| ewe | [masakhaner_ewe](docs/masakhaner_ewe.md) | 3,739 | 0.00% | 82.96% |
+| fon | [masakhaner_fon](docs/masakhaner_fon.md) | 3,425 | 0.00% | 56.79% |
+| fra — French | [masakhanews_fra](docs/masakhanews_fra.md) | 2,105 | 100.00% | 0.00% |
+| hau — Hausa | [masakhaner_hau](docs/masakhaner_hau.md) | 6,369 | 0.00% | 72.41% |
+| hau — Hausa | [masakhanews_hau](docs/masakhanews_hau.md) | 3,173 | 0.00% | 70.22% |
+| ibo — Igbo | [masakhaner_ibo](docs/masakhaner_ibo.md) | 5,793 | 0.00% | 63.94% |
+| ibo — Igbo | [masakhanews_ibo](docs/masakhanews_ibo.md) | 1,834 | 0.00% | 84.84% |
+| kin — Kinyarwanda | [masakhaner_kin](docs/masakhaner_kin.md) | 6,993 | 0.00% | 78.59% |
+| lin — Lingala | [masakhanews_lin](docs/masakhanews_lin.md) | 870 | 0.00% | 12.64% |
+| lug — Ganda | [masakhaner_lug](docs/masakhaner_lug.md) | 5,757 | 0.00% | 72.92% |
+| lug — Ganda | [masakhanews_lug](docs/masakhanews_lug.md) | 1,104 | 0.00% | 71.92% |
+| luo — Luo (Kenya and Tanzania) | [masakhaner_luo](docs/masakhaner_luo.md) | 5,499 | 0.00% | 76.60% |
+| mixed | [masakhaner](docs/masakhaner.md) | 96,987 | — | 65.17% |
+| mixed | [masakhanews](docs/masakhanews.md) | 30,829 | — | 39.78% |
+| mos — Mossi | [masakhaner_mos](docs/masakhaner_mos.md) | 3,104 | 0.00% | 82.28% |
+| nya — Nyanja | [masakhaner_nya](docs/masakhaner_nya.md) | 6,209 | 0.00% | 66.98% |
+| orm — Oromo | [masakhanews_orm](docs/masakhanews_orm.md) | 1,615 | 0.00% | 73.50% |
+| pcm — Nigerian Pidgin | [masakhaner_pcm](docs/masakhaner_pcm.md) | 4,810 | 0.00% | 46.34% |
+| pcm — Nigerian Pidgin | [masakhanews_pcm](docs/masakhanews_pcm.md) | 1,511 | 0.00% | 32.03% |
+| run — Rundi | [masakhanews_run](docs/masakhanews_run.md) | 1,598 | 0.00% | 55.38% |
+| sna — Shona | [masakhaner_sna](docs/masakhaner_sna.md) | 7,602 | 0.00% | 94.54% |
+| sna — Shona | [masakhanews_sna](docs/masakhanews_sna.md) | 1,842 | 0.00% | 100.00% |
+| som — Somali | [masakhanews_som](docs/masakhanews_som.md) | 1,463 | 6.43% | 93.51% |
+| swa — Swahili | [masakhaner_swa](docs/masakhaner_swa.md) | 7,552 | 89.78% | 9.31% |
+| swa — Swahili | [masakhanews_swa](docs/masakhanews_swa.md) | 2,371 | 99.87% | 0.08% |
+| tir — Tigrinya | [masakhanews_tir](docs/masakhanews_tir.md) | 1,356 | 0.00% | 0.00% |
+| tsn — Tswana | [masakhaner_tsn](docs/masakhaner_tsn.md) | 3,352 | 0.00% | 53.28% |
+| twi | [masakhaner_twi](docs/masakhaner_twi.md) | 2,779 | 0.00% | 89.49% |
+| wol — Wolof | [masakhaner_wol](docs/masakhaner_wol.md) | 3,590 | 0.00% | 66.10% |
+| xho — Xhosa | [masakhaner_xho](docs/masakhaner_xho.md) | 4,760 | 0.00% | 87.18% |
+| xho — Xhosa | [masakhanews_xho](docs/masakhanews_xho.md) | 1,476 | 0.00% | 98.64% |
+| yor — Yoruba | [masakhaner_yor](docs/masakhaner_yor.md) | 6,086 | 7.99% | 31.50% |
+| yor — Yoruba | [masakhanews_yor](docs/masakhanews_yor.md) | 2,050 | 61.46% | 17.27% |
+| zul — Zulu | [masakhaner_zul](docs/masakhaner_zul.md) | 4,188 | 0.00% | 83.57% |
+
+### und — undetermined
+
+No detected language reaches 5% of these records. The guide-score files are precomputes; the detector returned `und` on every record.
+
+| dataset | records | und share |
+|---|--:|--:|
+| [guide_scores.mix_natural](docs/guide_scores.mix_natural.md) | 46,581 | 100.00% |
+| [guide_scores.mix_natural.dedup](docs/guide_scores.mix_natural.dedup.md) | 46,149 | 100.00% |
+| [guide_scores.rams_baseword](docs/guide_scores.rams_baseword.md) | 12,602 | 100.00% |
+| [guide_scores.mix_natural.shard3](docs/guide_scores.mix_natural.shard3.md) | 11,751 | 100.00% |
+| [guide_scores.mix_natural.shard1](docs/guide_scores.mix_natural.shard1.md) | 11,690 | 100.00% |
+| [guide_scores.mix_natural.shard2](docs/guide_scores.mix_natural.shard2.md) | 11,610 | 100.00% |
+| [guide_scores.mix_natural.shard0](docs/guide_scores.mix_natural.shard0.md) | 11,530 | 100.00% |
+| [guide_scores.rams_baseword.dedup](docs/guide_scores.rams_baseword.dedup.md) | 9,536 | 100.00% |
+| [guide_scores.rams_baseword.shard0](docs/guide_scores.rams_baseword.shard0.md) | 3,162 | 100.00% |
+| [guide_scores.rams_baseword.shard3](docs/guide_scores.rams_baseword.shard3.md) | 3,151 | 100.00% |
+| [guide_scores.rams_baseword.shard1](docs/guide_scores.rams_baseword.shard1.md) | 3,149 | 100.00% |
+| [guide_scores.rams_baseword.shard2](docs/guide_scores.rams_baseword.shard2.md) | 3,140 | 100.00% |
 ## Language balance in the casualty line (2026-09-03)
 
 Every casualty corpus in this repo was 100% English and 100% LLM-written text, so the
@@ -328,86 +643,86 @@ professorbob_re's `no relation` (37% of its gold), dropped in `labels/unified-fu
 
 ## Summary
 
-| Dataset | Task(s) | Train | Val† | Test | License‡ | Source |
-|---|---|--:|--:|--:|---|---|
-| **NER** | | | | | | |
-| NuNER | NER | 790,202 | 98,373 | 98,464 | MIT | [HF](https://huggingface.co/datasets/numind/NuNER) |
-| Pile-NER-definition | NER (typed + definitions) | 38,048 | 4,740 | 4,715 | see card | [HF](https://huggingface.co/datasets/Universal-NER/Pile-NER-definition) |
-| GLiNER multi-task synthetic | NER (multi-task) | 10,319 | 1,276 | 1,288 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/GLINER-multi-task-synthetic-data) |
-| GLiNER multilingual synthetic | NER (multilingual) | 77,259 | 9,598 | 9,749 | see card | [HF](https://huggingface.co/datasets/knowledgator/gliner-multilingual-synthetic) |
-| biomed_NER | NER (biomedical) | 3,875 | 485 | 470 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/biomed_NER) |
-| PubMedAbstractsNER | NER (biomedical + descriptions) | 28,051 | 3,486 | 3,450 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/PubMedAbstractsNER) |
-| KazNERD | NER (Kazakh, 25 types) | 47,536 | 5,884 | 5,961 | cc-by-4.0 | [HF](https://huggingface.co/datasets/yeshpanovrustem/kaznerd) |
-| BC4CHEMD | NER (chemical) | 11,604 | 1,436 | 1,459 | see card | [HF](https://huggingface.co/datasets/chintagunta85/bc4chemd) |
-| BC5CDR | NER (chemical + disease) | 3,126 | 394 | 395 | other | [HF](https://huggingface.co/datasets/tner/bc5cdr) |
-| stockmark-jpn | NER (Japanese, 8 types) | 3,900 | 486 | 473 | cc-by-sa-3.0 | [HF](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset) |
-| FiNER-ORD | NER (financial, PER/LOC/ORG) | 1,427 | 184 | 171 | **cc-by-nc-4.0** | [HF](https://huggingface.co/datasets/gtfintechlab/finer-ord) |
-| KLUE-NER | NER (Korean, 6 types) | 16,782 | 2,116 | 2,104 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
-| MasakhaNER 2.0 | NER (20 African langs, 4 types) | 67,865 | 9,951 | 20,511 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhaner2) |
-| WikiANN (PAN-X) | NER (176 langs) | _streamed_§ | _streamed_§ | _streamed_§ | see card | [HF](https://huggingface.co/datasets/unimelb-nlp/wikiann) |
-| **NER (biomedical — MTL-Bioinformatics-2016)** | | | | | | |
-| AnatEM | NER (anatomy) | 3,514 | 1,122 | 2,308 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BC2GM | NER (genes) | 6,404 | 1,283 | 2,568 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BioNLP09 | NER (proteins) | 4,711 | 1,014 | 1,700 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BioNLP11EPI | NER (proteins) | 3,797 | 1,241 | 2,836 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BioNLP11ID | NER (4 types) | 1,850 | 586 | 1,389 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BioNLP13CG | NER (16 types) | 2,936 | 964 | 1,829 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BioNLP13GE | NER (proteins) | 1,504 | 1,663 | 1,941 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| BioNLP13PC | NER (4 types) | 2,365 | 812 | 1,575 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| CRAFT | NER (6 ontologies) | 8,291 | 2,742 | 5,652 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| Ex-PTM | NER (proteins) | 857 | 279 | 1,160 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| JNLPBA | NER (5 types) | 15,058 | 1,514 | 3,189 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| NCBI-disease | NER (disease) | 2,923 | 489 | 539 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| linnaeus | NER (species) | 1,546 | 520 | 1,029 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) |
-| **Relation extraction** | | | | | | |
-| sentence_rex | Relation extraction | 34,314 | 4,268 | 4,283 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) |
-| bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) |
-| DocRED | NER + relations (doc-level) | 83,940 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) |
-| Re-DocRED | NER + relations (doc-level) | 3,053 | 500 | 500 | see card | [HF](https://huggingface.co/datasets/tonytan48/Re-DocRED) |
-| KLUE-RE | NER + relations (Korean) | 26,028 | 3,237 | 3,205 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) |
-| BioRED | NER + relations (biomedical) | 308 | 47 | 45 | NLM / NCBI | [NCBI](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/) |
-| SciERC | NER + relations (scientific) | 265 | 46 | 38 | research use (AI2) | [AI2](http://nlp.cs.washington.edu/sciIE/) |
-| ProfessorBob relation_extraction | Relation extraction (passage-level) | 13,926 | 1,737 | 1,728 | see card | [HF](https://huggingface.co/datasets/ProfessorBob/relation_extraction) |
-| **Classification** | | | | | | |
-| GLiClass v3 logic | Classification (multiple-choice) | 4,566 | 550 | 548 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset) |
-| GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) |
-| Scientific-text-classification | Classification (single-label) | 40,047 | 4,997 | 4,956 | see card | [HF](https://huggingface.co/datasets/knowledgator/Scientific-text-classification) |
-| events_classification_biotech | Classification (multi-label) | 2,217 | 279 | 263 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) |
-| MasakhaNEWS | Classification (16 African langs, 7 topics) | 21,499 | 3,094 | 6,236 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhanews) |
-| gate2 (casualty relevance gate) | Classification (2-label relevance) | 11,781 | 1,419 | 1,446 | none declared (derived; not redistributable) | local — [Hub](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) |
-| **Structured extraction** | | | | | | |
-| text2json-training-data | **Structured extraction (json_structures)** | 7,976 | 891 | 872 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
-| json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) |
-| cas_ann_en | Structured extraction (`casualty_report`, unsplit) | 9,648 | — | — | DocEE text, model gold | [Hub](https://huggingface.co/datasets/whr778/cas_ann_en) |
-| cas_ann_ccnews | Structured extraction (`casualty_report`, unsplit) | 12,491 | — | — | CC-News text, model gold | local |
-| **Event extraction** (manual download) | | | | | | |
-| WikiEvents | NER + event extraction | 200 | 20 | 20 | see source | [gen-arg](https://github.com/raspberryice/gen-arg) |
-| RAMS | Event extraction (trigger + args) | 7,329 | 924 | 871 | see source | [JHU](https://nlp.jhu.edu/rams/) |
-| MAVEN | Event detection (trigger) | 2,913 | — | — | see source | [GitHub](https://github.com/THU-KEG/MAVEN-dataset) |
-| CASIE | Event extraction (cybersecurity) | 798 | 95 | 107 | see source | [GitHub](https://github.com/Ebiquity/CASIE) |
-| CMNEE | Event extraction (Chinese military) | 9,281 | 1,606 | 2,724 | see source | [GitHub](https://github.com/2086482524/CMNEE) |
-| DocEE | Event extraction (doc-level) | 21,842 | 2,721 | 2,744 | see source | [GitHub](https://github.com/tongmeihan1995/docee) |
-| ChFinAnn | Event extraction (Chinese financial) | 25,632 | 3,204 | 3,204 | see source | [Doc2EDAG](https://github.com/dolphin-zs/Doc2EDAG) |
-| DocFEE | Event extraction (Chinese financial) | 16,384 | 1,823 | 800 | cc-by-4.0 | [GitHub](https://github.com/tongzhou21/DocFEE) |
-| DuEE 1.0 | Event extraction (Chinese) | 11,603 | 1,453 | — | see source | [LUGE](https://www.luge.ai/) |
-| Mendeley-ED | Event detection (English, trigger-only) | 1,431 | 159 | 156 | cc-by-4.0 | [Mendeley](https://doi.org/10.17632/7d54rvzxkr.1) |
-| ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| **Real text, model annotations** | | | | | | |
-| cc_news_haiku45 | Multi-task IE (NER, rel, evt, cls, struct) | 15,839 | 2,075 | 2,043 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) |
-| cc_news_events_haiku45 | Events + entities, full event menu (English) | 6,562 | 803 | 895 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) |
-| cc_news_events_sonnet55_v2 | Events + entities + classification, news55 menu, eval voted 2-of-3 | 4,597 | 500 | 500 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) |
-| turkish_event | Classification + entities (Turkish news) | 24,028 | 3,016 | 3,090 | not redistributable | [HF](https://huggingface.co/datasets/umutertugrul/turkish-news-1.8M-tokenized) |
-| **Derived from corpora above** (added 2026-10; not in the total) | | | | | | |
-| cmnee_ner | Entities typed over CMNEE (Chinese) | 9,281 | 1,601 | 2,724 | derived from CMNEE | local |
-| duee_ner | Entities typed over DuEE (Chinese) | 11,323 | 1,414 | — | derived from DuEE | local |
-| docee_zh | DocEE-zh, classification + entities, DocEE-en label space | 27,122 | 3,390 | 3,398 | DocEE | local |
-| rams_merged | RAMS, one record per passage | 6,322 | — | — | derived from RAMS | local |
-| synthetic_events_capped | LLM multi-task slice, capped by argument gold | 4,727 | — | — | generated here | local |
-| **EKF disaster tracking** (synthetic) | | | | | | |
-| casualty_ft | Structured extraction (single-event) | 29,198 | 1,303 | 1,038 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
-| casualty_multi | Structured extraction (multi-event) | 29,030 | 1,297 | 1,023 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) |
-| **Total (generated)** | | **1,933,577** | **249,880** | **276,572** | | |
-| Rows added 2026-10-14 (the eight above, not in the total) | | 93,962 | 10,724 | 10,607 | | |
+| Dataset | Task(s) | Train | Val† | Test | License‡ | Source  Census |
+|---|---|--:|--:|--:|---|---|---|
+| **NER** | | | | | | | |
+| NuNER | NER | 790,202 | 98,373 | 98,464 | MIT | [HF](https://huggingface.co/datasets/numind/NuNER) | [census](docs/nuner_full.md) |
+| Pile-NER-definition | NER (typed + definitions) | 38,048 | 4,740 | 4,715 | see card | [HF](https://huggingface.co/datasets/Universal-NER/Pile-NER-definition) | [census](docs/pile_ner_def.md) |
+| GLiNER multi-task synthetic | NER (multi-task) | 10,319 | 1,276 | 1,288 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/GLINER-multi-task-synthetic-data) | [census](docs/knowledgator_gliner.md) |
+| GLiNER multilingual synthetic | NER (multilingual) | 77,259 | 9,598 | 9,749 | see card | [HF](https://huggingface.co/datasets/knowledgator/gliner-multilingual-synthetic) | [census](docs/gliner_multilingual.md) |
+| biomed_NER | NER (biomedical) | 3,875 | 485 | 470 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/biomed_NER) | [census](docs/biomed_ner.md) |
+| PubMedAbstractsNER | NER (biomedical + descriptions) | 28,051 | 3,486 | 3,450 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/PubMedAbstractsNER) | [census](docs/pubmed_abstracts_ner.md) |
+| KazNERD | NER (Kazakh, 25 types) | 47,536 | 5,884 | 5,961 | cc-by-4.0 | [HF](https://huggingface.co/datasets/yeshpanovrustem/kaznerd) | [census](docs/kaznerd.md) |
+| BC4CHEMD | NER (chemical) | 11,604 | 1,436 | 1,459 | see card | [HF](https://huggingface.co/datasets/chintagunta85/bc4chemd) | [census](docs/bc4chemd.md) |
+| BC5CDR | NER (chemical + disease) | 3,126 | 394 | 395 | other | [HF](https://huggingface.co/datasets/tner/bc5cdr) | [census](docs/bc5cdr.md) |
+| stockmark-jpn | NER (Japanese, 8 types) | 3,900 | 486 | 473 | cc-by-sa-3.0 | [HF](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset) | [census](docs/stockmark_jpn.md) |
+| FiNER-ORD | NER (financial, PER/LOC/ORG) | 1,427 | 184 | 171 | **cc-by-nc-4.0** | [HF](https://huggingface.co/datasets/gtfintechlab/finer-ord) | [census](docs/finer_ord.md) |
+| KLUE-NER | NER (Korean, 6 types) | 16,782 | 2,116 | 2,104 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) | [census](docs/klue_ner.md) |
+| MasakhaNER 2.0 | NER (20 African langs, 4 types) | 67,865 | 9,951 | 20,511 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhaner2) | [census](docs/masakhaner.md) |
+| WikiANN (PAN-X) | NER (176 langs) | _streamed_§ | _streamed_§ | _streamed_§ | see card | [HF](https://huggingface.co/datasets/unimelb-nlp/wikiann) | |
+| **NER (biomedical — MTL-Bioinformatics-2016)** | | | | | | | |
+| AnatEM | NER (anatomy) | 3,514 | 1,122 | 2,308 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/anatem.md) |
+| BC2GM | NER (genes) | 6,404 | 1,283 | 2,568 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/bc2gm.md) |
+| BioNLP09 | NER (proteins) | 4,711 | 1,014 | 1,700 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/bionlp09.md) |
+| BioNLP11EPI | NER (proteins) | 3,797 | 1,241 | 2,836 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/bionlp11epi.md) |
+| BioNLP11ID | NER (4 types) | 1,850 | 586 | 1,389 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/bionlp11id.md) |
+| BioNLP13CG | NER (16 types) | 2,936 | 964 | 1,829 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/bionlp13cg.md) |
+| BioNLP13GE | NER (proteins) | 1,504 | 1,663 | 1,941 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/bionlp13ge.md) |
+| BioNLP13PC | NER (4 types) | 2,365 | 812 | 1,575 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/bionlp13pc.md) |
+| CRAFT | NER (6 ontologies) | 8,291 | 2,742 | 5,652 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/craft.md) |
+| Ex-PTM | NER (proteins) | 857 | 279 | 1,160 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/ex_ptm.md) |
+| JNLPBA | NER (5 types) | 15,058 | 1,514 | 3,189 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/jnlpba.md) |
+| NCBI-disease | NER (disease) | 2,923 | 489 | 539 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/ncbi_disease.md) |
+| linnaeus | NER (species) | 1,546 | 520 | 1,029 | cc-by-4.0 | [GitHub](https://github.com/cambridgeltl/MTL-Bioinformatics-2016) | [census](docs/linnaeus.md) |
+| **Relation extraction** | | | | | | | |
+| sentence_rex | Relation extraction | 34,314 | 4,268 | 4,283 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/sentence_rex) | [census](docs/sentence_rex.md) |
+| bio-NER-relations | NER + relations | 2,085 | 256 | 258 | see card | [HF](https://huggingface.co/datasets/knowledgator/bio-NER-relations) | [census](docs/bio_ner_relations.md) |
+| DocRED | NER + relations (doc-level) | 83,940 | 10,421 | 10,554 | MIT | [HF](https://huggingface.co/datasets/thunlp/docred) | [census](docs/docred.md) |
+| Re-DocRED | NER + relations (doc-level) | 3,053 | 500 | 500 | see card | [HF](https://huggingface.co/datasets/tonytan48/Re-DocRED) | [census](docs/redocred.md) |
+| KLUE-RE | NER + relations (Korean) | 26,028 | 3,237 | 3,205 | cc-by-sa-4.0 | [GitHub](https://github.com/KLUE-benchmark/KLUE) | [census](docs/klue_re.md) |
+| BioRED | NER + relations (biomedical) | 308 | 47 | 45 | NLM / NCBI | [NCBI](https://ftp.ncbi.nlm.nih.gov/pub/lu/BioRED/) | [census](docs/biored.md) |
+| SciERC | NER + relations (scientific) | 265 | 46 | 38 | research use (AI2) | [AI2](http://nlp.cs.washington.edu/sciIE/) | [census](docs/scierc.md) |
+| ProfessorBob relation_extraction | Relation extraction (passage-level) | 13,926 | 1,737 | 1,728 | see card | [HF](https://huggingface.co/datasets/ProfessorBob/relation_extraction) | [census](docs/professorbob_re.md) |
+| **Classification** | | | | | | | |
+| GLiClass v3 logic | Classification (multiple-choice) | 4,566 | 550 | 548 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v3-logic-dataset) | [census](docs/gliclass_logic.md) |
+| GLiClass v2.0-RAC | Classification (multi-label) | 439,354 | 54,718 | 55,293 | Apache-2.0 | [HF](https://huggingface.co/datasets/knowledgator/gliclass-v2.0-RAC) | [census](docs/gliclass_rac.md) |
+| Scientific-text-classification | Classification (single-label) | 40,047 | 4,997 | 4,956 | see card | [HF](https://huggingface.co/datasets/knowledgator/Scientific-text-classification) | [census](docs/scientific_text.md) |
+| events_classification_biotech | Classification (multi-label) | 2,217 | 279 | 263 | ODC-BY | [HF](https://huggingface.co/datasets/knowledgator/events_classification_biotech) | [census](docs/events_biotech.md) |
+| MasakhaNEWS | Classification (16 African langs, 7 topics) | 21,499 | 3,094 | 6,236 | afl-3.0 | [HF](https://huggingface.co/datasets/masakhane/masakhanews) | [census](docs/masakhanews.md) |
+| gate2 (casualty relevance gate) | Classification (2-label relevance) | 11,781 | 1,419 | 1,446 | none declared (derived; not redistributable) | local — [Hub](https://huggingface.co/datasets/whr778/gate2-casualty-relevance) | [census](docs/gate2.md) |
+| **Structured extraction** | | | | | | | |
+| text2json-training-data | **Structured extraction (json_structures)** | 7,976 | 891 | 872 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) | [census](docs/text2json.md) |
+| json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) | [census](docs/paraloq_json.md) |
+| cas_ann_en | Structured extraction (`casualty_report`, unsplit) | 9,648 | — | — | DocEE text, model gold | [Hub](https://huggingface.co/datasets/whr778/cas_ann_en) | [census](docs/cas_ann_en.md) |
+| cas_ann_ccnews | Structured extraction (`casualty_report`, unsplit) | 12,491 | — | — | CC-News text, model gold | local | [census](docs/cas_ann_ccnews.md) |
+| **Event extraction** (manual download) | | | | | | | |
+| WikiEvents | NER + event extraction | 200 | 20 | 20 | see source | [gen-arg](https://github.com/raspberryice/gen-arg) | [census](docs/wikievents.md) |
+| RAMS | Event extraction (trigger + args) | 7,329 | 924 | 871 | see source | [JHU](https://nlp.jhu.edu/rams/) | [census](docs/rams.md) |
+| MAVEN | Event detection (trigger) | 2,913 | — | — | see source | [GitHub](https://github.com/THU-KEG/MAVEN-dataset) | [census](docs/maven.md) |
+| CASIE | Event extraction (cybersecurity) | 798 | 95 | 107 | see source | [GitHub](https://github.com/Ebiquity/CASIE) | [census](docs/casie.md) |
+| CMNEE | Event extraction (Chinese military) | 9,281 | 1,606 | 2,724 | see source | [GitHub](https://github.com/2086482524/CMNEE) | [census](docs/cmnee.md) |
+| DocEE | Event extraction (doc-level) | 21,842 | 2,721 | 2,744 | see source | [GitHub](https://github.com/tongmeihan1995/docee) | [census](docs/docee.md) |
+| ChFinAnn | Event extraction (Chinese financial) | 25,632 | 3,204 | 3,204 | see source | [Doc2EDAG](https://github.com/dolphin-zs/Doc2EDAG) | [census](docs/chfinann.md) |
+| DocFEE | Event extraction (Chinese financial) | 16,384 | 1,823 | 800 | cc-by-4.0 | [GitHub](https://github.com/tongzhou21/DocFEE) | [census](docs/docfee.md) |
+| DuEE 1.0 | Event extraction (Chinese) | 11,603 | 1,453 | — | see source | [LUGE](https://www.luge.ai/) | [census](docs/duee.md) |
+| Mendeley-ED | Event detection (English, trigger-only) | 1,431 | 159 | 156 | cc-by-4.0 | [Mendeley](https://doi.org/10.17632/7d54rvzxkr.1) | [census](docs/mendeley_ed.md) |
+| ACE 2005 | NER + relations + events | — | — | — | LDC (LDC2006T06) | [LDC](https://catalog.ldc.upenn.edu/LDC2006T06) | |
+| **Real text, model annotations** | | | | | | | |
+| cc_news_haiku45 | Multi-task IE (NER, rel, evt, cls, struct) | 15,839 | 2,075 | 2,043 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) | [census](docs/cc_news_haiku45.md) |
+| cc_news_events_haiku45 | Events + entities, full event menu (English) | 6,562 | 803 | 895 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) | [census](docs/cc_news_events_haiku45.md) |
+| cc_news_events_sonnet55_v2 | Events + entities + classification, news55 menu, eval voted 2-of-3 | 4,597 | 500 | 500 | unknown ‡ | [HF](https://huggingface.co/datasets/vblagoje/cc_news) | [census](docs/cc_news_events_sonnet55_v2.md) |
+| turkish_event | Classification + entities (Turkish news) | 24,028 | 3,016 | 3,090 | not redistributable | [HF](https://huggingface.co/datasets/umutertugrul/turkish-news-1.8M-tokenized) | [census](docs/turkish_event.md) |
+| **Derived from corpora above** (added 2026-10; not in the total) | | | | | | | |
+| cmnee_ner | Entities typed over CMNEE (Chinese) | 9,281 | 1,601 | 2,724 | derived from CMNEE | local | [census](docs/cmnee_ner.md) |
+| duee_ner | Entities typed over DuEE (Chinese) | 11,323 | 1,414 | — | derived from DuEE | local | [census](docs/duee_ner.md) |
+| docee_zh | DocEE-zh, classification + entities, DocEE-en label space | 27,122 | 3,390 | 3,398 | DocEE | local | [census](docs/docee_zh.md) |
+| rams_merged | RAMS, one record per passage | 6,322 | — | — | derived from RAMS | local | [census](docs/rams_merged.md) |
+| synthetic_events_capped | LLM multi-task slice, capped by argument gold | 4,727 | — | — | generated here | local | [census](docs/synthetic_events_capped.md) |
+| **EKF disaster tracking** (synthetic) | | | | | | | |
+| casualty_ft | Structured extraction (single-event) | 29,198 | 1,303 | 1,038 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) | [census](docs/casualty_ft.md) |
+| casualty_multi | Structured extraction (multi-event) | 29,030 | 1,297 | 1,023 | generated here | [`disaster_streams/`](../../datasets/disaster_streams) | [census](docs/casualty_multi.md) |
+| **Total (generated)** | | **1,933,577** | **249,880** | **276,572** | | | |
+| Rows added 2026-10-14 (the eight above, not in the total) | | 93,962 | 10,724 | 10,607 | | | |
 
 † Val column includes the `dev` split for WikiEvents and RAMS. MAVEN ships only a
 labelled train split (dev/test labels are held out for the leaderboard).
@@ -747,7 +1062,7 @@ appear verbatim in the text. Small but field-diverse, and Apache-2.0 (clean lice
 
 ### cas_ann_en — real DocEE casualty reports
 `data/cas_ann_en.jsonl` · 9,648 records, unsplit.
-[Census](../../data/docs/cas_ann_en.md).
+[Census](docs/cas_ann_en.md).
 
 DocEE documents screened by the toll regex and annotated as `casualty_report`
 (`annotate_casualty.py`). Bought 2026-09-03 for about $20: 14,850 documents
@@ -763,7 +1078,7 @@ Language: eng 9,645 (99.97%), und 3.*
 
 ### cas_ann_ccnews — real CC-News casualty reports
 `data/cas_ann_ccnews.jsonl` · 12,491 records, unsplit.
-[Census](../../data/docs/cas_ann_ccnews.md).
+[Census](docs/cas_ann_ccnews.md).
 
 English CC-News screened for a casualty toll, then annotated as `casualty_report`.
 The screen is a regex and then `whr778/gliner2-base-v1-casualty-docee`
