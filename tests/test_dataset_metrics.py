@@ -111,3 +111,102 @@ def test_labels_option_maps_before_counting(tmp_path):
     m.write_text("labels:\n  entities:\n    map:\n      person: Person\n", encoding="utf-8")
     assert list(dm.collect(tmp_path, [], fns=dm.load_label_fns(str(m)))["x"]["train"]["entities"]) == ["Person"]
     assert list(dm.collect(tmp_path, [])["x"]["train"]["entities"]) == ["person"]
+
+
+# "John left. He waved." — John 0:4, left 5:9, He 11:13, waved 14:19.
+COREF_RECORD = {
+    "input": "John left. He waved.",
+    "output": {"events": [
+        {"event_type": "Leave",
+         "triggers": [{"text": "left", "start": 5, "end": 9},
+                      {"text": "waved", "start": 14, "end": 19}],
+         "arguments": [{"role": "Person", "entity": {"text": "John", "start": 0, "end": 4}}]},
+        {"event_type": "Leave",
+         "triggers": [{"text": "left", "start": 5, "end": 9}],
+         "arguments": [{"role": "Person", "entity": {"text": "he", "start": 11, "end": 13}}]},
+    ]},
+    "coref_clusters": [[
+        {"text": "John", "start": 0, "end": 4},
+        {"text": "He", "start": 11, "end": 13},
+    ]],
+}
+
+
+def test_coref_counts_trigger_pairs_and_argument_expansion(tmp_path):
+    f = tmp_path / "x.train.jsonl"
+    _write(f, [COREF_RECORD])
+    m = dm.scan_file(f)
+    assert m["coref_docs"] == 1
+    assert m["coref_clusters"] == 1
+    assert m["coref_mentions"] == 2
+    assert m["coref_mention_pairs"] == 1
+    assert m["coref_pronouns"] == 1
+    # One event lists both triggers: one positive pair. The third trigger is a second
+    # event of the same type, so the other two pairs are cross-event.
+    assert (m["trig_coref_events"], m["trig_coref_pos"], m["trig_coref_cross"]) == (1, 1, 2)
+    assert m["id_multi"] == m["trig_coref_events"]
+    # "John" is in one cluster and gains "He". "he" does not match the mention text "He".
+    assert (m["arg_coref_added"], m["arg_coref_skipped"]) == (1, 0)
+    # Both argument spans sit in the cluster, and each has the other mention.
+    assert (m["arg_span_coref"], m["arg_span_others"], m["arg_span_ambiguous"]) == (2, 2, 0)
+
+
+def test_span_geometry_partitions_inside_and_outside(tmp_path):
+    f = tmp_path / "x.train.jsonl"
+    _write(f, [{"input": "xxxx yyyy zzzz", "output": {"events": [{
+        "event_type": "E",
+        "triggers": [{"text": "yyyy", "start": 5, "end": 9}],
+        "arguments": [
+            {"role": "eq", "entity": {"text": "yyyy", "start": 5, "end": 9}},
+            {"role": "in", "entity": {"text": "yy", "start": 5, "end": 7}},
+            {"role": "over", "entity": {"text": "yy z", "start": 7, "end": 11}},
+            {"role": "out", "entity": {"text": "xxxx", "start": 0, "end": 4}},
+            {"role": "str", "entity": "somewhere"},
+        ],
+    }]}}])
+    m = dm.scan_file(f)
+    assert m["arg_place"]["inside"] == m["arg_equal"] + m["arg_nested"] == 2
+    assert m["arg_place"]["outside"] == (
+        m["arg_trigger_inside"] + m["arg_partial"] + m["arg_disjoint"]) == 2
+    assert (m["arg_equal"], m["arg_nested"], m["arg_partial"], m["arg_disjoint"]) == (1, 1, 1, 1)
+    assert m["arg_place"]["unmeasured"] == 1
+
+
+def test_markdown_names_tvd_and_coref(tmp_path):
+    _write(tmp_path / "x.train.jsonl", [
+        COREF_RECORD,
+        {"input": "aaa", "output": {"entities": {"A": ["a", "a", "a"]}}},
+    ])
+    _write(tmp_path / "x.val.jsonl", [{
+        "input": "bbb", "output": {"entities": {"A": ["a"], "B": ["b", "b", "b"]}},
+    }])
+    text = dm.markdown_report(dm.collect(tmp_path, ["x"]), {}, top=0)
+    # Train is all A. Val is 1/4 A and 3/4 B. TVD = 0.75.
+    assert "0.7500 STRONG" in text
+    assert "### Coreference" in text
+    assert "positive pairs" in text
+    assert "mentions the string rule adds" in text
+    bare = dm.markdown_report({"z": {"train": dm.new_metrics()}}, {}, top=0)
+    assert "No `coref_clusters`." in bare
+
+
+def test_language_section_lists_every_language_and_its_records():
+    train, val = dm.new_metrics(), dm.new_metrics()
+    train["records"], val["records"] = 10, 4
+    train["languages"] = Counter({"eng": 7, "fra": 2, "deu": 1})
+    val["languages"] = Counter({"eng": 1, "zho": 3})
+    text = dm.markdown_report({"x": {"train": train, "val": val}}, {}, top=0)
+    assert "| eng | 7 | 1 | 8 | 57.14% |" in text
+    assert "| zho | 0 | 3 | 3 | 21.43% |" in text
+    assert "| fra | 2 | 0 | 2 | 14.29% |" in text
+    assert "| deu | 1 | 0 | 1 | 7.14% |" in text
+    bare = dm.markdown_report({"z": {"train": dm.new_metrics()}}, {}, top=0)
+    assert "Language was not measured." in bare
+
+
+def test_tvd_gates_are_the_data_health_gates():
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "derive"))
+    import data_health
+    assert (dm.TVD_WARN, dm.TVD_STRONG, dm.THIN_SUPPORT) == (
+        data_health.TVD_WARN, data_health.TVD_STRONG, data_health.THIN_SUPPORT)

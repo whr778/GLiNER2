@@ -29,7 +29,22 @@ Usage:
   uv run python scripts/dataset_metrics.py casie redocred  # a subset
   uv run python scripts/dataset_metrics.py --top 15        # cap long tails
   uv run python scripts/dataset_metrics.py --json m.json   # machine-readable
-  uv run python scripts/dataset_metrics.py --config tools/train/config/base/eb17-best.yaml --lang
+  uv run python scripts/dataset_metrics.py --markdown census.md casie
+  uv run python scripts/dataset_metrics.py --config tools/train/config/base/eb17-best.yaml --lang --markdown census.md
+
+``--markdown`` writes one file: the census above, plus the dataset diagnostics that
+used to live in their own commands. Label shift is TVD (total variation distance)
+between splits. Argument-inside-trigger is the span count from
+``tools/data/measure_argument_inside_trigger.py``, with equal spans, partial
+overlaps, and a trigger sitting inside a longer argument broken out. String
+occurrence is ``measure_occurrence_ambiguity.py`` over every record, not a sample.
+Event identity is ``measure_event_normalisation.py``: multi-trigger events, and
+same-type pairs that share an argument. Coreference is three counts from the gold:
+mention clusters on ``coref_clusters``, trigger pairs inside one event (TriggerLink's
+positives) against same-type pairs across events, and the argument mentions
+``expand_argument_coreferents`` would add. Checkpoint measures (surface alignment
+against the model tokenizer, gradient share, the junction) stay in their own
+commands: they describe a model, not the gold.
 
 Input length is counted with GLiNER2's ``WhitespaceTokenSplitter`` (the same
 tokenizer the model uses), so counts match the model's view of the text and CJK
@@ -44,17 +59,29 @@ import json
 import statistics
 import sys
 from collections import Counter, defaultdict
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import yaml
 
+from gliner2.inference.entity_coref import PRONOUNS
+from gliner2.processing.argument_coref import expand_argument_coreferents
 from gliner2.processor import WhitespaceTokenSplitter
 from gliner2.training.eval_metrics import _gold_event_argument_set, _gold_event_trigger_set
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "train"))
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT / "tools" / "train"))
+sys.path.insert(0, str(_ROOT / "tools" / "data"))
 import train as T  # noqa: E402
 from model_card import load_registry  # noqa: E402
+from adapt_ace2005_office import adapt_record, is_office_record  # noqa: E402
+from compare_label_distributions import tvd  # noqa: E402
+from measure_argument_inside_trigger import contained, measure_record, span_of  # noqa: E402
+
+# Same gates as tools/derive/data_health.py.
+TVD_WARN, TVD_STRONG = 0.15, 0.30
+THIN_SUPPORT = 10
 
 SPLITS = ("train", "val", "dev", "test")
 SPLIT_ORDER = {"train": 0, "val": 1, "dev": 2, "test": 3, "all": 4}
@@ -109,6 +136,30 @@ def new_metrics() -> Dict[str, Any]:
         "ev_records": 0, "ev_instances": 0, "ev_triggerless": 0,
         "trigger_gold": 0, "argument_gold": 0, "args_per_instance": [],
         "trigger_words": [],
+        # Span geometry of an argument against its own event's triggers. ``arg_place``
+        # is the measure_argument_inside_trigger total (inside / outside / unmeasured).
+        # The five counts under it partition the placed arguments.
+        "arg_place": Counter(), "arg_place_role": defaultdict(Counter),
+        "arg_equal": 0, "arg_nested": 0, "arg_trigger_inside": 0,
+        "arg_partial": 0, "arg_disjoint": 0, "office_adapted": 0,
+        # String occurrence under the whitespace splitter. Offset gold is still counted,
+        # and ``occ_*_offset`` says how many of those surfaces carry a span.
+        "occ_trig_sum": 0, "occ_trig_placed": 0, "occ_trig_gt1": 0, "occ_trig_unplaced": 0,
+        "occ_trig_offset": 0, "occ_trig_string": 0,
+        "occ_arg_sum": 0, "occ_arg_placed": 0, "occ_arg_gt1": 0, "occ_arg_unplaced": 0,
+        "occ_arg_offset": 0, "occ_arg_string": 0,
+        # Event identity. Shared-argument pairs are an upper bound: two real events can
+        # share a participant.
+        "id_docs": 0, "id_events": 0, "id_multi": 0, "id_pairs": 0,
+        "id_share_text": 0, "id_share_role": 0, "id_nested": 0,
+        "id_identical": 0, "id_split_docs": 0,
+        # coref_clusters, trigger pairs, and what argument expansion would add.
+        "coref_docs": 0, "coref_clusters": 0, "coref_mentions": 0,
+        "coref_multi": 0, "coref_singletons": 0, "coref_mention_pairs": 0,
+        "coref_pronouns": 0,
+        "trig_coref_events": 0, "trig_coref_pos": 0, "trig_coref_cross": 0,
+        "arg_coref_added": 0, "arg_coref_skipped": 0,
+        "arg_span_coref": 0, "arg_span_others": 0, "arg_span_ambiguous": 0,
     }
 
 
@@ -168,6 +219,185 @@ def add_events(m: Dict, out: Dict) -> None:
     m["argument_gold"] += len(_gold_event_argument_set(out))
 
 
+def _surface(value) -> str:
+    if isinstance(value, dict):
+        return (value.get("text") or "").strip()
+    return (value or "").strip() if isinstance(value, str) else ""
+
+
+def _occurrence(words: List[str], surface: str) -> int:
+    """Places ``surface`` lands in an already-tokenized document. Same match as
+    ``measure_occurrence_ambiguity.occurrences``: lowercased whitespace tokens."""
+    sub = [t for t, _, _ in _tokenize(surface, lower=True)]
+    n = len(sub)
+    if not n:
+        return 0
+    return sum(words[i:i + n] == sub for i in range(len(words) - n + 1))
+
+
+def _tally_surface(m: Dict, kind: str, words: List[str], value) -> None:
+    surface = _surface(value)
+    if not surface:
+        return
+    offset = span_of(value) is not None
+    m[f"occ_{kind}_offset" if offset else f"occ_{kind}_string"] += 1
+    n = _occurrence(words, surface)
+    if n == 0:
+        m[f"occ_{kind}_unplaced"] += 1
+        return
+    m[f"occ_{kind}_placed"] += 1
+    m[f"occ_{kind}_sum"] += n
+    m[f"occ_{kind}_gt1"] += n > 1
+
+
+def _arg_text(arg: Dict) -> str:
+    return _surface(arg.get("entity") if isinstance(arg, dict) else None).lower()
+
+
+def _arg_pair(arg: Dict) -> Tuple[str, str]:
+    role = arg.get("role") if isinstance(arg, dict) else None
+    return (role or "", _arg_text(arg))
+
+
+def _pairs(n: int) -> int:
+    return n * (n - 1) // 2
+
+
+def add_coref(m: Dict, rec: Dict, events: List[Dict]) -> None:
+    """Mention clusters, trigger pairs, and argument mentions expansion would add.
+
+    TriggerLink's positive is two triggers of one event. A same-type pair drawn from
+    two events is a gold hard negative. ``expand_argument_coreferents`` is the string
+    rule training uses; a span in exactly one multi-mention cluster is the offset rule,
+    which still sees a pronoun that sits in two clusters under its surface.
+    """
+    clusters = [c for c in (rec.get("coref_clusters") or []) if isinstance(c, list)]
+    if clusters:
+        m["coref_docs"] += 1
+    span_at: Dict[Tuple[int, int], List[int]] = defaultdict(list)
+    for index, cluster in enumerate(clusters):
+        mentions = [x for x in cluster if isinstance(x, dict)]
+        if not mentions:
+            continue
+        m["coref_clusters"] += 1
+        m["coref_mentions"] += len(mentions)
+        m["coref_multi"] += len(mentions) > 1
+        m["coref_singletons"] += len(mentions) == 1
+        m["coref_mention_pairs"] += _pairs(len(mentions))
+        for mention in mentions:
+            if (mention.get("text") or "").strip().casefold() in PRONOUNS:
+                m["coref_pronouns"] += 1
+            span = span_of(mention)
+            if span:
+                span_at[span].append(index)
+    by_type: Dict[str, List[int]] = defaultdict(list)
+    for event in events:
+        triggers = [t for t in event.get("triggers") or [] if _surface(t)]
+        by_type[event["event_type"]].append(len(triggers))
+        if len(triggers) > 1:
+            m["trig_coref_events"] += 1
+            m["trig_coref_pos"] += _pairs(len(triggers))
+    for counts in by_type.values():
+        m["trig_coref_cross"] += _pairs(sum(counts)) - sum(_pairs(k) for k in counts)
+    for event in events:
+        for argument in event.get("arguments") or []:
+            if not isinstance(argument, dict):
+                continue
+            span = span_of(argument.get("entity"))
+            hits = set(span_at.get(span, ())) if span else set()
+            if len(hits) > 1:
+                m["arg_span_ambiguous"] += 1
+                continue
+            if len(hits) != 1:
+                continue
+            cluster = clusters[next(iter(hits))]
+            others = [x for x in cluster if isinstance(x, dict) and span_of(x) != span]
+            if others:
+                m["arg_span_coref"] += 1
+                m["arg_span_others"] += len(others)
+    output = rec.get("output") if isinstance(rec.get("output"), dict) else None
+    text = rec.get("input")
+    if clusters and events and isinstance(output, dict) and isinstance(text, str):
+        expanded = expand_argument_coreferents(output, clusters, text)
+        m["arg_coref_added"] += expanded.get("_argument_coref_added") or 0
+        m["arg_coref_skipped"] += expanded.get("_argument_coref_skipped") or 0
+
+
+def add_diagnostics(m: Dict, rec: Dict) -> None:
+    """Span geometry, string occurrence, and event identity for one record.
+
+    Span geometry follows ``measure_argument_inside_trigger``: an office ACE record
+    is adapted first, and an equal span counts as inside. The five placed counts
+    partition inside (equal, nested) and outside (trigger inside the argument,
+    partial overlap, disjoint).
+    """
+    source = rec
+    if is_office_record(rec):
+        source = adapt_record(rec)
+        m["office_adapted"] += 1
+    part, roles = measure_record(source)
+    m["arg_place"].update(part)
+    for role, counts in roles.items():
+        m["arg_place_role"][role].update(counts)
+    for event in (source.get("output") or {}).get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        triggers = [s for s in (span_of(t) for t in event.get("triggers") or []) if s]
+        for argument in event.get("arguments") or []:
+            if not isinstance(argument, dict):
+                continue
+            argument_span = span_of(argument.get("entity"))
+            if argument_span is None or not triggers:
+                continue
+            if any(argument_span == trigger for trigger in triggers):
+                m["arg_equal"] += 1
+            elif any(contained(argument_span, trigger) for trigger in triggers):
+                m["arg_nested"] += 1
+            elif any(contained(trigger, argument_span) for trigger in triggers):
+                m["arg_trigger_inside"] += 1
+            elif any(argument_span[0] < trigger[1] and trigger[0] < argument_span[1]
+                     for trigger in triggers):
+                m["arg_partial"] += 1
+            else:
+                m["arg_disjoint"] += 1
+
+    text = rec.get("input") or ""
+    events = [e for e in (rec.get("output") or {}).get("events") or []
+              if isinstance(e, dict) and e.get("event_type")]
+    add_coref(m, rec, events)
+    if not events:
+        return
+    words = [t for t, _, _ in _tokenize(text, lower=True)]
+    for event in events:
+        for trigger in event.get("triggers") or []:
+            _tally_surface(m, "trig", words, trigger)
+        for argument in event.get("arguments") or []:
+            _tally_surface(m, "arg", words, (argument or {}).get("entity") if isinstance(argument, dict) else None)
+    m["id_docs"] += 1
+    m["id_events"] += len(events)
+    m["id_multi"] += sum(
+        len([t for t in event.get("triggers") or [] if _surface(t)]) > 1 for event in events)
+    split_doc = False
+    for left, right in combinations(events, 2):
+        if left["event_type"] != right["event_type"]:
+            continue
+        m["id_pairs"] += 1
+        left_text = {_arg_text(a) for a in left.get("arguments") or [] if _arg_text(a)}
+        right_text = {_arg_text(a) for a in right.get("arguments") or [] if _arg_text(a)}
+        left_pairs = {_arg_pair(a) for a in left.get("arguments") or [] if _arg_text(a)}
+        right_pairs = {_arg_pair(a) for a in right.get("arguments") or [] if _arg_text(a)}
+        if left_text & right_text:
+            m["id_share_text"] += 1
+            split_doc = True
+        if left_pairs & right_pairs:
+            m["id_share_role"] += 1
+        if left_text and right_text and (left_text <= right_text or right_text <= left_text):
+            m["id_nested"] += 1
+        if left_text and left_text == right_text:
+            m["id_identical"] += 1
+    m["id_split_docs"] += split_doc
+
+
 def add_record(m: Dict, rec: Dict, lang: Optional[Callable[[str], str]]) -> None:
     text = rec.get("input") or ""
     m["records"] += 1
@@ -178,6 +408,7 @@ def add_record(m: Dict, rec: Dict, lang: Optional[Callable[[str], str]]) -> None
     out = rec.get("output") or {}
     for add in (add_entities, add_relations, add_classifications, add_structures, add_events):
         add(m, out)
+    add_diagnostics(m, rec)
 
 
 def scan_file(path: Path, fns: Optional[Dict] = None,
@@ -512,6 +743,483 @@ def to_json(data: Dict[str, Dict[str, Dict[str, Any]]]) -> Dict[str, Any]:
     return out
 
 
+def _md(value) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _md_table(headers: List[str], rows: List[List]) -> List[str]:
+    head = "| " + " | ".join(_md(h) for h in headers) + " |"
+    rule = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_md(c) for c in row) + " |" for row in rows]
+    return [head, rule, *body]
+
+
+def _share(n: int, d: int) -> str:
+    return f"{n / d:.2%}" if d else "n/a"
+
+
+def _percentile(words: List[int], p: float) -> int:
+    if not words:
+        return 0
+    xs = sorted(words)
+    index = min(len(xs) - 1, max(0, int(round(p / 100 * (len(xs) - 1)))))
+    return xs[index]
+
+
+def _marginals(m: Dict) -> List[Tuple[str, Counter]]:
+    roles: Counter = Counter()
+    for by_role in m["event_roles"].values():
+        roles.update(by_role)
+    classes: Counter = Counter()
+    for task, labels in m["classifications"].items():
+        for lab, n in labels.items():
+            classes[f"{task}: {lab}"] += n
+    return [
+        ("entities (per mention)", m["entities"]),
+        ("relations (per instance)", m["relations"]),
+        ("event types (per trigger mention)", m["event_triggers"]),
+        ("event roles (per argument)", roles),
+        ("classifications (true_label)", classes),
+    ]
+
+
+def _tvd_cell(p: Counter, q: Counter) -> str:
+    d = tvd(p, q)
+    if d != d:
+        return "n/a"
+    mark = " STRONG" if d > TVD_STRONG else " WARN" if d > TVD_WARN else ""
+    return f"{d:.4f}{mark}"
+
+
+def _drivers(p: Counter, q: Counter, n: int = 5) -> str:
+    pt, qt = sum(p.values()), sum(q.values())
+    if not pt or not qt:
+        return ""
+    ranked = sorted(set(p) | set(q), key=lambda k: -abs(p[k] / pt - q[k] / qt))[:n]
+    return ", ".join(f"{k} {p[k] / pt:.0%}→{q[k] / qt:.0%}" for k in ranked)
+
+
+def _split_pairs(splits: Dict) -> List[Tuple[str, str]]:
+    pairs = []
+    for a, b in (("train", "val"), ("train", "dev"), ("train", "test"),
+                 ("val", "test"), ("dev", "test"), ("val", "dev")):
+        if a in splits and b in splits:
+            pairs.append((a, b))
+    return pairs
+
+
+def _label_table(title: str, counts: Counter, top: int) -> List[str]:
+    items = counts.most_common()
+    shown = items[:top] if top else items
+    total = sum(counts.values())
+    lines = [f"#### {title}", ""]
+    lines += _md_table(
+        ["label", "count", "share"],
+        [[name, f"{n:,}", _share(n, total)] for name, n in shown])
+    if top and len(items) > top:
+        lines.append("")
+        lines.append(f"{len(items) - top} further labels omitted (`--top {top}`).")
+    return lines
+
+
+def _coref_section(splits: Dict[str, Dict], order: List[str]) -> List[str]:
+    """Mention clusters, trigger pairs, and argument coreference. A zero is a measured zero."""
+    lines = ["### Coreference", ""]
+    any_clusters = any(m["coref_clusters"] for m in splits.values())
+    lines.append("**Mention clusters.** `coref_clusters` on the record: a list of mentions `{text, start, end}`. A pair is two mentions in the same cluster. A pronoun is a mention whose text is in the inference pronoun list.")
+    lines.append("")
+    if not any_clusters:
+        lines.append("No `coref_clusters`.")
+        lines.append("")
+    else:
+        lines += _md_table(
+            ["split", "docs", "clusters", "mentions", "multi-mention", "singletons",
+             "mention pairs", "pronoun mentions", "pronoun share"],
+            [[s, f"{splits[s]['coref_docs']:,}", f"{splits[s]['coref_clusters']:,}",
+              f"{splits[s]['coref_mentions']:,}", f"{splits[s]['coref_multi']:,}",
+              f"{splits[s]['coref_singletons']:,}", f"{splits[s]['coref_mention_pairs']:,}",
+              f"{splits[s]['coref_pronouns']:,}",
+              _share(splits[s]["coref_pronouns"], splits[s]["coref_mentions"])]
+             for s in order])
+        lines.append("")
+    lines.append(
+        "**Trigger coref.** A positive pair is two triggers listed on the same event. That is what TriggerLink trains as the same event. "
+        "A same-type pair drawn from two events is a gold hard negative: different events. "
+        "False triggers that are not in the gold are not in this count.")
+    lines.append("")
+    if not any(m["trig_coref_events"] or m["trig_coref_cross"] for m in splits.values()):
+        lines.append("No event lists more than one trigger, and no document has two events of one type, so there is no trigger pair.")
+        lines.append("")
+    else:
+        lines += _md_table(
+            ["split", "events with > 1 trigger", "positive pairs", "same-type pairs across events"],
+            [[s, f"{splits[s]['trig_coref_events']:,}", f"{splits[s]['trig_coref_pos']:,}",
+              f"{splits[s]['trig_coref_cross']:,}"] for s in order])
+        lines.append("")
+    lines.append(
+        "**Argument coref.** The string rule is `expand_argument_coreferents`: an argument surface that sits in exactly one cluster gains that cluster's other mentions, and a surface that sits in two clusters is skipped. "
+        "The span rule matches the argument's offsets to one cluster. It still counts a pronoun whose surface is shared by two clusters.")
+    lines.append("")
+    if not any(m["argument_gold"] or m["arg_coref_added"] or m["arg_span_coref"] for m in splits.values()):
+        lines.append("No event arguments.")
+        lines.append("")
+        return lines
+    lines += _md_table(
+        ["split", "mentions the string rule adds", "arguments skipped, 2+ clusters",
+         "arguments in one multi-mention cluster", "other mentions of that cluster",
+         "argument spans in 2+ clusters"],
+        [[s, f"{splits[s]['arg_coref_added']:,}", f"{splits[s]['arg_coref_skipped']:,}",
+          f"{splits[s]['arg_span_coref']:,}", f"{splits[s]['arg_span_others']:,}",
+          f"{splits[s]['arg_span_ambiguous']:,}"] for s in order])
+    lines.append("")
+    return lines
+
+
+def _language_section(splits: Dict[str, Dict], order: List[str]) -> List[str]:
+    """Every detected language and how many records it covers. A missing counter is not a zero."""
+    lines = ["### Language", ""]
+    lines.append(
+        "One language per record, from `train._detect_lang` (lumi, ISO 639-2), the same code "
+        "`eval_by_language` uses. `und` is undetermined. The count is records.")
+    lines.append("")
+    if not any(m["languages"] for m in splits.values()):
+        lines.append("Language was not measured.")
+        lines.append("")
+        return lines
+    totals = Counter()
+    for split in order:
+        totals.update(splits[split]["languages"])
+    grand = sum(m["records"] for m in splits.values())
+    rows = []
+    for lang, n in totals.most_common():
+        rows.append([lang, *[f"{splits[s]['languages'][lang]:,}" for s in order],
+                     f"{n:,}", _share(n, grand)])
+    lines += _md_table(["language", *order, "records", "share"], rows)
+    lines.append("")
+    return lines
+
+
+def _dataset_markdown(dataset: str, splits: Dict[str, Dict], registry: Dict, top: int) -> List[str]:
+    lines = [f"## {dataset}", ""]
+    order = sorted(splits, key=lambda s: SPLIT_ORDER.get(s, 9))
+    rows = []
+    for split in order:
+        m = splits[split]
+        h = head_counts(m)
+        w = word_stats(m["words"])
+        rows.append([
+            split, f"{m['records']:,}", f"{len(m['hashes']):,}",
+            w["median"], _percentile(m["words"], 90), w["max"],
+            f"{h['entities']:,}", f"{h['relations']:,}", f"{h['classifications']:,}",
+            f"{h['structures']:,}", f"{h['event_triggers']:,}", f"{h['event_arguments']:,}",
+        ])
+    lines.append("### Splits")
+    lines.append("")
+    lines.append("Lengths are whitespace tokens (`WhitespaceTokenSplitter`), the same count as the text report. They are not encoder subwords.")
+    lines.append("")
+    lines += _md_table(
+        ["split", "records", "unique inputs", "tokens median", "tokens p90", "tokens max",
+         "entities", "relations", "classifications", "structures", "event triggers", "event arguments"],
+        rows)
+    lines += _language_section(splits, order)
+
+    lines.append("### Cross-split uniqueness")
+    lines.append("")
+    lines.append("The key is the sha1 of the stripped input text. `records` above `unique inputs` means the same text is repeated inside that split.")
+    lines.append("")
+    uniq = uniqueness({dataset: splits})
+    lines += _md_table(["check", "count"], [[k, f"{v:,}"] for k, v in uniq.items()])
+    lines.append("")
+
+    lines.append("### Label shift (TVD)")
+    lines.append("")
+    lines.append(
+        "TVD is total variation distance, `0.5 * sum |p - q|` over one category's label marginal. "
+        "0 means the two splits match. 1 means they share no label. "
+        f"The data-health gates are TVD {TVD_WARN} (WARN) and {TVD_STRONG} (STRONG). "
+        "Support is the count each marginal is normalised over. A TVD on a small support is not comparable to one on a large support.")
+    lines.append("")
+    shift_rows = []
+    for name, _ in _marginals(next(iter(splits.values()))):
+        for a, b in _split_pairs(splits):
+            pa = dict(_marginals(splits[a]))
+            pb = dict(_marginals(splits[b]))
+            p, q = pa[name], pb[name]
+            if not sum(p.values()) and not sum(q.values()):
+                continue
+            shift_rows.append([
+                name, f"{a} / {b}", _tvd_cell(p, q),
+                f"{sum(p.values()):,} / {sum(q.values()):,}", _drivers(p, q),
+            ])
+    if shift_rows:
+        lines += _md_table(["category", "splits", "TVD", "support", "largest movers"], shift_rows)
+    else:
+        lines.append("No label marginal has gold on both sides of a split pair.")
+    lines.append("")
+    train = splits.get("train")
+    if train:
+        for other in order:
+            if other == "train":
+                continue
+            for name, counts in _marginals(splits[other]):
+                train_counts = dict(_marginals(train))[name]
+                unseen = {k: v for k, v in counts.items() if k not in train_counts and v}
+                thin = {k: v for k, v in counts.items() if 0 < v < THIN_SUPPORT}
+                if unseen:
+                    shown = ", ".join(f"{k} ×{v}" for k, v in sorted(unseen.items(), key=lambda kv: -kv[1]))
+                    lines.append(f"Unseen in train, present in {other}, {name}: {shown}.")
+                if thin:
+                    shown = ", ".join(f"{k} ×{v}" for k, v in sorted(thin.items(), key=lambda kv: kv[1]))
+                    lines.append(
+                        f"Thin support in {other}, {name}: {len(thin)} label(s) under {THIN_SUPPORT} gold. {shown}.")
+    lines.append("")
+
+    lines.append("### Events")
+    lines.append("")
+    if not any(m["ev_instances"] for m in splits.values()):
+        lines.append("No event gold.")
+        lines.append("")
+    else:
+        for split in order:
+            m = splits[split]
+            if not m["ev_instances"]:
+                lines.append(f"**{split}.** No event instances.")
+                lines.append("")
+                continue
+            tw = m["trigger_words"]
+            single = sum(1 for w in tw if w == 1) / len(tw) if tw else 0.0
+            lines.append(
+                f"**{split}.** {m['ev_instances']:,} instances in {m['ev_records']:,} records, "
+                f"{m['ev_triggerless']:,} triggerless. "
+                f"Trigger gold {m['trigger_gold']:,}. Argument gold {m['argument_gold']:,}. "
+                f"Arguments per instance, mean {statistics.mean(m['args_per_instance']) if m['args_per_instance'] else 0:.2f}. "
+                f"Trigger length in whitespace tokens, mean {statistics.mean(tw) if tw else 0:.2f}, "
+                f"single-token share {single:.1%}.")
+            if m["argument_gold"] == 0:
+                lines.append("Trigger-only: this split cannot teach or score event arguments.")
+            lines.append("")
+            lines += _label_table(f"{split} event types", m["event_triggers"], top)
+            lines.append("")
+
+    lines.append("### Argument inside a trigger")
+    lines.append("")
+    lines.append(
+        "An argument is inside when it and a trigger of the same event both carry character offsets "
+        "and the argument span is contained in the trigger span, edges included. An equal span counts as inside. "
+        "A partial overlap, and a trigger contained in a longer argument, count as outside. "
+        "String gold has no span, so it is unmeasured and stays out of the inside share. "
+        "This is a span count, not an F1.")
+    lines.append("")
+    geo_rows = []
+    any_args = False
+    for split in order:
+        m = splits[split]
+        placed = m["arg_place"]["inside"] + m["arg_place"]["outside"]
+        if placed or m["arg_place"]["unmeasured"]:
+            any_args = True
+        geo_rows.append([
+            split, f"{m['arg_place']['inside']:,}", f"{placed:,}",
+            _share(m["arg_place"]["inside"], placed),
+            f"{m['arg_equal']:,}", f"{m['arg_nested']:,}", f"{m['arg_trigger_inside']:,}",
+            f"{m['arg_partial']:,}", f"{m['arg_disjoint']:,}", f"{m['arg_place']['unmeasured']:,}",
+        ])
+    if any_args:
+        lines += _md_table(
+            ["split", "inside", "placed", "inside share", "equal", "nested inside",
+             "trigger inside argument", "partial overlap", "disjoint", "unmeasured"],
+            geo_rows)
+        lines.append("")
+        lines.append("Equal and nested inside sum to inside. Trigger-inside-argument, partial overlap, and disjoint sum to outside.")
+        adapted = sum(m["office_adapted"] for m in splits.values())
+        if adapted:
+            lines.append(f"{adapted:,} office ACE records were adapted before this count, the same way `measure_argument_inside_trigger.py` adapts them.")
+        for split in order:
+            roles = splits[split]["arg_place_role"]
+            placed_roles = [r for r in roles if roles[r]["inside"] + roles[r]["outside"]]
+            if not placed_roles:
+                continue
+            lines.append("")
+            lines.append(f"**{split} by role.**")
+            lines.append("")
+            lines += _md_table(
+                ["role", "inside", "placed", "inside share", "unmeasured"],
+                [[r or "(no role)", f"{roles[r]['inside']:,}",
+                  f"{roles[r]['inside'] + roles[r]['outside']:,}",
+                  _share(roles[r]["inside"], roles[r]["inside"] + roles[r]["outside"]),
+                  f"{roles[r]['unmeasured']:,}"]
+                 for r in sorted(placed_roles, key=lambda r: (-(roles[r]["inside"] + roles[r]["outside"]), r))])
+    else:
+        lines.append("No event arguments.")
+    lines.append("")
+
+    lines.append("### String occurrence")
+    lines.append("")
+    lines.append(
+        "How many places a gold surface lands when placement is a lowercased whitespace-token run, "
+        "which is what string gold does (`latent_all`). Mean 1.00 and a `share > 1` of 0% means every placed surface is unambiguous. "
+        "Unplaced is the share of surfaces that land nowhere. "
+        "Offset gold is placed at its span, so a repeat here is a repeated string, not an extra training target. "
+        "Counted over every record.")
+    lines.append("")
+    occ_rows = []
+    any_occ = False
+    for split in order:
+        m = splits[split]
+        surfaces = m["occ_trig_placed"] + m["occ_trig_unplaced"] + m["occ_arg_placed"] + m["occ_arg_unplaced"]
+        if surfaces:
+            any_occ = True
+        trig_mean = m["occ_trig_sum"] / m["occ_trig_placed"] if m["occ_trig_placed"] else 0
+        arg_mean = m["occ_arg_sum"] / m["occ_arg_placed"] if m["occ_arg_placed"] else 0
+        occ_rows.append([
+            split,
+            f"{trig_mean:.2f}", _share(m["occ_trig_gt1"], m["occ_trig_placed"]),
+            f"{arg_mean:.2f}", _share(m["occ_arg_gt1"], m["occ_arg_placed"]),
+            _share(m["occ_trig_unplaced"] + m["occ_arg_unplaced"], surfaces),
+            f"{m['occ_arg_offset']:,}", f"{m['occ_arg_string']:,}",
+            f"{m['occ_trig_offset']:,}", f"{m['occ_trig_string']:,}",
+        ])
+    if any_occ:
+        lines += _md_table(
+            ["split", "trigger mean occ", "trigger share > 1", "argument mean occ", "argument share > 1",
+             "unplaced share", "offset arguments", "string arguments", "offset triggers", "string triggers"],
+            occ_rows)
+    else:
+        lines.append("No trigger or argument surfaces.")
+    lines.append("")
+
+    lines.append("### Event identity")
+    lines.append("")
+    lines.append(
+        "The multi-trigger share is events whose trigger list has more than one surface. "
+        "A same-type pair that shares an argument text is an upper bound on one real event split into two records: "
+        "two real events can share a participant. Nested means one argument set contains the other. Identical means the sets are equal.")
+    lines.append("")
+    if not any(m["id_events"] for m in splits.values()):
+        lines.append("No event instances.")
+    else:
+        id_rows = []
+        for split in order:
+            m = splits[split]
+            id_rows.append([
+                split, f"{m['id_events']:,}", _share(m["id_multi"], m["id_events"]),
+                f"{m['id_pairs']:,}", _share(m["id_share_text"], m["id_pairs"]),
+                _share(m["id_share_role"], m["id_pairs"]),
+                _share(m["id_nested"], m["id_pairs"]), _share(m["id_identical"], m["id_pairs"]),
+                _share(m["id_split_docs"], m["id_docs"]),
+            ])
+        lines += _md_table(
+            ["split", "events", "share > 1 trigger", "same-type pairs", "share an argument",
+             "share role + argument", "nested", "identical", "docs with a shared argument"],
+            id_rows)
+    lines.append("")
+
+    lines += _coref_section(splits, order)
+
+    for title, key in (("Entities", "entities"), ("Relations", "relations")):
+        lines.append(f"### {title}")
+        lines.append("")
+        any_head = False
+        for split in order:
+            counts = splits[split][key]
+            if not counts:
+                continue
+            any_head = True
+            lines += _label_table(f"{split}", counts, top)
+            lines.append("")
+        if not any_head:
+            lines.append("None.")
+            lines.append("")
+
+    lines.append("### Classifications")
+    lines.append("")
+    if not any(m["classifications"] for m in splits.values()):
+        lines.append("None.")
+        lines.append("")
+    else:
+        for split in order:
+            tasks = splits[split]["classifications"]
+            if not tasks:
+                continue
+            for task, labels in sorted(tasks.items()):
+                total = sum(labels.values())
+                major = labels.most_common(1)[0][1] / total if total else 0.0
+                lines.append(f"**{split}, {task}.** Majority class {major:.1%} of {total:,} answers. The marginal is `true_label`, not the menu.")
+                lines.append("")
+                lines += _label_table(f"{split} {task}", labels, top)
+                lines.append("")
+
+    lines.append("### Structures")
+    lines.append("")
+    if not any(m["structure_records"] for m in splits.values()):
+        lines.append("None.")
+        lines.append("")
+    else:
+        for split in order:
+            m = splits[split]
+            if not m["structure_records"]:
+                continue
+            lines.append(f"**{split}.**")
+            lines.append("")
+            rows = []
+            for name, n in sorted(m["structure_records"].items()):
+                fields = m["structures"].get(name, {})
+                if not fields:
+                    rows.append([name, "(no field values)", f"{n:,}", "0%"])
+                for field, c in sorted(fields.items(), key=lambda kv: -kv[1]):
+                    rows.append([name, field, f"{c:,}", _share(c, n)])
+                anchors = m["structure_anchors"].get(name)
+                anchor = ", ".join(f"{k} ×{v:,}" for k, v in anchors.most_common(4)) if anchors else "none"
+                rows.append([name, "record_metadata", anchor, ""])
+            lines += _md_table(["record type", "field", "count", "coverage of records"], rows)
+            lines.append("")
+
+    lines.append("### Provenance")
+    lines.append("")
+    prov_rows = []
+    for head in ("entities", "relations", "events", "classifications", "structures"):
+        prov_rows.append([head, provenance(registry, dataset, head)])
+    lines += _md_table(["head", "who wrote the gold"], prov_rows)
+    lines.append("")
+    return lines
+
+
+def markdown_report(data: Dict[str, Dict[str, Dict]], registry: Dict, top: int,
+                    config: Optional[str] = None) -> str:
+    """One markdown census. Each dataset is a section. Metric types are named where they are used."""
+    lines = ["# Dataset census", ""]
+    lines.append("Gold the training and scoring path sees. Label counts are after the label map when one was applied.")
+    if config:
+        lines.append(f"Config: `{config}`. Splits are resolved the same way `tools/train/train.py` resolves them.")
+    lines.append("")
+    lines.append(
+        "Checkpoint measures stay in their own commands. Surface alignment needs the model tokenizer. "
+        "Gradient share, the junction, and familiarity need a checkpoint. They describe a model, not this gold.")
+    lines.append("")
+    summary = [["dataset", "split", "records", "unique inputs", "entities", "relations",
+                "classifications", "structures", "event triggers", "event arguments"]]
+    for dataset in sorted(data):
+        for split in sorted(data[dataset], key=lambda s: SPLIT_ORDER.get(s, 9)):
+            m = data[dataset][split]
+            h = head_counts(m)
+            summary.append([
+                dataset, split, f"{m['records']:,}", f"{len(m['hashes']):,}",
+                f"{h['entities']:,}", f"{h['relations']:,}", f"{h['classifications']:,}",
+                f"{h['structures']:,}", f"{h['event_triggers']:,}", f"{h['event_arguments']:,}",
+            ])
+    lines += _md_table(summary[0], summary[1:])
+    lines.append("")
+    if len(data) > 1:
+        lines.append("## Across these datasets")
+        lines.append("")
+        lines.append("Uniqueness here unions every dataset in this run. An overlap can be two corpora sharing a document, not only a split of one corpus.")
+        lines.append("")
+        lines += _md_table(["check", "count"], [[k, f"{v:,}"] for k, v in uniqueness(data).items()])
+        lines.append("")
+    for dataset in sorted(data):
+        lines += _dataset_markdown(dataset, data[dataset], registry, top)
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(description="Report label distributions for the data/ corpora.")
     p.add_argument("datasets", nargs="*", help="Limit to these dataset basenames (default: all).")
@@ -523,9 +1231,14 @@ def main(argv=None) -> None:
                                     "config's own map in --config mode. Passthrough corpora stay raw.")
     p.add_argument("--top", type=int, default=0, help="Cap each distribution to its top-N labels (0 = all).")
     p.add_argument("--json", dest="json_out", help="Write metrics as JSON here instead of a text report.")
+    p.add_argument("--markdown", dest="markdown_out",
+                   help="Write one markdown census. Detects each record's language. Also includes "
+                        "splits, TVD, argument-inside-trigger, string occurrence, event identity, "
+                        "and trigger and argument coreference.")
     args = p.parse_args(argv)
 
-    lang = T._detect_lang if args.lang else None
+    # The markdown census always names every language. Text and JSON stay opt-in via --lang.
+    lang = T._detect_lang if args.lang or args.markdown_out else None
     if args.config:
         data = collect_config(args.config, lang, args.labels)
     else:
@@ -543,6 +1256,12 @@ def main(argv=None) -> None:
         Path(args.json_out).write_text(json.dumps(report, ensure_ascii=False, indent=2),
                                        encoding="utf-8")
         print(f"[out] wrote {args.json_out} ({len(data)} datasets)")
+    if args.markdown_out:
+        registry = load_registry().get("datasets") or {}
+        Path(args.markdown_out).write_text(
+            markdown_report(data, registry, args.top, args.config), encoding="utf-8")
+        print(f"[out] wrote {args.markdown_out} ({len(data)} datasets)")
+    if args.json_out or args.markdown_out:
         return
 
     print("\n".join(summary_table(data)))
