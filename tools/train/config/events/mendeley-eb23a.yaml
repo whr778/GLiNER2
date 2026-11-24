@@ -13,6 +13,7 @@ model:
     record_argument_coref_copy: none
     record_argument_coref_boost: 0.0
     report_task_losses: true
+    loss_reduction: global
 
 training:
   checkpoint_restart: null

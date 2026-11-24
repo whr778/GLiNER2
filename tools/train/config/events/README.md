@@ -2,7 +2,7 @@
 
 One fine-tune per event corpus, warm-started from `whr778/gliner2-eb23a`, and a control from `fastino/gliner2.5-multi-v1`. The pair shares data, negative dose, and schedule. The pretrained checkpoint is the difference, except Mendeley: that corpus is multi-trigger, so the eb23a arm keeps TriggerLink weight `0.3` and the multi-v1 arm stays at `0.0` (that checkpoint has no TriggerLink).
 
-Both checkpoints are boundary models with `max_len: 4096`. Labels are `labels/unified-full-v4.yaml`. Relation negatives are off: none of these corpora have relation gold, and the relneg A/B (2026-10-19) was negative. `expand_argument_coref: false` and `record_argument_coref_copy: none`. Every event corpus here has one trigger per event except Mendeley, so TriggerLink weight is `0.0` on the rest.
+Both checkpoints are boundary models with `max_len: 4096`. Labels are `labels/unified-full-v4.yaml`. Both arms set `loss_reduction: global`. The multi-v1 checkpoint ships `sum`, and the per-task loss report rejects `sum`. `sum` also grows the span terms with document length. Relation negatives are off: none of these corpora have relation gold, and the relneg A/B (2026-10-19) was negative. `expand_argument_coref: false` and `record_argument_coref_copy: none`. Every event corpus here has one trigger per event except Mendeley, so TriggerLink weight is `0.0` on the rest.
 
 Doses are the train-split ontology, counted 2026-11-24. A dose larger than the pool injects the whole pool.
 

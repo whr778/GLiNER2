@@ -53,6 +53,7 @@ def test_each_event_corpus_has_an_eb23a_arm_and_a_multi_control():
         eb_head.pop("record_coref_link_weight")
         mu_head.pop("record_coref_link_weight")
         assert eb_head == mu_head
+        assert eb_head["loss_reduction"] == "global"
         assert eb["eval"] == mu["eval"]
         # One trigger per event, so TriggerLink has no positives. Mendeley is the exception.
         eb_w = eb["model"]["boundary_head"]["record_coref_link_weight"]
