@@ -101,6 +101,7 @@ Push with [`push_corpus_hf.py`](push_corpus_hf.py) for split files and
 | `data/casualty_multi_loc.*.jsonl` | train | [`whr778/casualty_multi_loc`](https://huggingface.co/datasets/whr778/casualty_multi_loc) | registry `hf_jsonl` |
 | `data/casualty_ml.*.jsonl` | test/train/val | [`whr778/casualty_ml`](https://huggingface.co/datasets/whr778/casualty_ml) | registry `hf_jsonl` |
 | `data/cas_ann_en.jsonl` | (unsplit) | [`whr778/cas_ann_en`](https://huggingface.co/datasets/whr778/cas_ann_en) | direct upload |
+| `data/cas_ann_ccnews.jsonl` | (unsplit) | none; an input to [`whr778/casualty_ml`](https://huggingface.co/datasets/whr778/casualty_ml) | no separate registry entry |
 | `data/casualty_natural.*.jsonl` | train | [`whr778/casualty_natural`](https://huggingface.co/datasets/whr778/casualty_natural) | registry `hf_jsonl` |
 | `data/cc_news_haiku45.*.jsonl` | test/train/val | [`whr778/cc_news_haiku45`](https://huggingface.co/datasets/whr778/cc_news_haiku45) | registry `hf_jsonl` |
 | `data/chfinann.*.jsonl` | test/train/val | [`whr778/chfinann`](https://huggingface.co/datasets/whr778/chfinann) | registry `hf_jsonl` |
@@ -215,7 +216,8 @@ volume:
 |---|---|---|---|
 | Turkish | `turkish_gate/cas_ann_tr` (31,263 available) | **real news** | location 36,461 · dead 26,919 · injured 20,234 |
 | Chinese | `chinese_gate/cas_ann_zh*` | **real news** | location 26,163 · dead 21,830 · injured 8,242 |
-| English | `cas_ann_en` (DocEE) + CC-News top-up | **real news** | location 13,777 · dead 10,101 · injured 3,414 |
+| English | `cas_ann_en` (DocEE) | **real news** | location 13,777 · dead 10,101 · injured 3,414 · missing 534 |
+| English | `cas_ann_ccnews` (CC-News) | **real news** | location 14,933 · dead 12,175 · injured 3,951 · missing 328 |
 
 Built by `tools/train/build_casualty_multilingual.py`. Verified 0 duplicates within each
 split, 0 overlap across splits, 0 overlap across languages, 100% carrying
@@ -228,7 +230,7 @@ stated "Chinese -- there is none. 4 of 818,776 casualty_report structures across
 corpus on disk are Chinese." That was wrong: 20,901 real Chinese casualty records were in
 `data/chinese_gate/`, a subdirectory the scan treated as scratch rather than as a corpus.
 The English arm was synthetic for the same reason in reverse -- nobody had asked for real
-English casualty annotation until `cas_ann_en`.
+English casualty annotation until `cas_ann_en` and `cas_ann_ccnews`, both bought 2026-09-03.
 
 ## How well does the base encoder already know each corpus? (2026-09-21)
 
@@ -376,6 +378,8 @@ professorbob_re's `no relation` (37% of its gold), dropped in `labels/unified-fu
 | **Structured extraction** | | | | | | |
 | text2json-training-data | **Structured extraction (json_structures)** | 7,976 | 891 | 872 | see card | [HF](https://huggingface.co/datasets/knowledgator/text2json-training-data) |
 | json_data_extraction | Schema-driven structured extraction | 378 | 55 | 50 | Apache-2.0 | [HF](https://huggingface.co/datasets/paraloq/json_data_extraction) |
+| cas_ann_en | Structured extraction (`casualty_report`, unsplit) | 9,648 | — | — | DocEE text, model gold | [Hub](https://huggingface.co/datasets/whr778/cas_ann_en) |
+| cas_ann_ccnews | Structured extraction (`casualty_report`, unsplit) | 12,491 | — | — | CC-News text, model gold | local |
 | **Event extraction** (manual download) | | | | | | |
 | WikiEvents | NER + event extraction | 200 | 20 | 20 | see source | [gen-arg](https://github.com/raspberryice/gen-arg) |
 | RAMS | Event extraction (trigger + args) | 7,329 | 924 | 871 | see source | [JHU](https://nlp.jhu.edu/rams/) |
@@ -740,6 +744,39 @@ triple. The converter walks the extracted `item` recursively and maps every leaf
 scalar / list-of-scalars to a `{field: [value]}` entity, keeping only values that
 appear verbatim in the text. Small but field-diverse, and Apache-2.0 (clean license).
 *Stats: ~1,634 distinct leaf field names, ~7,400 extracted values over 483 documents.*
+
+### cas_ann_en — real DocEE casualty reports
+`data/cas_ann_en.jsonl` · 9,648 records, unsplit.
+[Census](../../data/docs/cas_ann_en.md).
+
+DocEE documents screened by the toll regex and annotated as `casualty_report`
+(`annotate_casualty.py`). Bought 2026-09-03 for about $20: 14,850 documents
+screened, yield 65.0%, 0 duplicate documents. The first real-text English
+casualty corpus in this repo. Rows carry a DocEE split tag because the base
+trained on `docee.train`, so a blind test has to be carved from the val and test
+rows. With `cas_ann_ccnews`, it is the English arm of `casualty_ml`.
+
+*Stats, measured 2026-11-24: 15,097 `casualty_report` structures on 9,648 records.
+Field coverage of structures: location 13,777 (91.26%), dead 10,101 (66.91%),
+injured 3,414 (22.61%), missing 534 (3.54%). Every record carries `record_metadata`.
+Language: eng 9,645 (99.97%), und 3.*
+
+### cas_ann_ccnews — real CC-News casualty reports
+`data/cas_ann_ccnews.jsonl` · 12,491 records, unsplit.
+[Census](../../data/docs/cas_ann_ccnews.md).
+
+English CC-News screened for a casualty toll, then annotated as `casualty_report`.
+The screen is a regex and then `whr778/gliner2-base-v1-casualty-docee`
+(`screen_ccnews_candidates.py`): on 488,710 documents the regex kept 24.7%, the
+extractor kept 28.0% of those, and 12,491 rows were annotated (37.5% of 33,516
+unique candidates). About $45. One input, with `cas_ann_en`, to the English arm of
+`casualty_ml`. CC-News is absent from the base mix, so these rows may sit in val
+and test; DocEE-derived rows are pinned to train.
+
+*Stats, measured 2026-11-24: 16,521 `casualty_report` structures on 12,491 records.
+Field coverage of structures: location 14,933 (90.39%), dead 12,175 (73.69%),
+injured 3,951 (23.92%), missing 328 (1.99%). Every record carries `record_metadata`.
+Language: eng 12,488 (99.98%), und 3.*
 
 ## Event extraction
 
